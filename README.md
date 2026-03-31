@@ -23,8 +23,8 @@ Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
 Each agent repo must contain:
 
-- `Dockerfile`
 - `jackin.agent.toml`
+- a Dockerfile at the path declared by `jackin.agent.toml`
 
 Example `jackin.agent.toml`:
 

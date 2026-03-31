@@ -28,6 +28,27 @@ impl ClassSelector {
         }
     }
 
+    pub fn parse(input: &str) -> Result<Self, SelectorError> {
+        if input.is_empty() {
+            return Err(SelectorError::Empty);
+        }
+
+        if !input.contains('/') {
+            return (is_valid_class_segment(input) && !is_reserved_builtin_class_name(input))
+                .then(|| Self::new(None, input))
+                .ok_or_else(|| SelectorError::Invalid(input.to_string()));
+        }
+
+        let mut parts = input.split('/');
+        if let (Some(namespace), Some(name), None) = (parts.next(), parts.next(), parts.next()) {
+            if is_valid_class_segment(namespace) && is_valid_class_segment(name) {
+                return Ok(Self::new(Some(namespace), name));
+            }
+        }
+
+        Err(SelectorError::Invalid(input.to_string()))
+    }
+
     pub fn key(&self) -> String {
         match &self.namespace {
             Some(namespace) => format!("{namespace}/{}", self.name),
@@ -41,24 +62,39 @@ impl Selector {
         if input.is_empty() {
             return Err(SelectorError::Empty);
         }
-        if input.starts_with("agent-") {
+
+        if is_valid_container_name(input) {
             return Ok(Self::Container(input.to_string()));
         }
-        if let Some((base, suffix)) = input.rsplit_once("-clone-") {
-            if !base.is_empty() && suffix.chars().all(|ch| ch.is_ascii_digit()) {
-                return Ok(Self::Container(format!("agent-{input}")));
+
+        if !input.contains('/') {
+            if let Some((base, suffix)) = input.rsplit_once("-clone-") {
+                if is_valid_class_segment(base) && suffix.chars().all(|ch| ch.is_ascii_digit()) {
+                    return Ok(Self::Container(format!("agent-{input}")));
+                }
             }
         }
-        if let Some((namespace, name)) = input.split_once('/') {
-            if !namespace.is_empty() && !name.is_empty() {
-                return Ok(Self::Class(ClassSelector::new(Some(namespace), name)));
-            }
-        }
-        if input.chars().all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-') {
-            return Ok(Self::Class(ClassSelector::new(None, input)));
-        }
-        Err(SelectorError::Invalid(input.to_string()))
+
+        Ok(Self::Class(ClassSelector::parse(input)?))
     }
+}
+
+fn is_valid_class_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
+}
+
+fn is_valid_container_name(value: &str) -> bool {
+    value.starts_with("agent-") && is_valid_class_segment(&value["agent-".len()..])
+}
+
+fn is_reserved_builtin_class_name(value: &str) -> bool {
+    value.starts_with("agent-")
+        || value
+            .rsplit_once("-clone-")
+            .is_some_and(|(base, suffix)| is_valid_class_segment(base) && suffix.chars().all(|ch| ch.is_ascii_digit()))
 }
 
 #[cfg(test)]
@@ -69,6 +105,18 @@ mod tests {
     fn parses_builtin_class_selector() {
         let selector = Selector::parse("smith").unwrap();
         assert_eq!(selector, Selector::Class(ClassSelector::new(None, "smith")));
+    }
+
+    #[test]
+    fn class_parser_rejects_reserved_builtin_names() {
+        assert!(matches!(
+            ClassSelector::parse("agent-smith"),
+            Err(SelectorError::Invalid(_))
+        ));
+        assert!(matches!(
+            ClassSelector::parse("smith-clone-1"),
+            Err(SelectorError::Invalid(_))
+        ));
     }
 
     #[test]
@@ -93,5 +141,21 @@ mod tests {
     fn parses_clone_shorthand_selector() {
         let selector = Selector::parse("smith-clone-1").unwrap();
         assert_eq!(selector, Selector::Container("agent-smith-clone-1".to_string()));
+    }
+
+    #[test]
+    fn rejects_malformed_namespaced_selector() {
+        assert!(matches!(
+            Selector::parse("foo/bar/baz"),
+            Err(SelectorError::Invalid(_))
+        ));
+        assert!(matches!(
+            Selector::parse("foo/../bar"),
+            Err(SelectorError::Invalid(_))
+        ));
+        assert!(matches!(
+            Selector::parse("Foo/bar"),
+            Err(SelectorError::Invalid(_))
+        ));
     }
 }
