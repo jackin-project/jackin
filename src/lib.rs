@@ -13,7 +13,9 @@ use cli::{Cli, Command};
 use config::AppConfig;
 use docker::ShellRunner;
 use paths::JackinPaths;
-use selector::Selector;
+use selector::{ClassSelector, Selector};
+use std::io::ErrorKind;
+use std::path::Path;
 
 pub fn run(cli: Cli) -> Result<()> {
     let paths = JackinPaths::detect()?;
@@ -21,10 +23,10 @@ pub fn run(cli: Cli) -> Result<()> {
     let mut runner = ShellRunner;
 
     match cli.command {
-        Command::Load { selector } => match Selector::parse(&selector)? {
-            Selector::Class(class) => runtime::load_agent(&paths, &mut config, &class, &mut runner),
-            Selector::Container(_) => anyhow::bail!("load expects a class selector"),
-        },
+        Command::Load { selector } => {
+            let class = ClassSelector::parse(&selector)?;
+            runtime::load_agent(&paths, &mut config, &class, &mut runner)
+        }
         Command::Hardline { container } => runtime::hardline_agent(&container, &mut runner),
         Command::Eject {
             selector,
@@ -34,7 +36,7 @@ pub fn run(cli: Cli) -> Result<()> {
             Selector::Container(container) => {
                 runtime::eject_agent(&container, &mut runner)?;
                 if purge {
-                    std::fs::remove_dir_all(paths.data_dir.join(&container)).ok();
+                    remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                 }
                 Ok(())
             }
@@ -45,7 +47,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     {
                         runtime::eject_agent(&container, &mut runner)?;
                         if purge {
-                            std::fs::remove_dir_all(paths.data_dir.join(&container)).ok();
+                            remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                         }
                     }
                     Ok(())
@@ -53,7 +55,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     let container = crate::instance::primary_container_name(&class);
                     runtime::eject_agent(&container, &mut runner)?;
                     if purge {
-                        std::fs::remove_dir_all(paths.data_dir.join(&container)).ok();
+                        remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                     }
                     Ok(())
                 }
@@ -62,22 +64,29 @@ pub fn run(cli: Cli) -> Result<()> {
         Command::Exile => runtime::exile_all(&mut runner),
         Command::Purge { selector, all } => match Selector::parse(&selector)? {
             Selector::Container(container) => {
-                std::fs::remove_dir_all(paths.data_dir.join(container)).ok();
+                remove_data_dir_if_exists(&paths.data_dir.join(container))?;
                 Ok(())
             }
             Selector::Class(class) => {
                 if all {
                     runtime::purge_class_data(&paths, &class)
                 } else {
-                    std::fs::remove_dir_all(
-                        paths
+                    remove_data_dir_if_exists(
+                        &paths
                             .data_dir
                             .join(crate::instance::primary_container_name(&class)),
-                    )
-                    .ok();
+                    )?;
                     Ok(())
                 }
             }
         },
+    }
+}
+
+fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
+    match std::fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
     }
 }

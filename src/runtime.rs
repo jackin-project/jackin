@@ -40,7 +40,8 @@ pub fn load_agent(
         )?;
     }
 
-    let manifest = validate_agent_repo(&cached_repo.repo_dir)?;
+    let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
+    let manifest = &validated_repo.manifest;
 
     let existing = list_running_agent_names(runner)?;
     let container_name = next_container_name(selector, &existing);
@@ -50,94 +51,101 @@ pub fn load_agent(
     let network = format!("jackin-{container_name}-net");
     let dind = format!("{container_name}-dind");
 
-    runner.run(
-        "docker",
-        &["network".into(), "create".into(), network.clone()],
-        None,
-    )?;
+    let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
+    let load_result = (|| -> anyhow::Result<()> {
+        runner.run(
+            "docker",
+            &["network".into(), "create".into(), network.clone()],
+            None,
+        )?;
 
-    runner.run(
-        "docker",
-        &[
-            "run".into(),
-            "-d".into(),
-            "--name".into(),
-            dind.clone(),
-            "--network".into(),
-            network.clone(),
-            "--privileged".into(),
-            "docker:dind".into(),
-        ],
-        None,
-    )?;
+        runner.run(
+            "docker",
+            &[
+                "run".into(),
+                "-d".into(),
+                "--name".into(),
+                dind.clone(),
+                "--network".into(),
+                network.clone(),
+                "--privileged".into(),
+                "docker:dind".into(),
+            ],
+            None,
+        )?;
 
-    wait_for_dind(&dind, runner)?;
+        wait_for_dind(&dind, runner)?;
 
-    runner.run(
-        "docker",
-        &[
-            "build".into(),
-            "-t".into(),
-            image.clone(),
-            "-f".into(),
-            cached_repo
-                .repo_dir
-                .join(&manifest.dockerfile)
-                .display()
-                .to_string(),
-            cached_repo.repo_dir.display().to_string(),
-        ],
-        None,
-    )?;
+        runner.run(
+            "docker",
+            &[
+                "build".into(),
+                "-t".into(),
+                image.clone(),
+                "-f".into(),
+                validated_repo.dockerfile_path.display().to_string(),
+                cached_repo.repo_dir.display().to_string(),
+            ],
+            None,
+        )?;
 
-    runner.run(
-        "docker",
-        &[
-            "run".into(),
-            "-d".into(),
-            "--name".into(),
-            container_name.clone(),
-            "--hostname".into(),
-            container_name.clone(),
-            "--network".into(),
-            network,
-            "--label".into(),
-            "jackin.managed=true".into(),
-            "--label".into(),
-            format!("jackin.class={}", selector.key()),
-            "-e".into(),
-            format!("DOCKER_HOST=tcp://{dind}:2375"),
-            "-v".into(),
-            format!("{}:/workspace", cached_repo.repo_dir.display()),
-            "-v".into(),
-            format!("{}:/home/claude/.claude", state.claude_dir.display()),
-            "-v".into(),
-            format!("{}:/home/claude/.claude.json", state.claude_json.display()),
-            image,
-            "tail".into(),
-            "-f".into(),
-            "/dev/null".into(),
-        ],
-        None,
-    )?;
+        runner.run(
+            "docker",
+            &[
+                "run".into(),
+                "-d".into(),
+                "--name".into(),
+                container_name.clone(),
+                "--hostname".into(),
+                container_name.clone(),
+                "--network".into(),
+                network.clone(),
+                "--label".into(),
+                "jackin.managed=true".into(),
+                "--label".into(),
+                format!("jackin.class={}", selector.key()),
+                "-e".into(),
+                format!("DOCKER_HOST=tcp://{dind}:2375"),
+                "-v".into(),
+                format!("{}:/workspace", cached_repo.repo_dir.display()),
+                "-v".into(),
+                format!("{}:/home/claude/.claude", state.claude_dir.display()),
+                "-v".into(),
+                format!("{}:/home/claude/.claude.json", state.claude_json.display()),
+                image,
+                "tail".into(),
+                "-f".into(),
+                "/dev/null".into(),
+            ],
+            None,
+        )?;
 
-    bootstrap_plugins(&container_name, &manifest, runner)?;
+        bootstrap_plugins(&container_name, manifest, runner)?;
 
-    runner.run(
-        "docker",
-        &[
-            "exec".into(),
-            "-it".into(),
-            container_name,
-            "env".into(),
-            "CLAUDE_ENV=docker".into(),
-            "claude".into(),
-            "--dangerously-skip-permissions".into(),
-            "--verbose".into(),
-        ],
-        None,
-    )?;
+        runner.run(
+            "docker",
+            &[
+                "exec".into(),
+                "-it".into(),
+                container_name.clone(),
+                "env".into(),
+                "CLAUDE_ENV=docker".into(),
+                "claude".into(),
+                "--dangerously-skip-permissions".into(),
+                "--verbose".into(),
+            ],
+            None,
+        )?;
 
+        Ok(())
+    })();
+
+    if let Err(error) = load_result {
+        cleanup.run(runner);
+        return Err(error);
+    }
+
+    cleanup.disarm();
     Ok(())
 }
 
@@ -151,8 +159,7 @@ pub fn hardline_agent(
             "exec".into(),
             "-it".into(),
             container_name.to_string(),
-            "zsh".into(),
-            "-l".into(),
+            "sh".into(),
         ],
         None,
     )
@@ -186,26 +193,36 @@ fn bootstrap_plugins(
     manifest: &AgentManifest,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    let mut script = vec![
-        "set -euo pipefail".to_string(),
-        "claude plugin marketplace add anthropics/claude-plugins-official >/dev/null 2>&1 || true"
-            .to_string(),
-    ];
-    for plugin in &manifest.claude.plugins {
-        script.push(format!("claude plugin install {plugin}"));
-    }
-
-    runner.run(
+    let _ = runner.run(
         "docker",
         &[
             "exec".into(),
             container_name.to_string(),
-            "bash".into(),
-            "-lc".into(),
-            script.join(" && "),
+            "claude".into(),
+            "plugin".into(),
+            "marketplace".into(),
+            "add".into(),
+            "anthropics/claude-plugins-official".into(),
         ],
         None,
-    )
+    );
+
+    for plugin in &manifest.claude.plugins {
+        runner.run(
+            "docker",
+            &[
+                "exec".into(),
+                container_name.to_string(),
+                "claude".into(),
+                "plugin".into(),
+                "install".into(),
+                plugin.clone(),
+            ],
+            None,
+        )?;
+    }
+
+    Ok(())
 }
 
 pub fn list_running_agent_names(
@@ -284,9 +301,54 @@ fn image_name(selector: &ClassSelector) -> String {
     format!("jackin-{}", selector.key().replace('/', "-"))
 }
 
+struct LoadCleanup {
+    container_name: String,
+    dind: String,
+    network: String,
+    armed: bool,
+}
+
+impl LoadCleanup {
+    fn new(container_name: String, dind: String, network: String) -> Self {
+        Self {
+            container_name,
+            dind,
+            network,
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+
+    fn run(&self, runner: &mut impl CommandRunner) {
+        if !self.armed {
+            return;
+        }
+
+        let _ = runner.run(
+            "docker",
+            &["rm".into(), "-f".into(), self.container_name.clone()],
+            None,
+        );
+        let _ = runner.run(
+            "docker",
+            &["rm".into(), "-f".into(), self.dind.clone()],
+            None,
+        );
+        let _ = runner.run(
+            "docker",
+            &["network".into(), "rm".into(), self.network.clone()],
+            None,
+        );
+    }
+}
+
 #[derive(Default)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,
+    pub fail_on: Vec<String>,
 }
 
 impl CommandRunner for FakeRunner {
@@ -296,8 +358,11 @@ impl CommandRunner for FakeRunner {
         args: &[String],
         _cwd: Option<&std::path::Path>,
     ) -> anyhow::Result<()> {
-        self.recorded
-            .push(format!("{} {}", program, args.join(" ")));
+        let command = format!("{} {}", program, args.join(" "));
+        self.recorded.push(command.clone());
+        if self.fail_on.iter().any(|pattern| command.contains(pattern)) {
+            anyhow::bail!("command failed: {command}");
+        }
         Ok(())
     }
 
@@ -307,8 +372,11 @@ impl CommandRunner for FakeRunner {
         args: &[String],
         _cwd: Option<&std::path::Path>,
     ) -> anyhow::Result<String> {
-        self.recorded
-            .push(format!("{} {}", program, args.join(" ")));
+        let command = format!("{} {}", program, args.join(" "));
+        self.recorded.push(command.clone());
+        if self.fail_on.iter().any(|pattern| command.contains(pattern)) {
+            anyhow::bail!("command failed: {command}");
+        }
         Ok(String::new())
     }
 }
@@ -416,9 +484,37 @@ mod tests {
 
         hardline_agent("agent-smith", &mut runner).unwrap();
 
-        assert_eq!(
-            runner.recorded.last().unwrap(),
-            "docker exec -it agent-smith zsh -l"
-        );
+        assert_eq!(runner.recorded.last().unwrap(), "docker exec -it agent-smith sh");
+    }
+
+    #[test]
+    fn load_agent_rolls_back_runtime_on_bootstrap_failure() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "smith");
+        let mut runner = FakeRunner {
+            fail_on: vec!["docker exec agent-smith claude plugin install".to_string()],
+            ..Default::default()
+        };
+
+        let repo_dir = paths.agents_dir.join("smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM debian:trixie\n").unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
+        )
+        .unwrap();
+
+        let error = load_agent(&paths, &mut config, &selector, &mut runner).unwrap_err();
+
+        assert!(error.to_string().contains("docker exec agent-smith claude plugin install"));
+        assert!(runner.recorded.iter().any(|call| call == "docker rm -f agent-smith"));
+        assert!(runner.recorded.iter().any(|call| call == "docker rm -f agent-smith-dind"));
+        assert!(runner
+            .recorded
+            .iter()
+            .any(|call| call == "docker network rm jackin-agent-smith-net"));
     }
 }
