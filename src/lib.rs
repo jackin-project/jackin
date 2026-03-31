@@ -26,6 +26,58 @@ pub fn run(cli: Cli) -> Result<()> {
             Selector::Container(_) => anyhow::bail!("load expects a class selector"),
         },
         Command::Hardline { container } => runtime::hardline_agent(&container, &mut runner),
-        Command::Eject { .. } | Command::Exile | Command::Purge { .. } => Ok(()),
+        Command::Eject {
+            selector,
+            all,
+            purge,
+        } => match Selector::parse(&selector)? {
+            Selector::Container(container) => {
+                runtime::eject_agent(&container, &mut runner)?;
+                if purge {
+                    std::fs::remove_dir_all(paths.data_dir.join(&container)).ok();
+                }
+                Ok(())
+            }
+            Selector::Class(class) => {
+                if all {
+                    for container in
+                        runtime::matching_family(&class, &runtime::list_running_agent_names(&mut runner)?)
+                    {
+                        runtime::eject_agent(&container, &mut runner)?;
+                        if purge {
+                            std::fs::remove_dir_all(paths.data_dir.join(&container)).ok();
+                        }
+                    }
+                    Ok(())
+                } else {
+                    let container = crate::instance::primary_container_name(&class);
+                    runtime::eject_agent(&container, &mut runner)?;
+                    if purge {
+                        std::fs::remove_dir_all(paths.data_dir.join(&container)).ok();
+                    }
+                    Ok(())
+                }
+            }
+        },
+        Command::Exile => runtime::exile_all(&mut runner),
+        Command::Purge { selector, all } => match Selector::parse(&selector)? {
+            Selector::Container(container) => {
+                std::fs::remove_dir_all(paths.data_dir.join(container)).ok();
+                Ok(())
+            }
+            Selector::Class(class) => {
+                if all {
+                    runtime::purge_class_data(&paths, &class)
+                } else {
+                    std::fs::remove_dir_all(
+                        paths
+                            .data_dir
+                            .join(crate::instance::primary_container_name(&class)),
+                    )
+                    .ok();
+                    Ok(())
+                }
+            }
+        },
     }
 }

@@ -230,6 +230,56 @@ pub fn list_running_agent_names(
         .collect())
 }
 
+pub fn matching_family(selector: &ClassSelector, names: &[String]) -> Vec<String> {
+    names
+        .iter()
+        .filter(|name| crate::instance::class_family_matches(selector, name))
+        .cloned()
+        .collect()
+}
+
+pub fn purge_class_data(paths: &JackinPaths, selector: &ClassSelector) -> anyhow::Result<()> {
+    if !paths.data_dir.exists() {
+        return Ok(());
+    }
+
+    for entry in std::fs::read_dir(&paths.data_dir)? {
+        let entry = entry?;
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if crate::instance::class_family_matches(selector, &file_name) {
+            std::fs::remove_dir_all(entry.path())?;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn eject_agent(
+    container_name: &str,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    let dind = format!("{container_name}-dind");
+    let network = format!("jackin-{container_name}-net");
+
+    runner.run(
+        "docker",
+        &["rm".into(), "-f".into(), container_name.to_string()],
+        None,
+    )?;
+    runner.run("docker", &["rm".into(), "-f".into(), dind], None)?;
+    runner.run("docker", &["network".into(), "rm".into(), network], None)?;
+
+    Ok(())
+}
+
+pub fn exile_all(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
+    let names = list_running_agent_names(runner)?;
+    for name in names {
+        eject_agent(&name, runner)?;
+    }
+    Ok(())
+}
+
 fn image_name(selector: &ClassSelector) -> String {
     format!("jackin-{}", selector.key().replace('/', "-"))
 }
@@ -303,6 +353,61 @@ mod tests {
             .any(|call| call.contains("docker build")));
         assert!(runner.recorded.iter().any(|call| call
             .contains("docker exec -it agent-chainargos-smith env CLAUDE_ENV=docker claude --dangerously-skip-permissions --verbose")));
+    }
+
+    #[test]
+    fn eject_all_targets_only_requested_class_family() {
+        let selector = ClassSelector::new(None, "smith");
+        let names = vec![
+            "agent-smith".to_string(),
+            "agent-smith-clone-1".to_string(),
+            "agent-chainargos-smith".to_string(),
+        ];
+
+        let matched = matching_family(&selector, &names);
+
+        assert_eq!(matched, vec!["agent-smith", "agent-smith-clone-1"]);
+    }
+
+    #[test]
+    fn purge_all_removes_matching_state_directories() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(paths.data_dir.join("agent-smith")).unwrap();
+        std::fs::create_dir_all(paths.data_dir.join("agent-smith-clone-1")).unwrap();
+        std::fs::create_dir_all(paths.data_dir.join("agent-chainargos-smith")).unwrap();
+        let selector = ClassSelector::new(None, "smith");
+
+        purge_class_data(&paths, &selector).unwrap();
+
+        assert!(!paths.data_dir.join("agent-smith").exists());
+        assert!(!paths.data_dir.join("agent-smith-clone-1").exists());
+        assert!(paths.data_dir.join("agent-chainargos-smith").exists());
+    }
+
+    #[test]
+    fn eject_agent_removes_container_dind_and_network() {
+        let mut runner = FakeRunner::default();
+
+        eject_agent("agent-smith", &mut runner).unwrap();
+
+        assert_eq!(runner.recorded, vec![
+            "docker rm -f agent-smith",
+            "docker rm -f agent-smith-dind",
+            "docker network rm jackin-agent-smith-net",
+        ]);
+    }
+
+    #[test]
+    fn exile_all_ejects_all_running_agents() {
+        let mut runner = FakeRunner::default();
+
+        exile_all(&mut runner).unwrap();
+
+        assert_eq!(
+            runner.recorded,
+            vec!["docker ps --filter label=jackin.managed=true --format {{.Names}}"]
+        );
     }
 
     #[test]
