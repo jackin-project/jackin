@@ -1,12 +1,14 @@
 # jackin
 
-`jackin` is a CLI for orchestrating Claude Code agents at scale. Each agent runs in an isolated Docker container with Docker-in-Docker enabled — a self-contained world to think, build, and execute in. You're the Operator. They're already inside.
+`jackin` is a CLI for orchestrating AI coding agents at scale. Each agent runs in an isolated Docker container with Docker-in-Docker enabled — a self-contained world to think, build, and execute in. You're the Operator. They're already inside.
 
 Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
+> **Current status:** jackin is built as a proof of concept around [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its first and only supported agent runtime. Support for additional agent runtimes — [Codex](https://github.com/openai/codex) and [Amp Code](https://ampcode.com) — is planned for future releases.
+
 ## Construct
 
-`jackin/construct:trixie` is the shared base image for every agent repo. In The Matrix, the construct is the base simulated environment you load before a mission. That maps directly to `jackin`'s shared runtime image: every agent starts from the same construct before layering on its own specialized environment.
+`ghcr.io/donbeave/jackin-construct:trixie` is the shared base image for every agent repo. In The Matrix, the construct is the base simulated environment you load before a mission. That maps directly to `jackin`'s shared runtime image: every agent starts from the same construct before layering on its own specialized environment.
 
 ## Commands
 
@@ -34,6 +36,12 @@ The manifest Dockerfile path must be relative and must stay inside the repo chec
 
 Derived build-context generation currently rejects symlinks in the agent repo instead of following or preserving them.
 
-The final Dockerfile stage must literally be `FROM jackin/construct:trixie`, optionally with an alias such as `FROM jackin/construct:trixie AS runtime`. Earlier stages may use any base image.
+The final Dockerfile stage must literally be `FROM ghcr.io/donbeave/jackin-construct:trixie`, optionally with an alias such as `FROM ghcr.io/donbeave/jackin-construct:trixie AS runtime`. Earlier stages may use any base image.
 
 `smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the cached repo checkout at `/workspace`, mounting persisted `.claude`, `.claude.json`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.
+
+## Roadmap
+
+- [x] Claude Code agent runtime
+- [ ] [Codex](https://github.com/openai/codex) agent runtime
+- [ ] [Amp Code](https://ampcode.com) agent runtime

@@ -409,7 +409,7 @@ mod tests {
 
         let repo_dir = paths.agents_dir.join("chainargos").join("smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM ghcr.io/donbeave/jackin-construct:trixie\n").unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
@@ -595,7 +595,7 @@ mod tests {
 
         let repo_dir = paths.agents_dir.join("smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM ghcr.io/donbeave/jackin-construct:trixie\n").unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
@@ -640,7 +640,7 @@ mod tests {
 
         let repo_dir = paths.agents_dir.join("smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM ghcr.io/donbeave/jackin-construct:trixie\n").unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
