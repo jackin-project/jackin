@@ -47,7 +47,7 @@ pub fn load_agent(
     let build = create_derived_build_context(&cached_repo.repo_dir, &validated_repo)?;
 
     let image = image_name(selector);
-    let network = format!("jackin-{container_name}-net");
+    let network = format!("{container_name}-net");
     let dind = format!("{container_name}-dind");
 
     let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
@@ -240,7 +240,7 @@ pub fn eject_agent(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let dind = format!("{container_name}-dind");
-    let network = format!("jackin-{container_name}-net");
+    let network = format!("{container_name}-net");
 
     run_cleanup_command(
         runner,
@@ -401,13 +401,13 @@ mod tests {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(Some("chainargos"), "smith");
+        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
         let mut runner = FakeRunner::with_capture_queue([
             String::new(),
-            "agent-chainargos-smith".to_string(),
+            "jackin-chainargos-the-architect".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("chainargos").join("smith");
+        let repo_dir = paths.agents_dir.join("chainargos").join("the-architect");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(repo_dir.join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
         std::fs::write(
@@ -420,7 +420,7 @@ mod tests {
 
         assert!(std::fs::read_to_string(&paths.config_file)
             .unwrap()
-            .contains("chainargos/smith"));
+            .contains("chainargos/the-architect"));
         assert!(runner
             .recorded
             .iter()
@@ -428,14 +428,14 @@ mod tests {
         assert!(runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker build -t jackin-chainargos-smith -f")));
+            .any(|call| call.contains("docker build -t jackin-chainargos-the-architect -f")));
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
         }));
         assert!(runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker run -it --name agent-chainargos-smith")));
+            .any(|call| call.contains("docker run -it --name jackin-chainargos-the-architect")));
         assert!(runner
             .recorded
             .iter()
@@ -448,43 +448,43 @@ mod tests {
 
     #[test]
     fn eject_all_targets_only_requested_class_family() {
-        let selector = ClassSelector::new(None, "smith");
+        let selector = ClassSelector::new(None, "agent-smith");
         let names = vec![
-            "agent-smith".to_string(),
-            "agent-smith-clone-1".to_string(),
-            "agent-chainargos-smith".to_string(),
+            "jackin-agent-smith".to_string(),
+            "jackin-agent-smith-clone-1".to_string(),
+            "jackin-chainargos-the-architect".to_string(),
         ];
 
         let matched = matching_family(&selector, &names);
 
-        assert_eq!(matched, vec!["agent-smith", "agent-smith-clone-1"]);
+        assert_eq!(matched, vec!["jackin-agent-smith", "jackin-agent-smith-clone-1"]);
     }
 
     #[test]
     fn purge_all_removes_matching_state_directories() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        std::fs::create_dir_all(paths.data_dir.join("agent-smith")).unwrap();
-        std::fs::create_dir_all(paths.data_dir.join("agent-smith-clone-1")).unwrap();
-        std::fs::create_dir_all(paths.data_dir.join("agent-chainargos-smith")).unwrap();
-        let selector = ClassSelector::new(None, "smith");
+        std::fs::create_dir_all(paths.data_dir.join("jackin-agent-smith")).unwrap();
+        std::fs::create_dir_all(paths.data_dir.join("jackin-agent-smith-clone-1")).unwrap();
+        std::fs::create_dir_all(paths.data_dir.join("jackin-chainargos-the-architect")).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
 
         purge_class_data(&paths, &selector).unwrap();
 
-        assert!(!paths.data_dir.join("agent-smith").exists());
-        assert!(!paths.data_dir.join("agent-smith-clone-1").exists());
-        assert!(paths.data_dir.join("agent-chainargos-smith").exists());
+        assert!(!paths.data_dir.join("jackin-agent-smith").exists());
+        assert!(!paths.data_dir.join("jackin-agent-smith-clone-1").exists());
+        assert!(paths.data_dir.join("jackin-chainargos-the-architect").exists());
     }
 
     #[test]
     fn eject_agent_removes_container_dind_and_network() {
         let mut runner = FakeRunner::default();
 
-        eject_agent("agent-smith", &mut runner).unwrap();
+        eject_agent("jackin-agent-smith", &mut runner).unwrap();
 
         assert_eq!(runner.recorded, vec![
-            "docker rm -f agent-smith",
-            "docker rm -f agent-smith-dind",
+            "docker rm -f jackin-agent-smith",
+            "docker rm -f jackin-agent-smith-dind",
             "docker network rm jackin-agent-smith-net",
         ]);
     }
@@ -494,12 +494,12 @@ mod tests {
         let mut runner = FakeRunner {
             fail_with: vec![
                 (
-                    "docker rm -f agent-smith".to_string(),
-                    "Error response from daemon: No such container: agent-smith".to_string(),
+                    "docker rm -f jackin-agent-smith".to_string(),
+                    "Error response from daemon: No such container: jackin-agent-smith".to_string(),
                 ),
                 (
-                    "docker rm -f agent-smith-dind".to_string(),
-                    "Error response from daemon: No such container: agent-smith-dind".to_string(),
+                    "docker rm -f jackin-agent-smith-dind".to_string(),
+                    "Error response from daemon: No such container: jackin-agent-smith-dind".to_string(),
                 ),
                 (
                     "docker network rm jackin-agent-smith-net".to_string(),
@@ -510,18 +510,18 @@ mod tests {
             ..Default::default()
         };
 
-        eject_agent("agent-smith", &mut runner).unwrap();
+        eject_agent("jackin-agent-smith", &mut runner).unwrap();
 
         assert_eq!(runner.recorded, vec![
-            "docker rm -f agent-smith",
-            "docker rm -f agent-smith-dind",
+            "docker rm -f jackin-agent-smith",
+            "docker rm -f jackin-agent-smith-dind",
             "docker network rm jackin-agent-smith-net",
         ]);
     }
 
     #[test]
     fn exile_all_ejects_all_managed_agents() {
-        let mut runner = FakeRunner::with_capture_queue(["agent-smith\nagent-smith-clone-1".to_string()]);
+        let mut runner = FakeRunner::with_capture_queue(["jackin-agent-smith\njackin-agent-smith-clone-1".to_string()]);
 
         exile_all(&mut runner).unwrap();
 
@@ -529,11 +529,11 @@ mod tests {
             runner.recorded,
             vec![
                 "docker ps -a --filter label=jackin.managed=true --format {{.Names}}",
-                "docker rm -f agent-smith",
-                "docker rm -f agent-smith-dind",
+                "docker rm -f jackin-agent-smith",
+                "docker rm -f jackin-agent-smith-dind",
                 "docker network rm jackin-agent-smith-net",
-                "docker rm -f agent-smith-clone-1",
-                "docker rm -f agent-smith-clone-1-dind",
+                "docker rm -f jackin-agent-smith-clone-1",
+                "docker rm -f jackin-agent-smith-clone-1-dind",
                 "docker network rm jackin-agent-smith-clone-1-net",
             ]
         );
@@ -544,8 +544,8 @@ mod tests {
         let mut runner = FakeRunner {
             fail_with: vec![
                 (
-                    "docker rm -f agent-smith".to_string(),
-                    "Error response from daemon: No such container: agent-smith".to_string(),
+                    "docker rm -f jackin-agent-smith".to_string(),
+                    "Error response from daemon: No such container: jackin-agent-smith".to_string(),
                 ),
                 (
                     "docker network rm jackin-agent-smith-net".to_string(),
@@ -553,7 +553,7 @@ mod tests {
                         .to_string(),
                 ),
             ],
-            capture_queue: VecDeque::from(vec!["agent-smith\nagent-smith-clone-1".to_string()]),
+            capture_queue: VecDeque::from(vec!["jackin-agent-smith\njackin-agent-smith-clone-1".to_string()]),
             ..Default::default()
         };
 
@@ -563,11 +563,11 @@ mod tests {
             runner.recorded,
             vec![
                 "docker ps -a --filter label=jackin.managed=true --format {{.Names}}",
-                "docker rm -f agent-smith",
-                "docker rm -f agent-smith-dind",
+                "docker rm -f jackin-agent-smith",
+                "docker rm -f jackin-agent-smith-dind",
                 "docker network rm jackin-agent-smith-net",
-                "docker rm -f agent-smith-clone-1",
-                "docker rm -f agent-smith-clone-1-dind",
+                "docker rm -f jackin-agent-smith-clone-1",
+                "docker rm -f jackin-agent-smith-clone-1-dind",
                 "docker network rm jackin-agent-smith-clone-1-net",
             ]
         );
@@ -577,9 +577,9 @@ mod tests {
     fn hardline_uses_docker_attach() {
         let mut runner = FakeRunner::default();
 
-        hardline_agent("agent-smith", &mut runner).unwrap();
+        hardline_agent("jackin-agent-smith", &mut runner).unwrap();
 
-        assert_eq!(runner.recorded.last().unwrap(), "docker attach agent-smith");
+        assert_eq!(runner.recorded.last().unwrap(), "docker attach jackin-agent-smith");
     }
 
     #[test]
@@ -587,13 +587,13 @@ mod tests {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "smith");
+        let selector = ClassSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::with_capture_queue([
             String::new(),
-            "agent-smith".to_string(),
+            "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("smith");
+        let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(repo_dir.join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
         std::fs::write(
@@ -607,19 +607,19 @@ mod tests {
         assert!(runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker build -t jackin-smith -f")));
+            .any(|call| call.contains("docker build -t jackin-agent-smith -f")));
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
         }));
         assert!(runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker run -it --name agent-smith")));
+            .any(|call| call.contains("docker run -it --name jackin-agent-smith")));
         assert!(runner
             .recorded
             .iter()
             .any(|call| call.contains("/home/claude/.jackin/plugins.json:ro")));
-        assert!(!runner.recorded.iter().any(|call| call == "docker rm -f agent-smith"));
+        assert!(!runner.recorded.iter().any(|call| call == "docker rm -f jackin-agent-smith"));
         assert!(!runner
             .recorded
             .iter()
@@ -631,14 +631,14 @@ mod tests {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "smith");
+        let selector = ClassSelector::new(None, "agent-smith");
         let mut runner = FakeRunner {
-            fail_on: vec!["docker run -it --name agent-smith".to_string()],
+            fail_on: vec!["docker run -it --name jackin-agent-smith".to_string()],
             capture_queue: VecDeque::from(vec![String::new()]),
             ..Default::default()
         };
 
-        let repo_dir = paths.agents_dir.join("smith");
+        let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(repo_dir.join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
         std::fs::write(
@@ -649,9 +649,9 @@ mod tests {
 
         let error = load_agent(&paths, &mut config, &selector, &mut runner).unwrap_err();
 
-        assert!(error.to_string().contains("docker run -it --name agent-smith"));
-        assert!(runner.recorded.iter().any(|call| call == "docker rm -f agent-smith"));
-        assert!(runner.recorded.iter().any(|call| call == "docker rm -f agent-smith-dind"));
+        assert!(error.to_string().contains("docker run -it --name jackin-agent-smith"));
+        assert!(runner.recorded.iter().any(|call| call == "docker rm -f jackin-agent-smith"));
+        assert!(runner.recorded.iter().any(|call| call == "docker rm -f jackin-agent-smith-dind"));
         assert!(runner
             .recorded
             .iter()
