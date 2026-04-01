@@ -12,7 +12,7 @@ pub struct DerivedBuildContext {
 
 pub fn render_derived_dockerfile(base_dockerfile: &str) -> String {
     format!(
-        "{base_dockerfile}\nUSER root\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh\nRUN chmod +x /home/claude/entrypoint.sh\nWORKDIR /workspace\nUSER claude\nENTRYPOINT [\"/home/claude/entrypoint.sh\"]\n"
+        "{base_dockerfile}\nUSER claude\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version\nUSER root\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh\nRUN chmod +x /home/claude/entrypoint.sh\nWORKDIR /workspace\nUSER claude\nENTRYPOINT [\"/home/claude/entrypoint.sh\"]\n"
     )
 }
 
@@ -100,6 +100,16 @@ mod tests {
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh")
         );
         assert!(dockerfile.contains("ENTRYPOINT [\"/home/claude/entrypoint.sh\"]"));
+    }
+
+    #[test]
+    fn renders_derived_dockerfile_installs_claude_as_claude_user() {
+        let dockerfile = render_derived_dockerfile("FROM jackin/construct:trixie\n");
+        let install = "USER claude\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version";
+        let copy = "USER root\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh";
+
+        assert!(dockerfile.contains(install));
+        assert!(dockerfile.contains(copy));
     }
 
     #[test]
