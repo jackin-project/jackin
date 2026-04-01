@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod config;
+pub mod derived_image;
 pub mod docker;
 pub mod instance;
 pub mod manifest;
