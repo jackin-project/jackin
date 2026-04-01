@@ -79,6 +79,11 @@ fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
             copy_dir_all(&entry.path(), &destination)?;
         } else if file_type.is_file() {
             std::fs::copy(entry.path(), destination)?;
+        } else if file_type.is_symlink() {
+            anyhow::bail!(
+                "invalid agent repo: derived build context does not support symlinks: {}",
+                entry.path().display()
+            );
         }
     }
 
@@ -88,6 +93,8 @@ fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
     use tempfile::tempdir;
 
     #[test]
@@ -161,5 +168,31 @@ mod tests {
         assert!(dockerignore.contains("!.jackin-runtime/"));
         assert!(dockerignore.contains("!.jackin-runtime/entrypoint.sh"));
         assert!(dockerignore.contains("!.jackin-runtime/DerivedDockerfile"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinks_in_repo_build_context() {
+        let repo = tempdir().unwrap();
+        std::fs::write(
+            repo.path().join("Dockerfile"),
+            "FROM jackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+        std::fs::write(repo.path().join("shared.txt"), "hello\n").unwrap();
+        symlink(repo.path().join("shared.txt"), repo.path().join("linked.txt")).unwrap();
+
+        let validated = crate::repo::validate_agent_repo(repo.path()).unwrap();
+        let error = create_derived_build_context(repo.path(), &validated)
+            .err()
+            .expect("symlinks should be rejected");
+
+        assert!(error.to_string().contains("symlink"));
+        assert!(error.to_string().contains("linked.txt"));
     }
 }

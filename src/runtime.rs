@@ -242,15 +242,27 @@ pub fn eject_agent(
     let dind = format!("{container_name}-dind");
     let network = format!("jackin-{container_name}-net");
 
-    runner.run(
-        "docker",
+    run_cleanup_command(
+        runner,
         &["rm".into(), "-f".into(), container_name.to_string()],
-        None,
     )?;
-    runner.run("docker", &["rm".into(), "-f".into(), dind], None)?;
-    runner.run("docker", &["network".into(), "rm".into(), network], None)?;
+    run_cleanup_command(runner, &["rm".into(), "-f".into(), dind])?;
+    run_cleanup_command(runner, &["network".into(), "rm".into(), network])?;
 
     Ok(())
+}
+
+fn run_cleanup_command(runner: &mut impl CommandRunner, args: &[String]) -> anyhow::Result<()> {
+    match runner.capture("docker", args, None) {
+        Ok(_) => Ok(()),
+        Err(error) if is_missing_cleanup_error(&error) => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn is_missing_cleanup_error(error: &anyhow::Error) -> bool {
+    let message = error.to_string();
+    message.contains("No such container") || message.contains("No such network")
 }
 
 pub fn exile_all(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
@@ -317,6 +329,7 @@ use std::collections::VecDeque;
 pub struct FakeRunner {
     pub recorded: Vec<String>,
     pub fail_on: Vec<String>,
+    pub fail_with: Vec<(String, String)>,
     pub capture_queue: VecDeque<String>,
 }
 
@@ -340,6 +353,13 @@ impl CommandRunner for FakeRunner {
     ) -> anyhow::Result<()> {
         let command = format!("{} {}", program, args.join(" "));
         self.recorded.push(command.clone());
+        if let Some((_, message)) = self
+            .fail_with
+            .iter()
+            .find(|(pattern, _)| command.contains(pattern))
+        {
+            anyhow::bail!(message.clone());
+        }
         if self.fail_on.iter().any(|pattern| command.contains(pattern)) {
             anyhow::bail!("command failed: {command}");
         }
@@ -354,6 +374,13 @@ impl CommandRunner for FakeRunner {
     ) -> anyhow::Result<String> {
         let command = format!("{} {}", program, args.join(" "));
         self.recorded.push(command.clone());
+        if let Some((_, message)) = self
+            .fail_with
+            .iter()
+            .find(|(pattern, _)| command.contains(pattern))
+        {
+            anyhow::bail!(message.clone());
+        }
         if self.fail_on.iter().any(|pattern| command.contains(pattern)) {
             anyhow::bail!("command failed: {command}");
         }
@@ -463,8 +490,72 @@ mod tests {
     }
 
     #[test]
+    fn eject_agent_ignores_missing_runtime_resources() {
+        let mut runner = FakeRunner {
+            fail_with: vec![
+                (
+                    "docker rm -f agent-smith".to_string(),
+                    "Error response from daemon: No such container: agent-smith".to_string(),
+                ),
+                (
+                    "docker rm -f agent-smith-dind".to_string(),
+                    "Error response from daemon: No such container: agent-smith-dind".to_string(),
+                ),
+                (
+                    "docker network rm jackin-agent-smith-net".to_string(),
+                    "Error response from daemon: No such network: jackin-agent-smith-net"
+                        .to_string(),
+                ),
+            ],
+            ..Default::default()
+        };
+
+        eject_agent("agent-smith", &mut runner).unwrap();
+
+        assert_eq!(runner.recorded, vec![
+            "docker rm -f agent-smith",
+            "docker rm -f agent-smith-dind",
+            "docker network rm jackin-agent-smith-net",
+        ]);
+    }
+
+    #[test]
     fn exile_all_ejects_all_managed_agents() {
         let mut runner = FakeRunner::with_capture_queue(["agent-smith\nagent-smith-clone-1".to_string()]);
+
+        exile_all(&mut runner).unwrap();
+
+        assert_eq!(
+            runner.recorded,
+            vec![
+                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}",
+                "docker rm -f agent-smith",
+                "docker rm -f agent-smith-dind",
+                "docker network rm jackin-agent-smith-net",
+                "docker rm -f agent-smith-clone-1",
+                "docker rm -f agent-smith-clone-1-dind",
+                "docker network rm jackin-agent-smith-clone-1-net",
+            ]
+        );
+    }
+
+    #[test]
+    fn exile_all_continues_when_some_runtime_resources_are_missing() {
+        let mut runner = FakeRunner {
+            fail_with: vec![
+                (
+                    "docker rm -f agent-smith".to_string(),
+                    "Error response from daemon: No such container: agent-smith".to_string(),
+                ),
+                (
+                    "docker network rm jackin-agent-smith-net".to_string(),
+                    "Error response from daemon: No such network: jackin-agent-smith-net"
+                        .to_string(),
+                ),
+            ],
+            capture_queue: VecDeque::from(vec!["agent-smith\nagent-smith-clone-1".to_string()]),
+            ..Default::default()
+        };
 
         exile_all(&mut runner).unwrap();
 
