@@ -133,7 +133,7 @@ mod tests {
         std::fs::create_dir_all(temp.path().join("docker")).unwrap();
         std::fs::write(
             temp.path().join("docker/agent.Dockerfile"),
-            "FROM ghcr.io/donbeave/jackin-construct:trixie\n",
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
