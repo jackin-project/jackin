@@ -36,7 +36,7 @@
 
 ### Verification Targets
 
-- Test: `cargo test`
+- Test: `cargo nextest run`
 - Verify construct image: `docker build -t donbeave/jackin-construct:trixie docker/construct`
 - Verify runtime flow: `cargo run -- load smith`, detach with `Ctrl-P`, `Ctrl-Q`, then `cargo run -- hardline agent-smith`, `cargo run -- eject smith --purge`
 
@@ -77,7 +77,7 @@ Add this test to `src/instance.rs` below `prepares_persisted_claude_state`:
 
 - [ ] **Step 2: Run the focused test and confirm it fails**
 
-Run: `cargo test prepares_plugins_json_for_runtime_bootstrap -- --exact`
+Run: `cargo nextest run prepares_plugins_json_for_runtime_bootstrap -E 'test(=prepares_plugins_json_for_runtime_bootstrap)'`
 
 Expected: FAIL with compile errors such as `no field 'jackin_dir' on type 'AgentState'` and `this function takes 2 arguments but 3 arguments were supplied`.
 
@@ -166,11 +166,11 @@ impl AgentState {
 
 - [ ] **Step 5: Re-run the focused test and then the full state module tests**
 
-Run: `cargo test prepares_plugins_json_for_runtime_bootstrap -- --exact`
+Run: `cargo nextest run prepares_plugins_json_for_runtime_bootstrap -E 'test(=prepares_plugins_json_for_runtime_bootstrap)'`
 
 Expected: PASS
 
-Run: `cargo test instance::tests -- --nocapture`
+Run: `cargo nextest run instance::tests --no-capture`
 
 Expected: PASS with the existing naming tests and the new plugins JSON test.
 
@@ -245,7 +245,7 @@ mod tests {
 
 - [ ] **Step 2: Run the focused contract tests and confirm they fail**
 
-Run: `cargo test repo_contract::tests -- --nocapture`
+Run: `cargo nextest run repo_contract::tests --no-capture`
 
 Expected: FAIL with `cannot find function 'validate_agent_dockerfile' in this scope`.
 
@@ -333,11 +333,11 @@ pub mod repo_contract;
 
 - [ ] **Step 5: Re-run the contract tests and the repo tests**
 
-Run: `cargo test repo_contract::tests -- --nocapture`
+Run: `cargo nextest run repo_contract::tests --no-capture`
 
 Expected: PASS
 
-Run: `cargo test repo::tests -- --nocapture`
+Run: `cargo nextest run repo::tests --no-capture`
 
 Expected: PASS after updating the existing repo assertions from `validated.dockerfile_path` to `validated.dockerfile.dockerfile_path`.
 
@@ -397,7 +397,7 @@ mod tests {
 
 - [ ] **Step 2: Run the focused derived-image tests and confirm they fail**
 
-Run: `cargo test derived_image::tests -- --nocapture`
+Run: `cargo nextest run derived_image::tests --no-capture`
 
 Expected: FAIL with `cannot find function 'render_derived_dockerfile' in this scope`.
 
@@ -588,7 +588,7 @@ fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
 
 - [ ] **Step 5: Re-run the derived-image tests and build the construct image locally**
 
-Run: `cargo test derived_image::tests -- --nocapture`
+Run: `cargo nextest run derived_image::tests --no-capture`
 
 Expected: PASS
 
@@ -653,7 +653,7 @@ Add these tests to `src/runtime.rs`:
 
 - [ ] **Step 2: Run the focused runtime tests and confirm they fail**
 
-Run: `cargo test runtime::tests -- --nocapture`
+Run: `cargo nextest run runtime::tests --no-capture`
 
 Expected: FAIL because runtime still records `docker exec -it agent-smith sh` and still uses detached `docker run -d` plus `docker exec` plugin bootstrapping.
 
@@ -853,11 +853,11 @@ Delete `bootstrap_plugins`, because plugin installation now happens in the conta
 
 - [ ] **Step 5: Run the runtime tests and then the full suite**
 
-Run: `cargo test runtime::tests -- --nocapture`
+Run: `cargo nextest run runtime::tests --no-capture`
 
 Expected: PASS with updated `docker attach`, attached `docker run -it`, and no `docker exec claude plugin install` calls.
 
-Run: `cargo test`
+Run: `cargo nextest run`
 
 Expected: PASS for the full `jackin` crate.
 
@@ -917,7 +917,7 @@ The final Dockerfile stage must literally be `FROM donbeave/jackin-construct:tri
 
 - [ ] **Step 2: Run the main verification commands after the doc update**
 
-Run: `cargo test`
+Run: `cargo nextest run`
 
 Expected: PASS
 
@@ -1028,7 +1028,7 @@ Run from `../jackin`:
 
 ```bash
 docker build -t donbeave/jackin-construct:trixie docker/construct
-cargo test
+cargo nextest run
 cargo run -- load smith
 ```
 
