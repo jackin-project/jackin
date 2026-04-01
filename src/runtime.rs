@@ -45,7 +45,7 @@ pub fn load_agent(
 
     let existing = list_running_agent_names(runner)?;
     let container_name = next_container_name(selector, &existing);
-    let state = AgentState::prepare(paths, &container_name)?;
+    let state = AgentState::prepare(paths, &container_name, manifest)?;
 
     let image = image_name(selector);
     let network = format!("jackin-{container_name}-net");

@@ -1,5 +1,7 @@
+use crate::manifest::AgentManifest;
 use crate::paths::JackinPaths;
 use crate::selector::ClassSelector;
+use serde::Serialize;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -7,23 +9,46 @@ pub struct AgentState {
     pub root: PathBuf,
     pub claude_dir: PathBuf,
     pub claude_json: PathBuf,
+    pub jackin_dir: PathBuf,
+    pub plugins_json: PathBuf,
+}
+
+#[derive(Debug, Serialize)]
+struct PluginState<'a> {
+    plugins: &'a [String],
 }
 
 impl AgentState {
-    pub fn prepare(paths: &JackinPaths, container_name: &str) -> anyhow::Result<Self> {
+    pub fn prepare(
+        paths: &JackinPaths,
+        container_name: &str,
+        manifest: &AgentManifest,
+    ) -> anyhow::Result<Self> {
         let root = paths.data_dir.join(container_name);
         let claude_dir = root.join(".claude");
         let claude_json = root.join(".claude.json");
+        let jackin_dir = root.join(".jackin");
+        let plugins_json = jackin_dir.join("plugins.json");
 
         std::fs::create_dir_all(&claude_dir)?;
+        std::fs::create_dir_all(&jackin_dir)?;
         if !claude_json.exists() {
             std::fs::write(&claude_json, "{}")?;
         }
+
+        std::fs::write(
+            &plugins_json,
+            serde_json::to_string_pretty(&PluginState {
+                plugins: &manifest.claude.plugins,
+            })?,
+        )?;
 
         Ok(Self {
             root,
             claude_dir,
             claude_json,
+            jackin_dir,
+            plugins_json,
         })
     }
 }
@@ -80,10 +105,39 @@ mod tests {
     fn prepares_persisted_claude_state() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+        std::fs::write(temp.path().join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
+        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
 
-        let state = AgentState::prepare(&paths, "agent-smith").unwrap();
+        let state = AgentState::prepare(&paths, "agent-smith", &manifest).unwrap();
 
         assert!(state.claude_dir.is_dir());
         assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
+    }
+
+    #[test]
+    fn prepares_plugins_json_for_runtime_bootstrap() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\", \"feature-dev@claude-plugins-official\"]\n",
+        )
+        .unwrap();
+        std::fs::write(temp.path().join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
+
+        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
+        let state = AgentState::prepare(&paths, "agent-smith", &manifest).unwrap();
+
+        assert!(state.jackin_dir.is_dir());
+        assert_eq!(
+            std::fs::read_to_string(&state.plugins_json).unwrap(),
+            "{\n  \"plugins\": [\n    \"code-review@claude-plugins-official\",\n    \"feature-dev@claude-plugins-official\"\n  ]\n}"
+        );
     }
 }
