@@ -55,8 +55,8 @@ impl AgentState {
 
 pub fn primary_container_name(selector: &ClassSelector) -> String {
     match &selector.namespace {
-        Some(namespace) => format!("agent-{namespace}-{}", selector.name),
-        None => format!("agent-{}", selector.name),
+        Some(namespace) => format!("jackin-{namespace}-{}", selector.name),
+        None => format!("jackin-{}", selector.name),
     }
 }
 
@@ -90,15 +90,15 @@ mod tests {
 
     #[test]
     fn picks_next_clone_name() {
-        let selector = ClassSelector::new(None, "smith");
+        let selector = ClassSelector::new(None, "agent-smith");
         let existing = vec![
-            "agent-smith".to_string(),
-            "agent-smith-clone-1".to_string(),
+            "jackin-agent-smith".to_string(),
+            "jackin-agent-smith-clone-1".to_string(),
         ];
 
         let name = next_container_name(&selector, &existing);
 
-        assert_eq!(name, "agent-smith-clone-2");
+        assert_eq!(name, "jackin-agent-smith-clone-2");
     }
 
     #[test]
@@ -113,7 +113,7 @@ mod tests {
         std::fs::write(temp.path().join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
         let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
 
-        let state = AgentState::prepare(&paths, "agent-smith", &manifest).unwrap();
+        let state = AgentState::prepare(&paths, "jackin-agent-smith", &manifest).unwrap();
 
         assert!(state.claude_dir.is_dir());
         assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
@@ -132,7 +132,7 @@ mod tests {
         std::fs::write(temp.path().join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
 
         let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
-        let state = AgentState::prepare(&paths, "agent-smith", &manifest).unwrap();
+        let state = AgentState::prepare(&paths, "jackin-agent-smith", &manifest).unwrap();
 
         assert!(state.jackin_dir.is_dir());
         assert_eq!(
