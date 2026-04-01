@@ -1,5 +1,6 @@
 use crate::manifest::AgentManifest;
 use crate::paths::JackinPaths;
+use crate::repo_contract::{validate_agent_dockerfile, ValidatedDockerfile};
 use crate::selector::ClassSelector;
 use std::path::{Component, Path, PathBuf};
 
@@ -26,22 +27,23 @@ impl CachedRepo {
 #[derive(Debug, Clone)]
 pub struct ValidatedAgentRepo {
     pub manifest: AgentManifest,
-    pub dockerfile_path: PathBuf,
+    pub dockerfile: ValidatedDockerfile,
 }
 
 pub fn validate_agent_repo(repo_dir: &Path) -> anyhow::Result<ValidatedAgentRepo> {
-    let manifest = repo_dir.join("jackin.agent.toml");
+    let manifest_path = repo_dir.join("jackin.agent.toml");
 
-    if !manifest.is_file() {
-        anyhow::bail!("invalid agent repo: missing {}", manifest.display());
+    if !manifest_path.is_file() {
+        anyhow::bail!("invalid agent repo: missing {}", manifest_path.display());
     }
 
     let manifest = AgentManifest::load(repo_dir)?;
     let dockerfile_path = resolve_manifest_dockerfile_path(repo_dir, &manifest)?;
+    let dockerfile = validate_agent_dockerfile(&dockerfile_path)?;
 
     Ok(ValidatedAgentRepo {
         manifest,
-        dockerfile_path,
+        dockerfile,
     })
 }
 
@@ -131,7 +133,7 @@ mod tests {
         std::fs::create_dir_all(temp.path().join("docker")).unwrap();
         std::fs::write(
             temp.path().join("docker/agent.Dockerfile"),
-            "FROM debian:trixie\n",
+            "FROM jackin/construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -142,6 +144,9 @@ mod tests {
 
         let validated = validate_agent_repo(temp.path()).unwrap();
 
-        assert_eq!(validated.dockerfile_path, temp.path().join("docker/agent.Dockerfile"));
+        assert_eq!(
+            validated.dockerfile.dockerfile_path,
+            temp.path().join("docker/agent.Dockerfile")
+        );
     }
 }

@@ -5,6 +5,7 @@ pub mod instance;
 pub mod manifest;
 pub mod paths;
 pub mod repo;
+pub mod repo_contract;
 pub mod runtime;
 pub mod selector;
 
