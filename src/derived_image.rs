@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
-        let dockerfile = render_derived_dockerfile("FROM jackin/construct:trixie\n");
+        let dockerfile = render_derived_dockerfile("FROM ghcr.io/donbeave/jackin-construct:trixie\n");
 
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(dockerfile.contains("WORKDIR /workspace"));
@@ -111,7 +111,7 @@ mod tests {
 
     #[test]
     fn renders_derived_dockerfile_installs_claude_as_claude_user() {
-        let dockerfile = render_derived_dockerfile("FROM jackin/construct:trixie\n");
+        let dockerfile = render_derived_dockerfile("FROM ghcr.io/donbeave/jackin-construct:trixie\n");
         let install = "USER claude\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version";
         let copy = "USER root\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh";
 
@@ -124,7 +124,7 @@ mod tests {
         let repo = tempdir().unwrap();
         std::fs::write(
             repo.path().join("Dockerfile"),
-            "FROM jackin/construct:trixie\n",
+            "FROM ghcr.io/donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -151,7 +151,7 @@ mod tests {
         let repo = tempdir().unwrap();
         std::fs::write(
             repo.path().join("Dockerfile"),
-            "FROM jackin/construct:trixie\n",
+            "FROM ghcr.io/donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(repo.path().join(".dockerignore"), ".*\n.jackin-runtime\n").unwrap();
@@ -176,7 +176,7 @@ mod tests {
         let repo = tempdir().unwrap();
         std::fs::write(
             repo.path().join("Dockerfile"),
-            "FROM jackin/construct:trixie\n",
+            "FROM ghcr.io/donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
