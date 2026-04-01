@@ -30,6 +30,10 @@ Each agent repo must contain:
 - `jackin.agent.toml`
 - a Dockerfile at the path declared by `jackin.agent.toml`
 
-The final Dockerfile stage must literally be `FROM jackin/construct:trixie`.
+The manifest Dockerfile path must be relative and must stay inside the repo checkout.
 
-`jackin` validates that Dockerfile, generates the final Claude-ready derived image itself, and mounts the cached repo checkout into `/workspace` at runtime.
+Derived build-context generation currently rejects symlinks in the agent repo instead of following or preserving them.
+
+The final Dockerfile stage must literally be `FROM jackin/construct:trixie`, optionally with an alias such as `FROM jackin/construct:trixie AS runtime`. Earlier stages may use any base image.
+
+`smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the cached repo checkout at `/workspace`, mounting persisted `.claude`, `.claude.json`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.

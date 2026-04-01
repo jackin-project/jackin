@@ -42,12 +42,13 @@ impl CommandRunner for ShellRunner {
             command.current_dir(dir);
         }
         let output = command.output()?;
-        anyhow::ensure!(
-            output.status.success(),
-            "command failed: {} {}",
-            program,
-            args.join(" ")
-        );
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            if stderr.is_empty() {
+                anyhow::bail!("command failed: {} {}", program, args.join(" "));
+            }
+            anyhow::bail!("command failed: {} {}: {}", program, args.join(" "), stderr);
+        }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 }
