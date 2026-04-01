@@ -1,7 +1,7 @@
 use crate::config::AppConfig;
+use crate::derived_image::create_derived_build_context;
 use crate::docker::CommandRunner;
 use crate::instance::{next_container_name, AgentState};
-use crate::manifest::AgentManifest;
 use crate::paths::JackinPaths;
 use crate::repo::{validate_agent_repo, CachedRepo};
 use crate::selector::ClassSelector;
@@ -41,11 +41,10 @@ pub fn load_agent(
     }
 
     let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
-    let manifest = &validated_repo.manifest;
-
-    let existing = list_running_agent_names(runner)?;
+    let existing = list_managed_agent_names(runner)?;
     let container_name = next_container_name(selector, &existing);
-    let state = AgentState::prepare(paths, &container_name, manifest)?;
+    let state = AgentState::prepare(paths, &container_name, &validated_repo.manifest)?;
+    let build = create_derived_build_context(&cached_repo.repo_dir, &validated_repo)?;
 
     let image = image_name(selector);
     let network = format!("jackin-{container_name}-net");
@@ -83,8 +82,8 @@ pub fn load_agent(
                 "-t".into(),
                 image.clone(),
                 "-f".into(),
-                validated_repo.dockerfile.dockerfile_path.display().to_string(),
-                cached_repo.repo_dir.display().to_string(),
+                build.dockerfile_path.display().to_string(),
+                build.context_dir.display().to_string(),
             ],
             None,
         )?;
@@ -93,7 +92,7 @@ pub fn load_agent(
             "docker",
             &[
                 "run".into(),
-                "-d".into(),
+                "-it".into(),
                 "--name".into(),
                 container_name.clone(),
                 "--hostname".into(),
@@ -112,27 +111,9 @@ pub fn load_agent(
                 format!("{}:/home/claude/.claude", state.claude_dir.display()),
                 "-v".into(),
                 format!("{}:/home/claude/.claude.json", state.claude_json.display()),
-                image,
-                "tail".into(),
-                "-f".into(),
-                "/dev/null".into(),
-            ],
-            None,
-        )?;
-
-        bootstrap_plugins(&container_name, manifest, runner)?;
-
-        runner.run(
-            "docker",
-            &[
-                "exec".into(),
-                "-it".into(),
-                container_name.clone(),
-                "env".into(),
-                "CLAUDE_ENV=docker".into(),
-                "claude".into(),
-                "--dangerously-skip-permissions".into(),
-                "--verbose".into(),
+                "-v".into(),
+                format!("{}:/home/claude/.jackin/plugins.json:ro", state.plugins_json.display()),
+                image.clone(),
             ],
             None,
         )?;
@@ -140,29 +121,31 @@ pub fn load_agent(
         Ok(())
     })();
 
-    if let Err(error) = load_result {
-        cleanup.run(runner);
-        return Err(error);
+    match load_result {
+        Ok(()) => {
+            if list_running_agent_names(runner)?
+                .iter()
+                .any(|name| name == &container_name)
+            {
+                cleanup.disarm();
+                Ok(())
+            } else {
+                cleanup.run(runner);
+                Ok(())
+            }
+        }
+        Err(error) => {
+            cleanup.run(runner);
+            Err(error)
+        }
     }
-
-    cleanup.disarm();
-    Ok(())
 }
 
 pub fn hardline_agent(
     container_name: &str,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    runner.run(
-        "docker",
-        &[
-            "exec".into(),
-            "-it".into(),
-            container_name.to_string(),
-            "sh".into(),
-        ],
-        None,
-    )
+    runner.run("docker", &["attach".into(), container_name.to_string()], None)
 }
 
 fn wait_for_dind(dind_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
@@ -188,55 +171,36 @@ fn wait_for_dind(dind_name: &str, runner: &mut impl CommandRunner) -> anyhow::Re
     anyhow::bail!("timed out waiting for Docker-in-Docker sidecar {dind_name}")
 }
 
-fn bootstrap_plugins(
-    container_name: &str,
-    manifest: &AgentManifest,
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<()> {
-    let _ = runner.run(
-        "docker",
-        &[
-            "exec".into(),
-            container_name.to_string(),
-            "claude".into(),
-            "plugin".into(),
-            "marketplace".into(),
-            "add".into(),
-            "anthropics/claude-plugins-official".into(),
-        ],
-        None,
-    );
-
-    for plugin in &manifest.claude.plugins {
-        runner.run(
-            "docker",
-            &[
-                "exec".into(),
-                container_name.to_string(),
-                "claude".into(),
-                "plugin".into(),
-                "install".into(),
-                plugin.clone(),
-            ],
-            None,
-        )?;
-    }
-
-    Ok(())
-}
-
 pub fn list_running_agent_names(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<Vec<String>> {
+    list_agent_names(runner, false)
+}
+
+pub fn list_managed_agent_names(
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<Vec<String>> {
+    list_agent_names(runner, true)
+}
+
+fn list_agent_names(
+    runner: &mut impl CommandRunner,
+    include_stopped: bool,
+) -> anyhow::Result<Vec<String>> {
+    let mut args = vec!["ps".into()];
+    if include_stopped {
+        args.push("-a".into());
+    }
+    args.extend([
+        "--filter".into(),
+        "label=jackin.managed=true".into(),
+        "--format".into(),
+        "{{.Names}}".into(),
+    ]);
+
     let output = runner.capture(
         "docker",
-        &[
-            "ps".into(),
-            "--filter".into(),
-            "label=jackin.managed=true".into(),
-            "--format".into(),
-            "{{.Names}}".into(),
-        ],
+        &args,
         None,
     )?;
 
@@ -290,7 +254,7 @@ pub fn eject_agent(
 }
 
 pub fn exile_all(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
-    let names = list_running_agent_names(runner)?;
+    let names = list_managed_agent_names(runner)?;
     for name in names {
         eject_agent(&name, runner)?;
     }
@@ -345,12 +309,28 @@ impl LoadCleanup {
     }
 }
 
+#[cfg(test)]
+use std::collections::VecDeque;
+
+#[cfg(test)]
 #[derive(Default)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,
     pub fail_on: Vec<String>,
+    pub capture_queue: VecDeque<String>,
 }
 
+#[cfg(test)]
+impl FakeRunner {
+    fn with_capture_queue<const N: usize>(outputs: [String; N]) -> Self {
+        Self {
+            capture_queue: VecDeque::from(outputs.to_vec()),
+            ..Default::default()
+        }
+    }
+}
+
+#[cfg(test)]
 impl CommandRunner for FakeRunner {
     fn run(
         &mut self,
@@ -377,7 +357,7 @@ impl CommandRunner for FakeRunner {
         if self.fail_on.iter().any(|pattern| command.contains(pattern)) {
             anyhow::bail!("command failed: {command}");
         }
-        Ok(String::new())
+        Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 }
 
@@ -395,7 +375,10 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(Some("chainargos"), "smith");
-        let mut runner = FakeRunner::default();
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(),
+            "agent-chainargos-smith".to_string(),
+        ]);
 
         let repo_dir = paths.agents_dir.join("chainargos").join("smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -418,9 +401,22 @@ mod tests {
         assert!(runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker build")));
-        assert!(runner.recorded.iter().any(|call| call
-            .contains("docker exec -it agent-chainargos-smith env CLAUDE_ENV=docker claude --dangerously-skip-permissions --verbose")));
+            .any(|call| call.contains("docker build -t jackin-chainargos-smith -f")));
+        assert!(runner.recorded.iter().any(|call| {
+            call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
+        }));
+        assert!(runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker run -it --name agent-chainargos-smith")));
+        assert!(runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("/home/claude/.jackin/plugins.json:ro")));
+        assert!(!runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("claude plugin install")));
     }
 
     #[test]
@@ -467,34 +463,87 @@ mod tests {
     }
 
     #[test]
-    fn exile_all_ejects_all_running_agents() {
-        let mut runner = FakeRunner::default();
+    fn exile_all_ejects_all_managed_agents() {
+        let mut runner = FakeRunner::with_capture_queue(["agent-smith\nagent-smith-clone-1".to_string()]);
 
         exile_all(&mut runner).unwrap();
 
         assert_eq!(
             runner.recorded,
-            vec!["docker ps --filter label=jackin.managed=true --format {{.Names}}"]
+            vec![
+                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}",
+                "docker rm -f agent-smith",
+                "docker rm -f agent-smith-dind",
+                "docker network rm jackin-agent-smith-net",
+                "docker rm -f agent-smith-clone-1",
+                "docker rm -f agent-smith-clone-1-dind",
+                "docker network rm jackin-agent-smith-clone-1-net",
+            ]
         );
     }
 
     #[test]
-    fn hardline_uses_docker_exec_shell() {
+    fn hardline_uses_docker_attach() {
         let mut runner = FakeRunner::default();
 
         hardline_agent("agent-smith", &mut runner).unwrap();
 
-        assert_eq!(runner.recorded.last().unwrap(), "docker exec -it agent-smith sh");
+        assert_eq!(runner.recorded.last().unwrap(), "docker attach agent-smith");
     }
 
     #[test]
-    fn load_agent_rolls_back_runtime_on_bootstrap_failure() {
+    fn load_agent_runs_attached_with_plugins_mount() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "smith");
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(),
+            "agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
+        )
+        .unwrap();
+
+        load_agent(&paths, &mut config, &selector, &mut runner).unwrap();
+
+        assert!(runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker build -t jackin-smith -f")));
+        assert!(runner.recorded.iter().any(|call| {
+            call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
+        }));
+        assert!(runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker run -it --name agent-smith")));
+        assert!(runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("/home/claude/.jackin/plugins.json:ro")));
+        assert!(!runner.recorded.iter().any(|call| call == "docker rm -f agent-smith"));
+        assert!(!runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("claude plugin install")));
+    }
+
+    #[test]
+    fn load_agent_rolls_back_runtime_on_attached_run_failure() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "smith");
         let mut runner = FakeRunner {
-            fail_on: vec!["docker exec agent-smith claude plugin install".to_string()],
+            fail_on: vec!["docker run -it --name agent-smith".to_string()],
+            capture_queue: VecDeque::from(vec![String::new()]),
             ..Default::default()
         };
 
@@ -509,7 +558,7 @@ mod tests {
 
         let error = load_agent(&paths, &mut config, &selector, &mut runner).unwrap_err();
 
-        assert!(error.to_string().contains("docker exec agent-smith claude plugin install"));
+        assert!(error.to_string().contains("docker run -it --name agent-smith"));
         assert!(runner.recorded.iter().any(|call| call == "docker rm -f agent-smith"));
         assert!(runner.recorded.iter().any(|call| call == "docker rm -f agent-smith-dind"));
         assert!(runner

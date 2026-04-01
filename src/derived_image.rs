@@ -33,12 +33,39 @@ pub fn create_derived_build_context(
         &dockerfile_path,
         render_derived_dockerfile(&validated.dockerfile.dockerfile_contents),
     )?;
+    ensure_runtime_assets_are_included(&context_dir)?;
 
     Ok(DerivedBuildContext {
         temp_dir,
         context_dir,
         dockerfile_path,
     })
+}
+
+fn ensure_runtime_assets_are_included(context_dir: &Path) -> anyhow::Result<()> {
+    let dockerignore_path = context_dir.join(".dockerignore");
+    let mut dockerignore = if dockerignore_path.exists() {
+        std::fs::read_to_string(&dockerignore_path)?
+    } else {
+        String::new()
+    };
+
+    for rule in [
+        "!.jackin-runtime/",
+        "!.jackin-runtime/entrypoint.sh",
+        "!.jackin-runtime/DerivedDockerfile",
+    ] {
+        if !dockerignore.lines().any(|line| line == rule) {
+            if !dockerignore.is_empty() && !dockerignore.ends_with('\n') {
+                dockerignore.push('\n');
+            }
+            dockerignore.push_str(rule);
+            dockerignore.push('\n');
+        }
+    }
+
+    std::fs::write(dockerignore_path, dockerignore)?;
+    Ok(())
 }
 
 fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
@@ -100,5 +127,29 @@ mod tests {
                 .is_file()
         );
         assert!(build.dockerfile_path.is_file());
+    }
+
+    #[test]
+    fn preserves_runtime_assets_when_repo_dockerignore_excludes_hidden_paths() {
+        let repo = tempdir().unwrap();
+        std::fs::write(
+            repo.path().join("Dockerfile"),
+            "FROM jackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(repo.path().join(".dockerignore"), ".*\n.jackin-runtime\n").unwrap();
+        std::fs::write(
+            repo.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let validated = crate::repo::validate_agent_repo(repo.path()).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated).unwrap();
+        let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
+
+        assert!(dockerignore.contains("!.jackin-runtime/"));
+        assert!(dockerignore.contains("!.jackin-runtime/entrypoint.sh"));
+        assert!(dockerignore.contains("!.jackin-runtime/DerivedDockerfile"));
     }
 }

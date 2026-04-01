@@ -45,7 +45,7 @@ pub fn run(cli: Cli) -> Result<()> {
             Selector::Class(class) => {
                 if all {
                     for container in
-                        runtime::matching_family(&class, &runtime::list_running_agent_names(&mut runner)?)
+                        runtime::matching_family(&class, &runtime::list_managed_agent_names(&mut runner)?)
                     {
                         runtime::eject_agent(&container, &mut runner)?;
                         if purge {
