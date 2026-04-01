@@ -83,7 +83,7 @@ pub fn load_agent(
                 "-t".into(),
                 image.clone(),
                 "-f".into(),
-                validated_repo.dockerfile_path.display().to_string(),
+                validated_repo.dockerfile.dockerfile_path.display().to_string(),
                 cached_repo.repo_dir.display().to_string(),
             ],
             None,
@@ -399,7 +399,7 @@ mod tests {
 
         let repo_dir = paths.agents_dir.join("chainargos").join("smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM debian:trixie\n").unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
@@ -500,7 +500,7 @@ mod tests {
 
         let repo_dir = paths.agents_dir.join("smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM debian:trixie\n").unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
