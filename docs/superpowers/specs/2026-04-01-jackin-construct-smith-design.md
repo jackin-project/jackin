@@ -12,7 +12,7 @@ The first delivery is a paired change across two repositories:
 - `donbeave/jackin`
 - `donbeave/smith`
 
-The shared base image is the canonical `jackin/construct:trixie` image. The name comes from The Matrix: the construct is the base simulated environment loaded before a mission. That maps directly to this image's role as the common environment every agent starts from before its own specialized layer is applied.
+The shared base image is the canonical `donbeave/jackin-construct:trixie` image. The name comes from The Matrix: the construct is the base simulated environment loaded before a mission. That maps directly to this image's role as the common environment every agent starts from before its own specialized layer is applied.
 
 For v1 of this redesign, `jackin` validates agent Dockerfiles with a structured parser, generates a derived Dockerfile for the final Claude-ready runtime, and keeps the loaded agent lifecycle close to the older `claude-code-docker` model while remaining public-friendly and local-only.
 
@@ -49,7 +49,7 @@ This redesign is delivered across two repositories with a clean ownership split.
 
 `donbeave/jackin` owns:
 
-- the `jackin/construct:trixie` base image source under `docker/construct/`
+- the `donbeave/jackin-construct:trixie` base image source under `docker/construct/`
 - Dockerfile validation using a structured parser library
 - derived Dockerfile generation
 - runtime-owned injected files and metadata
@@ -60,24 +60,24 @@ This redesign is delivered across two repositories with a clean ownership split.
 
 - `jackin.agent.toml`
 - its base agent Dockerfile
-- only the agent-specific environment layer on top of `jackin/construct:trixie`
+- only the agent-specific environment layer on top of `donbeave/jackin-construct:trixie`
 - public-facing repo documentation for the first agent repo
 
 ### Base Image Contract
 
 The v1 contract is strict and explicit.
 
-- The only approved base image reference is `jackin/construct:trixie`.
+- The only approved base image reference is `donbeave/jackin-construct:trixie`.
 - An agent Dockerfile may use multiple stages.
 - Earlier builder stages are unrestricted.
-- The final stage must literally be `FROM jackin/construct:trixie`, with only an optional `AS <name>` alias.
+- The final stage must literally be `FROM donbeave/jackin-construct:trixie`, with only an optional `AS <name>` alias.
 - Indirection through `ARG`, alternative tags, digest equivalents, or pattern matching is not supported in v1.
 
 `jackin` validates this contract with a parser library rather than string matching or regex.
 
 ### Construct Image Responsibilities
 
-The `jackin/construct:trixie` image is the shared runtime foundation. Its source of truth lives in `donbeave/jackin/docker/construct/`.
+The `donbeave/jackin-construct:trixie` image is the shared runtime foundation. Its source of truth lives in `donbeave/jackin/docker/construct/`.
 
 For v1 it provides:
 
@@ -141,7 +141,7 @@ On `jackin load`, `jackin`:
 2. loads `jackin.agent.toml`
 3. resolves the manifest Dockerfile path inside the repo
 4. parses the Dockerfile with a structured parser
-5. validates that the final stage literally uses `jackin/construct:trixie`
+5. validates that the final stage literally uses `donbeave/jackin-construct:trixie`
 
 If validation fails, `load` stops before any Docker build begins.
 
@@ -273,7 +273,7 @@ Failure handling is intentionally strict and boring.
 - invalid manifest Dockerfile path
 - missing Dockerfile
 - unparsable Dockerfile
-- final stage not literally using `jackin/construct:trixie`
+- final stage not literally using `donbeave/jackin-construct:trixie`
 
 These should be reported as agent repo contract violations, not generic Docker failures.
 
@@ -309,7 +309,7 @@ This redesign should add focused regression coverage around the new contract bou
 
 High-value tests include:
 
-- Dockerfile validation of final-stage `FROM jackin/construct:trixie`
+- Dockerfile validation of final-stage `FROM donbeave/jackin-construct:trixie`
 - rejection of invalid final-stage references
 - derived Dockerfile generation with the expected injected steps
 - runtime preparation that writes the expected per-container plugin metadata
@@ -323,7 +323,7 @@ The goal is not broad end-to-end Docker integration coverage in unit tests, but 
 
 - keep the Matrix framing
 - explain why the base image is called `construct`
-- describe the strict `jackin/construct:trixie` contract
+- describe the strict `donbeave/jackin-construct:trixie` contract
 - explain that `jackin` generates the final Claude-ready image layer
 
 `smith` documentation should:
