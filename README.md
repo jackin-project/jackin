@@ -8,7 +8,7 @@ Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
 ## Construct
 
-`ghcr.io/donbeave/jackin-construct:trixie` is the shared base image for every agent repo. In The Matrix, the construct is the base simulated environment you load before a mission. That maps directly to `jackin`'s shared runtime image: every agent starts from the same construct before layering on its own specialized environment.
+`donbeave/jackin-construct:trixie` is the shared base image for every agent repo. In The Matrix, the construct is the base simulated environment you load before a mission. That maps directly to `jackin`'s shared runtime image: every agent starts from the same construct before layering on its own specialized environment.
 
 ## Commands
 
@@ -36,7 +36,7 @@ The manifest Dockerfile path must be relative and must stay inside the repo chec
 
 Derived build-context generation currently rejects symlinks in the agent repo instead of following or preserving them.
 
-The final Dockerfile stage must literally be `FROM ghcr.io/donbeave/jackin-construct:trixie`, optionally with an alias such as `FROM ghcr.io/donbeave/jackin-construct:trixie AS runtime`. Earlier stages may use any base image.
+The final Dockerfile stage must literally be `FROM donbeave/jackin-construct:trixie`, optionally with an alias such as `FROM donbeave/jackin-construct:trixie AS runtime`. Earlier stages may use any base image.
 
 `smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the cached repo checkout at `/workspace`, mounting persisted `.claude`, `.claude.json`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.
 

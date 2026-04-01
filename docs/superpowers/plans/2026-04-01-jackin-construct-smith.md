@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace `jackin`'s direct agent-image build path with a strict `jackin/construct:trixie` derived-image pipeline and create the first public `smith` agent repo that loads through it.
+**Goal:** Replace `jackin`'s direct agent-image build path with a strict `donbeave/jackin-construct:trixie` derived-image pipeline and create the first public `smith` agent repo that loads through it.
 
-**Architecture:** `jackin` gains three focused units: persisted runtime state preparation, Dockerfile contract validation, and derived-image build context generation. Runtime orchestration then consumes those units to run attached Claude sessions with per-agent networks and DinD sidecars, while a new sibling `smith` repo provides only an agent-specific environment layer on top of `jackin/construct:trixie`.
+**Architecture:** `jackin` gains three focused units: persisted runtime state preparation, Dockerfile contract validation, and derived-image build context generation. Runtime orchestration then consumes those units to run attached Claude sessions with per-agent networks and DinD sidecars, while a new sibling `smith` repo provides only an agent-specific environment layer on top of `donbeave/jackin-construct:trixie`.
 
 **Tech Stack:** Rust 2024, `anyhow`, `serde`, `serde_json`, `dockerfile-parser`, Docker, shell scripts, GitHub CLI.
 
@@ -19,7 +19,7 @@
 - Modify: `src/repo.rs` — delegate Dockerfile contract parsing to a dedicated validator and return richer validated repo data.
 - Modify: `src/instance.rs` — add `.jackin/plugins.json` persisted state preparation.
 - Modify: `src/runtime.rs` — switch from detached `docker exec` orchestration to attached derived-image runtime orchestration.
-- Create: `src/repo_contract.rs` — parse Dockerfiles and validate the strict final-stage `FROM jackin/construct:trixie` contract.
+- Create: `src/repo_contract.rs` — parse Dockerfiles and validate the strict final-stage `FROM donbeave/jackin-construct:trixie` contract.
 - Create: `src/derived_image.rs` — create temporary build contexts and render the derived Dockerfile.
 - Create: `docker/construct/Dockerfile` — shared construct image source.
 - Create: `docker/construct/install-plugins.sh` — generic plugin installer that reads `/home/claude/.jackin/plugins.json` with `jq`.
@@ -30,14 +30,14 @@
 ### `donbeave/smith`
 
 - Create: `../smith/README.md` — document `smith` as a public-friendly `jackin` agent repo mounted as `/workspace`.
-- Create: `../smith/Dockerfile` — minimal agent-specific layer on `jackin/construct:trixie` that preinstalls `node@lts`.
+- Create: `../smith/Dockerfile` — minimal agent-specific layer on `donbeave/jackin-construct:trixie` that preinstalls `node@lts`.
 - Create: `../smith/jackin.agent.toml` — plugin declarations and Dockerfile path.
 - Create: `../smith/.gitignore` — keep the new repo clean.
 
 ### Verification Targets
 
 - Test: `cargo test`
-- Verify construct image: `docker build -t jackin/construct:trixie docker/construct`
+- Verify construct image: `docker build -t donbeave/jackin-construct:trixie docker/construct`
 - Verify runtime flow: `cargo run -- load smith`, detach with `Ctrl-P`, `Ctrl-Q`, then `cargo run -- hardline agent-smith`, `cargo run -- eject smith --purge`
 
 ### Task 1: Persisted Runtime State And Dependencies
@@ -62,7 +62,7 @@ Add this test to `src/instance.rs` below `prepares_persisted_claude_state`:
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\", \"feature-dev@claude-plugins-official\"]\n",
         )
         .unwrap();
-        std::fs::write(temp.path().join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
+        std::fs::write(temp.path().join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
 
         let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
         let state = AgentState::prepare(&paths, "agent-smith", &manifest).unwrap();
@@ -205,7 +205,7 @@ mod tests {
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            "FROM rust:1.87 AS builder\nRUN cargo build\n\nFROM jackin/construct:trixie AS runtime\nCOPY --from=builder /app /workspace/app\n",
+            "FROM rust:1.87 AS builder\nRUN cargo build\n\nFROM donbeave/jackin-construct:trixie AS runtime\nCOPY --from=builder /app /workspace/app\n",
         )
         .unwrap();
 
@@ -223,7 +223,7 @@ mod tests {
 
         let error = validate_agent_dockerfile(&dockerfile).unwrap_err();
 
-        assert!(error.to_string().contains("jackin/construct:trixie"));
+        assert!(error.to_string().contains("donbeave/jackin-construct:trixie"));
     }
 
     #[test]
@@ -232,13 +232,13 @@ mod tests {
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            "ARG BASE=jackin/construct:trixie\nFROM ${BASE}\n",
+            "ARG BASE=donbeave/jackin-construct:trixie\nFROM ${BASE}\n",
         )
         .unwrap();
 
         let error = validate_agent_dockerfile(&dockerfile).unwrap_err();
 
-        assert!(error.to_string().contains("literal FROM jackin/construct:trixie"));
+        assert!(error.to_string().contains("literal FROM donbeave/jackin-construct:trixie"));
     }
 }
 ```
@@ -257,7 +257,7 @@ Replace `src/repo_contract.rs` with this focused validator:
 use dockerfile_parser::Dockerfile;
 use std::path::{Path, PathBuf};
 
-pub const CONSTRUCT_IMAGE: &str = "jackin/construct:trixie";
+pub const CONSTRUCT_IMAGE: &str = "donbeave/jackin-construct:trixie";
 
 #[derive(Debug, Clone)]
 pub struct ValidatedDockerfile {
@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
-        let dockerfile = render_derived_dockerfile("FROM jackin/construct:trixie\n");
+        let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n");
 
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(dockerfile.contains("WORKDIR /workspace"));
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn creates_temp_context_with_repo_copy_and_runtime_assets() {
         let repo = tempdir().unwrap();
-        std::fs::write(repo.path().join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
+        std::fs::write(repo.path().join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
         std::fs::write(repo.path().join("jackin.agent.toml"), "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n").unwrap();
 
         let validated = crate::repo::validate_agent_repo(repo.path()).unwrap();
@@ -592,9 +592,9 @@ Run: `cargo test derived_image::tests -- --nocapture`
 
 Expected: PASS
 
-Run: `docker build -t jackin/construct:trixie docker/construct`
+Run: `docker build -t donbeave/jackin-construct:trixie docker/construct`
 
-Expected: PASS with the final image tagged as `jackin/construct:trixie`.
+Expected: PASS with the final image tagged as `donbeave/jackin-construct:trixie`.
 
 - [ ] **Step 6: Commit the construct and derived-image work**
 
@@ -635,7 +635,7 @@ Add these tests to `src/runtime.rs`:
 
         let repo_dir = paths.agents_dir.join("smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM jackin/construct:trixie\n").unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
@@ -886,7 +886,7 @@ Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
 ## Construct
 
-`jackin/construct:trixie` is the shared base image for every agent repo. In The Matrix, the construct is the base simulated environment you load before a mission. That maps directly to `jackin`'s shared runtime image: every agent starts from the same construct before layering on its own specialized environment.
+`donbeave/jackin-construct:trixie` is the shared base image for every agent repo. In The Matrix, the construct is the base simulated environment you load before a mission. That maps directly to `jackin`'s shared runtime image: every agent starts from the same construct before layering on its own specialized environment.
 
 ## Commands
 
@@ -910,7 +910,7 @@ Each agent repo must contain:
 - `jackin.agent.toml`
 - a Dockerfile at the path declared by `jackin.agent.toml`
 
-The final Dockerfile stage must literally be `FROM jackin/construct:trixie`.
+The final Dockerfile stage must literally be `FROM donbeave/jackin-construct:trixie`.
 
 `jackin` validates that Dockerfile, generates the final Claude-ready derived image itself, and mounts the cached repo checkout into `/workspace` at runtime.
 ```
@@ -963,7 +963,7 @@ plugins = [
 Create `../smith/Dockerfile`:
 
 ```dockerfile
-FROM jackin/construct:trixie
+FROM donbeave/jackin-construct:trixie
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -986,7 +986,7 @@ It provides only the agent-specific environment layer for `jackin`, not the fina
 
 ## Contract
 
-- final Dockerfile stage must literally be `FROM jackin/construct:trixie`
+- final Dockerfile stage must literally be `FROM donbeave/jackin-construct:trixie`
 - plugins are declared in `jackin.agent.toml`
 - the repo is expected to run cleanly without company-specific secrets, custom CA setup, or private mirrors
 
@@ -994,7 +994,7 @@ It provides only the agent-specific environment layer for `jackin`, not the fina
 
 For v1, `smith` intentionally stays minimal:
 
-- shared shell/runtime tools come from `jackin/construct:trixie`
+- shared shell/runtime tools come from `donbeave/jackin-construct:trixie`
 - this repo preinstalls `node@lts`
 - runtime workspace is the repo itself, mounted at `/workspace`
 ```
@@ -1027,7 +1027,7 @@ Expected: PASS with `origin` pointing to `git@github.com:donbeave/smith.git`.
 Run from `../jackin`:
 
 ```bash
-docker build -t jackin/construct:trixie docker/construct
+docker build -t donbeave/jackin-construct:trixie docker/construct
 cargo test
 cargo run -- load smith
 ```

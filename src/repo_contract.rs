@@ -1,7 +1,7 @@
 use dockerfile_parser::{Dockerfile, Instruction};
 use std::path::{Path, PathBuf};
 
-pub const CONSTRUCT_IMAGE: &str = "ghcr.io/donbeave/jackin-construct:trixie";
+pub const CONSTRUCT_IMAGE: &str = "donbeave/jackin-construct:trixie";
 
 #[derive(Debug, Clone)]
 pub struct ValidatedDockerfile {
@@ -53,7 +53,7 @@ mod tests {
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            "FROM rust:1.87 AS builder\nRUN cargo build\n\nFROM ghcr.io/donbeave/jackin-construct:trixie AS runtime\nCOPY --from=builder /app /workspace/app\n",
+            "FROM rust:1.87 AS builder\nRUN cargo build\n\nFROM donbeave/jackin-construct:trixie AS runtime\nCOPY --from=builder /app /workspace/app\n",
         )
         .unwrap();
 
@@ -71,7 +71,7 @@ mod tests {
 
         let error = validate_agent_dockerfile(&dockerfile).unwrap_err();
 
-        assert!(error.to_string().contains("ghcr.io/donbeave/jackin-construct:trixie"));
+        assert!(error.to_string().contains("donbeave/jackin-construct:trixie"));
     }
 
     #[test]
@@ -80,7 +80,7 @@ mod tests {
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            "ARG BASE=ghcr.io/donbeave/jackin-construct:trixie\nFROM ${BASE}\n",
+            "ARG BASE=donbeave/jackin-construct:trixie\nFROM ${BASE}\n",
         )
         .unwrap();
 
@@ -89,7 +89,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("literal FROM ghcr.io/donbeave/jackin-construct:trixie")
+                .contains("literal FROM donbeave/jackin-construct:trixie")
         );
     }
 }
