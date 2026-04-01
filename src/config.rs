@@ -43,7 +43,7 @@ impl AppConfig {
             .ok_or_else(|| anyhow::anyhow!("unknown selector {}", selector.key()))?;
 
         let source = AgentSource {
-            git: format!("git@github.com:{namespace}/{}.git", selector.name),
+            git: format!("git@github.com:{namespace}/jackin-{}.git", selector.name),
         };
         self.agents.insert(selector.key(), source.clone());
         self.save(paths)?;
@@ -58,9 +58,9 @@ impl AppConfig {
     fn default_config() -> Self {
         let mut agents = BTreeMap::new();
         agents.insert(
-            "smith".to_string(),
+            "agent-smith".to_string(),
             AgentSource {
-                git: "git@github.com:donbeave/smith.git".to_string(),
+                git: "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
             },
         );
         Self { agents }
@@ -75,15 +75,15 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn bootstrap_writes_default_smith_entry() {
+    fn bootstrap_writes_default_agent_smith_entry() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
 
         let config = AppConfig::load_or_init(&paths).unwrap();
 
         assert_eq!(
-            config.agents.get("smith").unwrap().git,
-            "git@github.com:donbeave/smith.git"
+            config.agents.get("agent-smith").unwrap().git,
+            "git@github.com:donbeave/jackin-agent-smith.git"
         );
         assert!(paths.config_file.exists());
     }
@@ -93,13 +93,13 @@ mod tests {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(Some("chainargos"), "smith");
+        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
 
         let source = config.resolve_or_register(&selector, &paths).unwrap();
 
-        assert_eq!(source.git, "git@github.com:chainargos/smith.git");
+        assert_eq!(source.git, "git@github.com:chainargos/jackin-the-architect.git");
         assert!(std::fs::read_to_string(&paths.config_file)
             .unwrap()
-            .contains("[agents.\"chainargos/smith\"]"));
+            .contains("[agents.\"chainargos/the-architect\"]"));
     }
 }
