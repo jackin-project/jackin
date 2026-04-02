@@ -10,6 +10,7 @@ pub mod repo_contract;
 pub mod runtime;
 pub mod selector;
 pub mod tui;
+pub mod workspace;
 
 use anyhow::Result;
 use cli::{Cli, Command};
