@@ -42,12 +42,12 @@ The branding and README should preserve the concept of “jacking in” and keep
 1. Global app config:
    - `~/.config/jackin/config.toml`
 2. Cached agent class repositories:
-   - `~/.jackin/agents/smith`
-   - `~/.jackin/agents/chainargos/smith`
+   - `~/.jackin/agents/agent-smith`
+   - `~/.jackin/agents/chainargos/the-architect`
 3. Persisted runtime data per loaded container:
-   - `~/.jackin/data/agent-smith`
-   - `~/.jackin/data/agent-smith-clone-1`
-   - `~/.jackin/data/agent-chainargos-smith`
+   - `~/.jackin/data/jackin-agent-smith`
+   - `~/.jackin/data/jackin-agent-smith-clone-1`
+   - `~/.jackin/data/jackin-chainargos-the-architect`
 
 The cached repo is shared by every instance of the same class source. The runtime data directory is unique per running or previously run container instance.
 
@@ -66,15 +66,22 @@ If either file is missing, the repo is not considered a valid `jackin` agent rep
 
 Built-in or unscoped classes:
 
-- selector: `smith`
-- primary container: `agent-smith`
-- clones: `agent-smith-clone-1`, `agent-smith-clone-2`, ...
+- selector: `agent-smith`
+- primary container: `jackin-agent-smith`
+- clones: `jackin-agent-smith-clone-1`, `jackin-agent-smith-clone-2`, ...
 
 Namespaced classes:
 
-- selector: `chainargos/smith`
-- primary container: `agent-chainargos-smith`
-- clones: `agent-chainargos-smith-clone-1`, `agent-chainargos-smith-clone-2`, ...
+- selector: `chainargos/the-architect`
+- primary container: `jackin-chainargos-the-architect`
+- clones: `jackin-chainargos-the-architect-clone-1`, `jackin-chainargos-the-architect-clone-2`, ...
+
+Agent repos follow the `jackin-{class-name}` naming convention on GitHub:
+
+- `jackin-agent-smith` — the default agent
+- `chainargos/jackin-the-architect` — a namespaced agent
+
+The class name is what you use with `jackin load`. The repo name adds the `jackin-` prefix for discoverability.
 
 Clones reuse the same cached repo checkout and only get their own per-instance runtime data directory.
 
@@ -86,8 +93,8 @@ Loads exactly one agent instance and immediately enters its Claude Code session.
 
 Examples:
 
-- `jackin load smith`
-- `jackin load chainargos/smith`
+- `jackin load agent-smith`
+- `jackin load chainargos/the-architect`
 
 Behavior:
 
@@ -108,8 +115,8 @@ Connects directly to an already running container.
 
 Examples:
 
-- `jackin hardline agent-smith`
-- `jackin hardline agent-chainargos-smith-clone-1`
+- `jackin hardline jackin-agent-smith`
+- `jackin hardline jackin-chainargos-the-architect-clone-1`
 
 This is the equivalent of opening a direct line into an already-running Matrix instance.
 
@@ -119,23 +126,23 @@ Stops and removes running containers.
 
 Examples:
 
+- `jackin eject jackin-agent-smith`
 - `jackin eject agent-smith`
-- `jackin eject smith`
-- `jackin eject smith --all`
-- `jackin eject chainargos/smith --all`
-- `jackin eject agent-smith --purge`
+- `jackin eject agent-smith --all`
+- `jackin eject chainargos/the-architect --all`
+- `jackin eject jackin-agent-smith --purge`
 
 Rules:
 
-- explicit `agent-*` targets one concrete container
+- explicit `jackin-*` container names target one concrete container
 - class selectors without `--all` target the primary instance name for that class
 - class selectors with `--all` target the full family for that exact class scope only
 - `--purge` additionally deletes the targeted runtime data directories under `~/.jackin/data/...`
 
 Examples of class-family matching:
 
-- `jackin eject smith --all` matches `agent-smith`, `agent-smith-clone-*`
-- `jackin eject chainargos/smith --all` matches `agent-chainargos-smith`, `agent-chainargos-smith-clone-*`
+- `jackin eject agent-smith --all` matches `jackin-agent-smith`, `jackin-agent-smith-clone-*`
+- `jackin eject chainargos/the-architect --all` matches `jackin-chainargos-the-architect`, `jackin-chainargos-the-architect-clone-*`
 
 There is no cross-namespace matching by default.
 
@@ -151,9 +158,9 @@ Deletes persisted runtime data under `~/.jackin/data/...`.
 
 Examples:
 
-- `jackin purge smith`
-- `jackin purge smith-clone-1`
-- `jackin purge smith --all`
+- `jackin purge agent-smith`
+- `jackin purge agent-smith-clone-1`
+- `jackin purge agent-smith --all`
 
 `purge` follows the same selector and `--all` rules as `eject`, but operates on runtime data instead of container processes.
 
@@ -173,23 +180,23 @@ Purpose:
 First-run behavior:
 
 - if the file does not exist, `jackin` creates it automatically
-- the generated default file includes a built-in `smith` entry
+- the generated default file includes a built-in `agent-smith` entry
 - if the operator runs `jackin load owner/repo` and that selector is missing, `jackin` derives the GitHub source from the selector, adds it to the config, and continues
 
 Example shape:
 
 ```toml
-[agents.smith]
-git = "git@github.com:donbeave/smith.git"
+[agents.agent-smith]
+git = "git@github.com:donbeave/jackin-agent-smith.git"
 
-[agents."chainargos/smith"]
-git = "git@github.com:chainargos/smith.git"
+[agents."chainargos/the-architect"]
+git = "git@github.com:chainargos/jackin-the-architect.git"
 ```
 
 V1 behavior for configured selectors:
 
 - selectors are resolved from this file
-- namespaced selectors such as `chainargos/smith` are persisted here after first use
+- namespaced selectors such as `chainargos/the-architect` are persisted here after first use
 - the file is operator-managed and auto-created on first use
 
 ### Repo Manifest
@@ -209,6 +216,9 @@ Example shape:
 ```toml
 dockerfile = "Dockerfile"
 
+[identity]
+name = "Agent Smith"
+
 [claude]
 plugins = [
   "code-review@claude-plugins-official",
@@ -217,24 +227,26 @@ plugins = [
 ]
 ```
 
+The optional `[identity]` section allows an agent to declare a display name. When omitted, the class selector name is used instead.
+
 V1 intentionally keeps this file minimal. More runtime settings can be added later if the basic contract proves stable.
 
 ## Runtime Lifecycle
 
 ### Load Flow
 
-For `jackin load smith`, the runtime flow is:
+For `jackin load agent-smith`, the runtime flow is:
 
 1. Ensure `~/.config/jackin/config.toml` exists.
 2. Create the default config if missing.
-3. Resolve `smith` to its configured Git URL.
-4. Ensure the cached repo exists at `~/.jackin/agents/smith`.
+3. Resolve `agent-smith` to its configured Git URL.
+4. Ensure the cached repo exists at `~/.jackin/agents/agent-smith`.
 5. If the repo does not exist, clone it.
 6. If the repo exists, run `git pull` before launching.
 7. Verify the repo contains `Dockerfile` and `jackin.agent.toml`.
 8. Determine the target instance name:
-   - first instance: `agent-smith`
-   - next concurrent instance: `agent-smith-clone-1`
+   - first instance: `jackin-agent-smith`
+   - next concurrent instance: `jackin-agent-smith-clone-1`
    - subsequent concurrent instances: increment the clone suffix
 9. Ensure the per-instance runtime data directory exists at `~/.jackin/data/<container-name>`.
 10. Rebuild the image from the cached repo.
@@ -333,4 +345,4 @@ It should also explain the meaning of `load`, `hardline`, `eject`, `exile`, and 
 
 ## Recommendation
 
-Implement v1 as a config-driven Rust CLI with a small command surface and a stable storage model. Preserve the proven Docker lifecycle from the ChainArgos prototype, but make the terminology, config, repo contract, and container naming native to `jackin`.
+Implement v1 as a config-driven Rust CLI with a small command surface and a stable storage model. Preserve the proven Docker lifecycle from the earlier prototype, but make the terminology, config, repo contract, and container naming native to `jackin`.
