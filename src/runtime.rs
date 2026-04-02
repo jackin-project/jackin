@@ -26,6 +26,11 @@ struct GitIdentity {
     user_email: String,
 }
 
+struct HostIdentity {
+    uid: String,
+    gid: String,
+}
+
 fn load_git_identity() -> GitIdentity {
     let user_name = std::process::Command::new("git")
         .args(["config", "user.name"])
@@ -44,6 +49,36 @@ fn load_git_identity() -> GitIdentity {
     GitIdentity {
         user_name,
         user_email,
+    }
+}
+
+#[cfg(unix)]
+fn load_host_identity() -> HostIdentity {
+    let uid = std::process::Command::new("id")
+        .args(["-u"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "1000".to_string());
+    let gid = std::process::Command::new("id")
+        .args(["-g"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "1000".to_string());
+
+    HostIdentity { uid, gid }
+}
+
+#[cfg(not(unix))]
+fn load_host_identity() -> HostIdentity {
+    HostIdentity {
+        uid: "1000".to_string(),
+        gid: "1000".to_string(),
     }
 }
 
@@ -86,6 +121,7 @@ pub fn load_agent(
     opts: &LoadOptions,
 ) -> anyhow::Result<()> {
     let git = load_git_identity();
+    let host = load_host_identity();
 
     // Matrix intro
     if !opts.no_intro {
@@ -173,6 +209,10 @@ pub fn load_agent(
         step += 1;
         let build_args = [
             "build".into(),
+            "--build-arg".into(),
+            format!("JACKIN_HOST_UID={}", host.uid),
+            "--build-arg".into(),
+            format!("JACKIN_HOST_GID={}", host.gid),
             "-t".into(),
             image.clone(),
             "-f".into(),
@@ -611,7 +651,10 @@ mod tests {
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("docker build -t jackin-chainargos-the-architect -f"))
+                .any(|call| {
+                    call.contains("docker build ")
+                        && call.contains("-t jackin-chainargos-the-architect")
+                })
         );
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
@@ -901,7 +944,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("docker build -t jackin-agent-smith -f"))
+                .any(|call| call.contains("docker build ") && call.contains("-t jackin-agent-smith"))
         );
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
@@ -994,6 +1037,65 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
             workspace_dir.display()
         )));
         assert!(!run_call.contains(&format!("{}:/workspace", repo_dir.display())));
+    }
+
+    #[test]
+    fn load_agent_passes_host_uid_and_gid_to_docker_build() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let workspace_dir = temp.path().join("workspace");
+        std::fs::create_dir_all(&workspace_dir).unwrap();
+        let workspace = crate::workspace::ResolvedWorkspace {
+            label: workspace_dir.display().to_string(),
+            workdir: workspace_dir.display().to_string(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: workspace_dir.display().to_string(),
+                dst: workspace_dir.display().to_string(),
+                readonly: false,
+            }],
+        };
+
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let build_call = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker build ") && call.contains("-t jackin-agent-smith"))
+            .unwrap();
+        assert!(build_call.contains("--build-arg JACKIN_HOST_UID="));
+        assert!(build_call.contains("--build-arg JACKIN_HOST_GID="));
     }
 
     #[test]
