@@ -122,32 +122,24 @@ impl AppConfig {
         for (name, mount) in mounts {
             let expanded_src = expand_tilde(&mount.src);
             if !std::path::Path::new(&expanded_src).is_absolute() {
-                anyhow::bail!(
-                    "mount {:?} source must be an absolute path: {}",
-                    name,
-                    expanded_src
-                );
+                anyhow::bail!("mount {name:?} source must be an absolute path: {expanded_src}");
             }
             if !std::path::Path::new(&expanded_src).exists() {
                 anyhow::bail!(
-                    "mount {:?} source does not exist: {} (expanded from {:?})",
-                    name,
-                    expanded_src,
+                    "mount {name:?} source does not exist: {expanded_src} (expanded from {:?})",
                     mount.src
                 );
             }
             if !mount.dst.starts_with('/') {
                 anyhow::bail!(
-                    "mount {:?} destination must be an absolute path: {}",
-                    name,
+                    "mount {name:?} destination must be an absolute path: {}",
                     mount.dst
                 );
             }
             if !seen_dst.insert(mount.dst.clone()) {
                 anyhow::bail!(
-                    "duplicate mount destination {:?} in mount {:?}",
-                    mount.dst,
-                    name
+                    "duplicate mount destination {:?} in mount {name:?}",
+                    mount.dst
                 );
             }
             validated.push(MountConfig {
@@ -230,10 +222,7 @@ impl AppConfig {
         let mut seen_upsert_destinations = std::collections::HashSet::new();
         for mount in &edit.upsert_mounts {
             if !seen_upsert_destinations.insert(mount.dst.as_str()) {
-                anyhow::bail!(
-                    "duplicate workspace edit mount destination: {}",
-                    mount.dst
-                );
+                anyhow::bail!("duplicate workspace edit mount destination: {}", mount.dst);
             }
         }
 
@@ -306,7 +295,7 @@ impl AppConfig {
             .iter()
             .filter_map(|(_, entry)| match entry {
                 MountEntry::Mount(m) => Some(m.clone()),
-                _ => None,
+                MountEntry::Scoped(_) => None,
             })
             .collect()
     }
@@ -401,11 +390,11 @@ gradle-wrapper = { src = "~/.gradle/wrapper", dst = "/home/claude/.gradle/wrappe
                 assert_eq!(m.dst, "/home/claude/.gradle/caches");
                 assert!(!m.readonly);
             }
-            _ => panic!("expected MountEntry::Mount"),
+            MountEntry::Scoped(_) => panic!("expected MountEntry::Mount"),
         }
         match mounts.get("gradle-wrapper").unwrap() {
             MountEntry::Mount(m) => assert!(m.readonly),
-            _ => panic!("expected MountEntry::Mount"),
+            MountEntry::Scoped(_) => panic!("expected MountEntry::Mount"),
         }
     }
 
@@ -429,7 +418,7 @@ brown-config = { src = "~/.chainargos/brown", dst = "/config" }
                 assert_eq!(m.dst, "/secrets");
                 assert!(m.readonly);
             }
-            _ => panic!("expected MountEntry::Scoped"),
+            MountEntry::Mount(_) => panic!("expected MountEntry::Scoped"),
         }
         match mounts.get("chainargos/agent-brown").unwrap() {
             MountEntry::Scoped(scope) => {
@@ -437,7 +426,7 @@ brown-config = { src = "~/.chainargos/brown", dst = "/config" }
                 assert_eq!(m.dst, "/config");
                 assert!(!m.readonly);
             }
-            _ => panic!("expected MountEntry::Scoped"),
+            MountEntry::Mount(_) => panic!("expected MountEntry::Scoped"),
         }
     }
 
@@ -721,7 +710,10 @@ dst = "/workspace/src"
             )
             .unwrap_err();
 
-        assert!(err.to_string().contains("duplicate workspace edit mount destination"));
+        assert!(
+            err.to_string()
+                .contains("duplicate workspace edit mount destination")
+        );
         assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
     }
 
@@ -756,7 +748,10 @@ dst = "/workspace/src"
             )
             .unwrap_err();
 
-        assert!(err.to_string().contains("unknown workspace mount destination"));
+        assert!(
+            err.to_string()
+                .contains("unknown workspace mount destination")
+        );
         assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
     }
 

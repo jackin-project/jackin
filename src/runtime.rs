@@ -112,6 +112,7 @@ fn build_config_rows(
     rows
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn load_agent(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -162,7 +163,7 @@ pub fn load_agent(
             "git",
             &[
                 "clone".into(),
-                source.git.clone(),
+                source.git,
                 cached_repo.repo_dir.display().to_string(),
             ],
             None,
@@ -314,12 +315,11 @@ pub fn load_agent(
                 .any(|name| name == &container_name)
             {
                 cleanup.disarm();
-                Ok(())
             } else {
                 cleanup.run(runner);
                 render_exit(&agent_display_name, runner, opts);
-                Ok(())
             }
+            Ok(())
         }
         Err(error) => {
             cleanup.run(runner);
@@ -332,10 +332,10 @@ pub fn load_agent(
 fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: &LoadOptions) {
     tui::clear_screen();
     let remaining = list_running_agent_names(runner).unwrap_or_default();
-    if !opts.no_intro {
-        tui::matrix_outro(agent_display_name, &remaining);
-    } else {
+    if opts.no_intro {
         tui::simple_outro(agent_display_name, &remaining);
+    } else {
+        tui::matrix_outro(agent_display_name, &remaining);
     }
 }
 
@@ -403,7 +403,7 @@ fn list_agent_names(
     Ok(output
         .lines()
         .filter(|line| !line.is_empty())
-        .map(|line| line.to_string())
+        .map(String::from)
         .collect())
 }
 
@@ -478,7 +478,7 @@ struct LoadCleanup {
 }
 
 impl LoadCleanup {
-    fn new(container_name: String, dind: String, network: String) -> Self {
+    const fn new(container_name: String, dind: String, network: String) -> Self {
         Self {
             container_name,
             dind,
@@ -487,7 +487,7 @@ impl LoadCleanup {
         }
     }
 
-    fn disarm(&mut self) {
+    const fn disarm(&mut self) {
         self.armed = false;
     }
 
@@ -530,7 +530,7 @@ pub struct FakeRunner {
 impl FakeRunner {
     fn with_capture_queue<const N: usize>(outputs: [String; N]) -> Self {
         Self {
-            capture_queue: VecDeque::from(outputs.to_vec()),
+            capture_queue: VecDeque::from(outputs),
             ..Default::default()
         }
     }
@@ -647,15 +647,9 @@ mod tests {
                 .iter()
                 .any(|call| call.contains("git -C") || call.contains("git clone"))
         );
-        assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|call| {
-                    call.contains("docker build ")
-                        && call.contains("-t jackin-chainargos-the-architect")
-                })
-        );
+        assert!(runner.recorded.iter().any(|call| {
+            call.contains("docker build ") && call.contains("-t jackin-chainargos-the-architect")
+        }));
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
         }));
@@ -852,12 +846,10 @@ mod tests {
         std::fs::create_dir_all(&mount_src).unwrap();
         std::fs::create_dir_all(&paths.config_dir).unwrap();
 
-        let config_content = format!(
-            r#"[agents."chainargos/agent-brown"]
+        let config_content = r#"[agents."chainargos/agent-brown"]
 git = "git@github.com:chainargos/jackin-agent-brown.git"
-"#,
-        );
-        std::fs::write(&paths.config_file, &config_content).unwrap();
+"#;
+        std::fs::write(&paths.config_file, config_content).unwrap();
         let mut config = AppConfig::load_or_init(&paths).unwrap();
 
         let workspace = crate::workspace::ResolvedWorkspace {
@@ -941,10 +933,9 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         .unwrap();
 
         assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|call| call.contains("docker build ") && call.contains("-t jackin-agent-smith"))
+            runner.recorded.iter().any(
+                |call| call.contains("docker build ") && call.contains("-t jackin-agent-smith")
+            )
         );
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"

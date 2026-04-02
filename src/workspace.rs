@@ -41,10 +41,9 @@ pub fn expand_tilde(path: &str) -> String {
 }
 
 pub fn parse_mount_spec(spec: &str) -> anyhow::Result<MountConfig> {
-    let (raw, readonly) = match spec.strip_suffix(":ro") {
-        Some(value) => (value, true),
-        None => (spec, false),
-    };
+    let (raw, readonly) = spec
+        .strip_suffix(":ro")
+        .map_or((spec, false), |value| (value, true));
     let (src, dst) = raw
         .split_once(':')
         .ok_or_else(|| anyhow::anyhow!("invalid mount spec {spec:?}; expected src:dst[:ro]"))?;
@@ -189,7 +188,8 @@ pub fn resolve_load_workspace(
     validate_workspace_config("runtime", &workspace)?;
 
     let mut mounts = workspace.mounts.clone();
-    let global_mounts = crate::config::AppConfig::validate_mounts(&config.resolve_mounts(selector))?;
+    let global_mounts =
+        crate::config::AppConfig::validate_mounts(&config.resolve_mounts(selector))?;
 
     for mount in global_mounts {
         if mounts.iter().any(|existing| existing.dst == mount.dst) {
@@ -293,9 +293,13 @@ mod tests {
         )
         .unwrap();
 
-        assert!(resolved
-            .mounts
-            .iter()
-            .any(|mount| mount.dst == "/home/claude/home" && mount.src == home && mount.readonly));
+        assert!(
+            resolved
+                .mounts
+                .iter()
+                .any(|mount| mount.dst == "/home/claude/home"
+                    && mount.src == home
+                    && mount.readonly)
+        );
     }
 }

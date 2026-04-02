@@ -35,8 +35,8 @@ impl LaunchState {
             name: "Current directory".to_string(),
             workspace: ResolvedWorkspace {
                 label: current.workdir.clone(),
-                workdir: current.workdir.clone(),
-                mounts: current.mounts.clone(),
+                workdir: current.workdir,
+                mounts: current.mounts,
             },
             allowed_agents: configured_agents(config),
             default_agent: None,
@@ -89,9 +89,7 @@ impl LaunchState {
         self.workspaces[self.selected_workspace]
             .allowed_agents
             .iter()
-            .filter(|agent| {
-                query.is_empty() || agent.key().to_ascii_lowercase().contains(&query)
-            })
+            .filter(|agent| query.is_empty() || agent.key().to_ascii_lowercase().contains(&query))
             .cloned()
             .collect()
     }
@@ -152,17 +150,17 @@ fn resolve_selected_workspace(
     crate::workspace::resolve_load_workspace(config, agent, cwd, choice.input.clone())
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn run_launch(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) -> anyhow::Result<(ClassSelector, ResolvedWorkspace)> {
     use crossterm::ExecutableCommand;
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-    use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
+    use crossterm::terminal::{
+        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    };
 
-    let mut state = LaunchState::new(config, cwd)?;
-    let mut stdout = std::io::stdout();
-    enable_raw_mode()?;
     struct TerminalGuard;
     impl Drop for TerminalGuard {
         fn drop(&mut self) {
@@ -171,6 +169,10 @@ pub fn run_launch(
             let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
         }
     }
+
+    let mut state = LaunchState::new(config, cwd)?;
+    let mut stdout = std::io::stdout();
+    enable_raw_mode()?;
     let _guard = TerminalGuard;
     stdout.execute(EnterAlternateScreen)?;
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
@@ -184,11 +186,11 @@ pub fn run_launch(
             match state.stage {
                 LaunchStage::Workspace => match key.code {
                     KeyCode::Up => {
-                        state.selected_workspace = state.selected_workspace.saturating_sub(1)
+                        state.selected_workspace = state.selected_workspace.saturating_sub(1);
                     }
                     KeyCode::Down => {
                         state.selected_workspace = (state.selected_workspace + 1)
-                            .min(state.workspaces.len().saturating_sub(1))
+                            .min(state.workspaces.len().saturating_sub(1));
                     }
                     KeyCode::Enter => {
                         let agents = state.filtered_agents();
@@ -236,11 +238,11 @@ pub fn run_launch(
                         state.selected_agent = 0;
                     }
                     KeyCode::Up => {
-                        state.selected_agent = state.selected_agent.saturating_sub(1)
+                        state.selected_agent = state.selected_agent.saturating_sub(1);
                     }
                     KeyCode::Down => {
                         state.selected_agent = (state.selected_agent + 1)
-                            .min(state.filtered_agents().len().saturating_sub(1))
+                            .min(state.filtered_agents().len().saturating_sub(1));
                     }
                     KeyCode::Enter => {
                         let agents = state.filtered_agents();
@@ -267,7 +269,7 @@ pub fn run_launch(
     result
 }
 
-fn footer_text(stage: LaunchStage) -> &'static str {
+const fn footer_text(stage: LaunchStage) -> &'static str {
     match stage {
         LaunchStage::Workspace => "Enter select   Esc/q quit",
         LaunchStage::Agent => "Enter load   Esc back   Type to filter",
@@ -359,8 +361,8 @@ fn draw_launch(frame: &mut ratatui::Frame, state: &LaunchState) {
     agent_state.select(Some(state.selected_agent));
     frame.render_stateful_widget(agent_list, right[1], &mut agent_state);
 
-    let footer = Paragraph::new(footer_text(state.stage))
-        .block(Block::default().borders(Borders::TOP));
+    let footer =
+        Paragraph::new(footer_text(state.stage)).block(Block::default().borders(Borders::TOP));
     frame.render_widget(footer, root[2]);
 }
 
@@ -387,7 +389,7 @@ mod tests {
                 workdir: workdir.clone(),
                 mounts: vec![crate::workspace::MountConfig {
                     src: workdir.clone(),
-                    dst: workdir.clone(),
+                    dst: workdir,
                     readonly: false,
                 }],
                 allowed_agents: vec!["agent-smith".to_string()],
@@ -430,7 +432,13 @@ mod tests {
 
     #[test]
     fn footer_text_matches_stage_behavior() {
-        assert_eq!(footer_text(LaunchStage::Workspace), "Enter select   Esc/q quit");
-        assert_eq!(footer_text(LaunchStage::Agent), "Enter load   Esc back   Type to filter");
+        assert_eq!(
+            footer_text(LaunchStage::Workspace),
+            "Enter select   Esc/q quit"
+        );
+        assert_eq!(
+            footer_text(LaunchStage::Agent),
+            "Enter load   Esc back   Type to filter"
+        );
     }
 }

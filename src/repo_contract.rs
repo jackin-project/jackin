@@ -21,17 +21,13 @@ pub fn validate_agent_dockerfile(dockerfile_path: &Path) -> anyhow::Result<Valid
         anyhow::anyhow!("invalid agent repo: Dockerfile must contain at least one FROM instruction")
     })?;
 
-    let from = match final_stage.instructions.first() {
-        Some(Instruction::From(from)) => from,
-        _ => anyhow::bail!(
-            "invalid agent repo: Dockerfile must contain at least one FROM instruction"
-        ),
+    let Some(Instruction::From(from)) = final_stage.instructions.first() else {
+        anyhow::bail!("invalid agent repo: Dockerfile must contain at least one FROM instruction")
     };
 
     anyhow::ensure!(
         from.flags.is_empty() && from.image.as_ref() == CONSTRUCT_IMAGE,
-        "invalid agent repo: final Dockerfile stage must use literal FROM {}",
-        CONSTRUCT_IMAGE
+        "invalid agent repo: final Dockerfile stage must use literal FROM {CONSTRUCT_IMAGE}"
     );
 
     Ok(ValidatedDockerfile {

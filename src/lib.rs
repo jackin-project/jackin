@@ -23,6 +23,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use workspace::{WorkspaceConfig, WorkspaceEdit, parse_mount_spec};
 
+#[allow(clippy::too_many_lines)]
 pub fn run(cli: Cli) -> Result<()> {
     let paths = JackinPaths::detect()?;
     let mut config = AppConfig::load_or_init(&paths)?;
@@ -77,14 +78,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 no_intro: false,
                 debug: false,
             };
-            runtime::load_agent(
-                &paths,
-                &mut config,
-                &class,
-                &workspace,
-                &mut runner,
-                &opts,
-            )
+            runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts)
         }
         Command::Hardline { container } => runtime::hardline_agent(&container, &mut runner),
         Command::Eject {
@@ -110,15 +104,14 @@ pub fn run(cli: Cli) -> Result<()> {
                             remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                         }
                     }
-                    Ok(())
                 } else {
                     let container = crate::instance::primary_container_name(&class);
                     runtime::eject_agent(&container, &mut runner)?;
                     if purge {
                         remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                     }
-                    Ok(())
                 }
+                Ok(())
             }
         },
         Command::Exile => runtime::exile_all(&mut runner),
