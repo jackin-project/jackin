@@ -12,10 +12,10 @@ pub struct CachedRepo {
 
 impl CachedRepo {
     pub fn new(paths: &JackinPaths, selector: &ClassSelector) -> Self {
-        let repo_dir = match &selector.namespace {
-            Some(namespace) => paths.agents_dir.join(namespace).join(&selector.name),
-            None => paths.agents_dir.join(&selector.name),
-        };
+        let repo_dir = selector.namespace.as_ref().map_or_else(
+            || paths.agents_dir.join(&selector.name),
+            |namespace| paths.agents_dir.join(namespace).join(&selector.name),
+        );
 
         Self {
             key: selector.key(),

@@ -11,7 +11,7 @@ const MATRIX_GREEN: (u8, u8, u8) = (0, 255, 65);
 const MATRIX_DIM: (u8, u8, u8) = (0, 140, 30);
 const MATRIX_DARK: (u8, u8, u8) = (0, 80, 18);
 
-fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
+const fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
     owo_colors::Rgb(color.0, color.1, color.2)
 }
 
@@ -22,7 +22,7 @@ struct RainCell {
     age: u16,
 }
 
-fn age_to_color(age: u16) -> Option<(u8, u8, u8)> {
+const fn age_to_color(age: u16) -> Option<(u8, u8, u8)> {
     match age {
         0 => Some(WHITE),
         1..=2 => Some((180, 255, 180)),
@@ -34,7 +34,7 @@ fn age_to_color(age: u16) -> Option<(u8, u8, u8)> {
     }
 }
 
-fn should_mutate(age: u16, seed: &mut u64) -> bool {
+const fn should_mutate(age: u16, seed: &mut u64) -> bool {
     let roll = (xorshift(seed) % 100) as u16;
     match age {
         0..=2 => roll < 30,
@@ -46,7 +46,7 @@ fn should_mutate(age: u16, seed: &mut u64) -> bool {
 const RAIN_CHARS: &[u8] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*<>{}[]|/\\~";
 
-fn xorshift(seed: &mut u64) -> u64 {
+const fn xorshift(seed: &mut u64) -> u64 {
     if *seed == 0 {
         *seed = 0xDEAD_BEEF_CAFE_1337;
     }
@@ -88,20 +88,21 @@ fn banner_grid(banner: &[&str], cols: usize, rows: usize) -> Vec<Vec<Option<char
     grid
 }
 
+#[allow(clippy::too_many_lines)]
 fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
-    let cols = 70;
-    let rows = 18;
-    let frame_ms = 60;
-    let total_frames = duration_ms / frame_ms;
-
-    let mut seed: u64 = 0xDEAD_BEEF_CAFE_1337;
-
     struct Column {
         head: i32,
         speed: u32,
         active: bool,
         cooldown: u32,
     }
+
+    let cols = 70;
+    let rows = 18;
+    let frame_ms = 60;
+    let total_frames = duration_ms / frame_ms;
+
+    let mut seed: u64 = 0xDEAD_BEEF_CAFE_1337;
 
     let mut columns: Vec<Column> = (0..cols)
         .map(|_| {
@@ -124,8 +125,8 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
     // ── Phase 1: Pure rain ──────────────────────────────────────────────
     for frame in 0..total_frames {
         // Age all existing cells
-        for row in grid.iter_mut() {
-            for cell in row.iter_mut() {
+        for row in &mut grid {
+            for cell in &mut *row {
                 if let Some(c) = cell {
                     c.age += 1;
                     if age_to_color(c.age).is_none() {
@@ -150,7 +151,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                 continue;
             }
 
-            if frame % (column.speed as u64) == 0 {
+            if frame % u64::from(column.speed) == 0 {
                 column.head += 1;
             }
 
@@ -207,7 +208,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
         }
 
         // Stop spawning new heads — deactivate all columns permanently
-        for column in columns.iter_mut() {
+        for column in &mut columns {
             column.active = false;
             column.cooldown = u32::MAX;
         }
@@ -466,7 +467,7 @@ pub fn print_config_table(rows: &[(String, String)]) {
 // ── Step shimmer ─────────────────────────────────────────────────────────
 
 pub fn step_shimmer(n: u32, text: &str) {
-    let prefix = format!("  {:>2}.  ", n);
+    let prefix = format!("  {n:>2}.  ");
     let chars: Vec<char> = text.chars().collect();
     let frames = chars.len() + 6;
 
