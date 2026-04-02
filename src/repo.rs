@@ -79,13 +79,13 @@ mod tests {
     fn computes_cached_repo_path_for_namespaced_selector() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(Some("chainargos"), "smith");
+        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
 
         let repo = CachedRepo::new(&paths, &selector);
 
         assert_eq!(
             repo.repo_dir,
-            paths.agents_dir.join("chainargos").join("smith")
+            paths.agents_dir.join("chainargos").join("the-architect")
         );
     }
 
