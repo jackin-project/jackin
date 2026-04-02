@@ -66,6 +66,11 @@ pub enum Command {
         #[arg(long)]
         all: bool,
     },
+    /// Manage saved workspaces
+    Workspace {
+        #[command(subcommand)]
+        command: WorkspaceCommand,
+    },
     /// Operator configuration
     Config {
         #[command(subcommand)]
@@ -78,6 +83,45 @@ pub enum ConfigCommand {
     Mount {
         #[command(subcommand)]
         command: MountCommand,
+    },
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum WorkspaceCommand {
+    Add {
+        name: String,
+        #[arg(long)]
+        workdir: String,
+        #[arg(long = "mount", required = true)]
+        mounts: Vec<String>,
+        #[arg(long = "allowed-agent")]
+        allowed_agents: Vec<String>,
+        #[arg(long = "default-agent")]
+        default_agent: Option<String>,
+    },
+    List,
+    Show {
+        name: String,
+    },
+    Edit {
+        name: String,
+        #[arg(long)]
+        workdir: Option<String>,
+        #[arg(long = "mount")]
+        mounts: Vec<String>,
+        #[arg(long = "remove-destination")]
+        remove_destinations: Vec<String>,
+        #[arg(long = "allowed-agent")]
+        allowed_agents: Vec<String>,
+        #[arg(long = "remove-allowed-agent")]
+        remove_allowed_agents: Vec<String>,
+        #[arg(long = "default-agent")]
+        default_agent: Option<String>,
+        #[arg(long = "clear-default-agent", default_value_t = false)]
+        clear_default_agent: bool,
+    },
+    Remove {
+        name: String,
     },
 }
 
@@ -116,37 +160,54 @@ mod tests {
     #[test]
     fn parses_config_mount_add() {
         let cli = Cli::try_parse_from([
-            "jackin", "config", "mount", "add", "gradle-cache",
-            "--src", "~/.gradle/caches",
-            "--dst", "/home/claude/.gradle/caches",
+            "jackin",
+            "config",
+            "mount",
+            "add",
+            "gradle-cache",
+            "--src",
+            "~/.gradle/caches",
+            "--dst",
+            "/home/claude/.gradle/caches",
             "--readonly",
-            "--scope", "chainargos/*",
-        ]).unwrap();
+            "--scope",
+            "chainargos/*",
+        ])
+        .unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config { command: ConfigCommand::Mount { command: MountCommand::Add { .. } } }
+            Command::Config {
+                command: ConfigCommand::Mount {
+                    command: MountCommand::Add { .. }
+                }
+            }
         ));
     }
 
     #[test]
     fn parses_config_mount_remove() {
-        let cli = Cli::try_parse_from([
-            "jackin", "config", "mount", "remove", "gradle-cache",
-        ]).unwrap();
+        let cli =
+            Cli::try_parse_from(["jackin", "config", "mount", "remove", "gradle-cache"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config { command: ConfigCommand::Mount { command: MountCommand::Remove { .. } } }
+            Command::Config {
+                command: ConfigCommand::Mount {
+                    command: MountCommand::Remove { .. }
+                }
+            }
         ));
     }
 
     #[test]
     fn parses_config_mount_list() {
-        let cli = Cli::try_parse_from([
-            "jackin", "config", "mount", "list",
-        ]).unwrap();
+        let cli = Cli::try_parse_from(["jackin", "config", "mount", "list"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config { command: ConfigCommand::Mount { command: MountCommand::List } }
+            Command::Config {
+                command: ConfigCommand::Mount {
+                    command: MountCommand::List
+                }
+            }
         ));
     }
 
@@ -164,18 +225,74 @@ mod tests {
     }
 
     #[test]
+    fn parses_workspace_add_command() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "add",
+            "big-monorepo",
+            "--workdir",
+            "/workspace/project",
+            "--mount",
+            "/tmp/project:/workspace/project",
+            "--mount",
+            "/tmp/cache:/workspace/cache:ro",
+            "--allowed-agent",
+            "agent-smith",
+            "--default-agent",
+            "agent-smith",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Workspace {
+                command: WorkspaceCommand::Add { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_workspace_edit_command() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "edit",
+            "big-monorepo",
+            "--mount",
+            "/tmp/new-cache:/workspace/cache:ro",
+            "--remove-destination",
+            "/workspace/shared",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Workspace {
+                command: WorkspaceCommand::Edit { .. }
+            }
+        ));
+    }
+
+    #[test]
     fn help_contains_banner_and_matrix_descriptions() {
         let err = Cli::try_parse_from(["jackin", "--help"]).unwrap_err();
         let help = err.to_string();
         assert!(help.contains("j a c k i n"), "banner missing");
         assert!(help.contains("operator terminal"), "banner tagline missing");
-        assert!(help.contains("Send agents into the Matrix"), "about text missing");
+        assert!(
+            help.contains("Send agents into the Matrix"),
+            "about text missing"
+        );
     }
 
     #[test]
     fn load_help_contains_matrix_description() {
         let err = Cli::try_parse_from(["jackin", "load", "--help"]).unwrap_err();
         let help = err.to_string();
-        assert!(help.contains("Jack an agent into the Matrix"), "load description missing");
+        assert!(
+            help.contains("Jack an agent into the Matrix"),
+            "load description missing"
+        );
     }
 }
