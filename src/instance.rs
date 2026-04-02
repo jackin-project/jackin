@@ -54,10 +54,10 @@ impl AgentState {
 }
 
 pub fn primary_container_name(selector: &ClassSelector) -> String {
-    match &selector.namespace {
-        Some(namespace) => format!("jackin-{namespace}-{}", selector.name),
-        None => format!("jackin-{}", selector.name),
-    }
+    selector.namespace.as_ref().map_or_else(
+        || format!("jackin-{}", selector.name),
+        |namespace| format!("jackin-{namespace}-{}", selector.name),
+    )
 }
 
 pub fn next_container_name(selector: &ClassSelector, existing: &[String]) -> String {

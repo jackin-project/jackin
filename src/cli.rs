@@ -10,14 +10,14 @@ const HELP_STYLES: Styles = Styles::styled()
     .invalid(AnsiColor::Red.on_default().effects(Effects::BOLD))
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
 
-const BANNER: &str = r#"
+const BANNER: &str = r"
     │ │╷│ │╷│ ╷  │╷│ │╷│ │╷│
     │ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│
     ╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵
                ╵
           j a c k i n
        operator terminal
-"#;
+";
 
 /// Send agents into the Matrix
 #[derive(Debug, Parser)]
