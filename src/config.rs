@@ -154,6 +154,61 @@ impl AppConfig {
         Ok(validated)
     }
 
+    pub fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
+        let scope_key = scope.unwrap_or("");
+        if scope_key.is_empty() {
+            self.docker.mounts.0.insert(name.to_string(), MountEntry::Mount(mount));
+        } else {
+            match self.docker.mounts.0.entry(scope_key.to_string()) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    if let MountEntry::Scoped(map) = entry.get_mut() {
+                        map.insert(name.to_string(), mount);
+                    }
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let mut map = BTreeMap::new();
+                    map.insert(name.to_string(), mount);
+                    entry.insert(MountEntry::Scoped(map));
+                }
+            }
+        }
+    }
+
+    pub fn remove_mount(&mut self, name: &str, scope: Option<&str>) -> bool {
+        let scope_key = scope.unwrap_or("");
+        if scope_key.is_empty() {
+            self.docker.mounts.0.remove(name).is_some()
+        } else {
+            match self.docker.mounts.0.get_mut(scope_key) {
+                Some(MountEntry::Scoped(map)) => {
+                    let removed = map.remove(name).is_some();
+                    if map.is_empty() {
+                        self.docker.mounts.0.remove(scope_key);
+                    }
+                    removed
+                }
+                _ => false,
+            }
+        }
+    }
+
+    pub fn list_mounts(&self) -> Vec<(String, String, &MountConfig)> {
+        let mut result = Vec::new();
+        for (key, entry) in &self.docker.mounts.0 {
+            match entry {
+                MountEntry::Mount(m) => {
+                    result.push(("(global)".to_string(), key.clone(), m));
+                }
+                MountEntry::Scoped(map) => {
+                    for (name, m) in map {
+                        result.push((key.clone(), name.clone(), m));
+                    }
+                }
+            }
+        }
+        result
+    }
+
     fn default_config() -> Self {
         let mut agents = BTreeMap::new();
         agents.insert(
