@@ -70,6 +70,36 @@ pub fn run(cli: Cli) -> Result<()> {
             }
         },
         Command::Exile => runtime::exile_all(&mut runner),
+        Command::Config { command: config_cmd } => match config_cmd {
+            cli::ConfigCommand::Mount { command: mount_cmd } => {
+                match mount_cmd {
+                    cli::MountCommand::Add { name, src, dst, readonly, scope } => {
+                        let mount = config::MountConfig { src, dst, readonly };
+                        config.add_mount(&name, mount, scope.as_deref());
+                        config.save(&paths)?;
+                        Ok(())
+                    }
+                    cli::MountCommand::Remove { name, scope } => {
+                        if config.remove_mount(&name, scope.as_deref()) {
+                            config.save(&paths)?;
+                        }
+                        Ok(())
+                    }
+                    cli::MountCommand::List => {
+                        let mounts = config.list_mounts();
+                        if mounts.is_empty() {
+                            println!("No mounts configured.");
+                        } else {
+                            for (scope, name, m) in &mounts {
+                                let ro = if m.readonly { " (ro)" } else { "" };
+                                println!("{scope}  {name}  {} -> {}{ro}", m.src, m.dst);
+                            }
+                        }
+                        Ok(())
+                    }
+                }
+            }
+        },
         Command::Purge { selector, all } => match Selector::parse(&selector)? {
             Selector::Container(container) => {
                 remove_data_dir_if_exists(&paths.data_dir.join(container))?;
