@@ -30,8 +30,7 @@ impl AgentManifest {
     pub fn display_name(&self, fallback: &str) -> String {
         self.identity
             .as_ref()
-            .map(|id| id.name.clone())
-            .unwrap_or_else(|| fallback.to_string())
+            .map_or_else(|| fallback.to_string(), |id| id.name.clone())
     }
 }
 
