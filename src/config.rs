@@ -121,6 +121,13 @@ impl AppConfig {
 
         for (name, mount) in mounts {
             let expanded_src = expand_tilde(&mount.src);
+            if !std::path::Path::new(&expanded_src).is_absolute() {
+                anyhow::bail!(
+                    "mount {:?} source must be an absolute path: {}",
+                    name,
+                    expanded_src
+                );
+            }
             if !std::path::Path::new(&expanded_src).exists() {
                 anyhow::bail!(
                     "mount {:?} source does not exist: {} (expanded from {:?})",
@@ -835,6 +842,22 @@ shared = { src = "/tmp/specific", dst = "/data" }
             err.to_string()
                 .contains("/nonexistent/path/that/does/not/exist")
         );
+    }
+
+    #[test]
+    fn validate_mounts_rejects_relative_src() {
+        let mounts = vec![(
+            "test-mount".to_string(),
+            MountConfig {
+                src: ".".to_string(),
+                dst: "/data".to_string(),
+                readonly: false,
+            },
+        )];
+
+        let err = AppConfig::validate_mounts(&mounts).unwrap_err();
+
+        assert!(err.to_string().contains("source must be an absolute path"));
     }
 
     #[test]
