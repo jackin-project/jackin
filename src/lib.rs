@@ -3,6 +3,7 @@ pub mod config;
 pub mod derived_image;
 pub mod docker;
 pub mod instance;
+pub mod launch;
 pub mod manifest;
 pub mod paths;
 pub mod repo;
@@ -104,6 +105,15 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
             }
         },
+        Command::Launch => {
+            let cwd = std::env::current_dir()?;
+            let (class, workspace) = crate::launch::run_launch(&config, &cwd)?;
+            let opts = runtime::LoadOptions {
+                no_intro: false,
+                debug: false,
+            };
+            runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts)
+        }
         Command::Exile => runtime::exile_all(&mut runner),
         Command::Config {
             command: config_cmd,
