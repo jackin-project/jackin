@@ -1,6 +1,6 @@
-use crate::config::AppConfig;
+use crate::config::{AppConfig, MountEntry};
 use crate::selector::ClassSelector;
-use crate::workspace::{current_dir_workspace, ResolvedWorkspace};
+use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LaunchStage {
@@ -14,7 +14,8 @@ pub struct WorkspaceChoice {
     pub workspace: ResolvedWorkspace,
     pub allowed_agents: Vec<ClassSelector>,
     pub default_agent: Option<String>,
-    pub global_mounts: Vec<crate::workspace::MountConfig>,
+    pub global_mounts: Vec<MountConfig>,
+    pub input: LoadWorkspaceInput,
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +30,7 @@ pub struct LaunchState {
 impl LaunchState {
     pub fn new(config: &AppConfig, cwd: &std::path::Path) -> anyhow::Result<Self> {
         let current = current_dir_workspace(cwd)?;
-        let global_mounts = config.global_mounts();
+        let global_mounts = global_mounts(config)?;
         let current_choice = WorkspaceChoice {
             name: "Current directory".to_string(),
             workspace: ResolvedWorkspace {
@@ -40,6 +41,7 @@ impl LaunchState {
             allowed_agents: configured_agents(config),
             default_agent: None,
             global_mounts: global_mounts.clone(),
+            input: LoadWorkspaceInput::CurrentDir,
         };
 
         let mut workspaces = vec![current_choice];
@@ -55,6 +57,7 @@ impl LaunchState {
                 allowed_agents,
                 default_agent: saved.default_agent.clone(),
                 global_mounts: global_mounts.clone(),
+                input: LoadWorkspaceInput::Saved(name.clone()),
             });
         }
 
@@ -86,7 +89,9 @@ impl LaunchState {
         self.workspaces[self.selected_workspace]
             .allowed_agents
             .iter()
-            .filter(|agent| query.is_empty() || agent.key().to_ascii_lowercase().contains(&query))
+            .filter(|agent| {
+                query.is_empty() || agent.key().to_ascii_lowercase().contains(&query)
+            })
             .cloned()
             .collect()
     }
@@ -116,19 +121,57 @@ fn eligible_agents_for_saved_workspace(
         .collect()
 }
 
+fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
+    let mounts = config
+        .docker
+        .mounts
+        .0
+        .iter()
+        .filter_map(|(name, entry)| match entry {
+            MountEntry::Mount(mount) => Some((name.clone(), mount.clone())),
+            MountEntry::Scoped(_) => None,
+        })
+        .collect::<Vec<_>>();
+
+    AppConfig::validate_mounts(&mounts)
+}
+
+fn default_agent_index(choice: &WorkspaceChoice, agents: &[ClassSelector]) -> Option<usize> {
+    choice
+        .default_agent
+        .as_ref()
+        .and_then(|default| agents.iter().position(|agent| agent.key() == *default))
+}
+
+fn resolve_selected_workspace(
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    choice: &WorkspaceChoice,
+    agent: &ClassSelector,
+) -> anyhow::Result<ResolvedWorkspace> {
+    crate::workspace::resolve_load_workspace(config, agent, cwd, choice.input.clone())
+}
+
 pub fn run_launch(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) -> anyhow::Result<(ClassSelector, ResolvedWorkspace)> {
-    use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-    use crossterm::terminal::{
-        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-    };
     use crossterm::ExecutableCommand;
+    use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+    use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 
     let mut state = LaunchState::new(config, cwd)?;
     let mut stdout = std::io::stdout();
     enable_raw_mode()?;
+    struct TerminalGuard;
+    impl Drop for TerminalGuard {
+        fn drop(&mut self) {
+            let _ = crossterm::terminal::disable_raw_mode();
+            let mut stdout = std::io::stdout();
+            let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+        }
+    }
+    let _guard = TerminalGuard;
     stdout.execute(EnterAlternateScreen)?;
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
@@ -149,18 +192,32 @@ pub fn run_launch(
                     }
                     KeyCode::Enter => {
                         let agents = state.filtered_agents();
-                        if agents.len() == 1 {
-                            break Ok((
-                                agents[0].clone(),
-                                state.workspaces[state.selected_workspace].workspace.clone(),
+                        if agents.is_empty() {
+                            break Err(anyhow::anyhow!(
+                                "no eligible agents for workspace {}",
+                                state.workspaces[state.selected_workspace].name
                             ));
+                        }
+                        if agents.len() == 1 {
+                            let agent = agents[0].clone();
+                            let workspace = resolve_selected_workspace(
+                                config,
+                                cwd,
+                                &state.workspaces[state.selected_workspace],
+                                &agent,
+                            )?;
+                            break Ok((agent, workspace));
                         }
                         state.stage = LaunchStage::Agent;
                         state.agent_query.clear();
-                        state.selected_agent = 0;
+                        state.selected_agent = default_agent_index(
+                            &state.workspaces[state.selected_workspace],
+                            &agents,
+                        )
+                        .unwrap_or(0);
                     }
                     KeyCode::Char('q') | KeyCode::Esc => {
-                        break Err(anyhow::anyhow!("launch cancelled"))
+                        break Err(anyhow::anyhow!("launch cancelled"));
                     }
                     _ => {}
                 },
@@ -190,10 +247,13 @@ pub fn run_launch(
                         let agent = agents
                             .get(state.selected_agent)
                             .ok_or_else(|| anyhow::anyhow!("no agent selected"))?;
-                        break Ok((
-                            agent.clone(),
-                            state.workspaces[state.selected_workspace].workspace.clone(),
-                        ));
+                        let workspace = resolve_selected_workspace(
+                            config,
+                            cwd,
+                            &state.workspaces[state.selected_workspace],
+                            agent,
+                        )?;
+                        break Ok((agent.clone(), workspace));
                     }
                     _ => {}
                 },
@@ -207,10 +267,17 @@ pub fn run_launch(
     result
 }
 
+fn footer_text(stage: LaunchStage) -> &'static str {
+    match stage {
+        LaunchStage::Workspace => "Enter select   Esc/q quit",
+        LaunchStage::Agent => "Enter load   Esc back   Type to filter",
+    }
+}
+
 fn draw_launch(frame: &mut ratatui::Frame, state: &LaunchState) {
     use ratatui::layout::{Constraint, Direction, Layout};
     use ratatui::style::{Modifier, Style};
-    use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+    use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
     let root = Layout::default()
         .direction(Direction::Vertical)
@@ -237,7 +304,7 @@ fn draw_launch(frame: &mut ratatui::Frame, state: &LaunchState) {
     let workspace_list = List::new(workspace_items)
         .block(Block::default().title("Workspaces").borders(Borders::ALL))
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-    let mut workspace_state = ratatui::widgets::ListState::default();
+    let mut workspace_state = ListState::default();
     workspace_state.select(Some(state.selected_workspace));
     frame.render_stateful_widget(workspace_list, body[0], &mut workspace_state);
 
@@ -288,11 +355,11 @@ fn draw_launch(frame: &mut ratatui::Frame, state: &LaunchState) {
     let agent_list = List::new(agent_items)
         .block(Block::default().title(agent_title).borders(Borders::ALL))
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-    let mut agent_state = ratatui::widgets::ListState::default();
+    let mut agent_state = ListState::default();
     agent_state.select(Some(state.selected_agent));
     frame.render_stateful_widget(agent_list, right[1], &mut agent_state);
 
-    let footer = Paragraph::new("Enter select   Esc back   q quit   Type to filter agents")
+    let footer = Paragraph::new(footer_text(state.stage))
         .block(Block::default().borders(Borders::TOP));
     frame.render_widget(footer, root[2]);
 }
@@ -352,11 +419,18 @@ mod tests {
                 ],
                 default_agent: None,
                 global_mounts: vec![],
+                input: LoadWorkspaceInput::CurrentDir,
             }],
         };
 
         let filtered = state.filtered_agents();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].key(), "chainargos/the-architect");
+    }
+
+    #[test]
+    fn footer_text_matches_stage_behavior() {
+        assert_eq!(footer_text(LaunchStage::Workspace), "Enter select   Esc/q quit");
+        assert_eq!(footer_text(LaunchStage::Agent), "Enter load   Esc back   Type to filter");
     }
 }

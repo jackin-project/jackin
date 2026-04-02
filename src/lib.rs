@@ -70,6 +70,22 @@ pub fn run(cli: Cli) -> Result<()> {
                 &opts,
             )
         }
+        Command::Launch => {
+            let cwd = std::env::current_dir()?;
+            let (class, workspace) = crate::launch::run_launch(&config, &cwd)?;
+            let opts = runtime::LoadOptions {
+                no_intro: false,
+                debug: false,
+            };
+            runtime::load_agent(
+                &paths,
+                &mut config,
+                &class,
+                &workspace,
+                &mut runner,
+                &opts,
+            )
+        }
         Command::Hardline { container } => runtime::hardline_agent(&container, &mut runner),
         Command::Eject {
             selector,
@@ -105,15 +121,6 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
             }
         },
-        Command::Launch => {
-            let cwd = std::env::current_dir()?;
-            let (class, workspace) = crate::launch::run_launch(&config, &cwd)?;
-            let opts = runtime::LoadOptions {
-                no_intro: false,
-                debug: false,
-            };
-            runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts)
-        }
         Command::Exile => runtime::exile_all(&mut runner),
         Command::Config {
             command: config_cmd,
