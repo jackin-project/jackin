@@ -139,9 +139,9 @@ Examples:
 ```bash
 jackin load agent-smith
 jackin load agent-smith .
-jackin load agent-smith ~/Projects/chainargos/chainargos
-jackin load agent-smith --workspace chainargos
-jackin load agent-smith -w chainargos
+jackin load agent-smith ~/Projects/chainargos/big-monorepo
+jackin load agent-smith --workspace big-monorepo
+jackin load agent-smith -w big-monorepo
 jackin load agent-smith \
   --mount "$PWD/project:/workspace/project" \
   --mount "$PWD/shared:/workspace/shared" \
@@ -251,16 +251,16 @@ Saved workspaces live in local config at `~/.config/jackin/config.toml` as a new
 Example:
 
 ```toml
-[workspaces.chainargos]
-workdir = "/Users/donbeave/Projects/chainargos/chainargos"
+[workspaces.big-monorepo]
+workdir = "/Users/donbeave/Projects/chainargos/big-monorepo"
 default_agent = "agent-smith"
 allowed_agents = ["agent-smith", "chainargos/the-architect"]
 
-[[workspaces.chainargos.mounts]]
-src = "/Users/donbeave/Projects/chainargos/chainargos"
-dst = "/Users/donbeave/Projects/chainargos/chainargos"
+[[workspaces.big-monorepo.mounts]]
+src = "/Users/donbeave/Projects/chainargos/big-monorepo"
+dst = "/Users/donbeave/Projects/chainargos/big-monorepo"
 
-[[workspaces.chainargos.mounts]]
+[[workspaces.big-monorepo.mounts]]
 src = "/tmp/cache"
 dst = "/workspace/cache"
 readonly = true
@@ -337,7 +337,7 @@ Exact runtime mechanics can be finalized during implementation, but this behavio
 ### Fastest Path
 
 ```bash
-cd ~/Projects/chainargos/chainargos
+cd ~/Projects/chainargos/big-monorepo
 jackin launch
 ```
 
@@ -352,7 +352,7 @@ Behavior:
 ### Explicit Saved Workspace
 
 ```bash
-jackin load agent-smith -w chainargos
+jackin load agent-smith -w big-monorepo
 ```
 
 Behavior:
