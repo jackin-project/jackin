@@ -5,13 +5,97 @@ use crate::instance::{next_container_name, AgentState};
 use crate::paths::JackinPaths;
 use crate::repo::{validate_agent_repo, CachedRepo};
 use crate::selector::ClassSelector;
+use crate::tui;
+
+pub struct LoadOptions {
+    pub no_intro: bool,
+    pub debug: bool,
+}
+
+impl Default for LoadOptions {
+    fn default() -> Self {
+        Self {
+            no_intro: true,
+            debug: false,
+        }
+    }
+}
+
+struct GitIdentity {
+    user_name: String,
+    user_email: String,
+}
+
+fn load_git_identity() -> GitIdentity {
+    let user_name = std::process::Command::new("git")
+        .args(["config", "user.name"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    let user_email = std::process::Command::new("git")
+        .args(["config", "user.email"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    GitIdentity {
+        user_name,
+        user_email,
+    }
+}
+
+fn build_config_rows(
+    agent_display_name: &str,
+    container_name: &str,
+    repo_dir: &std::path::Path,
+    git: &GitIdentity,
+    image: &str,
+    dind: &str,
+) -> Vec<(String, String)> {
+    let mut rows = vec![
+        ("identity".to_string(), agent_display_name.to_string()),
+        ("container".to_string(), container_name.to_string()),
+        ("repository".to_string(), repo_dir.display().to_string()),
+    ];
+
+    if !git.user_name.is_empty() {
+        rows.push((
+            "operator".to_string(),
+            if git.user_email.is_empty() {
+                git.user_name.clone()
+            } else {
+                format!("{} <{}>", git.user_name, git.user_email)
+            },
+        ));
+    }
+
+    rows.push(("image".to_string(), image.to_string()));
+    rows.push(("dind".to_string(), dind.to_string()));
+    rows
+}
 
 pub fn load_agent(
     paths: &JackinPaths,
     config: &mut AppConfig,
     selector: &ClassSelector,
     runner: &mut impl CommandRunner,
+    opts: &LoadOptions,
 ) -> anyhow::Result<()> {
+    let git = load_git_identity();
+
+    // Matrix intro
+    if !opts.no_intro {
+        let intro_name = if git.user_name.is_empty() {
+            "Neo"
+        } else {
+            &git.user_name
+        };
+        tui::matrix_intro(intro_name);
+    }
+
     let source = config.resolve_or_register(selector, paths)?;
 
     let cached_repo = CachedRepo::new(paths, selector);
@@ -50,14 +134,56 @@ pub fn load_agent(
     let network = format!("{container_name}-net");
     let dind = format!("{container_name}-dind");
 
+    let agent_display_name = validated_repo.manifest.display_name(&selector.name);
+
+    // Set terminal title
+    tui::set_terminal_title(&agent_display_name);
+
+    // Configuration summary
+    let config_rows = build_config_rows(
+        &agent_display_name,
+        &container_name,
+        &cached_repo.repo_dir,
+        &git,
+        &image,
+        &dind,
+    );
+    eprintln!();
+    tui::print_config_table(&config_rows);
+    eprintln!();
+
+    let mut step = 1u32;
+
     let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
     let load_result = (|| -> anyhow::Result<()> {
+        // Step 1: Build Docker image
+        tui::step_shimmer(step, "Building Docker image");
+        step += 1;
+        runner.run(
+            "docker",
+            &[
+                "build".into(),
+                "-t".into(),
+                image.clone(),
+                "-f".into(),
+                build.dockerfile_path.display().to_string(),
+                build.context_dir.display().to_string(),
+            ],
+            None,
+        )?;
+
+        // Step 2: Create Docker network
+        tui::step_shimmer(step, "Creating Docker network");
+        step += 1;
         runner.run(
             "docker",
             &["network".into(), "create".into(), network.clone()],
             None,
         )?;
 
+        // Step 3: Start Docker-in-Docker
+        tui::step_shimmer(step, "Starting Docker-in-Docker container");
+        step += 1;
         runner.run(
             "docker",
             &[
@@ -75,18 +201,10 @@ pub fn load_agent(
 
         wait_for_dind(&dind, runner)?;
 
-        runner.run(
-            "docker",
-            &[
-                "build".into(),
-                "-t".into(),
-                image.clone(),
-                "-f".into(),
-                build.dockerfile_path.display().to_string(),
-                build.context_dir.display().to_string(),
-            ],
-            None,
-        )?;
+        // Step 4: Launch agent
+        tui::step_shimmer(step, "Mounting volumes");
+
+        tui::print_deploying(&agent_display_name);
 
         runner.run(
             "docker",
@@ -131,13 +249,29 @@ pub fn load_agent(
                 Ok(())
             } else {
                 cleanup.run(runner);
+                render_exit(&agent_display_name, runner, opts);
                 Ok(())
             }
         }
         Err(error) => {
             cleanup.run(runner);
+            render_exit(&agent_display_name, runner, opts);
             Err(error)
         }
+    }
+}
+
+fn render_exit(
+    agent_display_name: &str,
+    runner: &mut impl CommandRunner,
+    opts: &LoadOptions,
+) {
+    tui::clear_screen();
+    let remaining = list_running_agent_names(runner).unwrap_or_default();
+    if !opts.no_intro {
+        tui::matrix_outro(agent_display_name, &remaining);
+    } else {
+        tui::simple_outro(agent_display_name, &remaining);
     }
 }
 
@@ -416,7 +550,7 @@ mod tests {
         )
         .unwrap();
 
-        load_agent(&paths, &mut config, &selector, &mut runner).unwrap();
+        load_agent(&paths, &mut config, &selector, &mut runner, &LoadOptions::default()).unwrap();
 
         assert!(std::fs::read_to_string(&paths.config_file)
             .unwrap()
@@ -602,7 +736,7 @@ mod tests {
         )
         .unwrap();
 
-        load_agent(&paths, &mut config, &selector, &mut runner).unwrap();
+        load_agent(&paths, &mut config, &selector, &mut runner, &LoadOptions::default()).unwrap();
 
         assert!(runner
             .recorded
@@ -647,7 +781,7 @@ mod tests {
         )
         .unwrap();
 
-        let error = load_agent(&paths, &mut config, &selector, &mut runner).unwrap_err();
+        let error = load_agent(&paths, &mut config, &selector, &mut runner, &LoadOptions::default()).unwrap_err();
 
         assert!(error.to_string().contains("docker run -it --name jackin-agent-smith"));
         assert!(runner.recorded.iter().any(|call| call == "docker rm -f jackin-agent-smith"));

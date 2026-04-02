@@ -9,7 +9,15 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
-    Load { selector: String },
+    Load {
+        selector: String,
+        /// Skip the Matrix intro/outro animations
+        #[arg(long, default_value_t = false)]
+        no_intro: bool,
+        /// Show verbose output (e.g. Docker build logs)
+        #[arg(long, default_value_t = false)]
+        debug: bool,
+    },
     Hardline { container: String },
     Eject {
         selector: String,
@@ -37,6 +45,8 @@ mod tests {
             cli.command,
             Command::Load {
                 selector: "agent-smith".to_string(),
+                no_intro: false,
+                debug: false,
             }
         );
     }
