@@ -1,7 +1,27 @@
+use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
 
+const HELP_STYLES: Styles = Styles::styled()
+    .header(AnsiColor::BrightGreen.on_default().effects(Effects::BOLD))
+    .usage(AnsiColor::BrightGreen.on_default().effects(Effects::BOLD))
+    .literal(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .placeholder(AnsiColor::Green.on_default())
+    .valid(AnsiColor::BrightGreen.on_default())
+    .invalid(AnsiColor::Red.on_default().effects(Effects::BOLD))
+    .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
+
+const BANNER: &str = r#"
+    │ │╷│ │╷│ ╷  │╷│ │╷│ │╷│
+    │ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│
+    ╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵
+               ╵
+          j a c k i n
+       operator terminal
+"#;
+
+/// Send agents into the Matrix
 #[derive(Debug, Parser)]
-#[command(name = "jackin", version, about = " Claude agent operator")]
+#[command(name = "jackin", version, styles = HELP_STYLES, before_help = BANNER)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -9,29 +29,44 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
+    /// Jack an agent into the Matrix
     Load {
+        /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
         selector: String,
-        /// Skip the Matrix intro/outro animations
+        /// Bypass the construct sequence
         #[arg(long, default_value_t = false)]
         no_intro: bool,
-        /// Show verbose output (e.g. Docker build logs)
+        /// Show raw signal output
         #[arg(long, default_value_t = false)]
         debug: bool,
     },
-    Hardline { container: String },
+    /// Reattach to a running agent
+    Hardline {
+        /// Container name to reattach to
+        container: String,
+    },
+    /// Pull an agent out of the Matrix
     Eject {
+        /// Agent class selector or container name
         selector: String,
+        /// Pull every instance of this class
         #[arg(long)]
         all: bool,
+        /// Delete persisted state after ejection
         #[arg(long)]
         purge: bool,
     },
+    /// Pull every agent out
     Exile,
+    /// Delete persisted state for an agent class
     Purge {
+        /// Agent class selector
         selector: String,
+        /// Delete state for every instance of this class
         #[arg(long)]
         all: bool,
     },
+    /// Operator configuration
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
@@ -126,5 +161,21 @@ mod tests {
                 debug: false,
             }
         );
+    }
+
+    #[test]
+    fn help_contains_banner_and_matrix_descriptions() {
+        let err = Cli::try_parse_from(["jackin", "--help"]).unwrap_err();
+        let help = err.to_string();
+        assert!(help.contains("j a c k i n"), "banner missing");
+        assert!(help.contains("operator terminal"), "banner tagline missing");
+        assert!(help.contains("Send agents into the Matrix"), "about text missing");
+    }
+
+    #[test]
+    fn load_help_contains_matrix_description() {
+        let err = Cli::try_parse_from(["jackin", "load", "--help"]).unwrap_err();
+        let help = err.to_string();
+        assert!(help.contains("Jack an agent into the Matrix"), "load description missing");
     }
 }
