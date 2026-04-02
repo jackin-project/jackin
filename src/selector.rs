@@ -23,7 +23,7 @@ pub enum SelectorError {
 impl ClassSelector {
     pub fn new(namespace: Option<&str>, name: &str) -> Self {
         Self {
-            namespace: namespace.map(|value| value.to_string()),
+            namespace: namespace.map(ToString::to_string),
             name: name.to_string(),
         }
     }
@@ -51,10 +51,10 @@ impl ClassSelector {
     }
 
     pub fn key(&self) -> String {
-        match &self.namespace {
-            Some(namespace) => format!("{namespace}/{}", self.name),
-            None => self.name.clone(),
-        }
+        self.namespace.as_ref().map_or_else(
+            || self.name.clone(),
+            |namespace| format!("{namespace}/{}", self.name),
+        )
     }
 }
 
