@@ -60,7 +60,35 @@ fn random_char(seed: &mut u64) -> char {
     RAIN_CHARS[(xorshift(seed) as usize) % RAIN_CHARS.len()] as char
 }
 
-fn digital_rain(duration_ms: u64) {
+const REVEAL_BANNER: &[&str] = &[
+    "\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2577}  \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502} \u{2502}\u{2577}\u{2502}",
+    "\u{2502} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2575} \u{2577} \u{2575}\u{2502} \u{2502}\u{2575}\u{2502} \u{2502}\u{2575}\u{2502}",
+    "\u{2575}  \u{2575} \u{2575} \u{2575}  \u{2502}  \u{2575} \u{2575} \u{2575} \u{2575} \u{2575}",
+    "           \u{2575}",
+    "      j a c k i n",
+    "   operator terminal",
+];
+
+fn banner_grid(banner: &[&str], cols: usize, rows: usize) -> Vec<Vec<Option<char>>> {
+    let banner_height = banner.len();
+    let banner_width = banner.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let offset_row = (rows.saturating_sub(banner_height)) / 2;
+    let offset_col = (cols.saturating_sub(banner_width)) / 2;
+
+    let mut grid = vec![vec![None; cols]; rows];
+    for (i, line) in banner.iter().enumerate() {
+        for (j, ch) in line.chars().enumerate() {
+            let r = offset_row + i;
+            let c = offset_col + j;
+            if r < rows && c < cols && ch != ' ' {
+                grid[r][c] = Some(ch);
+            }
+        }
+    }
+    grid
+}
+
+fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
     let cols = 70;
     let rows = 18;
     let frame_ms = 60;
@@ -213,7 +241,7 @@ fn glitch_text(text: &str, color: (u8, u8, u8)) {
 pub fn matrix_intro(operator_name: &str) {
     clear_screen();
 
-    digital_rain(2000);
+    digital_rain(2000, Some(REVEAL_BANNER));
 
     clear_screen();
     std::thread::sleep(std::time::Duration::from_millis(300));
@@ -241,7 +269,7 @@ pub fn matrix_intro(operator_name: &str) {
 pub fn matrix_outro(agent_name: &str, remaining: &[String]) {
     clear_screen();
 
-    digital_rain(1500);
+    digital_rain(1500, None);
 
     clear_screen();
     std::thread::sleep(std::time::Duration::from_millis(300));
