@@ -98,11 +98,19 @@ pub fn load_agent(
 
     let source = config.resolve_or_register(selector, paths)?;
 
+    let mut step = 1u32;
+
+    // Step 1: Resolve agent identity (clone or update repo)
     let cached_repo = CachedRepo::new(paths, selector);
     std::fs::create_dir_all(cached_repo.repo_dir.parent().unwrap())?;
 
+    if !opts.no_intro {
+        tui::step_shimmer(step, "Resolving agent identity");
+    }
+    step += 1;
+
     if cached_repo.repo_dir.exists() {
-        runner.run(
+        runner.capture(
             "git",
             &[
                 "-C".into(),
@@ -113,7 +121,7 @@ pub fn load_agent(
             None,
         )?;
     } else {
-        runner.run(
+        runner.capture(
             "git",
             &[
                 "clone".into(),
@@ -158,57 +166,66 @@ pub fn load_agent(
     tui::print_config_table(&config_rows);
     eprintln!();
 
-    let mut step = 1u32;
-
     let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
     let load_result = (|| -> anyhow::Result<()> {
-        // Step 1: Build Docker image
-        tui::step_shimmer(step, "Building Docker image");
+        // Step 2: Build Docker image
+        if !opts.no_intro {
+            tui::step_shimmer(step, "Building Docker image");
+        }
         step += 1;
-        runner.run(
-            "docker",
-            &[
-                "build".into(),
-                "-t".into(),
-                image.clone(),
-                "-f".into(),
-                build.dockerfile_path.display().to_string(),
-                build.context_dir.display().to_string(),
-            ],
-            None,
-        )?;
+        let build_args = [
+            "build".into(),
+            "-t".into(),
+            image.clone(),
+            "-f".into(),
+            build.dockerfile_path.display().to_string(),
+            build.context_dir.display().to_string(),
+        ];
+        if opts.debug {
+            runner.run("docker", &build_args, None)?;
+        } else {
+            runner.capture("docker", &build_args, None)?;
+        }
 
-        // Step 2: Create Docker network
-        tui::step_shimmer(step, "Creating Docker network");
+        // Step 3: Create Docker network
+        if !opts.no_intro {
+            tui::step_shimmer(step, "Creating Docker network");
+        }
         step += 1;
-        runner.run(
-            "docker",
-            &["network".into(), "create".into(), network.clone()],
-            None,
-        )?;
+        let network_args = ["network".into(), "create".into(), network.clone()];
+        if opts.debug {
+            runner.run("docker", &network_args, None)?;
+        } else {
+            runner.capture("docker", &network_args, None)?;
+        }
 
-        // Step 3: Start Docker-in-Docker
-        tui::step_shimmer(step, "Starting Docker-in-Docker container");
+        // Step 4: Start Docker-in-Docker
+        if !opts.no_intro {
+            tui::step_shimmer(step, "Starting Docker-in-Docker container");
+        }
         step += 1;
-        runner.run(
-            "docker",
-            &[
-                "run".into(),
-                "-d".into(),
-                "--name".into(),
-                dind.clone(),
-                "--network".into(),
-                network.clone(),
-                "--privileged".into(),
-                "docker:dind".into(),
-            ],
-            None,
-        )?;
+        let dind_args = [
+            "run".into(),
+            "-d".into(),
+            "--name".into(),
+            dind.clone(),
+            "--network".into(),
+            network.clone(),
+            "--privileged".into(),
+            "docker:dind".into(),
+        ];
+        if opts.debug {
+            runner.run("docker", &dind_args, None)?;
+        } else {
+            runner.capture("docker", &dind_args, None)?;
+        }
 
-        wait_for_dind(&dind, runner)?;
+        wait_for_dind(&dind, runner, opts.debug)?;
 
-        // Step 4: Launch agent
-        tui::step_shimmer(step, "Mounting volumes");
+        // Step 5: Launch agent
+        if !opts.no_intro {
+            tui::step_shimmer(step, "Mounting volumes");
+        }
 
         tui::print_deploying(&agent_display_name);
 
@@ -293,22 +310,25 @@ pub fn hardline_agent(
     runner.run("docker", &["attach".into(), container_name.to_string()], None)
 }
 
-fn wait_for_dind(dind_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
+fn wait_for_dind(dind_name: &str, runner: &mut impl CommandRunner, debug: bool) -> anyhow::Result<()> {
     for _ in 0..30 {
-        if runner
-            .run(
-                "docker",
-                &[
-                    "exec".into(),
-                    dind_name.to_string(),
-                    "docker".into(),
-                    "info".into(),
-                ],
-                None,
-            )
-            .is_ok()
-        {
+        let result = runner.capture(
+            "docker",
+            &[
+                "exec".into(),
+                dind_name.to_string(),
+                "docker".into(),
+                "info".into(),
+            ],
+            None,
+        );
+        if result.is_ok() {
             return Ok(());
+        }
+        if debug {
+            if let Err(ref e) = result {
+                eprintln!("  DinD not ready: {e}");
+            }
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
