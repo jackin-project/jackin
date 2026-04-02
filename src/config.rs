@@ -275,18 +275,6 @@ impl AppConfig {
             .collect()
     }
 
-    pub fn global_mounts(&self) -> Vec<MountConfig> {
-        self.docker
-            .mounts
-            .0
-            .iter()
-            .filter_map(|(_, entry)| match entry {
-                MountEntry::Mount(mount) => Some(mount.clone()),
-                MountEntry::Scoped(_) => None,
-            })
-            .collect()
-    }
-
     fn default_config() -> Self {
         let mut agents = BTreeMap::new();
         agents.insert(
