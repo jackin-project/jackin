@@ -497,6 +497,53 @@ pub fn step_shimmer(n: u32, text: &str) {
     eprintln!("{}", text.color(rgb(PHOSPHOR_DIM)).bold());
 }
 
+/// Minimal step message without animation (used in `--no-intro` mode).
+pub fn step_quiet(n: u32, text: &str) {
+    let prefix = format!("  {n:>2}.  ");
+    let mg = rgb(PHOSPHOR_GREEN);
+    eprintln!(
+        "{}{}",
+        prefix.color(mg).bold(),
+        text.color(rgb(PHOSPHOR_DIM)).bold()
+    );
+}
+
+/// Display a spinner while waiting, returning when `poll` returns `Ok(())`.
+/// `poll` is called up to `max_attempts` times with `interval` between calls.
+pub fn spin_wait<F>(
+    message: &str,
+    max_attempts: u32,
+    interval: std::time::Duration,
+    mut poll: F,
+) -> anyhow::Result<()>
+where
+    F: FnMut() -> anyhow::Result<()>,
+{
+    const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let mg = rgb(PHOSPHOR_GREEN);
+
+    for attempt in 0..max_attempts {
+        if poll().is_ok() {
+            // Clear spinner line
+            eprint!("\r\x1b[2K");
+            let _ = io::stderr().flush();
+            return Ok(());
+        }
+        let frame = FRAMES[attempt as usize % FRAMES.len()];
+        eprint!(
+            "\r  {}  {}",
+            frame.color(mg).bold(),
+            message.color(rgb(PHOSPHOR_DIM)).bold()
+        );
+        let _ = io::stderr().flush();
+        std::thread::sleep(interval);
+    }
+    // Clear spinner line before bailing
+    eprint!("\r\x1b[2K");
+    let _ = io::stderr().flush();
+    anyhow::bail!("timed out: {message}")
+}
+
 pub fn step_fail(msg: &str) {
     eprintln!("       {}", msg.color(rgb(ROSE)));
 }

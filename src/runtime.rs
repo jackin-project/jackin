@@ -82,19 +82,78 @@ fn load_host_identity() -> HostIdentity {
     }
 }
 
+/// Extract `owner/repo` from a git remote URL.
+fn parse_repo_name(url: &str) -> Option<String> {
+    let url = url.trim();
+    let stripped = url.strip_suffix(".git").unwrap_or(url);
+    // HTTPS: https://github.com/owner/repo
+    if let Some(rest) = stripped
+        .strip_prefix("https://")
+        .or_else(|| stripped.strip_prefix("http://"))
+    {
+        return rest.find('/').map(|i| rest[i + 1..].to_string());
+    }
+    // SSH: git@github.com:owner/repo
+    stripped
+        .rsplit_once(':')
+        .map(|(_, p)| p.to_string())
+}
+
+/// Derive a short repository name from a git remote URL (e.g. `donbeave/jackin`).
+fn git_repo_name(dir: &std::path::Path) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["-C", &dir.display().to_string(), "remote", "get-url", "origin"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    parse_repo_name(&url)
+}
+
+/// Get the current branch name for a git directory.
+fn git_branch(dir: &std::path::Path) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["-C", &dir.display().to_string(), "rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if branch.is_empty() { None } else { Some(branch) }
+}
+
+/// Check whether a path is inside a git work tree.
+fn is_git_dir(dir: &std::path::Path) -> bool {
+    std::process::Command::new("git")
+        .args(["-C", &dir.display().to_string(), "rev-parse", "--is-inside-work-tree"])
+        .output()
+        .ok()
+        .is_some_and(|o| o.status.success())
+}
+
 fn build_config_rows(
     agent_display_name: &str,
     container_name: &str,
-    repo_dir: &std::path::Path,
+    workspace: &crate::workspace::ResolvedWorkspace,
     git: &GitIdentity,
     image: &str,
-    dind: &str,
 ) -> Vec<(String, String)> {
     let mut rows = vec![
         ("identity".to_string(), agent_display_name.to_string()),
         ("container".to_string(), container_name.to_string()),
-        ("repository".to_string(), repo_dir.display().to_string()),
     ];
+
+    // Show repository/branch for git directories, or workspace name for saved workspaces
+    let workdir = std::path::Path::new(&workspace.label);
+    if workdir.is_absolute() && is_git_dir(workdir) {
+        if let Some(repo_name) = git_repo_name(workdir) {
+            rows.push(("repository".to_string(), repo_name));
+        }
+        if let Some(branch) = git_branch(workdir) {
+            rows.push(("branch".to_string(), branch));
+        }
+    } else {
+        rows.push(("workspace".to_string(), workspace.label.clone()));
+    }
 
     if !git.user_name.is_empty() {
         rows.push((
@@ -108,7 +167,6 @@ fn build_config_rows(
     }
 
     rows.push(("image".to_string(), image.to_string()));
-    rows.push(("dind".to_string(), dind.to_string()));
     rows
 }
 
@@ -142,7 +200,9 @@ pub fn load_agent(
     let cached_repo = CachedRepo::new(paths, selector);
     std::fs::create_dir_all(cached_repo.repo_dir.parent().unwrap())?;
 
-    if !opts.no_intro {
+    if opts.no_intro {
+        tui::step_quiet(step, "Resolving agent identity");
+    } else {
         tui::step_shimmer(step, "Resolving agent identity");
     }
     step += 1;
@@ -192,10 +252,9 @@ pub fn load_agent(
     let config_rows = build_config_rows(
         &agent_display_name,
         &container_name,
-        &cached_repo.repo_dir,
+        workspace,
         &git,
         &image,
-        &dind,
     );
     eprintln!();
     tui::print_config_table(&config_rows);
@@ -204,7 +263,9 @@ pub fn load_agent(
     let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
     let load_result = (|| -> anyhow::Result<()> {
         // Step 2: Build Docker image
-        if !opts.no_intro {
+        if opts.no_intro {
+            tui::step_quiet(step, "Building Docker image");
+        } else {
             tui::step_shimmer(step, "Building Docker image");
         }
         step += 1;
@@ -220,14 +281,12 @@ pub fn load_agent(
             build.dockerfile_path.display().to_string(),
             build.context_dir.display().to_string(),
         ];
-        if opts.debug {
-            runner.run("docker", &build_args, None)?;
-        } else {
-            runner.capture("docker", &build_args, None)?;
-        }
+        runner.run("docker", &build_args, None)?;
 
         // Step 3: Create Docker network
-        if !opts.no_intro {
+        if opts.no_intro {
+            tui::step_quiet(step, "Creating Docker network");
+        } else {
             tui::step_shimmer(step, "Creating Docker network");
         }
         step += 1;
@@ -239,7 +298,9 @@ pub fn load_agent(
         }
 
         // Step 4: Start Docker-in-Docker
-        if !opts.no_intro {
+        if opts.no_intro {
+            tui::step_quiet(step, "Starting Docker-in-Docker container");
+        } else {
             tui::step_shimmer(step, "Starting Docker-in-Docker container");
         }
         step += 1;
@@ -262,7 +323,9 @@ pub fn load_agent(
         wait_for_dind(&dind, runner, opts.debug)?;
 
         // Step 5: Launch agent
-        if !opts.no_intro {
+        if opts.no_intro {
+            tui::step_quiet(step, "Mounting volumes");
+        } else {
             tui::step_shimmer(step, "Mounting volumes");
         }
 
@@ -352,27 +415,28 @@ fn wait_for_dind(
     runner: &mut impl CommandRunner,
     debug: bool,
 ) -> anyhow::Result<()> {
-    for _ in 0..30 {
-        let result = runner.capture(
-            "docker",
-            &[
-                "exec".into(),
-                dind_name.to_string(),
-                "docker".into(),
-                "info".into(),
-            ],
-            None,
-        );
-        if result.is_ok() {
-            return Ok(());
-        }
-        if debug && let Err(ref e) = result {
-            eprintln!("  DinD not ready: {e}");
-        }
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
-
-    anyhow::bail!("timed out waiting for Docker-in-Docker sidecar {dind_name}")
+    tui::spin_wait(
+        "Waiting for Docker-in-Docker to be ready",
+        30,
+        std::time::Duration::from_secs(1),
+        || {
+            let result = runner.capture(
+                "docker",
+                &[
+                    "exec".into(),
+                    dind_name.to_string(),
+                    "docker".into(),
+                    "info".into(),
+                ],
+                None,
+            );
+            if debug && let Err(ref e) = result {
+                eprintln!("  DinD not ready: {e}");
+            }
+            result.map(|_| ())
+        },
+    )
+    .map_err(|_| anyhow::anyhow!("timed out waiting for Docker-in-Docker sidecar {dind_name}"))
 }
 
 pub fn list_running_agent_names(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<String>> {
@@ -521,6 +585,7 @@ use std::collections::VecDeque;
 #[derive(Default)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,
+    pub run_recorded: Vec<String>,
     pub fail_on: Vec<String>,
     pub fail_with: Vec<(String, String)>,
     pub capture_queue: VecDeque<String>,
@@ -546,6 +611,7 @@ impl CommandRunner for FakeRunner {
     ) -> anyhow::Result<()> {
         let command = format!("{} {}", program, args.join(" "));
         self.recorded.push(command.clone());
+        self.run_recorded.push(command.clone());
         if let Some((_, message)) = self
             .fail_with
             .iter()
@@ -937,6 +1003,13 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
                 |call| call.contains("docker build ") && call.contains("-t jackin-agent-smith")
             )
         );
+        // Docker build always streams output via run (not capture)
+        assert!(
+            runner
+                .run_recorded
+                .iter()
+                .any(|call| call.contains("docker build "))
+        );
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
         }));
@@ -1087,6 +1160,14 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
             .unwrap();
         assert!(build_call.contains("--build-arg JACKIN_HOST_UID="));
         assert!(build_call.contains("--build-arg JACKIN_HOST_GID="));
+
+        // Docker build always streams output via run (not capture)
+        assert!(
+            runner
+                .run_recorded
+                .iter()
+                .any(|call| call.contains("docker build "))
+        );
     }
 
     #[test]
@@ -1148,5 +1229,159 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
                 .iter()
                 .any(|call| call == "docker network rm jackin-agent-smith-net")
         );
+    }
+
+    #[test]
+    fn load_agent_checks_dind_readiness() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        // DinD readiness check polls via docker exec
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker exec jackin-agent-smith-dind docker info"))
+        );
+
+        // DinD container is started before the readiness check
+        let dind_start = runner
+            .recorded
+            .iter()
+            .position(|call| call.contains("docker run -d --name jackin-agent-smith-dind"))
+            .unwrap();
+        let dind_check = runner
+            .recorded
+            .iter()
+            .position(|call| call.contains("docker exec jackin-agent-smith-dind docker info"))
+            .unwrap();
+        assert!(dind_start < dind_check);
+    }
+
+    #[test]
+    fn parse_repo_name_extracts_owner_repo_from_ssh_url() {
+        assert_eq!(
+            parse_repo_name("git@github.com:donbeave/jackin.git"),
+            Some("donbeave/jackin".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_repo_name_extracts_owner_repo_from_https_url() {
+        assert_eq!(
+            parse_repo_name("https://github.com/donbeave/jackin.git"),
+            Some("donbeave/jackin".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_repo_name_handles_url_without_git_suffix() {
+        assert_eq!(
+            parse_repo_name("https://github.com/donbeave/jackin"),
+            Some("donbeave/jackin".to_string())
+        );
+        assert_eq!(
+            parse_repo_name("git@github.com:donbeave/jackin"),
+            Some("donbeave/jackin".to_string())
+        );
+    }
+
+    #[test]
+    fn config_rows_show_repo_and_branch_for_git_directory() {
+        // Use the jackin repo itself as a known git directory
+        let cwd = std::env::current_dir().unwrap();
+        let workspace = crate::workspace::ResolvedWorkspace {
+            label: cwd.display().to_string(),
+            workdir: cwd.display().to_string(),
+            mounts: vec![],
+        };
+        let git = GitIdentity {
+            user_name: String::new(),
+            user_email: String::new(),
+        };
+
+        let rows = build_config_rows("Agent", "jackin-agent", &workspace, &git, "img");
+
+        let labels: Vec<&str> = rows.iter().map(|(l, _)| l.as_str()).collect();
+        assert!(labels.contains(&"repository"));
+        assert!(labels.contains(&"branch"));
+        assert!(!labels.contains(&"workspace"));
+        assert!(!labels.contains(&"dind"));
+    }
+
+    #[test]
+    fn config_rows_show_workspace_for_saved_workspace() {
+        let workspace = crate::workspace::ResolvedWorkspace {
+            label: "big-monorepo".to_string(),
+            workdir: "/workspace/project".to_string(),
+            mounts: vec![],
+        };
+        let git = GitIdentity {
+            user_name: "Neo".to_string(),
+            user_email: "neo@matrix.org".to_string(),
+        };
+
+        let rows = build_config_rows("Agent", "jackin-agent", &workspace, &git, "img");
+
+        let labels: Vec<&str> = rows.iter().map(|(l, _)| l.as_str()).collect();
+        assert!(labels.contains(&"workspace"));
+        assert!(!labels.contains(&"repository"));
+        assert!(!labels.contains(&"branch"));
+        assert!(!labels.contains(&"dind"));
+
+        let ws_value = rows.iter().find(|(l, _)| l == "workspace").unwrap();
+        assert_eq!(ws_value.1, "big-monorepo");
+    }
+
+    #[test]
+    fn config_rows_omit_dind() {
+        let workspace = crate::workspace::ResolvedWorkspace {
+            label: "test".to_string(),
+            workdir: "/workspace".to_string(),
+            mounts: vec![],
+        };
+        let git = GitIdentity {
+            user_name: String::new(),
+            user_email: String::new(),
+        };
+
+        let rows = build_config_rows("Agent", "jackin-agent", &workspace, &git, "img");
+
+        let labels: Vec<&str> = rows.iter().map(|(l, _)| l.as_str()).collect();
+        assert!(!labels.contains(&"dind"));
     }
 }

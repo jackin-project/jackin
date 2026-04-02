@@ -155,9 +155,17 @@ pub fn resolve_load_workspace(
     cwd: &Path,
     input: LoadWorkspaceInput,
 ) -> anyhow::Result<ResolvedWorkspace> {
-    let workspace = match input {
-        LoadWorkspaceInput::CurrentDir => current_dir_workspace(cwd)?,
-        LoadWorkspaceInput::Path(path) => current_dir_workspace(&path)?,
+    let (workspace, label) = match input {
+        LoadWorkspaceInput::CurrentDir => {
+            let ws = current_dir_workspace(cwd)?;
+            let label = ws.workdir.clone();
+            (ws, label)
+        }
+        LoadWorkspaceInput::Path(path) => {
+            let ws = current_dir_workspace(&path)?;
+            let label = ws.workdir.clone();
+            (ws, label)
+        }
         LoadWorkspaceInput::Saved(name) => {
             let workspace = config
                 .workspaces
@@ -175,14 +183,20 @@ pub fn resolve_load_workspace(
                     selector.key()
                 );
             }
-            workspace
+            (workspace, name)
         }
-        LoadWorkspaceInput::Custom { mounts, workdir } => WorkspaceConfig {
-            workdir,
-            mounts,
-            allowed_agents: vec![],
-            default_agent: None,
-        },
+        LoadWorkspaceInput::Custom { mounts, workdir } => {
+            let label = workdir.clone();
+            (
+                WorkspaceConfig {
+                    workdir,
+                    mounts,
+                    allowed_agents: vec![],
+                    default_agent: None,
+                },
+                label,
+            )
+        }
     };
 
     validate_workspace_config("runtime", &workspace)?;
@@ -202,7 +216,7 @@ pub fn resolve_load_workspace(
     }
 
     Ok(ResolvedWorkspace {
-        label: workspace.workdir.clone(),
+        label,
         workdir: workspace.workdir,
         mounts,
     })
@@ -268,6 +282,46 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("is not allowed by workspace"));
+    }
+
+    #[test]
+    fn saved_workspace_label_uses_workspace_name() {
+        let temp = tempdir().unwrap();
+        let mount_src = temp.path().join("project");
+        std::fs::create_dir_all(&mount_src).unwrap();
+
+        let mut config = crate::config::AppConfig::default();
+        config.agents.insert(
+            "agent-smith".to_string(),
+            crate::config::AgentSource {
+                git: "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
+            },
+        );
+        config.workspaces.insert(
+            "big-monorepo".to_string(),
+            WorkspaceConfig {
+                workdir: "/workspace/project".to_string(),
+                mounts: vec![MountConfig {
+                    src: mount_src.display().to_string(),
+                    dst: "/workspace/project".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec![],
+                default_agent: None,
+            },
+        );
+
+        let cwd = std::env::temp_dir();
+        let resolved = resolve_load_workspace(
+            &config,
+            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            &cwd,
+            LoadWorkspaceInput::Saved("big-monorepo".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.label, "big-monorepo");
+        assert_eq!(resolved.workdir, "/workspace/project");
     }
 
     #[test]
