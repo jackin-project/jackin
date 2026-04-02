@@ -12,7 +12,7 @@ pub struct DerivedBuildContext {
 
 pub fn render_derived_dockerfile(base_dockerfile: &str) -> String {
     format!(
-        "{base_dockerfile}\nUSER claude\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version\nUSER root\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh\nRUN chmod +x /home/claude/entrypoint.sh\nWORKDIR /workspace\nUSER claude\nENTRYPOINT [\"/home/claude/entrypoint.sh\"]\n"
+        "{base_dockerfile}\nUSER root\nARG JACKIN_HOST_UID=1000\nARG JACKIN_HOST_GID=1000\nRUN current_gid=\"$(id -g claude)\" && current_uid=\"$(id -u claude)\" && if [ \"$current_gid\" != \"$JACKIN_HOST_GID\" ]; then groupmod -o -g \"$JACKIN_HOST_GID\" claude && usermod -g \"$JACKIN_HOST_GID\" claude; fi && if [ \"$current_uid\" != \"$JACKIN_HOST_UID\" ]; then usermod -o -u \"$JACKIN_HOST_UID\" claude; fi && chown -R claude:claude /home/claude\nUSER claude\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version\nUSER root\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh\nRUN chmod +x /home/claude/entrypoint.sh\nWORKDIR /workspace\nUSER claude\nENTRYPOINT [\"/home/claude/entrypoint.sh\"]\n"
     )
 }
 
@@ -112,11 +112,23 @@ mod tests {
     #[test]
     fn renders_derived_dockerfile_installs_claude_as_claude_user() {
         let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n");
-        let install = "USER claude\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version";
+        let install =
+            "USER claude\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version";
         let copy = "USER root\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh";
 
         assert!(dockerfile.contains(install));
         assert!(dockerfile.contains(copy));
+    }
+
+    #[test]
+    fn renders_derived_dockerfile_rewrites_claude_uid_and_gid() {
+        let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n");
+
+        assert!(dockerfile.contains("ARG JACKIN_HOST_UID=1000"));
+        assert!(dockerfile.contains("ARG JACKIN_HOST_GID=1000"));
+        assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" claude"));
+        assert!(dockerfile.contains("usermod -g \"$JACKIN_HOST_GID\" claude"));
+        assert!(dockerfile.contains("usermod -o -u \"$JACKIN_HOST_UID\" claude"));
     }
 
     #[test]
@@ -163,7 +175,8 @@ mod tests {
 
         let validated = crate::repo::validate_agent_repo(repo.path()).unwrap();
         let build = create_derived_build_context(repo.path(), &validated).unwrap();
-        let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
+        let dockerignore =
+            std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
         assert!(dockerignore.contains("!.jackin-runtime/"));
         assert!(dockerignore.contains("!.jackin-runtime/entrypoint.sh"));
@@ -185,7 +198,11 @@ mod tests {
         )
         .unwrap();
         std::fs::write(repo.path().join("shared.txt"), "hello\n").unwrap();
-        symlink(repo.path().join("shared.txt"), repo.path().join("linked.txt")).unwrap();
+        symlink(
+            repo.path().join("shared.txt"),
+            repo.path().join("linked.txt"),
+        )
+        .unwrap();
 
         let validated = crate::repo::validate_agent_repo(repo.path()).unwrap();
         let error = create_derived_build_context(repo.path(), &validated)
