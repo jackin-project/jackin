@@ -1,6 +1,6 @@
 use crate::manifest::AgentManifest;
 use crate::paths::JackinPaths;
-use crate::repo_contract::{validate_agent_dockerfile, ValidatedDockerfile};
+use crate::repo_contract::{ValidatedDockerfile, validate_agent_dockerfile};
 use crate::selector::ClassSelector;
 use std::path::{Component, Path, PathBuf};
 
@@ -47,7 +47,10 @@ pub fn validate_agent_repo(repo_dir: &Path) -> anyhow::Result<ValidatedAgentRepo
     })
 }
 
-fn resolve_manifest_dockerfile_path(repo_dir: &Path, manifest: &AgentManifest) -> anyhow::Result<PathBuf> {
+fn resolve_manifest_dockerfile_path(
+    repo_dir: &Path,
+    manifest: &AgentManifest,
+) -> anyhow::Result<PathBuf> {
     let dockerfile = Path::new(&manifest.dockerfile);
 
     if dockerfile.is_absolute() {
@@ -55,7 +58,10 @@ fn resolve_manifest_dockerfile_path(repo_dir: &Path, manifest: &AgentManifest) -
     }
 
     for component in dockerfile.components() {
-        if matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_)) {
+        if matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        ) {
             anyhow::bail!("invalid agent repo: dockerfile path must stay inside the repo");
         }
     }
