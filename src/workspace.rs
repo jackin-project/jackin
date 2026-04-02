@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MountConfig {
@@ -31,7 +31,9 @@ pub struct WorkspaceEdit {
 }
 
 pub fn expand_tilde(path: &str) -> String {
-    if (path == "~" || path.starts_with("~/")) && let Ok(home) = std::env::var("HOME") {
+    if (path == "~" || path.starts_with("~/"))
+        && let Ok(home) = std::env::var("HOME")
+    {
         return path.replacen('~', &home, 1);
     }
 
@@ -101,7 +103,10 @@ pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> any
 
     if let Some(default_agent) = &workspace.default_agent
         && !workspace.allowed_agents.is_empty()
-        && !workspace.allowed_agents.iter().any(|agent| agent == default_agent)
+        && !workspace
+            .allowed_agents
+            .iter()
+            .any(|agent| agent == default_agent)
     {
         anyhow::bail!(
             "workspace {name:?} default_agent must be a member of allowed_agents when allowed_agents is set"
@@ -124,6 +129,87 @@ pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
         }],
         allowed_agents: vec![],
         default_agent: None,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadWorkspaceInput {
+    CurrentDir,
+    Path(PathBuf),
+    Saved(String),
+    Custom {
+        mounts: Vec<MountConfig>,
+        workdir: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedWorkspace {
+    pub label: String,
+    pub workdir: String,
+    pub mounts: Vec<MountConfig>,
+}
+
+pub fn resolve_load_workspace(
+    config: &crate::config::AppConfig,
+    selector: &crate::selector::ClassSelector,
+    cwd: &Path,
+    input: LoadWorkspaceInput,
+) -> anyhow::Result<ResolvedWorkspace> {
+    let workspace = match input {
+        LoadWorkspaceInput::CurrentDir => current_dir_workspace(cwd)?,
+        LoadWorkspaceInput::Path(path) => current_dir_workspace(&path)?,
+        LoadWorkspaceInput::Saved(name) => {
+            let workspace = config
+                .workspaces
+                .get(&name)
+                .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?
+                .clone();
+            if !workspace.allowed_agents.is_empty()
+                && !workspace
+                    .allowed_agents
+                    .iter()
+                    .any(|agent| agent == &selector.key())
+            {
+                anyhow::bail!(
+                    "agent {} is not allowed by workspace {name}",
+                    selector.key()
+                );
+            }
+            workspace
+        }
+        LoadWorkspaceInput::Custom { mounts, workdir } => WorkspaceConfig {
+            workdir,
+            mounts,
+            allowed_agents: vec![],
+            default_agent: None,
+        },
+    };
+
+    validate_workspace_config("runtime", &workspace)?;
+
+    let mut mounts = workspace.mounts.clone();
+    let global_mounts = config
+        .resolve_mounts(selector)
+        .into_iter()
+        .map(|(_, mount)| mount)
+        .collect::<Vec<_>>();
+    validate_mounts(&global_mounts)?;
+
+    for mount in global_mounts {
+        if mounts.iter().any(|existing| existing.dst == mount.dst) {
+            anyhow::bail!(
+                "global mount destination conflicts with workspace destination: {}",
+                mount.dst
+            );
+        }
+        mounts.push(mount);
+    }
+
+    Ok(ResolvedWorkspace {
+        label: workspace.workdir.clone(),
+        workdir: workspace.workdir,
+        mounts,
     })
 }
 
@@ -152,5 +238,40 @@ mod tests {
         );
         assert_eq!(workspace.mounts.len(), 1);
         assert_eq!(workspace.mounts[0].src, workspace.mounts[0].dst);
+    }
+
+    #[test]
+    fn resolves_saved_workspace_and_rejects_disallowed_agent() {
+        let mut config = crate::config::AppConfig::default();
+        config.agents.insert(
+            "agent-smith".to_string(),
+            crate::config::AgentSource {
+                git: "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
+            },
+        );
+        config.workspaces.insert(
+            "big-monorepo".to_string(),
+            WorkspaceConfig {
+                workdir: "/workspace/project".to_string(),
+                mounts: vec![MountConfig {
+                    src: "/tmp/project".to_string(),
+                    dst: "/workspace/project".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec!["agent-smith".to_string()],
+                default_agent: Some("agent-smith".to_string()),
+            },
+        );
+
+        let cwd = std::env::temp_dir();
+        let error = resolve_load_workspace(
+            &config,
+            &crate::selector::ClassSelector::new(None, "neo"),
+            &cwd,
+            LoadWorkspaceInput::Saved("big-monorepo".to_string()),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("is not allowed by workspace"));
     }
 }

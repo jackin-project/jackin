@@ -33,6 +33,18 @@ pub enum Command {
     Load {
         /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
         selector: String,
+        /// Direct path to mount as workspace
+        #[arg(value_name = "PATH", conflicts_with_all = ["workspace", "mounts", "workdir"])]
+        path: Option<String>,
+        /// Saved workspace name
+        #[arg(short = 'w', long = "workspace", conflicts_with_all = ["path", "mounts", "workdir"])]
+        workspace: Option<String>,
+        /// Custom mount spec (src:dst[:ro])
+        #[arg(long = "mount", conflicts_with_all = ["path", "workspace"])]
+        mounts: Vec<String>,
+        /// Container working directory (required with --mount)
+        #[arg(long, requires = "mounts", conflicts_with_all = ["path", "workspace"])]
+        workdir: Option<String>,
         /// Bypass the construct sequence
         #[arg(long, default_value_t = false)]
         no_intro: bool,
@@ -218,14 +230,49 @@ mod tests {
     #[test]
     fn parses_load_command() {
         let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
-        assert_eq!(
+        assert!(matches!(
             cli.command,
             Command::Load {
-                selector: "agent-smith".to_string(),
+                ref selector,
+                path: None,
+                workspace: None,
+                workdir: None,
                 no_intro: false,
                 debug: false,
+                ..
+            } if selector == "agent-smith"
+        ));
+    }
+
+    #[test]
+    fn parses_load_with_workspace_short_flag() {
+        let cli =
+            Cli::try_parse_from(["jackin", "load", "agent-smith", "-w", "big-monorepo"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Load {
+                workspace: Some(_),
+                ..
             }
-        );
+        ));
+    }
+
+    #[test]
+    fn parses_load_with_custom_mounts() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "load",
+            "agent-smith",
+            "--mount",
+            "/tmp/project:/workspace/project",
+            "--mount",
+            "/tmp/cache:/workspace/cache:ro",
+            "--workdir",
+            "/workspace/project",
+        ])
+        .unwrap();
+
+        assert!(matches!(cli.command, Command::Load { .. }));
     }
 
     #[test]
