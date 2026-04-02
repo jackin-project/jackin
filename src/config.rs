@@ -322,6 +322,12 @@ impl AppConfig {
                 git: "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
             },
         );
+        agents.insert(
+            "the-architect".to_string(),
+            AgentSource {
+                git: "git@github.com:donbeave/jackin-the-architect.git".to_string(),
+            },
+        );
         Self {
             agents,
             ..Self::default()
@@ -337,7 +343,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn bootstrap_writes_default_agent_smith_entry() {
+    fn bootstrap_writes_default_agent_entries() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
 
@@ -346,6 +352,10 @@ mod tests {
         assert_eq!(
             config.agents.get("agent-smith").unwrap().git,
             "git@github.com:donbeave/jackin-agent-smith.git"
+        );
+        assert_eq!(
+            config.agents.get("the-architect").unwrap().git,
+            "git@github.com:donbeave/jackin-the-architect.git"
         );
         assert!(paths.config_file.exists());
     }
