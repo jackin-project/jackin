@@ -80,7 +80,7 @@ fn banner_grid(banner: &[&str], cols: usize, rows: usize) -> Vec<Vec<Option<char
         for (j, ch) in line.chars().enumerate() {
             let r = offset_row + i;
             let c = offset_col + j;
-            if r < rows && c < cols && ch != ' ' {
+            if r < rows && c < cols {
                 grid[r][c] = Some(ch);
             }
         }
@@ -222,7 +222,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                         continue;
                     }
                     if let Some(rc) = cell {
-                        rc.age += 1;
+                        rc.age += 3;
                         if age_to_color(rc.age).is_none() {
                             *cell = None;
                         } else if should_mutate(rc.age, &mut seed) {
@@ -240,7 +240,11 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                         && frame >= flip_at[r][c]
                     {
                         locked[r][c] = true;
-                        grid[r][c] = Some(RainCell { ch: *ch, age: 0 });
+                        if *ch == ' ' {
+                            grid[r][c] = None;
+                        } else {
+                            grid[r][c] = Some(RainCell { ch: *ch, age: 0 });
+                        }
                     }
                 }
             }
@@ -273,8 +277,6 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
             std::thread::sleep(std::time::Duration::from_millis(frame_ms));
         }
 
-        // ── Phase 3: Hold ───────────────────────────────────────────────
-        std::thread::sleep(std::time::Duration::from_millis(800));
     }
 
     // Clear rain area
