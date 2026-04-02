@@ -78,6 +78,8 @@ pub enum Command {
         #[arg(long)]
         all: bool,
     },
+    /// Fast interactive launcher
+    Launch,
     /// Manage saved workspaces
     Workspace {
         #[command(subcommand)]
@@ -339,6 +341,12 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn parses_launch_command() {
+        let cli = Cli::try_parse_from(["jackin", "launch"]).unwrap();
+        assert!(matches!(cli.command, Command::Launch));
     }
 
     #[test]
