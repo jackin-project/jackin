@@ -360,6 +360,21 @@ pub fn print_deploying(agent_name: &str) {
     clear_screen();
 }
 
+// ── Logo ─────────────────────────────────────────────────────────────
+
+pub fn print_logo(logo_path: &std::path::Path) {
+    let contents = match std::fs::read_to_string(logo_path) {
+        Ok(c) if !c.trim().is_empty() => c,
+        _ => return,
+    };
+
+    eprintln!();
+    for line in contents.lines() {
+        eprintln!("  {}", line.color(rgb(PHOSPHOR_GREEN)));
+    }
+    eprintln!();
+}
+
 // ── Utility ──────────────────────────────────────────────────────────────
 
 pub fn fatal(msg: &str) {

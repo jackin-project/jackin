@@ -139,6 +139,9 @@ pub fn load_agent(
     // Set terminal title
     tui::set_terminal_title(&agent_display_name);
 
+    // Logo (if present in agent repo)
+    tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
+
     // Configuration summary
     let config_rows = build_config_rows(
         &agent_display_name,
