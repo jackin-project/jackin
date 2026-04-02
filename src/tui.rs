@@ -277,6 +277,8 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
             std::thread::sleep(std::time::Duration::from_millis(frame_ms));
         }
 
+        // Hold the revealed logo briefly
+        std::thread::sleep(std::time::Duration::from_millis(1500));
     }
 
     // Clear rain area
