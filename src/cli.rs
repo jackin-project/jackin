@@ -32,11 +32,11 @@ mod tests {
 
     #[test]
     fn parses_load_command() {
-        let cli = Cli::try_parse_from(["jackin", "load", "smith"]).unwrap();
+        let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
         assert_eq!(
             cli.command,
             Command::Load {
-                selector: "smith".to_string(),
+                selector: "agent-smith".to_string(),
             }
         );
     }
