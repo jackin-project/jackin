@@ -10,7 +10,7 @@ This design evolves `jackin` from the current direct-build agent contract into a
 The first delivery is a paired change across two repositories:
 
 - `donbeave/jackin`
-- `donbeave/smith`
+- `donbeave/jackin-agent-smith`
 
 The shared base image is the canonical `donbeave/jackin-construct:trixie` image. The name comes from The Matrix: the construct is the base simulated environment loaded before a mission. That maps directly to this image's role as the common environment every agent starts from before its own specialized layer is applied.
 
@@ -22,7 +22,7 @@ For v1 of this redesign, `jackin` validates agent Dockerfiles with a structured 
 - Introduce a strict, explicit, validated base-image contract for agent repos.
 - Make derived Dockerfile generation the standard build path for all agent repos.
 - Keep shared Claude runtime concerns in `jackin`, not in each agent repo.
-- Create `smith` as the first real public-friendly agent repo that follows the new contract.
+- Create `agent-smith` as the first real public-friendly agent repo that follows the new contract.
 - Preserve the current runtime model where the cached agent repo checkout is mounted as the main in-container workspace.
 - Keep the Matrix framing in product docs, including the rationale for the `construct` name.
 
@@ -31,7 +31,7 @@ For v1 of this redesign, `jackin` validates agent Dockerfiles with a structured 
 - Support loose or pattern-based base-image matching in v1.
 - Support agent repos that fully own the final Claude-ready image.
 - Preserve the old direct-build repo contract as a parallel supported mode.
-- Add company-specific secrets, CA setup, private mirrors, or internal-only assumptions to `smith`.
+- Add company-specific secrets, CA setup, private mirrors, or internal-only assumptions to `agent-smith`.
 - Add Context7 bootstrapping in this phase.
 - Build a broad detached-runtime supervisor system beyond `eject` and `exile`.
 
@@ -56,7 +56,7 @@ This redesign is delivered across two repositories with a clean ownership split.
 - lifecycle orchestration for `load`, `hardline`, `eject`, `exile`, and `purge`
 - documentation for the shared contract
 
-`donbeave/smith` owns:
+`donbeave/jackin-agent-smith` owns:
 
 - `jackin.agent.toml`
 - its base agent Dockerfile
@@ -112,18 +112,18 @@ The repo Dockerfile remains the source of truth for the agent-specific environme
 - the final runtime `WORKDIR`
 - the final `ENTRYPOINT`
 
-### Smith Repo Shape
+### Agent Smith Repo Shape
 
-`smith` is the first real public-friendly `jackin` agent repo.
+`agent-smith` is the first real public-friendly `jackin` agent repo.
 
 It should:
 
-- be created as `donbeave/smith`
+- be created as `donbeave/jackin-agent-smith`
 - be runnable outside company infrastructure
 - avoid 1Password lookups, custom CA injection, private mirrors, and internal secrets
 - keep the mounted cached repo checkout as the live `/workspace` repo inside the container
 
-For v1, `smith` is intentionally serious but minimal.
+For v1, `agent-smith` is intentionally serious but minimal.
 
 - It preinstalls `node@lts` during image build.
 - It does not carry over the old Java versions.
@@ -178,7 +178,7 @@ This temp context contains:
 
 Plugin declarations stay in `jackin.agent.toml`.
 
-`smith` does not provide `install-plugins.sh` and does not own plugin installation logic.
+`agent-smith` does not provide `install-plugins.sh` and does not own plugin installation logic.
 
 For each loaded container instance, `jackin load` writes plugin metadata into the persisted state directory under:
 
@@ -326,7 +326,7 @@ The goal is not broad end-to-end Docker integration coverage in unit tests, but 
 - describe the strict `donbeave/jackin-construct:trixie` contract
 - explain that `jackin` generates the final Claude-ready image layer
 
-`smith` documentation should:
+`agent-smith` documentation should:
 
 - explain that it is a `jackin` agent repo
 - document that it is public-friendly
