@@ -344,6 +344,8 @@ pub fn load_agent(
             "jackin.managed=true".into(),
             "--label".into(),
             format!("jackin.class={}", selector.key()),
+            "--label".into(),
+            format!("jackin.display_name={agent_display_name}"),
             "--workdir".into(),
             workspace.workdir.clone(),
             "-e".into(),
@@ -394,7 +396,7 @@ pub fn load_agent(
 
 fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: &LoadOptions) {
     tui::clear_screen();
-    let remaining = list_running_agent_names(runner).unwrap_or_default();
+    let remaining = list_running_agent_display_names(runner).unwrap_or_default();
     if opts.no_intro {
         tui::simple_outro(agent_display_name, &remaining);
     } else {
@@ -469,6 +471,54 @@ fn list_agent_names(
         .filter(|line| !line.is_empty())
         .map(String::from)
         .collect())
+}
+
+/// List running agents with human-friendly display names.
+///
+/// Returns display names like "The Architect" or "The Architect (Clone 2)".
+/// Falls back to the raw container name if no display label is present.
+pub fn list_running_agent_display_names(
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<Vec<String>> {
+    let output = runner.capture(
+        "docker",
+        &[
+            "ps".into(),
+            "--filter".into(),
+            "label=jackin.managed=true".into(),
+            "--format".into(),
+            "{{.Names}}\t{{.Label \"jackin.display_name\"}}".into(),
+        ],
+        None,
+    )?;
+
+    Ok(output
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let parts: Vec<&str> = line.splitn(2, '\t').collect();
+            let container_name = parts[0];
+            let display_name = parts.get(1).unwrap_or(&"");
+            format_agent_display(container_name, display_name)
+        })
+        .collect())
+}
+
+/// Format a human-friendly agent name from a container name and its display label.
+///
+/// Examples:
+///   - `("jackin-the-architect", "The Architect")` → `"The Architect"`
+///   - `("jackin-the-architect-clone-2", "The Architect")` → `"The Architect (Clone 2)"`
+///   - `("jackin-the-architect", "")` → `"jackin-the-architect"`
+fn format_agent_display(container_name: &str, display_name: &str) -> String {
+    if display_name.is_empty() {
+        return container_name.to_string();
+    }
+
+    container_name.rsplit_once("-clone-").map_or_else(
+        || display_name.to_string(),
+        |suffix| format!("{display_name} (Clone {})", suffix.1),
+    )
 }
 
 pub fn matching_family(selector: &ClassSelector, names: &[String]) -> Vec<String> {
@@ -1383,5 +1433,76 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
 
         let labels: Vec<&str> = rows.iter().map(|(l, _)| l.as_str()).collect();
         assert!(!labels.contains(&"dind"));
+    }
+
+    #[test]
+    fn format_agent_display_uses_display_name_for_primary() {
+        assert_eq!(
+            format_agent_display("jackin-the-architect", "The Architect"),
+            "The Architect"
+        );
+    }
+
+    #[test]
+    fn format_agent_display_appends_clone_index() {
+        assert_eq!(
+            format_agent_display("jackin-the-architect-clone-2", "The Architect"),
+            "The Architect (Clone 2)"
+        );
+    }
+
+    #[test]
+    fn format_agent_display_falls_back_to_container_name() {
+        assert_eq!(
+            format_agent_display("jackin-the-architect", ""),
+            "jackin-the-architect"
+        );
+    }
+
+    #[test]
+    fn load_agent_sets_display_name_label() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[identity]\nname = \"Agent Smith\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -it"))
+            .unwrap();
+        assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
     }
 }
