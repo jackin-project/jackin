@@ -17,6 +17,32 @@ fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
 
 // ── Digital rain ─────────────────────────────────────────────────────────
 
+struct RainCell {
+    ch: char,
+    age: u16,
+}
+
+fn age_to_color(age: u16) -> Option<(u8, u8, u8)> {
+    match age {
+        0 => Some(WHITE),
+        1..=2 => Some((180, 255, 180)),
+        3..=5 => Some(PHOSPHOR_GREEN),
+        6..=10 => Some((0, 200, 50)),
+        11..=16 => Some(PHOSPHOR_DIM),
+        17..=24 => Some(PHOSPHOR_DARK),
+        _ => None,
+    }
+}
+
+fn should_mutate(age: u16, seed: &mut u64) -> bool {
+    let roll = (xorshift(seed) % 100) as u16;
+    match age {
+        0..=2 => roll < 30,
+        3..=10 => roll < 15,
+        _ => roll < 5,
+    }
+}
+
 const RAIN_CHARS: &[u8] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*<>{}[]|/\\~";
 
@@ -42,80 +68,89 @@ fn digital_rain(duration_ms: u64) {
 
     let mut seed: u64 = 0xDEAD_BEEF_CAFE_1337;
 
-    let mut drops: Vec<(i32, i32, bool)> = (0..cols)
+    struct Column {
+        head: i32,
+        speed: u32,
+        active: bool,
+        cooldown: u32,
+    }
+
+    let mut columns: Vec<Column> = (0..cols)
         .map(|_| {
             let s = xorshift(&mut seed);
-            let speed = 1 + (s % 3) as i32;
-            let start = -((s % (rows as u64 + 5)) as i32);
-            (start, speed, !s.is_multiple_of(3))
+            Column {
+                head: -((s % (rows as u64 + 10)) as i32),
+                speed: 1 + (s % 3) as u32,
+                active: s % 3 != 0,
+                cooldown: 0,
+            }
         })
         .collect();
 
-    let mut grid = vec![vec![' '; cols]; rows];
+    let mut grid: Vec<Vec<Option<RainCell>>> = (0..rows).map(|_| {
+        (0..cols).map(|_| None).collect()
+    }).collect();
 
     eprint!("\x1b[?25l"); // hide cursor
 
     for frame in 0..total_frames {
-        for (col, (pos, speed, active)) in drops.iter_mut().enumerate() {
-            if !*active {
-                let s = xorshift(&mut seed);
-                if s.is_multiple_of(8) {
-                    *active = true;
-                    *pos = -((s % 5) as i32);
-                    *speed = 1 + (s % 3) as i32;
+        // Age all existing cells
+        for row in grid.iter_mut() {
+            for cell in row.iter_mut() {
+                if let Some(c) = cell {
+                    c.age += 1;
+                    if age_to_color(c.age).is_none() {
+                        *cell = None;
+                    } else if should_mutate(c.age, &mut seed) {
+                        c.ch = random_char(&mut seed);
+                    }
+                }
+            }
+        }
+
+        // Advance columns
+        for (col, column) in columns.iter_mut().enumerate() {
+            if !column.active {
+                if column.cooldown > 0 {
+                    column.cooldown -= 1;
+                } else {
+                    column.active = true;
+                    column.head = -((xorshift(&mut seed) % 5) as i32);
+                    column.speed = 1 + (xorshift(&mut seed) % 3) as u32;
                 }
                 continue;
             }
 
-            if frame % (*speed as u64) == 0 {
-                *pos += 1;
+            if frame % (column.speed as u64) == 0 {
+                column.head += 1;
             }
 
-            let head = *pos;
+            let head = column.head;
             if head >= 0 && (head as usize) < rows {
-                grid[head as usize][col] = random_char(&mut seed);
+                grid[head as usize][col] = Some(RainCell {
+                    ch: random_char(&mut seed),
+                    age: 0,
+                });
             }
 
-            let tail = head - 8;
-            if tail >= 0 && (tail as usize) < rows {
-                grid[tail as usize][col] = ' ';
-            }
-
-            let s = xorshift(&mut seed);
-            if s.is_multiple_of(5) {
-                let r = (s as usize) % rows;
-                if grid[r][col] != ' ' {
-                    grid[r][col] = random_char(&mut seed);
-                }
-            }
-
-            if tail > rows as i32 {
-                *active = false;
-                *pos = -((xorshift(&mut seed) % 8) as i32) - 3;
+            if head > (rows as i32) + 10 {
+                column.active = false;
+                column.cooldown = 3 + (xorshift(&mut seed) % 13) as u32;
             }
         }
 
+        // Render
         eprint!("\x1b[H");
         for row in &grid {
             eprint!("  ");
-            for (col_idx, &ch) in row.iter().enumerate() {
-                if ch == ' ' {
-                    eprint!(" ");
-                    continue;
+            for cell in row {
+                match cell {
+                    None => eprint!(" "),
+                    Some(c) => {
+                        let (r, g, b) = age_to_color(c.age).unwrap_or(PHOSPHOR_DARK);
+                        eprint!("{}", c.ch.color(owo_colors::Rgb(r, g, b)));
+                    }
                 }
-                let head_pos = drops[col_idx].0;
-                let dist = head_pos - col_idx as i32;
-                // Approximate row distance for coloring
-                let color = if dist == 0 {
-                    WHITE
-                } else if dist == 1 {
-                    PHOSPHOR_GREEN
-                } else if dist < 4 {
-                    PHOSPHOR_DIM
-                } else {
-                    PHOSPHOR_DARK
-                };
-                eprint!("{}", ch.color(rgb(color)));
             }
             eprintln!();
         }
