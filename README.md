@@ -12,12 +12,26 @@ Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
 ## Commands
 
-- `jackin load agent-smith` — send an agent in.
+- `jackin launch` — fast interactive launcher for the current directory or a saved workspace.
+- `jackin load agent-smith` — send an agent in using the current directory as the workspace.
+- `jackin load agent-smith ~/Projects/chainargos/big-monorepo` — send an agent into a direct path workspace.
+- `jackin load agent-smith -w big-monorepo` — use a saved workspace definition.
 - `jackin hardline jackin-agent-smith` — reattach to a running agent.
 - `jackin eject jackin-agent-smith` — pull one agent out.
-- `jackin eject agent-smith --all` — pull every Agent Smith out for one class scope.
-- `jackin exile` — remove every running agent.
-- `jackin purge agent-smith --all` — delete persisted state for one class.
+- `jackin workspace add big-monorepo --workdir /workspace/project --mount ~/Projects/chainargos/big-monorepo:/workspace/project` — save a reusable workspace.
+
+## Workspaces
+
+`jackin launch` is the fastest way to start work. It shows two kinds of workspace choices:
+
+- `Current directory` — a synthetic workspace that mounts the current directory to the same absolute path inside the container and uses that path as `workdir`
+- saved workspaces — named local definitions stored in `~/.config/jackin/config.toml`
+
+If the current directory exactly matches a saved workspace `workdir`, Jackin preselects that saved workspace in the launcher. You can still move to `Current directory` to force the raw direct-mount behavior.
+
+`launch` is the human-first flow: pick a workspace, preview mounts and `workdir`, then choose an agent. `load` stays the explicit terminal-first path for current-directory mode, direct paths, saved workspaces, and fully custom one-off mount composition. If you need to hand-author `--mount ... --workdir ...`, do that in `load`, not in `launch`.
+
+Saved workspaces are local operator config. They define mounts, `workdir`, and optional allowed/default agents.
 
 ## Naming Convention
 
@@ -59,7 +73,7 @@ Derived build-context generation currently rejects symlinks in the agent repo in
 
 The final Dockerfile stage must literally be `FROM donbeave/jackin-construct:trixie`, optionally with an alias such as `FROM donbeave/jackin-construct:trixie AS runtime`. Earlier stages may use any base image.
 
-`agent-smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the cached repo checkout at `/workspace`, mounting persisted `.claude`, `.claude.json`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.
+`agent-smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the resolved workspace paths into the runtime container, mounting persisted `.claude`, `.claude.json`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.
 
 ## Roadmap
 
