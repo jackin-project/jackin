@@ -1,2 +1,11 @@
-.worktrees/
+# macOS
+.DS_Store
+
+# Rust
 /target/
+
+# Claude Code
+.worktrees/
+
+# Temporary files
+/tmp/
