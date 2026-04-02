@@ -87,7 +87,8 @@ fn is_valid_class_segment(value: &str) -> bool {
 }
 
 fn is_valid_container_name(value: &str) -> bool {
-    value.starts_with("jackin-") && is_valid_class_segment(&value["jackin-".len()..])
+    value.strip_prefix("jackin-")
+        .is_some_and(|rest| is_valid_class_segment(rest))
 }
 
 fn is_reserved_builtin_class_name(value: &str) -> bool {
