@@ -189,12 +189,7 @@ pub fn resolve_load_workspace(
     validate_workspace_config("runtime", &workspace)?;
 
     let mut mounts = workspace.mounts.clone();
-    let global_mounts = config
-        .resolve_mounts(selector)
-        .into_iter()
-        .map(|(_, mount)| mount)
-        .collect::<Vec<_>>();
-    validate_mounts(&global_mounts)?;
+    let global_mounts = crate::config::AppConfig::validate_mounts(&config.resolve_mounts(selector))?;
 
     for mount in global_mounts {
         if mounts.iter().any(|existing| existing.dst == mount.dst) {
@@ -273,5 +268,34 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("is not allowed by workspace"));
+    }
+
+    #[test]
+    fn resolves_global_mounts_with_tilde_sources() {
+        let home = std::env::var("HOME").unwrap();
+        let cwd = tempdir().unwrap();
+        let mut config = crate::config::AppConfig::default();
+        config.add_mount(
+            "home",
+            MountConfig {
+                src: "~".to_string(),
+                dst: "/home/claude/home".to_string(),
+                readonly: true,
+            },
+            None,
+        );
+
+        let resolved = resolve_load_workspace(
+            &config,
+            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            cwd.path(),
+            LoadWorkspaceInput::CurrentDir,
+        )
+        .unwrap();
+
+        assert!(resolved
+            .mounts
+            .iter()
+            .any(|mount| mount.dst == "/home/claude/home" && mount.src == home && mount.readonly));
     }
 }
