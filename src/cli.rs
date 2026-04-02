@@ -117,7 +117,11 @@ pub enum WorkspaceCommand {
         remove_allowed_agents: Vec<String>,
         #[arg(long = "default-agent")]
         default_agent: Option<String>,
-        #[arg(long = "clear-default-agent", default_value_t = false)]
+        #[arg(
+            long = "clear-default-agent",
+            conflicts_with = "default_agent",
+            default_value_t = false
+        )]
         clear_default_agent: bool,
     },
     Remove {
@@ -272,6 +276,22 @@ mod tests {
                 command: WorkspaceCommand::Edit { .. }
             }
         ));
+    }
+
+    #[test]
+    fn rejects_conflicting_workspace_edit_default_agent_flags() {
+        let err = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "edit",
+            "big-monorepo",
+            "--default-agent",
+            "agent-smith",
+            "--clear-default-agent",
+        ])
+        .unwrap_err();
+
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]

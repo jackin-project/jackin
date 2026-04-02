@@ -1,6 +1,6 @@
 use crate::paths::JackinPaths;
 use crate::selector::ClassSelector;
-use crate::workspace::{expand_tilde, validate_workspace_config, WorkspaceConfig, WorkspaceEdit};
+use crate::workspace::{WorkspaceConfig, WorkspaceEdit, expand_tilde, validate_workspace_config};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -211,12 +211,25 @@ impl AppConfig {
     }
 
     pub fn add_workspace(&mut self, name: &str, workspace: WorkspaceConfig) -> anyhow::Result<()> {
+        if self.workspaces.contains_key(name) {
+            anyhow::bail!("workspace {name:?} already exists; use `workspace edit`");
+        }
         validate_workspace_config(name, &workspace)?;
         self.workspaces.insert(name.to_string(), workspace);
         Ok(())
     }
 
     pub fn edit_workspace(&mut self, name: &str, edit: WorkspaceEdit) -> anyhow::Result<()> {
+        let mut seen_upsert_destinations = std::collections::HashSet::new();
+        for mount in &edit.upsert_mounts {
+            if !seen_upsert_destinations.insert(mount.dst.as_str()) {
+                anyhow::bail!(
+                    "duplicate workspace edit mount destination: {}",
+                    mount.dst
+                );
+            }
+        }
+
         let current = self
             .workspaces
             .get(name)
@@ -228,7 +241,11 @@ impl AppConfig {
         }
 
         for dst in edit.remove_destinations {
+            let original_len = workspace.mounts.len();
             workspace.mounts.retain(|mount| mount.dst != dst);
+            if workspace.mounts.len() == original_len {
+                anyhow::bail!("unknown workspace mount destination: {dst}");
+            }
         }
 
         for mount in edit.upsert_mounts {
@@ -268,8 +285,11 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn remove_workspace(&mut self, name: &str) -> bool {
-        self.workspaces.remove(name).is_some()
+    pub fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
+        self.workspaces
+            .remove(name)
+            .map(|_| ())
+            .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))
     }
 
     pub fn list_workspaces(&self) -> Vec<(&str, &WorkspaceConfig)> {
@@ -335,9 +355,11 @@ mod tests {
             source.git,
             "git@github.com:chainargos/jackin-the-architect.git"
         );
-        assert!(std::fs::read_to_string(&paths.config_file)
-            .unwrap()
-            .contains("[agents.\"chainargos/the-architect\"]"));
+        assert!(
+            std::fs::read_to_string(&paths.config_file)
+                .unwrap()
+                .contains("[agents.\"chainargos/the-architect\"]")
+        );
     }
 
     // --- Task 3: Deserialization tests ---
@@ -452,9 +474,11 @@ readonly = true
         let error =
             crate::workspace::validate_workspace_config("big-monorepo", &workspace).unwrap_err();
 
-        assert!(error
-            .to_string()
-            .contains("must be equal to or inside one of the workspace mount destinations"));
+        assert!(
+            error
+                .to_string()
+                .contains("must be equal to or inside one of the workspace mount destinations")
+        );
     }
 
     #[test]
@@ -489,9 +513,11 @@ readonly = true
             )
             .unwrap_err();
 
-        assert!(error
-            .to_string()
-            .contains("must be equal to or inside one of the workspace mount destinations"));
+        assert!(
+            error
+                .to_string()
+                .contains("must be equal to or inside one of the workspace mount destinations")
+        );
         assert_eq!(
             config.workspaces.get("big-monorepo").unwrap().workdir,
             "/workspace/project"
@@ -521,9 +547,11 @@ dst = "/workspace/src"
 
         let error = AppConfig::load_or_init(&paths).unwrap_err();
 
-        assert!(error
-            .to_string()
-            .contains("must be equal to or inside one of the workspace mount destinations"));
+        assert!(
+            error
+                .to_string()
+                .contains("must be equal to or inside one of the workspace mount destinations")
+        );
     }
 
     #[test]
@@ -569,7 +597,9 @@ dst = "/workspace/src"
             allowed_agents: vec!["agent-smith".to_string()],
             default_agent: Some("agent-smith".to_string()),
         };
-        config.add_workspace("big-monorepo", original.clone()).unwrap();
+        config
+            .add_workspace("big-monorepo", original.clone())
+            .unwrap();
 
         let err = config
             .edit_workspace(
@@ -581,10 +611,143 @@ dst = "/workspace/src"
             )
             .unwrap_err();
 
-        assert!(err
-            .to_string()
-            .contains("must be equal to or inside one of the workspace mount destinations"));
+        assert!(
+            err.to_string()
+                .contains("must be equal to or inside one of the workspace mount destinations")
+        );
         assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
+    }
+
+    #[test]
+    fn add_workspace_rejects_duplicate_name_and_preserves_existing_value() {
+        let temp = tempdir().unwrap();
+        let mut config = AppConfig::default();
+        let original = WorkspaceConfig {
+            workdir: "/workspace/project".to_string(),
+            mounts: vec![MountConfig {
+                src: temp.path().display().to_string(),
+                dst: "/workspace/project".to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+        };
+        config
+            .add_workspace("big-monorepo", original.clone())
+            .unwrap();
+
+        let err = config
+            .add_workspace(
+                "big-monorepo",
+                WorkspaceConfig {
+                    workdir: "/workspace/other".to_string(),
+                    mounts: vec![MountConfig {
+                        src: temp.path().display().to_string(),
+                        dst: "/workspace/other".to_string(),
+                        readonly: true,
+                    }],
+                    allowed_agents: vec!["agent-smith".to_string()],
+                    default_agent: Some("agent-smith".to_string()),
+                },
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("already exists"));
+        assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
+    }
+
+    #[test]
+    fn edit_workspace_rejects_duplicate_upsert_destinations() {
+        let temp = tempdir().unwrap();
+        let original_src = temp.path().join("project");
+        let first_upsert = temp.path().join("cache-a");
+        let second_upsert = temp.path().join("cache-b");
+        std::fs::create_dir_all(&original_src).unwrap();
+        std::fs::create_dir_all(&first_upsert).unwrap();
+        std::fs::create_dir_all(&second_upsert).unwrap();
+
+        let mut config = AppConfig::default();
+        let original = WorkspaceConfig {
+            workdir: "/workspace/project".to_string(),
+            mounts: vec![MountConfig {
+                src: original_src.display().to_string(),
+                dst: "/workspace/project".to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+        };
+        config
+            .add_workspace("big-monorepo", original.clone())
+            .unwrap();
+
+        let err = config
+            .edit_workspace(
+                "big-monorepo",
+                WorkspaceEdit {
+                    upsert_mounts: vec![
+                        MountConfig {
+                            src: first_upsert.display().to_string(),
+                            dst: "/workspace/cache".to_string(),
+                            readonly: false,
+                        },
+                        MountConfig {
+                            src: second_upsert.display().to_string(),
+                            dst: "/workspace/cache".to_string(),
+                            readonly: true,
+                        },
+                    ],
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("duplicate workspace edit mount destination"));
+        assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
+    }
+
+    #[test]
+    fn edit_workspace_rejects_missing_remove_destination() {
+        let temp = tempdir().unwrap();
+        let original_src = temp.path().join("project");
+        std::fs::create_dir_all(&original_src).unwrap();
+
+        let mut config = AppConfig::default();
+        let original = WorkspaceConfig {
+            workdir: "/workspace/project".to_string(),
+            mounts: vec![MountConfig {
+                src: original_src.display().to_string(),
+                dst: "/workspace/project".to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+        };
+        config
+            .add_workspace("big-monorepo", original.clone())
+            .unwrap();
+
+        let err = config
+            .edit_workspace(
+                "big-monorepo",
+                WorkspaceEdit {
+                    remove_destinations: vec!["/workspace/missing".to_string()],
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("unknown workspace mount destination"));
+        assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
+    }
+
+    #[test]
+    fn remove_workspace_errors_when_missing() {
+        let mut config = AppConfig::default();
+
+        let err = config.remove_workspace("missing").unwrap_err();
+
+        assert!(err.to_string().contains("unknown workspace missing"));
     }
 
     // --- Task 4: Resolution tests ---
@@ -611,15 +774,21 @@ other-data = { src = "/tmp/other", dst = "/other" }
         let selector = ClassSelector::new(Some("chainargos"), "agent-brown");
         let resolved = config.resolve_mounts(&selector);
         assert_eq!(resolved.len(), 3);
-        assert!(resolved
-            .iter()
-            .any(|(_, m)| m.dst == "/home/claude/.gradle/caches"));
-        assert!(resolved
-            .iter()
-            .any(|(_, m)| m.dst == "/secrets" && m.readonly));
-        assert!(resolved
-            .iter()
-            .any(|(_, m)| m.dst == "/config" && !m.readonly));
+        assert!(
+            resolved
+                .iter()
+                .any(|(_, m)| m.dst == "/home/claude/.gradle/caches")
+        );
+        assert!(
+            resolved
+                .iter()
+                .any(|(_, m)| m.dst == "/secrets" && m.readonly)
+        );
+        assert!(
+            resolved
+                .iter()
+                .any(|(_, m)| m.dst == "/config" && !m.readonly)
+        );
     }
 
     #[test]
@@ -662,9 +831,10 @@ shared = { src = "/tmp/specific", dst = "/data" }
             },
         )];
         let err = AppConfig::validate_mounts(&mounts).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("/nonexistent/path/that/does/not/exist"));
+        assert!(
+            err.to_string()
+                .contains("/nonexistent/path/that/does/not/exist")
+        );
     }
 
     #[test]

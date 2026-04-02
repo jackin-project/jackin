@@ -208,9 +208,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
             WorkspaceCommand::Remove { name } => {
-                if config.remove_workspace(&name) {
-                    config.save(&paths)?;
-                }
+                config.remove_workspace(&name)?;
+                config.save(&paths)?;
                 Ok(())
             }
         },
