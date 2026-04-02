@@ -384,8 +384,8 @@ mod tests {
             r#"[agents.agent-smith]
 git = "git@github.com:old/wrong-url.git"
 
-[agents."chainargos/agent-jones"]
-git = "git@github.com:chainargos/jackin-agent-jones.git"
+[agents."chainargos/agent-brown"]
+git = "git@github.com:chainargos/jackin-agent-brown.git"
 "#,
         )
         .unwrap();
@@ -404,15 +404,15 @@ git = "git@github.com:chainargos/jackin-agent-jones.git"
         );
         // User-added entries are preserved
         assert_eq!(
-            config.agents.get("chainargos/agent-jones").unwrap().git,
-            "git@github.com:chainargos/jackin-agent-jones.git"
+            config.agents.get("chainargos/agent-brown").unwrap().git,
+            "git@github.com:chainargos/jackin-agent-brown.git"
         );
 
         // Config file is updated on disk
         let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(persisted.contains("donbeave/jackin-agent-smith.git"));
         assert!(persisted.contains("donbeave/jackin-the-architect.git"));
-        assert!(persisted.contains("chainargos/jackin-agent-jones.git"));
+        assert!(persisted.contains("chainargos/jackin-agent-brown.git"));
     }
 
     #[test]
