@@ -13,13 +13,14 @@ pub mod tui;
 pub mod workspace;
 
 use anyhow::Result;
-use cli::{Cli, Command};
+use cli::{Cli, Command, WorkspaceCommand};
 use config::AppConfig;
 use docker::ShellRunner;
 use paths::JackinPaths;
 use selector::{ClassSelector, Selector};
 use std::io::ErrorKind;
 use std::path::Path;
+use workspace::{WorkspaceConfig, WorkspaceEdit, parse_mount_spec};
 
 pub fn run(cli: Cli) -> Result<()> {
     let paths = JackinPaths::detect()?;
@@ -51,9 +52,10 @@ pub fn run(cli: Cli) -> Result<()> {
             }
             Selector::Class(class) => {
                 if all {
-                    for container in
-                        runtime::matching_family(&class, &runtime::list_managed_agent_names(&mut runner)?)
-                    {
+                    for container in runtime::matching_family(
+                        &class,
+                        &runtime::list_managed_agent_names(&mut runner)?,
+                    ) {
                         runtime::eject_agent(&container, &mut runner)?;
                         if purge {
                             remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
@@ -71,34 +73,145 @@ pub fn run(cli: Cli) -> Result<()> {
             }
         },
         Command::Exile => runtime::exile_all(&mut runner),
-        Command::Config { command: config_cmd } => match config_cmd {
-            cli::ConfigCommand::Mount { command: mount_cmd } => {
-                match mount_cmd {
-                    cli::MountCommand::Add { name, src, dst, readonly, scope } => {
-                        let mount = config::MountConfig { src, dst, readonly };
-                        config.add_mount(&name, mount, scope.as_deref());
-                        config.save(&paths)?;
-                        Ok(())
-                    }
-                    cli::MountCommand::Remove { name, scope } => {
-                        if config.remove_mount(&name, scope.as_deref()) {
-                            config.save(&paths)?;
-                        }
-                        Ok(())
-                    }
-                    cli::MountCommand::List => {
-                        let mounts = config.list_mounts();
-                        if mounts.is_empty() {
-                            println!("No mounts configured.");
-                        } else {
-                            for (scope, name, m) in &mounts {
-                                let ro = if m.readonly { " (ro)" } else { "" };
-                                println!("{scope}  {name}  {} -> {}{ro}", m.src, m.dst);
-                            }
-                        }
-                        Ok(())
-                    }
+        Command::Config {
+            command: config_cmd,
+        } => match config_cmd {
+            cli::ConfigCommand::Mount { command: mount_cmd } => match mount_cmd {
+                cli::MountCommand::Add {
+                    name,
+                    src,
+                    dst,
+                    readonly,
+                    scope,
+                } => {
+                    let mount = config::MountConfig { src, dst, readonly };
+                    config.add_mount(&name, mount, scope.as_deref());
+                    config.save(&paths)?;
+                    Ok(())
                 }
+                cli::MountCommand::Remove { name, scope } => {
+                    if config.remove_mount(&name, scope.as_deref()) {
+                        config.save(&paths)?;
+                    }
+                    Ok(())
+                }
+                cli::MountCommand::List => {
+                    let mounts = config.list_mounts();
+                    if mounts.is_empty() {
+                        println!("No mounts configured.");
+                    } else {
+                        for (scope, name, m) in &mounts {
+                            let ro = if m.readonly { " (ro)" } else { "" };
+                            println!("{scope}  {name}  {} -> {}{ro}", m.src, m.dst);
+                        }
+                    }
+                    Ok(())
+                }
+            },
+        },
+        Command::Workspace { command } => match command {
+            WorkspaceCommand::Add {
+                name,
+                workdir,
+                mounts,
+                allowed_agents,
+                default_agent,
+            } => {
+                let mounts = mounts
+                    .iter()
+                    .map(|value| parse_mount_spec(value))
+                    .collect::<Result<Vec<_>>>()?;
+                config.add_workspace(
+                    &name,
+                    WorkspaceConfig {
+                        workdir,
+                        mounts,
+                        allowed_agents,
+                        default_agent,
+                    },
+                )?;
+                config.save(&paths)?;
+                Ok(())
+            }
+            WorkspaceCommand::List => {
+                for (name, workspace) in config.list_workspaces() {
+                    let allowed = if workspace.allowed_agents.is_empty() {
+                        "all".to_string()
+                    } else {
+                        workspace.allowed_agents.len().to_string()
+                    };
+                    let default_agent = workspace.default_agent.as_deref().unwrap_or("-");
+                    println!(
+                        "{name}\t{}\t{} mounts\tallowed={allowed}\tdefault={default_agent}",
+                        workspace.workdir,
+                        workspace.mounts.len()
+                    );
+                }
+                Ok(())
+            }
+            WorkspaceCommand::Show { name } => {
+                let workspace = config
+                    .workspaces
+                    .get(&name)
+                    .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?;
+                println!("name: {name}");
+                println!("workdir: {}", workspace.workdir);
+                println!(
+                    "allowed_agents: {}",
+                    if workspace.allowed_agents.is_empty() {
+                        "all".to_string()
+                    } else {
+                        workspace.allowed_agents.join(", ")
+                    }
+                );
+                println!(
+                    "default_agent: {}",
+                    workspace.default_agent.as_deref().unwrap_or("-")
+                );
+                println!("mounts:");
+                for mount in &workspace.mounts {
+                    let ro = if mount.readonly { " (ro)" } else { "" };
+                    println!("  {} -> {}{ro}", mount.src, mount.dst);
+                }
+                Ok(())
+            }
+            WorkspaceCommand::Edit {
+                name,
+                workdir,
+                mounts,
+                remove_destinations,
+                allowed_agents,
+                remove_allowed_agents,
+                default_agent,
+                clear_default_agent,
+            } => {
+                let upsert_mounts = mounts
+                    .iter()
+                    .map(|value| parse_mount_spec(value))
+                    .collect::<Result<Vec<_>>>()?;
+                config.edit_workspace(
+                    &name,
+                    WorkspaceEdit {
+                        workdir,
+                        upsert_mounts,
+                        remove_destinations,
+                        allowed_agents_to_add: allowed_agents,
+                        allowed_agents_to_remove: remove_allowed_agents,
+                        default_agent: if clear_default_agent {
+                            Some(None)
+                        } else {
+                            default_agent.map(Some)
+                        },
+                    },
+                )?;
+                config.save(&paths)?;
+                Ok(())
+            }
+            WorkspaceCommand::Remove { name } => {
+                if config.remove_workspace(&name) {
+                    config.save(&paths)?;
+                }
+                Ok(())
             }
         },
         Command::Purge { selector, all } => match Selector::parse(&selector)? {
