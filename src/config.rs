@@ -48,7 +48,9 @@ impl AppConfig {
         }
 
         let contents = std::fs::read_to_string(&paths.config_file)?;
-        Ok(toml::from_str(&contents)?)
+        let config: Self = toml::from_str(&contents)?;
+        config.validate_workspaces()?;
+        Ok(config)
     }
 
     pub fn resolve_or_register(
@@ -215,10 +217,11 @@ impl AppConfig {
     }
 
     pub fn edit_workspace(&mut self, name: &str, edit: WorkspaceEdit) -> anyhow::Result<()> {
-        let workspace = self
+        let current = self
             .workspaces
-            .get_mut(name)
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?;
+        let mut workspace = current.clone();
 
         if let Some(workdir) = edit.workdir {
             workspace.workdir = workdir;
@@ -260,7 +263,8 @@ impl AppConfig {
             workspace.default_agent = default_agent;
         }
 
-        validate_workspace_config(name, workspace)?;
+        validate_workspace_config(name, &workspace)?;
+        self.workspaces.insert(name.to_string(), workspace);
         Ok(())
     }
 
@@ -273,6 +277,13 @@ impl AppConfig {
             .iter()
             .map(|(name, workspace)| (name.as_str(), workspace))
             .collect()
+    }
+
+    fn validate_workspaces(&self) -> anyhow::Result<()> {
+        for (name, workspace) in &self.workspaces {
+            validate_workspace_config(name, workspace)?;
+        }
+        Ok(())
     }
 
     fn default_config() -> Self {
@@ -444,6 +455,136 @@ readonly = true
         assert!(error
             .to_string()
             .contains("must be equal to or inside one of the workspace mount destinations"));
+    }
+
+    #[test]
+    fn edit_workspace_does_not_persist_invalid_mutation() {
+        let temp = tempdir().unwrap();
+        let mut config = AppConfig::default();
+        let src = temp.path().display().to_string();
+
+        config
+            .add_workspace(
+                "big-monorepo",
+                WorkspaceConfig {
+                    workdir: "/workspace/project".to_string(),
+                    mounts: vec![MountConfig {
+                        src,
+                        dst: "/workspace/project".to_string(),
+                        readonly: false,
+                    }],
+                    allowed_agents: vec![],
+                    default_agent: None,
+                },
+            )
+            .unwrap();
+
+        let error = config
+            .edit_workspace(
+                "big-monorepo",
+                WorkspaceEdit {
+                    workdir: Some("/workspace/missing".to_string()),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("must be equal to or inside one of the workspace mount destinations"));
+        assert_eq!(
+            config.workspaces.get("big-monorepo").unwrap().workdir,
+            "/workspace/project"
+        );
+    }
+
+    #[test]
+    fn load_or_init_rejects_invalid_saved_workspace() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(&paths.config_dir).unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"
+[agents.agent-smith]
+git = "git@github.com:donbeave/jackin-agent-smith.git"
+
+[workspaces.big-monorepo]
+workdir = "/workspace/project"
+
+[[workspaces.big-monorepo.mounts]]
+src = "/tmp"
+dst = "/workspace/src"
+"#,
+        )
+        .unwrap();
+
+        let error = AppConfig::load_or_init(&paths).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("must be equal to or inside one of the workspace mount destinations"));
+    }
+
+    #[test]
+    fn load_or_init_rejects_invalid_persisted_workspace() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mount_src = temp.path().join("workspace-src");
+        std::fs::create_dir_all(&mount_src).unwrap();
+
+        let toml_str = format!(
+            r#"
+[agents.agent-smith]
+git = "git@github.com:donbeave/jackin-agent-smith.git"
+
+[workspaces.broken]
+workdir = "/workspace/project"
+
+[[workspaces.broken.mounts]]
+src = "{}"
+dst = "/workspace/src"
+"#,
+            mount_src.display()
+        );
+
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, toml_str).unwrap();
+
+        let err = AppConfig::load_or_init(&paths).unwrap_err();
+        assert!(err.to_string().contains("workspace \"broken\" workdir must be equal to or inside one of the workspace mount destinations"));
+    }
+
+    #[test]
+    fn edit_workspace_leaves_original_value_when_validation_fails() {
+        let temp = tempdir().unwrap();
+        let mut config = AppConfig::default();
+        let original = WorkspaceConfig {
+            workdir: "/workspace/project".to_string(),
+            mounts: vec![MountConfig {
+                src: temp.path().display().to_string(),
+                dst: "/workspace/project".to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec!["agent-smith".to_string()],
+            default_agent: Some("agent-smith".to_string()),
+        };
+        config.add_workspace("big-monorepo", original.clone()).unwrap();
+
+        let err = config
+            .edit_workspace(
+                "big-monorepo",
+                WorkspaceEdit {
+                    workdir: Some("/workspace/elsewhere".to_string()),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("must be equal to or inside one of the workspace mount destinations"));
+        assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
     }
 
     // --- Task 4: Resolution tests ---
