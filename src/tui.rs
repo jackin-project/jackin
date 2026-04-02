@@ -121,6 +121,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
 
     eprint!("\x1b[?25l"); // hide cursor
 
+    // ── Phase 1: Pure rain ──────────────────────────────────────────────
     for frame in 0..total_frames {
         // Age all existing cells
         for row in grid.iter_mut() {
@@ -185,6 +186,95 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
 
         let _ = io::stderr().flush();
         std::thread::sleep(std::time::Duration::from_millis(frame_ms));
+    }
+
+    // ── Phase 2 & 3: Reveal + Hold (only if reveal banner provided) ─────
+    if let Some(banner) = reveal {
+        let target = banner_grid(banner, cols, rows);
+
+        // Assign a random flip frame to each banner cell within the reveal window
+        let reveal_frames = 1000 / frame_ms;
+        let mut flip_at: Vec<Vec<u64>> = (0..rows).map(|_| {
+            (0..cols).map(|_| 0).collect()
+        }).collect();
+        let mut locked: Vec<Vec<bool>> = vec![vec![false; cols]; rows];
+
+        for (r, row) in target.iter().enumerate() {
+            for (c, cell) in row.iter().enumerate() {
+                if cell.is_some() {
+                    flip_at[r][c] = xorshift(&mut seed) % reveal_frames;
+                }
+            }
+        }
+
+        // Stop spawning new heads — deactivate all columns permanently
+        for column in columns.iter_mut() {
+            column.active = false;
+            column.cooldown = u32::MAX;
+        }
+
+        // Reveal phase animation
+        for frame in 0..reveal_frames {
+            // Age existing non-locked cells
+            for (r, row) in grid.iter_mut().enumerate() {
+                for (c, cell) in row.iter_mut().enumerate() {
+                    if locked[r][c] {
+                        continue;
+                    }
+                    if let Some(rc) = cell {
+                        rc.age += 1;
+                        if age_to_color(rc.age).is_none() {
+                            *cell = None;
+                        } else if should_mutate(rc.age, &mut seed) {
+                            rc.ch = random_char(&mut seed);
+                        }
+                    }
+                }
+            }
+
+            // Lock banner cells that have reached their flip frame
+            for (r, row) in target.iter().enumerate() {
+                for (c, target_ch) in row.iter().enumerate() {
+                    if let Some(ch) = target_ch
+                        && !locked[r][c]
+                        && frame >= flip_at[r][c]
+                    {
+                        locked[r][c] = true;
+                        grid[r][c] = Some(RainCell { ch: *ch, age: 0 });
+                    }
+                }
+            }
+
+            // Render
+            eprint!("\x1b[H");
+            for (r, row) in grid.iter().enumerate() {
+                eprint!("  ");
+                for (c, cell) in row.iter().enumerate() {
+                    if locked[r][c] {
+                        if let Some(rc) = cell {
+                            eprint!("{}", rc.ch.color(rgb(MATRIX_GREEN)));
+                        } else {
+                            eprint!(" ");
+                        }
+                    } else {
+                        match cell {
+                            None => eprint!(" "),
+                            Some(rc) => {
+                                let (cr, cg, cb) = age_to_color(rc.age).unwrap_or(MATRIX_DARK);
+                                eprint!("{}", rc.ch.color(owo_colors::Rgb(cr, cg, cb)));
+                            }
+                        }
+                    }
+                }
+                eprintln!();
+            }
+
+            let _ = io::stderr().flush();
+            std::thread::sleep(std::time::Duration::from_millis(frame_ms));
+        }
+
+        // ── Phase 3: Hold ───────────────────────────────────────────────
+        std::thread::sleep(std::time::Duration::from_millis(800));
     }
 
     // Clear rain area
