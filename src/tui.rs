@@ -356,7 +356,7 @@ pub fn print_deploying(agent_name: &str) {
     );
     eprintln!();
 
-    std::thread::sleep(std::time::Duration::from_millis(800));
+    std::thread::sleep(std::time::Duration::from_millis(1500));
     clear_screen();
 }
 
