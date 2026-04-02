@@ -130,6 +130,9 @@ pub fn load_agent(
     let state = AgentState::prepare(paths, &container_name, &validated_repo.manifest)?;
     let build = create_derived_build_context(&cached_repo.repo_dir, &validated_repo)?;
 
+    let resolved_mounts = config.resolve_mounts(selector);
+    let validated_mounts = AppConfig::validate_mounts(&resolved_mounts)?;
+
     let image = image_name(selector);
     let network = format!("{container_name}-net");
     let dind = format!("{container_name}-dind");
@@ -209,9 +212,7 @@ pub fn load_agent(
 
         tui::print_deploying(&agent_display_name);
 
-        runner.run(
-            "docker",
-            &[
+        let mut run_args: Vec<String> = vec![
                 "run".into(),
                 "-it".into(),
                 "--name".into(),
@@ -234,10 +235,17 @@ pub fn load_agent(
                 format!("{}:/home/claude/.claude.json", state.claude_json.display()),
                 "-v".into(),
                 format!("{}:/home/claude/.jackin/plugins.json:ro", state.plugins_json.display()),
-                image.clone(),
-            ],
-            None,
-        )?;
+        ];
+        // User-configured mounts
+        for mount in &validated_mounts {
+            let suffix = if mount.readonly { ":ro" } else { "" };
+            run_args.extend([
+                "-v".into(),
+                format!("{}:{}{}", mount.src, mount.dst, suffix),
+            ]);
+        }
+        run_args.push(image.clone());
+        runner.run("docker", &run_args, None)?;
 
         Ok(())
     })();
@@ -708,6 +716,53 @@ mod tests {
                 "docker network rm jackin-agent-smith-clone-1-net",
             ]
         );
+    }
+
+    #[test]
+    fn load_agent_injects_configured_mounts() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(Some("chainargos"), "agent-brown");
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(),
+            "jackin-chainargos-agent-brown".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("chainargos").join("agent-brown");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        // Create a mount source directory
+        let mount_src = temp.path().join("test-mount");
+        std::fs::create_dir_all(&mount_src).unwrap();
+        std::fs::create_dir_all(&paths.config_dir).unwrap();
+
+        // Write config with a scoped mount
+        let config_content = format!(
+            r#"[agents."chainargos/agent-brown"]
+git = "git@github.com:chainargos/jackin-agent-brown.git"
+
+[docker.mounts."chainargos/*"]
+test-mount = {{ src = "{}", dst = "/test-data", readonly = true }}
+"#,
+            mount_src.display()
+        );
+        std::fs::write(&paths.config_file, &config_content).unwrap();
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+
+        load_agent(&paths, &mut config, &selector, &mut runner, &LoadOptions::default()).unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -it"))
+            .unwrap();
+        assert!(run_cmd.contains(&format!("{}:/test-data:ro", mount_src.display())));
     }
 
     #[test]
