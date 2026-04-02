@@ -47,7 +47,7 @@ fn digital_rain(duration_ms: u64) {
             let s = xorshift(&mut seed);
             let speed = 1 + (s % 3) as i32;
             let start = -((s % (rows as u64 + 5)) as i32);
-            (start, speed, (s % 3) != 0)
+            (start, speed, !s.is_multiple_of(3))
         })
         .collect();
 
@@ -59,7 +59,7 @@ fn digital_rain(duration_ms: u64) {
         for (col, (pos, speed, active)) in drops.iter_mut().enumerate() {
             if !*active {
                 let s = xorshift(&mut seed);
-                if s % 8 == 0 {
+                if s.is_multiple_of(8) {
                     *active = true;
                     *pos = -((s % 5) as i32);
                     *speed = 1 + (s % 3) as i32;
@@ -82,7 +82,7 @@ fn digital_rain(duration_ms: u64) {
             }
 
             let s = xorshift(&mut seed);
-            if s % 5 == 0 {
+            if s.is_multiple_of(5) {
                 let r = (s as usize) % rows;
                 if grid[r][col] != ' ' {
                     grid[r][col] = random_char(&mut seed);
@@ -154,12 +154,12 @@ fn glitch_text(text: &str, color: (u8, u8, u8)) {
         eprint!("\r  ");
         for &ch in &chars {
             let s = xorshift(&mut seed);
-            let display = if s % 4 == 0 {
+            let display = if s.is_multiple_of(4) {
                 random_char(&mut seed)
             } else {
                 ch
             };
-            let (r, g, b) = if s % 3 == 0 {
+            let (r, g, b) = if s.is_multiple_of(3) {
                 MATRIX_GREEN
             } else {
                 color
@@ -295,7 +295,7 @@ pub fn print_config_table(rows: &[(String, String)]) {
             "\u{2502}".color(dim),
             value.color(powder),
             " ".repeat(pad_r),
-            format!(" \u{2502}").color(dim),
+            " \u{2502}".to_string().color(dim),
         );
     }
 
