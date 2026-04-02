@@ -299,6 +299,18 @@ impl AppConfig {
             .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))
     }
 
+    pub fn global_mounts(&self) -> Vec<MountConfig> {
+        self.docker
+            .mounts
+            .0
+            .iter()
+            .filter_map(|(_, entry)| match entry {
+                MountEntry::Mount(m) => Some(m.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub fn list_workspaces(&self) -> Vec<(&str, &WorkspaceConfig)> {
         self.workspaces
             .iter()
