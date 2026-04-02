@@ -75,6 +75,14 @@ The final Dockerfile stage must literally be `FROM donbeave/jackin-construct:tri
 
 `agent-smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the resolved workspace paths into the runtime container, mounting persisted `.claude`, `.claude.json`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.
 
+## Development
+
+To develop and test jackin itself, use [The Architect](https://github.com/donbeave/jackin-the-architect) — a dedicated agent with the full Rust toolchain:
+
+```sh
+jackin load the-architect
+```
+
 ## Roadmap
 
 - [x] Claude Code agent runtime
