@@ -81,7 +81,7 @@ fn digital_rain(duration_ms: u64) {
             Column {
                 head: -((s % (rows as u64 + 10)) as i32),
                 speed: 1 + (s % 3) as u32,
-                active: s % 3 != 0,
+                active: !s.is_multiple_of(3),
                 cooldown: 0,
             }
         })
