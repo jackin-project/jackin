@@ -1,9 +1,9 @@
 use crate::config::AppConfig;
 use crate::derived_image::create_derived_build_context;
 use crate::docker::CommandRunner;
-use crate::instance::{next_container_name, AgentState};
+use crate::instance::{AgentState, next_container_name};
 use crate::paths::JackinPaths;
-use crate::repo::{validate_agent_repo, CachedRepo};
+use crate::repo::{CachedRepo, validate_agent_repo};
 use crate::selector::ClassSelector;
 use crate::tui;
 
@@ -81,6 +81,7 @@ pub fn load_agent(
     paths: &JackinPaths,
     config: &mut AppConfig,
     selector: &ClassSelector,
+    workspace: &crate::workspace::ResolvedWorkspace,
     runner: &mut impl CommandRunner,
     opts: &LoadOptions,
 ) -> anyhow::Result<()> {
@@ -137,9 +138,6 @@ pub fn load_agent(
     let container_name = next_container_name(selector, &existing);
     let state = AgentState::prepare(paths, &container_name, &validated_repo.manifest)?;
     let build = create_derived_build_context(&cached_repo.repo_dir, &validated_repo)?;
-
-    let resolved_mounts = config.resolve_mounts(selector);
-    let validated_mounts = AppConfig::validate_mounts(&resolved_mounts)?;
 
     let image = image_name(selector);
     let network = format!("{container_name}-net");
@@ -230,31 +228,33 @@ pub fn load_agent(
         tui::print_deploying(&agent_display_name);
 
         let mut run_args: Vec<String> = vec![
-                "run".into(),
-                "-it".into(),
-                "--name".into(),
-                container_name.clone(),
-                "--hostname".into(),
-                container_name.clone(),
-                "--network".into(),
-                network.clone(),
-                "--label".into(),
-                "jackin.managed=true".into(),
-                "--label".into(),
-                format!("jackin.class={}", selector.key()),
-                "-e".into(),
-                format!("DOCKER_HOST=tcp://{dind}:2375"),
-                "-v".into(),
-                format!("{}:/workspace", cached_repo.repo_dir.display()),
-                "-v".into(),
-                format!("{}:/home/claude/.claude", state.claude_dir.display()),
-                "-v".into(),
-                format!("{}:/home/claude/.claude.json", state.claude_json.display()),
-                "-v".into(),
-                format!("{}:/home/claude/.jackin/plugins.json:ro", state.plugins_json.display()),
+            "run".into(),
+            "-it".into(),
+            "--name".into(),
+            container_name.clone(),
+            "--hostname".into(),
+            container_name.clone(),
+            "--network".into(),
+            network.clone(),
+            "--label".into(),
+            "jackin.managed=true".into(),
+            "--label".into(),
+            format!("jackin.class={}", selector.key()),
+            "--workdir".into(),
+            workspace.workdir.clone(),
+            "-e".into(),
+            format!("DOCKER_HOST=tcp://{dind}:2375"),
+            "-v".into(),
+            format!("{}:/home/claude/.claude", state.claude_dir.display()),
+            "-v".into(),
+            format!("{}:/home/claude/.claude.json", state.claude_json.display()),
+            "-v".into(),
+            format!(
+                "{}:/home/claude/.jackin/plugins.json:ro",
+                state.plugins_json.display()
+            ),
         ];
-        // User-configured mounts
-        for mount in &validated_mounts {
+        for mount in &workspace.mounts {
             let suffix = if mount.readonly { ":ro" } else { "" };
             run_args.extend([
                 "-v".into(),
@@ -289,11 +289,7 @@ pub fn load_agent(
     }
 }
 
-fn render_exit(
-    agent_display_name: &str,
-    runner: &mut impl CommandRunner,
-    opts: &LoadOptions,
-) {
+fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: &LoadOptions) {
     tui::clear_screen();
     let remaining = list_running_agent_names(runner).unwrap_or_default();
     if !opts.no_intro {
@@ -303,14 +299,19 @@ fn render_exit(
     }
 }
 
-pub fn hardline_agent(
-    container_name: &str,
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<()> {
-    runner.run("docker", &["attach".into(), container_name.to_string()], None)
+pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
+    runner.run(
+        "docker",
+        &["attach".into(), container_name.to_string()],
+        None,
+    )
 }
 
-fn wait_for_dind(dind_name: &str, runner: &mut impl CommandRunner, debug: bool) -> anyhow::Result<()> {
+fn wait_for_dind(
+    dind_name: &str,
+    runner: &mut impl CommandRunner,
+    debug: bool,
+) -> anyhow::Result<()> {
     for _ in 0..30 {
         let result = runner.capture(
             "docker",
@@ -325,9 +326,7 @@ fn wait_for_dind(dind_name: &str, runner: &mut impl CommandRunner, debug: bool) 
         if result.is_ok() {
             return Ok(());
         }
-        if debug
-            && let Err(ref e) = result
-        {
+        if debug && let Err(ref e) = result {
             eprintln!("  DinD not ready: {e}");
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -336,15 +335,11 @@ fn wait_for_dind(dind_name: &str, runner: &mut impl CommandRunner, debug: bool) 
     anyhow::bail!("timed out waiting for Docker-in-Docker sidecar {dind_name}")
 }
 
-pub fn list_running_agent_names(
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<Vec<String>> {
+pub fn list_running_agent_names(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<String>> {
     list_agent_names(runner, false)
 }
 
-pub fn list_managed_agent_names(
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<Vec<String>> {
+pub fn list_managed_agent_names(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<String>> {
     list_agent_names(runner, true)
 }
 
@@ -363,11 +358,7 @@ fn list_agent_names(
         "{{.Names}}".into(),
     ]);
 
-    let output = runner.capture(
-        "docker",
-        &args,
-        None,
-    )?;
+    let output = runner.capture("docker", &args, None)?;
 
     Ok(output
         .lines()
@@ -400,10 +391,7 @@ pub fn purge_class_data(paths: &JackinPaths, selector: &ClassSelector) -> anyhow
     Ok(())
 }
 
-pub fn eject_agent(
-    container_name: &str,
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<()> {
+pub fn eject_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     let dind = format!("{container_name}-dind");
     let network = format!("{container_name}-net");
 
@@ -561,6 +549,18 @@ mod tests {
     use crate::selector::ClassSelector;
     use tempfile::tempdir;
 
+    fn repo_workspace(repo_dir: &std::path::Path) -> crate::workspace::ResolvedWorkspace {
+        crate::workspace::ResolvedWorkspace {
+            label: repo_dir.display().to_string(),
+            workdir: "/workspace".to_string(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: repo_dir.display().to_string(),
+                dst: "/workspace".to_string(),
+                readonly: false,
+            }],
+        }
+    }
+
     #[test]
     fn load_owner_repo_registers_source_and_builds_commands() {
         let temp = tempdir().unwrap();
@@ -574,41 +574,66 @@ mod tests {
 
         let repo_dir = paths.agents_dir.join("chainargos").join("the-architect");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
         )
         .unwrap();
 
-        load_agent(&paths, &mut config, &selector, &mut runner, &LoadOptions::default()).unwrap();
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
 
-        assert!(std::fs::read_to_string(&paths.config_file)
-            .unwrap()
-            .contains("chainargos/the-architect"));
-        assert!(runner
-            .recorded
-            .iter()
-            .any(|call| call.contains("git -C") || call.contains("git clone")));
-        assert!(runner
-            .recorded
-            .iter()
-            .any(|call| call.contains("docker build -t jackin-chainargos-the-architect -f")));
+        assert!(
+            std::fs::read_to_string(&paths.config_file)
+                .unwrap()
+                .contains("chainargos/the-architect")
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("git -C") || call.contains("git clone"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker build -t jackin-chainargos-the-architect -f"))
+        );
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
         }));
-        assert!(runner
-            .recorded
-            .iter()
-            .any(|call| call.contains("docker run -it --name jackin-chainargos-the-architect")));
-        assert!(runner
-            .recorded
-            .iter()
-            .any(|call| call.contains("/home/claude/.jackin/plugins.json:ro")));
-        assert!(!runner
-            .recorded
-            .iter()
-            .any(|call| call.contains("claude plugin install")));
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker run -it --name jackin-chainargos-the-architect"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("/home/claude/.jackin/plugins.json:ro"))
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("claude plugin install"))
+        );
     }
 
     #[test]
@@ -622,7 +647,10 @@ mod tests {
 
         let matched = matching_family(&selector, &names);
 
-        assert_eq!(matched, vec!["jackin-agent-smith", "jackin-agent-smith-clone-1"]);
+        assert_eq!(
+            matched,
+            vec!["jackin-agent-smith", "jackin-agent-smith-clone-1"]
+        );
     }
 
     #[test]
@@ -638,7 +666,12 @@ mod tests {
 
         assert!(!paths.data_dir.join("jackin-agent-smith").exists());
         assert!(!paths.data_dir.join("jackin-agent-smith-clone-1").exists());
-        assert!(paths.data_dir.join("jackin-chainargos-the-architect").exists());
+        assert!(
+            paths
+                .data_dir
+                .join("jackin-chainargos-the-architect")
+                .exists()
+        );
     }
 
     #[test]
@@ -647,11 +680,14 @@ mod tests {
 
         eject_agent("jackin-agent-smith", &mut runner).unwrap();
 
-        assert_eq!(runner.recorded, vec![
-            "docker rm -f jackin-agent-smith",
-            "docker rm -f jackin-agent-smith-dind",
-            "docker network rm jackin-agent-smith-net",
-        ]);
+        assert_eq!(
+            runner.recorded,
+            vec![
+                "docker rm -f jackin-agent-smith",
+                "docker rm -f jackin-agent-smith-dind",
+                "docker network rm jackin-agent-smith-net",
+            ]
+        );
     }
 
     #[test]
@@ -664,7 +700,8 @@ mod tests {
                 ),
                 (
                     "docker rm -f jackin-agent-smith-dind".to_string(),
-                    "Error response from daemon: No such container: jackin-agent-smith-dind".to_string(),
+                    "Error response from daemon: No such container: jackin-agent-smith-dind"
+                        .to_string(),
                 ),
                 (
                     "docker network rm jackin-agent-smith-net".to_string(),
@@ -677,16 +714,21 @@ mod tests {
 
         eject_agent("jackin-agent-smith", &mut runner).unwrap();
 
-        assert_eq!(runner.recorded, vec![
-            "docker rm -f jackin-agent-smith",
-            "docker rm -f jackin-agent-smith-dind",
-            "docker network rm jackin-agent-smith-net",
-        ]);
+        assert_eq!(
+            runner.recorded,
+            vec![
+                "docker rm -f jackin-agent-smith",
+                "docker rm -f jackin-agent-smith-dind",
+                "docker network rm jackin-agent-smith-net",
+            ]
+        );
     }
 
     #[test]
     fn exile_all_ejects_all_managed_agents() {
-        let mut runner = FakeRunner::with_capture_queue(["jackin-agent-smith\njackin-agent-smith-clone-1".to_string()]);
+        let mut runner = FakeRunner::with_capture_queue([
+            "jackin-agent-smith\njackin-agent-smith-clone-1".to_string(),
+        ]);
 
         exile_all(&mut runner).unwrap();
 
@@ -718,7 +760,9 @@ mod tests {
                         .to_string(),
                 ),
             ],
-            capture_queue: VecDeque::from(vec!["jackin-agent-smith\njackin-agent-smith-clone-1".to_string()]),
+            capture_queue: VecDeque::from(vec![
+                "jackin-agent-smith\njackin-agent-smith-clone-1".to_string(),
+            ]),
             ..Default::default()
         };
 
@@ -750,32 +794,55 @@ mod tests {
 
         let repo_dir = paths.agents_dir.join("chainargos").join("agent-brown");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
         )
         .unwrap();
 
-        // Create a mount source directory
         let mount_src = temp.path().join("test-mount");
         std::fs::create_dir_all(&mount_src).unwrap();
         std::fs::create_dir_all(&paths.config_dir).unwrap();
 
-        // Write config with a scoped mount
         let config_content = format!(
             r#"[agents."chainargos/agent-brown"]
 git = "git@github.com:chainargos/jackin-agent-brown.git"
-
-[docker.mounts."chainargos/*"]
-test-mount = {{ src = "{}", dst = "/test-data", readonly = true }}
 "#,
-            mount_src.display()
         );
         std::fs::write(&paths.config_file, &config_content).unwrap();
         let mut config = AppConfig::load_or_init(&paths).unwrap();
 
-        load_agent(&paths, &mut config, &selector, &mut runner, &LoadOptions::default()).unwrap();
+        let workspace = crate::workspace::ResolvedWorkspace {
+            label: "/workspace".to_string(),
+            workdir: "/workspace".to_string(),
+            mounts: vec![
+                crate::workspace::MountConfig {
+                    src: repo_dir.display().to_string(),
+                    dst: "/workspace".to_string(),
+                    readonly: false,
+                },
+                crate::workspace::MountConfig {
+                    src: mount_src.display().to_string(),
+                    dst: "/test-data".to_string(),
+                    readonly: true,
+                },
+            ],
+        };
+
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
 
         let run_cmd = runner
             .recorded
@@ -791,7 +858,10 @@ test-mount = {{ src = "{}", dst = "/test-data", readonly = true }}
 
         hardline_agent("jackin-agent-smith", &mut runner).unwrap();
 
-        assert_eq!(runner.recorded.last().unwrap(), "docker attach jackin-agent-smith");
+        assert_eq!(
+            runner.recorded.last().unwrap(),
+            "docker attach jackin-agent-smith"
+        );
     }
 
     #[test]
@@ -800,42 +870,130 @@ test-mount = {{ src = "{}", dst = "/test-data", readonly = true }}
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::with_capture_queue([
-            String::new(),
-            "jackin-agent-smith".to_string(),
-        ]);
+        let mut runner =
+            FakeRunner::with_capture_queue([String::new(), "jackin-agent-smith".to_string()]);
 
         let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
         )
         .unwrap();
 
-        load_agent(&paths, &mut config, &selector, &mut runner, &LoadOptions::default()).unwrap();
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
 
-        assert!(runner
-            .recorded
-            .iter()
-            .any(|call| call.contains("docker build -t jackin-agent-smith -f")));
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker build -t jackin-agent-smith -f"))
+        );
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
         }));
-        assert!(runner
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker run -it --name jackin-agent-smith"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("/home/claude/.jackin/plugins.json:ro"))
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call == "docker rm -f jackin-agent-smith")
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("claude plugin install"))
+        );
+    }
+
+    #[test]
+    fn load_agent_uses_resolved_workspace_mounts_and_workdir() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let workspace_dir = temp.path().join("workspace");
+        std::fs::create_dir_all(&workspace_dir).unwrap();
+        let workspace = crate::workspace::ResolvedWorkspace {
+            label: workspace_dir.display().to_string(),
+            workdir: workspace_dir.display().to_string(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: workspace_dir.display().to_string(),
+                dst: workspace_dir.display().to_string(),
+                readonly: false,
+            }],
+        };
+
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_call = runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker run -it --name jackin-agent-smith")));
-        assert!(runner
-            .recorded
-            .iter()
-            .any(|call| call.contains("/home/claude/.jackin/plugins.json:ro")));
-        assert!(!runner.recorded.iter().any(|call| call == "docker rm -f jackin-agent-smith"));
-        assert!(!runner
-            .recorded
-            .iter()
-            .any(|call| call.contains("claude plugin install")));
+            .find(|call| call.contains("docker run -it"))
+            .unwrap();
+        assert!(run_call.contains(&format!("--workdir {}", workspace.workdir)));
+        assert!(run_call.contains(&format!(
+            "{}:{}",
+            workspace_dir.display(),
+            workspace_dir.display()
+        )));
+        assert!(!run_call.contains(&format!("{}:/workspace", repo_dir.display())));
     }
 
     #[test]
@@ -852,21 +1010,50 @@ test-mount = {{ src = "{}", dst = "/test-data", readonly = true }}
 
         let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        std::fs::write(repo_dir.join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
         )
         .unwrap();
 
-        let error = load_agent(&paths, &mut config, &selector, &mut runner, &LoadOptions::default()).unwrap_err();
+        let workspace = repo_workspace(&repo_dir);
+        let error = load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap_err();
 
-        assert!(error.to_string().contains("docker run -it --name jackin-agent-smith"));
-        assert!(runner.recorded.iter().any(|call| call == "docker rm -f jackin-agent-smith"));
-        assert!(runner.recorded.iter().any(|call| call == "docker rm -f jackin-agent-smith-dind"));
-        assert!(runner
-            .recorded
-            .iter()
-            .any(|call| call == "docker network rm jackin-agent-smith-net"));
+        assert!(
+            error
+                .to_string()
+                .contains("docker run -it --name jackin-agent-smith")
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call == "docker rm -f jackin-agent-smith")
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call == "docker rm -f jackin-agent-smith-dind")
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call == "docker network rm jackin-agent-smith-net")
+        );
     }
 }

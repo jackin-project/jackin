@@ -30,12 +30,44 @@ pub fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Load {
             selector,
+            path,
+            workspace,
+            mounts,
+            workdir,
             no_intro,
             debug,
         } => {
             let class = ClassSelector::parse(&selector)?;
+            let cwd = std::env::current_dir()?;
+            let workspace_input = if let Some(name) = workspace {
+                crate::workspace::LoadWorkspaceInput::Saved(name)
+            } else if !mounts.is_empty() {
+                let mounts = mounts
+                    .iter()
+                    .map(|value| crate::workspace::parse_mount_spec(value))
+                    .collect::<Result<Vec<_>>>()?;
+                crate::workspace::LoadWorkspaceInput::Custom {
+                    mounts,
+                    workdir: workdir.ok_or_else(|| {
+                        anyhow::anyhow!("--workdir is required when using --mount")
+                    })?,
+                }
+            } else if let Some(path) = path {
+                crate::workspace::LoadWorkspaceInput::Path(std::path::PathBuf::from(path))
+            } else {
+                crate::workspace::LoadWorkspaceInput::CurrentDir
+            };
+            let resolved_workspace =
+                crate::workspace::resolve_load_workspace(&config, &class, &cwd, workspace_input)?;
             let opts = runtime::LoadOptions { no_intro, debug };
-            runtime::load_agent(&paths, &mut config, &class, &mut runner, &opts)
+            runtime::load_agent(
+                &paths,
+                &mut config,
+                &class,
+                &resolved_workspace,
+                &mut runner,
+                &opts,
+            )
         }
         Command::Hardline { container } => runtime::hardline_agent(&container, &mut runner),
         Command::Eject {
