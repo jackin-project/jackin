@@ -15,6 +15,8 @@ dockerfile-parser = "0.9.0"
 tempfile = "3.20"
 owo-colors = { version = "4", features = ["supports-colors"] }
 ctrlc = "3"
+ratatui = "0.29"
+crossterm = "0.28"
 
 [dev-dependencies]
 assert_cmd = "2.0"
