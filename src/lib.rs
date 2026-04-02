@@ -9,6 +9,7 @@ pub mod repo;
 pub mod repo_contract;
 pub mod runtime;
 pub mod selector;
+pub mod tui;
 
 use anyhow::Result;
 use cli::{Cli, Command};
@@ -25,9 +26,14 @@ pub fn run(cli: Cli) -> Result<()> {
     let mut runner = ShellRunner;
 
     match cli.command {
-        Command::Load { selector } => {
+        Command::Load {
+            selector,
+            no_intro,
+            debug,
+        } => {
             let class = ClassSelector::parse(&selector)?;
-            runtime::load_agent(&paths, &mut config, &class, &mut runner)
+            let opts = runtime::LoadOptions { no_intro, debug };
+            runtime::load_agent(&paths, &mut config, &class, &mut runner, &opts)
         }
         Command::Hardline { container } => runtime::hardline_agent(&container, &mut runner),
         Command::Eject {
