@@ -40,10 +40,11 @@ impl ClassSelector {
         }
 
         let mut parts = input.split('/');
-        if let (Some(namespace), Some(name), None) = (parts.next(), parts.next(), parts.next()) {
-            if is_valid_class_segment(namespace) && is_valid_class_segment(name) {
-                return Ok(Self::new(Some(namespace), name));
-            }
+        if let (Some(namespace), Some(name), None) = (parts.next(), parts.next(), parts.next())
+            && is_valid_class_segment(namespace)
+            && is_valid_class_segment(name)
+        {
+            return Ok(Self::new(Some(namespace), name));
         }
 
         Err(SelectorError::Invalid(input.to_string()))
@@ -67,12 +68,12 @@ impl Selector {
             return Ok(Self::Container(input.to_string()));
         }
 
-        if !input.contains('/') {
-            if let Some((base, suffix)) = input.rsplit_once("-clone-") {
-                if is_valid_class_segment(base) && suffix.chars().all(|ch| ch.is_ascii_digit()) {
-                    return Ok(Self::Container(format!("jackin-{input}")));
-                }
-            }
+        if !input.contains('/')
+            && let Some((base, suffix)) = input.rsplit_once("-clone-")
+            && is_valid_class_segment(base)
+            && suffix.chars().all(|ch| ch.is_ascii_digit())
+        {
+            return Ok(Self::Container(format!("jackin-{input}")));
         }
 
         Ok(Self::Class(ClassSelector::parse(input)?))
@@ -88,7 +89,7 @@ fn is_valid_class_segment(value: &str) -> bool {
 
 fn is_valid_container_name(value: &str) -> bool {
     value.strip_prefix("jackin-")
-        .is_some_and(|rest| is_valid_class_segment(rest))
+        .is_some_and(is_valid_class_segment)
 }
 
 fn is_reserved_builtin_class_name(value: &str) -> bool {

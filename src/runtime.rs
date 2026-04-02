@@ -325,10 +325,10 @@ fn wait_for_dind(dind_name: &str, runner: &mut impl CommandRunner, debug: bool) 
         if result.is_ok() {
             return Ok(());
         }
-        if debug {
-            if let Err(ref e) = result {
-                eprintln!("  DinD not ready: {e}");
-            }
+        if debug
+            && let Err(ref e) = result
+        {
+            eprintln!("  DinD not ready: {e}");
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
