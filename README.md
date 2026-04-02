@@ -12,12 +12,33 @@ Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
 ## Commands
 
-- `jackin load smith` — send an agent in.
-- `jackin hardline agent-smith` — reattach to a running agent.
-- `jackin eject agent-smith` — pull one agent out.
-- `jackin eject smith --all` — pull every Smith out for one class scope.
+- `jackin load agent-smith` — send an agent in.
+- `jackin hardline jackin-agent-smith` — reattach to a running agent.
+- `jackin eject jackin-agent-smith` — pull one agent out.
+- `jackin eject agent-smith --all` — pull every Agent Smith out for one class scope.
 - `jackin exile` — remove every running agent.
-- `jackin purge smith --all` — delete persisted state for one class.
+- `jackin purge agent-smith --all` — delete persisted state for one class.
+
+## Naming Convention
+
+Agent repos follow the `jackin-{class-name}` naming convention on GitHub:
+
+- `jackin-agent-smith` — the default agent
+- `jackin-neo` — a custom agent named "neo"
+- `chainargos/jackin-the-architect` — a namespaced agent
+
+The class name is what you use with `jackin load`. The repo name adds the `jackin-` prefix for discoverability.
+
+## Agent Identity
+
+Agents can declare a display name in `jackin.agent.toml`:
+
+```toml
+[identity]
+name = "Agent Smith"
+```
+
+This name is used for visualization in jackin. When omitted, the class selector name is used instead.
 
 ## Storage
 
@@ -38,10 +59,11 @@ Derived build-context generation currently rejects symlinks in the agent repo in
 
 The final Dockerfile stage must literally be `FROM donbeave/jackin-construct:trixie`, optionally with an alias such as `FROM donbeave/jackin-construct:trixie AS runtime`. Earlier stages may use any base image.
 
-`smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the cached repo checkout at `/workspace`, mounting persisted `.claude`, `.claude.json`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.
+`agent-smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the cached repo checkout at `/workspace`, mounting persisted `.claude`, `.claude.json`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.
 
 ## Roadmap
 
 - [x] Claude Code agent runtime
+- [ ] Kubernetes platform support
 - [ ] [Codex](https://github.com/openai/codex) agent runtime
 - [ ] [Amp Code](https://ampcode.com) agent runtime
