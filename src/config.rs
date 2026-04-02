@@ -6,6 +6,17 @@ use std::collections::BTreeMap;
 
 pub use crate::workspace::MountConfig;
 
+const BUILTIN_AGENTS: &[(&str, &str)] = &[
+    (
+        "agent-smith",
+        "git@github.com:donbeave/jackin-agent-smith.git",
+    ),
+    (
+        "the-architect",
+        "git@github.com:donbeave/jackin-the-architect.git",
+    ),
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSource {
     pub git: String,
@@ -41,14 +52,17 @@ impl AppConfig {
     pub fn load_or_init(paths: &JackinPaths) -> anyhow::Result<Self> {
         paths.ensure_base_dirs()?;
 
-        if !paths.config_file.exists() {
-            let config = Self::default_config();
+        let mut config = if paths.config_file.exists() {
+            let contents = std::fs::read_to_string(&paths.config_file)?;
+            toml::from_str(&contents)?
+        } else {
+            Self::default()
+        };
+
+        if config.sync_builtin_agents() {
             config.save(paths)?;
-            return Ok(config);
         }
 
-        let contents = std::fs::read_to_string(&paths.config_file)?;
-        let config: Self = toml::from_str(&contents)?;
         config.validate_workspaces()?;
         Ok(config)
     }
@@ -314,24 +328,23 @@ impl AppConfig {
         Ok(())
     }
 
-    fn default_config() -> Self {
-        let mut agents = BTreeMap::new();
-        agents.insert(
-            "agent-smith".to_string(),
-            AgentSource {
-                git: "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
-            },
-        );
-        agents.insert(
-            "the-architect".to_string(),
-            AgentSource {
-                git: "git@github.com:donbeave/jackin-the-architect.git".to_string(),
-            },
-        );
-        Self {
-            agents,
-            ..Self::default()
+    /// Ensures all built-in agent entries match the current binary version.
+    /// Returns `true` if any entries were added or updated.
+    fn sync_builtin_agents(&mut self) -> bool {
+        let mut changed = false;
+        for &(name, git) in BUILTIN_AGENTS {
+            let expected = AgentSource {
+                git: git.to_string(),
+            };
+            match self.agents.get(name) {
+                Some(existing) if existing.git == expected.git => {}
+                _ => {
+                    self.agents.insert(name.to_string(), expected);
+                    changed = true;
+                }
+            }
         }
+        changed
     }
 }
 
@@ -343,7 +356,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn bootstrap_writes_default_agent_entries() {
+    fn bootstrap_writes_builtin_agent_entries() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
 
@@ -358,6 +371,73 @@ mod tests {
             "git@github.com:donbeave/jackin-the-architect.git"
         );
         assert!(paths.config_file.exists());
+    }
+
+    #[test]
+    fn sync_updates_stale_builtin_entries_and_preserves_user_agents() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        std::fs::write(
+            &paths.config_file,
+            r#"[agents.agent-smith]
+git = "git@github.com:old/wrong-url.git"
+
+[agents."chainargos/agent-jones"]
+git = "git@github.com:chainargos/jackin-agent-jones.git"
+"#,
+        )
+        .unwrap();
+
+        let config = AppConfig::load_or_init(&paths).unwrap();
+
+        // Built-in entries are corrected
+        assert_eq!(
+            config.agents.get("agent-smith").unwrap().git,
+            "git@github.com:donbeave/jackin-agent-smith.git"
+        );
+        // Missing built-in entries are added
+        assert_eq!(
+            config.agents.get("the-architect").unwrap().git,
+            "git@github.com:donbeave/jackin-the-architect.git"
+        );
+        // User-added entries are preserved
+        assert_eq!(
+            config.agents.get("chainargos/agent-jones").unwrap().git,
+            "git@github.com:chainargos/jackin-agent-jones.git"
+        );
+
+        // Config file is updated on disk
+        let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(persisted.contains("donbeave/jackin-agent-smith.git"));
+        assert!(persisted.contains("donbeave/jackin-the-architect.git"));
+        assert!(persisted.contains("chainargos/jackin-agent-jones.git"));
+    }
+
+    #[test]
+    fn sync_does_not_rewrite_config_when_already_current() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+
+        // First load creates the file
+        AppConfig::load_or_init(&paths).unwrap();
+        let mtime_before = std::fs::metadata(&paths.config_file)
+            .unwrap()
+            .modified()
+            .unwrap();
+
+        // Small delay so mtime would differ if rewritten
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Second load should not rewrite
+        AppConfig::load_or_init(&paths).unwrap();
+        let mtime_after = std::fs::metadata(&paths.config_file)
+            .unwrap()
+            .modified()
+            .unwrap();
+
+        assert_eq!(mtime_before, mtime_after);
     }
 
     #[test]
