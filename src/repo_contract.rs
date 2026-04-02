@@ -71,7 +71,11 @@ mod tests {
 
         let error = validate_agent_dockerfile(&dockerfile).unwrap_err();
 
-        assert!(error.to_string().contains("donbeave/jackin-construct:trixie"));
+        assert!(
+            error
+                .to_string()
+                .contains("donbeave/jackin-construct:trixie")
+        );
     }
 
     #[test]

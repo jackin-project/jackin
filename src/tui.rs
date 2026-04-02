@@ -115,9 +115,9 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
         })
         .collect();
 
-    let mut grid: Vec<Vec<Option<RainCell>>> = (0..rows).map(|_| {
-        (0..cols).map(|_| None).collect()
-    }).collect();
+    let mut grid: Vec<Vec<Option<RainCell>>> = (0..rows)
+        .map(|_| (0..cols).map(|_| None).collect())
+        .collect();
 
     eprint!("\x1b[?25l"); // hide cursor
 
@@ -194,9 +194,8 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
 
         // Assign a random flip frame to each banner cell within the reveal window
         let reveal_frames = 1000 / frame_ms;
-        let mut flip_at: Vec<Vec<u64>> = (0..rows).map(|_| {
-            (0..cols).map(|_| 0).collect()
-        }).collect();
+        let mut flip_at: Vec<Vec<u64>> =
+            (0..rows).map(|_| (0..cols).map(|_| 0).collect()).collect();
         let mut locked: Vec<Vec<bool>> = vec![vec![false; cols]; rows];
 
         for (r, row) in target.iter().enumerate() {

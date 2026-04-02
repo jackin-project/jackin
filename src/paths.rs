@@ -12,7 +12,8 @@ pub struct JackinPaths {
 
 impl JackinPaths {
     pub fn detect() -> anyhow::Result<Self> {
-        let base = BaseDirs::new().ok_or_else(|| anyhow::anyhow!("Cannot resolve home directory"))?;
+        let base =
+            BaseDirs::new().ok_or_else(|| anyhow::anyhow!("Cannot resolve home directory"))?;
         let home_dir = base.home_dir().to_path_buf();
         let config_dir = home_dir.join(".config/jackin");
 

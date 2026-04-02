@@ -110,7 +110,11 @@ mod tests {
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
         )
         .unwrap();
-        std::fs::write(temp.path().join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
         let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
 
         let state = AgentState::prepare(&paths, "jackin-agent-smith", &manifest).unwrap();
@@ -129,7 +133,11 @@ mod tests {
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\", \"feature-dev@claude-plugins-official\"]\n",
         )
         .unwrap();
-        std::fs::write(temp.path().join("Dockerfile"), "FROM donbeave/jackin-construct:trixie\n").unwrap();
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
 
         let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
         let state = AgentState::prepare(&paths, "jackin-agent-smith", &manifest).unwrap();
