@@ -1,0 +1,71 @@
+---
+title: "jackin config"
+description: "View and modify operator configuration"
+---
+
+## Synopsis
+
+```bash
+jackin config <SUBCOMMAND>
+```
+
+Manage global operator configuration. Currently supports global mount management.
+
+## `config mount`
+
+Manage global mounts that apply to all (or scoped) agent launches.
+
+### `config mount add`
+
+```bash
+jackin config mount add <NAME> --src <PATH> --dst <PATH> [OPTIONS]
+```
+
+Register a new global mount.
+
+| Option | Description |
+|---|---|
+| `--src <PATH>` | Path on the host machine |
+| `--dst <PATH>` | Path inside the container |
+| `--readonly` | Make this mount read-only |
+| `--scope <PATTERN>` | Only apply to matching agents (glob pattern) |
+
+```bash
+# Mount Gradle cache for all agents
+jackin config mount add gradle-cache \
+  --src ~/.gradle/caches \
+  --dst /home/claude/.gradle/caches \
+  --readonly
+
+# Mount secrets only for chainargos agents
+jackin config mount add secrets \
+  --src ~/.chainargos/secrets \
+  --dst /secrets \
+  --readonly \
+  --scope "chainargos/*"
+```
+
+### `config mount list`
+
+```bash
+jackin config mount list
+```
+
+Show all registered global mounts with their source, destination, read-only status, and scope.
+
+### `config mount remove`
+
+```bash
+jackin config mount remove <NAME> [OPTIONS]
+```
+
+Unregister a global mount.
+
+| Option | Description |
+|---|---|
+| `--scope <PATTERN>` | Only remove from this scope (leave other scopes untouched) |
+
+```bash
+jackin config mount remove gradle-cache
+jackin config mount remove secrets --scope "chainargos/*"
+```

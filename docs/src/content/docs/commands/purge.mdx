@@ -1,0 +1,47 @@
+---
+title: "jackin purge"
+description: "Delete persisted state for an agent"
+---
+
+## Synopsis
+
+```bash
+jackin purge <SELECTOR> [OPTIONS]
+```
+
+Delete persisted state (Claude history, settings, plugins) for an agent without stopping it. Use this to start fresh without rebuilding the Docker image.
+
+## Arguments
+
+| Argument | Required | Description |
+|---|---|---|
+| `SELECTOR` | Yes | Agent class selector (e.g., `agent-smith`, `chainargos/the-architect`) |
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--all` | Delete state for every instance, not just the default |
+
+## Examples
+
+```bash
+# Purge default instance state
+jackin purge agent-smith
+
+# Purge all instances
+jackin purge agent-smith --all
+
+# Purge a namespaced agent
+jackin purge chainargos/the-architect
+```
+
+## What gets deleted
+
+Persisted state at `~/.jackin/data/<container-name>/`:
+
+- `.claude/` — Claude Code session history and configuration
+- `.claude.json` — Claude settings
+- `plugins.json` — installed Claude plugins
+
+The Docker image and cached agent repo are **not** affected. Use `--rebuild` on the next `jackin load` to force a full image rebuild.
