@@ -69,7 +69,8 @@ impl CommandRunner for ShellRunner {
         }
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if self.debug && !stdout.is_empty() {
-            eprintln!("{}", format!("[debug] -> {stdout}").dimmed());
+            let first_line = stdout.lines().next().unwrap_or("");
+            eprintln!("{}", format!("[debug] -> {first_line}").dimmed());
         }
         Ok(stdout)
     }
