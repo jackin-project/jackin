@@ -152,6 +152,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 },
             };
 
+            let saved_workspace_name = if let LoadWorkspaceInput::Saved(ref name) = workspace_input
+            {
+                Some(name.clone())
+            } else {
+                None
+            };
+
             let ad_hoc_mounts = mounts
                 .iter()
                 .map(|value| parse_mount_spec(value))
@@ -165,14 +172,22 @@ pub fn run(cli: Cli) -> Result<()> {
                 &ad_hoc_mounts,
             )?;
             let opts = runtime::LoadOptions { no_intro, debug };
-            runtime::load_agent(
+            let result = runtime::load_agent(
                 &paths,
                 &mut config,
                 &class,
                 &resolved_workspace,
                 &mut runner,
                 &opts,
-            )
+            );
+            // Remember the last-used agent for this workspace
+            if let Some(ws_name) = saved_workspace_name
+                && let Some(ws) = config.workspaces.get_mut(&ws_name)
+            {
+                ws.last_agent = Some(class.key());
+                let _ = config.save(&paths);
+            }
+            result
         }
         Command::Launch => {
             let cwd = std::env::current_dir()?;
@@ -181,7 +196,14 @@ pub fn run(cli: Cli) -> Result<()> {
                 no_intro: false,
                 debug: false,
             };
-            runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts)
+            let result =
+                runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts);
+            // Remember the last-used agent if this was a saved workspace
+            if let Some(ws) = config.workspaces.get_mut(&workspace.label) {
+                ws.last_agent = Some(class.key());
+                let _ = config.save(&paths);
+            }
+            result
         }
         Command::Hardline { container } => runtime::hardline_agent(&container, &mut runner),
         Command::Eject {
@@ -217,7 +239,18 @@ pub fn run(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
-        Command::Exile => runtime::exile_all(&mut runner),
+        Command::Exile => {
+            let names = runtime::list_managed_agent_names(&mut runner)?;
+            if names.is_empty() {
+                println!("No agents running.");
+            } else {
+                for name in &names {
+                    runtime::eject_agent(name, &mut runner)?;
+                    println!("Ejected {name}.");
+                }
+            }
+            Ok(())
+        }
         Command::Config {
             command: config_cmd,
         } => match config_cmd {
@@ -321,6 +354,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         mounts: all_mounts,
                         allowed_agents,
                         default_agent,
+                        last_agent: None,
                     },
                 )?;
                 config.save(&paths)?;
@@ -596,6 +630,7 @@ mod tests {
                 mounts: vec![],
                 allowed_agents: vec![],
                 default_agent: None,
+                last_agent: None,
             },
         );
         let cwd = std::env::temp_dir();
