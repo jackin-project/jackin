@@ -13,6 +13,8 @@ Reconnect your terminal to a running agent container. Use this when you've close
 
 In The Matrix, a hardline is a phone line used to enter or exit the simulation. In jackin, it's your way back into a running agent session.
 
+If you pass an agent class selector, `jackin hardline` reconnects to that class's primary container. If you have multiple running instances, use the full container name to pick a specific clone.
+
 ## Arguments
 
 | Argument | Required | Description |
@@ -29,7 +31,7 @@ jackin hardline agent-smith
 jackin hardline jackin-agent-smith-clone-1
 
 # Reconnect to a namespaced agent
-jackin hardline chainargos/the-architect
+jackin hardline chainargos/backend-engineer
 ```
 
 ## When to use
