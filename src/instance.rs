@@ -57,11 +57,15 @@ impl AgentState {
     }
 }
 
-pub fn primary_container_name(selector: &ClassSelector) -> String {
+pub fn runtime_slug(selector: &ClassSelector) -> String {
     selector.namespace.as_ref().map_or_else(
-        || format!("jackin-{}", selector.name),
-        |namespace| format!("jackin-{namespace}-{}", selector.name),
+        || selector.name.clone(),
+        |namespace| format!("{namespace}__{}", selector.name),
     )
+}
+
+pub fn primary_container_name(selector: &ClassSelector) -> String {
+    format!("jackin-{}", runtime_slug(selector))
 }
 
 pub fn next_container_name(selector: &ClassSelector, existing: &[String]) -> String {
@@ -103,6 +107,14 @@ mod tests {
         let name = next_container_name(&selector, &existing);
 
         assert_eq!(name, "jackin-agent-smith-clone-2");
+    }
+
+    #[test]
+    fn distinguishes_namespaced_and_flat_class_container_names() {
+        let namespaced = ClassSelector::new(Some("chainargos"), "the-architect");
+        let flat = ClassSelector::new(None, "chainargos-the-architect");
+
+        assert_ne!(primary_container_name(&namespaced), primary_container_name(&flat));
     }
 
     #[test]

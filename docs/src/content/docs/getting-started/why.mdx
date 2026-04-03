@@ -38,6 +38,26 @@ Instead of running on your host, each agent runs inside a Docker container with 
 
 Think of it this way: you're not restricting the agent's *capabilities*. You're restricting its *blast radius*.
 
+## Why separate agent classes from workspaces?
+
+This is the part new users usually need spelled out.
+
+A **workspace** controls file visibility. It says which project paths are mounted into the container.
+
+An **agent class** controls environment and behavior. It says which tools, shells, plugins, and defaults exist in that container image.
+
+Those are different concerns, and combining them into one giant image brings back the same problem as a cluttered host machine: the agent can inspect too many tools, too many conventions, and too much implicit context.
+
+Imagine one company with a shared monorepo:
+
+- the frontend team uses a `frontend` agent class with Node, Playwright, design-system utilities, and UI-oriented Claude plugins
+- the backend team uses a `backend` agent class with Rust or Go toolchains, database clients, and API-oriented plugins
+- both teams can still point those agent classes at the same monorepo workspace when needed
+
+That split keeps the visible project files and the installed toolchain independently controllable.
+
+It also helps with Claude Code plugins. A tool like Superpowers can be extremely useful, but it brings hooks and behavior that you may not want in every task. The most reliable way to keep it out of scope is not to "mostly disable" it, but to use a different agent class where it simply is not installed.
+
 ## The Matrix analogy
 
 The name "jackin" comes from [jacking in](https://matrix.fandom.com/wiki/Jacking_in) to The Matrix. In the films, an operator loads a person into a simulated environment — the construct — where they can train, fight, and operate with superhuman abilities. But they're not actually modifying the real world. The operator controls what the simulation contains.

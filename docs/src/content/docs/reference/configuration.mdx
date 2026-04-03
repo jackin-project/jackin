@@ -9,7 +9,7 @@ description: "The config.toml schema and storage locations"
 |---|---|
 | `~/.config/jackin/config.toml` | Operator configuration (workspaces, global mounts) |
 | `~/.jackin/agents/` | Cached agent repository checkouts |
-| `~/.jackin/data/<container-name>/` | Persisted agent state (Claude history, settings, plugins) |
+| `~/.jackin/data/<container-name>/` | Persisted agent state (Claude history, settings, GitHub CLI config, plugins) |
 
 ## config.toml schema
 
@@ -20,53 +20,45 @@ The configuration file is TOML format at `~/.config/jackin/config.toml`. It's ma
 ```toml
 [workspaces.my-app]
 workdir = "/home/user/Projects/my-app"
-workdir_mount = true
+allowed_agents = ["agent-smith", "the-architect"]
+default_agent = "agent-smith"
+last_agent = "the-architect"
+
+[[workspaces.my-app.mounts]]
+src = "/home/user/Projects/my-app"
+dst = "/home/user/Projects/my-app"
+readonly = false
 
 [[workspaces.my-app.mounts]]
 src = "/home/user/cache"
 dst = "/cache"
 readonly = true
-
-[workspaces.my-app.agents]
-allowed = ["agent-smith", "the-architect"]
-default = "agent-smith"
 ```
 
 | Field | Description |
 |---|---|
 | `workdir` | Container working directory |
-| `workdir_mount` | Whether to auto-mount workdir (default: `true`) |
 | `mounts` | Array of mount specifications |
 | `mounts[].src` | Host path |
 | `mounts[].dst` | Container path |
 | `mounts[].readonly` | Read-only flag |
-| `agents.allowed` | List of allowed agent selectors |
-| `agents.default` | Default agent selector |
+| `allowed_agents` | List of allowed agent selectors |
+| `default_agent` | Default agent selector |
+| `last_agent` | Most recently used agent selector for this workspace |
+
+When you use `jackin workspace add`, the common case is to make `workdir` and the first mount destination the same absolute path. If you need a different container layout, use `--no-workdir-mount` and define mounts explicitly.
 
 ### Global mounts
 
 ```toml
-[[mounts]]
-name = "gradle-cache"
-src = "/home/user/.gradle/caches"
-dst = "/home/claude/.gradle/caches"
-readonly = true
+[docker.mounts]
+gradle-cache = { src = "/home/user/.gradle/caches", dst = "/home/claude/.gradle/caches", readonly = true }
 
-[[mounts]]
-name = "secrets"
-src = "/home/user/.chainargos/secrets"
-dst = "/secrets"
-readonly = true
-scope = "chainargos/*"
+[docker.mounts."chainargos/*"]
+secrets = { src = "/home/user/.chainargos/secrets", dst = "/secrets", readonly = true }
 ```
 
-| Field | Description |
-|---|---|
-| `name` | Unique identifier for the mount |
-| `src` | Host path |
-| `dst` | Container path |
-| `readonly` | Read-only flag |
-| `scope` | Optional glob pattern to limit to specific agents |
+Global mounts are stored by name. Unscoped mounts live directly under `[docker.mounts]`. Scoped mounts live under a scope key such as `[docker.mounts."chainargos/*"]`.
 
 ## Persisted state
 
@@ -76,6 +68,7 @@ Each agent instance stores state at `~/.jackin/data/<container-name>/`:
 |---|---|
 | `.claude/` | Claude Code session history, conversation context |
 | `.claude.json` | Claude Code settings |
+| `.config/gh/` | GitHub CLI authentication and settings |
 | `plugins.json` | Installed Claude plugins list |
 
 This state is mounted back into the container on subsequent loads, so the agent resumes where it left off.

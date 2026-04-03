@@ -15,6 +15,8 @@ Manage global operator configuration. Currently supports global mount management
 
 Manage global mounts that apply to all (or scoped) agent launches.
 
+Global mounts are best for caches, shared read-only reference material, or team-wide directories that should be available everywhere.
+
 ### `config mount add`
 
 ```bash
@@ -22,6 +24,8 @@ jackin config mount add <NAME> --src <PATH> --dst <PATH> [OPTIONS]
 ```
 
 Register a new global mount.
+
+If a global mount resolves to the same container destination as a workspace mount or load-time mount, Jackin raises a conflict error at load time instead of silently overriding one of them.
 
 | Option | Description |
 |---|---|

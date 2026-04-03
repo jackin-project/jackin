@@ -67,7 +67,7 @@ import { Aside } from '@astrojs/starlight/components';
 
 ### Loading an agent
 
-1. **Resolve agent class** — map selector to GitHub repo, clone/update
+1. **Resolve agent class** — map selector to GitHub repo, clone/update, verify cached repo origin, reject dirty cached checkouts
 2. **Validate contract** — check `jackin.agent.toml` and Dockerfile
 3. **Generate derived Dockerfile** — add Claude, entrypoint, user mapping
 4. **Build image** — Docker layer caching makes this fast after first build
@@ -92,7 +92,7 @@ import { Aside } from '@astrojs/starlight/components';
 
 Each agent gets an isolated Docker network:
 
-- Network name: `jackin-{agent-class}-net`
+- Network name: derived from the runtime container name, for example `jackin-agent-smith-net` or `jackin-chainargos__the-architect-net`
 - The agent container and its DinD sidecar share this network
 - The agent connects to DinD via `DOCKER_HOST=tcp://{dind}:2375`
 - Agents cannot reach other agents' networks
@@ -113,6 +113,7 @@ The DinD sidecar currently runs without TLS. This means any container on the age
 │   └── jackin-agent-smith/
 │       ├── .claude/               # Session history
 │       ├── .claude.json           # Settings
+│       ├── .config/gh/            # GitHub CLI auth + config
 │       └── plugins.json           # Plugin list
 ```
 

@@ -9,7 +9,7 @@ description: "Delete persisted state for an agent"
 jackin purge <SELECTOR> [OPTIONS]
 ```
 
-Delete persisted state (Claude history, settings, plugins) for an agent without stopping it. Use this to start fresh without rebuilding the Docker image.
+Delete persisted state (Claude history, settings, GitHub CLI state, plugins) for an agent without stopping it. Use this to start fresh without rebuilding the Docker image.
 
 ## Arguments
 
@@ -42,6 +42,7 @@ Persisted state at `~/.jackin/data/<container-name>/`:
 
 - `.claude/` — Claude Code session history and configuration
 - `.claude.json` — Claude settings
+- `.config/gh/` — GitHub CLI authentication and settings
 - `plugins.json` — installed Claude plugins
 
 The Docker image and cached agent repo are **not** affected. Use `--rebuild` on the next `jackin load` to force a full image rebuild.

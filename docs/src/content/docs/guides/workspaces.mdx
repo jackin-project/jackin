@@ -9,6 +9,13 @@ import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 A workspace is a saved configuration that tells jackin how to mount your project directories into an agent container. Instead of typing long mount paths every time, you save a workspace once and reference it by name.
 
+A workspace is **not** the same thing as an agent class:
+
+- **workspace** = which project files are available
+- **agent class** = which tools, plugins, and defaults are installed
+
+That means one workspace can be reused with multiple agent classes when the file access should stay the same but the runtime profile should differ.
+
 ## The current directory workspace
 
 The simplest way to use jackin is from your project directory:
@@ -32,6 +39,12 @@ Now you can load agents into it from anywhere:
 
 ```bash
 jackin load agent-smith my-app
+```
+
+Or load a different agent class into the same workspace:
+
+```bash
+jackin load the-architect my-app
 ```
 
 ### What `--workdir` does
@@ -115,6 +128,8 @@ jackin workspace add secure-api \
 
 - `--allowed-agent` — only these agents can load this workspace (repeatable)
 - `--default-agent` — auto-selected when you use `jackin launch` with this workspace
+
+This is especially useful when one workspace should only be used with a very specific tool profile, such as a production-infra agent or a security-review agent.
 
 ### Editing agent restrictions
 

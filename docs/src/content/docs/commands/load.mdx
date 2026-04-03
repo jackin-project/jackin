@@ -13,6 +13,8 @@ jackin load [SELECTOR] [TARGET] [OPTIONS]
 
 Load an agent into an isolated Docker container. This is the primary command for starting an agent session.
 
+`SELECTOR` chooses the **agent class** (tool profile). `TARGET` chooses the **workspace or path** (file access boundary).
+
 ## Arguments
 
 | Argument | Required | Description |
@@ -65,6 +67,14 @@ jackin load agent-smith ~/app --mount ~/cache:/cache:ro
 4. Creates a per-agent Docker network and DinD sidecar
 5. Launches the agent container with all resolved mounts
 6. Starts Claude Code with `--dangerously-skip-permissions`
+
+<Aside type="note">
+If the cached agent repo has been locally modified, contains extra files, or its git `origin` no longer matches the configured source, `jackin load` stops with an error instead of trusting that cache.
+</Aside>
+
+<Aside type="caution">
+If two resolved mounts target the same container destination, `jackin load` fails with a conflict error. It does not silently override one mount with another.
+</Aside>
 
 <Aside type="tip">
 If no selector is given and the current directory matches a saved workspace with a default agent, that agent is used automatically.

@@ -26,12 +26,19 @@ AI coding agents like Claude Code are most productive when they can run **withou
 
 **jackin solves this** by giving each agent its own isolated Docker container with Docker-in-Docker enabled. The agent thinks it has free rein — but it's operating inside a construct you defined.
 
+## Think in two dimensions
+
+- **Agent class** = the tool profile. Which image, plugins, defaults, and runtime behavior should this agent have?
+- **Workspace** = the access boundary. Which project files should this agent be allowed to see?
+
+That separation is the point. A backend agent and frontend agent can work on the same repository workspace without sharing one giant all-knowing image.
+
 <CardGrid>
   <Card title="Isolated by default" icon="shield">
     Each agent runs in its own Docker container. It can only see directories you explicitly mount and tools baked into its image.
   </Card>
   <Card title="Full autonomy inside" icon="rocket">
-    Agents run with `--dangerously-skip-permissions` safely. No permission prompts, no restrictions — inside the sandbox.
+    Agents run with `--dangerously-skip-permissions` inside the container boundary. Claude is unrestricted there, but the container still limits its world.
   </Card>
   <Card title="Operator control" icon="setting">
     You control the blast radius: which folders agents read/write, whether mounts are read-only, and which Docker network they use.
@@ -54,6 +61,8 @@ jackin load agent-smith
 # Or use the interactive launcher
 jackin launch
 ```
+
+`agent-smith` is just the default starter agent class name in this project. Your own classes might be named `frontend`, `backend`, or `review-only`.
 
 <CardGrid>
   <LinkCard title="Installation" href="/jackin/getting-started/installation/" description="All the ways to install jackin" />

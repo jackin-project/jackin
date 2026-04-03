@@ -37,6 +37,28 @@ jackin load agent-smith
 jackin launch
 ```
 
+## Mental Model
+
+There are three core ideas in `jackin`:
+
+- **Agent class** — a reusable tool profile defined by a GitHub repo and loaded by name, such as `agent-smith`, `the-architect`, `frontend-team`, or `backend-team`
+- **Workspace** — the project access boundary: which host directories are mounted, where they appear in the container, and which agent classes are allowed to use them
+- **Agent instance** — one running container created from an agent class and attached to one workspace
+
+`agent-smith` is just the default starter class name in this project. It is not magic syntax. In a real company you might have classes like `frontend`, `backend`, `infra`, or `review-only`.
+
+This distinction matters. A workspace answers "which files can this agent see?" An agent class answers "which tools, defaults, plugins, and runtime behavior does this agent have?"
+
+For example:
+
+- a frontend team and backend team might both work inside the same monorepo workspace
+- the frontend agent class might include Node, Playwright, and UI-focused Claude plugins
+- the backend agent class might include Rust or Go tooling, database clients, and different plugins
+
+Keeping those as separate agent classes is intentional isolation. If you put every tool and every plugin into one giant image, you recreate the same problem as a cluttered local machine: the agent can inspect and react to far more context than the task actually needs.
+
+This is also useful for controlling Claude Code plugin behavior. If one agent class includes something powerful like Superpowers and another agent class does not, the second container genuinely cannot load it because it is not installed there. That can be a practical way to keep certain workflows or hooks completely out of scope for specific tasks.
+
 ## Construct
 
 `donbeave/jackin-construct:trixie` is the shared base image for every agent repo. In The Matrix, the construct is the base simulated environment you load before a mission. That maps directly to `jackin`'s shared runtime image: every agent starts from the same construct before layering on its own specialized environment.
@@ -150,6 +172,13 @@ If the current directory exactly matches a saved workspace `workdir`, Jackin pre
 
 Saved workspaces are local operator config. They define mounts, `workdir`, and optional allowed/default agents.
 
+One useful pattern is to reuse the same workspace with different agent classes:
+
+- `jackin load agent-smith big-monorepo` for general work
+- `jackin load the-architect big-monorepo` for Rust-heavy changes
+
+Another pattern is the opposite: reuse one agent class across many workspaces when the tooling stays the same but the projects differ.
+
 ## Naming Convention
 
 Agent repos follow the `jackin-{class-name}` naming convention on GitHub:
@@ -175,7 +204,7 @@ This name is used for visualization in jackin. When omitted, the class selector 
 
 - `~/.config/jackin/config.toml` — operator config.
 - `~/.jackin/agents/...` — cached agent repositories.
-- `~/.jackin/data/<container-name>/` — persisted `.claude`, `.claude.json`, and `plugins.json` for one agent instance.
+- `~/.jackin/data/<container-name>/` — persisted `.claude`, `.claude.json`, `.config/gh`, and `plugins.json` for one agent instance.
 
 ## Agent Repo Contract
 
@@ -188,9 +217,11 @@ The manifest Dockerfile path must be relative and must stay inside the repo chec
 
 Derived build-context generation currently rejects symlinks in the agent repo instead of following or preserving them.
 
+Cached agent repos must stay clean. If the cached checkout's `origin` no longer matches the configured repo, or if the cache contains local changes or extra files, `jackin` refuses to load it until you clean or remove that cache directory.
+
 The final Dockerfile stage must literally be `FROM donbeave/jackin-construct:trixie`, optionally with an alias such as `FROM donbeave/jackin-construct:trixie AS runtime`. Earlier stages may use any base image.
 
-`agent-smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the resolved workspace paths into the runtime container, mounting persisted `.claude`, `.claude.json`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.
+`agent-smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the resolved workspace paths into the runtime container, mounting persisted `.claude`, `.claude.json`, `.config/gh`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.
 
 ## Development
 
