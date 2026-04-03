@@ -30,11 +30,15 @@ pub struct WorkspaceEdit {
     pub default_agent: Option<Option<String>>,
 }
 
+fn home_dir() -> Option<String> {
+    directories::BaseDirs::new().map(|b| b.home_dir().display().to_string())
+}
+
 pub fn expand_tilde(path: &str) -> String {
     if (path == "~" || path.starts_with("~/"))
-        && let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())
+        && let Some(home) = home_dir()
     {
-        return path.replacen('~', &home.display().to_string(), 1);
+        return path.replacen('~', &home, 1);
     }
 
     path.to_string()
