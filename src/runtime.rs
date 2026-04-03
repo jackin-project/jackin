@@ -179,7 +179,11 @@ pub fn load_agent(
 
     // Step 1: Resolve agent identity (clone or update repo)
     let cached_repo = CachedRepo::new(paths, selector);
-    std::fs::create_dir_all(cached_repo.repo_dir.parent().unwrap())?;
+    let repo_parent = cached_repo
+        .repo_dir
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("agent repo path has no parent: {}", cached_repo.repo_dir.display()))?;
+    std::fs::create_dir_all(repo_parent)?;
 
     opts.step(step, "Resolving agent identity");
     step += 1;
@@ -573,21 +577,24 @@ impl LoadCleanup {
             return;
         }
 
-        let _ = runner.run(
-            "docker",
+        if let Err(e) = run_cleanup_command(
+            runner,
             &["rm".into(), "-f".into(), self.container_name.clone()],
-            None,
-        );
-        let _ = runner.run(
-            "docker",
+        ) {
+            tui::step_fail(&format!("cleanup failed (container): {e}"));
+        }
+        if let Err(e) = run_cleanup_command(
+            runner,
             &["rm".into(), "-f".into(), self.dind.clone()],
-            None,
-        );
-        let _ = runner.run(
-            "docker",
+        ) {
+            tui::step_fail(&format!("cleanup failed (dind): {e}"));
+        }
+        if let Err(e) = run_cleanup_command(
+            runner,
             &["network".into(), "rm".into(), self.network.clone()],
-            None,
-        );
+        ) {
+            tui::step_fail(&format!("cleanup failed (network): {e}"));
+        }
     }
 }
 
