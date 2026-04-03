@@ -6,6 +6,21 @@ Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
 > **Current status:** jackin is built as a proof of concept around [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its first and only supported agent runtime. Support for additional agent runtimes — [Codex](https://github.com/openai/codex) and [Amp Code](https://ampcode.com) — is planned for future releases.
 
+## Installation
+
+### Homebrew (macOS/Linux)
+
+```sh
+brew tap donbeave/tap
+brew install jackin
+```
+
+### From source
+
+```sh
+cargo install --git https://github.com/donbeave/jackin.git
+```
+
 ## Quick Start
 
 ```sh
