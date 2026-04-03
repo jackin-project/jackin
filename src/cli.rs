@@ -5,7 +5,7 @@ const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::BrightGreen.on_default().effects(Effects::BOLD))
     .usage(AnsiColor::BrightGreen.on_default().effects(Effects::BOLD))
     .literal(AnsiColor::Green.on_default().effects(Effects::BOLD))
-    .placeholder(AnsiColor::Green.on_default())
+    .placeholder(AnsiColor::White.on_default())
     .valid(AnsiColor::BrightGreen.on_default())
     .invalid(AnsiColor::Red.on_default().effects(Effects::BOLD))
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
@@ -55,12 +55,12 @@ Examples:
   jackin load agent-smith --rebuild"
     )]
     Load {
-        /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
+        /// Agent class selector (e.g. `agent-smith`, `chainargos/agent-brown`)
         selector: String,
-        /// Path, path:container-dest, or saved workspace name
+        /// Path, `path:container-dest`, or saved workspace name
         #[arg(value_name = "TARGET")]
         target: Option<String>,
-        /// Additional bind-mount spec as path[:ro] or src:dst[:ro] (repeatable)
+        /// Additional bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)
         #[arg(long = "mount")]
         mounts: Vec<String>,
         /// Force rebuild the Docker image (updates Claude to latest version)
@@ -121,7 +121,7 @@ Examples:
   jackin purge chainargos/the-architect"
     )]
     Purge {
-        /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
+        /// Agent class selector (e.g. `agent-smith`, `chainargos/agent-brown`)
         selector: String,
         /// Delete state for every instance, not just the default
         #[arg(long)]
@@ -177,7 +177,7 @@ Examples:
         /// Working directory (automatically mounted at the same path unless --no-workdir-mount)
         #[arg(long)]
         workdir: String,
-        /// Additional bind-mount spec as path[:ro] or src:dst[:ro] (repeatable)
+        /// Additional bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)
         #[arg(long = "mount")]
         mounts: Vec<String>,
         /// Do not auto-mount the workdir; provide all mounts explicitly with --mount
@@ -224,7 +224,7 @@ Examples:
         /// Update the container working directory
         #[arg(long)]
         workdir: Option<String>,
-        /// Add a bind-mount spec as path[:ro] or src:dst[:ro] (repeatable)
+        /// Add a bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)
         #[arg(long = "mount")]
         mounts: Vec<String>,
         /// Remove a mount by its container destination path (repeatable)
@@ -284,7 +284,7 @@ Examples:
         /// Make this mount read-only inside the container
         #[arg(long, default_value_t = false)]
         readonly: bool,
-        /// Apply only to matching agents (e.g. "chainargos/*" or "chainargos/agent-brown")
+        /// Apply only to matching agents (e.g. `chainargos/*` or `chainargos/agent-brown`)
         #[arg(long)]
         scope: Option<String>,
     },
@@ -602,7 +602,7 @@ mod tests {
     fn load_help_shows_mount_format() {
         let help = help_text(&["jackin", "load", "--help"]);
         assert!(
-            help.contains("path[:ro] or src:dst[:ro]"),
+            help.contains("path[:ro]") && help.contains("src:dst[:ro]"),
             "mount format missing"
         );
     }
@@ -656,7 +656,7 @@ mod tests {
     fn workspace_add_help_shows_mount_format() {
         let help = help_text(&["jackin", "workspace", "add", "--help"]);
         assert!(
-            help.contains("path[:ro] or src:dst[:ro]"),
+            help.contains("path[:ro]") && help.contains("src:dst[:ro]"),
             "mount format missing"
         );
     }
@@ -674,7 +674,7 @@ mod tests {
     fn workspace_edit_help_shows_mount_format() {
         let help = help_text(&["jackin", "workspace", "edit", "--help"]);
         assert!(
-            help.contains("path[:ro] or src:dst[:ro]"),
+            help.contains("path[:ro]") && help.contains("src:dst[:ro]"),
             "mount format missing"
         );
     }
