@@ -24,20 +24,30 @@ impl Default for LoadOptions {
 struct StepCounter {
     current: u32,
     quiet: bool,
+    agent_name: String,
 }
 
 impl StepCounter {
-    const fn new(quiet: bool) -> Self {
-        Self { current: 0, quiet }
+    fn new(quiet: bool, agent_name: &str) -> Self {
+        Self {
+            current: 0,
+            quiet,
+            agent_name: agent_name.to_string(),
+        }
     }
 
     fn next(&mut self, text: &str) {
         self.current += 1;
+        tui::set_terminal_title(&format!("{} \u{2014} {text}", self.agent_name));
         if self.quiet {
             tui::step_quiet(self.current, text);
         } else {
             tui::step_shimmer(self.current, text);
         }
+    }
+
+    fn done(&self) {
+        tui::set_terminal_title(&self.agent_name);
     }
 }
 
@@ -343,7 +353,7 @@ pub fn load_agent(
 
     let (source, is_new) = config.resolve_agent_source(selector)?;
 
-    let mut steps = StepCounter::new(opts.no_intro);
+    let mut steps = StepCounter::new(opts.no_intro, &selector.name);
 
     // Step 1: Resolve agent identity (clone or update repo)
     steps.next("Resolving agent identity");
@@ -365,9 +375,7 @@ pub fn load_agent(
     let dind = format!("{container_name}-dind");
 
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
-
-    // Set terminal title
-    tui::set_terminal_title(&agent_display_name);
+    steps.agent_name.clone_from(&agent_display_name);
 
     // Logo (if present in agent repo)
     tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
@@ -398,6 +406,7 @@ pub fn load_agent(
 
         // Step 5: Launch agent
         steps.next("Mounting volumes");
+        steps.done();
 
         launch_agent_runtime(
             &container_name,
