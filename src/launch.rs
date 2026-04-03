@@ -15,6 +15,7 @@ pub struct WorkspaceChoice {
     pub workspace: ResolvedWorkspace,
     pub allowed_agents: Vec<ClassSelector>,
     pub default_agent: Option<String>,
+    pub last_agent: Option<String>,
     pub global_mounts: Vec<MountConfig>,
     pub input: LoadWorkspaceInput,
 }
@@ -41,6 +42,7 @@ impl LaunchState {
             },
             allowed_agents: configured_agents(config),
             default_agent: None,
+            last_agent: None,
             global_mounts: global_mounts.clone(),
             input: LoadWorkspaceInput::CurrentDir,
         };
@@ -57,6 +59,7 @@ impl LaunchState {
                 },
                 allowed_agents,
                 default_agent: saved.default_agent.clone(),
+                last_agent: saved.last_agent.clone(),
                 global_mounts: global_mounts.clone(),
                 input: LoadWorkspaceInput::Saved(name.clone()),
             });
@@ -135,10 +138,17 @@ fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
 }
 
 fn default_agent_index(choice: &WorkspaceChoice, agents: &[ClassSelector]) -> Option<usize> {
+    // Last-used agent takes priority, then falls back to default_agent
     choice
-        .default_agent
+        .last_agent
         .as_ref()
-        .and_then(|default| agents.iter().position(|agent| agent.key() == *default))
+        .and_then(|last| agents.iter().position(|agent| agent.key() == *last))
+        .or_else(|| {
+            choice
+                .default_agent
+                .as_ref()
+                .and_then(|default| agents.iter().position(|agent| agent.key() == *default))
+        })
 }
 
 fn resolve_selected_workspace(
@@ -686,6 +696,7 @@ mod tests {
                 }],
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: Some("agent-smith".to_string()),
+                last_agent: None,
             },
         );
 
@@ -712,6 +723,7 @@ mod tests {
                     crate::selector::ClassSelector::new(Some("chainargos"), "the-architect"),
                 ],
                 default_agent: None,
+                last_agent: None,
                 global_mounts: vec![],
                 input: LoadWorkspaceInput::CurrentDir,
             }],

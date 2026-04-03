@@ -18,6 +18,8 @@ pub struct WorkspaceConfig {
     pub allowed_agents: Vec<String>,
     #[serde(default)]
     pub default_agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_agent: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -151,6 +153,7 @@ pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
         }],
         allowed_agents: vec![],
         default_agent: None,
+        last_agent: None,
     })
 }
 
@@ -196,6 +199,7 @@ pub fn resolve_load_workspace(
                 }],
                 allowed_agents: vec![],
                 default_agent: None,
+                last_agent: None,
             };
             let label = ws.workdir.clone();
             (ws, label)
@@ -331,6 +335,7 @@ mod tests {
                 }],
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: Some("agent-smith".to_string()),
+                last_agent: None,
             },
         );
 
@@ -371,6 +376,7 @@ mod tests {
                 }],
                 allowed_agents: vec![],
                 default_agent: None,
+                last_agent: None,
             },
         );
 
@@ -448,6 +454,7 @@ mod tests {
                 }],
                 allowed_agents: vec![],
                 default_agent: None,
+                last_agent: None,
             },
         );
 
@@ -487,6 +494,7 @@ mod tests {
                 }],
                 allowed_agents: vec![],
                 default_agent: None,
+                last_agent: None,
             },
         );
 
