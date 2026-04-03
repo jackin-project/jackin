@@ -148,6 +148,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     if mounts.is_empty() {
                         println!("No mounts configured.");
                     } else {
+                        use tabled::settings::Style;
                         use tabled::{Table, Tabled};
                         #[derive(Tabled)]
                         struct Row {
@@ -172,7 +173,9 @@ pub fn run(cli: Cli) -> Result<()> {
                                 mode: if m.readonly { "read-only".to_string() } else { "read-write".to_string() },
                             })
                             .collect();
-                        println!("{}", Table::new(rows));
+                        let mut table = Table::new(rows);
+                        table.with(Style::modern_rounded());
+                        println!("{table}");
                     }
                     Ok(())
                 }
@@ -214,6 +217,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         "  jackin workspace add <name> --workdir /path/to/project --mount /path/to/project"
                     );
                 } else {
+                    use tabled::settings::Style;
                     use tabled::{Table, Tabled};
                     #[derive(Tabled)]
                     struct Row {
@@ -246,38 +250,79 @@ pub fn run(cli: Cli) -> Result<()> {
                                 .to_string(),
                         })
                         .collect();
-                    println!("{}", Table::new(rows));
+                    let mut table = Table::new(rows);
+                    table.with(Style::modern_rounded());
+                    println!("{table}");
+                    println!();
+                    println!("Run jackin workspace show <name> for details.");
                 }
                 Ok(())
             }
             WorkspaceCommand::Show { name } => {
+                use tabled::settings::Style;
+                use tabled::{Table, Tabled};
+
+                #[derive(Tabled)]
+                struct MountRow {
+                    #[tabled(rename = "Source")]
+                    src: String,
+                    #[tabled(rename = "Destination")]
+                    dst: String,
+                    #[tabled(rename = "Mode")]
+                    mode: String,
+                }
+
                 let workspace = config
                     .workspaces
                     .get(&name)
                     .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?;
-                println!("name: {name}");
-                println!("workdir: {}", workspace.workdir);
-                println!(
-                    "allowed agents: {}",
-                    if workspace.allowed_agents.is_empty() {
-                        "any agent".to_string()
-                    } else {
-                        workspace.allowed_agents.join(", ")
-                    }
-                );
-                println!(
-                    "default agent: {}",
-                    workspace.default_agent.as_deref().unwrap_or("none")
-                );
-                println!("mounts:");
-                for mount in &workspace.mounts {
-                    let mode = if mount.readonly {
-                        " (read-only)"
-                    } else {
-                        ""
-                    };
-                    println!("  {} -> {}{mode}", mount.src, mount.dst);
+
+                let allowed = if workspace.allowed_agents.is_empty() {
+                    "any agent".to_string()
+                } else {
+                    workspace.allowed_agents.join(", ")
+                };
+                let default_agent = workspace
+                    .default_agent
+                    .as_deref()
+                    .unwrap_or("none");
+
+                let info = [
+                    ("Name", name.as_str()),
+                    ("Workdir", &workspace.workdir),
+                    ("Allowed Agents", &allowed),
+                    ("Default Agent", default_agent),
+                ];
+                let mut info_table = Table::builder(
+                    info.iter().map(|(k, v)| [*k, *v]),
+                )
+                .build();
+                info_table
+                    .with(Style::modern_rounded())
+                    .with(tabled::settings::Remove::row(tabled::settings::object::Rows::first()));
+                println!("{info_table}");
+
+                if !workspace.mounts.is_empty() {
+                    println!();
+                    println!("Mounts:");
+                    let mount_rows: Vec<MountRow> = workspace
+                        .mounts
+                        .iter()
+                        .map(|m| MountRow {
+                            src: m.src.clone(),
+                            dst: m.dst.clone(),
+                            mode: if m.readonly {
+                                "read-only".to_string()
+                            } else {
+                                "read-write".to_string()
+                            },
+                        })
+                        .collect();
+                    let mut mount_table = Table::new(mount_rows);
+                    mount_table.with(Style::modern_rounded());
+                    println!("{mount_table}");
                 }
+
                 Ok(())
             }
             WorkspaceCommand::Edit {
