@@ -65,33 +65,27 @@ struct HostIdentity {
 }
 
 /// Run a command and return its trimmed stdout, or `None` on failure.
-fn capture_stdout(program: &str, args: &[&str]) -> Option<String> {
-    let output = std::process::Command::new(program)
-        .args(args)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())?;
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if value.is_empty() { None } else { Some(value) }
+fn try_capture(runner: &mut impl CommandRunner, program: &str, args: &[&str]) -> Option<String> {
+    runner.capture(program, args, None).ok().filter(|s| !s.is_empty())
 }
 
-fn load_git_identity() -> GitIdentity {
+fn load_git_identity(runner: &mut impl CommandRunner) -> GitIdentity {
     GitIdentity {
-        user_name: capture_stdout("git", &["config", "user.name"]).unwrap_or_default(),
-        user_email: capture_stdout("git", &["config", "user.email"]).unwrap_or_default(),
+        user_name: try_capture(runner, "git", &["config", "user.name"]).unwrap_or_default(),
+        user_email: try_capture(runner, "git", &["config", "user.email"]).unwrap_or_default(),
     }
 }
 
 #[cfg(unix)]
-fn load_host_identity() -> HostIdentity {
+fn load_host_identity(runner: &mut impl CommandRunner) -> HostIdentity {
     HostIdentity {
-        uid: capture_stdout("id", &["-u"]).unwrap_or_else(|| "1000".to_string()),
-        gid: capture_stdout("id", &["-g"]).unwrap_or_else(|| "1000".to_string()),
+        uid: try_capture(runner, "id", &["-u"]).unwrap_or_else(|| "1000".to_string()),
+        gid: try_capture(runner, "id", &["-g"]).unwrap_or_else(|| "1000".to_string()),
     }
 }
 
 #[cfg(not(unix))]
-fn load_host_identity() -> HostIdentity {
+fn load_host_identity(_runner: &mut impl CommandRunner) -> HostIdentity {
     HostIdentity {
         uid: "1000".to_string(),
         gid: "1000".to_string(),
@@ -116,22 +110,22 @@ fn parse_repo_name(url: &str) -> Option<String> {
 }
 
 /// Derive a short repository name from a git remote URL (e.g. `donbeave/jackin`).
-fn git_repo_name(dir: &std::path::Path) -> Option<String> {
+fn git_repo_name(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
     let dir_str = dir.display().to_string();
-    let url = capture_stdout("git", &["-C", &dir_str, "remote", "get-url", "origin"])?;
+    let url = try_capture(runner, "git", &["-C", &dir_str, "remote", "get-url", "origin"])?;
     parse_repo_name(&url)
 }
 
 /// Get the current branch name for a git directory.
-fn git_branch(dir: &std::path::Path) -> Option<String> {
+fn git_branch(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
     let dir_str = dir.display().to_string();
-    capture_stdout("git", &["-C", &dir_str, "rev-parse", "--abbrev-ref", "HEAD"])
+    try_capture(runner, "git", &["-C", &dir_str, "rev-parse", "--abbrev-ref", "HEAD"])
 }
 
 /// Check whether a path is inside a git work tree.
-fn is_git_dir(dir: &std::path::Path) -> bool {
+fn is_git_dir(dir: &std::path::Path, runner: &mut impl CommandRunner) -> bool {
     let dir_str = dir.display().to_string();
-    capture_stdout("git", &["-C", &dir_str, "rev-parse", "--is-inside-work-tree"]).is_some()
+    try_capture(runner, "git", &["-C", &dir_str, "rev-parse", "--is-inside-work-tree"]).is_some()
 }
 
 fn build_config_rows(
@@ -140,6 +134,7 @@ fn build_config_rows(
     workspace: &crate::workspace::ResolvedWorkspace,
     git: &GitIdentity,
     image: &str,
+    runner: &mut impl CommandRunner,
 ) -> Vec<(String, String)> {
     // Who
     let mut rows = vec![("identity".to_string(), agent_display_name.to_string())];
@@ -156,11 +151,11 @@ fn build_config_rows(
 
     // Where
     let workdir = std::path::Path::new(&workspace.label);
-    if workdir.is_absolute() && is_git_dir(workdir) {
-        if let Some(repo_name) = git_repo_name(workdir) {
+    if workdir.is_absolute() && is_git_dir(workdir, runner) {
+        if let Some(repo_name) = git_repo_name(workdir, runner) {
             rows.push(("repository".to_string(), repo_name));
         }
-        if let Some(branch) = git_branch(workdir) {
+        if let Some(branch) = git_branch(workdir, runner) {
             rows.push(("branch".to_string(), branch));
         }
     } else {
@@ -189,13 +184,10 @@ fn resolve_agent_repo(
     std::fs::create_dir_all(repo_parent)?;
 
     let repo_path = cached_repo.repo_dir.display().to_string();
-    let clone_result = runner.capture("git", &["clone", git_url, &repo_path], None);
-    if let Err(e) = clone_result {
-        if !cached_repo.repo_dir.exists() {
-            return Err(e);
-        }
-        // Already cloned (possibly by a concurrent process) — update instead
+    if cached_repo.repo_dir.join(".git").is_dir() {
         runner.capture("git", &["-C", &repo_path, "pull", "--ff-only"], None)?;
+    } else {
+        runner.capture("git", &["clone", git_url, &repo_path], None)?;
     }
 
     let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
@@ -267,22 +259,37 @@ fn build_agent_image(
     Ok(image)
 }
 
+struct LaunchContext<'a> {
+    container_name: &'a str,
+    image: &'a str,
+    network: &'a str,
+    dind: &'a str,
+    selector: &'a ClassSelector,
+    agent_display_name: &'a str,
+    workspace: &'a crate::workspace::ResolvedWorkspace,
+    state: &'a AgentState,
+    git: &'a GitIdentity,
+    debug: bool,
+}
+
 /// Create the Docker network, start `DinD`, and launch the agent container.
-#[allow(clippy::too_many_arguments)]
 fn launch_agent_runtime(
-    container_name: &str,
-    image: &str,
-    network: &str,
-    dind: &str,
-    selector: &ClassSelector,
-    agent_display_name: &str,
-    workspace: &crate::workspace::ResolvedWorkspace,
-    state: &AgentState,
-    git: &GitIdentity,
+    ctx: &LaunchContext<'_>,
     steps: &mut StepCounter,
     runner: &mut impl CommandRunner,
-    debug: bool,
 ) -> anyhow::Result<()> {
+    let LaunchContext {
+        container_name,
+        image,
+        network,
+        dind,
+        selector,
+        agent_display_name,
+        workspace,
+        state,
+        git,
+        debug,
+    } = ctx;
     // Clean up stale resources from a previous run that wasn't cleaned up
     // (e.g. terminal closed, process killed, Ctrl+C during docker run)
     let _ = run_cleanup_command(runner, &["rm", "-f", container_name]);
@@ -307,7 +314,7 @@ fn launch_agent_runtime(
     ];
     runner.capture("docker", &dind_args, None)?;
 
-    wait_for_dind(dind, runner, debug)?;
+    wait_for_dind(dind, runner, *debug)?;
 
     // Step 4: Mount volumes and launch
     steps.next("Launching agent");
@@ -352,7 +359,7 @@ fn launch_agent_runtime(
         "-e",
         &git_author_email,
     ];
-    if debug {
+    if *debug {
         run_args.extend_from_slice(&["-e", "CLAUDE_DEBUG=1"]);
     }
     run_args.extend_from_slice(&[
@@ -389,8 +396,8 @@ pub fn load_agent(
     runner: &mut impl CommandRunner,
     opts: &LoadOptions,
 ) -> anyhow::Result<()> {
-    let git = load_git_identity();
-    let host = load_host_identity();
+    let git = load_git_identity(runner);
+    let host = load_host_identity(runner);
 
     // Matrix intro
     if !opts.no_intro {
@@ -438,6 +445,7 @@ pub fn load_agent(
         workspace,
         &git,
         &image,
+        runner,
     );
     eprintln!();
     tui::print_config_table(&config_rows);
@@ -453,20 +461,19 @@ pub fn load_agent(
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");
 
-        launch_agent_runtime(
-            &container_name,
-            &image,
-            &network,
-            &dind,
+        let ctx = LaunchContext {
+            container_name: &container_name,
+            image: &image,
+            network: &network,
+            dind: &dind,
             selector,
-            &agent_display_name,
+            agent_display_name: &agent_display_name,
             workspace,
-            &state,
-            &git,
-            &mut steps,
-            runner,
-            opts.debug,
-        )?;
+            state: &state,
+            git: &git,
+            debug: opts.debug,
+        };
+        launch_agent_runtime(&ctx, &mut steps, runner)?;
 
         Ok(())
     })();
@@ -724,6 +731,21 @@ impl FakeRunner {
             ..Default::default()
         }
     }
+
+    /// Prefixes the capture queue with empty responses for the identity lookups
+    /// (`git config user.name`, `git config user.email`, `id -u`, `id -g`)
+    /// that `load_agent` performs before any docker commands.
+    fn for_load_agent<const N: usize>(outputs: [String; N]) -> Self {
+        let mut queue = VecDeque::with_capacity(4 + N);
+        for _ in 0..4 {
+            queue.push_back(String::new());
+        }
+        queue.extend(outputs);
+        Self {
+            capture_queue: queue,
+            ..Default::default()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -796,7 +818,7 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(Some("chainargos"), "the-architect");
-        let mut runner = FakeRunner::with_capture_queue([
+        let mut runner = FakeRunner::for_load_agent([
             String::new(),
             "jackin-chainargos-the-architect".to_string(),
         ]);
@@ -1013,7 +1035,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = ClassSelector::new(Some("chainargos"), "agent-brown");
-        let mut runner = FakeRunner::with_capture_queue([
+        let mut runner = FakeRunner::for_load_agent([
             String::new(),
             "jackin-chainargos-agent-brown".to_string(),
         ]);
@@ -1095,7 +1117,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
         let mut runner =
-            FakeRunner::with_capture_queue([String::new(), "jackin-agent-smith".to_string()]);
+            FakeRunner::for_load_agent([String::new(), "jackin-agent-smith".to_string()]);
 
         let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -1168,7 +1190,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::with_capture_queue([
+        let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
             String::new(),
@@ -1232,7 +1254,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::with_capture_queue([
+        let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
             String::new(),
@@ -1301,7 +1323,10 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let selector = ClassSelector::new(None, "agent-smith");
         let mut runner = FakeRunner {
             fail_on: vec!["docker run -it --name jackin-agent-smith".to_string()],
-            capture_queue: VecDeque::from(vec![String::new()]),
+            capture_queue: VecDeque::from(vec![
+                String::new(), String::new(), String::new(), String::new(), // identity
+                String::new(), // git pull
+            ]),
             ..Default::default()
         };
 
@@ -1360,7 +1385,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::with_capture_queue([
+        let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
             String::new(),
@@ -1457,7 +1482,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
             user_email: String::new(),
         };
 
-        let rows = build_config_rows("Agent", "jackin-agent", &workspace, &git, "img");
+        let rows = build_config_rows("Agent", "jackin-agent", &workspace, &git, "img", &mut crate::docker::ShellRunner::default());
 
         let labels: Vec<&str> = rows.iter().map(|(l, _)| l.as_str()).collect();
         assert!(labels.contains(&"repository"));
@@ -1478,7 +1503,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
             user_email: "neo@matrix.org".to_string(),
         };
 
-        let rows = build_config_rows("Agent", "jackin-agent", &workspace, &git, "img");
+        let rows = build_config_rows("Agent", "jackin-agent", &workspace, &git, "img", &mut crate::docker::ShellRunner::default());
 
         let labels: Vec<&str> = rows.iter().map(|(l, _)| l.as_str()).collect();
         assert!(labels.contains(&"workspace"));
@@ -1502,7 +1527,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
             user_email: String::new(),
         };
 
-        let rows = build_config_rows("Agent", "jackin-agent", &workspace, &git, "img");
+        let rows = build_config_rows("Agent", "jackin-agent", &workspace, &git, "img", &mut crate::docker::ShellRunner::default());
 
         let labels: Vec<&str> = rows.iter().map(|(l, _)| l.as_str()).collect();
         assert!(!labels.contains(&"dind"));
@@ -1538,7 +1563,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::with_capture_queue([
+        let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
             String::new(),
