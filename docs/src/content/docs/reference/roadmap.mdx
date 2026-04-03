@@ -1,0 +1,53 @@
+---
+title: Roadmap
+description: What's done and what's coming next
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Current status
+
+jackin is at **v0.1.0** — a functional proof of concept with Claude Code as its first supported agent runtime.
+
+## Completed
+
+- Claude Code agent runtime with full permission mode
+- Docker container isolation with Docker-in-Docker
+- Interactive TUI launcher
+- Workspace management (add, edit, remove, list, show)
+- Global mount configuration with agent scoping
+- Agent repo contract validation
+- Derived Dockerfile generation
+- State persistence across sessions
+- Agent identity (display names)
+- UID/GID host user mapping
+- GitHub CLI authentication passthrough
+- Homebrew installation
+
+## Planned
+
+### Agent runtimes
+
+<Aside>
+jackin's architecture is runtime-agnostic. The construct and workspace system work the same regardless of which AI agent runs inside.
+</Aside>
+
+- **Kubernetes platform support** — run agents on Kubernetes clusters instead of local Docker, enabling team-scale deployments
+- **[Codex](https://github.com/openai/codex) runtime** — OpenAI's coding agent as an alternative to Claude Code
+- **[Amp Code](https://ampcode.com) runtime** — Sourcegraph's AI coding agent
+
+### Infrastructure improvements
+
+- **DinD TLS authentication** — secure the Docker-in-Docker daemon with auto-generated certificates
+- **Orphaned container cleanup** — automatic garbage collection of DinD containers when agent startup fails
+- **Construct user creation optimization** — move user creation to the derived layer to eliminate UID/GID remapping
+
+## Contributing
+
+jackin is open source under the Apache 2.0 license. To develop and test jackin itself, use [The Architect](https://github.com/donbeave/jackin-the-architect) — a dedicated agent with the full Rust toolchain:
+
+```bash
+jackin load the-architect
+```
+
+The project uses `cargo-nextest` for testing and requires all clippy lints to pass before committing.

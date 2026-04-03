@@ -1,0 +1,101 @@
+---
+title: Agent Repos
+description: How agent repositories work and how they're discovered
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What is an agent repo?
+
+An agent repo is a GitHub repository that defines a specific agent class. It contains:
+
+1. A **Dockerfile** — the agent's environment definition (tools, languages, SDKs)
+2. A **manifest file** (`jackin.agent.toml`) — metadata about the agent
+
+When you run `jackin load agent-smith`, jackin looks for a GitHub repo named `jackin-agent-smith` and builds a container from it.
+
+## Naming convention
+
+Agent repos follow the `jackin-{class-name}` naming pattern:
+
+| Class name | GitHub repo | Load command |
+|---|---|---|
+| `agent-smith` | `jackin-agent-smith` | `jackin load agent-smith` |
+| `neo` | `jackin-neo` | `jackin load neo` |
+| `the-architect` | `jackin-the-architect` | `jackin load the-architect` |
+
+### Namespaced agents
+
+Organizations can create agents under their namespace:
+
+| Class name | GitHub repo | Load command |
+|---|---|---|
+| `chainargos/the-architect` | `chainargos/jackin-the-architect` | `jackin load chainargos/the-architect` |
+| `chainargos/agent-brown` | `chainargos/jackin-agent-brown` | `jackin load chainargos/agent-brown` |
+
+The namespace prefix maps directly to the GitHub organization or user.
+
+## Agent identity
+
+Agents can declare a display name in their manifest:
+
+```toml title="jackin.agent.toml"
+[identity]
+name = "Agent Smith"
+```
+
+This name appears in jackin's TUI and output. When omitted, the class selector name is used instead (e.g., `agent-smith`).
+
+## Caching
+
+Agent repos are cloned to `~/.jackin/agents/` on first load. Subsequent loads use the cached checkout. jackin updates the repo (pulls latest) each time you load an agent to ensure you're running the latest version.
+
+<Aside type="tip">
+Pass `--rebuild` to force jackin to rebuild the Docker image from scratch. This is useful when the construct base image or agent Dockerfile has changed.
+</Aside>
+
+## The repo contract
+
+Every agent repo must satisfy a contract:
+
+1. **Must contain `jackin.agent.toml`** at the repository root
+2. **Must contain a Dockerfile** at the path declared in the manifest
+3. **The Dockerfile path must be relative** and must stay inside the repo checkout (no `../` escapes)
+4. **The final Dockerfile stage must use the construct base**:
+   ```dockerfile
+   FROM donbeave/jackin-construct:trixie
+   ```
+   An optional alias is allowed:
+   ```dockerfile
+   FROM donbeave/jackin-construct:trixie AS runtime
+   ```
+5. **Earlier stages may use any base image** — multi-stage builds are fully supported
+6. **No symlinks** — the derived build-context generator currently rejects symlinks
+
+<Aside type="caution">
+Agent repos only own their agent-specific environment layer. jackin owns everything else: validating the contract, generating the derived Dockerfile, installing Claude Code, injecting the entrypoint, mounting workspaces, and wiring Docker-in-Docker.
+</Aside>
+
+## Example agent repo
+
+A minimal agent repo for a Node.js development agent:
+
+```toml title="jackin.agent.toml"
+[agent]
+dockerfile = "Dockerfile"
+
+[identity]
+name = "Node Agent"
+```
+
+```dockerfile title="Dockerfile"
+FROM donbeave/jackin-construct:trixie
+
+# Install Node.js via mise
+RUN mise install node@22 && mise use --global node@22
+
+# Install common global packages
+RUN npm install -g typescript tsx prettier eslint
+```
+
+That's it. jackin handles the rest — Claude installation, entrypoint, user mapping, state persistence, and DinD setup.
