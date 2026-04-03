@@ -398,6 +398,14 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
             };
 
             if ws.name == "Current directory" {
+                let path_style = if is_selected {
+                    Style::default()
+                        .fg(colors::WHITE)
+                        .add_modifier(Modifier::BOLD)
+                        .bg(colors::DARK_BG)
+                } else {
+                    Style::default().fg(colors::WHITE)
+                };
                 let tag_style = if is_selected {
                     Style::default().fg(colors::TAG).bg(colors::DARK_BG)
                 } else {
@@ -406,7 +414,7 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
                 ListItem::new(Line::from(vec![
                     Span::styled(
                         format!("  {}  ", tui::shorten_home(&ws.workspace.workdir)),
-                        name_style,
+                        path_style,
                     ),
                     Span::styled("current directory", tag_style),
                 ]))
