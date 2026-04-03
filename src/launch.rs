@@ -285,7 +285,7 @@ pub fn run_launch(
 
 // ── Full banner (matching CLI help colors) ──────────────────────────────
 
-const BANNER_HEIGHT: u16 = 8;
+const BANNER_HEIGHT: u16 = 9; // 1 blank + 6 logo lines + 2 padding below
 
 fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
     use ratatui::layout::Alignment;
@@ -298,6 +298,7 @@ fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
     let sub = Style::default().fg(colors::DIM_BLUE);
 
     let lines = vec![
+        Line::from(""),
         Line::from(Span::styled("│ │╷│ │╷│ ╷  │╷│ │╷│ │╷│", blue)),
         Line::from(Span::styled("│ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│", blue)),
         Line::from(Span::styled("╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵", blue)),
@@ -314,7 +315,7 @@ fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
 
 #[allow(clippy::too_many_lines)]
 fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
-    use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin};
+    use ratatui::layout::{Alignment, Constraint, Direction, Layout};
     use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::{
@@ -323,12 +324,11 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
 
     let area = frame.area();
 
-    // Main vertical layout: banner | spacer | body | footer
+    // Main vertical layout: banner | body | footer
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(BANNER_HEIGHT), // banner
-            Constraint::Length(1),             // spacer
+            Constraint::Length(BANNER_HEIGHT), // banner (includes bottom padding)
             Constraint::Min(10),              // body
             Constraint::Length(2),             // footer
         ])
@@ -337,17 +337,15 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
     // Banner
     render_banner(frame, root[0]);
 
-    // Body: workspace list (top) + details (bottom)
+    // Body: workspace list (top, 40%) + details (bottom, 60%) — fixed ratio
     let selected = &state.workspaces[state.selected_workspace];
-    let mount_lines = selected.workspace.mounts.len() + selected.global_mounts.len() + 4; // padding
-    let details_height = (mount_lines as u16).clamp(6, 16);
     let body = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(5),                  // workspace list
-            Constraint::Length(details_height),   // details
+            Constraint::Percentage(40), // workspace list
+            Constraint::Percentage(60), // details (scrollable content in fixed area)
         ])
-        .split(root[2]);
+        .split(root[1]);
 
     // Center the workspace list content
     let list_area = centered_rect(body[0], 60);
@@ -475,13 +473,13 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         Span::styled("quit", Style::default().fg(colors::DIM_GREEN)),
     ]))
     .alignment(Alignment::Center);
-    frame.render_widget(footer, root[3].inner(Margin::new(0, 0)));
+    frame.render_widget(footer, root[2]);
 }
 
 // ── Screen 2: Agent selection ──────────────────────────────────────────
 
 fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
-    use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin};
+    use ratatui::layout::{Alignment, Constraint, Direction, Layout};
     use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
@@ -571,7 +569,7 @@ fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         Span::styled("back", Style::default().fg(colors::DIM_GREEN)),
     ]))
     .alignment(Alignment::Center);
-    frame.render_widget(footer, root[3].inner(Margin::new(0, 0)));
+    frame.render_widget(footer, root[3]);
 }
 
 // ── Layout helpers ─────────────────────────────────────────────────────
