@@ -290,11 +290,7 @@ fn launch_agent_runtime(
     let _ = run_cleanup_command(runner, &["network", "rm", network]);
 
     // Create Docker network
-    if debug {
-        runner.run("docker", &["network", "create", network], None)?;
-    } else {
-        runner.capture("docker", &["network", "create", network], None)?;
-    }
+    runner.capture("docker", &["network", "create", network], None)?;
 
     // Start Docker-in-Docker
     let dind_args: Vec<&str> = vec![
@@ -309,11 +305,7 @@ fn launch_agent_runtime(
         "DOCKER_TLS_CERTDIR=",
         "docker:dind",
     ];
-    if debug {
-        runner.run("docker", &dind_args, None)?;
-    } else {
-        runner.capture("docker", &dind_args, None)?;
-    }
+    runner.capture("docker", &dind_args, None)?;
 
     wait_for_dind(dind, runner, debug)?;
 
@@ -517,22 +509,16 @@ pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> 
 fn wait_for_dind(
     dind_name: &str,
     runner: &mut impl CommandRunner,
-    debug: bool,
+    _debug: bool,
 ) -> anyhow::Result<()> {
     tui::spin_wait(
         "Waiting for Docker-in-Docker to be ready",
         30,
         std::time::Duration::from_secs(1),
         || {
-            let result = runner.capture(
-                "docker",
-                &["exec", dind_name, "docker", "info"],
-                None,
-            );
-            if debug && let Err(ref e) = result {
-                eprintln!("  DinD not ready: {e}");
-            }
-            result.map(|_| ())
+            runner
+                .capture("docker", &["exec", dind_name, "docker", "info"], None)
+                .map(|_| ())
         },
     )
     .map_err(|_| anyhow::anyhow!("timed out waiting for Docker-in-Docker sidecar {dind_name}"))
