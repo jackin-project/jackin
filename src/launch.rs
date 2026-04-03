@@ -157,7 +157,7 @@ mod colors {
 
     pub const BRIGHT_BLUE: Color = Color::Rgb(100, 149, 237); // circuit lines, labels
     pub const DIM_BLUE: Color = Color::Rgb(75, 105, 145); // borders, subtitle
-    pub const DETAIL_BORDER: Color = Color::Rgb(55, 65, 85); // details panel border
+    pub const DETAIL_BORDER: Color = Color::Rgb(60, 75, 90); // details panel border
     pub const DETAIL_BG: Color = Color::Rgb(15, 17, 25); // details panel background
     pub const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65); // highlight
     pub const DIM_GREEN: Color = Color::Rgb(0, 140, 30); // footer hints
@@ -355,19 +355,21 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
     // Banner
     render_banner(frame, root[0]);
 
-    // Body: workspace list (top, 40%) + details (bottom, 60%) — fixed ratio
+    // Body: workspace list (fixed height) + gap + details (fills rest)
     let selected = &state.workspaces[state.selected_workspace];
+    let list_height = (state.workspaces.len() as u16) + 2; // items + border top/bottom
     let body = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(40), // workspace list
-            Constraint::Percentage(60), // details (scrollable content in fixed area)
+            Constraint::Length(list_height), // workspace list — fixed to item count
+            Constraint::Length(1),           // gap between panels
+            Constraint::Min(6),             // details — fills remaining space
         ])
         .split(root[1]);
 
     // Center both panels at the same width
     let list_area = centered_rect(body[0], 70);
-    let detail_area = centered_rect(body[1], 70);
+    let detail_area = centered_rect(body[2], 70);
 
     // Workspace list
     let workspace_items: Vec<ListItem> = state
@@ -490,7 +492,8 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(colors::DETAIL_BORDER))
-        .style(Style::default().bg(colors::DETAIL_BG));
+        .style(Style::default().bg(colors::DETAIL_BG))
+        .padding(ratatui::widgets::Padding::new(1, 1, 1, 0));
     let details = Paragraph::new(detail_lines)
         .block(detail_block)
         .wrap(Wrap { trim: false });
