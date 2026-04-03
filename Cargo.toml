@@ -2,6 +2,10 @@
 name = "jackin"
 version = "0.1.0"
 edition = "2024"
+description = "Matrix-inspired CLI for orchestrating AI coding agents at scale"
+homepage = "https://github.com/donbeave/jackin"
+repository = "https://github.com/donbeave/jackin"
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0"
