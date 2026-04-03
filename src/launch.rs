@@ -158,10 +158,12 @@ mod colors {
     pub const BRIGHT_BLUE: Color = Color::Rgb(100, 149, 237); // circuit lines, labels
     pub const DIM_BLUE: Color = Color::Rgb(75, 105, 145); // borders, subtitle
     pub const DETAIL_BORDER: Color = Color::Rgb(55, 65, 85); // details panel border
+    pub const DETAIL_BG: Color = Color::Rgb(15, 17, 25); // details panel background
     pub const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65); // highlight
     pub const DIM_GREEN: Color = Color::Rgb(0, 140, 30); // footer hints
     pub const WHITE: Color = Color::Rgb(255, 255, 255);
     pub const DIM_WHITE: Color = Color::Rgb(180, 180, 180);
+    pub const TAG: Color = Color::Rgb(120, 120, 140); // dim tags like "current directory"
     pub const PATH: Color = Color::Rgb(220, 190, 120); // paths (warm amber)
     pub const PATH_DST: Color = Color::Rgb(150, 180, 220); // mount destination
     pub const DARK_BG: Color = Color::Rgb(20, 20, 30); // subtle bg for selected
@@ -373,12 +375,8 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         .iter()
         .enumerate()
         .map(|(i, ws)| {
-            let label = if ws.name == "Current directory" {
-                format!("  {}  (cwd)", tui::shorten_home(&ws.workspace.workdir))
-            } else {
-                format!("  {}  ", ws.name)
-            };
-            let style = if i == state.selected_workspace {
+            let is_selected = i == state.selected_workspace;
+            let name_style = if is_selected {
                 Style::default()
                     .fg(colors::PHOSPHOR_GREEN)
                     .add_modifier(Modifier::BOLD)
@@ -386,7 +384,26 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
             } else {
                 Style::default().fg(colors::DIM_WHITE)
             };
-            ListItem::new(Line::from(Span::styled(label, style)))
+
+            if ws.name == "Current directory" {
+                let tag_style = if is_selected {
+                    Style::default().fg(colors::TAG).bg(colors::DARK_BG)
+                } else {
+                    Style::default().fg(colors::TAG)
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format!("  {}  ", tui::shorten_home(&ws.workspace.workdir)),
+                        name_style,
+                    ),
+                    Span::styled("current directory", tag_style),
+                ]))
+            } else {
+                ListItem::new(Line::from(Span::styled(
+                    format!("  {}  ", ws.name),
+                    name_style,
+                )))
+            }
         })
         .collect();
 
@@ -472,7 +489,8 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
     let detail_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(colors::DETAIL_BORDER));
+        .border_style(Style::default().fg(colors::DETAIL_BORDER))
+        .style(Style::default().bg(colors::DETAIL_BG));
     let details = Paragraph::new(detail_lines)
         .block(detail_block)
         .wrap(Wrap { trim: false });
