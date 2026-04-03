@@ -247,6 +247,12 @@ fn launch_agent_runtime(
     runner: &mut impl CommandRunner,
     debug: bool,
 ) -> anyhow::Result<()> {
+    // Clean up stale resources from a previous run that wasn't cleaned up
+    // (e.g. terminal closed, process killed, Ctrl+C during docker run)
+    let _ = run_cleanup_command(runner, &["rm", "-f", container_name]);
+    let _ = run_cleanup_command(runner, &["rm", "-f", dind]);
+    let _ = run_cleanup_command(runner, &["network", "rm", network]);
+
     // Create Docker network
     if debug {
         runner.run("docker", &["network", "create", network], None)?;
