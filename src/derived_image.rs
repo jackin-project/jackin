@@ -12,7 +12,31 @@ pub struct DerivedBuildContext {
 
 pub fn render_derived_dockerfile(base_dockerfile: &str) -> String {
     format!(
-        "{base_dockerfile}\nUSER root\nARG JACKIN_HOST_UID=1000\nARG JACKIN_HOST_GID=1000\nRUN current_gid=\"$(id -g claude)\" && current_uid=\"$(id -u claude)\" && if [ \"$current_gid\" != \"$JACKIN_HOST_GID\" ]; then groupmod -o -g \"$JACKIN_HOST_GID\" claude && usermod -g \"$JACKIN_HOST_GID\" claude; fi && if [ \"$current_uid\" != \"$JACKIN_HOST_UID\" ]; then usermod -o -u \"$JACKIN_HOST_UID\" claude; fi && chown -R claude:claude /home/claude\nUSER claude\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version\nUSER root\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh\nRUN chmod +x /home/claude/entrypoint.sh\nWORKDIR /workspace\nUSER claude\nENTRYPOINT [\"/home/claude/entrypoint.sh\"]\n"
+        "\
+{base_dockerfile}
+USER root
+ARG JACKIN_HOST_UID=1000
+ARG JACKIN_HOST_GID=1000
+RUN current_gid=\"$(id -g claude)\" \
+    && current_uid=\"$(id -u claude)\" \
+    && if [ \"$current_gid\" != \"$JACKIN_HOST_GID\" ]; then \
+         groupmod -o -g \"$JACKIN_HOST_GID\" claude \
+         && usermod -g \"$JACKIN_HOST_GID\" claude; \
+       fi \
+    && if [ \"$current_uid\" != \"$JACKIN_HOST_UID\" ]; then \
+         usermod -o -u \"$JACKIN_HOST_UID\" claude; \
+       fi \
+    && chown -R claude:claude /home/claude
+USER claude
+RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN claude --version
+USER root
+COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh
+RUN chmod +x /home/claude/entrypoint.sh
+WORKDIR /workspace
+USER claude
+ENTRYPOINT [\"/home/claude/entrypoint.sh\"]
+"
     )
 }
 
