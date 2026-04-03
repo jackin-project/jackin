@@ -168,7 +168,7 @@ pub fn run(cli: Cli) -> Result<()> {
                             .map(|(scope, name, m)| Row {
                                 scope: scope.clone(),
                                 name: name.clone(),
-                                src: m.src.clone(),
+                                src: tui::shorten_home(&m.src),
                                 dst: m.dst.clone(),
                                 mode: if m.readonly { "read-only".to_string() } else { "read-write".to_string() },
                             })
@@ -236,7 +236,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         .iter()
                         .map(|(name, ws)| Row {
                             name: (*name).to_string(),
-                            workdir: ws.workdir.clone(),
+                            workdir: tui::shorten_home(&ws.workdir),
                             mounts: ws.mounts.len(),
                             allowed: if ws.allowed_agents.is_empty() {
                                 "any agent".to_string()
@@ -254,7 +254,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     table.with(Style::modern_rounded());
                     println!("{table}");
                     println!();
-                    println!("Run jackin workspace show <name> for details.");
+                    tui::hint("Run ", "jackin workspace show <name>", " for details.");
                 }
                 Ok(())
             }
@@ -287,9 +287,10 @@ pub fn run(cli: Cli) -> Result<()> {
                     .as_deref()
                     .unwrap_or("none");
 
+                let short_workdir = tui::shorten_home(&workspace.workdir);
                 let info = [
                     ("Name", name.as_str()),
-                    ("Workdir", &workspace.workdir),
+                    ("Workdir", short_workdir.as_str()),
                     ("Allowed Agents", &allowed),
                     ("Default Agent", default_agent),
                 ];
@@ -309,8 +310,8 @@ pub fn run(cli: Cli) -> Result<()> {
                         .mounts
                         .iter()
                         .map(|m| MountRow {
-                            src: m.src.clone(),
-                            dst: m.dst.clone(),
+                            src: tui::shorten_home(&m.src),
+                            dst: tui::shorten_home(&m.dst),
                             mode: if m.readonly {
                                 "read-only".to_string()
                             } else {
