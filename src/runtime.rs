@@ -21,6 +21,16 @@ impl Default for LoadOptions {
     }
 }
 
+impl LoadOptions {
+    fn step(&self, n: u32, text: &str) {
+        if self.no_intro {
+            tui::step_quiet(n, text);
+        } else {
+            tui::step_shimmer(n, text);
+        }
+    }
+}
+
 struct GitIdentity {
     user_name: String,
     user_email: String,
@@ -31,47 +41,30 @@ struct HostIdentity {
     gid: String,
 }
 
+/// Run a command and return its trimmed stdout, or `None` on failure.
+fn capture_stdout(program: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() { None } else { Some(value) }
+}
+
 fn load_git_identity() -> GitIdentity {
-    let user_name = std::process::Command::new("git")
-        .args(["config", "user.name"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
-    let user_email = std::process::Command::new("git")
-        .args(["config", "user.email"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
     GitIdentity {
-        user_name,
-        user_email,
+        user_name: capture_stdout("git", &["config", "user.name"]).unwrap_or_default(),
+        user_email: capture_stdout("git", &["config", "user.email"]).unwrap_or_default(),
     }
 }
 
 #[cfg(unix)]
 fn load_host_identity() -> HostIdentity {
-    let uid = std::process::Command::new("id")
-        .args(["-u"])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "1000".to_string());
-    let gid = std::process::Command::new("id")
-        .args(["-g"])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "1000".to_string());
-
-    HostIdentity { uid, gid }
+    HostIdentity {
+        uid: capture_stdout("id", &["-u"]).unwrap_or_else(|| "1000".to_string()),
+        gid: capture_stdout("id", &["-g"]).unwrap_or_else(|| "1000".to_string()),
+    }
 }
 
 #[cfg(not(unix))]
@@ -101,33 +94,21 @@ fn parse_repo_name(url: &str) -> Option<String> {
 
 /// Derive a short repository name from a git remote URL (e.g. `donbeave/jackin`).
 fn git_repo_name(dir: &std::path::Path) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["-C", &dir.display().to_string(), "remote", "get-url", "origin"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())?;
-    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let dir_str = dir.display().to_string();
+    let url = capture_stdout("git", &["-C", &dir_str, "remote", "get-url", "origin"])?;
     parse_repo_name(&url)
 }
 
 /// Get the current branch name for a git directory.
 fn git_branch(dir: &std::path::Path) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["-C", &dir.display().to_string(), "rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())?;
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if branch.is_empty() { None } else { Some(branch) }
+    let dir_str = dir.display().to_string();
+    capture_stdout("git", &["-C", &dir_str, "rev-parse", "--abbrev-ref", "HEAD"])
 }
 
 /// Check whether a path is inside a git work tree.
 fn is_git_dir(dir: &std::path::Path) -> bool {
-    std::process::Command::new("git")
-        .args(["-C", &dir.display().to_string(), "rev-parse", "--is-inside-work-tree"])
-        .output()
-        .ok()
-        .is_some_and(|o| o.status.success())
+    let dir_str = dir.display().to_string();
+    capture_stdout("git", &["-C", &dir_str, "rev-parse", "--is-inside-work-tree"]).is_some()
 }
 
 fn build_config_rows(
@@ -200,11 +181,7 @@ pub fn load_agent(
     let cached_repo = CachedRepo::new(paths, selector);
     std::fs::create_dir_all(cached_repo.repo_dir.parent().unwrap())?;
 
-    if opts.no_intro {
-        tui::step_quiet(step, "Resolving agent identity");
-    } else {
-        tui::step_shimmer(step, "Resolving agent identity");
-    }
+    opts.step(step, "Resolving agent identity");
     step += 1;
 
     if cached_repo.repo_dir.exists() {
@@ -263,11 +240,7 @@ pub fn load_agent(
     let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
     let load_result = (|| -> anyhow::Result<()> {
         // Step 2: Build Docker image
-        if opts.no_intro {
-            tui::step_quiet(step, "Building Docker image");
-        } else {
-            tui::step_shimmer(step, "Building Docker image");
-        }
+        opts.step(step, "Building Docker image");
         step += 1;
         let build_args = [
             "build".into(),
@@ -284,11 +257,7 @@ pub fn load_agent(
         runner.run("docker", &build_args, None)?;
 
         // Step 3: Create Docker network
-        if opts.no_intro {
-            tui::step_quiet(step, "Creating Docker network");
-        } else {
-            tui::step_shimmer(step, "Creating Docker network");
-        }
+        opts.step(step, "Creating Docker network");
         step += 1;
         let network_args = ["network".into(), "create".into(), network.clone()];
         if opts.debug {
@@ -298,11 +267,7 @@ pub fn load_agent(
         }
 
         // Step 4: Start Docker-in-Docker
-        if opts.no_intro {
-            tui::step_quiet(step, "Starting Docker-in-Docker container");
-        } else {
-            tui::step_shimmer(step, "Starting Docker-in-Docker container");
-        }
+        opts.step(step, "Starting Docker-in-Docker container");
         step += 1;
         let dind_args = [
             "run".into(),
@@ -312,6 +277,8 @@ pub fn load_agent(
             "--network".into(),
             network.clone(),
             "--privileged".into(),
+            "-e".into(),
+            "DOCKER_TLS_CERTDIR=".into(),
             "docker:dind".into(),
         ];
         if opts.debug {
@@ -323,11 +290,7 @@ pub fn load_agent(
         wait_for_dind(&dind, runner, opts.debug)?;
 
         // Step 5: Launch agent
-        if opts.no_intro {
-            tui::step_quiet(step, "Mounting volumes");
-        } else {
-            tui::step_shimmer(step, "Mounting volumes");
-        }
+        opts.step(step, "Mounting volumes");
 
         tui::print_deploying(&agent_display_name);
 

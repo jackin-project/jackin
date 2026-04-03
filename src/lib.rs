@@ -85,35 +85,28 @@ pub fn run(cli: Cli) -> Result<()> {
             selector,
             all,
             purge,
-        } => match Selector::parse(&selector)? {
-            Selector::Container(container) => {
-                runtime::eject_agent(&container, &mut runner)?;
+        } => {
+            let containers = match Selector::parse(&selector)? {
+                Selector::Container(container) => vec![container],
+                Selector::Class(class) => {
+                    if all {
+                        runtime::matching_family(
+                            &class,
+                            &runtime::list_managed_agent_names(&mut runner)?,
+                        )
+                    } else {
+                        vec![crate::instance::primary_container_name(&class)]
+                    }
+                }
+            };
+            for container in &containers {
+                runtime::eject_agent(container, &mut runner)?;
                 if purge {
-                    remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
+                    remove_data_dir_if_exists(&paths.data_dir.join(container))?;
                 }
-                Ok(())
             }
-            Selector::Class(class) => {
-                if all {
-                    for container in runtime::matching_family(
-                        &class,
-                        &runtime::list_managed_agent_names(&mut runner)?,
-                    ) {
-                        runtime::eject_agent(&container, &mut runner)?;
-                        if purge {
-                            remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
-                        }
-                    }
-                } else {
-                    let container = crate::instance::primary_container_name(&class);
-                    runtime::eject_agent(&container, &mut runner)?;
-                    if purge {
-                        remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
-                    }
-                }
-                Ok(())
-            }
-        },
+            Ok(())
+        }
         Command::Exile => runtime::exile_all(&mut runner),
         Command::Config {
             command: config_cmd,
@@ -176,18 +169,28 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
             WorkspaceCommand::List => {
-                for (name, workspace) in config.list_workspaces() {
-                    let allowed = if workspace.allowed_agents.is_empty() {
-                        "all".to_string()
-                    } else {
-                        workspace.allowed_agents.len().to_string()
-                    };
-                    let default_agent = workspace.default_agent.as_deref().unwrap_or("-");
-                    println!(
-                        "{name}\t{}\t{} mounts\tallowed={allowed}\tdefault={default_agent}",
-                        workspace.workdir,
-                        workspace.mounts.len()
+                let workspaces = config.list_workspaces();
+                if workspaces.is_empty() {
+                    eprintln!("No workspaces configured.");
+                    eprintln!();
+                    eprintln!("Add one with:");
+                    eprintln!(
+                        "  jackin workspace add <name> --workdir /path/to/project --mount /path/to/project"
                     );
+                } else {
+                    for (name, workspace) in &workspaces {
+                        let allowed = if workspace.allowed_agents.is_empty() {
+                            "all".to_string()
+                        } else {
+                            workspace.allowed_agents.len().to_string()
+                        };
+                        let default_agent = workspace.default_agent.as_deref().unwrap_or("-");
+                        println!(
+                            "{name}\t{}\t{} mounts\tallowed={allowed}\tdefault={default_agent}",
+                            workspace.workdir,
+                            workspace.mounts.len()
+                        );
+                    }
                 }
                 Ok(())
             }
