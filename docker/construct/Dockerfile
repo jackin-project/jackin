@@ -24,7 +24,7 @@ RUN apt-get update && \
     zsh && \
     ln -sf /usr/bin/fdfind /usr/local/bin/fd && \
     apt-get autoremove -y && \
-    rm -rf /var/lib/apt/* \
+    rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \
            /tmp/*
 
@@ -39,7 +39,7 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     apt-get update && \
     apt-get install -y --no-install-recommends mise && \
     apt-get autoremove -y && \
-    rm -rf /var/lib/apt/* \
+    rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \
            /tmp/*
 
@@ -50,7 +50,7 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings
     apt-get update && \
     apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin && \
     apt-get autoremove -y && \
-    rm -rf /var/lib/apt/* \
+    rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \
            /tmp/*
 
@@ -63,7 +63,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     apt-get update && \
     apt-get install -y --no-install-recommends gh && \
     apt-get autoremove -y && \
-    rm -rf /var/lib/apt/* \
+    rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \
            /tmp/*
 
