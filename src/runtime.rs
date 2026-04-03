@@ -188,25 +188,20 @@ pub fn load_agent(
     opts.step(step, "Resolving agent identity");
     step += 1;
 
-    if cached_repo.repo_dir.exists() {
+    let repo_path = cached_repo.repo_dir.display().to_string();
+    let clone_result = runner.capture(
+        "git",
+        &["clone".into(), source.git, repo_path.clone()],
+        None,
+    );
+    if let Err(e) = clone_result {
+        if !cached_repo.repo_dir.exists() {
+            return Err(e);
+        }
+        // Already cloned (possibly by a concurrent process) — update instead
         runner.capture(
             "git",
-            &[
-                "-C".into(),
-                cached_repo.repo_dir.display().to_string(),
-                "pull".into(),
-                "--ff-only".into(),
-            ],
-            None,
-        )?;
-    } else {
-        runner.capture(
-            "git",
-            &[
-                "clone".into(),
-                source.git,
-                cached_repo.repo_dir.display().to_string(),
-            ],
+            &["-C".into(), repo_path, "pull".into(), "--ff-only".into()],
             None,
         )?;
     }
