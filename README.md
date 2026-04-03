@@ -42,7 +42,7 @@ jackin launch
 There are three core ideas in `jackin`:
 
 - **Agent class** — a reusable tool profile defined by an agent repo and loaded by name, such as `agent-smith`, `the-architect`, `chainargos/frontend-engineer`, or `chainargos/backend-engineer`
-- **Workspace** — the file-access boundary for a project: which host directories are mounted and where they appear in the container. A workspace can be implicit (the current directory) or saved by name. Saved workspaces can also restrict which agent classes are allowed and set a default
+- **Workspace** — the file-access boundary for a project: which host directories are mounted and where they appear in the container. A workspace can be synthetic (the current directory) or saved by name. Saved workspaces can also restrict which agent classes are allowed and set a default
 - **Agent instance** — one running container created from an agent class and attached to one workspace
 
 `agent-smith` is just the default starter class name in this project. It is not magic syntax. In a real company you might have classes like `frontend-engineer`, `backend-engineer`, `infra-operator`, or `security-reviewer`.
@@ -180,7 +180,7 @@ A saved workspace is useful when you want to:
 
 `launch` is the human-first flow: pick a workspace, preview mounts and `workdir`, then choose an agent class. `load` stays the explicit terminal-first path: pass a path, a `path:container-dest` mapping, or a saved workspace name as the optional second argument. Use `--mount` to layer additional mounts on top of any target type.
 
-Saved workspaces are local operator config. They define mounts, `workdir`, and optional allowed/default agents.
+Saved workspaces are local operator config. They define mounts, `workdir`, and optional allowed/default agent classes.
 
 One useful pattern is to reuse the same workspace with different agent classes:
 
