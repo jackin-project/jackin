@@ -81,11 +81,10 @@ impl AppConfig {
     pub fn load_or_init(paths: &JackinPaths) -> anyhow::Result<Self> {
         paths.ensure_base_dirs()?;
 
-        let mut config = if paths.config_file.exists() {
-            let contents = std::fs::read_to_string(&paths.config_file)?;
-            toml::from_str(&contents)?
-        } else {
-            Self::default()
+        let mut config = match std::fs::read_to_string(&paths.config_file) {
+            Ok(contents) => toml::from_str(&contents)?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(e) => return Err(e.into()),
         };
 
         if config.sync_builtin_agents() {
@@ -158,40 +157,19 @@ impl AppConfig {
         by_name.into_iter().collect()
     }
 
-    pub fn validate_mounts(mounts: &[(String, MountConfig)]) -> anyhow::Result<Vec<MountConfig>> {
-        let mut validated = Vec::new();
-        let mut seen_dst = std::collections::HashSet::new();
-
-        for (name, mount) in mounts {
-            let expanded_src = expand_tilde(&mount.src);
-            if !std::path::Path::new(&expanded_src).is_absolute() {
-                anyhow::bail!("mount {name:?} source must be an absolute path: {expanded_src}");
-            }
-            if !std::path::Path::new(&expanded_src).exists() {
-                anyhow::bail!(
-                    "mount {name:?} source does not exist: {expanded_src} (expanded from {:?})",
-                    mount.src
-                );
-            }
-            if !mount.dst.starts_with('/') {
-                anyhow::bail!(
-                    "mount {name:?} destination must be an absolute path: {}",
-                    mount.dst
-                );
-            }
-            if !seen_dst.insert(mount.dst.clone()) {
-                anyhow::bail!(
-                    "duplicate mount destination {:?} in mount {name:?}",
-                    mount.dst
-                );
-            }
-            validated.push(MountConfig {
-                src: expanded_src,
+    pub fn expand_and_validate_named_mounts(
+        mounts: &[(String, MountConfig)],
+    ) -> anyhow::Result<Vec<MountConfig>> {
+        let expanded: Vec<MountConfig> = mounts
+            .iter()
+            .map(|(_, mount)| MountConfig {
+                src: expand_tilde(&mount.src),
                 dst: mount.dst.clone(),
                 readonly: mount.readonly,
-            });
-        }
-        Ok(validated)
+            })
+            .collect();
+        crate::workspace::validate_mounts(&expanded)?;
+        Ok(expanded)
     }
 
     pub fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
@@ -961,7 +939,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
                 readonly: false,
             },
         )];
-        let err = AppConfig::validate_mounts(&mounts).unwrap_err();
+        let err = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap_err();
         assert!(
             err.to_string()
                 .contains("/nonexistent/path/that/does/not/exist")
@@ -979,9 +957,9 @@ shared = { src = "/tmp/specific", dst = "/data" }
             },
         )];
 
-        let err = AppConfig::validate_mounts(&mounts).unwrap_err();
+        let err = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap_err();
 
-        assert!(err.to_string().contains("source must be an absolute path"));
+        assert!(err.to_string().contains("mount source must be absolute"));
     }
 
     #[test]
@@ -995,7 +973,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
                 readonly: false,
             },
         )];
-        let err = AppConfig::validate_mounts(&mounts).unwrap_err();
+        let err = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap_err();
         assert!(err.to_string().contains("absolute"));
     }
 
@@ -1021,7 +999,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
                 },
             ),
         ];
-        let err = AppConfig::validate_mounts(&mounts).unwrap_err();
+        let err = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap_err();
         assert!(err.to_string().contains("duplicate"));
     }
 
@@ -1036,7 +1014,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
                 readonly: true,
             },
         )];
-        let validated = AppConfig::validate_mounts(&mounts).unwrap();
+        let validated = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap();
         assert_eq!(validated[0].src, home);
     }
 

@@ -521,13 +521,16 @@ where
 {
     const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     let mg = rgb(PHOSPHOR_GREEN);
+    let mut last_err = None;
 
     for attempt in 0..max_attempts {
-        if poll().is_ok() {
-            // Clear spinner line
-            eprint!("\r\x1b[2K");
-            let _ = io::stderr().flush();
-            return Ok(());
+        match poll() {
+            Ok(()) => {
+                eprint!("\r\x1b[2K");
+                let _ = io::stderr().flush();
+                return Ok(());
+            }
+            Err(e) => last_err = Some(e),
         }
         let frame = FRAMES[attempt as usize % FRAMES.len()];
         eprint!(
@@ -538,10 +541,10 @@ where
         let _ = io::stderr().flush();
         std::thread::sleep(interval);
     }
-    // Clear spinner line before bailing
+    // Clear spinner line before returning the error
     eprint!("\r\x1b[2K");
     let _ = io::stderr().flush();
-    anyhow::bail!("timed out: {message}")
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("timed out: {message}")))
 }
 
 pub fn step_fail(msg: &str) {
