@@ -27,14 +27,15 @@ jobs:
         uses: jdx/mise-action@v2
         with:
           working-directory: docs
+          install: true
 
       - name: Install dependencies
         working-directory: docs
-        run: bun install --frozen-lockfile
+        run: mise exec -- bun install --frozen-lockfile
 
       - name: Build site
         working-directory: docs
-        run: bun run build
+        run: mise exec -- bun run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
