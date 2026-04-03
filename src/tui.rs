@@ -589,7 +589,9 @@ pub fn step_quiet(n: u32, text: &str) {
 }
 
 /// Display a spinner while waiting, returning when `poll` returns `Ok(())`.
+///
 /// `poll` is called up to `max_attempts` times with `interval` between calls.
+/// The spinner animates smoothly independent of the poll interval.
 pub fn spin_wait<F>(
     message: &str,
     max_attempts: u32,
@@ -600,10 +602,12 @@ where
     F: FnMut() -> anyhow::Result<()>,
 {
     const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    const SPIN_MS: u64 = 80;
     let mg = rgb(PHOSPHOR_GREEN);
     let mut last_err = None;
+    let mut frame_idx: usize = 0;
 
-    for attempt in 0..max_attempts {
+    for _attempt in 0..max_attempts {
         match poll() {
             Ok(()) => {
                 eprint!("\r\x1b[2K");
@@ -612,16 +616,20 @@ where
             }
             Err(e) => last_err = Some(e),
         }
-        let frame = FRAMES[attempt as usize % FRAMES.len()];
-        eprint!(
-            "\r  {}  {}",
-            frame.color(mg).bold(),
-            message.color(rgb(PHOSPHOR_DIM)).bold()
-        );
-        let _ = io::stderr().flush();
-        std::thread::sleep(interval);
+        // Animate the spinner for the duration of `interval`
+        let spins = interval.as_millis() as u64 / SPIN_MS;
+        for _ in 0..spins {
+            let frame = FRAMES[frame_idx % FRAMES.len()];
+            eprint!(
+                "\r  {}  {}",
+                frame.color(mg).bold(),
+                message.color(rgb(PHOSPHOR_DIM)).bold()
+            );
+            let _ = io::stderr().flush();
+            std::thread::sleep(std::time::Duration::from_millis(SPIN_MS));
+            frame_idx += 1;
+        }
     }
-    // Clear spinner line before returning the error
     eprint!("\r\x1b[2K");
     let _ = io::stderr().flush();
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("timed out: {message}")))
