@@ -3,6 +3,7 @@ FROM debian:trixie
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG UID=1000
+ARG GID=1000
 
 # Install core system packages
 RUN apt-get update && \
@@ -53,7 +54,8 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings
            /tmp/*
 
 # Create runtime user
-RUN useradd -m -u "$UID" -s /bin/zsh claude && \
+RUN groupadd -g "$GID" claude && \
+    useradd -m -u "$UID" -g "$GID" -s /bin/zsh claude && \
     echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude && \
     install -d -o claude -g claude /home/claude/.claude /home/claude/.jackin
 
