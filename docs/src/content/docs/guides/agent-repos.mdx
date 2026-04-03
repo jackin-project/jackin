@@ -14,6 +14,13 @@ An agent repo is a GitHub repository that defines a specific agent class. It con
 
 When you run `jackin load agent-smith`, jackin looks for a GitHub repo named `jackin-agent-smith` and builds a container from it.
 
+An agent class is best thought of as a reusable tool profile. It is where you decide things like:
+
+- which language toolchains are installed
+- which helper scripts and shell defaults are present
+- which Claude plugins are installed
+- whether this is a frontend, backend, infra, or review-focused environment
+
 ## Naming convention
 
 Agent repos follow the `jackin-{class-name}` naming pattern:
@@ -48,7 +55,14 @@ This name appears in jackin's TUI and output. When omitted, the class selector n
 
 ## Caching
 
-Agent repos are cloned to `~/.jackin/agents/` on first load. Subsequent loads use the cached checkout. jackin updates the repo (pulls latest) each time you load an agent to ensure you're running the latest version.
+Agent repos are cloned to `~/.jackin/agents/` on first load. Subsequent loads use the cached checkout. Jackin updates the repo on each load to keep the cache current.
+
+Jackin is intentionally strict about that cache:
+
+- if the cached repo's `origin` no longer matches the configured source, load fails
+- if the cached repo contains local changes or extra files, load fails
+
+This avoids silently building from a tampered or stale cache. If you intentionally edited the cached repo, remove it and let Jackin clone again.
 
 <Aside type="tip">
 Pass `--rebuild` to force jackin to rebuild the Docker image from scratch. This is useful when the construct base image or agent Dockerfile has changed.
@@ -81,8 +95,10 @@ Agent repos only own their agent-specific environment layer. jackin owns everyth
 A minimal agent repo for a Node.js development agent:
 
 ```toml title="jackin.agent.toml"
-[agent]
 dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
 
 [identity]
 name = "Node Agent"

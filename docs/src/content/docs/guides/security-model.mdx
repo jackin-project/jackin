@@ -70,11 +70,13 @@ The current implementation creates the user in the construct image at UID 1000, 
 
 ## State persistence
 
-Agent state is stored at `~/.jackin/data/<container-name>/` on your host. This includes Claude's session history and settings. This persisted state is:
+Agent state is stored at `~/.jackin/data/<container-name>/` on your host. This includes Claude's session history and settings, plugin state, and GitHub CLI state if you authenticate inside the container. This persisted state is:
 
 - Local to your machine (not shared)
 - Mountable back into the container on next load
 - Deletable with `jackin purge` for a clean start
+
+This means Jackin does **not** mount host credentials by default, but credentials acquired by tools inside the container can persist for that agent instance across sessions.
 
 ## Threat model
 
@@ -84,7 +86,7 @@ jackin is designed to protect against:
 |---|---|
 | Agent reads sensitive files | Only mounted directories are visible |
 | Agent modifies system files | Container filesystem is isolated |
-| Agent accesses credentials | No host credentials unless explicitly mounted |
+| Agent accesses host credentials | No host credentials unless explicitly mounted |
 | Agent installs malware | Contained within the ephemeral container |
 | Agent exfiltrates data | Only mounted data is accessible (network access is open) |
 | Agent affects other agents | Separate containers, networks, and state |
@@ -106,5 +108,6 @@ jackin provides container-level isolation, not VM-level isolation. Be aware of t
 2. **Use read-only mounts.** If the agent only needs to read something, mount it as `:ro`.
 3. **Don't mount credential directories.** Avoid mounting `~/.ssh`, `~/.aws`, `~/.config`, or `~/.gnupg`.
 4. **Review agent repos before loading.** The Dockerfile defines what gets installed — treat it like a dependency you're adding to your project.
-5. **Use `jackin purge` periodically.** Clear persisted state for agents you no longer use.
-6. **Keep Docker updated.** Container isolation is only as strong as the Docker runtime.
+5. **Split agent classes by scope.** Keep frontend, backend, infra, or review-only environments separate when they need different tools or plugins.
+6. **Use `jackin purge` periodically.** Clear persisted state for agents you no longer use.
+7. **Keep Docker updated.** Container isolation is only as strong as the Docker runtime.
