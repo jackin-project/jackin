@@ -285,10 +285,10 @@ pub fn run_launch(
 
 // ── Full banner (matching CLI help colors) ──────────────────────────────
 
-const BANNER_HEIGHT: u16 = 9; // 1 blank + 6 logo lines + 2 padding below
+const BANNER_HEIGHT: u16 = 9;
 
 fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
-    use ratatui::layout::Alignment;
+    use ratatui::layout::{Alignment, Constraint, Direction, Layout};
     use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
@@ -297,18 +297,31 @@ fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
     let title = Style::default().fg(colors::WHITE).add_modifier(Modifier::BOLD);
     let sub = Style::default().fg(colors::DIM_BLUE);
 
+    // The logo is 25 chars wide ("│ │╷│ │╷│ ╷  │╷│ │╷│ │╷│").
+    // Pre-pad each line to the same width so Alignment::Center keeps them grouped.
+    let w = 25;
     let lines = vec![
         Line::from(""),
-        Line::from(Span::styled("│ │╷│ │╷│ ╷  │╷│ │╷│ │╷│", blue)),
-        Line::from(Span::styled("│ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│", blue)),
-        Line::from(Span::styled("╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵", blue)),
-        Line::from(Span::styled("           ╵", blue)),
-        Line::from(Span::styled("      j a c k i n", title)),
-        Line::from(Span::styled("   operator terminal", sub)),
+        Line::from(Span::styled(format!("{:<w$}", "│ │╷│ │╷│ ╷  │╷│ │╷│ │╷│"), blue)),
+        Line::from(Span::styled(format!("{:<w$}", "│ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│"), blue)),
+        Line::from(Span::styled(format!("{:<w$}", "╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵"), blue)),
+        Line::from(Span::styled(format!("{:<w$}", "           ╵"), blue)),
+        Line::from(Span::styled(format!("{:^w$}", "j a c k i n"), title)),
+        Line::from(Span::styled(format!("{:^w$}", "operator terminal"), sub)),
     ];
 
-    let banner = Paragraph::new(lines).alignment(Alignment::Center);
-    frame.render_widget(banner, area);
+    // Center the logo block horizontally
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(w as u16),
+            Constraint::Fill(1),
+        ])
+        .split(area);
+
+    let banner = Paragraph::new(lines).alignment(Alignment::Left);
+    frame.render_widget(banner, cols[1]);
 }
 
 // ── Screen 1: Workspace selection ──────────────────────────────────────
@@ -347,9 +360,9 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         ])
         .split(root[1]);
 
-    // Center the workspace list content
-    let list_area = centered_rect(body[0], 60);
-    let detail_area = centered_rect(body[1], 80);
+    // Center both panels at the same width
+    let list_area = centered_rect(body[0], 70);
+    let detail_area = centered_rect(body[1], 70);
 
     // Workspace list
     let workspace_items: Vec<ListItem> = state
