@@ -123,7 +123,6 @@ fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
     let mounts = config
         .docker
         .mounts
-        .0
         .iter()
         .filter_map(|(name, entry)| match entry {
             MountEntry::Mount(mount) => Some((name.clone(), mount.clone())),
