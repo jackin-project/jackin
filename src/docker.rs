@@ -13,14 +13,20 @@ pub trait CommandRunner {
 #[derive(Default)]
 pub struct ShellRunner;
 
-impl CommandRunner for ShellRunner {
-    fn run(&mut self, program: &str, args: &[String], cwd: Option<&Path>) -> anyhow::Result<()> {
+impl ShellRunner {
+    fn build_command(program: &str, args: &[String], cwd: Option<&Path>) -> std::process::Command {
         let mut command = std::process::Command::new(program);
         command.args(args);
         if let Some(dir) = cwd {
             command.current_dir(dir);
         }
-        let status = command.status()?;
+        command
+    }
+}
+
+impl CommandRunner for ShellRunner {
+    fn run(&mut self, program: &str, args: &[String], cwd: Option<&Path>) -> anyhow::Result<()> {
+        let status = Self::build_command(program, args, cwd).status()?;
         anyhow::ensure!(
             status.success(),
             "command failed: {} {}",
@@ -36,12 +42,7 @@ impl CommandRunner for ShellRunner {
         args: &[String],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        let mut command = std::process::Command::new(program);
-        command.args(args);
-        if let Some(dir) = cwd {
-            command.current_dir(dir);
-        }
-        let output = command.output()?;
+        let output = Self::build_command(program, args, cwd).output()?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             if stderr.is_empty() {

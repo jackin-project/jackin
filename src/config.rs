@@ -30,7 +30,36 @@ pub enum MountEntry {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DockerMounts(pub BTreeMap<String, MountEntry>);
+pub struct DockerMounts(BTreeMap<String, MountEntry>);
+
+impl DockerMounts {
+    pub fn get(&self, key: &str) -> Option<&MountEntry> {
+        self.0.get(key)
+    }
+
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut MountEntry> {
+        self.0.get_mut(key)
+    }
+
+    pub fn insert(&mut self, key: String, value: MountEntry) -> Option<MountEntry> {
+        self.0.insert(key, value)
+    }
+
+    pub fn remove(&mut self, key: &str) -> Option<MountEntry> {
+        self.0.remove(key)
+    }
+
+    pub fn entry(
+        &mut self,
+        key: String,
+    ) -> std::collections::btree_map::Entry<'_, String, MountEntry> {
+        self.0.entry(key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &MountEntry)> {
+        self.0.iter()
+    }
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DockerConfig {
@@ -108,14 +137,14 @@ impl AppConfig {
             let entries = match scope {
                 None => {
                     let mut map = BTreeMap::new();
-                    for (name, entry) in &self.docker.mounts.0 {
+                    for (name, entry) in self.docker.mounts.iter() {
                         if let MountEntry::Mount(m) = entry {
                             map.insert(name.clone(), m.clone());
                         }
                     }
                     map
                 }
-                Some(scope_key) => match self.docker.mounts.0.get(scope_key) {
+                Some(scope_key) => match self.docker.mounts.get(scope_key) {
                     Some(MountEntry::Scoped(scope_map)) => scope_map.clone(),
                     _ => continue,
                 },
@@ -170,10 +199,9 @@ impl AppConfig {
         if scope_key.is_empty() {
             self.docker
                 .mounts
-                .0
                 .insert(name.to_string(), MountEntry::Mount(mount));
         } else {
-            match self.docker.mounts.0.entry(scope_key.to_string()) {
+            match self.docker.mounts.entry(scope_key.to_string()) {
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     if let MountEntry::Scoped(map) = entry.get_mut() {
                         map.insert(name.to_string(), mount);
@@ -191,13 +219,13 @@ impl AppConfig {
     pub fn remove_mount(&mut self, name: &str, scope: Option<&str>) -> bool {
         let scope_key = scope.unwrap_or("");
         if scope_key.is_empty() {
-            self.docker.mounts.0.remove(name).is_some()
+            self.docker.mounts.remove(name).is_some()
         } else {
-            match self.docker.mounts.0.get_mut(scope_key) {
+            match self.docker.mounts.get_mut(scope_key) {
                 Some(MountEntry::Scoped(map)) => {
                     let removed = map.remove(name).is_some();
                     if map.is_empty() {
-                        self.docker.mounts.0.remove(scope_key);
+                        self.docker.mounts.remove(scope_key);
                     }
                     removed
                 }
@@ -208,7 +236,7 @@ impl AppConfig {
 
     pub fn list_mounts(&self) -> Vec<(String, String, &MountConfig)> {
         let mut result = Vec::new();
-        for (key, entry) in &self.docker.mounts.0 {
+        for (key, entry) in self.docker.mounts.iter() {
             match entry {
                 MountEntry::Mount(m) => {
                     result.push(("(global)".to_string(), key.clone(), m));
@@ -305,7 +333,6 @@ impl AppConfig {
     pub fn global_mounts(&self) -> Vec<MountConfig> {
         self.docker
             .mounts
-            .0
             .iter()
             .filter_map(|(_, entry)| match entry {
                 MountEntry::Mount(m) => Some(m.clone()),
@@ -473,7 +500,7 @@ gradle-cache = { src = "~/.gradle/caches", dst = "/home/claude/.gradle/caches" }
 gradle-wrapper = { src = "~/.gradle/wrapper", dst = "/home/claude/.gradle/wrapper", readonly = true }
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        let mounts = &config.docker.mounts.0;
+        let mounts = &config.docker.mounts;
         match mounts.get("gradle-cache").unwrap() {
             MountEntry::Mount(m) => {
                 assert_eq!(m.src, "~/.gradle/caches");
@@ -501,7 +528,7 @@ chainargos-secrets = { src = "~/.chainargos/secrets", dst = "/secrets", readonly
 brown-config = { src = "~/.chainargos/brown", dst = "/config" }
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        let mounts = &config.docker.mounts.0;
+        let mounts = &config.docker.mounts;
         match mounts.get("chainargos/*").unwrap() {
             MountEntry::Scoped(scope) => {
                 let m = scope.get("chainargos-secrets").unwrap();

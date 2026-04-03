@@ -46,11 +46,13 @@ pub fn parse_mount_spec(spec: &str) -> anyhow::Result<MountConfig> {
         .map_or((spec, false), |value| (value, true));
     let (src, dst) = raw
         .split_once(':')
-        .ok_or_else(|| anyhow::anyhow!("invalid mount spec {spec:?}; expected src:dst[:ro]"))?;
+        .map_or_else(|| (raw, raw), |(s, d)| (s, d));
+    let expanded_src = expand_tilde(src);
+    let dst = if src == dst { expanded_src.clone() } else { dst.to_string() };
 
     Ok(MountConfig {
-        src: expand_tilde(src),
-        dst: dst.to_string(),
+        src: expanded_src,
+        dst,
         readonly,
     })
 }
@@ -234,6 +236,34 @@ mod tests {
         assert_eq!(mount.src, "/tmp/cache");
         assert_eq!(mount.dst, "/workspace/cache");
         assert!(mount.readonly);
+    }
+
+    #[test]
+    fn parses_mount_spec_with_src_only() {
+        let mount = parse_mount_spec("/tmp/project").unwrap();
+
+        assert_eq!(mount.src, "/tmp/project");
+        assert_eq!(mount.dst, "/tmp/project");
+        assert!(!mount.readonly);
+    }
+
+    #[test]
+    fn parses_mount_spec_with_src_only_readonly() {
+        let mount = parse_mount_spec("/tmp/project:ro").unwrap();
+
+        assert_eq!(mount.src, "/tmp/project");
+        assert_eq!(mount.dst, "/tmp/project");
+        assert!(mount.readonly);
+    }
+
+    #[test]
+    fn parses_mount_spec_with_tilde_src_only() {
+        let home = std::env::var("HOME").unwrap();
+        let mount = parse_mount_spec("~/projects").unwrap();
+
+        assert_eq!(mount.src, format!("{home}/projects"));
+        assert_eq!(mount.dst, format!("{home}/projects"));
+        assert!(!mount.readonly);
     }
 
     #[test]
