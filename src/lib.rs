@@ -169,7 +169,7 @@ pub fn run(cli: Cli) -> Result<()> {
                                 name: name.clone(),
                                 src: m.src.clone(),
                                 dst: m.dst.clone(),
-                                mode: if m.readonly { "ro".to_string() } else { "rw".to_string() },
+                                mode: if m.readonly { "read-only".to_string() } else { "read-write".to_string() },
                             })
                             .collect();
                         println!("{}", Table::new(rows));
@@ -235,11 +235,15 @@ pub fn run(cli: Cli) -> Result<()> {
                             workdir: ws.workdir.clone(),
                             mounts: ws.mounts.len(),
                             allowed: if ws.allowed_agents.is_empty() {
-                                "all".to_string()
+                                "any agent".to_string()
                             } else {
                                 ws.allowed_agents.join(", ")
                             },
-                            default_agent: ws.default_agent.as_deref().unwrap_or("-").to_string(),
+                            default_agent: ws
+                                .default_agent
+                                .as_deref()
+                                .unwrap_or("none")
+                                .to_string(),
                         })
                         .collect();
                     println!("{}", Table::new(rows));
