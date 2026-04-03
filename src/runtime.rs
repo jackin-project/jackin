@@ -264,6 +264,7 @@ fn launch_agent_runtime(
     agent_display_name: &str,
     workspace: &crate::workspace::ResolvedWorkspace,
     state: &AgentState,
+    git: &GitIdentity,
     steps: &mut StepCounter,
     runner: &mut impl CommandRunner,
     debug: bool,
@@ -311,6 +312,8 @@ fn launch_agent_runtime(
     let class_label = format!("jackin.class={}", selector.key());
     let display_label = format!("jackin.display_name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2375");
+    let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
+    let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let claude_dir_mount = format!("{}:/home/claude/.claude", state.claude_dir.display());
     let claude_json_mount = format!("{}:/home/claude/.claude.json", state.claude_json.display());
     let plugins_mount = format!(
@@ -337,6 +340,10 @@ fn launch_agent_runtime(
         &workspace.workdir,
         "-e",
         &docker_host,
+        "-e",
+        &git_author_name,
+        "-e",
+        &git_author_email,
         "-v",
         &claude_dir_mount,
         "-v",
@@ -441,6 +448,7 @@ pub fn load_agent(
             &agent_display_name,
             workspace,
             &state,
+            &git,
             &mut steps,
             runner,
             opts.debug,
