@@ -138,12 +138,20 @@ fn build_config_rows(
     git: &GitIdentity,
     image: &str,
 ) -> Vec<(String, String)> {
-    let mut rows = vec![
-        ("identity".to_string(), agent_display_name.to_string()),
-        ("container".to_string(), container_name.to_string()),
-    ];
+    // Who
+    let mut rows = vec![("identity".to_string(), agent_display_name.to_string())];
+    if !git.user_name.is_empty() {
+        rows.push((
+            "operator".to_string(),
+            if git.user_email.is_empty() {
+                git.user_name.clone()
+            } else {
+                format!("{} <{}>", git.user_name, git.user_email)
+            },
+        ));
+    }
 
-    // Show repository/branch for git directories, or workspace name for saved workspaces
+    // Where
     let workdir = std::path::Path::new(&workspace.label);
     if workdir.is_absolute() && is_git_dir(workdir) {
         if let Some(repo_name) = git_repo_name(workdir) {
@@ -156,17 +164,8 @@ fn build_config_rows(
         rows.push(("workspace".to_string(), workspace.label.clone()));
     }
 
-    if !git.user_name.is_empty() {
-        rows.push((
-            "operator".to_string(),
-            if git.user_email.is_empty() {
-                git.user_name.clone()
-            } else {
-                format!("{} <{}>", git.user_name, git.user_email)
-            },
-        ));
-    }
-
+    // Runtime
+    rows.push(("container".to_string(), container_name.to_string()));
     rows.push(("image".to_string(), image.to_string()));
     rows
 }
