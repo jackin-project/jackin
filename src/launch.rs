@@ -452,7 +452,7 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         Span::styled("workdir  ", Style::default().fg(colors::BRIGHT_BLUE)),
         Span::styled(
             tui::shorten_home(&selected.workspace.workdir),
-            Style::default().fg(colors::PATH),
+            Style::default().fg(colors::WHITE),
         ),
     ]));
     detail_lines.push(Line::from(vec![
