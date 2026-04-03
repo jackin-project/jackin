@@ -1,3 +1,4 @@
+use std::fmt;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,6 +11,16 @@ pub enum Selector {
 pub struct ClassSelector {
     pub namespace: Option<String>,
     pub name: String,
+}
+
+impl fmt::Display for ClassSelector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(namespace) = &self.namespace {
+            write!(f, "{namespace}/{}", self.name)
+        } else {
+            f.write_str(&self.name)
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -51,10 +62,7 @@ impl ClassSelector {
     }
 
     pub fn key(&self) -> String {
-        self.namespace.as_ref().map_or_else(
-            || self.name.clone(),
-            |namespace| format!("{namespace}/{}", self.name),
-        )
+        self.to_string()
     }
 }
 
