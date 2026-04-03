@@ -200,3 +200,7 @@ jackin load the-architect
 - [ ] Kubernetes platform support
 - [ ] [Codex](https://github.com/openai/codex) agent runtime
 - [ ] [Amp Code](https://ampcode.com) agent runtime
+
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE).
