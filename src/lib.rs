@@ -127,6 +127,79 @@ fn resolve_target_name(
     }
 }
 
+/// Resolve the agent and workspace from the current directory context.
+///
+/// Finds a saved workspace whose workdir matches `cwd`, then picks the agent:
+/// 1. `last_agent` (most recently used)
+/// 2. `default_agent` (explicitly configured)
+/// 3. If multiple agents available — prompt
+/// 4. If exactly one agent — use it
+/// 5. No match — error with guidance
+fn resolve_agent_from_context(
+    config: &AppConfig,
+    cwd: &Path,
+) -> Result<(ClassSelector, LoadWorkspaceInput)> {
+    let cwd_str = cwd.display().to_string();
+
+    // Find a workspace whose workdir matches cwd
+    let matching_ws = config
+        .workspaces
+        .iter()
+        .find(|(_, ws)| ws.workdir == cwd_str);
+
+    if let Some((name, ws)) = matching_ws {
+        // Try last_agent, then default_agent
+        let agent_key = ws
+            .last_agent
+            .as_deref()
+            .or(ws.default_agent.as_deref());
+
+        if let Some(key) = agent_key {
+            let class = ClassSelector::parse(key)?;
+            return Ok((class, LoadWorkspaceInput::Saved(name.clone())));
+        }
+
+        // No remembered agent — find eligible agents
+        let eligible: Vec<ClassSelector> = config
+            .agents
+            .keys()
+            .filter_map(|k| ClassSelector::parse(k).ok())
+            .filter(|agent| {
+                ws.allowed_agents.is_empty()
+                    || ws.allowed_agents.iter().any(|a| a == &agent.key())
+            })
+            .collect();
+
+        match eligible.len() {
+            0 => anyhow::bail!("no agents configured; add one with jackin load <agent>"),
+            1 => {
+                return Ok((
+                    eligible.into_iter().next().unwrap(),
+                    LoadWorkspaceInput::Saved(name.clone()),
+                ));
+            }
+            _ => {
+                let options: Vec<String> = eligible.iter().map(ClassSelector::key).collect();
+                let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
+                let choice = tui::prompt_choice(
+                    &format!("Workspace {name:?} has multiple agents. Select one:"),
+                    &option_refs,
+                )?;
+                return Ok((
+                    eligible[choice].clone(),
+                    LoadWorkspaceInput::Saved(name.clone()),
+                ));
+            }
+        }
+    }
+
+    anyhow::bail!(
+        "no saved workspace matches the current directory.\n\
+         Run jackin load <agent> to use the current directory, or\n\
+         run jackin launch for the interactive launcher."
+    );
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn run(cli: Cli) -> Result<()> {
     let paths = JackinPaths::detect()?;
@@ -142,15 +215,21 @@ pub fn run(cli: Cli) -> Result<()> {
             no_intro,
             debug,
         } => {
-            let class = ClassSelector::parse(&selector)?;
             let cwd = std::env::current_dir()?;
 
-            let workspace_input = match target {
-                None => LoadWorkspaceInput::CurrentDir,
-                Some(t) => match classify_target(&t) {
-                    TargetKind::Path { src, dst } => LoadWorkspaceInput::Path { src, dst },
-                    TargetKind::Name(name) => resolve_target_name(&name, &config, &cwd)?,
-                },
+            let (class, workspace_input) = if let Some(sel) = selector {
+                let class = ClassSelector::parse(&sel)?;
+                let input = match target {
+                    None => LoadWorkspaceInput::CurrentDir,
+                    Some(t) => match classify_target(&t) {
+                        TargetKind::Path { src, dst } => LoadWorkspaceInput::Path { src, dst },
+                        TargetKind::Name(name) => resolve_target_name(&name, &config, &cwd)?,
+                    },
+                };
+                (class, input)
+            } else {
+                // No selector — resolve agent from workspace context
+                resolve_agent_from_context(&config, &cwd)?
             };
 
             let saved_workspace_name = if let LoadWorkspaceInput::Saved(ref name) = workspace_input
