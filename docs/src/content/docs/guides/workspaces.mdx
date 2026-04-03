@@ -1,0 +1,141 @@
+---
+title: Workspaces
+description: Save and manage project workspace configurations
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## What is a workspace?
+
+A workspace is a saved configuration that tells jackin how to mount your project directories into an agent container. Instead of typing long mount paths every time, you save a workspace once and reference it by name.
+
+## The current directory workspace
+
+The simplest way to use jackin is from your project directory:
+
+```bash
+cd ~/Projects/my-app
+jackin load agent-smith
+```
+
+This creates a temporary workspace that mounts the current directory (`~/Projects/my-app`) into the container at the **same absolute path**. The agent sees the exact same directory layout you do.
+
+## Saving workspaces
+
+For projects you work on regularly, save a workspace:
+
+```bash
+jackin workspace add my-app --workdir ~/Projects/my-app
+```
+
+Now you can load agents into it from anywhere:
+
+```bash
+jackin load agent-smith my-app
+```
+
+### What `--workdir` does
+
+The `--workdir` path serves two purposes:
+
+1. **Working directory** — the container's `cwd` when the agent starts
+2. **Auto-mount** — by default, the workdir is automatically mounted at the same path inside the container
+
+<Aside type="tip">
+The auto-mount keeps host and container paths identical, which avoids confusion when the agent references file paths. This is the common case.
+</Aside>
+
+### Adding extra mounts
+
+Workspaces can include additional directories beyond the workdir:
+
+```bash
+jackin workspace add my-app \
+  --workdir ~/Projects/my-app \
+  --mount ~/cache:/cache:ro \
+  --mount ~/shared-libs:/libs:ro
+```
+
+### Controlling the mount layout
+
+If you need the container layout to differ from your host:
+
+```bash
+jackin workspace add monorepo \
+  --workdir /workspace \
+  --no-workdir-mount \
+  --mount ~/src:/workspace
+```
+
+Here, `--no-workdir-mount` disables the automatic workdir mount, and you provide all mounts explicitly.
+
+## Managing workspaces
+
+### List all workspaces
+
+```bash
+jackin workspace list
+```
+
+### Show workspace details
+
+```bash
+jackin workspace show my-app
+```
+
+### Edit a workspace
+
+```bash
+# Change the workdir
+jackin workspace edit my-app --workdir ~/Projects/my-app-v2
+
+# Add a mount
+jackin workspace edit my-app --mount ~/data:/data:ro
+
+# Remove a mount by its container destination
+jackin workspace edit my-app --remove-destination /old-mount
+```
+
+### Delete a workspace
+
+```bash
+jackin workspace remove my-app
+```
+
+## Restricting agents
+
+You can limit which agents are allowed to use a workspace:
+
+```bash
+jackin workspace add secure-api \
+  --workdir ~/Projects/secure-api \
+  --allowed-agent agent-smith \
+  --default-agent agent-smith
+```
+
+- `--allowed-agent` — only these agents can load this workspace (repeatable)
+- `--default-agent` — auto-selected when you use `jackin launch` with this workspace
+
+### Editing agent restrictions
+
+```bash
+# Grant access to another agent
+jackin workspace edit secure-api --allowed-agent the-architect
+
+# Revoke access
+jackin workspace edit secure-api --remove-allowed-agent the-architect
+
+# Change default agent
+jackin workspace edit secure-api --default-agent neo
+
+# Clear the default agent
+jackin workspace edit secure-api --clear-default-agent
+```
+
+## Workspace auto-detection
+
+When you run `jackin launch`, the TUI launcher checks if your current directory matches any saved workspace's `workdir`. If it does, that workspace is preselected — saving you a selection step. You can always override this by choosing a different workspace or "Current directory."
+
+## Storage
+
+Workspace definitions are stored in `~/.config/jackin/config.toml`. They're local operator configuration — not part of any project or agent repo.
