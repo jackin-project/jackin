@@ -621,7 +621,7 @@ where
         for _ in 0..spins {
             let frame = FRAMES[frame_idx % FRAMES.len()];
             eprint!(
-                "\r  {}  {}",
+                "\r      {}  {}",
                 frame.color(mg).bold(),
                 message.color(rgb(MATRIX_DIM)).bold()
             );
