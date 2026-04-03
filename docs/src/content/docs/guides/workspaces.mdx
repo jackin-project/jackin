@@ -27,7 +27,7 @@ cd ~/Projects/my-app
 jackin load agent-smith
 ```
 
-This creates a temporary workspace that mounts the current directory (`~/Projects/my-app`) into the container at the **same absolute path**. The agent sees the exact same directory layout you do.
+This creates a current-directory workspace that mounts the current directory (`~/Projects/my-app`) into the container at the **same absolute path**. The agent sees the exact same directory layout you do.
 
 ## Why save a workspace?
 
@@ -147,7 +147,7 @@ jackin workspace add secure-api \
 ```
 
 - `--allowed-agent` — only these agents can load this workspace (repeatable)
-- `--default-agent` — auto-selected when you use `jackin launch` with this workspace
+- `--default-agent` — auto-selected agent class when you use `jackin launch` with this workspace
 
 This is especially useful when one workspace should only be used with a very specific tool profile, such as a production-infra agent or a security-review agent.
 
@@ -169,7 +169,7 @@ jackin workspace edit secure-api --clear-default-agent
 
 ## Workspace auto-detection
 
-When you run `jackin launch`, the TUI launcher checks if your current directory matches any saved workspace's `workdir`. If it does, that workspace is preselected — saving you a selection step and reinforcing the value of naming project boundaries once. You can always override this by choosing a different workspace or "Current directory."
+When you run `jackin launch`, the TUI launcher checks if your current directory exactly matches a saved workspace's `workdir`. If it does, that workspace is preselected — saving you a selection step and reinforcing the value of naming project boundaries once. This auto-detection works best when the saved workspace keeps the host path and container `workdir` the same. If you remap `workdir` to a container-only path like `/workspace`, choose that saved workspace manually in the launcher. You can always override the preselection by choosing a different workspace or "Current directory."
 
 ## Storage
 

@@ -42,7 +42,7 @@ jackin launch
 There are three core ideas in `jackin`:
 
 - **Agent class** — a reusable tool profile defined by an agent repo and loaded by name, such as `agent-smith`, `the-architect`, `chainargos/frontend-engineer`, or `chainargos/backend-engineer`
-- **Workspace** — the file-access boundary for a project: which host directories are mounted and where they appear in the container. A workspace can be synthetic (the current directory) or saved by name. Saved workspaces can also restrict which agent classes are allowed and set a default
+- **Workspace** — the file-access boundary for a project: which host directories are mounted and where they appear in the container. A workspace can be the current-directory workspace or a saved workspace. Saved workspaces can also restrict which agent classes are allowed and set a default.
 - **Agent instance** — one running container created from an agent class and attached to one workspace
 
 `agent-smith` is just the default starter class name in this project. It is not magic syntax. In a real company you might have classes like `frontend-engineer`, `backend-engineer`, `infra-operator`, or `security-reviewer`.
@@ -195,7 +195,7 @@ Agent repos follow the `jackin-{class-name}` naming convention on GitHub:
 
 - `jackin-agent-smith` — the default agent
 - `jackin-neo` — a custom agent named "neo"
-- `chainargos/jackin-the-architect` — a namespaced agent
+- `chainargos/jackin-backend-engineer` — a namespaced agent
 
 The class name is what you use with `jackin load`. The repo name adds the `jackin-` prefix for discoverability.
 

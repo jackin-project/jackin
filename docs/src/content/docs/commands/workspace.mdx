@@ -28,8 +28,8 @@ Save a new workspace definition.
 | `--workdir <PATH>` | Working directory (auto-mounted at the same path by default) |
 | `--mount <SPEC>` | Additional bind-mount spec (repeatable) |
 | `--no-workdir-mount` | Don't auto-mount the workdir |
-| `--allowed-agent <NAME>` | Restrict to these agents (repeatable) |
-| `--default-agent <NAME>` | Agent to auto-select |
+| `--allowed-agent <NAME>` | Restrict to these agent classes (repeatable) |
+| `--default-agent <NAME>` | Agent class to auto-select |
 
 ```bash
 jackin workspace add my-app --workdir ~/Projects/my-app
@@ -67,8 +67,8 @@ Modify an existing workspace.
 | `--workdir <PATH>` | Update the working directory |
 | `--mount <SPEC>` | Add a mount (repeatable) |
 | `--remove-destination <PATH>` | Remove a mount by container path (repeatable) |
-| `--allowed-agent <NAME>` | Grant agent access (repeatable) |
-| `--remove-allowed-agent <NAME>` | Revoke agent access (repeatable) |
+| `--allowed-agent <NAME>` | Grant agent class access (repeatable) |
+| `--remove-allowed-agent <NAME>` | Revoke agent class access (repeatable) |
 | `--default-agent <NAME>` | Set default agent |
 | `--clear-default-agent` | Clear the default agent |
 
