@@ -455,6 +455,12 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
 
     if !all_mounts.is_empty() {
         detail_lines.push(Line::from(""));
+        detail_lines.push(Line::from(Span::styled(
+            "mounts",
+            Style::default()
+                .fg(colors::BRIGHT_BLUE)
+                .add_modifier(Modifier::BOLD),
+        )));
         for (mount, is_global) in &all_mounts {
             let src_short = tui::shorten_home(&mount.src);
             let dst_short = tui::shorten_home(&mount.dst);
@@ -492,8 +498,7 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(colors::DETAIL_BORDER))
-        .style(Style::default().bg(colors::DETAIL_BG))
-        .padding(ratatui::widgets::Padding::new(1, 1, 1, 0));
+        .style(Style::default().bg(colors::DETAIL_BG));
     let details = Paragraph::new(detail_lines)
         .block(detail_block)
         .wrap(Wrap { trim: false });
@@ -523,35 +528,55 @@ fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
     let area = frame.area();
     let selected_ws = &state.workspaces[state.selected_workspace];
 
+    let agents = state.filtered_agents();
+    let list_height = (agents.len() as u16) + 2; // items + borders
+
+    // Workspace context block height
+    let ws_block_height: u16 = 3; // border top + content + border bottom
+
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(BANNER_HEIGHT), // banner
-            Constraint::Length(2),             // workspace context line
-            Constraint::Min(8),               // agent list
-            Constraint::Length(2),             // footer
+            Constraint::Length(BANNER_HEIGHT),    // banner
+            Constraint::Length(ws_block_height),  // workspace context block
+            Constraint::Length(1),               // gap
+            Constraint::Length(list_height),      // agent list (fixed)
+            Constraint::Min(0),                  // remaining space
+            Constraint::Length(2),               // footer
         ])
         .split(area);
 
     // Banner
     render_banner(frame, root[0]);
 
-    // Context: which workspace is selected
+    // Workspace context — centered styled block
     let ws_label = if selected_ws.name == "Current directory" {
         tui::shorten_home(&selected_ws.workspace.workdir)
     } else {
         selected_ws.name.clone()
     };
-    let context = Paragraph::new(Line::from(vec![
-        Span::styled("  workspace: ", Style::default().fg(colors::DIM_BLUE)),
-        Span::styled(ws_label, Style::default().fg(colors::WHITE).add_modifier(Modifier::BOLD)),
-    ]));
-    frame.render_widget(context, root[1]);
+    let ws_context_area = centered_rect(root[1], 50);
+    let ws_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(colors::DETAIL_BORDER))
+        .style(Style::default().bg(colors::DETAIL_BG));
+    let ws_context = Paragraph::new(Line::from(vec![
+        Span::styled(" workspace: ", Style::default().fg(colors::DIM_BLUE)),
+        Span::styled(
+            ws_label,
+            Style::default()
+                .fg(colors::WHITE)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]))
+    .block(ws_block)
+    .alignment(Alignment::Center);
+    frame.render_widget(ws_context, ws_context_area);
 
-    // Agent list (centered)
-    let list_area = centered_rect(root[2], 50);
+    // Agent list (centered, fixed height)
+    let list_area = centered_rect(root[3], 50);
 
-    let agents = state.filtered_agents();
     let agent_items: Vec<ListItem> = agents
         .iter()
         .enumerate()
@@ -605,7 +630,7 @@ fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         Span::styled("back", Style::default().fg(colors::DIM_GREEN)),
     ]))
     .alignment(Alignment::Center);
-    frame.render_widget(footer, root[3]);
+    frame.render_widget(footer, root[5]);
 }
 
 // ── Layout helpers ─────────────────────────────────────────────────────

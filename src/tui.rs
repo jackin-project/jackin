@@ -18,7 +18,7 @@ const fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
 // ── Skippable sleep ─────────────────────────────────────────────────────
 
 /// Sleep for `duration`, but return `true` immediately if Enter or Esc is pressed.
-/// Enables raw mode temporarily to detect keypresses without blocking.
+/// Temporarily enables raw mode for keypress detection, then restores it.
 fn skippable_sleep(duration: std::time::Duration) -> bool {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 
@@ -34,21 +34,6 @@ fn skippable_sleep(duration: std::time::Duration) -> bool {
     };
     let _ = crossterm::terminal::disable_raw_mode();
     skipped
-}
-
-/// Like `skippable_sleep` but for short frame delays in animations.
-/// Returns `true` if the animation should be skipped.
-fn skippable_frame(frame_ms: u64) -> bool {
-    use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-
-    if crossterm::event::poll(std::time::Duration::from_millis(frame_ms)).unwrap_or(false) {
-        return matches!(
-            event::read(),
-            Ok(Event::Key(key)) if key.kind == KeyEventKind::Press
-                && matches!(key.code, KeyCode::Enter | KeyCode::Esc)
-        );
-    }
-    false
 }
 
 // ── Digital rain ─────────────────────────────────────────────────────────
@@ -157,7 +142,6 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
         .collect();
 
     eprint!("\x1b[?25l"); // hide cursor
-    let _ = crossterm::terminal::enable_raw_mode();
 
     // ── Phase 1: Pure rain ──────────────────────────────────────────────
     let mut skipped = false;
@@ -227,7 +211,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
         }
 
         let _ = io::stderr().flush();
-        skipped = skippable_frame(frame_ms);
+        skipped = skippable_sleep(std::time::Duration::from_millis(frame_ms));
     }
 
     // ── Phase 2 & 3: Reveal + Hold (only if reveal banner provided) ─────
@@ -318,16 +302,14 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
             }
 
             let _ = io::stderr().flush();
-            skipped = skippable_frame(frame_ms);
+            skipped = skippable_sleep(std::time::Duration::from_millis(frame_ms));
         }
 
         // Hold the revealed logo briefly
         if !skipped {
-            let _ = skippable_frame(1500);
+            let _ = skippable_sleep(std::time::Duration::from_millis(1500));
         }
     }
-
-    let _ = crossterm::terminal::disable_raw_mode();
 
     // Clear rain area
     eprint!("\x1b[H");
