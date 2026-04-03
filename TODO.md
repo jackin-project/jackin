@@ -82,3 +82,25 @@ The agent container (`jackin-the-architect`) is gone, but its DinD sidecar (`jac
 5. **Automatic pre-launch garbage collection**: Before each `load`, scan for orphaned jackin-managed resources (DinD containers without a matching agent container) and clean them up. This is the most robust — handles all failure modes including hard kills and terminal closures.
 
 **Decision**: Deferred. Option 5 (automatic GC) is probably the best UX. Option 4 (explicit `jackin gc`) is simpler to implement as a first step.
+
+## 1Password Integration for Agent Secrets
+
+**Problem**: Jackin does not yet have a first-class way to integrate with 1Password for secrets an agent may need at runtime, such as API tokens, cloud credentials, or project-specific environment values. Today the operator has to manage these manually through mounts, shell setup, or ad-hoc environment injection.
+
+**Why it matters**:
+- 1Password is a common source of truth for developer and team secrets
+- Manual secret handling is error-prone and easy to make inconsistent across agents and workspaces
+- A first-class integration could reduce the need to mount broad host directories just to make credentials available
+- The operator should be able to decide which secrets enter which agent environment, matching jackin's boundary model
+
+**Options to consider**:
+
+1. **1Password CLI passthrough**: Install or expose the `op` CLI in agent classes and let operators authenticate inside the container. Simple and flexible, but pushes too much setup onto each agent session and weakens the "predefined environment" story.
+
+2. **Workspace-managed secret references**: Let workspaces or global config declare references to 1Password items or fields, then resolve them at launch time into files, mounts, or environment variables. This fits jackin's operator-controlled boundary model, but needs careful UX and secret-handling rules.
+
+3. **Ephemeral runtime injection**: Resolve 1Password secrets only at launch and inject them into the running container without persisting them into `~/.jackin/data`. Better from a persistence standpoint, but requires very clear rules around visibility, logging, and restart behavior.
+
+4. **Read-only secret mount generation**: Materialize selected 1Password secrets into temporary files and mount them read-only into the container. This matches existing mount semantics well, but needs secure lifecycle cleanup and a good way to map secrets to destinations.
+
+**Decision**: Deferred. The right direction is probably operator-controlled launch-time resolution with non-persistent secret injection, but it needs design work around UX, persistence, and how it fits workspace and global mount configuration.
