@@ -28,6 +28,7 @@ RUN current_gid=\"$(id -g claude)\" \
        fi \
     && chown -R claude:claude /home/claude
 USER claude
+ARG JACKIN_CACHE_BUST=0
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN claude --version
 USER root
@@ -137,7 +138,7 @@ mod tests {
     fn renders_derived_dockerfile_installs_claude_as_claude_user() {
         let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n");
         let install =
-            "USER claude\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version";
+            "USER claude\nARG JACKIN_CACHE_BUST=0\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version";
         let copy = "USER root\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh";
 
         assert!(dockerfile.contains(install));
