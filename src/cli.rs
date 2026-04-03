@@ -10,20 +10,21 @@ const HELP_STYLES: Styles = Styles::styled()
     .invalid(AnsiColor::Red.on_default().effects(Effects::BOLD))
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
 
-macro_rules! banner {
-    () => {
-        r"
-    │ │╷│ │╷│ ╷  │╷│ │╷│ │╷│
-    │ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│
-    ╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵
-               ╵
-          j a c k i n
-       operator terminal
-"
-    };
-}
-
-const BANNER: &str = concat!("\n", banner!());
+const BANNER: &str = concat!(
+    "\n",
+    "\x1b[94m",
+    "    │ │╷│ │╷│ ╷  │╷│ │╷│ │╷│\n",
+    "    │ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│\n",
+    "    ╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵\n",
+    "               ╵\n",
+    "\x1b[0m",
+    "\x1b[1;97m",
+    "          j a c k i n\n",
+    "\x1b[0m",
+    "\x1b[38;5;67m",
+    "       operator terminal\n",
+    "\x1b[0m",
+);
 
 /// Send agents into the Matrix
 #[derive(Debug, Parser)]
