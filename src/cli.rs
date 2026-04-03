@@ -11,7 +11,7 @@ const HELP_STYLES: Styles = Styles::styled()
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
 
 const BANNER: &str = concat!(
-    "\n",
+    "\n\n\n",
     "\x1b[94m",
     "    │ │╷│ │╷│ ╷  │╷│ │╷│ │╷│\n",
     "    │ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│\n",
@@ -506,25 +506,211 @@ mod tests {
         assert!(matches!(cli.command, Command::Launch));
     }
 
+    /// Strip ANSI escape sequences for clean test assertions.
+    fn strip_ansi(s: &str) -> String {
+        let mut result = String::with_capacity(s.len());
+        let mut chars = s.chars();
+        while let Some(ch) = chars.next() {
+            if ch == '\x1b' {
+                // Skip until 'm' (SGR) or other terminator
+                for inner in chars.by_ref() {
+                    if inner.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+        result
+    }
+
+    fn help_text(args: &[&str]) -> String {
+        let err = Cli::try_parse_from(args).unwrap_err();
+        strip_ansi(&err.to_string())
+    }
+
+    // ── Banner tests ────────────────────────────────────────────────────
+
     #[test]
-    fn help_contains_banner_and_matrix_descriptions() {
-        let err = Cli::try_parse_from(["jackin", "--help"]).unwrap_err();
-        let help = err.to_string();
-        assert!(help.contains("j a c k i n"), "banner missing");
-        assert!(help.contains("operator terminal"), "banner tagline missing");
+    fn root_help_shows_banner_with_top_padding() {
+        let help = help_text(&["jackin", "--help"]);
+        // Banner should have an empty line before the circuit art (top padding)
+        let circuit_line = "│ │";
+        let banner_pos = help.find(circuit_line).expect("circuit art missing");
+        let before_banner = &help[..banner_pos];
+        let newline_count = before_banner.chars().filter(|&c| c == '\n').count();
         assert!(
-            help.contains("Send agents into the Matrix"),
-            "about text missing"
+            newline_count >= 2,
+            "banner missing top padding (expected >=2 newlines, got {newline_count}): {before_banner:?}"
+        );
+        assert!(help.contains("j a c k i n"), "banner text missing");
+        assert!(help.contains("operator terminal"), "banner tagline missing");
+    }
+
+    #[test]
+    fn root_help_shows_all_commands() {
+        let help = help_text(&["jackin", "--help"]);
+        assert!(help.contains("Send agents into the Matrix"));
+        for cmd in ["load", "hardline", "eject", "exile", "purge", "launch", "workspace", "config"]
+        {
+            assert!(help.contains(cmd), "missing command: {cmd}");
+        }
+    }
+
+    // ── Load help ───────────────────────────────────────────────────────
+
+    #[test]
+    fn load_help_shows_description_and_examples() {
+        let help = help_text(&["jackin", "load", "--help"]);
+        assert!(help.contains("Jack an agent into the Matrix"));
+        assert!(help.contains("Examples:"));
+        assert!(help.contains("jackin load agent-smith"));
+        assert!(help.contains("jackin load agent-smith -w big-monorepo"));
+    }
+
+    #[test]
+    fn load_help_shows_mount_format() {
+        let help = help_text(&["jackin", "load", "--help"]);
+        assert!(
+            help.contains("path[:ro] or src:dst[:ro]"),
+            "mount format missing"
+        );
+    }
+
+    // ── Hardline help ───────────────────────────────────────────────────
+
+    #[test]
+    fn hardline_help_shows_examples() {
+        let help = help_text(&["jackin", "hardline", "--help"]);
+        assert!(help.contains("Reattach to a running agent"));
+        assert!(help.contains("jackin hardline jackin-agent-smith"));
+    }
+
+    // ── Eject help ──────────────────────────────────────────────────────
+
+    #[test]
+    fn eject_help_shows_examples() {
+        let help = help_text(&["jackin", "eject", "--help"]);
+        assert!(help.contains("Pull an agent out"));
+        assert!(help.contains("jackin eject agent-smith --all"));
+        assert!(help.contains("jackin eject agent-smith --purge"));
+    }
+
+    // ── Purge help ──────────────────────────────────────────────────────
+
+    #[test]
+    fn purge_help_shows_examples() {
+        let help = help_text(&["jackin", "purge", "--help"]);
+        assert!(help.contains("Delete persisted state"));
+        assert!(help.contains("jackin purge agent-smith --all"));
+    }
+
+    // ── Workspace subcommand help ───────────────────────────────────────
+
+    #[test]
+    fn workspace_add_help_shows_auto_mount_and_examples() {
+        let help = help_text(&["jackin", "workspace", "add", "--help"]);
+        assert!(
+            help.contains("automatically mounted"),
+            "auto-mount behavior not documented"
+        );
+        assert!(
+            help.contains("--no-workdir-mount"),
+            "opt-out flag missing"
+        );
+        assert!(help.contains("Examples:"));
+        assert!(help.contains("jackin workspace add my-app --workdir ~/Projects/my-app"));
+    }
+
+    #[test]
+    fn workspace_add_help_shows_mount_format() {
+        let help = help_text(&["jackin", "workspace", "add", "--help"]);
+        assert!(
+            help.contains("path[:ro] or src:dst[:ro]"),
+            "mount format missing"
         );
     }
 
     #[test]
-    fn load_help_contains_matrix_description() {
-        let err = Cli::try_parse_from(["jackin", "load", "--help"]).unwrap_err();
-        let help = err.to_string();
+    fn workspace_edit_help_shows_examples() {
+        let help = help_text(&["jackin", "workspace", "edit", "--help"]);
+        assert!(help.contains("Modify an existing workspace"));
+        assert!(help.contains("Examples:"));
+        assert!(help.contains("jackin workspace edit my-app --workdir ~/new-dir"));
+        assert!(help.contains("--clear-default-agent"));
+    }
+
+    #[test]
+    fn workspace_edit_help_shows_mount_format() {
+        let help = help_text(&["jackin", "workspace", "edit", "--help"]);
         assert!(
-            help.contains("Jack an agent into the Matrix"),
-            "load description missing"
+            help.contains("path[:ro] or src:dst[:ro]"),
+            "mount format missing"
         );
+    }
+
+    #[test]
+    fn workspace_show_help_shows_examples() {
+        let help = help_text(&["jackin", "workspace", "show", "--help"]);
+        assert!(help.contains("jackin workspace show my-app"));
+    }
+
+    #[test]
+    fn workspace_remove_help_shows_examples() {
+        let help = help_text(&["jackin", "workspace", "remove", "--help"]);
+        assert!(help.contains("jackin workspace remove my-app"));
+    }
+
+    // ── Config mount help ───────────────────────────────────────────────
+
+    #[test]
+    fn config_mount_add_help_shows_examples() {
+        let help = help_text(&["jackin", "config", "mount", "add", "--help"]);
+        assert!(help.contains("Examples:"));
+        assert!(help.contains("jackin config mount add gradle-cache"));
+        assert!(help.contains("--scope"));
+    }
+
+    #[test]
+    fn config_mount_remove_help_shows_examples() {
+        let help = help_text(&["jackin", "config", "mount", "remove", "--help"]);
+        assert!(help.contains("Examples:"));
+        assert!(help.contains("jackin config mount remove gradle-cache"));
+    }
+
+    // ── Subcommand banner consistency ───────────────────────────────────
+
+    #[test]
+    fn all_subcommand_help_pages_show_banner() {
+        let subcommands = [
+            vec!["jackin", "load", "--help"],
+            vec!["jackin", "hardline", "--help"],
+            vec!["jackin", "eject", "--help"],
+            vec!["jackin", "exile", "--help"],
+            vec!["jackin", "purge", "--help"],
+            vec!["jackin", "launch", "--help"],
+            vec!["jackin", "workspace", "add", "--help"],
+            vec!["jackin", "workspace", "list", "--help"],
+            vec!["jackin", "workspace", "show", "--help"],
+            vec!["jackin", "workspace", "edit", "--help"],
+            vec!["jackin", "workspace", "remove", "--help"],
+            vec!["jackin", "config", "mount", "add", "--help"],
+            vec!["jackin", "config", "mount", "remove", "--help"],
+            vec!["jackin", "config", "mount", "list", "--help"],
+        ];
+        for args in &subcommands {
+            let help = help_text(args);
+            assert!(
+                help.contains("j a c k i n"),
+                "banner missing in: {}",
+                args.join(" ")
+            );
+            assert!(
+                help.contains("operator terminal"),
+                "tagline missing in: {}",
+                args.join(" ")
+            );
+        }
     }
 }
