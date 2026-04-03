@@ -32,9 +32,9 @@ pub struct WorkspaceEdit {
 
 pub fn expand_tilde(path: &str) -> String {
     if (path == "~" || path.starts_with("~/"))
-        && let Ok(home) = std::env::var("HOME")
+        && let Some(home) = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())
     {
-        return path.replacen('~', &home, 1);
+        return path.replacen('~', &home.display().to_string(), 1);
     }
 
     path.to_string()
@@ -205,7 +205,7 @@ pub fn resolve_load_workspace(
 
     let mut mounts = workspace.mounts.clone();
     let global_mounts =
-        crate::config::AppConfig::validate_mounts(&config.resolve_mounts(selector))?;
+        crate::config::AppConfig::expand_and_validate_named_mounts(&config.resolve_mounts(selector))?;
 
     for mount in global_mounts {
         if mounts.iter().any(|existing| existing.dst == mount.dst) {

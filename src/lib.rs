@@ -171,10 +171,10 @@ pub fn run(cli: Cli) -> Result<()> {
             WorkspaceCommand::List => {
                 let workspaces = config.list_workspaces();
                 if workspaces.is_empty() {
-                    eprintln!("No workspaces configured.");
-                    eprintln!();
-                    eprintln!("Add one with:");
-                    eprintln!(
+                    println!("No workspaces configured.");
+                    println!();
+                    println!("Add one with:");
+                    println!(
                         "  jackin workspace add <name> --workdir /path/to/project --mount /path/to/project"
                     );
                 } else {
