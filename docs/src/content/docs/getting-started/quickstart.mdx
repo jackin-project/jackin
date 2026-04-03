@@ -7,6 +7,8 @@ import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
 ## Load your first agent
 
+In `jackin`, the first thing you choose is usually an **agent class**. That is the tool profile you want to run. `agent-smith` is the default starter class included by this project.
+
 <Steps>
 1. **Navigate to your project directory**
 
@@ -35,6 +37,8 @@ import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
    Press `Ctrl+C` or type `/exit` in Claude Code to leave. The container stops, but its state is persisted for next time.
 </Steps>
+
+If you already know you want a more specialized agent class, swap `agent-smith` for something else such as `the-architect`.
 
 ## Use the interactive launcher
 
@@ -98,6 +102,17 @@ jackin exile
     jackin load agent-smith backend
 
     # Both agents run simultaneously in isolated containers
+    ```
+  </TabItem>
+  <TabItem label="One workspace, different agents">
+    ```bash
+    # Same project access boundary, different tool profiles
+    jackin workspace add monorepo --workdir ~/Projects/monorepo
+
+    jackin load agent-smith monorepo
+    jackin load the-architect monorepo
+
+    # Same files, different environment and plugins
     ```
   </TabItem>
   <TabItem label="Read-only access">
