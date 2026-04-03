@@ -283,25 +283,30 @@ pub fn run_launch(
     result
 }
 
-// ── Compact banner (single-line logo for TUI) ──────────────────────────
+// ── Full banner (matching CLI help colors) ──────────────────────────────
+
+const BANNER_HEIGHT: u16 = 8;
 
 fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
-    use ratatui::style::Style;
+    use ratatui::layout::Alignment;
+    use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
 
-    let line = Line::from(vec![
-        Span::styled(
-            "│╷│ ╷ │╷│",
-            Style::default().fg(colors::BRIGHT_BLUE),
-        ),
-        Span::styled("  j a c k i n  ", Style::default().fg(colors::WHITE).add_modifier(ratatui::style::Modifier::BOLD)),
-        Span::styled(
-            "operator terminal",
-            Style::default().fg(colors::DIM_BLUE),
-        ),
-    ]);
-    let banner = Paragraph::new(line).alignment(ratatui::layout::Alignment::Center);
+    let blue = Style::default().fg(colors::BRIGHT_BLUE);
+    let title = Style::default().fg(colors::WHITE).add_modifier(Modifier::BOLD);
+    let sub = Style::default().fg(colors::DIM_BLUE);
+
+    let lines = vec![
+        Line::from(Span::styled("│ │╷│ │╷│ ╷  │╷│ │╷│ │╷│", blue)),
+        Line::from(Span::styled("│ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│", blue)),
+        Line::from(Span::styled("╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵", blue)),
+        Line::from(Span::styled("           ╵", blue)),
+        Line::from(Span::styled("      j a c k i n", title)),
+        Line::from(Span::styled("   operator terminal", sub)),
+    ];
+
+    let banner = Paragraph::new(lines).alignment(Alignment::Center);
     frame.render_widget(banner, area);
 }
 
@@ -318,14 +323,14 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
 
     let area = frame.area();
 
-    // Main vertical layout: banner | body | footer
+    // Main vertical layout: banner | spacer | body | footer
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),  // banner
-            Constraint::Length(1),  // spacer
-            Constraint::Min(10),   // body
-            Constraint::Length(2),  // footer
+            Constraint::Length(BANNER_HEIGHT), // banner
+            Constraint::Length(1),             // spacer
+            Constraint::Min(10),              // body
+            Constraint::Length(2),             // footer
         ])
         .split(area);
 
@@ -487,10 +492,10 @@ fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),  // banner
-            Constraint::Length(2),  // workspace context line
-            Constraint::Min(8),    // agent list
-            Constraint::Length(2),  // footer
+            Constraint::Length(BANNER_HEIGHT), // banner
+            Constraint::Length(2),             // workspace context line
+            Constraint::Min(8),               // agent list
+            Constraint::Length(2),             // footer
         ])
         .split(area);
 
