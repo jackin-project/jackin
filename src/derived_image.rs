@@ -34,7 +34,6 @@ RUN claude --version
 USER root
 COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh
 RUN chmod +x /home/claude/entrypoint.sh
-WORKDIR /workspace
 USER claude
 ENTRYPOINT [\"/home/claude/entrypoint.sh\"]
 "
@@ -127,7 +126,7 @@ mod tests {
         let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n");
 
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
-        assert!(dockerfile.contains("WORKDIR /workspace"));
+        assert!(!dockerfile.contains("WORKDIR"));
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh")
         );

@@ -204,7 +204,7 @@ fn resolve_agent_from_context(
 pub fn run(cli: Cli) -> Result<()> {
     let paths = JackinPaths::detect()?;
     let mut config = AppConfig::load_or_init(&paths)?;
-    let mut runner = ShellRunner;
+    let mut runner = ShellRunner::default();
 
     match cli.command {
         Command::Load {
@@ -215,6 +215,7 @@ pub fn run(cli: Cli) -> Result<()> {
             no_intro,
             debug,
         } => {
+            runner.debug = debug;
             let cwd = std::env::current_dir()?;
 
             let (class, workspace_input) = if let Some(sel) = selector {

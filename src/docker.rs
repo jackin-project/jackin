@@ -1,3 +1,4 @@
+use owo_colors::OwoColorize;
 use std::path::Path;
 
 pub trait CommandRunner {
@@ -11,7 +12,10 @@ pub trait CommandRunner {
 }
 
 #[derive(Default)]
-pub struct ShellRunner;
+pub struct ShellRunner {
+    pub debug: bool,
+}
+
 
 impl ShellRunner {
     fn build_command(program: &str, args: &[&str], cwd: Option<&Path>) -> std::process::Command {
@@ -22,10 +26,22 @@ impl ShellRunner {
         }
         command
     }
+
+    fn log_command(&self, program: &str, args: &[&str], cwd: Option<&Path>) {
+        if self.debug {
+            let cmd = format!("{} {}", program, args.join(" "));
+            if let Some(dir) = cwd {
+                eprintln!("{}", format!("[debug] cd {} && {}", dir.display(), cmd).dimmed());
+            } else {
+                eprintln!("{}", format!("[debug] {cmd}").dimmed());
+            }
+        }
+    }
 }
 
 impl CommandRunner for ShellRunner {
     fn run(&mut self, program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<()> {
+        self.log_command(program, args, cwd);
         let status = Self::build_command(program, args, cwd).status()?;
         anyhow::ensure!(
             status.success(),
@@ -42,6 +58,7 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
+        self.log_command(program, args, cwd);
         let output = Self::build_command(program, args, cwd).output()?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -50,6 +67,10 @@ impl CommandRunner for ShellRunner {
             }
             anyhow::bail!("command failed: {} {}: {}", program, args.join(" "), stderr);
         }
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if self.debug && !stdout.is_empty() {
+            eprintln!("{}", format!("[debug] -> {stdout}").dimmed());
+        }
+        Ok(stdout)
     }
 }

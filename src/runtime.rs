@@ -1,6 +1,7 @@
 use crate::config::AppConfig;
 use crate::derived_image::create_derived_build_context;
 use crate::docker::CommandRunner;
+use owo_colors::OwoColorize;
 use crate::instance::{AgentState, next_container_name};
 use crate::paths::JackinPaths;
 use crate::repo::{CachedRepo, validate_agent_repo};
@@ -209,9 +210,22 @@ fn build_agent_image(
     validated_repo: &crate::repo::ValidatedAgentRepo,
     host: &HostIdentity,
     rebuild: bool,
+    debug: bool,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<String> {
     let build = create_derived_build_context(&cached_repo.repo_dir, validated_repo)?;
+
+    if debug {
+        eprintln!(
+            "{}",
+            format!(
+                "[debug] DerivedDockerfile ({}):\n{}",
+                build.dockerfile_path.display(),
+                std::fs::read_to_string(&build.dockerfile_path).unwrap_or_default()
+            )
+            .dimmed()
+        );
+    }
     let image = image_name(selector);
 
     let build_arg_uid = format!("JACKIN_HOST_UID={}", host.uid);
@@ -241,7 +255,7 @@ fn build_agent_image(
     // Extract and display the Claude version from the built image
     if let Ok(version) = runner.capture(
         "docker",
-        &["run", "--rm", &image, "claude", "--version"],
+        &["run", "--rm", "--entrypoint", "claude", &image, "--version"],
         None,
     ) {
         let version = version.trim();
@@ -344,13 +358,18 @@ fn launch_agent_runtime(
         &git_author_name,
         "-e",
         &git_author_email,
+    ];
+    if debug {
+        run_args.extend_from_slice(&["-e", "CLAUDE_DEBUG=1"]);
+    }
+    run_args.extend_from_slice(&[
         "-v",
         &claude_dir_mount,
         "-v",
         &claude_json_mount,
         "-v",
         &plugins_mount,
-    ];
+    ]);
 
     let mut mount_strings: Vec<String> = Vec::new();
     for mount in &workspace.mounts {
@@ -434,7 +453,7 @@ pub fn load_agent(
         // Step 2: Build Docker image
         steps.next("Building Docker image");
         let image =
-            build_agent_image(selector, &cached_repo, &validated_repo, &host, opts.rebuild, runner)?;
+            build_agent_image(selector, &cached_repo, &validated_repo, &host, opts.rebuild, opts.debug, runner)?;
 
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");

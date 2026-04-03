@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+# Trace all commands in debug mode
+if [ "${CLAUDE_DEBUG:-0}" = "1" ]; then
+    set -x
+fi
+
 run_maybe_quiet() {
     if [ "${CLAUDE_DEBUG:-0}" = "1" ]; then
         "$@"
@@ -15,6 +20,15 @@ if [ -n "${GIT_AUTHOR_NAME:-}" ]; then
 fi
 if [ -n "${GIT_AUTHOR_EMAIL:-}" ]; then
     git config --global user.email "$GIT_AUTHOR_EMAIL"
+fi
+
+# Authenticate with GitHub if gh is installed in the container
+if [ -x /usr/bin/gh ]; then
+    if ! gh auth status &>/dev/null; then
+        gh auth login
+    fi
+    gh auth setup-git
+    git config --global url."https://github.com/".insteadOf "git@github.com:"
 fi
 
 run_maybe_quiet /home/claude/install-plugins.sh
