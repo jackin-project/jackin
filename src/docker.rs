@@ -1,11 +1,11 @@
 use std::path::Path;
 
 pub trait CommandRunner {
-    fn run(&mut self, program: &str, args: &[String], cwd: Option<&Path>) -> anyhow::Result<()>;
+    fn run(&mut self, program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<()>;
     fn capture(
         &mut self,
         program: &str,
-        args: &[String],
+        args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String>;
 }
@@ -14,7 +14,7 @@ pub trait CommandRunner {
 pub struct ShellRunner;
 
 impl ShellRunner {
-    fn build_command(program: &str, args: &[String], cwd: Option<&Path>) -> std::process::Command {
+    fn build_command(program: &str, args: &[&str], cwd: Option<&Path>) -> std::process::Command {
         let mut command = std::process::Command::new(program);
         command.args(args);
         if let Some(dir) = cwd {
@@ -25,7 +25,7 @@ impl ShellRunner {
 }
 
 impl CommandRunner for ShellRunner {
-    fn run(&mut self, program: &str, args: &[String], cwd: Option<&Path>) -> anyhow::Result<()> {
+    fn run(&mut self, program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<()> {
         let status = Self::build_command(program, args, cwd).status()?;
         anyhow::ensure!(
             status.success(),
@@ -39,7 +39,7 @@ impl CommandRunner for ShellRunner {
     fn capture(
         &mut self,
         program: &str,
-        args: &[String],
+        args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
         let output = Self::build_command(program, args, cwd).output()?;

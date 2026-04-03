@@ -95,13 +95,17 @@ impl AppConfig {
         Ok(config)
     }
 
-    pub fn resolve_or_register(
+    /// Resolve an existing agent source or derive a new one from the selector.
+    ///
+    /// Returns `(source, is_new)`. When `is_new` is `true` the source has been
+    /// inserted into the in-memory config but **not** persisted — the caller
+    /// should call [`save`] after validating that the repository is reachable.
+    pub fn resolve_agent_source(
         &mut self,
         selector: &ClassSelector,
-        paths: &JackinPaths,
-    ) -> anyhow::Result<AgentSource> {
+    ) -> anyhow::Result<(AgentSource, bool)> {
         if let Some(source) = self.agents.get(&selector.key()) {
-            return Ok(source.clone());
+            return Ok((source.clone(), false));
         }
 
         let namespace = selector
@@ -113,8 +117,7 @@ impl AppConfig {
             git: format!("git@github.com:{namespace}/jackin-{}.git", selector.name),
         };
         self.agents.insert(selector.key(), source.clone());
-        self.save(paths)?;
-        Ok(source)
+        Ok((source, true))
     }
 
     pub fn save(&self, paths: &JackinPaths) -> anyhow::Result<()> {
@@ -446,18 +449,22 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
     }
 
     #[test]
-    fn resolve_or_register_adds_owner_repo_on_first_use() {
+    fn resolve_agent_source_adds_owner_repo_on_first_use() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(Some("chainargos"), "the-architect");
 
-        let source = config.resolve_or_register(&selector, &paths).unwrap();
+        let (source, is_new) = config.resolve_agent_source(&selector).unwrap();
 
         assert_eq!(
             source.git,
             "git@github.com:chainargos/jackin-the-architect.git"
         );
+        assert!(is_new);
+
+        // Not yet persisted — caller must save explicitly
+        config.save(&paths).unwrap();
         assert!(
             std::fs::read_to_string(&paths.config_file)
                 .unwrap()
