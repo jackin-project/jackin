@@ -36,11 +36,11 @@ An agent **class** is a reusable tool profile for creating agent containers. It'
 
 The name `agent-smith` is just a project-specific example. In practice, agent class names can reflect the job they are designed for:
 
-- `frontend`
-- `backend`
-- `infra`
-- `docs`
-- `review-only`
+- `frontend-engineer`
+- `backend-engineer`
+- `infra-operator`
+- `docs-writer`
+- `security-reviewer`
 
 When you run `jackin load agent-smith`, jackin clones the `jackin-agent-smith` repository, builds a Docker image from it, and launches a container.
 
@@ -101,7 +101,7 @@ A **workspace** defines how your project directories are mounted into an agent c
 - **workdir** — the working directory inside the container
 - **mounts** — which host directories to mount, where, and with what permissions
 - **allowed agents** — optionally restrict which agent classes can use this workspace
-- **default agent** — which agent to auto-select when loading this workspace
+- **default agent** — which agent class to auto-select when loading this workspace
 
 Think of a workspace as answering: "Which project files can this agent see, and where do they appear in the container?"
 
@@ -121,7 +121,7 @@ That keeps tool and plugin scope small even when the project scope is shared.
 
 Workspaces can be:
 
-1. **Implicit** — the current directory, mounted at the same path. This is what you get with `jackin load agent-smith` from any directory.
+1. **Current-directory workspace** — the current directory, mounted at the same path. This is what you get with `jackin load agent-smith` from any directory.
 
 2. **Saved** — named configurations stored in `~/.config/jackin/config.toml`. Saved workspaces are useful when you want to reuse the same project boundary across sessions, launch from anywhere, preserve a multi-mount layout, or keep a preferred/default agent attached to that project.
 
