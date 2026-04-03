@@ -503,6 +503,38 @@ pub fn run(cli: Cli) -> Result<()> {
                     .iter()
                     .map(|value| parse_mount_spec(value))
                     .collect::<Result<Vec<_>>>()?;
+
+                // Collect what changed for the summary
+                let mut changes: Vec<String> = Vec::new();
+                if let Some(ref w) = workdir {
+                    changes.push(format!("workdir → {}", tui::shorten_home(w)));
+                }
+                for m in &upsert_mounts {
+                    if m.src == m.dst {
+                        changes.push(format!("added mount {}", tui::shorten_home(&m.src)));
+                    } else {
+                        changes.push(format!(
+                            "added mount {} → {}",
+                            tui::shorten_home(&m.src),
+                            tui::shorten_home(&m.dst)
+                        ));
+                    }
+                }
+                for dst in &remove_destinations {
+                    changes.push(format!("removed mount {}", tui::shorten_home(dst)));
+                }
+                for agent in &allowed_agents {
+                    changes.push(format!("allowed agent {agent}"));
+                }
+                for agent in &remove_allowed_agents {
+                    changes.push(format!("removed agent {agent}"));
+                }
+                if clear_default_agent {
+                    changes.push("cleared default agent".to_string());
+                } else if let Some(ref agent) = default_agent {
+                    changes.push(format!("default agent → {agent}"));
+                }
+
                 config.edit_workspace(
                     &name,
                     WorkspaceEdit {
@@ -519,7 +551,10 @@ pub fn run(cli: Cli) -> Result<()> {
                     },
                 )?;
                 config.save(&paths)?;
-                println!("Updated workspace {name:?}.");
+                println!("Updated workspace {name:?}:");
+                for change in &changes {
+                    println!("  - {change}");
+                }
                 Ok(())
             }
             WorkspaceCommand::Remove { name } => {
