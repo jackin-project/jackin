@@ -6,6 +6,12 @@ Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
 > **Current status:** jackin is built as a proof of concept around [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its first and only supported agent runtime. Support for additional agent runtimes — [Codex](https://github.com/openai/codex) and [Amp Code](https://ampcode.com) — is planned for future releases.
 
+## Why
+
+AI coding agents are most productive when they can run without permission prompts — reading files, executing commands, installing packages, and making changes freely. Claude Code calls this `--dangerously-skip-permissions` mode. But running an unrestricted agent directly on your host machine means it can see your entire filesystem, access your credentials, and modify anything.
+
+jackin solves this by giving each agent its own isolated Docker container. The agent runs with full autonomy *inside* the container, but can only see the directories you explicitly mount and the tooling baked into its image. The operator controls the blast radius: which folders the agent can read or write, whether mounts are read-only, and which Docker network the agent lives on. The agent thinks it has free rein — but it's operating inside a construct you defined.
+
 ## Installation
 
 ### Homebrew (macOS/Linux)

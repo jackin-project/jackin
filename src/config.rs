@@ -580,6 +580,7 @@ readonly = true
             }],
             allowed_agents: vec![],
             default_agent: None,
+                last_agent: None,
         };
 
         let error =
@@ -610,6 +611,7 @@ readonly = true
                     }],
                     allowed_agents: vec![],
                     default_agent: None,
+                last_agent: None,
                 },
             )
             .unwrap();
@@ -707,6 +709,7 @@ dst = "/workspace/src"
             }],
             allowed_agents: vec!["agent-smith".to_string()],
             default_agent: Some("agent-smith".to_string()),
+                last_agent: None,
         };
         config
             .add_workspace("big-monorepo", original.clone())
@@ -742,6 +745,7 @@ dst = "/workspace/src"
             }],
             allowed_agents: vec![],
             default_agent: None,
+                last_agent: None,
         };
         config
             .add_workspace("big-monorepo", original.clone())
@@ -759,6 +763,7 @@ dst = "/workspace/src"
                     }],
                     allowed_agents: vec!["agent-smith".to_string()],
                     default_agent: Some("agent-smith".to_string()),
+                last_agent: None,
                 },
             )
             .unwrap_err();
@@ -787,6 +792,7 @@ dst = "/workspace/src"
             }],
             allowed_agents: vec![],
             default_agent: None,
+                last_agent: None,
         };
         config
             .add_workspace("big-monorepo", original.clone())
@@ -836,6 +842,7 @@ dst = "/workspace/src"
             }],
             allowed_agents: vec![],
             default_agent: None,
+                last_agent: None,
         };
         config
             .add_workspace("big-monorepo", original.clone())
