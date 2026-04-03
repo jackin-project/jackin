@@ -30,62 +30,70 @@ pub struct Cli {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     /// Jack an agent into the Matrix
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Load {
         /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
         selector: String,
-        /// Direct path to mount as workspace
+        /// Direct path to a directory to mount as the agent's workspace
         #[arg(value_name = "PATH", conflicts_with_all = ["workspace", "mounts", "workdir"])]
         path: Option<String>,
-        /// Saved workspace name
+        /// Use a previously saved workspace by name
         #[arg(short = 'w', long = "workspace", conflicts_with_all = ["path", "mounts", "workdir"])]
         workspace: Option<String>,
-        /// Custom mount spec (src:dst[:ro])
+        /// Bind-mount spec as src:dst[:ro] (repeatable)
         #[arg(long = "mount", conflicts_with_all = ["path", "workspace"])]
         mounts: Vec<String>,
-        /// Container working directory (required with --mount)
+        /// Working directory inside the container (required with --mount)
         #[arg(long, requires = "mounts", conflicts_with_all = ["path", "workspace"])]
         workdir: Option<String>,
-        /// Bypass the construct sequence
+        /// Skip the animated intro sequence
         #[arg(long, default_value_t = false)]
         no_intro: bool,
-        /// Show raw signal output
+        /// Print raw container output for troubleshooting
         #[arg(long, default_value_t = false)]
         debug: bool,
     },
-    /// Reattach to a running agent
+    /// Reattach to a running agent's session
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Hardline {
-        /// Container name to reattach to
+        /// Name of the running container to reconnect to
         container: String,
     },
     /// Pull an agent out of the Matrix
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Eject {
-        /// Agent class selector or container name
+        /// Agent class selector or container name to stop
         selector: String,
-        /// Pull every instance of this class
+        /// Stop every running instance of this agent class
         #[arg(long)]
         all: bool,
-        /// Delete persisted state after ejection
+        /// Also delete persisted state after stopping
         #[arg(long)]
         purge: bool,
     },
-    /// Pull every agent out
+    /// Pull every running agent out at once
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
     /// Delete persisted state for an agent class
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Purge {
-        /// Agent class selector
+        /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
         selector: String,
-        /// Delete state for every instance of this class
+        /// Delete state for every instance, not just the default
         #[arg(long)]
         all: bool,
     },
-    /// Fast interactive launcher
+    /// Open the interactive TUI launcher to pick a workspace and agent
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Launch,
     /// Manage saved workspaces
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Workspace {
         #[command(subcommand)]
         command: WorkspaceCommand,
     },
-    /// Operator configuration
+    /// View and modify operator configuration
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
@@ -94,6 +102,8 @@ pub enum Command {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum ConfigCommand {
+    /// Manage global mount configurations
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Mount {
         #[command(subcommand)]
         command: MountCommand,
@@ -102,35 +112,57 @@ pub enum ConfigCommand {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum WorkspaceCommand {
+    /// Save a new workspace definition
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Add {
+        /// Unique name for this workspace
         name: String,
+        /// Working directory inside the container
         #[arg(long)]
         workdir: String,
+        /// Bind-mount spec as src:dst[:ro] (repeatable, at least one required)
         #[arg(long = "mount", required = true)]
         mounts: Vec<String>,
+        /// Restrict which agents may use this workspace (repeatable)
         #[arg(long = "allowed-agent")]
         allowed_agents: Vec<String>,
+        /// Agent to select by default when loading this workspace
         #[arg(long = "default-agent")]
         default_agent: Option<String>,
     },
+    /// List all saved workspaces
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     List,
+    /// Display details of a saved workspace
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Show {
+        /// Name of the workspace to display
         name: String,
     },
+    /// Modify an existing workspace
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Edit {
+        /// Name of the workspace to modify
         name: String,
+        /// Update the container working directory
         #[arg(long)]
         workdir: Option<String>,
+        /// Add a bind-mount spec as src:dst[:ro] (repeatable)
         #[arg(long = "mount")]
         mounts: Vec<String>,
+        /// Remove a mount by its container destination path (repeatable)
         #[arg(long = "remove-destination")]
         remove_destinations: Vec<String>,
+        /// Grant an agent access to this workspace (repeatable)
         #[arg(long = "allowed-agent")]
         allowed_agents: Vec<String>,
+        /// Revoke an agent's access to this workspace (repeatable)
         #[arg(long = "remove-allowed-agent")]
         remove_allowed_agents: Vec<String>,
+        /// Set the default agent for this workspace
         #[arg(long = "default-agent")]
         default_agent: Option<String>,
+        /// Clear the current default agent
         #[arg(
             long = "clear-default-agent",
             conflicts_with = "default_agent",
@@ -138,36 +170,45 @@ pub enum WorkspaceCommand {
         )]
         clear_default_agent: bool,
     },
+    /// Delete a saved workspace
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Remove {
+        /// Name of the workspace to delete
         name: String,
     },
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum MountCommand {
+    /// Register a new global mount applied to matching agents
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Add {
-        /// Mount name (used as identifier for removal)
+        /// Unique name for this mount (used to identify it later)
         name: String,
-        /// Host source path
+        /// Path on the host machine to mount from
         #[arg(long)]
         src: String,
-        /// Container destination path
+        /// Path inside the container to mount to
         #[arg(long)]
         dst: String,
-        /// Mount as read-only
+        /// Make this mount read-only inside the container
         #[arg(long, default_value_t = false)]
         readonly: bool,
-        /// Scope pattern (e.g. "chainargos/*" or "chainargos/agent-brown")
+        /// Apply only to matching agents (e.g. "chainargos/*" or "chainargos/agent-brown")
         #[arg(long)]
         scope: Option<String>,
     },
+    /// Unregister a global mount by name
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Remove {
-        /// Mount name to remove
+        /// Name of the mount to remove
         name: String,
-        /// Scope pattern to remove from
+        /// Only remove from this scope (leave other scopes untouched)
         #[arg(long)]
         scope: Option<String>,
     },
+    /// List all registered global mounts
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     List,
 }
 
