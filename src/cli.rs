@@ -19,6 +19,16 @@ const BANNER: &str = r"
        operator terminal
 ";
 
+const SUB_BANNER: &str = r"
+
+    │ │╷│ │╷│ ╷  │╷│ │╷│ │╷│
+    │ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│
+    ╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵
+               ╵
+          j a c k i n
+       operator terminal
+";
+
 /// Send agents into the Matrix
 #[derive(Debug, Parser)]
 #[command(name = "jackin", version, styles = HELP_STYLES, before_help = BANNER)]
@@ -30,7 +40,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     /// Jack an agent into the Matrix
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Load {
         /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
         selector: String,
@@ -54,13 +64,13 @@ pub enum Command {
         debug: bool,
     },
     /// Reattach to a running agent's session
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Hardline {
         /// Name of the running container to reconnect to
         container: String,
     },
     /// Pull an agent out of the Matrix
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Eject {
         /// Agent class selector or container name to stop
         selector: String,
@@ -72,10 +82,10 @@ pub enum Command {
         purge: bool,
     },
     /// Pull every running agent out at once
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Exile,
     /// Delete persisted state for an agent class
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Purge {
         /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
         selector: String,
@@ -84,16 +94,16 @@ pub enum Command {
         all: bool,
     },
     /// Open the interactive TUI launcher to pick a workspace and agent
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Launch,
     /// Manage saved workspaces
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Workspace {
         #[command(subcommand)]
         command: WorkspaceCommand,
     },
     /// View and modify operator configuration
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
@@ -103,7 +113,7 @@ pub enum Command {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum ConfigCommand {
     /// Manage global mount configurations
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Mount {
         #[command(subcommand)]
         command: MountCommand,
@@ -113,7 +123,7 @@ pub enum ConfigCommand {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum WorkspaceCommand {
     /// Save a new workspace definition
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Add {
         /// Unique name for this workspace
         name: String,
@@ -131,16 +141,16 @@ pub enum WorkspaceCommand {
         default_agent: Option<String>,
     },
     /// List all saved workspaces
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     List,
     /// Display details of a saved workspace
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Show {
         /// Name of the workspace to display
         name: String,
     },
     /// Modify an existing workspace
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Edit {
         /// Name of the workspace to modify
         name: String,
@@ -171,7 +181,7 @@ pub enum WorkspaceCommand {
         clear_default_agent: bool,
     },
     /// Delete a saved workspace
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Remove {
         /// Name of the workspace to delete
         name: String,
@@ -181,7 +191,7 @@ pub enum WorkspaceCommand {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum MountCommand {
     /// Register a new global mount applied to matching agents
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Add {
         /// Unique name for this mount (used to identify it later)
         name: String,
@@ -199,7 +209,7 @@ pub enum MountCommand {
         scope: Option<String>,
     },
     /// Unregister a global mount by name
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     Remove {
         /// Name of the mount to remove
         name: String,
@@ -208,7 +218,7 @@ pub enum MountCommand {
         scope: Option<String>,
     },
     /// List all registered global mounts
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(before_help = SUB_BANNER, styles = HELP_STYLES)]
     List,
 }
 
