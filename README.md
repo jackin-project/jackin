@@ -30,10 +30,10 @@ cargo install --git https://github.com/donbeave/jackin.git
 ## Quick Start
 
 ```sh
-# Load an agent into the current directory
+# Load an agent class into the current-directory workspace
 jackin load agent-smith
 
-# Interactive launcher — pick workspace and agent from a TUI
+# Interactive launcher — pick a workspace and agent class from a TUI
 jackin launch
 ```
 
@@ -41,8 +41,8 @@ jackin launch
 
 There are three core ideas in `jackin`:
 
-- **Agent class** — a reusable tool profile defined by a GitHub repo and loaded by name, such as `agent-smith`, `the-architect`, `chainargos/frontend-engineer`, or `chainargos/backend-engineer`
-- **Workspace** — the project access boundary: which host directories are mounted, where they appear in the container, and which agent classes are allowed to use them
+- **Agent class** — a reusable tool profile defined by an agent repo and loaded by name, such as `agent-smith`, `the-architect`, `chainargos/frontend-engineer`, or `chainargos/backend-engineer`
+- **Workspace** — the file-access boundary for a project: which host directories are mounted and where they appear in the container. A workspace can be implicit (the current directory) or saved by name. Saved workspaces can also restrict which agent classes are allowed and set a default
 - **Agent instance** — one running container created from an agent class and attached to one workspace
 
 `agent-smith` is just the default starter class name in this project. It is not magic syntax. In a real company you might have classes like `frontend-engineer`, `backend-engineer`, `infra-operator`, or `security-reviewer`.
@@ -57,9 +57,9 @@ That separation is useful even when the project stays the same. One project can 
 - `chainargos/frontend-engineer` can mount the same monorepo workspace but carry Node, Playwright, design-system tooling, and UI-focused plugins
 - `chainargos/backend-engineer` can mount that same workspace but carry Rust or Go tooling, database clients, and backend-oriented plugins
 
-This is not duplication. It is how you create a smaller, more relevant ecosystem for the agent. A kitchen-sink image with every tool and every plugin gives the model more surface area to inspect and react to. A narrower environment usually produces better results because more of what the agent sees is relevant to the task.
+This is not duplication. It is how you create a smaller, more relevant runtime surface for the agent. A kitchen-sink image with every tool and every plugin gives the model more surface area to inspect and react to. A narrower environment usually produces better results because more of what the agent sees is relevant to the task.
 
-This is also useful for controlling Claude Code plugin behavior. If one agent class includes something powerful like Superpowers and another agent class does not, the second container genuinely cannot load it because it is not installed there. That is often more reliable than trying to "mostly disable" tools in one giant shared image.
+This is also useful for controlling plugin behavior. If one agent class includes a privileged plugin or tool and another agent class does not, the second container genuinely cannot load it because it is not installed there. That is often more reliable than trying to "mostly disable" tools in one giant shared image.
 
 ## Construct
 
@@ -92,7 +92,7 @@ jackin load agent-smith ~/app --mount ~/cache:/cache:ro
 jackin launch
 ```
 
-### Managing Running Agents
+### Managing Running Agent Instances
 
 ```sh
 # Reattach to a running agent
@@ -126,7 +126,7 @@ jackin workspace add my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:r
 # Disable auto-mount to control all mounts explicitly
 jackin workspace add monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
 
-# Restrict which agents can use a workspace
+# Restrict which agent classes can use a workspace
 jackin workspace add secure --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith
 
 # List, show, edit, remove
@@ -178,7 +178,7 @@ A saved workspace is useful when you want to:
 - set a default agent class for that project
 - restrict sensitive workspaces to a smaller set of agent classes
 
-`launch` is the human-first flow: pick a workspace, preview mounts and `workdir`, then choose an agent. `load` stays the explicit terminal-first path: pass a path, a `path:container-dest` mapping, or a saved workspace name as the optional second argument. Use `--mount` to layer additional mounts on top of any target type.
+`launch` is the human-first flow: pick a workspace, preview mounts and `workdir`, then choose an agent class. `load` stays the explicit terminal-first path: pass a path, a `path:container-dest` mapping, or a saved workspace name as the optional second argument. Use `--mount` to layer additional mounts on top of any target type.
 
 Saved workspaces are local operator config. They define mounts, `workdir`, and optional allowed/default agents.
 
