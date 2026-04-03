@@ -6,19 +6,109 @@ Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
 > **Current status:** jackin is built as a proof of concept around [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its first and only supported agent runtime. Support for additional agent runtimes — [Codex](https://github.com/openai/codex) and [Amp Code](https://ampcode.com) — is planned for future releases.
 
+## Quick Start
+
+```sh
+# Load an agent into the current directory
+jackin load agent-smith
+
+# Interactive launcher — pick workspace and agent from a TUI
+jackin launch
+```
+
 ## Construct
 
 `donbeave/jackin-construct:trixie` is the shared base image for every agent repo. In The Matrix, the construct is the base simulated environment you load before a mission. That maps directly to `jackin`'s shared runtime image: every agent starts from the same construct before layering on its own specialized environment.
 
 ## Commands
 
-- `jackin launch` — fast interactive launcher for the current directory or a saved workspace.
-- `jackin load agent-smith` — send an agent in using the current directory as the workspace.
-- `jackin load agent-smith ~/Projects/chainargos/big-monorepo` — send an agent into a direct path workspace.
-- `jackin load agent-smith -w big-monorepo` — use a saved workspace definition.
-- `jackin hardline jackin-agent-smith` — reattach to a running agent.
-- `jackin eject jackin-agent-smith` — pull one agent out.
-- `jackin workspace add big-monorepo --workdir /workspace/project --mount ~/Projects/chainargos/big-monorepo:/workspace/project` — save a reusable workspace.
+### Loading Agents
+
+```sh
+# Current directory as workspace
+jackin load agent-smith
+
+# Direct path
+jackin load agent-smith ~/Projects/my-app
+
+# Saved workspace
+jackin load agent-smith -w big-monorepo
+
+# Custom mounts
+jackin load agent-smith --mount ~/src:/workspace/src --workdir /workspace/src
+
+# Interactive launcher
+jackin launch
+```
+
+### Managing Running Agents
+
+```sh
+# Reattach to a running agent
+jackin hardline jackin-agent-smith
+
+# Stop an agent
+jackin eject agent-smith
+
+# Stop all instances of an agent class
+jackin eject agent-smith --all
+
+# Stop and delete persisted state
+jackin eject agent-smith --purge
+
+# Stop every running agent
+jackin exile
+
+# Delete persisted state without stopping
+jackin purge agent-smith
+```
+
+### Workspaces
+
+```sh
+# Save a workspace — workdir is auto-mounted at the same path
+jackin workspace add my-app --workdir ~/Projects/my-app
+
+# Add extra mounts alongside the auto-mounted workdir
+jackin workspace add my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
+
+# Disable auto-mount to control all mounts explicitly
+jackin workspace add monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
+
+# Restrict which agents can use a workspace
+jackin workspace add secure --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith
+
+# List, show, edit, remove
+jackin workspace list
+jackin workspace show my-app
+jackin workspace edit my-app --mount ~/new-cache:/cache:ro
+jackin workspace remove my-app
+```
+
+By default, `workspace add` automatically mounts the `--workdir` path into the container at the same location. This keeps the host and container directory layouts identical, which is the common case. Pass `--no-workdir-mount` when you need the workdir to differ from the mount layout (e.g. `--workdir /workspace` with `--mount ~/src:/workspace`).
+
+### Global Mounts
+
+```sh
+# Add a global mount applied to all agents
+jackin config mount add gradle-cache --src ~/.gradle/caches --dst /home/claude/.gradle/caches --readonly
+
+# Scope a mount to specific agents
+jackin config mount add secrets --src ~/.chainargos/secrets --dst /secrets --readonly --scope "chainargos/*"
+
+# List and remove
+jackin config mount list
+jackin config mount remove gradle-cache
+```
+
+### Mount Spec Format
+
+The `--mount` flag accepts two formats:
+
+- **`path`** — mounts the path identically in the container (e.g. `~/Projects/my-app` becomes `~/Projects/my-app:~/Projects/my-app`)
+- **`src:dst`** — explicit host and container paths (e.g. `~/src:/workspace/src`)
+
+Append `:ro` to make a mount read-only (e.g. `~/cache:/cache:ro`).
 
 ## Workspaces
 
@@ -29,7 +119,7 @@ Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
 If the current directory exactly matches a saved workspace `workdir`, Jackin preselects that saved workspace in the launcher. You can still move to `Current directory` to force the raw direct-mount behavior.
 
-`launch` is the human-first flow: pick a workspace, preview mounts and `workdir`, then choose an agent. `load` stays the explicit terminal-first path for current-directory mode, direct paths, saved workspaces, and fully custom one-off mount composition. If you need to hand-author `--mount ... --workdir ...`, do that in `load`, not in `launch`.
+`launch` is the human-first flow: pick a workspace, preview mounts and `workdir`, then choose an agent. `load` stays the explicit terminal-first path for current-directory mode, direct paths, saved workspaces, and fully custom one-off mount composition.
 
 Saved workspaces are local operator config. They define mounts, `workdir`, and optional allowed/default agents.
 
