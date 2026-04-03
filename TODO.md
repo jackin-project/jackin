@@ -22,6 +22,34 @@
 
 **Decision**: Deferred. Needs design work to evaluate the agent author experience impact of each option.
 
+## DinD Running Without TLS Authentication
+
+**Problem**: The Docker-in-Docker sidecar runs with `DOCKER_TLS_CERTDIR=` (empty, disabling TLS) and listens on `tcp://0.0.0.0:2375` without any authentication. Docker itself warns this will become a hard failure in a future release:
+
+```
+level=warning msg="Binding to IP address without --tlsverify is insecure and gives root access on this machine to everyone who has access to your network."
+level=warning msg="Support for listening on TCP without authentication or explicit intent to run without authentication will be removed in the next release"
+```
+
+**Why it matters**:
+- Any container on the same Docker network (`jackin-*-net`) has unauthenticated root access to the DinD daemon
+- While the per-agent network provides some isolation, this is still an unnecessary attack surface
+- A future Docker release will break this entirely — DinD will refuse to start without TLS or an explicit `--tls=false` flag
+
+**Current state**: The DinD container is started with `-e DOCKER_TLS_CERTDIR=` (in `launch_agent_runtime`) and the agent connects via `DOCKER_HOST=tcp://{dind}:2375`. No certificates are generated or mounted.
+
+**Options to consider**:
+
+1. **Enable TLS with auto-generated certificates**: Let DinD generate certs in a shared volume, mount the client certs into the agent container, and set `DOCKER_TLS_VERIFY=1` + `DOCKER_CERT_PATH`. This is the Docker-recommended approach. Adds complexity: need a shared volume for certs and a wait for cert generation before the agent starts.
+
+2. **Use Docker socket mounting instead of TCP**: Mount the DinD socket via a shared volume (`/var/run/docker.sock`) instead of TCP. Eliminates the network exposure entirely. May require changes to the DinD container setup.
+
+3. **Explicitly pass `--tls=false`**: Acknowledge the risk and suppress the warning/future breakage. Quick fix but doesn't address the security concern. Only appropriate if the per-agent network is considered sufficient isolation.
+
+4. **Use Docker's built-in `--link` or socket proxy**: More complex but eliminates TCP exposure.
+
+**Decision**: Deferred. Option 1 (TLS with auto-generated certs) is the correct long-term solution. Option 3 is the minimum viable fix to prevent breakage when Docker enforces TLS.
+
 ## Orphaned DinD Container on Agent Launch Failure
 
 **Problem**: When an agent container fails to start (e.g. entrypoint error, Claude install failure, or the user exits immediately), the DinD sidecar container remains running indefinitely. The current cleanup logic only runs when the `docker run -it` command completes and the agent is no longer in the running container list, or on explicit error. But if the agent container never starts successfully (exits during entrypoint before attaching), the DinD container is left behind.
