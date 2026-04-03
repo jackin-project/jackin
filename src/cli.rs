@@ -46,7 +46,7 @@ pub enum Command {
         /// Use a previously saved workspace by name
         #[arg(short = 'w', long = "workspace", conflicts_with_all = ["path", "mounts", "workdir"])]
         workspace: Option<String>,
-        /// Bind-mount spec as src:dst[:ro] (repeatable)
+        /// Bind-mount spec as path[:ro] or src:dst[:ro] (repeatable)
         #[arg(long = "mount", conflicts_with_all = ["path", "workspace"])]
         mounts: Vec<String>,
         /// Working directory inside the container (required with --mount)
