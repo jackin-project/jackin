@@ -15,6 +15,42 @@ const fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
     owo_colors::Rgb(color.0, color.1, color.2)
 }
 
+// ── Skippable sleep ─────────────────────────────────────────────────────
+
+/// Sleep for `duration`, but return `true` immediately if Enter or Esc is pressed.
+/// Enables raw mode temporarily to detect keypresses without blocking.
+fn skippable_sleep(duration: std::time::Duration) -> bool {
+    use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+
+    let _ = crossterm::terminal::enable_raw_mode();
+    let skipped = if crossterm::event::poll(duration).unwrap_or(false) {
+        matches!(
+            event::read(),
+            Ok(Event::Key(key)) if key.kind == KeyEventKind::Press
+                && matches!(key.code, KeyCode::Enter | KeyCode::Esc)
+        )
+    } else {
+        false
+    };
+    let _ = crossterm::terminal::disable_raw_mode();
+    skipped
+}
+
+/// Like `skippable_sleep` but for short frame delays in animations.
+/// Returns `true` if the animation should be skipped.
+fn skippable_frame(frame_ms: u64) -> bool {
+    use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+
+    if crossterm::event::poll(std::time::Duration::from_millis(frame_ms)).unwrap_or(false) {
+        return matches!(
+            event::read(),
+            Ok(Event::Key(key)) if key.kind == KeyEventKind::Press
+                && matches!(key.code, KeyCode::Enter | KeyCode::Esc)
+        );
+    }
+    false
+}
+
 // ── Digital rain ─────────────────────────────────────────────────────────
 
 struct RainCell {
@@ -121,9 +157,14 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
         .collect();
 
     eprint!("\x1b[?25l"); // hide cursor
+    let _ = crossterm::terminal::enable_raw_mode();
 
     // ── Phase 1: Pure rain ──────────────────────────────────────────────
+    let mut skipped = false;
     for frame in 0..total_frames {
+        if skipped {
+            break;
+        }
         // Age all existing cells
         for row in &mut grid {
             for cell in &mut *row {
@@ -186,7 +227,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
         }
 
         let _ = io::stderr().flush();
-        std::thread::sleep(std::time::Duration::from_millis(frame_ms));
+        skipped = skippable_frame(frame_ms);
     }
 
     // ── Phase 2 & 3: Reveal + Hold (only if reveal banner provided) ─────
@@ -215,6 +256,9 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
 
         // Reveal phase animation
         for frame in 0..reveal_frames {
+            if skipped {
+                break;
+            }
             // Age existing non-locked cells
             for (r, row) in grid.iter_mut().enumerate() {
                 for (c, cell) in row.iter_mut().enumerate() {
@@ -274,12 +318,16 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
             }
 
             let _ = io::stderr().flush();
-            std::thread::sleep(std::time::Duration::from_millis(frame_ms));
+            skipped = skippable_frame(frame_ms);
         }
 
         // Hold the revealed logo briefly
-        std::thread::sleep(std::time::Duration::from_millis(1500));
+        if !skipped {
+            let _ = skippable_frame(1500);
+        }
     }
+
+    let _ = crossterm::terminal::disable_raw_mode();
 
     // Clear rain area
     eprint!("\x1b[H");
@@ -293,17 +341,24 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
 
 // ── Text effects ─────────────────────────────────────────────────────────
 
-fn type_text(text: &str, color: (u8, u8, u8), char_ms: u64) {
+/// Returns `true` if skipped by keypress.
+fn type_text(text: &str, color: (u8, u8, u8), char_ms: u64) -> bool {
     eprint!("  ");
     for ch in text.chars() {
         eprint!("{}", ch.color(rgb(color)));
         let _ = io::stderr().flush();
-        std::thread::sleep(std::time::Duration::from_millis(char_ms));
+        if skippable_sleep(std::time::Duration::from_millis(char_ms)) {
+            // Print remainder instantly
+            eprintln!();
+            return true;
+        }
     }
     eprintln!();
+    false
 }
 
-fn glitch_text(text: &str, color: (u8, u8, u8)) {
+/// Returns `true` if skipped by keypress.
+fn glitch_text(text: &str, color: (u8, u8, u8)) -> bool {
     let chars: Vec<char> = text.chars().collect();
     let mut seed: u64 = 0xCAFE_BABE_1337;
 
@@ -324,10 +379,15 @@ fn glitch_text(text: &str, color: (u8, u8, u8)) {
             eprint!("{}", display.color(owo_colors::Rgb(r, g, b)));
         }
         let _ = io::stderr().flush();
-        std::thread::sleep(std::time::Duration::from_millis(80));
+        if skippable_sleep(std::time::Duration::from_millis(80)) {
+            eprint!("\r  ");
+            eprintln!("{}", text.color(rgb(color)));
+            return true;
+        }
     }
     eprint!("\r  ");
     eprintln!("{}", text.color(rgb(color)));
+    false
 }
 
 // ── Matrix intro / outro ─────────────────────────────────────────────────
@@ -338,26 +398,49 @@ pub fn matrix_intro(operator_name: &str) {
     digital_rain(2000, Some(REVEAL_BANNER));
 
     clear_screen();
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    if skippable_sleep(std::time::Duration::from_millis(300)) {
+        return;
+    }
 
     eprintln!();
-    type_text(&format!("Wake up, {operator_name}..."), PHOSPHOR_GREEN, 65);
-    std::thread::sleep(std::time::Duration::from_millis(800));
+    if type_text(&format!("Wake up, {operator_name}..."), PHOSPHOR_GREEN, 65) {
+        clear_screen();
+        return;
+    }
+    if skippable_sleep(std::time::Duration::from_millis(800)) {
+        clear_screen();
+        return;
+    }
 
     eprintln!();
-    type_text("The Matrix has you...", PHOSPHOR_GREEN, 55);
-    std::thread::sleep(std::time::Duration::from_millis(600));
+    if type_text("The Matrix has you...", PHOSPHOR_GREEN, 55) {
+        clear_screen();
+        return;
+    }
+    if skippable_sleep(std::time::Duration::from_millis(600)) {
+        clear_screen();
+        return;
+    }
 
     eprintln!();
-    type_text("Follow the white rabbit.", PHOSPHOR_GREEN, 50);
-    std::thread::sleep(std::time::Duration::from_millis(400));
+    if type_text("Follow the white rabbit.", PHOSPHOR_GREEN, 50) {
+        clear_screen();
+        return;
+    }
+    if skippable_sleep(std::time::Duration::from_millis(400)) {
+        clear_screen();
+        return;
+    }
 
     eprintln!();
     glitch_text(&format!("Knock, knock, {operator_name}."), PHOSPHOR_GREEN);
-    std::thread::sleep(std::time::Duration::from_millis(600));
+    if skippable_sleep(std::time::Duration::from_millis(600)) {
+        clear_screen();
+        return;
+    }
 
     clear_screen();
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    let _ = skippable_sleep(std::time::Duration::from_millis(200));
 }
 
 pub fn matrix_outro(agent_name: &str, remaining: &[String]) {
@@ -366,19 +449,27 @@ pub fn matrix_outro(agent_name: &str, remaining: &[String]) {
     digital_rain(1500, None);
 
     clear_screen();
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    if skippable_sleep(std::time::Duration::from_millis(300)) {
+        return;
+    }
 
     eprintln!();
-    type_text(
+    if type_text(
         &format!("{agent_name} has left the Matrix."),
         PHOSPHOR_GREEN,
         40,
-    );
-    std::thread::sleep(std::time::Duration::from_millis(400));
+    ) {
+        eprintln!();
+        return;
+    }
+    if skippable_sleep(std::time::Duration::from_millis(400)) {
+        eprintln!();
+        return;
+    }
 
     eprintln!();
-    if remaining.is_empty() {
-        type_text("No agents remain in the Matrix.", PHOSPHOR_DIM, 35);
+    let skipped = if remaining.is_empty() {
+        type_text("No agents remain in the Matrix.", PHOSPHOR_DIM, 35)
     } else {
         type_text(
             &format!(
@@ -388,13 +479,20 @@ pub fn matrix_outro(agent_name: &str, remaining: &[String]) {
             ),
             PHOSPHOR_DIM,
             30,
-        );
+        )
+    };
+    if skipped {
+        eprintln!();
+        return;
     }
 
-    std::thread::sleep(std::time::Duration::from_millis(400));
+    if skippable_sleep(std::time::Duration::from_millis(400)) {
+        eprintln!();
+        return;
+    }
     eprintln!();
     type_text("Connection closed.", PHOSPHOR_DARK, 45);
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    let _ = skippable_sleep(std::time::Duration::from_millis(500));
     eprintln!();
 }
 
