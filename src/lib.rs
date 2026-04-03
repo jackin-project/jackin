@@ -99,10 +99,17 @@ pub fn run(cli: Cli) -> Result<()> {
                     }
                 }
             };
-            for container in &containers {
-                runtime::eject_agent(container, &mut runner)?;
-                if purge {
-                    remove_data_dir_if_exists(&paths.data_dir.join(container))?;
+            if containers.is_empty() {
+                println!("No matching agents found.");
+            } else {
+                for container in &containers {
+                    runtime::eject_agent(container, &mut runner)?;
+                    if purge {
+                        remove_data_dir_if_exists(&paths.data_dir.join(container))?;
+                        println!("Ejected and purged {container}.");
+                    } else {
+                        println!("Ejected {container}.");
+                    }
                 }
             }
             Ok(())
@@ -119,14 +126,20 @@ pub fn run(cli: Cli) -> Result<()> {
                     readonly,
                     scope,
                 } => {
-                    let mount = config::MountConfig { src, dst, readonly };
+                    let ro = if readonly { " (read-only)" } else { "" };
+                    let scope_label = scope.as_deref().unwrap_or("global");
+                    let mount = config::MountConfig { src: src.clone(), dst: dst.clone(), readonly };
                     config.add_mount(&name, mount, scope.as_deref());
                     config.save(&paths)?;
+                    println!("Added mount {name:?} ({scope_label}): {src} -> {dst}{ro}");
                     Ok(())
                 }
                 cli::MountCommand::Remove { name, scope } => {
                     if config.remove_mount(&name, scope.as_deref()) {
                         config.save(&paths)?;
+                        println!("Removed mount {name:?}.");
+                    } else {
+                        println!("Mount {name:?} not found.");
                     }
                     Ok(())
                 }
@@ -156,16 +169,18 @@ pub fn run(cli: Cli) -> Result<()> {
                     .iter()
                     .map(|value| parse_mount_spec(value))
                     .collect::<Result<Vec<_>>>()?;
+                let mount_count = mounts.len();
                 config.add_workspace(
                     &name,
                     WorkspaceConfig {
-                        workdir,
+                        workdir: workdir.clone(),
                         mounts,
                         allowed_agents,
                         default_agent,
                     },
                 )?;
                 config.save(&paths)?;
+                println!("Added workspace {name:?} (workdir: {workdir}, {mount_count} mount(s)).");
                 Ok(())
             }
             WorkspaceCommand::List => {
@@ -250,30 +265,32 @@ pub fn run(cli: Cli) -> Result<()> {
                     },
                 )?;
                 config.save(&paths)?;
+                println!("Updated workspace {name:?}.");
                 Ok(())
             }
             WorkspaceCommand::Remove { name } => {
                 config.remove_workspace(&name)?;
                 config.save(&paths)?;
+                println!("Removed workspace {name:?}.");
                 Ok(())
             }
         },
         Command::Purge { selector, all } => match Selector::parse(&selector)? {
             Selector::Container(container) => {
-                remove_data_dir_if_exists(&paths.data_dir.join(container))?;
+                remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
+                println!("Purged state for {container}.");
                 Ok(())
             }
             Selector::Class(class) => {
                 if all {
-                    runtime::purge_class_data(&paths, &class)
+                    runtime::purge_class_data(&paths, &class)?;
+                    println!("Purged all state for {}.", class.key());
                 } else {
-                    remove_data_dir_if_exists(
-                        &paths
-                            .data_dir
-                            .join(crate::instance::primary_container_name(&class)),
-                    )?;
-                    Ok(())
+                    let container = crate::instance::primary_container_name(&class);
+                    remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
+                    println!("Purged state for {container}.");
                 }
+                Ok(())
             }
         },
     }
