@@ -130,7 +130,7 @@ fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
         })
         .collect::<Vec<_>>();
 
-    AppConfig::validate_mounts(&mounts)
+    AppConfig::expand_and_validate_named_mounts(&mounts)
 }
 
 fn default_agent_index(choice: &WorkspaceChoice, agents: &[ClassSelector]) -> Option<usize> {
@@ -156,9 +156,7 @@ pub fn run_launch(
 ) -> anyhow::Result<(ClassSelector, ResolvedWorkspace)> {
     use crossterm::ExecutableCommand;
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-    use crossterm::terminal::{
-        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-    };
+    use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 
     struct TerminalGuard;
     impl Drop for TerminalGuard {
@@ -166,13 +164,14 @@ pub fn run_launch(
             let _ = crossterm::terminal::disable_raw_mode();
             let mut stdout = std::io::stdout();
             let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
+            let _ = stdout.execute(crossterm::cursor::Show);
         }
     }
 
     let mut state = LaunchState::new(config, cwd)?;
     let mut stdout = std::io::stdout();
     enable_raw_mode()?;
-    let _guard = TerminalGuard;
+    let guard = TerminalGuard;
     stdout.execute(EnterAlternateScreen)?;
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
@@ -262,9 +261,8 @@ pub fn run_launch(
         }
     };
 
-    disable_raw_mode()?;
-    terminal.backend_mut().execute(LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    // TerminalGuard handles cleanup (disable_raw_mode, LeaveAlternateScreen, show cursor) on drop
+    drop(guard);
     result
 }
 
