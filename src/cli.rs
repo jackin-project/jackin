@@ -79,12 +79,13 @@ Examples:
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
-  jackin hardline jackin-agent-smith
+  jackin hardline agent-smith
+  jackin hardline chainargos/the-architect
   jackin hardline jackin-agent-smith-clone-1"
     )]
     Hardline {
-        /// Name of the running container to reconnect to
-        container: String,
+        /// Agent class selector or container name to reconnect to
+        selector: String,
     },
     /// Pull an agent out of the Matrix
     #[command(
@@ -613,7 +614,7 @@ mod tests {
     fn hardline_help_shows_examples() {
         let help = help_text(&["jackin", "hardline", "--help"]);
         assert!(help.contains("Reattach to a running agent"));
-        assert!(help.contains("jackin hardline jackin-agent-smith"));
+        assert!(help.contains("jackin hardline agent-smith"));
     }
 
     // ── Eject help ──────────────────────────────────────────────────────
