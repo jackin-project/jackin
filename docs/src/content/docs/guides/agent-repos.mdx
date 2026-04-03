@@ -14,6 +14,8 @@ An agent repo is a GitHub repository that defines a specific agent class. It con
 
 When you run `jackin load agent-smith`, jackin looks for a GitHub repo named `jackin-agent-smith` and builds a container from it.
 
+An agent repo is where you decide what kind of worker you are creating. In most teams, that means creating role-specific environments rather than one universal image. A frontend-oriented agent repo can install browser tooling and UI-focused plugins, while a backend-oriented repo can install server toolchains and database clients.
+
 An agent class is best thought of as a reusable tool profile. It is where you decide things like:
 
 - which language toolchains are installed
@@ -37,10 +39,25 @@ Organizations can create agents under their namespace:
 
 | Class name | GitHub repo | Load command |
 |---|---|---|
-| `chainargos/the-architect` | `chainargos/jackin-the-architect` | `jackin load chainargos/the-architect` |
-| `chainargos/agent-brown` | `chainargos/jackin-agent-brown` | `jackin load chainargos/agent-brown` |
+| `chainargos/frontend-engineer` | `chainargos/jackin-frontend-engineer` | `jackin load chainargos/frontend-engineer` |
+| `chainargos/backend-engineer` | `chainargos/jackin-backend-engineer` | `jackin load chainargos/backend-engineer` |
+| `chainargos/security-reviewer` | `chainargos/jackin-security-reviewer` | `jackin load chainargos/security-reviewer` |
 
 The namespace prefix maps directly to the GitHub organization or user.
+
+## When should you create another agent class?
+
+Create another agent class when the work needs a meaningfully different environment.
+
+Common reasons include:
+
+- frontend work needs Node, browser tooling, and UI-focused plugins
+- backend work needs Rust or Go toolchains, API clients, and database tools
+- infra work needs Terraform, cloud CLIs, and deployment helpers
+- security review work should have a smaller, audit-focused tool and plugin set
+- docs work may need writing or publishing tools without bringing in unrelated build systems
+
+The goal is not to create lots of arbitrary images. The goal is to avoid one kitchen-sink image that exposes every tool and plugin to every task.
 
 ## Agent identity
 
@@ -101,7 +118,7 @@ dockerfile = "Dockerfile"
 plugins = []
 
 [identity]
-name = "Node Agent"
+name = "Frontend Engineer"
 ```
 
 ```dockerfile title="Dockerfile"
