@@ -21,12 +21,22 @@ impl Default for LoadOptions {
     }
 }
 
-impl LoadOptions {
-    fn step(&self, n: u32, text: &str) {
-        if self.no_intro {
-            tui::step_quiet(n, text);
+struct StepCounter {
+    current: u32,
+    quiet: bool,
+}
+
+impl StepCounter {
+    const fn new(quiet: bool) -> Self {
+        Self { current: 0, quiet }
+    }
+
+    fn next(&mut self, text: &str) {
+        self.current += 1;
+        if self.quiet {
+            tui::step_quiet(self.current, text);
         } else {
-            tui::step_shimmer(n, text);
+            tui::step_shimmer(self.current, text);
         }
     }
 }
@@ -151,7 +161,165 @@ fn build_config_rows(
     rows
 }
 
-#[allow(clippy::too_many_lines)]
+/// Resolve the agent repository: clone if missing, pull if already present.
+/// Returns the validated repo metadata and cached repo paths.
+fn resolve_agent_repo(
+    paths: &JackinPaths,
+    selector: &ClassSelector,
+    git_url: &str,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo)> {
+    let cached_repo = CachedRepo::new(paths, selector);
+    let repo_parent = cached_repo
+        .repo_dir
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("agent repo path has no parent: {}", cached_repo.repo_dir.display()))?;
+    std::fs::create_dir_all(repo_parent)?;
+
+    let repo_path = cached_repo.repo_dir.display().to_string();
+    let clone_result = runner.capture("git", &["clone", git_url, &repo_path], None);
+    if let Err(e) = clone_result {
+        if !cached_repo.repo_dir.exists() {
+            return Err(e);
+        }
+        // Already cloned (possibly by a concurrent process) — update instead
+        runner.capture("git", &["-C", &repo_path, "pull", "--ff-only"], None)?;
+    }
+
+    let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
+    Ok((cached_repo, validated_repo))
+}
+
+/// Build the Docker image for the agent. Returns the image name.
+#[allow(clippy::similar_names)]
+fn build_agent_image(
+    selector: &ClassSelector,
+    cached_repo: &CachedRepo,
+    validated_repo: &crate::repo::ValidatedAgentRepo,
+    host: &HostIdentity,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<String> {
+    let build = create_derived_build_context(&cached_repo.repo_dir, validated_repo)?;
+    let image = image_name(selector);
+
+    let build_arg_uid = format!("JACKIN_HOST_UID={}", host.uid);
+    let build_arg_gid = format!("JACKIN_HOST_GID={}", host.gid);
+    let dockerfile_path = build.dockerfile_path.display().to_string();
+    let context_dir = build.context_dir.display().to_string();
+    let build_args: Vec<&str> = vec![
+        "build",
+        "--build-arg",
+        &build_arg_uid,
+        "--build-arg",
+        &build_arg_gid,
+        "-t",
+        &image,
+        "-f",
+        &dockerfile_path,
+        &context_dir,
+    ];
+    runner.run("docker", &build_args, None)?;
+
+    Ok(image)
+}
+
+/// Create the Docker network, start `DinD`, and launch the agent container.
+#[allow(clippy::too_many_arguments)]
+fn launch_agent_runtime(
+    container_name: &str,
+    image: &str,
+    network: &str,
+    dind: &str,
+    selector: &ClassSelector,
+    agent_display_name: &str,
+    workspace: &crate::workspace::ResolvedWorkspace,
+    state: &AgentState,
+    runner: &mut impl CommandRunner,
+    debug: bool,
+) -> anyhow::Result<()> {
+    // Create Docker network
+    if debug {
+        runner.run("docker", &["network", "create", network], None)?;
+    } else {
+        runner.capture("docker", &["network", "create", network], None)?;
+    }
+
+    // Start Docker-in-Docker
+    let dind_args: Vec<&str> = vec![
+        "run",
+        "-d",
+        "--name",
+        dind,
+        "--network",
+        network,
+        "--privileged",
+        "-e",
+        "DOCKER_TLS_CERTDIR=",
+        "docker:dind",
+    ];
+    if debug {
+        runner.run("docker", &dind_args, None)?;
+    } else {
+        runner.capture("docker", &dind_args, None)?;
+    }
+
+    wait_for_dind(dind, runner, debug)?;
+
+    // Launch agent
+    tui::print_deploying(agent_display_name);
+
+    let class_label = format!("jackin.class={}", selector.key());
+    let display_label = format!("jackin.display_name={agent_display_name}");
+    let docker_host = format!("DOCKER_HOST=tcp://{dind}:2375");
+    let claude_dir_mount = format!("{}:/home/claude/.claude", state.claude_dir.display());
+    let claude_json_mount = format!("{}:/home/claude/.claude.json", state.claude_json.display());
+    let plugins_mount = format!(
+        "{}:/home/claude/.jackin/plugins.json:ro",
+        state.plugins_json.display()
+    );
+
+    let mut run_args: Vec<&str> = vec![
+        "run",
+        "-it",
+        "--name",
+        container_name,
+        "--hostname",
+        container_name,
+        "--network",
+        network,
+        "--label",
+        "jackin.managed=true",
+        "--label",
+        &class_label,
+        "--label",
+        &display_label,
+        "--workdir",
+        &workspace.workdir,
+        "-e",
+        &docker_host,
+        "-v",
+        &claude_dir_mount,
+        "-v",
+        &claude_json_mount,
+        "-v",
+        &plugins_mount,
+    ];
+
+    let mut mount_strings: Vec<String> = Vec::new();
+    for mount in &workspace.mounts {
+        let suffix = if mount.readonly { ":ro" } else { "" };
+        mount_strings.push(format!("{}:{}{}", mount.src, mount.dst, suffix));
+    }
+    for ms in &mount_strings {
+        run_args.push("-v");
+        run_args.push(ms);
+    }
+    run_args.push(image);
+    runner.run("docker", &run_args, None)?;
+
+    Ok(())
+}
+
 pub fn load_agent(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -173,44 +341,24 @@ pub fn load_agent(
         tui::matrix_intro(intro_name);
     }
 
-    let source = config.resolve_or_register(selector, paths)?;
+    let (source, is_new) = config.resolve_agent_source(selector)?;
 
-    let mut step = 1u32;
+    let mut steps = StepCounter::new(opts.no_intro);
 
     // Step 1: Resolve agent identity (clone or update repo)
-    let cached_repo = CachedRepo::new(paths, selector);
-    let repo_parent = cached_repo
-        .repo_dir
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("agent repo path has no parent: {}", cached_repo.repo_dir.display()))?;
-    std::fs::create_dir_all(repo_parent)?;
+    steps.next("Resolving agent identity");
 
-    opts.step(step, "Resolving agent identity");
-    step += 1;
+    let (cached_repo, validated_repo) =
+        resolve_agent_repo(paths, selector, &source.git, runner)?;
 
-    let repo_path = cached_repo.repo_dir.display().to_string();
-    let clone_result = runner.capture(
-        "git",
-        &["clone".into(), source.git, repo_path.clone()],
-        None,
-    );
-    if let Err(e) = clone_result {
-        if !cached_repo.repo_dir.exists() {
-            return Err(e);
-        }
-        // Already cloned (possibly by a concurrent process) — update instead
-        runner.capture(
-            "git",
-            &["-C".into(), repo_path, "pull".into(), "--ff-only".into()],
-            None,
-        )?;
+    // Persist config only when the agent was newly registered
+    if is_new {
+        config.save(paths)?;
     }
 
-    let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
     let existing = list_managed_agent_names(runner)?;
     let container_name = next_container_name(selector, &existing);
     let state = AgentState::prepare(paths, &container_name, &validated_repo.manifest)?;
-    let build = create_derived_build_context(&cached_repo.repo_dir, &validated_repo)?;
 
     let image = image_name(selector);
     let network = format!("{container_name}-net");
@@ -239,98 +387,30 @@ pub fn load_agent(
     let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
     let load_result = (|| -> anyhow::Result<()> {
         // Step 2: Build Docker image
-        opts.step(step, "Building Docker image");
-        step += 1;
-        let build_args = [
-            "build".into(),
-            "--build-arg".into(),
-            format!("JACKIN_HOST_UID={}", host.uid),
-            "--build-arg".into(),
-            format!("JACKIN_HOST_GID={}", host.gid),
-            "-t".into(),
-            image.clone(),
-            "-f".into(),
-            build.dockerfile_path.display().to_string(),
-            build.context_dir.display().to_string(),
-        ];
-        runner.run("docker", &build_args, None)?;
+        steps.next("Building Docker image");
+        let image = build_agent_image(selector, &cached_repo, &validated_repo, &host, runner)?;
 
         // Step 3: Create Docker network
-        opts.step(step, "Creating Docker network");
-        step += 1;
-        let network_args = ["network".into(), "create".into(), network.clone()];
-        if opts.debug {
-            runner.run("docker", &network_args, None)?;
-        } else {
-            runner.capture("docker", &network_args, None)?;
-        }
+        steps.next("Creating Docker network");
 
         // Step 4: Start Docker-in-Docker
-        opts.step(step, "Starting Docker-in-Docker container");
-        step += 1;
-        let dind_args = [
-            "run".into(),
-            "-d".into(),
-            "--name".into(),
-            dind.clone(),
-            "--network".into(),
-            network.clone(),
-            "--privileged".into(),
-            "-e".into(),
-            "DOCKER_TLS_CERTDIR=".into(),
-            "docker:dind".into(),
-        ];
-        if opts.debug {
-            runner.run("docker", &dind_args, None)?;
-        } else {
-            runner.capture("docker", &dind_args, None)?;
-        }
-
-        wait_for_dind(&dind, runner, opts.debug)?;
+        steps.next("Starting Docker-in-Docker container");
 
         // Step 5: Launch agent
-        opts.step(step, "Mounting volumes");
+        steps.next("Mounting volumes");
 
-        tui::print_deploying(&agent_display_name);
-
-        let mut run_args: Vec<String> = vec![
-            "run".into(),
-            "-it".into(),
-            "--name".into(),
-            container_name.clone(),
-            "--hostname".into(),
-            container_name.clone(),
-            "--network".into(),
-            network.clone(),
-            "--label".into(),
-            "jackin.managed=true".into(),
-            "--label".into(),
-            format!("jackin.class={}", selector.key()),
-            "--label".into(),
-            format!("jackin.display_name={agent_display_name}"),
-            "--workdir".into(),
-            workspace.workdir.clone(),
-            "-e".into(),
-            format!("DOCKER_HOST=tcp://{dind}:2375"),
-            "-v".into(),
-            format!("{}:/home/claude/.claude", state.claude_dir.display()),
-            "-v".into(),
-            format!("{}:/home/claude/.claude.json", state.claude_json.display()),
-            "-v".into(),
-            format!(
-                "{}:/home/claude/.jackin/plugins.json:ro",
-                state.plugins_json.display()
-            ),
-        ];
-        for mount in &workspace.mounts {
-            let suffix = if mount.readonly { ":ro" } else { "" };
-            run_args.extend([
-                "-v".into(),
-                format!("{}:{}{}", mount.src, mount.dst, suffix),
-            ]);
-        }
-        run_args.push(image.clone());
-        runner.run("docker", &run_args, None)?;
+        launch_agent_runtime(
+            &container_name,
+            &image,
+            &network,
+            &dind,
+            selector,
+            &agent_display_name,
+            workspace,
+            &state,
+            runner,
+            opts.debug,
+        )?;
 
         Ok(())
     })();
@@ -367,11 +447,7 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
 }
 
 pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
-    runner.run(
-        "docker",
-        &["attach".into(), container_name.to_string()],
-        None,
-    )
+    runner.run("docker", &["attach", container_name], None)
 }
 
 fn wait_for_dind(
@@ -386,12 +462,7 @@ fn wait_for_dind(
         || {
             let result = runner.capture(
                 "docker",
-                &[
-                    "exec".into(),
-                    dind_name.to_string(),
-                    "docker".into(),
-                    "info".into(),
-                ],
+                &["exec", dind_name, "docker", "info"],
                 None,
             );
             if debug && let Err(ref e) = result {
@@ -415,16 +486,11 @@ fn list_agent_names(
     runner: &mut impl CommandRunner,
     include_stopped: bool,
 ) -> anyhow::Result<Vec<String>> {
-    let mut args = vec!["ps".into()];
+    let mut args = vec!["ps"];
     if include_stopped {
-        args.push("-a".into());
+        args.push("-a");
     }
-    args.extend([
-        "--filter".into(),
-        "label=jackin.managed=true".into(),
-        "--format".into(),
-        "{{.Names}}".into(),
-    ]);
+    args.extend(["--filter", "label=jackin.managed=true", "--format", "{{.Names}}"]);
 
     let output = runner.capture("docker", &args, None)?;
 
@@ -445,11 +511,11 @@ pub fn list_running_agent_display_names(
     let output = runner.capture(
         "docker",
         &[
-            "ps".into(),
-            "--filter".into(),
-            "label=jackin.managed=true".into(),
-            "--format".into(),
-            "{{.Names}}\t{{.Label \"jackin.display_name\"}}".into(),
+            "ps",
+            "--filter",
+            "label=jackin.managed=true",
+            "--format",
+            "{{.Names}}\t{{.Label \"jackin.display_name\"}}",
         ],
         None,
     )?;
@@ -511,17 +577,14 @@ pub fn eject_agent(container_name: &str, runner: &mut impl CommandRunner) -> any
     let dind = format!("{container_name}-dind");
     let network = format!("{container_name}-net");
 
-    run_cleanup_command(
-        runner,
-        &["rm".into(), "-f".into(), container_name.to_string()],
-    )?;
-    run_cleanup_command(runner, &["rm".into(), "-f".into(), dind])?;
-    run_cleanup_command(runner, &["network".into(), "rm".into(), network])?;
+    run_cleanup_command(runner, &["rm", "-f", container_name])?;
+    run_cleanup_command(runner, &["rm", "-f", &dind])?;
+    run_cleanup_command(runner, &["network", "rm", &network])?;
 
     Ok(())
 }
 
-fn run_cleanup_command(runner: &mut impl CommandRunner, args: &[String]) -> anyhow::Result<()> {
+fn run_cleanup_command(runner: &mut impl CommandRunner, args: &[&str]) -> anyhow::Result<()> {
     match runner.capture("docker", args, None) {
         Ok(_) => Ok(()),
         Err(error) if is_missing_cleanup_error(&error) => Ok(()),
@@ -572,22 +635,13 @@ impl LoadCleanup {
             return;
         }
 
-        if let Err(e) = run_cleanup_command(
-            runner,
-            &["rm".into(), "-f".into(), self.container_name.clone()],
-        ) {
+        if let Err(e) = run_cleanup_command(runner, &["rm", "-f", &self.container_name]) {
             tui::step_fail(&format!("cleanup failed (container): {e}"));
         }
-        if let Err(e) = run_cleanup_command(
-            runner,
-            &["rm".into(), "-f".into(), self.dind.clone()],
-        ) {
+        if let Err(e) = run_cleanup_command(runner, &["rm", "-f", &self.dind]) {
             tui::step_fail(&format!("cleanup failed (dind): {e}"));
         }
-        if let Err(e) = run_cleanup_command(
-            runner,
-            &["network".into(), "rm".into(), self.network.clone()],
-        ) {
+        if let Err(e) = run_cleanup_command(runner, &["network", "rm", &self.network]) {
             tui::step_fail(&format!("cleanup failed (network): {e}"));
         }
     }
@@ -621,7 +675,7 @@ impl CommandRunner for FakeRunner {
     fn run(
         &mut self,
         program: &str,
-        args: &[String],
+        args: &[&str],
         _cwd: Option<&std::path::Path>,
     ) -> anyhow::Result<()> {
         let command = format!("{} {}", program, args.join(" "));
@@ -643,7 +697,7 @@ impl CommandRunner for FakeRunner {
     fn capture(
         &mut self,
         program: &str,
-        args: &[String],
+        args: &[&str],
         _cwd: Option<&std::path::Path>,
     ) -> anyhow::Result<String> {
         let command = format!("{} {}", program, args.join(" "));
