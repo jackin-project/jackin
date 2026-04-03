@@ -11,6 +11,7 @@ pub struct AgentState {
     pub claude_json: PathBuf,
     pub jackin_dir: PathBuf,
     pub plugins_json: PathBuf,
+    pub gh_config_dir: PathBuf,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,9 +30,11 @@ impl AgentState {
         let claude_json = root.join(".claude.json");
         let jackin_dir = root.join(".jackin");
         let plugins_json = jackin_dir.join("plugins.json");
+        let gh_config_dir = root.join(".config/gh");
 
         std::fs::create_dir_all(&claude_dir)?;
         std::fs::create_dir_all(&jackin_dir)?;
+        std::fs::create_dir_all(&gh_config_dir)?;
         if !claude_json.exists() {
             std::fs::write(&claude_json, "{}")?;
         }
@@ -49,6 +52,7 @@ impl AgentState {
             claude_json,
             jackin_dir,
             plugins_json,
+            gh_config_dir,
         })
     }
 }
