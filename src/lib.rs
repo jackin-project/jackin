@@ -148,10 +148,31 @@ pub fn run(cli: Cli) -> Result<()> {
                     if mounts.is_empty() {
                         println!("No mounts configured.");
                     } else {
-                        for (scope, name, m) in &mounts {
-                            let ro = if m.readonly { " (ro)" } else { "" };
-                            println!("{scope}  {name}  {} -> {}{ro}", m.src, m.dst);
+                        use tabled::{Table, Tabled};
+                        #[derive(Tabled)]
+                        struct Row {
+                            #[tabled(rename = "Scope")]
+                            scope: String,
+                            #[tabled(rename = "Name")]
+                            name: String,
+                            #[tabled(rename = "Source")]
+                            src: String,
+                            #[tabled(rename = "Destination")]
+                            dst: String,
+                            #[tabled(rename = "Mode")]
+                            mode: String,
                         }
+                        let rows: Vec<Row> = mounts
+                            .iter()
+                            .map(|(scope, name, m)| Row {
+                                scope: scope.clone(),
+                                name: name.clone(),
+                                src: m.src.clone(),
+                                dst: m.dst.clone(),
+                                mode: if m.readonly { "ro".to_string() } else { "rw".to_string() },
+                            })
+                            .collect();
+                        println!("{}", Table::new(rows));
                     }
                     Ok(())
                 }
@@ -193,19 +214,35 @@ pub fn run(cli: Cli) -> Result<()> {
                         "  jackin workspace add <name> --workdir /path/to/project --mount /path/to/project"
                     );
                 } else {
-                    for (name, workspace) in &workspaces {
-                        let allowed = if workspace.allowed_agents.is_empty() {
-                            "all".to_string()
-                        } else {
-                            workspace.allowed_agents.len().to_string()
-                        };
-                        let default_agent = workspace.default_agent.as_deref().unwrap_or("-");
-                        println!(
-                            "{name}\t{}\t{} mounts\tallowed={allowed}\tdefault={default_agent}",
-                            workspace.workdir,
-                            workspace.mounts.len()
-                        );
+                    use tabled::{Table, Tabled};
+                    #[derive(Tabled)]
+                    struct Row {
+                        #[tabled(rename = "Name")]
+                        name: String,
+                        #[tabled(rename = "Workdir")]
+                        workdir: String,
+                        #[tabled(rename = "Mounts")]
+                        mounts: usize,
+                        #[tabled(rename = "Allowed Agents")]
+                        allowed: String,
+                        #[tabled(rename = "Default Agent")]
+                        default_agent: String,
                     }
+                    let rows: Vec<Row> = workspaces
+                        .iter()
+                        .map(|(name, ws)| Row {
+                            name: (*name).to_string(),
+                            workdir: ws.workdir.clone(),
+                            mounts: ws.mounts.len(),
+                            allowed: if ws.allowed_agents.is_empty() {
+                                "all".to_string()
+                            } else {
+                                ws.allowed_agents.join(", ")
+                            },
+                            default_agent: ws.default_agent.as_deref().unwrap_or("-").to_string(),
+                        })
+                        .collect();
+                    println!("{}", Table::new(rows));
                 }
                 Ok(())
             }
