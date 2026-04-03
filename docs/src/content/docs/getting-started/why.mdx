@@ -38,6 +38,8 @@ Instead of running on your host, each agent runs inside a Docker container with 
 
 Think of it this way: you're not restricting the agent's *capabilities*. You're restricting its *blast radius*.
 
+Jackin also helps you restrict the agent's *context*. You are not forced to put every language toolchain, helper script, and Claude plugin into one universal environment. You can build smaller agent classes for specific kinds of work and point them at the same workspace when needed.
+
 ## Why separate agent classes from workspaces?
 
 This is the part new users usually need spelled out.
@@ -46,15 +48,21 @@ A **workspace** controls file visibility. It says which project paths are mounte
 
 An **agent class** controls environment and behavior. It says which tools, shells, plugins, and defaults exist in that container image.
 
-Those are different concerns, and combining them into one giant image brings back the same problem as a cluttered host machine: the agent can inspect too many tools, too many conventions, and too much implicit context.
+Those are different concerns, and separating them is useful for two reasons.
+
+First, it keeps the blast radius clear. The workspace decides which files the agent can reach.
+
+Second, it keeps the agent's working environment focused. The agent class decides which tools, conventions, helper scripts, and plugins are even present. That matters because a giant all-in-one image creates noise. The model can inspect too many tools, too many conventions, and too much irrelevant context before it decides what to do.
 
 Imagine one company with a shared monorepo:
 
-- the frontend team uses a `frontend` agent class with Node, Playwright, design-system utilities, and UI-oriented Claude plugins
-- the backend team uses a `backend` agent class with Rust or Go toolchains, database clients, and API-oriented plugins
+- the frontend team uses a `chainargos/frontend-engineer` agent class with Node, Playwright, design-system utilities, and UI-oriented Claude plugins
+- the backend team uses a `chainargos/backend-engineer` agent class with Rust or Go toolchains, database clients, and API-oriented plugins
 - both teams can still point those agent classes at the same monorepo workspace when needed
 
 That split keeps the visible project files and the installed toolchain independently controllable.
+
+In practice, this often produces better results than one kitchen-sink agent image. A narrower environment gives the agent fewer irrelevant cues and makes it more likely that the tools and plugins it discovers actually match the task.
 
 It also helps with Claude Code plugins. A tool like Superpowers can be extremely useful, but it brings hooks and behavior that you may not want in every task. The most reliable way to keep it out of scope is not to "mostly disable" it, but to use a different agent class where it simply is not installed.
 
