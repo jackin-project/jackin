@@ -10,6 +10,7 @@ use crate::tui;
 pub struct LoadOptions {
     pub no_intro: bool,
     pub debug: bool,
+    pub rebuild: bool,
 }
 
 impl Default for LoadOptions {
@@ -17,6 +18,7 @@ impl Default for LoadOptions {
         Self {
             no_intro: true,
             debug: false,
+            rebuild: false,
         }
     }
 }
@@ -206,6 +208,7 @@ fn build_agent_image(
     cached_repo: &CachedRepo,
     validated_repo: &crate::repo::ValidatedAgentRepo,
     host: &HostIdentity,
+    rebuild: bool,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<String> {
     let build = create_derived_build_context(&cached_repo.repo_dir, validated_repo)?;
@@ -213,21 +216,39 @@ fn build_agent_image(
 
     let build_arg_uid = format!("JACKIN_HOST_UID={}", host.uid);
     let build_arg_gid = format!("JACKIN_HOST_GID={}", host.gid);
+    let cache_bust = format!(
+        "JACKIN_CACHE_BUST={}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs())
+    );
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
-    let build_args: Vec<&str> = vec![
+
+    let mut build_args: Vec<&str> = vec![
         "build",
         "--build-arg",
         &build_arg_uid,
         "--build-arg",
         &build_arg_gid,
-        "-t",
-        &image,
-        "-f",
-        &dockerfile_path,
-        &context_dir,
     ];
+    if rebuild {
+        build_args.extend(["--build-arg", &cache_bust]);
+    }
+    build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
     runner.run("docker", &build_args, None)?;
+
+    // Extract and display the Claude version from the built image
+    if let Ok(version) = runner.capture(
+        "docker",
+        &["run", "--rm", &image, "claude", "--version"],
+        None,
+    ) {
+        let version = version.trim();
+        if !version.is_empty() {
+            eprintln!("        Claude {version}");
+        }
+    }
 
     Ok(image)
 }
@@ -405,7 +426,8 @@ pub fn load_agent(
     let load_result = (|| -> anyhow::Result<()> {
         // Step 2: Build Docker image
         steps.next("Building Docker image");
-        let image = build_agent_image(selector, &cached_repo, &validated_repo, &host, runner)?;
+        let image =
+            build_agent_image(selector, &cached_repo, &validated_repo, &host, opts.rebuild, runner)?;
 
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");

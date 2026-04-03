@@ -138,6 +138,7 @@ pub fn run(cli: Cli) -> Result<()> {
             selector,
             target,
             mounts,
+            rebuild,
             no_intro,
             debug,
         } => {
@@ -171,7 +172,11 @@ pub fn run(cli: Cli) -> Result<()> {
                 workspace_input,
                 &ad_hoc_mounts,
             )?;
-            let opts = runtime::LoadOptions { no_intro, debug };
+            let opts = runtime::LoadOptions {
+                no_intro,
+                debug,
+                rebuild,
+            };
             let result = runtime::load_agent(
                 &paths,
                 &mut config,
@@ -195,6 +200,7 @@ pub fn run(cli: Cli) -> Result<()> {
             let opts = runtime::LoadOptions {
                 no_intro: false,
                 debug: false,
+                rebuild: false,
             };
             let result =
                 runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts);
