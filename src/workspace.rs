@@ -190,11 +190,20 @@ pub fn resolve_load_workspace(
                 .canonicalize()
                 .map_err(|e| anyhow::anyhow!("cannot resolve path {expanded_src}: {e}"))?;
             let src_str = canonical_src.display().to_string();
+            let workdir = if dst == src || dst == expanded_src {
+                src_str.clone()
+            } else {
+                dst.clone()
+            };
             let ws = WorkspaceConfig {
-                workdir: dst.clone(),
+                workdir,
                 mounts: vec![MountConfig {
                     src: src_str,
-                    dst,
+                    dst: if dst == src || dst == expanded_src {
+                        canonical_src.display().to_string()
+                    } else {
+                        dst
+                    },
                     readonly: false,
                 }],
                 allowed_agents: vec![],
@@ -392,6 +401,33 @@ mod tests {
 
         assert_eq!(resolved.label, "big-monorepo");
         assert_eq!(resolved.workdir, "/workspace/project");
+    }
+
+    #[test]
+    fn resolves_same_path_relative_target_to_absolute_workdir() {
+        let temp = tempdir().unwrap();
+        let original_cwd = std::env::current_dir().unwrap();
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::env::set_current_dir(temp.path()).unwrap();
+
+        let result = resolve_load_workspace(
+            &crate::config::AppConfig::default(),
+            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            temp.path(),
+            LoadWorkspaceInput::Path {
+                src: "./project".to_string(),
+                dst: "./project".to_string(),
+            },
+            &[],
+        );
+
+        std::env::set_current_dir(original_cwd).unwrap();
+
+        let resolved = result.unwrap();
+        let expected = project_dir.canonicalize().unwrap().display().to_string();
+        assert_eq!(resolved.workdir, expected);
+        assert_eq!(resolved.mounts[0].dst, expected);
     }
 
     #[test]

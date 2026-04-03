@@ -1,12 +1,12 @@
 use crate::config::AppConfig;
 use crate::derived_image::create_derived_build_context;
 use crate::docker::CommandRunner;
-use owo_colors::OwoColorize;
 use crate::instance::{AgentState, next_container_name};
 use crate::paths::JackinPaths;
 use crate::repo::{CachedRepo, validate_agent_repo};
 use crate::selector::ClassSelector;
 use crate::tui;
+use owo_colors::OwoColorize;
 
 pub struct LoadOptions {
     pub no_intro: bool,
@@ -109,6 +109,13 @@ fn parse_repo_name(url: &str) -> Option<String> {
         .map(|(_, p)| p.to_string())
 }
 
+fn repo_matches(expected: &str, actual: &str) -> bool {
+    match (parse_repo_name(expected), parse_repo_name(actual)) {
+        (Some(expected_repo), Some(actual_repo)) => expected_repo == actual_repo,
+        _ => expected.trim() == actual.trim(),
+    }
+}
+
 /// Derive a short repository name from a git remote URL (e.g. `donbeave/jackin`).
 fn git_repo_name(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
     let dir_str = dir.display().to_string();
@@ -185,6 +192,34 @@ fn resolve_agent_repo(
 
     let repo_path = cached_repo.repo_dir.display().to_string();
     if cached_repo.repo_dir.join(".git").is_dir() {
+        let remote_url = runner.capture(
+            "git",
+            &["-C", &repo_path, "remote", "get-url", "origin"],
+            None,
+        )?;
+        anyhow::ensure!(
+            repo_matches(git_url, &remote_url),
+            "cached agent repo remote does not match configured source: expected {git_url}, found {remote_url}. Remove the cached repo and try again."
+        );
+
+        let status = runner.capture(
+            "git",
+            &[
+                "-C",
+                &repo_path,
+                "status",
+                "--porcelain",
+                "--ignored=matching",
+                "--untracked-files=all",
+            ],
+            None,
+        )?;
+        anyhow::ensure!(
+            status.is_empty(),
+            "cached agent repo contains local changes or extra files: {}. Remove the cached repo or clean it before loading.",
+            cached_repo.repo_dir.display()
+        );
+
         runner.capture("git", &["-C", &repo_path, "pull", "--ff-only"], None)?;
     } else {
         runner.capture("git", &["clone", git_url, &repo_path], None)?;
@@ -669,7 +704,7 @@ pub fn exile_all(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
 }
 
 fn image_name(selector: &ClassSelector) -> String {
-    format!("jackin-{}", selector.key().replace('/', "-"))
+    format!("jackin-{}", crate::instance::runtime_slug(selector))
 }
 
 struct LoadCleanup {
@@ -820,7 +855,7 @@ mod tests {
         let selector = ClassSelector::new(Some("chainargos"), "the-architect");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
-            "jackin-chainargos-the-architect".to_string(),
+            "jackin-chainargos__the-architect".to_string(),
         ]);
 
         let repo_dir = paths.agents_dir.join("chainargos").join("the-architect");
@@ -859,7 +894,7 @@ mod tests {
                 .any(|call| call.contains("git -C") || call.contains("git clone"))
         );
         assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker build ") && call.contains("-t jackin-chainargos-the-architect")
+            call.contains("docker build ") && call.contains("-t jackin-chainargos__the-architect")
         }));
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
@@ -868,7 +903,7 @@ mod tests {
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("docker run -it --name jackin-chainargos-the-architect"))
+                .any(|call| call.contains("docker run -it --name jackin-chainargos__the-architect"))
         );
         assert!(
             runner
@@ -1466,6 +1501,77 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
             parse_repo_name("git@github.com:donbeave/jackin"),
             Some("donbeave/jackin".to_string())
         );
+    }
+
+    #[test]
+    fn image_name_distinguishes_namespaced_and_flat_classes() {
+        let namespaced = ClassSelector::new(Some("chainargos"), "the-architect");
+        let flat = ClassSelector::new(None, "chainargos-the-architect");
+
+        assert_ne!(image_name(&namespaced), image_name(&flat));
+    }
+
+    #[test]
+    fn resolve_agent_repo_rejects_cached_repo_with_wrong_remote() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let mut runner = FakeRunner::with_capture_queue(["git@github.com:evil/agent-smith.git".to_string()]);
+        let error = resolve_agent_repo(
+            &paths,
+            &selector,
+            "git@github.com:donbeave/jackin-agent-smith.git",
+            &mut runner,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("cached agent repo remote does not match"));
+    }
+
+    #[test]
+    fn resolve_agent_repo_rejects_cached_repo_with_local_changes() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let mut runner = FakeRunner::with_capture_queue([
+            "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
+            "?? scratch.txt".to_string(),
+        ]);
+        let error = resolve_agent_repo(
+            &paths,
+            &selector,
+            "git@github.com:donbeave/jackin-agent-smith.git",
+            &mut runner,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("contains local changes"));
     }
 
     #[test]

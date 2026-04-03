@@ -19,8 +19,10 @@ Creating a custom agent lets you define a specialized environment for a specific
 2. **Create the manifest file**
 
    ```toml title="jackin.agent.toml"
-   [agent]
    dockerfile = "Dockerfile"
+
+   [claude]
+   plugins = []
 
    [identity]
    name = "Rustacean"
@@ -113,20 +115,19 @@ USER claude
 
 ## Claude plugins
 
-Agent repos can declare Claude Code plugins to install. Add a `plugins` section to your manifest:
+Agent repos can declare Claude Code plugins to install. Add them to the `[claude]` section in your manifest:
 
 ```toml title="jackin.agent.toml"
-[agent]
 dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
 
 [identity]
 name = "My Agent"
-
-[plugins]
-paths = ["plugins/my-plugin"]
 ```
 
-Plugin directories are copied into the container and installed automatically when the agent starts.
+These plugin IDs are written into the agent's runtime state and installed automatically when the container starts.
 
 ## Testing your agent
 
