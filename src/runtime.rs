@@ -370,7 +370,6 @@ pub fn load_agent(
     let container_name = next_container_name(selector, &existing);
     let state = AgentState::prepare(paths, &container_name, &validated_repo.manifest)?;
 
-    let image = image_name(selector);
     let network = format!("{container_name}-net");
     let dind = format!("{container_name}-dind");
 
@@ -381,6 +380,7 @@ pub fn load_agent(
     tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
 
     // Configuration summary
+    let image = image_name(selector);
     let config_rows = build_config_rows(
         &agent_display_name,
         &container_name,
@@ -398,13 +398,10 @@ pub fn load_agent(
         steps.next("Building Docker image");
         let image = build_agent_image(selector, &cached_repo, &validated_repo, &host, runner)?;
 
-        // Step 3: Create Docker network
-        steps.next("Creating Docker network");
+        // Step 3: Create network and start Docker-in-Docker
+        steps.next("Starting Docker-in-Docker");
 
-        // Step 4: Start Docker-in-Docker
-        steps.next("Starting Docker-in-Docker container");
-
-        // Step 5: Launch agent
+        // Step 4: Launch agent
         steps.next("Mounting volumes");
         steps.done();
 
@@ -495,13 +492,19 @@ fn list_agent_names(
     runner: &mut impl CommandRunner,
     include_stopped: bool,
 ) -> anyhow::Result<Vec<String>> {
-    let mut args = vec!["ps"];
-    if include_stopped {
-        args.push("-a");
-    }
-    args.extend(["--filter", "label=jackin.managed=true", "--format", "{{.Names}}"]);
-
-    let output = runner.capture("docker", &args, None)?;
+    let output = if include_stopped {
+        runner.capture(
+            "docker",
+            &["ps", "-a", "--filter", "label=jackin.managed=true", "--format", "{{.Names}}"],
+            None,
+        )?
+    } else {
+        runner.capture(
+            "docker",
+            &["ps", "--filter", "label=jackin.managed=true", "--format", "{{.Names}}"],
+            None,
+        )?
+    };
 
     Ok(output
         .lines()
@@ -680,6 +683,23 @@ impl FakeRunner {
 }
 
 #[cfg(test)]
+impl FakeRunner {
+    fn check_command(&self, command: &str) -> anyhow::Result<()> {
+        if let Some((_, message)) = self
+            .fail_with
+            .iter()
+            .find(|(pattern, _)| command.contains(pattern))
+        {
+            anyhow::bail!("{message}");
+        }
+        if self.fail_on.iter().any(|pattern| command.contains(pattern)) {
+            anyhow::bail!("command failed: {command}");
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
 impl CommandRunner for FakeRunner {
     fn run(
         &mut self,
@@ -688,19 +708,9 @@ impl CommandRunner for FakeRunner {
         _cwd: Option<&std::path::Path>,
     ) -> anyhow::Result<()> {
         let command = format!("{} {}", program, args.join(" "));
-        self.recorded.push(command.clone());
         self.run_recorded.push(command.clone());
-        if let Some((_, message)) = self
-            .fail_with
-            .iter()
-            .find(|(pattern, _)| command.contains(pattern))
-        {
-            anyhow::bail!(message.clone());
-        }
-        if self.fail_on.iter().any(|pattern| command.contains(pattern)) {
-            anyhow::bail!("command failed: {command}");
-        }
-        Ok(())
+        self.recorded.push(command.clone());
+        self.check_command(&command)
     }
 
     fn capture(
@@ -711,16 +721,7 @@ impl CommandRunner for FakeRunner {
     ) -> anyhow::Result<String> {
         let command = format!("{} {}", program, args.join(" "));
         self.recorded.push(command.clone());
-        if let Some((_, message)) = self
-            .fail_with
-            .iter()
-            .find(|(pattern, _)| command.contains(pattern))
-        {
-            anyhow::bail!(message.clone());
-        }
-        if self.fail_on.iter().any(|pattern| command.contains(pattern)) {
-            anyhow::bail!("command failed: {command}");
-        }
+        self.check_command(&command)?;
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 }
