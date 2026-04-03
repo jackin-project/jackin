@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MountConfig {
@@ -157,12 +157,8 @@ pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadWorkspaceInput {
     CurrentDir,
-    Path(PathBuf),
+    Path { src: String, dst: String },
     Saved(String),
-    Custom {
-        mounts: Vec<MountConfig>,
-        workdir: String,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,15 +173,30 @@ pub fn resolve_load_workspace(
     selector: &crate::selector::ClassSelector,
     cwd: &Path,
     input: LoadWorkspaceInput,
+    ad_hoc_mounts: &[MountConfig],
 ) -> anyhow::Result<ResolvedWorkspace> {
-    let (workspace, label) = match input {
+    let (mut workspace, label) = match input {
         LoadWorkspaceInput::CurrentDir => {
             let ws = current_dir_workspace(cwd)?;
             let label = ws.workdir.clone();
             (ws, label)
         }
-        LoadWorkspaceInput::Path(path) => {
-            let ws = current_dir_workspace(&path)?;
+        LoadWorkspaceInput::Path { src, dst } => {
+            let expanded_src = expand_tilde(&src);
+            let canonical_src = Path::new(&expanded_src)
+                .canonicalize()
+                .map_err(|e| anyhow::anyhow!("cannot resolve path {expanded_src}: {e}"))?;
+            let src_str = canonical_src.display().to_string();
+            let ws = WorkspaceConfig {
+                workdir: dst.clone(),
+                mounts: vec![MountConfig {
+                    src: src_str,
+                    dst,
+                    readonly: false,
+                }],
+                allowed_agents: vec![],
+                default_agent: None,
+            };
             let label = ws.workdir.clone();
             (ws, label)
         }
@@ -208,19 +219,18 @@ pub fn resolve_load_workspace(
             }
             (workspace, name)
         }
-        LoadWorkspaceInput::Custom { mounts, workdir } => {
-            let label = workdir.clone();
-            (
-                WorkspaceConfig {
-                    workdir,
-                    mounts,
-                    allowed_agents: vec![],
-                    default_agent: None,
-                },
-                label,
-            )
-        }
     };
+
+    // Merge ad-hoc mounts after workspace mounts, checking for dst conflicts.
+    for ad_hoc in ad_hoc_mounts {
+        if workspace.mounts.iter().any(|existing| existing.dst == ad_hoc.dst) {
+            anyhow::bail!(
+                "ad-hoc mount destination conflicts with workspace mount destination: {}",
+                ad_hoc.dst
+            );
+        }
+        workspace.mounts.push(ad_hoc.clone());
+    }
 
     validate_workspace_config("runtime", &workspace)?;
     validate_mount_paths(&workspace.mounts)?;
@@ -330,6 +340,7 @@ mod tests {
             &crate::selector::ClassSelector::new(None, "neo"),
             &cwd,
             LoadWorkspaceInput::Saved("big-monorepo".to_string()),
+            &[],
         )
         .unwrap_err();
 
@@ -369,6 +380,7 @@ mod tests {
             &crate::selector::ClassSelector::new(None, "agent-smith"),
             &cwd,
             LoadWorkspaceInput::Saved("big-monorepo".to_string()),
+            &[],
         )
         .unwrap();
 
@@ -396,6 +408,7 @@ mod tests {
             &crate::selector::ClassSelector::new(None, "agent-smith"),
             cwd.path(),
             LoadWorkspaceInput::CurrentDir,
+            &[],
         )
         .unwrap();
 
@@ -407,5 +420,90 @@ mod tests {
                     && mount.src == home
                     && mount.readonly)
         );
+    }
+
+    #[test]
+    fn resolve_with_ad_hoc_mounts_merges_correctly() {
+        let temp = tempdir().unwrap();
+        let mount_src = temp.path().join("project");
+        let extra_src = temp.path().join("extra");
+        std::fs::create_dir_all(&mount_src).unwrap();
+        std::fs::create_dir_all(&extra_src).unwrap();
+
+        let mut config = crate::config::AppConfig::default();
+        config.agents.insert(
+            "agent-smith".to_string(),
+            crate::config::AgentSource {
+                git: "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
+            },
+        );
+        config.workspaces.insert(
+            "my-ws".to_string(),
+            WorkspaceConfig {
+                workdir: "/workspace/project".to_string(),
+                mounts: vec![MountConfig {
+                    src: mount_src.display().to_string(),
+                    dst: "/workspace/project".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec![],
+                default_agent: None,
+            },
+        );
+
+        let cwd = std::env::temp_dir();
+        let resolved = resolve_load_workspace(
+            &config,
+            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            &cwd,
+            LoadWorkspaceInput::Saved("my-ws".to_string()),
+            &[MountConfig {
+                src: extra_src.display().to_string(),
+                dst: "/extra".to_string(),
+                readonly: true,
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(resolved.mounts.len(), 2);
+        assert!(resolved.mounts.iter().any(|m| m.dst == "/extra" && m.readonly));
+    }
+
+    #[test]
+    fn resolve_with_ad_hoc_mount_dst_conflict_errors() {
+        let temp = tempdir().unwrap();
+        let mount_src = temp.path().join("project");
+        std::fs::create_dir_all(&mount_src).unwrap();
+
+        let mut config = crate::config::AppConfig::default();
+        config.workspaces.insert(
+            "my-ws".to_string(),
+            WorkspaceConfig {
+                workdir: "/workspace/project".to_string(),
+                mounts: vec![MountConfig {
+                    src: mount_src.display().to_string(),
+                    dst: "/workspace/project".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec![],
+                default_agent: None,
+            },
+        );
+
+        let cwd = std::env::temp_dir();
+        let error = resolve_load_workspace(
+            &config,
+            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            &cwd,
+            LoadWorkspaceInput::Saved("my-ws".to_string()),
+            &[MountConfig {
+                src: mount_src.display().to_string(),
+                dst: "/workspace/project".to_string(),
+                readonly: false,
+            }],
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("ad-hoc mount destination conflicts"));
     }
 }

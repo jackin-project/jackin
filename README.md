@@ -31,11 +31,17 @@ jackin load agent-smith
 # Direct path
 jackin load agent-smith ~/Projects/my-app
 
-# Saved workspace
-jackin load agent-smith -w big-monorepo
+# Path with custom container destination
+jackin load agent-smith ~/Projects/my-app:/app
 
-# Custom mounts
-jackin load agent-smith --mount ~/src:/workspace/src --workdir /workspace/src
+# Saved workspace
+jackin load agent-smith big-monorepo
+
+# Saved workspace with additional mounts
+jackin load agent-smith big-monorepo --mount ~/extra-data
+
+# Path with additional mounts
+jackin load agent-smith ~/app --mount ~/cache:/cache:ro
 
 # Interactive launcher
 jackin launch
@@ -119,7 +125,7 @@ Append `:ro` to make a mount read-only (e.g. `~/cache:/cache:ro`).
 
 If the current directory exactly matches a saved workspace `workdir`, Jackin preselects that saved workspace in the launcher. You can still move to `Current directory` to force the raw direct-mount behavior.
 
-`launch` is the human-first flow: pick a workspace, preview mounts and `workdir`, then choose an agent. `load` stays the explicit terminal-first path for current-directory mode, direct paths, saved workspaces, and fully custom one-off mount composition.
+`launch` is the human-first flow: pick a workspace, preview mounts and `workdir`, then choose an agent. `load` stays the explicit terminal-first path: pass a path, a `path:container-dest` mapping, or a saved workspace name as the optional second argument. Use `--mount` to layer additional mounts on top of any target type.
 
 Saved workspaces are local operator config. They define mounts, `workdir`, and optional allowed/default agents.
 
