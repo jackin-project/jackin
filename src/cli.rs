@@ -51,7 +51,8 @@ Examples:
   jackin load agent-smith ~/Projects/my-app:/app
   jackin load agent-smith big-monorepo
   jackin load agent-smith big-monorepo --mount ~/extra-data
-  jackin load agent-smith ~/app --mount ~/cache:/cache:ro"
+  jackin load agent-smith ~/app --mount ~/cache:/cache:ro
+  jackin load agent-smith --rebuild"
     )]
     Load {
         /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
@@ -62,6 +63,9 @@ Examples:
         /// Additional bind-mount spec as path[:ro] or src:dst[:ro] (repeatable)
         #[arg(long = "mount")]
         mounts: Vec<String>,
+        /// Force rebuild the Docker image (updates Claude to latest version)
+        #[arg(long, default_value_t = false)]
+        rebuild: bool,
         /// Skip the animated intro sequence
         #[arg(long, default_value_t = false)]
         no_intro: bool,
