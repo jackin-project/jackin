@@ -243,6 +243,7 @@ fn launch_agent_runtime(
     agent_display_name: &str,
     workspace: &crate::workspace::ResolvedWorkspace,
     state: &AgentState,
+    steps: &mut StepCounter,
     runner: &mut impl CommandRunner,
     debug: bool,
 ) -> anyhow::Result<()> {
@@ -280,7 +281,10 @@ fn launch_agent_runtime(
 
     wait_for_dind(dind, runner, debug)?;
 
-    // Launch agent
+    // Step 4: Mount volumes and launch
+    steps.next("Launching agent");
+    steps.done();
+
     tui::print_deploying(agent_display_name);
 
     let class_label = format!("jackin.class={}", selector.key());
@@ -406,10 +410,6 @@ pub fn load_agent(
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");
 
-        // Step 4: Launch agent
-        steps.next("Mounting volumes");
-        steps.done();
-
         launch_agent_runtime(
             &container_name,
             &image,
@@ -419,6 +419,7 @@ pub fn load_agent(
             &agent_display_name,
             workspace,
             &state,
+            &mut steps,
             runner,
             opts.debug,
         )?;
