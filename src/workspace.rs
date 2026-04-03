@@ -57,15 +57,14 @@ pub fn parse_mount_spec(spec: &str) -> anyhow::Result<MountConfig> {
     })
 }
 
-pub fn validate_mounts(mounts: &[MountConfig]) -> anyhow::Result<()> {
+/// Structural validation: absolute paths, no duplicate destinations.
+/// Safe to call at config-save time — does not touch the filesystem.
+pub fn validate_mount_specs(mounts: &[MountConfig]) -> anyhow::Result<()> {
     let mut seen_dst = std::collections::HashSet::new();
 
     for mount in mounts {
         if !Path::new(&mount.src).is_absolute() {
             anyhow::bail!("mount source must be absolute: {}", mount.src);
-        }
-        if !Path::new(&mount.src).exists() {
-            anyhow::bail!("mount source does not exist: {}", mount.src);
         }
         if !mount.dst.starts_with('/') {
             anyhow::bail!("mount destination must be an absolute path: {}", mount.dst);
@@ -76,6 +75,24 @@ pub fn validate_mounts(mounts: &[MountConfig]) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Filesystem validation: checks that mount sources exist on disk.
+/// Call at load/resolve time, not at config-save time.
+pub fn validate_mount_paths(mounts: &[MountConfig]) -> anyhow::Result<()> {
+    for mount in mounts {
+        if !Path::new(&mount.src).exists() {
+            anyhow::bail!("mount source does not exist: {}", mount.src);
+        }
+    }
+
+    Ok(())
+}
+
+/// Full validation: structural + filesystem checks combined.
+pub fn validate_mounts(mounts: &[MountConfig]) -> anyhow::Result<()> {
+    validate_mount_specs(mounts)?;
+    validate_mount_paths(mounts)
 }
 
 pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> anyhow::Result<()> {
@@ -89,7 +106,7 @@ pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> any
         anyhow::bail!("workspace {name:?} must define at least one mount");
     }
 
-    validate_mounts(&workspace.mounts)?;
+    validate_mount_specs(&workspace.mounts)?;
 
     let within_mount = workspace.mounts.iter().any(|mount| {
         workspace.workdir == mount.dst
@@ -202,6 +219,7 @@ pub fn resolve_load_workspace(
     };
 
     validate_workspace_config("runtime", &workspace)?;
+    validate_mount_paths(&workspace.mounts)?;
 
     let mut mounts = workspace.mounts.clone();
     let global_mounts =
