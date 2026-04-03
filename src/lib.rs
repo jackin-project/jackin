@@ -186,25 +186,45 @@ pub fn run(cli: Cli) -> Result<()> {
                 name,
                 workdir,
                 mounts,
+                no_workdir_mount,
                 allowed_agents,
                 default_agent,
             } => {
-                let mounts = mounts
+                let expanded_workdir = workspace::expand_tilde(&workdir);
+                let mut all_mounts: Vec<_> = mounts
                     .iter()
                     .map(|value| parse_mount_spec(value))
                     .collect::<Result<Vec<_>>>()?;
-                let mount_count = mounts.len();
+                if !no_workdir_mount {
+                    let already_mounted = all_mounts
+                        .iter()
+                        .any(|m| m.dst == expanded_workdir);
+                    if !already_mounted {
+                        all_mounts.insert(
+                            0,
+                            workspace::MountConfig {
+                                src: expanded_workdir.clone(),
+                                dst: expanded_workdir.clone(),
+                                readonly: false,
+                            },
+                        );
+                    }
+                }
+                let mount_count = all_mounts.len();
                 config.add_workspace(
                     &name,
                     WorkspaceConfig {
-                        workdir: workdir.clone(),
-                        mounts,
+                        workdir: expanded_workdir,
+                        mounts: all_mounts,
                         allowed_agents,
                         default_agent,
                     },
                 )?;
                 config.save(&paths)?;
-                println!("Added workspace {name:?} (workdir: {workdir}, {mount_count} mount(s)).");
+                println!(
+                    "Added workspace {name:?} (workdir: {}, {mount_count} mount(s)).",
+                    tui::shorten_home(&workdir)
+                );
                 Ok(())
             }
             WorkspaceCommand::List => {

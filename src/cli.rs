@@ -153,24 +153,32 @@ pub enum ConfigCommand {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum WorkspaceCommand {
     /// Save a new workspace definition
+    ///
+    /// By default the workdir path is automatically mounted into the container
+    /// at the same location (host path = container path). Use --no-workdir-mount
+    /// to disable this and provide all mounts explicitly.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
-  jackin workspace add my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app
-  jackin workspace add monorepo --workdir /workspace --mount ~/src:/workspace --mount ~/cache:/cache:ro
-  jackin workspace add restricted --workdir ~/app --mount ~/app --allowed-agent agent-smith --default-agent agent-smith"
+  jackin workspace add my-app --workdir ~/Projects/my-app
+  jackin workspace add my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
+  jackin workspace add monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
+  jackin workspace add restricted --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith"
     )]
     Add {
         /// Unique name for this workspace
         name: String,
-        /// Working directory inside the container
+        /// Working directory (automatically mounted at the same path unless --no-workdir-mount)
         #[arg(long)]
         workdir: String,
-        /// Bind-mount spec as path[:ro] or src:dst[:ro] (repeatable, at least one required)
-        #[arg(long = "mount", required = true)]
+        /// Additional bind-mount spec as path[:ro] or src:dst[:ro] (repeatable)
+        #[arg(long = "mount")]
         mounts: Vec<String>,
+        /// Do not auto-mount the workdir; provide all mounts explicitly with --mount
+        #[arg(long, default_value_t = false)]
+        no_workdir_mount: bool,
         /// Restrict which agents may use this workspace (repeatable)
         #[arg(long = "allowed-agent")]
         allowed_agents: Vec<String>,
@@ -427,6 +435,29 @@ mod tests {
             cli.command,
             Command::Workspace {
                 command: WorkspaceCommand::Add { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_workspace_add_with_workdir_only() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "add",
+            "my-app",
+            "--workdir",
+            "/tmp/my-app",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Workspace {
+                command: WorkspaceCommand::Add {
+                    no_workdir_mount: false,
+                    ..
+                }
             }
         ));
     }
