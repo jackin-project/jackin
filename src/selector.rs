@@ -96,9 +96,12 @@ fn is_valid_class_segment(value: &str) -> bool {
 }
 
 fn is_valid_container_name(value: &str) -> bool {
-    value
-        .strip_prefix("jackin-")
-        .is_some_and(is_valid_class_segment)
+    value.strip_prefix("jackin-").is_some_and(|suffix| {
+        !suffix.is_empty()
+            && suffix.chars().all(|ch| {
+                ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_'
+            })
+    })
 }
 
 fn is_reserved_builtin_class_name(value: &str) -> bool {
@@ -148,6 +151,15 @@ mod tests {
         assert_eq!(
             selector,
             Selector::Container("jackin-chainargos-the-architect-clone-1".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_container_selector_with_namespace_separator() {
+        let selector = Selector::parse("jackin-chainargos__the-architect").unwrap();
+        assert_eq!(
+            selector,
+            Selector::Container("jackin-chainargos__the-architect".to_string())
         );
     }
 
