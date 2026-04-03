@@ -1,5 +1,6 @@
 use crate::config::{AppConfig, MountEntry};
 use crate::selector::ClassSelector;
+use crate::tui;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,6 +150,20 @@ fn resolve_selected_workspace(
     crate::workspace::resolve_load_workspace(config, agent, cwd, choice.input.clone(), &[])
 }
 
+// ── Color palette (matching CLI banner) ────────────────────────────────
+
+mod colors {
+    use ratatui::style::Color;
+
+    pub const BRIGHT_BLUE: Color = Color::Rgb(100, 149, 237); // circuit lines
+    pub const DIM_BLUE: Color = Color::Rgb(75, 105, 145); // borders, subtitle
+    pub const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65); // highlight
+    pub const DIM_GREEN: Color = Color::Rgb(0, 140, 30); // footer hints
+    pub const WHITE: Color = Color::Rgb(255, 255, 255);
+    pub const DIM_WHITE: Color = Color::Rgb(180, 180, 180);
+    pub const DARK_BG: Color = Color::Rgb(20, 20, 30); // subtle bg for selected
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn run_launch(
     config: &AppConfig,
@@ -177,16 +192,19 @@ pub fn run_launch(
     let mut terminal = ratatui::Terminal::new(backend)?;
 
     let result = loop {
-        terminal.draw(|frame| draw_launch(frame, &state))?;
+        terminal.draw(|frame| match state.stage {
+            LaunchStage::Workspace => draw_workspace_screen(frame, &state),
+            LaunchStage::Agent => draw_agent_screen(frame, &state),
+        })?;
         if let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
         {
             match state.stage {
                 LaunchStage::Workspace => match key.code {
-                    KeyCode::Up => {
+                    KeyCode::Up | KeyCode::Char('k') => {
                         state.selected_workspace = state.selected_workspace.saturating_sub(1);
                     }
-                    KeyCode::Down => {
+                    KeyCode::Down | KeyCode::Char('j') => {
                         state.selected_workspace = (state.selected_workspace + 1)
                             .min(state.workspaces.len().saturating_sub(1));
                     }
@@ -261,106 +279,319 @@ pub fn run_launch(
         }
     };
 
-    // TerminalGuard handles cleanup (disable_raw_mode, LeaveAlternateScreen, show cursor) on drop
     drop(guard);
     result
 }
 
-const fn footer_text(stage: LaunchStage) -> &'static str {
-    match stage {
-        LaunchStage::Workspace => "Enter select   Esc/q quit",
-        LaunchStage::Agent => "Enter load   Esc back   Type to filter",
-    }
+// ── Compact banner (single-line logo for TUI) ──────────────────────────
+
+fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    use ratatui::style::Style;
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::Paragraph;
+
+    let line = Line::from(vec![
+        Span::styled(
+            "│╷│ ╷ │╷│",
+            Style::default().fg(colors::BRIGHT_BLUE),
+        ),
+        Span::styled("  j a c k i n  ", Style::default().fg(colors::WHITE).add_modifier(ratatui::style::Modifier::BOLD)),
+        Span::styled(
+            "operator terminal",
+            Style::default().fg(colors::DIM_BLUE),
+        ),
+    ]);
+    let banner = Paragraph::new(line).alignment(ratatui::layout::Alignment::Center);
+    frame.render_widget(banner, area);
 }
 
-fn draw_launch(frame: &mut ratatui::Frame, state: &LaunchState) {
-    use ratatui::layout::{Constraint, Direction, Layout};
+// ── Screen 1: Workspace selection ──────────────────────────────────────
+
+#[allow(clippy::too_many_lines)]
+fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
+    use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin};
     use ratatui::style::{Modifier, Style};
-    use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::{
+        Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Wrap,
+    };
+
+    let area = frame.area();
+
+    // Main vertical layout: banner | body | footer
+    let root = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),  // banner
+            Constraint::Length(1),  // spacer
+            Constraint::Min(10),   // body
+            Constraint::Length(2),  // footer
+        ])
+        .split(area);
+
+    // Banner
+    render_banner(frame, root[0]);
+
+    // Body: workspace list (top) + details (bottom)
+    let selected = &state.workspaces[state.selected_workspace];
+    let mount_lines = selected.workspace.mounts.len() + selected.global_mounts.len() + 4; // padding
+    let details_height = (mount_lines as u16).clamp(6, 16);
+    let body = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(5),                  // workspace list
+            Constraint::Length(details_height),   // details
+        ])
+        .split(root[2]);
+
+    // Center the workspace list content
+    let list_area = centered_rect(body[0], 60);
+    let detail_area = centered_rect(body[1], 80);
+
+    // Workspace list
+    let workspace_items: Vec<ListItem> = state
+        .workspaces
+        .iter()
+        .enumerate()
+        .map(|(i, ws)| {
+            let label = if ws.name == "Current directory" {
+                format!("  {}  (cwd)", tui::shorten_home(&ws.workspace.workdir))
+            } else {
+                format!("  {}  ", ws.name)
+            };
+            let style = if i == state.selected_workspace {
+                Style::default()
+                    .fg(colors::PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+                    .bg(colors::DARK_BG)
+            } else {
+                Style::default().fg(colors::DIM_WHITE)
+            };
+            ListItem::new(Line::from(Span::styled(label, style)))
+        })
+        .collect();
+
+    let ws_block = Block::default()
+        .title(Span::styled(
+            " Select Workspace ",
+            Style::default()
+                .fg(colors::BRIGHT_BLUE)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(colors::DIM_BLUE));
+
+    let workspace_list = List::new(workspace_items)
+        .block(ws_block)
+        .highlight_symbol("▸ ");
+    let mut workspace_state = ListState::default();
+    workspace_state.select(Some(state.selected_workspace));
+    frame.render_stateful_widget(workspace_list, list_area, &mut workspace_state);
+
+    // Details panel
+    let mut detail_lines: Vec<Line> = Vec::new();
+
+    detail_lines.push(Line::from(vec![
+        Span::styled("workdir  ", Style::default().fg(colors::BRIGHT_BLUE)),
+        Span::styled(
+            tui::shorten_home(&selected.workspace.workdir),
+            Style::default().fg(colors::WHITE),
+        ),
+    ]));
+    detail_lines.push(Line::from(vec![
+        Span::styled("agents   ", Style::default().fg(colors::BRIGHT_BLUE)),
+        Span::styled(
+            format!("{} available", selected.allowed_agents.len()),
+            Style::default().fg(colors::DIM_WHITE),
+        ),
+    ]));
+
+    if !selected.workspace.mounts.is_empty() {
+        detail_lines.push(Line::from(""));
+        detail_lines.push(Line::from(Span::styled(
+            "mounts",
+            Style::default()
+                .fg(colors::BRIGHT_BLUE)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for mount in &selected.workspace.mounts {
+            let mode = if mount.readonly { " (ro)" } else { "" };
+            detail_lines.push(Line::from(Span::styled(
+                format!(
+                    "  {} → {}{}",
+                    tui::shorten_home(&mount.src),
+                    tui::shorten_home(&mount.dst),
+                    mode
+                ),
+                Style::default().fg(colors::DIM_WHITE),
+            )));
+        }
+    }
+
+    if !selected.global_mounts.is_empty() {
+        detail_lines.push(Line::from(""));
+        detail_lines.push(Line::from(Span::styled(
+            "global mounts",
+            Style::default()
+                .fg(colors::BRIGHT_BLUE)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for mount in &selected.global_mounts {
+            let mode = if mount.readonly { " (ro)" } else { "" };
+            detail_lines.push(Line::from(Span::styled(
+                format!(
+                    "  {} → {}{}",
+                    tui::shorten_home(&mount.src),
+                    tui::shorten_home(&mount.dst),
+                    mode
+                ),
+                Style::default().fg(colors::DIM_WHITE),
+            )));
+        }
+    }
+
+    let detail_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(colors::DIM_BLUE));
+    let details = Paragraph::new(detail_lines)
+        .block(detail_block)
+        .wrap(Wrap { trim: false });
+    frame.render_widget(details, detail_area);
+
+    // Footer
+    let footer = Paragraph::new(Line::from(vec![
+        Span::styled("  Enter ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled("select   ", Style::default().fg(colors::DIM_GREEN)),
+        Span::styled("↑↓ ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled("navigate   ", Style::default().fg(colors::DIM_GREEN)),
+        Span::styled("Esc ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled("quit", Style::default().fg(colors::DIM_GREEN)),
+    ]))
+    .alignment(Alignment::Center);
+    frame.render_widget(footer, root[3].inner(Margin::new(0, 0)));
+}
+
+// ── Screen 2: Agent selection ──────────────────────────────────────────
+
+fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
+    use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin};
+    use ratatui::style::{Modifier, Style};
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
+
+    let area = frame.area();
+    let selected_ws = &state.workspaces[state.selected_workspace];
 
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Min(8),
-            Constraint::Length(2),
+            Constraint::Length(2),  // banner
+            Constraint::Length(2),  // workspace context line
+            Constraint::Min(8),    // agent list
+            Constraint::Length(2),  // footer
         ])
-        .split(frame.area());
-    let body = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
-        .split(root[1]);
-    let right = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(11), Constraint::Min(8)])
-        .split(body[1]);
+        .split(area);
 
-    let workspace_items = state
-        .workspaces
-        .iter()
-        .map(|workspace| ListItem::new(workspace.name.clone()))
-        .collect::<Vec<_>>();
-    let workspace_list = List::new(workspace_items)
-        .block(Block::default().title("Workspaces").borders(Borders::ALL))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-    let mut workspace_state = ListState::default();
-    workspace_state.select(Some(state.selected_workspace));
-    frame.render_stateful_widget(workspace_list, body[0], &mut workspace_state);
+    // Banner
+    render_banner(frame, root[0]);
 
-    let selected_workspace = &state.workspaces[state.selected_workspace];
-    let mount_lines = selected_workspace
-        .workspace
-        .mounts
-        .iter()
-        .map(|mount| {
-            let ro = if mount.readonly { " (ro)" } else { "" };
-            format!("{} -> {}{}", mount.src, mount.dst, ro)
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let global_lines = selected_workspace
-        .global_mounts
-        .iter()
-        .map(|mount| {
-            let ro = if mount.readonly { " (ro)" } else { "" };
-            format!("{} -> {}{}", mount.src, mount.dst, ro)
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let details = Paragraph::new(format!(
-        "available agents: {}\nworkdir: {}\n\nmounts:\n{}\n\nglobal:\n{}",
-        selected_workspace.allowed_agents.len(),
-        selected_workspace.workspace.workdir,
-        mount_lines,
-        global_lines,
-    ))
-    .block(
-        Block::default()
-            .title("Workspace Details")
-            .borders(Borders::ALL),
-    );
-    frame.render_widget(details, right[0]);
-
-    let agent_items = state
-        .filtered_agents()
-        .into_iter()
-        .map(|agent| ListItem::new(agent.key()))
-        .collect::<Vec<_>>();
-    let agent_title = if state.stage == LaunchStage::Agent {
-        format!("Agents (filter: {})", state.agent_query)
+    // Context: which workspace is selected
+    let ws_label = if selected_ws.name == "Current directory" {
+        tui::shorten_home(&selected_ws.workspace.workdir)
     } else {
-        "Agents".to_string()
+        selected_ws.name.clone()
     };
+    let context = Paragraph::new(Line::from(vec![
+        Span::styled("  workspace: ", Style::default().fg(colors::DIM_BLUE)),
+        Span::styled(ws_label, Style::default().fg(colors::WHITE).add_modifier(Modifier::BOLD)),
+    ]));
+    frame.render_widget(context, root[1]);
+
+    // Agent list (centered)
+    let list_area = centered_rect(root[2], 50);
+
+    let agents = state.filtered_agents();
+    let agent_items: Vec<ListItem> = agents
+        .iter()
+        .enumerate()
+        .map(|(i, agent)| {
+            let label = format!("  {}  ", agent.key());
+            let style = if i == state.selected_agent {
+                Style::default()
+                    .fg(colors::PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+                    .bg(colors::DARK_BG)
+            } else {
+                Style::default().fg(colors::DIM_WHITE)
+            };
+            ListItem::new(Line::from(Span::styled(label, style)))
+        })
+        .collect();
+
+    let title = if state.agent_query.is_empty() {
+        " Select Agent ".to_string()
+    } else {
+        format!(" Select Agent (filter: {}) ", state.agent_query)
+    };
+
+    let agent_block = Block::default()
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(colors::BRIGHT_BLUE)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(colors::DIM_BLUE));
+
     let agent_list = List::new(agent_items)
-        .block(Block::default().title(agent_title).borders(Borders::ALL))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+        .block(agent_block)
+        .highlight_symbol("▸ ");
     let mut agent_state = ListState::default();
     agent_state.select(Some(state.selected_agent));
-    frame.render_stateful_widget(agent_list, right[1], &mut agent_state);
+    frame.render_stateful_widget(agent_list, list_area, &mut agent_state);
 
-    let footer =
-        Paragraph::new(footer_text(state.stage)).block(Block::default().borders(Borders::TOP));
-    frame.render_widget(footer, root[2]);
+    // Footer
+    let footer = Paragraph::new(Line::from(vec![
+        Span::styled("  Enter ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled("load   ", Style::default().fg(colors::DIM_GREEN)),
+        Span::styled("↑↓ ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled("navigate   ", Style::default().fg(colors::DIM_GREEN)),
+        Span::styled("Type ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled("to filter   ", Style::default().fg(colors::DIM_GREEN)),
+        Span::styled("Esc ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled("back", Style::default().fg(colors::DIM_GREEN)),
+    ]))
+    .alignment(Alignment::Center);
+    frame.render_widget(footer, root[3].inner(Margin::new(0, 0)));
+}
+
+// ── Layout helpers ─────────────────────────────────────────────────────
+
+/// Create a centered sub-rect within `area`, using `percent` of the width.
+fn centered_rect(area: ratatui::layout::Rect, percent: u16) -> ratatui::layout::Rect {
+    use ratatui::layout::{Constraint, Direction, Layout};
+    let side = (100_u16.saturating_sub(percent)) / 2;
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(side),
+            Constraint::Percentage(percent),
+            Constraint::Percentage(side),
+        ])
+        .split(area);
+    cols[1]
+}
+
+#[cfg(test)]
+const fn footer_text(stage: LaunchStage) -> &'static str {
+    match stage {
+        LaunchStage::Workspace => "Enter select   ↑↓ navigate   Esc quit",
+        LaunchStage::Agent => "Enter load   ↑↓ navigate   Type to filter   Esc back",
+    }
 }
 
 #[cfg(test)]
@@ -429,13 +660,10 @@ mod tests {
 
     #[test]
     fn footer_text_matches_stage_behavior() {
-        assert_eq!(
-            footer_text(LaunchStage::Workspace),
-            "Enter select   Esc/q quit"
-        );
-        assert_eq!(
-            footer_text(LaunchStage::Agent),
-            "Enter load   Esc back   Type to filter"
-        );
+        assert!(footer_text(LaunchStage::Workspace).contains("Enter"));
+        assert!(footer_text(LaunchStage::Workspace).contains("quit"));
+        assert!(footer_text(LaunchStage::Agent).contains("Enter"));
+        assert!(footer_text(LaunchStage::Agent).contains("back"));
+        assert!(footer_text(LaunchStage::Agent).contains("filter"));
     }
 }
