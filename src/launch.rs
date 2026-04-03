@@ -146,7 +146,7 @@ fn resolve_selected_workspace(
     choice: &WorkspaceChoice,
     agent: &ClassSelector,
 ) -> anyhow::Result<ResolvedWorkspace> {
-    crate::workspace::resolve_load_workspace(config, agent, cwd, choice.input.clone())
+    crate::workspace::resolve_load_workspace(config, agent, cwd, choice.input.clone(), &[])
 }
 
 #[allow(clippy::too_many_lines)]

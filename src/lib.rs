@@ -21,7 +21,111 @@ use paths::JackinPaths;
 use selector::{ClassSelector, Selector};
 use std::io::ErrorKind;
 use std::path::Path;
-use workspace::{WorkspaceConfig, WorkspaceEdit, parse_mount_spec};
+use workspace::{LoadWorkspaceInput, WorkspaceConfig, WorkspaceEdit, expand_tilde, parse_mount_spec};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetKind {
+    Path { src: String, dst: String },
+    Name(String),
+}
+
+/// Classify a target string as either a path or a plain name.
+///
+/// Contains `/`, or starts with `.` or `~` => always a path.
+/// Otherwise => a plain name (workspace or directory name).
+pub fn classify_target(target: &str) -> TargetKind {
+    if target.contains('/') || target.starts_with('.') || target.starts_with('~') {
+        // Parse optional :dst — but be careful with src:dst vs path-only.
+        // A target like ~/Projects/my-app:/app has the pattern host:container.
+        // We split on the LAST colon that is followed by a `/` at position 0
+        // (i.e., an absolute container path), to distinguish from :ro suffix.
+        //
+        // Strategy: if there's a colon where the right side starts with `/`,
+        // treat it as src:dst.
+        let (src, dst) = if let Some(pos) = find_dst_separator(target) {
+            (&target[..pos], &target[pos + 1..])
+        } else {
+            // Same path for both src and dst — expand tilde for dst too.
+            let expanded = expand_tilde(target);
+            return TargetKind::Path {
+                src: target.to_string(),
+                dst: expanded,
+            };
+        };
+        TargetKind::Path {
+            src: src.to_string(),
+            dst: dst.to_string(),
+        }
+    } else {
+        TargetKind::Name(target.to_string())
+    }
+}
+
+/// Find the colon that separates src:dst in a target spec.
+/// The dst part must start with `/` (absolute container path).
+fn find_dst_separator(target: &str) -> Option<usize> {
+    // Search for `:` followed by `/`
+    for (i, _) in target.match_indices(':') {
+        if target[i + 1..].starts_with('/') {
+            return Some(i);
+        }
+    }
+    None
+}
+
+fn resolve_target_name(
+    name: &str,
+    config: &AppConfig,
+    cwd: &Path,
+) -> Result<LoadWorkspaceInput> {
+    let workspace_exists = config.workspaces.contains_key(name);
+    let dir_exists = cwd.join(name).is_dir();
+
+    match (workspace_exists, dir_exists) {
+        (true, true) => {
+            let choice = tui::prompt_choice(
+                &format!(
+                    "\"{name}\" matches both a saved workspace and a directory."
+                ),
+                &[
+                    &format!("Use workspace \"{name}\""),
+                    &format!("Use directory ./{name}"),
+                ],
+            )?;
+            if choice == 0 {
+                Ok(LoadWorkspaceInput::Saved(name.to_string()))
+            } else {
+                let full_path = cwd.join(name);
+                let canonical = full_path.display().to_string();
+                Ok(LoadWorkspaceInput::Path {
+                    src: canonical.clone(),
+                    dst: canonical,
+                })
+            }
+        }
+        (true, false) => Ok(LoadWorkspaceInput::Saved(name.to_string())),
+        (false, true) => {
+            let full_path = cwd.join(name);
+            let canonical = full_path.display().to_string();
+            Ok(LoadWorkspaceInput::Path {
+                src: canonical.clone(),
+                dst: canonical,
+            })
+        }
+        (false, false) => {
+            anyhow::bail!(
+                "\"{name}\" is neither a saved workspace nor a directory in the current path.\n\
+                 Saved workspaces: {}\n\
+                 Hint: use a path (e.g. ./{name}) to mount a directory.",
+                if config.workspaces.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    config.workspaces.keys().cloned().collect::<Vec<_>>().join(", ")
+                }
+            );
+        }
+    }
+}
 
 #[allow(clippy::too_many_lines)]
 pub fn run(cli: Cli) -> Result<()> {
@@ -32,35 +136,34 @@ pub fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Load {
             selector,
-            path,
-            workspace,
+            target,
             mounts,
-            workdir,
             no_intro,
             debug,
         } => {
             let class = ClassSelector::parse(&selector)?;
             let cwd = std::env::current_dir()?;
-            let workspace_input = if let Some(name) = workspace {
-                crate::workspace::LoadWorkspaceInput::Saved(name)
-            } else if !mounts.is_empty() {
-                let mounts = mounts
-                    .iter()
-                    .map(|value| crate::workspace::parse_mount_spec(value))
-                    .collect::<Result<Vec<_>>>()?;
-                crate::workspace::LoadWorkspaceInput::Custom {
-                    mounts,
-                    workdir: workdir.ok_or_else(|| {
-                        anyhow::anyhow!("--workdir is required when using --mount")
-                    })?,
-                }
-            } else if let Some(path) = path {
-                crate::workspace::LoadWorkspaceInput::Path(std::path::PathBuf::from(path))
-            } else {
-                crate::workspace::LoadWorkspaceInput::CurrentDir
+
+            let workspace_input = match target {
+                None => LoadWorkspaceInput::CurrentDir,
+                Some(t) => match classify_target(&t) {
+                    TargetKind::Path { src, dst } => LoadWorkspaceInput::Path { src, dst },
+                    TargetKind::Name(name) => resolve_target_name(&name, &config, &cwd)?,
+                },
             };
-            let resolved_workspace =
-                crate::workspace::resolve_load_workspace(&config, &class, &cwd, workspace_input)?;
+
+            let ad_hoc_mounts = mounts
+                .iter()
+                .map(|value| parse_mount_spec(value))
+                .collect::<Result<Vec<_>>>()?;
+
+            let resolved_workspace = crate::workspace::resolve_load_workspace(
+                &config,
+                &class,
+                &cwd,
+                workspace_input,
+                &ad_hoc_mounts,
+            )?;
             let opts = runtime::LoadOptions { no_intro, debug };
             runtime::load_agent(
                 &paths,
@@ -412,5 +515,112 @@ fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_target_tilde_path() {
+        let result = classify_target("~/Projects/my-app");
+        assert!(matches!(
+            result,
+            TargetKind::Path { ref src, .. } if src == "~/Projects/my-app"
+        ));
+    }
+
+    #[test]
+    fn classify_target_tilde_path_with_dst() {
+        let result = classify_target("~/Projects/my-app:/app");
+        assert!(matches!(
+            result,
+            TargetKind::Path { ref src, ref dst } if src == "~/Projects/my-app" && dst == "/app"
+        ));
+    }
+
+    #[test]
+    fn classify_target_dot_relative_path() {
+        let result = classify_target("./my-app");
+        assert!(matches!(result, TargetKind::Path { .. }));
+    }
+
+    #[test]
+    fn classify_target_absolute_path() {
+        let result = classify_target("/tmp/my-app");
+        assert!(matches!(
+            result,
+            TargetKind::Path { ref src, ref dst } if src == "/tmp/my-app" && dst == "/tmp/my-app"
+        ));
+    }
+
+    #[test]
+    fn classify_target_absolute_path_with_dst() {
+        let result = classify_target("/tmp/my-app:/workspace");
+        assert!(matches!(
+            result,
+            TargetKind::Path { ref src, ref dst } if src == "/tmp/my-app" && dst == "/workspace"
+        ));
+    }
+
+    #[test]
+    fn classify_target_plain_name() {
+        let result = classify_target("big-monorepo");
+        assert!(matches!(
+            result,
+            TargetKind::Name(ref name) if name == "big-monorepo"
+        ));
+    }
+
+    #[test]
+    fn classify_target_name_with_no_slash() {
+        let result = classify_target("my-workspace");
+        assert!(matches!(result, TargetKind::Name(_)));
+    }
+
+    #[test]
+    fn classify_target_relative_with_slash() {
+        // Contains `/` so treated as path
+        let result = classify_target("sub/dir");
+        assert!(matches!(result, TargetKind::Path { .. }));
+    }
+
+    #[test]
+    fn resolve_target_name_workspace_only() {
+        let mut config = config::AppConfig::default();
+        config.workspaces.insert(
+            "my-ws".to_string(),
+            workspace::WorkspaceConfig {
+                workdir: "/workspace".to_string(),
+                mounts: vec![],
+                allowed_agents: vec![],
+                default_agent: None,
+            },
+        );
+        let cwd = std::env::temp_dir();
+        let result = resolve_target_name("my-ws", &config, &cwd).unwrap();
+        assert!(matches!(result, LoadWorkspaceInput::Saved(ref name) if name == "my-ws"));
+    }
+
+    #[test]
+    fn resolve_target_name_directory_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("my-dir");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let config = config::AppConfig::default();
+        let result = resolve_target_name("my-dir", &config, temp.path()).unwrap();
+        assert!(matches!(result, LoadWorkspaceInput::Path { .. }));
+    }
+
+    #[test]
+    fn resolve_target_name_neither_errors() {
+        let config = config::AppConfig::default();
+        let cwd = std::env::temp_dir();
+        let result = resolve_target_name("nonexistent-thing", &config, &cwd);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("neither a saved workspace nor a directory"));
     }
 }
