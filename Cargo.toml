@@ -5,7 +5,7 @@ edition = "2024"
 description = "CLI for orchestrating AI coding agents at scale"
 homepage = "https://github.com/donbeave/jackin"
 repository = "https://github.com/donbeave/jackin"
-license = "MIT"
+license = "Apache-2.0"
 
 [dependencies]
 anyhow = "1.0"
