@@ -46,17 +46,19 @@ pub enum Command {
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
+  jackin load                                          # use workspace + last agent for cwd
+  jackin load --rebuild                                # same, with fresh Claude install
   jackin load agent-smith
   jackin load agent-smith ~/Projects/my-app
   jackin load agent-smith ~/Projects/my-app:/app
   jackin load agent-smith big-monorepo
   jackin load agent-smith big-monorepo --mount ~/extra-data
-  jackin load agent-smith ~/app --mount ~/cache:/cache:ro
-  jackin load agent-smith --rebuild"
+  jackin load agent-smith ~/app --mount ~/cache:/cache:ro"
     )]
     Load {
-        /// Agent class selector (e.g. `agent-smith`, `chainargos/agent-brown`)
-        selector: String,
+        /// Agent class selector (e.g. `agent-smith`, `chainargos/agent-brown`).
+        /// When omitted, uses the last-used or default agent for the workspace.
+        selector: Option<String>,
         /// Path, `path:container-dest`, or saved workspace name
         #[arg(value_name = "TARGET")]
         target: Option<String>,
@@ -374,12 +376,38 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Load {
-                ref selector,
+                selector: Some(ref s),
                 target: None,
                 no_intro: false,
                 debug: false,
                 ..
-            } if selector == "agent-smith"
+            } if s == "agent-smith"
+        ));
+    }
+
+    #[test]
+    fn parses_load_without_selector() {
+        let cli = Cli::try_parse_from(["jackin", "load"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Load {
+                selector: None,
+                target: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_load_rebuild_without_selector() {
+        let cli = Cli::try_parse_from(["jackin", "load", "--rebuild"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Load {
+                selector: None,
+                rebuild: true,
+                ..
+            }
         ));
     }
 
