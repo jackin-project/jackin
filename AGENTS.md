@@ -1,3 +1,5 @@
+@RULES.md follow the [rules](RULES.md)
+
 # AGENTS.md
 
 ## Testing
