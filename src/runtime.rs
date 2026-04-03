@@ -330,6 +330,7 @@ fn launch_agent_runtime(
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let claude_dir_mount = format!("{}:/home/claude/.claude", state.claude_dir.display());
     let claude_json_mount = format!("{}:/home/claude/.claude.json", state.claude_json.display());
+    let gh_config_mount = format!("{}:/home/claude/.config/gh", state.gh_config_dir.display());
     let plugins_mount = format!(
         "{}:/home/claude/.jackin/plugins.json:ro",
         state.plugins_json.display()
@@ -367,6 +368,8 @@ fn launch_agent_runtime(
         &claude_dir_mount,
         "-v",
         &claude_json_mount,
+        "-v",
+        &gh_config_mount,
         "-v",
         &plugins_mount,
     ]);
