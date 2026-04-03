@@ -9,9 +9,9 @@ export default defineConfig({
       title: 'jackin',
       description: 'CLI for orchestrating AI coding agents at scale',
       logo: {
-        dark: './src/assets/logo-dark.svg',
-        light: './src/assets/logo-light.svg',
-        replacesTitle: false,
+        dark: './src/assets/logo-dark.png',
+        light: './src/assets/logo-light.png',
+        replacesTitle: true,
       },
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/donbeave/jackin' },
