@@ -66,7 +66,7 @@ jackin launch
 
 ```sh
 # Reattach to a running agent
-jackin hardline jackin-agent-smith
+jackin hardline agent-smith
 
 # Stop an agent
 jackin eject agent-smith
