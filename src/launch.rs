@@ -155,12 +155,15 @@ fn resolve_selected_workspace(
 mod colors {
     use ratatui::style::Color;
 
-    pub const BRIGHT_BLUE: Color = Color::Rgb(100, 149, 237); // circuit lines
+    pub const BRIGHT_BLUE: Color = Color::Rgb(100, 149, 237); // circuit lines, labels
     pub const DIM_BLUE: Color = Color::Rgb(75, 105, 145); // borders, subtitle
+    pub const DETAIL_BORDER: Color = Color::Rgb(55, 65, 85); // details panel border
     pub const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65); // highlight
     pub const DIM_GREEN: Color = Color::Rgb(0, 140, 30); // footer hints
     pub const WHITE: Color = Color::Rgb(255, 255, 255);
     pub const DIM_WHITE: Color = Color::Rgb(180, 180, 180);
+    pub const PATH: Color = Color::Rgb(220, 190, 120); // paths (warm amber)
+    pub const PATH_DST: Color = Color::Rgb(150, 180, 220); // mount destination
     pub const DARK_BG: Color = Color::Rgb(20, 20, 30); // subtle bg for selected
 }
 
@@ -412,7 +415,7 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         Span::styled("workdir  ", Style::default().fg(colors::BRIGHT_BLUE)),
         Span::styled(
             tui::shorten_home(&selected.workspace.workdir),
-            Style::default().fg(colors::WHITE),
+            Style::default().fg(colors::PATH),
         ),
     ]));
     detail_lines.push(Line::from(vec![
@@ -423,54 +426,53 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         ),
     ]));
 
-    if !selected.workspace.mounts.is_empty() {
-        detail_lines.push(Line::from(""));
-        detail_lines.push(Line::from(Span::styled(
-            "mounts",
-            Style::default()
-                .fg(colors::BRIGHT_BLUE)
-                .add_modifier(Modifier::BOLD),
-        )));
-        for mount in &selected.workspace.mounts {
-            let mode = if mount.readonly { " (ro)" } else { "" };
-            detail_lines.push(Line::from(Span::styled(
-                format!(
-                    "  {} → {}{}",
-                    tui::shorten_home(&mount.src),
-                    tui::shorten_home(&mount.dst),
-                    mode
-                ),
-                Style::default().fg(colors::DIM_WHITE),
-            )));
-        }
-    }
+    let all_mounts: Vec<(&MountConfig, bool)> = selected
+        .workspace
+        .mounts
+        .iter()
+        .map(|m| (m, false))
+        .chain(selected.global_mounts.iter().map(|m| (m, true)))
+        .collect();
 
-    if !selected.global_mounts.is_empty() {
+    if !all_mounts.is_empty() {
         detail_lines.push(Line::from(""));
-        detail_lines.push(Line::from(Span::styled(
-            "global mounts",
-            Style::default()
-                .fg(colors::BRIGHT_BLUE)
-                .add_modifier(Modifier::BOLD),
-        )));
-        for mount in &selected.global_mounts {
-            let mode = if mount.readonly { " (ro)" } else { "" };
-            detail_lines.push(Line::from(Span::styled(
-                format!(
-                    "  {} → {}{}",
-                    tui::shorten_home(&mount.src),
-                    tui::shorten_home(&mount.dst),
-                    mode
-                ),
-                Style::default().fg(colors::DIM_WHITE),
-            )));
+        for (mount, is_global) in &all_mounts {
+            let src_short = tui::shorten_home(&mount.src);
+            let dst_short = tui::shorten_home(&mount.dst);
+            let ro = if mount.readonly { " (read-only)" } else { "" };
+            let global_tag = if *is_global { " [global]" } else { "" };
+
+            let mut spans = vec![Span::styled("  ", Style::default())];
+            if src_short == dst_short {
+                spans.push(Span::styled(src_short, Style::default().fg(colors::PATH)));
+            } else {
+                spans.push(Span::styled(
+                    src_short,
+                    Style::default().fg(colors::PATH),
+                ));
+                spans.push(Span::styled(
+                    " mounted as ",
+                    Style::default().fg(colors::DIM_WHITE),
+                ));
+                spans.push(Span::styled(
+                    dst_short,
+                    Style::default().fg(colors::PATH_DST),
+                ));
+            }
+            if !ro.is_empty() || !global_tag.is_empty() {
+                spans.push(Span::styled(
+                    format!("{ro}{global_tag}"),
+                    Style::default().fg(colors::DIM_WHITE),
+                ));
+            }
+            detail_lines.push(Line::from(spans));
         }
     }
 
     let detail_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(colors::DIM_BLUE));
+        .border_style(Style::default().fg(colors::DETAIL_BORDER));
     let details = Paragraph::new(detail_lines)
         .block(detail_block)
         .wrap(Wrap { trim: false });
