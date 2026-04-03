@@ -211,7 +211,13 @@ pub fn run(cli: Cli) -> Result<()> {
             }
             result
         }
-        Command::Hardline { container } => runtime::hardline_agent(&container, &mut runner),
+        Command::Hardline { selector } => {
+            let container = match Selector::parse(&selector)? {
+                Selector::Container(name) => name,
+                Selector::Class(class) => crate::instance::primary_container_name(&class),
+            };
+            runtime::hardline_agent(&container, &mut runner)
+        }
         Command::Eject {
             selector,
             all,
