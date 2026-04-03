@@ -7,11 +7,15 @@
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "generate-logos": "bun run scripts/generate-logos.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.38.2",
     "astro": "^6.1.3",
     "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2"
   }
 }
