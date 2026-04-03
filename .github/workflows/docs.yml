@@ -36,7 +36,7 @@ jobs:
 
       - name: Build site
         working-directory: docs
-        run: mise exec -- bun run build
+        run: mise exec -- bun --bun run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
