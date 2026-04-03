@@ -258,21 +258,25 @@ pub fn run(cli: Cli) -> Result<()> {
                 println!("name: {name}");
                 println!("workdir: {}", workspace.workdir);
                 println!(
-                    "allowed_agents: {}",
+                    "allowed agents: {}",
                     if workspace.allowed_agents.is_empty() {
-                        "all".to_string()
+                        "any agent".to_string()
                     } else {
                         workspace.allowed_agents.join(", ")
                     }
                 );
                 println!(
-                    "default_agent: {}",
-                    workspace.default_agent.as_deref().unwrap_or("-")
+                    "default agent: {}",
+                    workspace.default_agent.as_deref().unwrap_or("none")
                 );
                 println!("mounts:");
                 for mount in &workspace.mounts {
-                    let ro = if mount.readonly { " (ro)" } else { "" };
-                    println!("  {} -> {}{ro}", mount.src, mount.dst);
+                    let mode = if mount.readonly {
+                        " (read-only)"
+                    } else {
+                        ""
+                    };
+                    println!("  {} -> {}{mode}", mount.src, mount.dst);
                 }
                 Ok(())
             }

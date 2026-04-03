@@ -2,6 +2,7 @@ use crate::paths::JackinPaths;
 use crate::selector::ClassSelector;
 use crate::workspace::{WorkspaceConfig, WorkspaceEdit, expand_tilde, validate_workspace_config};
 use serde::{Deserialize, Serialize};
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
 pub use crate::workspace::MountConfig;
@@ -183,12 +184,12 @@ impl AppConfig {
                 .insert(name.to_string(), MountEntry::Mount(mount));
         } else {
             match self.docker.mounts.entry(scope_key.to_string()) {
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                Entry::Occupied(mut entry) => {
                     if let MountEntry::Scoped(map) = entry.get_mut() {
                         map.insert(name.to_string(), mount);
                     }
                 }
-                std::collections::btree_map::Entry::Vacant(entry) => {
+                Entry::Vacant(entry) => {
                     let mut map = BTreeMap::new();
                     map.insert(name.to_string(), mount);
                     entry.insert(MountEntry::Scoped(map));
