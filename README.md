@@ -41,23 +41,25 @@ jackin launch
 
 There are three core ideas in `jackin`:
 
-- **Agent class** — a reusable tool profile defined by a GitHub repo and loaded by name, such as `agent-smith`, `the-architect`, `frontend-team`, or `backend-team`
+- **Agent class** — a reusable tool profile defined by a GitHub repo and loaded by name, such as `agent-smith`, `the-architect`, `chainargos/frontend-engineer`, or `chainargos/backend-engineer`
 - **Workspace** — the project access boundary: which host directories are mounted, where they appear in the container, and which agent classes are allowed to use them
 - **Agent instance** — one running container created from an agent class and attached to one workspace
 
-`agent-smith` is just the default starter class name in this project. It is not magic syntax. In a real company you might have classes like `frontend`, `backend`, `infra`, or `review-only`.
+`agent-smith` is just the default starter class name in this project. It is not magic syntax. In a real company you might have classes like `frontend-engineer`, `backend-engineer`, `infra-operator`, or `security-reviewer`.
 
-This distinction matters. A workspace answers "which files can this agent see?" An agent class answers "which tools, defaults, plugins, and runtime behavior does this agent have?"
+This distinction matters because `jackin` isolates two different things on purpose.
 
-For example:
+- A workspace answers: **which files can this agent see?**
+- An agent class answers: **which tools, defaults, plugins, and runtime behavior does this agent have?**
 
-- a frontend team and backend team might both work inside the same monorepo workspace
-- the frontend agent class might include Node, Playwright, and UI-focused Claude plugins
-- the backend agent class might include Rust or Go tooling, database clients, and different plugins
+That separation is useful even when the project stays the same. One project can intentionally use multiple agent classes:
 
-Keeping those as separate agent classes is intentional isolation. If you put every tool and every plugin into one giant image, you recreate the same problem as a cluttered local machine: the agent can inspect and react to far more context than the task actually needs.
+- `chainargos/frontend-engineer` can mount the same monorepo workspace but carry Node, Playwright, design-system tooling, and UI-focused plugins
+- `chainargos/backend-engineer` can mount that same workspace but carry Rust or Go tooling, database clients, and backend-oriented plugins
 
-This is also useful for controlling Claude Code plugin behavior. If one agent class includes something powerful like Superpowers and another agent class does not, the second container genuinely cannot load it because it is not installed there. That can be a practical way to keep certain workflows or hooks completely out of scope for specific tasks.
+This is not duplication. It is how you create a smaller, more relevant ecosystem for the agent. A kitchen-sink image with every tool and every plugin gives the model more surface area to inspect and react to. A narrower environment usually produces better results because more of what the agent sees is relevant to the task.
+
+This is also useful for controlling Claude Code plugin behavior. If one agent class includes something powerful like Superpowers and another agent class does not, the second container genuinely cannot load it because it is not installed there. That is often more reliable than trying to "mostly disable" tools in one giant shared image.
 
 ## Construct
 
@@ -166,7 +168,15 @@ Append `:ro` to make a mount read-only (e.g. `~/cache:/cache:ro`).
 - `Current directory` — a synthetic workspace that mounts the current directory to the same absolute path inside the container and uses that path as `workdir`
 - saved workspaces — named local definitions stored in `~/.config/jackin/config.toml`
 
-If the current directory exactly matches a saved workspace `workdir`, Jackin preselects that saved workspace in the launcher. You can still move to `Current directory` to force the raw direct-mount behavior.
+The current-directory flow is great when you want to move fast from inside a project. But saved workspaces are more than shortcuts. They let you name a project boundary once and reuse it predictably.
+
+A saved workspace is useful when you want to:
+
+- launch the same project from anywhere without retyping mounts
+- keep a multi-mount layout consistent across sessions
+- let `jackin launch` auto-detect and preselect the right project
+- set a default agent class for that project
+- restrict sensitive workspaces to a smaller set of agent classes
 
 `launch` is the human-first flow: pick a workspace, preview mounts and `workdir`, then choose an agent. `load` stays the explicit terminal-first path: pass a path, a `path:container-dest` mapping, or a saved workspace name as the optional second argument. Use `--mount` to layer additional mounts on top of any target type.
 
@@ -174,8 +184,8 @@ Saved workspaces are local operator config. They define mounts, `workdir`, and o
 
 One useful pattern is to reuse the same workspace with different agent classes:
 
-- `jackin load agent-smith big-monorepo` for general work
-- `jackin load the-architect big-monorepo` for Rust-heavy changes
+- `jackin load chainargos/frontend-engineer big-monorepo` for UI work
+- `jackin load chainargos/backend-engineer big-monorepo` for API or database work
 
 Another pattern is the opposite: reuse one agent class across many workspaces when the tooling stays the same but the projects differ.
 
