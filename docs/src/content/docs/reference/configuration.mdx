@@ -1,0 +1,83 @@
+---
+title: Configuration File
+description: "The config.toml schema and storage locations"
+---
+
+## Storage locations
+
+| Path | Purpose |
+|---|---|
+| `~/.config/jackin/config.toml` | Operator configuration (workspaces, global mounts) |
+| `~/.jackin/agents/` | Cached agent repository checkouts |
+| `~/.jackin/data/<container-name>/` | Persisted agent state (Claude history, settings, plugins) |
+
+## config.toml schema
+
+The configuration file is TOML format at `~/.config/jackin/config.toml`. It's managed through CLI commands — you generally don't need to edit it by hand.
+
+### Workspaces
+
+```toml
+[workspaces.my-app]
+workdir = "/home/user/Projects/my-app"
+workdir_mount = true
+
+[[workspaces.my-app.mounts]]
+src = "/home/user/cache"
+dst = "/cache"
+readonly = true
+
+[workspaces.my-app.agents]
+allowed = ["agent-smith", "the-architect"]
+default = "agent-smith"
+```
+
+| Field | Description |
+|---|---|
+| `workdir` | Container working directory |
+| `workdir_mount` | Whether to auto-mount workdir (default: `true`) |
+| `mounts` | Array of mount specifications |
+| `mounts[].src` | Host path |
+| `mounts[].dst` | Container path |
+| `mounts[].readonly` | Read-only flag |
+| `agents.allowed` | List of allowed agent selectors |
+| `agents.default` | Default agent selector |
+
+### Global mounts
+
+```toml
+[[mounts]]
+name = "gradle-cache"
+src = "/home/user/.gradle/caches"
+dst = "/home/claude/.gradle/caches"
+readonly = true
+
+[[mounts]]
+name = "secrets"
+src = "/home/user/.chainargos/secrets"
+dst = "/secrets"
+readonly = true
+scope = "chainargos/*"
+```
+
+| Field | Description |
+|---|---|
+| `name` | Unique identifier for the mount |
+| `src` | Host path |
+| `dst` | Container path |
+| `readonly` | Read-only flag |
+| `scope` | Optional glob pattern to limit to specific agents |
+
+## Persisted state
+
+Each agent instance stores state at `~/.jackin/data/<container-name>/`:
+
+| File/Directory | Purpose |
+|---|---|
+| `.claude/` | Claude Code session history, conversation context |
+| `.claude.json` | Claude Code settings |
+| `plugins.json` | Installed Claude plugins list |
+
+This state is mounted back into the container on subsequent loads, so the agent resumes where it left off.
+
+Delete with `jackin purge <agent>` to start fresh.

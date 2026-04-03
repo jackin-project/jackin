@@ -1,0 +1,71 @@
+---
+title: "jackin load"
+description: "Jack an agent into the Matrix"
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Synopsis
+
+```bash
+jackin load [SELECTOR] [TARGET] [OPTIONS]
+```
+
+Load an agent into an isolated Docker container. This is the primary command for starting an agent session.
+
+## Arguments
+
+| Argument | Required | Description |
+|---|---|---|
+| `SELECTOR` | No | Agent class selector (e.g., `agent-smith`, `chainargos/the-architect`). When omitted, uses the last-used or default agent for the workspace. |
+| `TARGET` | No | Path, `path:container-dest`, or saved workspace name. Defaults to the current directory. |
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--mount <SPEC>` | Additional bind-mount spec. Repeatable. Format: `path[:ro]` or `src:dst[:ro]` |
+| `--rebuild` | Force rebuild the Docker image (updates Claude to latest version) |
+| `--no-intro` | Skip the animated intro sequence |
+| `--debug` | Print raw container output for troubleshooting |
+
+## Examples
+
+```bash
+# Use workspace + last agent for current directory
+jackin load
+
+# Force fresh Claude install
+jackin load --rebuild
+
+# Load a specific agent into current directory
+jackin load agent-smith
+
+# Load into a specific path
+jackin load agent-smith ~/Projects/my-app
+
+# Path with custom container destination
+jackin load agent-smith ~/Projects/my-app:/app
+
+# Load into a saved workspace
+jackin load agent-smith big-monorepo
+
+# Workspace with additional mounts
+jackin load agent-smith big-monorepo --mount ~/extra-data
+
+# Path with read-only additional mount
+jackin load agent-smith ~/app --mount ~/cache:/cache:ro
+```
+
+## What happens
+
+1. Resolves the agent class and clones/updates its repository
+2. Validates the agent repo contract (`jackin.agent.toml` + Dockerfile)
+3. Generates and builds a derived Docker image (cached if unchanged)
+4. Creates a per-agent Docker network and DinD sidecar
+5. Launches the agent container with all resolved mounts
+6. Starts Claude Code with `--dangerously-skip-permissions`
+
+<Aside type="tip">
+If no selector is given and the current directory matches a saved workspace with a default agent, that agent is used automatically.
+</Aside>

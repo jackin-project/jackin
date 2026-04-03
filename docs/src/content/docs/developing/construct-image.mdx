@@ -1,0 +1,100 @@
+---
+title: The Construct Image
+description: What's inside the shared base image that every agent starts from
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## What is the construct?
+
+`donbeave/jackin-construct:trixie` is the shared base Docker image for every agent. In The Matrix, the construct is the white void — the base simulation loaded before a mission. In jackin, it's the foundation layer that provides system tools, shell environment, and container infrastructure.
+
+Every agent Dockerfile starts from the construct:
+
+```dockerfile
+FROM donbeave/jackin-construct:trixie
+```
+
+## What's inside
+
+The construct is built on **Debian Trixie** and includes:
+
+### System tools
+
+| Package | Purpose |
+|---|---|
+| `bash` | Default shell for scripts |
+| `zsh` + Oh My Zsh | Interactive shell with autosuggestions |
+| `git` + Git LFS | Source control with large file support |
+| `curl` | HTTP client |
+| `jq` + `yq` | JSON and YAML processors |
+| `openssh-client` | SSH for git operations |
+| `sudo` | Privilege escalation (passwordless for claude user) |
+| `tree` | Directory visualization |
+
+### Search tools
+
+| Package | Purpose |
+|---|---|
+| `ripgrep` (`rg`) | Fast regex search |
+| `fd-find` (`fd`) | Fast file finder |
+| `fzf` | Fuzzy finder for interactive selection |
+
+### Development infrastructure
+
+| Package | Purpose |
+|---|---|
+| `mise` | Polyglot language version manager |
+| Docker CLI + Compose | Container operations via DinD |
+| GitHub CLI (`gh`) | Repository, PR, and issue operations |
+| Starship prompt | Informative terminal prompt |
+
+### User environment
+
+The construct creates a `claude` user with:
+- Home directory at `/home/claude`
+- Zsh as the default shell
+- Passwordless sudo access
+- Oh My Zsh with autosuggestions plugin
+- Starship prompt configured
+- mise shims in `$PATH`
+
+## How it's built
+
+The construct Dockerfile is at `docker/construct/Dockerfile` in the jackin repository. It's automatically built and pushed to Docker Hub via GitHub Actions when changes are made to `docker/construct/`.
+
+The image is tagged as:
+- `donbeave/jackin-construct:trixie` — the stable tag
+- `donbeave/jackin-construct:trixie-{sha}` — commit-specific tags
+
+## The derived image layer
+
+When you load an agent, jackin doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
+
+1. **User remapping** — adjusts the `claude` user's UID/GID to match your host user
+2. **Claude Code installation** — installs the Claude Code CLI
+3. **Runtime entrypoint** — the script that configures git, authenticates with GitHub, installs plugins, and launches Claude
+4. **Plugin installation** — any Claude plugins declared in the agent manifest
+
+<Aside type="note">
+The derived image is cached locally. You only pay the build cost once (or when you pass `--rebuild`).
+</Aside>
+
+## Extending the construct
+
+Agent repos add their tools on top of the construct. The construct provides the foundation — agents provide the specialization:
+
+```
+┌─────────────────────────────────┐
+│  Derived Layer (jackin-managed) │  Claude Code, entrypoint, user mapping
+├─────────────────────────────────┤
+│  Agent Layer (your Dockerfile)  │  Rust, Node, Python, custom tools
+├─────────────────────────────────┤
+│  Construct (shared base)        │  Debian, git, Docker CLI, mise, zsh
+└─────────────────────────────────┘
+```
+
+This layered approach means:
+- Agent authors focus on their tools, not infrastructure
+- The construct can be updated independently (security patches, new tools)
+- Docker layer caching makes builds fast

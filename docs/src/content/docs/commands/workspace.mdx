@@ -1,0 +1,88 @@
+---
+title: "jackin workspace"
+description: "Manage saved workspace configurations"
+---
+
+## Synopsis
+
+```bash
+jackin workspace <SUBCOMMAND>
+```
+
+Create, list, modify, and delete saved workspace definitions.
+
+## Subcommands
+
+### `workspace add`
+
+```bash
+jackin workspace add <NAME> --workdir <PATH> [OPTIONS]
+```
+
+Save a new workspace definition.
+
+| Option | Description |
+|---|---|
+| `--workdir <PATH>` | Working directory (auto-mounted at the same path by default) |
+| `--mount <SPEC>` | Additional bind-mount spec (repeatable) |
+| `--no-workdir-mount` | Don't auto-mount the workdir |
+| `--allowed-agent <NAME>` | Restrict to these agents (repeatable) |
+| `--default-agent <NAME>` | Agent to auto-select |
+
+```bash
+jackin workspace add my-app --workdir ~/Projects/my-app
+jackin workspace add my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
+jackin workspace add monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
+jackin workspace add restricted --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith
+```
+
+### `workspace list`
+
+```bash
+jackin workspace list
+```
+
+Show all saved workspaces.
+
+### `workspace show`
+
+```bash
+jackin workspace show <NAME>
+```
+
+Display details of a specific workspace including workdir, mounts, and agent restrictions.
+
+### `workspace edit`
+
+```bash
+jackin workspace edit <NAME> [OPTIONS]
+```
+
+Modify an existing workspace.
+
+| Option | Description |
+|---|---|
+| `--workdir <PATH>` | Update the working directory |
+| `--mount <SPEC>` | Add a mount (repeatable) |
+| `--remove-destination <PATH>` | Remove a mount by container path (repeatable) |
+| `--allowed-agent <NAME>` | Grant agent access (repeatable) |
+| `--remove-allowed-agent <NAME>` | Revoke agent access (repeatable) |
+| `--default-agent <NAME>` | Set default agent |
+| `--clear-default-agent` | Clear the default agent |
+
+```bash
+jackin workspace edit my-app --workdir ~/new-dir
+jackin workspace edit my-app --mount ~/cache:/cache:ro
+jackin workspace edit my-app --remove-destination /old-mount
+jackin workspace edit my-app --allowed-agent chainargos/the-architect
+jackin workspace edit my-app --default-agent agent-smith
+jackin workspace edit my-app --clear-default-agent
+```
+
+### `workspace remove`
+
+```bash
+jackin workspace remove <NAME>
+```
+
+Delete a saved workspace.

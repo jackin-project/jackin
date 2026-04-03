@@ -1,0 +1,39 @@
+---
+title: "jackin hardline"
+description: "Reattach to a running agent's session"
+---
+
+## Synopsis
+
+```bash
+jackin hardline <SELECTOR>
+```
+
+Reconnect your terminal to a running agent container. Use this when you've closed your terminal but the agent is still running in the background.
+
+In The Matrix, a hardline is a phone line used to enter or exit the simulation. In jackin, it's your way back into a running agent session.
+
+## Arguments
+
+| Argument | Required | Description |
+|---|---|---|
+| `SELECTOR` | Yes | Agent class selector (e.g., `agent-smith`) or full container name (e.g., `jackin-agent-smith-clone-1`) |
+
+## Examples
+
+```bash
+# Reconnect to agent-smith
+jackin hardline agent-smith
+
+# Reconnect to a specific container by name
+jackin hardline jackin-agent-smith-clone-1
+
+# Reconnect to a namespaced agent
+jackin hardline chainargos/the-architect
+```
+
+## When to use
+
+- You closed your terminal window but the agent container is still running
+- You want to check on an agent that's been running autonomously
+- You accidentally disconnected from a session

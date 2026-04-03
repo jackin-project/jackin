@@ -1,0 +1,60 @@
+---
+title: jackin
+description: CLI for orchestrating AI coding agents at scale
+template: splash
+hero:
+  tagline: Isolate AI coding agents in Docker containers. You're the Operator. They're already inside.
+  actions:
+    - text: Get Started
+      link: /jackin/getting-started/why/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/donbeave/jackin
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Why jackin?
+
+AI coding agents like Claude Code are most productive when they can run **without permission prompts** — reading files, executing commands, installing packages freely. But giving an agent unrestricted access to your host machine means it can see your entire filesystem, access your credentials, and modify anything.
+
+**jackin solves this** by giving each agent its own isolated Docker container with Docker-in-Docker enabled. The agent thinks it has free rein — but it's operating inside a construct you defined.
+
+<CardGrid>
+  <Card title="Isolated by default" icon="shield">
+    Each agent runs in its own Docker container. It can only see directories you explicitly mount and tools baked into its image.
+  </Card>
+  <Card title="Full autonomy inside" icon="rocket">
+    Agents run with `--dangerously-skip-permissions` safely. No permission prompts, no restrictions — inside the sandbox.
+  </Card>
+  <Card title="Operator control" icon="setting">
+    You control the blast radius: which folders agents read/write, whether mounts are read-only, and which Docker network they use.
+  </Card>
+  <Card title="Scale with confidence" icon="laptop">
+    Run multiple agents simultaneously, each in their own isolated environment with separate state and networking.
+  </Card>
+</CardGrid>
+
+## Quick start
+
+```bash
+# Install via Homebrew
+brew tap donbeave/tap
+brew install jackin
+
+# Load an agent into the current directory
+jackin load agent-smith
+
+# Or use the interactive launcher
+jackin launch
+```
+
+<CardGrid>
+  <LinkCard title="Installation" href="/jackin/getting-started/installation/" description="All the ways to install jackin" />
+  <LinkCard title="Core Concepts" href="/jackin/getting-started/concepts/" description="Understand operators, agents, and constructs" />
+  <LinkCard title="Creating Agents" href="/jackin/developing/creating-agents/" description="Build your own agent repos" />
+  <LinkCard title="Security Model" href="/jackin/guides/security-model/" description="How jackin keeps your system safe" />
+</CardGrid>

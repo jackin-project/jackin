@@ -1,0 +1,46 @@
+---
+title: "jackin launch"
+description: "Interactive TUI launcher"
+---
+
+## Synopsis
+
+```bash
+jackin launch
+```
+
+Open the interactive terminal UI launcher to visually select a workspace and agent.
+
+## How it works
+
+`launch` presents a two-step selection flow:
+
+1. **Pick a workspace** — choose from saved workspaces or "Current directory"
+2. **Pick an agent** — choose which agent class to load
+
+The TUI shows a preview of the mounts and working directory before you confirm.
+
+## Workspace selection
+
+The launcher shows two kinds of choices:
+
+- **Current directory** — a synthetic workspace that mounts your `cwd` at the same path inside the container
+- **Saved workspaces** — named definitions from `~/.config/jackin/config.toml`
+
+If your current directory matches a saved workspace's `workdir`, that workspace is preselected.
+
+## Agent selection
+
+If the selected workspace has:
+- **A default agent** — it's preselected
+- **Allowed agents** — only those are shown
+- **No restrictions** — all known agents are listed
+
+## When to use `launch` vs `load`
+
+| | `launch` | `load` |
+|---|---|---|
+| **Interface** | Visual TUI | Command-line arguments |
+| **Best for** | Exploring options, first-time setup | Scripting, repeatable workflows |
+| **Workspace selection** | Interactive picker | Explicit argument |
+| **Agent selection** | Interactive picker | Explicit argument |

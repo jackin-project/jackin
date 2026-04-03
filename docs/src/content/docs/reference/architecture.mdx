@@ -1,0 +1,135 @@
+---
+title: Architecture
+description: How jackin orchestrates containers, networks, and state
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## High-level architecture
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Host Machine                                         │
+│                                                       │
+│  ┌─────────────┐                                      │
+│  │  jackin CLI  │  Operator interface                  │
+│  └──────┬──────┘                                      │
+│         │                                             │
+│         ▼                                             │
+│  ┌──────────────────────────────────────────────┐     │
+│  │  Docker Engine                                │     │
+│  │                                               │     │
+│  │  ┌─────────────────────────────────────────┐  │     │
+│  │  │  jackin-agent-smith-net (Docker network) │  │     │
+│  │  │                                          │  │     │
+│  │  │  ┌──────────────┐  ┌─────────────────┐  │  │     │
+│  │  │  │ Agent         │  │ DinD Sidecar    │  │  │     │
+│  │  │  │ Container     │  │ (docker:dind)   │  │  │     │
+│  │  │  │               │  │                 │  │  │     │
+│  │  │  │ Claude Code   │──│ Docker daemon   │  │  │     │
+│  │  │  │ Agent tools   │  │ tcp://...:2375  │  │  │     │
+│  │  │  │ Mounted dirs  │  │                 │  │  │     │
+│  │  │  └──────────────┘  └─────────────────┘  │  │     │
+│  │  └─────────────────────────────────────────┘  │     │
+│  └──────────────────────────────────────────────┘     │
+│                                                       │
+│  ~/.jackin/data/  (persisted state)                    │
+│  ~/.jackin/agents/ (cached repos)                     │
+│  ~/.config/jackin/ (operator config)                  │
+└──────────────────────────────────────────────────────┘
+```
+
+## Image layers
+
+```
+┌─────────────────────────────────┐
+│  Derived Layer (jackin-managed) │
+│  - UID/GID remapping            │
+│  - Claude Code installation     │
+│  - Runtime entrypoint           │
+│  - Plugin installation          │
+├─────────────────────────────────┤
+│  Agent Layer (agent repo)       │
+│  - Language runtimes            │
+│  - Development tools            │
+│  - Custom configuration         │
+├─────────────────────────────────┤
+│  Construct Base                 │
+│  - Debian Trixie                │
+│  - Docker CLI + Compose         │
+│  - Git, GitHub CLI              │
+│  - mise, ripgrep, fd, fzf       │
+│  - zsh + Oh My Zsh              │
+└─────────────────────────────────┘
+```
+
+## Container lifecycle
+
+### Loading an agent
+
+1. **Resolve agent class** — map selector to GitHub repo, clone/update
+2. **Validate contract** — check `jackin.agent.toml` and Dockerfile
+3. **Generate derived Dockerfile** — add Claude, entrypoint, user mapping
+4. **Build image** — Docker layer caching makes this fast after first build
+5. **Create network** — `jackin-{agent}-net` for container isolation
+6. **Start DinD sidecar** — `jackin-{agent}-dind` with Docker daemon
+7. **Start agent container** — with mounts, env vars, and DinD connection
+8. **Agent runs** — Claude Code starts with full permissions
+
+### Reconnecting (hardline)
+
+1. **Find running container** — by selector or container name
+2. **Attach** — `docker attach` to the running container
+
+### Stopping (eject)
+
+1. **Stop agent container** — graceful shutdown
+2. **Stop DinD sidecar** — clean up the Docker daemon
+3. **Remove network** — clean up the isolated network
+4. *(Optional)* **Purge state** — delete persisted data
+
+## Networking
+
+Each agent gets an isolated Docker network:
+
+- Network name: `jackin-{agent-class}-net`
+- The agent container and its DinD sidecar share this network
+- The agent connects to DinD via `DOCKER_HOST=tcp://{dind}:2375`
+- Agents cannot reach other agents' networks
+
+<Aside type="note">
+The DinD sidecar currently runs without TLS. This means any container on the agent's network has unauthenticated access to the Docker daemon. TLS support is planned.
+</Aside>
+
+## State management
+
+```
+~/.jackin/
+├── agents/                        # Cached agent repos
+│   └── github.com/
+│       └── donbeave/
+│           └── jackin-agent-smith/ # Cloned repo
+├── data/                          # Persisted state per instance
+│   └── jackin-agent-smith/
+│       ├── .claude/               # Session history
+│       ├── .claude.json           # Settings
+│       └── plugins.json           # Plugin list
+```
+
+State persistence allows agents to maintain context across sessions. The `.claude/` directory contains Claude Code's conversation history and project context — so when you load an agent again, it remembers what it was working on.
+
+## Technology stack
+
+jackin itself is built in Rust:
+
+| Component | Technology |
+|---|---|
+| CLI parsing | `clap` with derive macros |
+| Terminal UI | `ratatui` + `crossterm` |
+| Table output | `tabled` |
+| Configuration | `serde` + `toml` |
+| Dockerfile parsing | `dockerfile-parser` |
+| Error handling | `anyhow` + `thiserror` |
+| Colored output | `owo-colors` |
+
+The project targets Rust edition 2024 with Rust 1.87+ and forbids unsafe code.

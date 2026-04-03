@@ -1,0 +1,84 @@
+---
+title: Why Jackin?
+description: The problem jackin solves and why it needs to exist
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+## The problem
+
+AI coding agents are transforming software development. Tools like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), and [Amp Code](https://ampcode.com) can read your codebase, write code, run tests, install dependencies, and execute arbitrary shell commands — all autonomously.
+
+But there's a catch: **these agents are most productive when they run without guardrails.**
+
+Claude Code has a mode called `--dangerously-skip-permissions` that removes all confirmation prompts. No "are you sure?" dialogs. No permission gates. The agent just *does things*. And that's exactly what you want when you're trying to get work done — an agent that can move fast without waiting for you to click "Allow" every ten seconds.
+
+**The problem is what "doing things" means on your host machine:**
+
+- The agent can read **every file** on your filesystem — your SSH keys, your `.env` files, your browser cookies
+- It can run **any command** — `rm -rf /`, `curl` data to external servers, modify system configs
+- It can install **any package** — potentially pulling in malicious dependencies
+- It has your **credentials** — Docker Hub tokens, AWS keys, GitHub tokens, anything in your shell environment
+
+Running an unrestricted AI agent directly on your host is like inviting a brilliant but unpredictable contractor into your home and saying "do whatever you want." They might build something amazing — or they might accidentally (or intentionally) cause damage you never anticipated.
+
+## The solution
+
+**jackin gives each agent its own isolated world to operate in.**
+
+Instead of running on your host, each agent runs inside a Docker container with Docker-in-Docker (DinD) enabled. From the agent's perspective, it has full autonomy — it can execute commands, install packages, build Docker images, run tests. But from *your* perspective as the operator, you've defined exactly what the agent can see and touch.
+
+<Steps>
+1. **You define the boundaries** — which directories to mount, whether they're read-only or read-write, what tools are available in the container image
+
+2. **The agent runs freely inside those boundaries** — no permission prompts, no restrictions, full `--dangerously-skip-permissions` mode
+
+3. **Your host system stays untouched** — the agent can't see your home directory, can't access your credentials, can't modify files outside its mounts
+</Steps>
+
+Think of it this way: you're not restricting the agent's *capabilities*. You're restricting its *blast radius*.
+
+## The Matrix analogy
+
+The name "jackin" comes from [jacking in](https://matrix.fandom.com/wiki/Jacking_in) to The Matrix. In the films, an operator loads a person into a simulated environment — the construct — where they can train, fight, and operate with superhuman abilities. But they're not actually modifying the real world. The operator controls what the simulation contains.
+
+That's exactly what jackin does:
+
+| Matrix | jackin |
+|---|---|
+| **Operator** | You — the developer running jackin |
+| **The Construct** | The base Docker image with system tools |
+| **Jacking in** | `jackin load agent-smith` |
+| **The agent inside** | Claude Code running with full permissions |
+| **The real world** | Your host machine, untouched |
+| **Hardline** | `jackin hardline` — reconnecting to a running agent |
+| **Pulling out** | `jackin eject` — stopping an agent |
+| **Exile** | `jackin exile` — pulling everyone out at once |
+
+Every command in jackin maps to a concept from The Matrix. This isn't just for fun — it makes the mental model intuitive. When you "load" an agent, you're loading it into a construct. When you "eject" it, you're pulling it out. The vocabulary reinforces what's actually happening.
+
+## What jackin is NOT
+
+<Aside type="caution">
+jackin is not a general-purpose container orchestrator. It's specifically designed for AI coding agents.
+</Aside>
+
+- **Not a VM** — agents share the host kernel via Docker. The isolation is at the container level, not the hypervisor level.
+- **Not a sandbox for untrusted code execution** — it's for running *trusted agent runtimes* (Claude Code, Codex) in a controlled environment. The agent binary itself is trusted; it's the agent's *actions* you want to contain.
+- **Not Kubernetes** — jackin runs on a single machine with Docker. Kubernetes support is on the roadmap for teams that need multi-node orchestration.
+
+## Who is it for?
+
+**Individual developers** who want to run AI agents at full speed without risking their host machine. You can give Claude Code complete autonomy inside a container, knowing it can't accidentally delete your SSH keys or push to production.
+
+**Teams** that want to standardize how AI agents are deployed. Define agent repos with the tools each project needs, save workspace configurations, and every developer gets the same isolated environment.
+
+**Agent developers** who want to build custom agent configurations. Create a Dockerfile with your preferred toolchain, declare it in a manifest, and anyone can load your agent with `jackin load`.
+
+## Current status
+
+<Aside>
+jackin is currently a proof of concept with Claude Code as its only supported agent runtime. Support for Codex and Amp Code is planned.
+</Aside>
+
+The project is at **v0.1.0** — the core isolation model works, workspaces and mounts are configurable, and the interactive TUI launcher is functional. It's built in Rust for performance and correctness, and licensed under Apache 2.0.

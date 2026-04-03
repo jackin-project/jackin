@@ -1,0 +1,85 @@
+---
+title: Agent Manifest
+description: "The jackin.agent.toml file that defines an agent"
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+Every agent repo must contain a `jackin.agent.toml` file at the repository root. This manifest tells jackin how to build and identify the agent.
+
+## Full schema
+
+```toml title="jackin.agent.toml"
+[agent]
+# Path to the Dockerfile (required)
+# Must be relative and stay inside the repo
+dockerfile = "Dockerfile"
+
+[identity]
+# Display name for the agent (optional)
+# Used in the TUI launcher and output
+# Falls back to the class selector name when omitted
+name = "Agent Smith"
+
+[plugins]
+# Claude Code plugin directories to install (optional)
+paths = ["plugins/my-plugin", "plugins/another-plugin"]
+```
+
+## Sections
+
+### `[agent]`
+
+| Field | Required | Description |
+|---|---|---|
+| `dockerfile` | Yes | Relative path to the Dockerfile within the repo |
+
+The Dockerfile path must:
+- Be relative (no absolute paths)
+- Stay inside the repository (no `../` escapes)
+- Point to a valid Dockerfile
+- Have a final stage that starts with `FROM donbeave/jackin-construct:trixie`
+
+### `[identity]`
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | No | Human-readable display name for the agent |
+
+When omitted, jackin uses the class selector name. For example, an agent loaded as `agent-smith` would display as "agent-smith" in the TUI.
+
+### `[plugins]`
+
+| Field | Required | Description |
+|---|---|---|
+| `paths` | No | List of directory paths containing Claude Code plugins |
+
+Plugin directories are copied into the derived image and installed when the agent starts. Paths are relative to the repository root.
+
+## Minimal example
+
+The smallest valid manifest:
+
+```toml title="jackin.agent.toml"
+[agent]
+dockerfile = "Dockerfile"
+```
+
+## Complete example
+
+```toml title="jackin.agent.toml"
+[agent]
+dockerfile = "docker/Dockerfile.agent"
+
+[identity]
+name = "The Architect"
+
+[plugins]
+paths = ["plugins/rust-analyzer-helper"]
+```
+
+<Aside type="tip">
+Keep manifests simple. The Dockerfile does the heavy lifting — the manifest just points jackin to it and provides metadata.
+</Aside>
