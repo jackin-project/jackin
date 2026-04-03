@@ -582,6 +582,39 @@ pub fn print_logo(logo_path: &std::path::Path) {
     eprintln!();
 }
 
+// ── Interactive prompt ───────────────────────────────────────────────────
+
+/// Display a numbered prompt on stderr and read a choice from stdin.
+/// Returns the 0-based index of the chosen option.
+/// Errors if stdin is not a terminal.
+pub fn prompt_choice(message: &str, options: &[&str]) -> anyhow::Result<usize> {
+    use std::io::{BufRead, IsTerminal};
+
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "ambiguous target requires interactive input, but stdin is not a terminal"
+        );
+    }
+
+    eprintln!("{message}");
+    for (i, option) in options.iter().enumerate() {
+        eprintln!("  [{}] {}", i + 1, option);
+    }
+    eprint!("Choose [1/{}]: ", options.len());
+    let _ = io::stderr().flush();
+
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line)?;
+    let trimmed = line.trim();
+    let index: usize = trimmed
+        .parse::<usize>()
+        .ok()
+        .and_then(|n| if n >= 1 && n <= options.len() { Some(n - 1) } else { None })
+        .ok_or_else(|| anyhow::anyhow!("invalid choice: {trimmed:?}"))?;
+
+    Ok(index)
+}
+
 // ── Utility ──────────────────────────────────────────────────────────────
 
 pub fn fatal(msg: &str) {

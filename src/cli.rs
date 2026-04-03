@@ -37,6 +37,10 @@ pub struct Cli {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     /// Jack an agent into the Matrix
+    ///
+    /// TARGET can be a path (~/Projects/my-app), a path with container
+    /// destination (~/Projects/my-app:/app), or a saved workspace name.
+    /// When omitted, the current directory is used.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -44,24 +48,20 @@ pub enum Command {
 Examples:
   jackin load agent-smith
   jackin load agent-smith ~/Projects/my-app
-  jackin load agent-smith -w big-monorepo
-  jackin load chainargos/the-architect --mount ~/src:/workspace/src --workdir /workspace/src"
+  jackin load agent-smith ~/Projects/my-app:/app
+  jackin load agent-smith big-monorepo
+  jackin load agent-smith big-monorepo --mount ~/extra-data
+  jackin load agent-smith ~/app --mount ~/cache:/cache:ro"
     )]
     Load {
         /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
         selector: String,
-        /// Direct path to a directory to mount as the agent's workspace
-        #[arg(value_name = "PATH", conflicts_with_all = ["workspace", "mounts", "workdir"])]
-        path: Option<String>,
-        /// Use a previously saved workspace by name
-        #[arg(short = 'w', long = "workspace", conflicts_with_all = ["path", "mounts", "workdir"])]
-        workspace: Option<String>,
-        /// Bind-mount spec as path[:ro] or src:dst[:ro] (repeatable)
-        #[arg(long = "mount", conflicts_with_all = ["path", "workspace"])]
+        /// Path, path:container-dest, or saved workspace name
+        #[arg(value_name = "TARGET")]
+        target: Option<String>,
+        /// Additional bind-mount spec as path[:ro] or src:dst[:ro] (repeatable)
+        #[arg(long = "mount")]
         mounts: Vec<String>,
-        /// Working directory inside the container (required with --mount)
-        #[arg(long, requires = "mounts", conflicts_with_all = ["path", "workspace"])]
-        workdir: Option<String>,
         /// Skip the animated intro sequence
         #[arg(long, default_value_t = false)]
         no_intro: bool,
@@ -370,9 +370,7 @@ mod tests {
             cli.command,
             Command::Load {
                 ref selector,
-                path: None,
-                workspace: None,
-                workdir: None,
+                target: None,
                 no_intro: false,
                 debug: false,
                 ..
@@ -381,20 +379,42 @@ mod tests {
     }
 
     #[test]
-    fn parses_load_with_workspace_short_flag() {
+    fn parses_load_with_target_path() {
         let cli =
-            Cli::try_parse_from(["jackin", "load", "agent-smith", "-w", "big-monorepo"]).unwrap();
+            Cli::try_parse_from(["jackin", "load", "agent-smith", "~/Projects/my-app"]).unwrap();
         assert!(matches!(
             cli.command,
             Command::Load {
-                workspace: Some(_),
+                target: Some(ref t),
                 ..
-            }
+            } if t == "~/Projects/my-app"
         ));
     }
 
     #[test]
-    fn parses_load_with_custom_mounts() {
+    fn parses_load_with_target_and_mount() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "load",
+            "agent-smith",
+            "big-monorepo",
+            "--mount",
+            "/tmp/cache:/workspace/cache:ro",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Load {
+                target: Some(ref t),
+                ref mounts,
+                ..
+            } if t == "big-monorepo" && mounts.len() == 1
+        ));
+    }
+
+    #[test]
+    fn parses_load_with_mount_only() {
         let cli = Cli::try_parse_from([
             "jackin",
             "load",
@@ -403,12 +423,17 @@ mod tests {
             "/tmp/project:/workspace/project",
             "--mount",
             "/tmp/cache:/workspace/cache:ro",
-            "--workdir",
-            "/workspace/project",
         ])
         .unwrap();
 
-        assert!(matches!(cli.command, Command::Load { .. }));
+        assert!(matches!(
+            cli.command,
+            Command::Load {
+                target: None,
+                ref mounts,
+                ..
+            } if mounts.len() == 2
+        ));
     }
 
     #[test]
@@ -566,7 +591,7 @@ mod tests {
         assert!(help.contains("Jack an agent into the Matrix"));
         assert!(help.contains("Examples:"));
         assert!(help.contains("jackin load agent-smith"));
-        assert!(help.contains("jackin load agent-smith -w big-monorepo"));
+        assert!(help.contains("jackin load agent-smith big-monorepo"));
     }
 
     #[test]
