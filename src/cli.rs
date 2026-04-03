@@ -36,7 +36,16 @@ pub struct Cli {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     /// Jack an agent into the Matrix
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin load agent-smith
+  jackin load agent-smith ~/Projects/my-app
+  jackin load agent-smith -w big-monorepo
+  jackin load chainargos/the-architect --mount ~/src:/workspace/src --workdir /workspace/src"
+    )]
     Load {
         /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
         selector: String,
@@ -60,13 +69,29 @@ pub enum Command {
         debug: bool,
     },
     /// Reattach to a running agent's session
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin hardline jackin-agent-smith
+  jackin hardline jackin-agent-smith-clone-1"
+    )]
     Hardline {
         /// Name of the running container to reconnect to
         container: String,
     },
     /// Pull an agent out of the Matrix
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin eject agent-smith
+  jackin eject agent-smith --all
+  jackin eject agent-smith --purge
+  jackin eject jackin-agent-smith-clone-1"
+    )]
     Eject {
         /// Agent class selector or container name to stop
         selector: String,
@@ -81,7 +106,15 @@ pub enum Command {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
     /// Delete persisted state for an agent class
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin purge agent-smith
+  jackin purge agent-smith --all
+  jackin purge chainargos/the-architect"
+    )]
     Purge {
         /// Agent class selector (e.g. agent-smith, chainargos/agent-brown)
         selector: String,
@@ -119,14 +152,22 @@ pub enum ConfigCommand {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum WorkspaceCommand {
     /// Save a new workspace definition
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace add my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app
+  jackin workspace add monorepo --workdir /workspace --mount ~/src:/workspace --mount ~/cache:/cache:ro
+  jackin workspace add restricted --workdir ~/app --mount ~/app --allowed-agent agent-smith --default-agent agent-smith"
+    )]
     Add {
         /// Unique name for this workspace
         name: String,
         /// Working directory inside the container
         #[arg(long)]
         workdir: String,
-        /// Bind-mount spec as src:dst[:ro] (repeatable, at least one required)
+        /// Bind-mount spec as path[:ro] or src:dst[:ro] (repeatable, at least one required)
         #[arg(long = "mount", required = true)]
         mounts: Vec<String>,
         /// Restrict which agents may use this workspace (repeatable)
@@ -140,20 +181,37 @@ pub enum WorkspaceCommand {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     List,
     /// Display details of a saved workspace
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace show my-app"
+    )]
     Show {
         /// Name of the workspace to display
         name: String,
     },
     /// Modify an existing workspace
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace edit my-app --workdir ~/new-dir
+  jackin workspace edit my-app --mount ~/cache:/cache:ro
+  jackin workspace edit my-app --remove-destination /old-mount
+  jackin workspace edit my-app --allowed-agent chainargos/the-architect
+  jackin workspace edit my-app --default-agent agent-smith
+  jackin workspace edit my-app --clear-default-agent"
+    )]
     Edit {
         /// Name of the workspace to modify
         name: String,
         /// Update the container working directory
         #[arg(long)]
         workdir: Option<String>,
-        /// Add a bind-mount spec as src:dst[:ro] (repeatable)
+        /// Add a bind-mount spec as path[:ro] or src:dst[:ro] (repeatable)
         #[arg(long = "mount")]
         mounts: Vec<String>,
         /// Remove a mount by its container destination path (repeatable)
@@ -177,7 +235,13 @@ pub enum WorkspaceCommand {
         clear_default_agent: bool,
     },
     /// Delete a saved workspace
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace remove my-app"
+    )]
     Remove {
         /// Name of the workspace to delete
         name: String,
@@ -187,7 +251,14 @@ pub enum WorkspaceCommand {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum MountCommand {
     /// Register a new global mount applied to matching agents
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin config mount add gradle-cache --src ~/.gradle/caches --dst /home/claude/.gradle/caches --readonly
+  jackin config mount add secrets --src ~/.chainargos/secrets --dst /secrets --readonly --scope \"chainargos/*\""
+    )]
     Add {
         /// Unique name for this mount (used to identify it later)
         name: String,
@@ -205,7 +276,14 @@ pub enum MountCommand {
         scope: Option<String>,
     },
     /// Unregister a global mount by name
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin config mount remove gradle-cache
+  jackin config mount remove secrets --scope \"chainargos/*\""
+    )]
     Remove {
         /// Name of the mount to remove
         name: String,
