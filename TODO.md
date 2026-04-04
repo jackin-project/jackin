@@ -14,3 +14,4 @@ Individual items are tracked in [`todo/`](todo/). Each file is a self-contained 
 - [Sensitive Mount Path Warnings](todo/sensitive-mount-warnings.md) — warn before mounting `~/.ssh`, `~/.aws`, etc.
 - [Reproducibility and Provenance Pinning](todo/reproducibility-pinning.md) — commit SHA pinning for agent repos
 - [Interactive Env Vars and Resolution](todo/env-var-interpolation.md) — interactive prompts, workspace overrides, and secret resolution for env vars
+- [Custom Plugin Marketplace Support](todo/custom-plugin-marketplace.md) — auto-install GitHub-hosted plugins from `jackin.agent.toml`
