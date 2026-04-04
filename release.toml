@@ -1,4 +1,3 @@
-[workspace]
 allow-branch = ["main"]
 publish = false
 push = true
