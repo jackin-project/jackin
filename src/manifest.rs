@@ -2,6 +2,7 @@ use serde::Deserialize;
 use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AgentManifest {
     pub dockerfile: String,
     #[serde(default)]
@@ -10,11 +11,13 @@ pub struct AgentManifest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IdentityConfig {
     pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ClaudeConfig {
     #[serde(default)]
     pub plugins: Vec<String>,
@@ -95,5 +98,47 @@ mod tests {
         let manifest = AgentManifest::load(temp.path()).unwrap();
 
         assert_eq!(manifest.display_name("agent-smith"), "agent-smith");
+    }
+
+    #[test]
+    fn rejects_unknown_top_level_field() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\nunknown_field = true\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let error = AgentManifest::load(temp.path()).unwrap_err();
+
+        assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn rejects_unknown_claude_field() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\ntypo = \"oops\"\n",
+        )
+        .unwrap();
+
+        let error = AgentManifest::load(temp.path()).unwrap_err();
+
+        assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn rejects_unknown_identity_field() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[identity]\nname = \"Smith\"\ntypo = true\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let error = AgentManifest::load(temp.path()).unwrap_err();
+
+        assert!(error.to_string().contains("unknown field"));
     }
 }
