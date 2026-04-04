@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="340" viewBox="0 0 900 340">
+  <defs>
+    <linearGradient id="rainFadeLight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a6fbf" stop-opacity="0.4"/>
+      <stop offset="50%" stop-color="#2a5a9f" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#3a6fbf" stop-opacity="0.5"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Digital rain pattern -->
+  <g font-family="'JetBrains Mono', 'Fira Code', 'DejaVu Sans Mono', monospace"
+     font-size="36" fill="url(#rainFadeLight)">
+    <text x="450" y="55" text-anchor="middle">│ │╷│ │╷│ ╷  │╷│ │╷│ │╷│</text>
+    <text x="450" y="104" text-anchor="middle">│ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│</text>
+    <text x="450" y="153" text-anchor="middle">╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵</text>
+    <text x="450" y="202" text-anchor="middle" xml:space="preserve">           ╵</text>
+  </g>
+
+  <!-- Title -->
+  <text x="450" y="268"
+    font-family="'JetBrains Mono', 'Fira Code', 'DejaVu Sans Mono', monospace"
+    font-size="48" font-weight="bold" fill="#1a1a1a" letter-spacing="0.25em"
+    text-anchor="middle">j a c k i n</text>
+
+  <!-- Subtitle -->
+  <text x="450" y="318"
+    font-family="'JetBrains Mono', 'Fira Code', 'DejaVu Sans Mono', monospace"
+    font-size="28" fill="#4a6a8f" letter-spacing="0.1em"
+    text-anchor="middle" opacity="0.8">operator terminal</text>
+</svg>
