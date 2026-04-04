@@ -1,291 +1,74 @@
 # jackin
 
-`jackin` is a CLI for orchestrating AI coding agents at scale. Each agent runs in an isolated Docker container with Docker-in-Docker enabled — a self-contained world to think, build, and execute in. You're the Operator. They're already inside.
+CLI for orchestrating AI coding agents in isolated Docker containers. You're the Operator. They're already inside.
 
 Documentation: <https://www.zhokhov.com/jackin/>
 
-Reference: <https://matrix.fandom.com/wiki/Jacking_in>
+Source code: <https://github.com/donbeave/jackin>
 
-> **Current status:** jackin is built as a proof of concept around [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its first and only supported agent runtime. Support for additional agent runtimes — [Codex](https://github.com/openai/codex) and [Amp Code](https://ampcode.com) — is planned for future releases.
+> **Current status:** jackin is built as a proof of concept around [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its first and only supported agent runtime. Support for additional runtimes is [on the roadmap](https://www.zhokhov.com/jackin/reference/roadmap/).
 
-## Why
-
-AI coding agents are most productive when they can run without permission prompts — reading files, executing commands, installing packages, and making changes freely. Claude Code calls this `--dangerously-skip-permissions` mode. But running an unrestricted agent directly on your host machine means it can see your entire filesystem, access your credentials, and modify anything.
-
-jackin solves this by giving each agent its own isolated Docker container. The agent runs with full autonomy *inside* the container, but can only see the directories you explicitly mount and the tooling baked into its image. The operator controls the blast radius: which folders the agent can read or write, whether mounts are read-only, and which Docker network the agent lives on. The agent thinks it has free rein — but it's operating inside a construct you defined.
-
-## jackin vs Docker Sandboxes
-
-[Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) is the most relevant mainstream alternative. Both tools solve the same core problem — letting an agent run with real autonomy while you constrain the blast radius from the outside — but they optimize for different things.
-
-> For a detailed technical comparison including other alternatives, see [Comparison with Alternatives](https://www.zhokhov.com/jackin/guides/comparison/).
-
-The most important difference is the isolation boundary:
-
-- **Docker Sandboxes** runs each sandbox in a lightweight microVM with its own kernel and private Docker daemon.
-- **jackin** runs each agent as a Docker container plus a privileged Docker-in-Docker sidecar on your existing Docker engine.
-
-That means Docker Sandboxes has the stronger boundary. jackin intentionally accepts a weaker boundary so it can stay open, inspectable, versionable, and centered on reusable agent classes plus named workspaces.
-
-### Where jackin is stronger
-
-- **Open source and inspectable.** jackin is Apache-2.0 licensed Rust code you can read, patch, and extend.
-- **Agent classes are reusable source artifacts.** A class is a git repo with a Dockerfile and manifest, which makes it versionable, reviewable, and shareable.
-- **Workspace and tooling are separated.** The same project can use different agent classes against the same workspace without collapsing everything into one giant image.
-- **Saved workspaces are first-class.** Reusable mount layouts, allowed agents, and defaults are part of the model.
-- **Multiple long-lived agents fit the design naturally.** Reattachable parallel agents are a normal workflow, not an edge case.
-- **Host-side cache reuse helps agent builds.** jackin builds agent images on the host Docker engine, so classes sharing layers can benefit from shared cache.
-- **Interactive TUI launcher.** `jackin launch` provides a visual workspace and agent picker.
-
-### Where Docker Sandboxes is stronger
-
-- **Harder isolation boundary.** MicroVMs and a private kernel are a stronger defense than plain containers sharing the host kernel.
-- **Zero-config start.** `docker sandbox run claude ~/my-project` works with an official template and no agent repo setup.
-- **Credential isolation for supported flows.** Docker Sandboxes can proxy credentials so the raw key never enters the sandbox. jackin does not have an equivalent mechanism yet.
-- **Network policy controls.** Docker Sandboxes provides outbound HTTP/HTTPS filtering, policy modes, and request logs. jackin currently isolates agent networks but does not do domain-level egress control.
-- **Sandbox state persists more broadly.** Docker Sandboxes persists installed packages and private Docker state until you remove the sandbox. jackin mainly persists Claude state and mounted workspace files.
-
-### Important nuance
-
-- Docker Sandboxes now supports multiple named sandboxes, multiple workspace mounts, read-only mounts, custom templates, snapshots, and a private Docker daemon. Older comparisons, including earlier jackin docs, understated that.
-- Docker does not publish a fixed per-sandbox RAM baseline in the docs. Still, the architecture implies materially higher resource usage than jackin because each sandbox carries its own VM, kernel, daemon, and cache.
-- jackin should not pretend to beat a microVM on raw isolation. Its real advantages are openness, reusable agent classes, named workspaces, and a better long-lived local workflow for operators who want to shape the environment themselves.
-
-## Installation
-
-### Homebrew (macOS/Linux)
+## Install
 
 ```sh
 brew tap donbeave/tap
 brew install jackin
 ```
 
-### From source
-
-```sh
-cargo install --git https://github.com/donbeave/jackin.git
-```
+Or [build from source](https://www.zhokhov.com/jackin/getting-started/installation/) if you prefer.
 
 ## Quick Start
 
 ```sh
-# Load an agent class into the current-directory workspace
+# Load an agent into your current project directory
 jackin load agent-smith
 
-# Interactive launcher — pick a workspace and agent class from a TUI
+# Or use the interactive TUI launcher
 jackin launch
 ```
 
-## Mental Model
+That's it. jackin pulls the base image, builds the agent container, mounts your project, and drops you into Claude Code — fully autonomous inside an isolated environment.
 
-There are three core ideas in `jackin`:
+See the [Quick Start guide](https://www.zhokhov.com/jackin/getting-started/quickstart/) for common workflows and next steps.
 
-- **Agent class** — a reusable tool profile defined by an agent repo and loaded by name, such as `agent-smith`, `the-architect`, `chainargos/frontend-engineer`, or `chainargos/backend-engineer`
-- **Workspace** — the file-access boundary for a project: which host directories are mounted and where they appear in the container. A workspace can be the current-directory workspace or a saved workspace. Saved workspaces can also restrict which agent classes are allowed and set a default.
-- **Agent instance** — one running container created from an agent class and attached to one workspace
+## What It Does
 
-`agent-smith` is just the default starter class name in this project. It is not magic syntax. In a real company you might have classes like `frontend-engineer`, `backend-engineer`, `infra-operator`, or `security-reviewer`.
+- **Isolates each agent** in its own Docker container with Docker-in-Docker enabled
+- **Gives agents full autonomy** inside the container boundary (`--dangerously-skip-permissions`)
+- **Separates tooling from file access** — agent classes define the environment, workspaces define which files are visible
+- **Supports multiple agents simultaneously** — different tool profiles against the same or different projects
+- **Persists agent state** between sessions (Claude history, GitHub CLI auth, plugins)
 
-This distinction matters because `jackin` isolates two different things on purpose.
+Learn more: [Why jackin?](https://www.zhokhov.com/jackin/getting-started/why/) · [Core Concepts](https://www.zhokhov.com/jackin/getting-started/concepts/) · [Security Model](https://www.zhokhov.com/jackin/guides/security-model/) · [Comparison with Alternatives](https://www.zhokhov.com/jackin/guides/comparison/)
 
-- A workspace answers: **which files can this agent see?**
-- An agent class answers: **which tools, defaults, plugins, and runtime behavior does this agent have?**
+## Ecosystem
 
-That separation is useful even when the project stays the same. One project can intentionally use multiple agent classes:
+| Repository | Description |
+|---|---|
+| [jackin](https://github.com/donbeave/jackin) | CLI source code (this repo) |
+| [jackin-agent-smith](https://github.com/donbeave/jackin-agent-smith) | Default general-purpose agent |
+| [jackin-the-architect](https://github.com/donbeave/jackin-the-architect) | Rust development agent (used for jackin development) |
+| [homebrew-tap](https://github.com/donbeave/homebrew-tap) | Homebrew formulae for installing jackin |
+| [construct image source](https://github.com/donbeave/jackin/tree/main/docker/construct) | Shared base Docker image for all agents |
 
-- `chainargos/frontend-engineer` can mount the same monorepo workspace but carry Node, Playwright, design-system tooling, and UI-focused plugins
-- `chainargos/backend-engineer` can mount that same workspace but carry Rust or Go tooling, database clients, and backend-oriented plugins
+## Documentation
 
-This is not duplication. It is how you create a smaller, more relevant runtime surface for the agent. A kitchen-sink image with every tool and every plugin gives the model more surface area to inspect and react to. A narrower environment usually produces better results because more of what the agent sees is relevant to the task.
+The full documentation lives at **<https://www.zhokhov.com/jackin/>** and covers:
 
-This is also useful for controlling plugin behavior. If one agent class includes a privileged plugin or tool and another agent class does not, the second container genuinely cannot load it because it is not installed there. That is often more reliable than trying to "mostly disable" tools in one giant shared image.
-
-## Construct
-
-`donbeave/jackin-construct:trixie` is the shared base image for every agent repo. In The Matrix, the construct is the base simulated environment you load before a mission. That maps directly to `jackin`'s shared runtime image: every agent starts from the same construct before layering on its own specialized environment.
-
-## Commands
-
-### Loading Agents
-
-```sh
-# Current directory as workspace
-jackin load agent-smith
-
-# Direct path
-jackin load agent-smith ~/Projects/my-app
-
-# Path with custom container destination
-jackin load agent-smith ~/Projects/my-app:/app
-
-# Saved workspace
-jackin load agent-smith big-monorepo
-
-# Saved workspace with additional mounts
-jackin load agent-smith big-monorepo --mount ~/extra-data
-
-# Path with additional mounts
-jackin load agent-smith ~/app --mount ~/cache:/cache:ro
-
-# Interactive launcher
-jackin launch
-```
-
-### Managing Running Agent Instances
-
-```sh
-# Reattach to a running agent
-jackin hardline agent-smith
-
-# Stop an agent
-jackin eject agent-smith
-
-# Stop all instances of an agent class
-jackin eject agent-smith --all
-
-# Stop and delete persisted state
-jackin eject agent-smith --purge
-
-# Stop every running agent
-jackin exile
-
-# Delete persisted state without stopping
-jackin purge agent-smith
-```
-
-### Workspaces
-
-```sh
-# Save a workspace — workdir is auto-mounted at the same path
-jackin workspace add my-app --workdir ~/Projects/my-app
-
-# Add extra mounts alongside the auto-mounted workdir
-jackin workspace add my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
-
-# Disable auto-mount to control all mounts explicitly
-jackin workspace add monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
-
-# Restrict which agent classes can use a workspace
-jackin workspace add secure --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith
-
-# List, show, edit, remove
-jackin workspace list
-jackin workspace show my-app
-jackin workspace edit my-app --mount ~/new-cache:/cache:ro
-jackin workspace remove my-app
-```
-
-By default, `workspace add` automatically mounts the `--workdir` path into the container at the same location. This keeps the host and container directory layouts identical, which is the common case. Pass `--no-workdir-mount` when you need the workdir to differ from the mount layout (e.g. `--workdir /workspace` with `--mount ~/src:/workspace`).
-
-### Global Mounts
-
-```sh
-# Add a global mount applied to all agents
-jackin config mount add gradle-cache --src ~/.gradle/caches --dst /home/claude/.gradle/caches --readonly
-
-# Scope a mount to specific agents
-jackin config mount add secrets --src ~/.chainargos/secrets --dst /secrets --readonly --scope "chainargos/*"
-
-# List and remove
-jackin config mount list
-jackin config mount remove gradle-cache
-```
-
-### Mount Spec Format
-
-The `--mount` flag accepts two formats:
-
-- **`path`** — mounts the path identically in the container (e.g. `~/Projects/my-app` becomes `~/Projects/my-app:~/Projects/my-app`)
-- **`src:dst`** — explicit host and container paths (e.g. `~/src:/workspace/src`)
-
-Append `:ro` to make a mount read-only (e.g. `~/cache:/cache:ro`).
-
-## Workspaces
-
-`jackin launch` is the fastest way to start work. It shows two kinds of workspace choices:
-
-- `Current directory` — a synthetic workspace that mounts the current directory to the same absolute path inside the container and uses that path as `workdir`
-- saved workspaces — named local definitions stored in `~/.config/jackin/config.toml`
-
-The current-directory flow is great when you want to move fast from inside a project. But saved workspaces are more than shortcuts. They let you name a project boundary once and reuse it predictably.
-
-A saved workspace is useful when you want to:
-
-- launch the same project from anywhere without retyping mounts
-- keep a multi-mount layout consistent across sessions
-- let `jackin launch` auto-detect and preselect the right project
-- set a default agent class for that project
-- restrict sensitive workspaces to a smaller set of agent classes
-
-`launch` is the human-first flow: pick a workspace, preview mounts and `workdir`, then choose an agent class. `load` stays the explicit terminal-first path: pass a path, a `path:container-dest` mapping, or a saved workspace name as the optional second argument. Use `--mount` to layer additional mounts on top of any target type.
-
-Saved workspaces are local operator config. They define mounts, `workdir`, and optional allowed/default agent classes.
-
-One useful pattern is to reuse the same workspace with different agent classes:
-
-- `jackin load chainargos/frontend-engineer big-monorepo` for UI work
-- `jackin load chainargos/backend-engineer big-monorepo` for API or database work
-
-Another pattern is the opposite: reuse one agent class across many workspaces when the tooling stays the same but the projects differ.
-
-## Naming Convention
-
-Agent repos follow the `jackin-{class-name}` naming convention on GitHub:
-
-- `jackin-agent-smith` — the default agent
-- `jackin-neo` — a custom agent named "neo"
-- `chainargos/jackin-backend-engineer` — a namespaced agent
-
-The class name is what you use with `jackin load`. The repo name adds the `jackin-` prefix for discoverability.
-
-## Agent Identity
-
-Agents can declare a display name in `jackin.agent.toml`:
-
-```toml
-[identity]
-name = "Agent Smith"
-```
-
-This name is used for visualization in jackin. When omitted, the class selector name is used instead.
-
-## Storage
-
-- `~/.config/jackin/config.toml` — operator config.
-- `~/.jackin/agents/...` — cached agent repositories.
-- `~/.jackin/data/<container-name>/` — persisted `.claude`, `.claude.json`, `.config/gh`, and `plugins.json` for one agent instance.
-
-## Agent Repo Contract
-
-Each agent repo must contain:
-
-- `jackin.agent.toml`
-- a Dockerfile at the path declared by `jackin.agent.toml`
-
-The manifest Dockerfile path must be relative and must stay inside the repo checkout.
-
-Derived build-context generation currently rejects symlinks in the agent repo instead of following or preserving them.
-
-Cached agent repos must stay clean. If the cached checkout's `origin` no longer matches the configured repo, or if the cache contains local changes or extra files, `jackin` refuses to load it until you clean or remove that cache directory.
-
-The final Dockerfile stage must literally be `FROM donbeave/jackin-construct:trixie`, optionally with an alias such as `FROM donbeave/jackin-construct:trixie AS runtime`. Earlier stages may use any base image.
-
-`agent-smith`-style agent repos only own their agent-specific environment layer. `jackin` owns the runtime wiring around that layer: validating the repo contract, generating the derived Dockerfile, installing Claude into the derived image, injecting the runtime entrypoint, mounting the resolved workspace paths into the runtime container, mounting persisted `.claude`, `.claude.json`, `.config/gh`, and `plugins.json`, and wiring the per-agent Docker-in-Docker runtime.
+- [Installation](https://www.zhokhov.com/jackin/getting-started/installation/) — all install methods and prerequisites
+- [Core Concepts](https://www.zhokhov.com/jackin/getting-started/concepts/) — operators, agents, constructs, and workspaces
+- [Commands](https://www.zhokhov.com/jackin/commands/load/) — complete CLI reference
+- [Creating Agents](https://www.zhokhov.com/jackin/developing/creating-agents/) — build your own agent repos
+- [The Construct Image](https://www.zhokhov.com/jackin/developing/construct-image/) — what's inside the shared base image
+- [Architecture](https://www.zhokhov.com/jackin/reference/architecture/) — how jackin orchestrates containers and networks
 
 ## Development
 
-To develop and test jackin itself, use [The Architect](https://github.com/donbeave/jackin-the-architect) — a dedicated agent with the full Rust toolchain:
+To develop jackin itself, use [The Architect](https://github.com/donbeave/jackin-the-architect) — a dedicated agent with the full Rust toolchain:
 
 ```sh
 jackin load the-architect
 ```
-
-## Roadmap
-
-- [x] Claude Code agent runtime
-- [ ] [Codex](https://github.com/openai/codex) agent runtime
-- [ ] [Amp Code](https://ampcode.com) agent runtime
-- [ ] Kubernetes platform support
 
 ## License
 
