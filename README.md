@@ -1,4 +1,4 @@
-# jackin
+# jackin'
 
 Matrix-inspired CLI for orchestrating AI coding agents in isolated Docker containers. You're the Operator. They're already inside.
 
