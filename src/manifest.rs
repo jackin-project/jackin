@@ -50,6 +50,11 @@ pub struct ClaudeConfig {
     pub plugins: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ManifestWarning {
+    pub message: String,
+}
+
 impl AgentManifest {
     pub fn load(repo_dir: &Path) -> anyhow::Result<Self> {
         let manifest_path = repo_dir.join("jackin.agent.toml");
@@ -61,6 +66,118 @@ impl AgentManifest {
         self.identity
             .as_ref()
             .map_or_else(|| fallback.to_string(), |id| id.name.clone())
+    }
+
+    pub fn validate(&self) -> anyhow::Result<Vec<ManifestWarning>> {
+        let mut warnings = Vec::new();
+
+        for (name, decl) in &self.env {
+            // Non-interactive without default is an error
+            if !decl.interactive && decl.default_value.is_none() {
+                anyhow::bail!(
+                    "env var {name}: non-interactive variable must have a default value"
+                );
+            }
+
+            // options without interactive is an error
+            if !decl.interactive && !decl.options.is_empty() {
+                anyhow::bail!(
+                    "env var {name}: options requires interactive = true"
+                );
+            }
+
+            // prompt without interactive is a warning
+            if !decl.interactive && decl.prompt.is_some() {
+                warnings.push(ManifestWarning {
+                    message: format!("env var {name}: prompt is ignored without interactive = true"),
+                });
+            }
+
+            // skippable without interactive is a warning
+            if !decl.interactive && decl.skippable {
+                warnings.push(ManifestWarning {
+                    message: format!(
+                        "env var {name}: skippable is meaningless without interactive = true"
+                    ),
+                });
+            }
+
+            // Validate depends_on entries
+            for dep in &decl.depends_on {
+                // Must have env. prefix
+                let Some(dep_name) = dep.strip_prefix("env.") else {
+                    anyhow::bail!(
+                        "env var {name}: depends_on entry \"{dep}\" must use env. prefix (e.g., \"env.{dep}\")"
+                    );
+                };
+
+                // Self-reference
+                if dep_name == name {
+                    anyhow::bail!("env var {name}: depends_on cannot reference self");
+                }
+
+                // Dangling reference
+                if !self.env.contains_key(dep_name) {
+                    anyhow::bail!(
+                        "env var {name}: depends_on references unknown env var \"{dep_name}\""
+                    );
+                }
+            }
+        }
+
+        // Cycle detection via topological sort (Kahn's algorithm)
+        self.detect_env_cycles()?;
+
+        Ok(warnings)
+    }
+
+    fn detect_env_cycles(&self) -> anyhow::Result<()> {
+        use std::collections::{HashMap, VecDeque};
+
+        let mut in_degree: HashMap<&str, usize> = HashMap::new();
+        let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+
+        for name in self.env.keys() {
+            in_degree.entry(name.as_str()).or_insert(0);
+            adjacency.entry(name.as_str()).or_default();
+        }
+
+        for (name, decl) in &self.env {
+            for dep in &decl.depends_on {
+                if let Some(dep_name) = dep.strip_prefix("env.") {
+                    adjacency.entry(dep_name).or_default().push(name.as_str());
+                    *in_degree.entry(name.as_str()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        let mut queue: VecDeque<&str> = in_degree
+            .iter()
+            .filter(|&(_, &deg)| deg == 0)
+            .map(|(&name, _)| name)
+            .collect();
+
+        let mut visited = 0usize;
+
+        while let Some(node) = queue.pop_front() {
+            visited += 1;
+            if let Some(neighbors) = adjacency.get(node) {
+                for &neighbor in neighbors {
+                    if let Some(deg) = in_degree.get_mut(neighbor) {
+                        *deg -= 1;
+                        if *deg == 0 {
+                            queue.push_back(neighbor);
+                        }
+                    }
+                }
+            }
+        }
+
+        if visited != self.env.len() {
+            anyhow::bail!("env var dependency cycle detected");
+        }
+
+        Ok(())
     }
 }
 
@@ -304,5 +421,148 @@ mod tests {
         let error = AgentManifest::load(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn validate_rejects_non_interactive_without_default() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let result = manifest.validate();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("FOO"));
+    }
+
+    #[test]
+    fn validate_rejects_options_without_interactive() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\ndefault = \"bar\"\noptions = [\"a\", \"b\"]\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let result = manifest.validate();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("options"));
+    }
+
+    #[test]
+    fn validate_rejects_dangling_depends_on() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.BRANCH]\ninteractive = true\ndepends_on = [\"env.NONEXISTENT\"]\nprompt = \"Branch:\"\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let result = manifest.validate();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("NONEXISTENT"));
+    }
+
+    #[test]
+    fn validate_rejects_self_referencing_depends_on() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\ninteractive = true\ndepends_on = [\"env.FOO\"]\nprompt = \"Value:\"\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let result = manifest.validate();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("self"));
+    }
+
+    #[test]
+    fn validate_rejects_dependency_cycle() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.A]\ninteractive = true\ndepends_on = [\"env.B\"]\nprompt = \"A:\"\n\n[env.B]\ninteractive = true\ndepends_on = [\"env.A\"]\nprompt = \"B:\"\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let result = manifest.validate();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cycle"));
+    }
+
+    #[test]
+    fn validate_rejects_depends_on_without_env_prefix() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.PROJECT]\ninteractive = true\nprompt = \"Project:\"\n\n[env.BRANCH]\ninteractive = true\ndepends_on = [\"PROJECT\"]\nprompt = \"Branch:\"\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let result = manifest.validate();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("env."));
+    }
+
+    #[test]
+    fn validate_accepts_valid_manifest_with_env() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.CLAUDE_ENV]\ndefault = \"docker\"\n\n[env.PROJECT]\ninteractive = true\noptions = [\"a\", \"b\"]\nprompt = \"Pick:\"\n\n[env.BRANCH]\ninteractive = true\ndepends_on = [\"env.PROJECT\"]\nprompt = \"Branch:\"\ndefault = \"main\"\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let warnings = manifest.validate().unwrap();
+
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn validate_warns_on_prompt_without_interactive() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\ndefault = \"bar\"\nprompt = \"This is ignored\"\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let warnings = manifest.validate().unwrap();
+
+        assert!(!warnings.is_empty());
+        assert!(warnings[0].message.contains("prompt"));
+    }
+
+    #[test]
+    fn validate_warns_on_skippable_without_interactive() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\ndefault = \"bar\"\nskippable = true\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let warnings = manifest.validate().unwrap();
+
+        assert!(!warnings.is_empty());
+        assert!(warnings[0].message.contains("skippable"));
     }
 }
