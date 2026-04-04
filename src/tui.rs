@@ -679,9 +679,7 @@ pub fn prompt_choice(message: &str, options: &[&str]) -> anyhow::Result<usize> {
     use std::io::{BufRead, IsTerminal};
 
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!(
-            "ambiguous target requires interactive input, but stdin is not a terminal"
-        );
+        anyhow::bail!("ambiguous target requires interactive input, but stdin is not a terminal");
     }
 
     eprintln!("{message}");
@@ -697,7 +695,13 @@ pub fn prompt_choice(message: &str, options: &[&str]) -> anyhow::Result<usize> {
     let index: usize = trimmed
         .parse::<usize>()
         .ok()
-        .and_then(|n| if n >= 1 && n <= options.len() { Some(n - 1) } else { None })
+        .and_then(|n| {
+            if n >= 1 && n <= options.len() {
+                Some(n - 1)
+            } else {
+                None
+            }
+        })
         .ok_or_else(|| anyhow::anyhow!("invalid choice: {trimmed:?}"))?;
 
     Ok(index)

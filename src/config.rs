@@ -2,8 +2,8 @@ use crate::paths::JackinPaths;
 use crate::selector::ClassSelector;
 use crate::workspace::{WorkspaceConfig, WorkspaceEdit, expand_tilde, validate_workspace_config};
 use serde::{Deserialize, Serialize};
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 
 pub use crate::workspace::MountConfig;
 
@@ -115,7 +115,10 @@ impl AppConfig {
             .ok_or_else(|| anyhow::anyhow!("unknown selector {}", selector.key()))?;
 
         let source = AgentSource {
-            git: format!("https://github.com/{namespace}/jackin-{}.git", selector.name),
+            git: format!(
+                "https://github.com/{namespace}/jackin-{}.git",
+                selector.name
+            ),
         };
         self.agents.insert(selector.key(), source.clone());
         Ok((source, true))
@@ -600,7 +603,7 @@ readonly = true
             }],
             allowed_agents: vec![],
             default_agent: None,
-                last_agent: None,
+            last_agent: None,
         };
 
         let error =
@@ -631,7 +634,7 @@ readonly = true
                     }],
                     allowed_agents: vec![],
                     default_agent: None,
-                last_agent: None,
+                    last_agent: None,
                 },
             )
             .unwrap();
@@ -729,7 +732,7 @@ dst = "/workspace/src"
             }],
             allowed_agents: vec!["agent-smith".to_string()],
             default_agent: Some("agent-smith".to_string()),
-                last_agent: None,
+            last_agent: None,
         };
         config
             .add_workspace("big-monorepo", original.clone())
@@ -765,7 +768,7 @@ dst = "/workspace/src"
             }],
             allowed_agents: vec![],
             default_agent: None,
-                last_agent: None,
+            last_agent: None,
         };
         config
             .add_workspace("big-monorepo", original.clone())
@@ -783,7 +786,7 @@ dst = "/workspace/src"
                     }],
                     allowed_agents: vec!["agent-smith".to_string()],
                     default_agent: Some("agent-smith".to_string()),
-                last_agent: None,
+                    last_agent: None,
                 },
             )
             .unwrap_err();
@@ -812,7 +815,7 @@ dst = "/workspace/src"
             }],
             allowed_agents: vec![],
             default_agent: None,
-                last_agent: None,
+            last_agent: None,
         };
         config
             .add_workspace("big-monorepo", original.clone())
@@ -862,7 +865,7 @@ dst = "/workspace/src"
             }],
             allowed_agents: vec![],
             default_agent: None,
-                last_agent: None,
+            last_agent: None,
         };
         config
             .add_workspace("big-monorepo", original.clone())

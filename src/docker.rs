@@ -23,7 +23,6 @@ pub struct ShellRunner {
     pub capture_timeout: Option<Duration>,
 }
 
-
 impl ShellRunner {
     fn build_command(program: &str, args: &[&str], cwd: Option<&Path>) -> std::process::Command {
         let mut command = std::process::Command::new(program);
@@ -38,7 +37,10 @@ impl ShellRunner {
         if self.debug {
             let cmd = format!("{} {}", program, args.join(" "));
             if let Some(dir) = cwd {
-                eprintln!("{}", format!("[debug] cd {} && {}", dir.display(), cmd).dimmed());
+                eprintln!(
+                    "{}",
+                    format!("[debug] cd {} && {}", dir.display(), cmd).dimmed()
+                );
             } else {
                 eprintln!("{}", format!("[debug] {cmd}").dimmed());
             }
