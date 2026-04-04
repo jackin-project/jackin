@@ -33,6 +33,12 @@ fi
 
 run_maybe_quiet /home/claude/install-plugins.sh
 
+# Run pre-launch hook if present
+if [ -x /home/claude/.jackin-runtime/pre-launch.sh ]; then
+    echo "Running pre-launch hook..."
+    /home/claude/.jackin-runtime/pre-launch.sh
+fi
+
 printf '\033[2J\033[H'
 
 exec env CLAUDE_ENV=docker claude --dangerously-skip-permissions --verbose
