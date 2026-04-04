@@ -65,6 +65,7 @@ jackin's architecture is shaped by a few explicit decisions:
 │  Derived Layer (jackin-managed) │
 │  - UID/GID remapping            │
 │  - Claude Code installation     │
+│  - Pre-launch hook (if declared)│
 │  - Runtime entrypoint           │
 │  - Plugin bootstrap             │
 ├─────────────────────────────────┤
@@ -91,13 +92,14 @@ That means an agent class defines the tools and conventions, while jackin' injec
 ### Loading an agent
 
 1. **Resolve agent class** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
-2. **Validate the repo contract** — require `jackin.agent.toml` and a valid Dockerfile path
-3. **Generate a derived build context** — copy the repo, inject runtime assets, and render a derived Dockerfile
-4. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
-5. **Create a per-agent Docker network**
-6. **Start a privileged `docker:dind` sidecar**
-7. **Start the agent container** — mounts, env vars, labels, and `DOCKER_HOST` all point at the sidecar
-8. **Run Claude Code with full permissions inside that boundary**
+2. **Validate the repo contract** — require `jackin.agent.toml` and a valid Dockerfile path, validate manifest strictly
+3. **Resolve environment variables** — prompt the user for interactive env vars declared in the manifest
+4. **Generate a derived build context** — copy the repo, inject runtime assets (entrypoint + pre-launch hook), and render a derived Dockerfile
+5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
+6. **Create a per-agent Docker network**
+7. **Start a privileged `docker:dind` sidecar**
+8. **Start the agent container** — mounts, resolved env vars, labels, and `DOCKER_HOST` all point at the sidecar
+9. **Run Claude Code with full permissions inside that boundary**
 
 ### Reconnecting
 
