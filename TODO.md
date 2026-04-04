@@ -13,3 +13,4 @@ Individual items are tracked in [`todo/`](todo/). Each file is a self-contained 
 - [Rootless DinD Research](todo/rootless-dind.md) — reduce privileged container attack surface
 - [Sensitive Mount Path Warnings](todo/sensitive-mount-warnings.md) — warn before mounting `~/.ssh`, `~/.aws`, etc.
 - [Reproducibility and Provenance Pinning](todo/reproducibility-pinning.md) — commit SHA pinning for agent repos
+- [Interactive Env Vars and Resolution](todo/env-var-interpolation.md) — interactive prompts, workspace overrides, and secret resolution for env vars
