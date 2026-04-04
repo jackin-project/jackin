@@ -22,8 +22,8 @@ use selector::{ClassSelector, Selector};
 use std::io::ErrorKind;
 use std::path::Path;
 use workspace::{
-    LoadWorkspaceInput, WorkspaceConfig, WorkspaceEdit, expand_tilde,
-    parse_mount_spec_resolved, resolve_path,
+    LoadWorkspaceInput, WorkspaceConfig, WorkspaceEdit, expand_tilde, parse_mount_spec_resolved,
+    resolve_path,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
