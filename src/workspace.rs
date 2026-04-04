@@ -330,7 +330,7 @@ mod tests {
         config.agents.insert(
             "agent-smith".to_string(),
             crate::config::AgentSource {
-                git: "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
+                git: "https://github.com/donbeave/jackin-agent-smith.git".to_string(),
             },
         );
         config.workspaces.insert(
@@ -371,7 +371,7 @@ mod tests {
         config.agents.insert(
             "agent-smith".to_string(),
             crate::config::AgentSource {
-                git: "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
+                git: "https://github.com/donbeave/jackin-agent-smith.git".to_string(),
             },
         );
         config.workspaces.insert(
@@ -476,7 +476,7 @@ mod tests {
         config.agents.insert(
             "agent-smith".to_string(),
             crate::config::AgentSource {
-                git: "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
+                git: "https://github.com/donbeave/jackin-agent-smith.git".to_string(),
             },
         );
         config.workspaces.insert(
