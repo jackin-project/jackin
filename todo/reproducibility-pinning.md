@@ -22,6 +22,6 @@ The current agent repo flow tracks moving branches (typically `main`) by default
 
 ## Related Files
 
-- `src/runtime.rs` — `resolve_agent_source()`, repo checkout logic
-- `src/config.rs` — agent config would need commit SHA field
+- `src/config.rs` — `resolve_agent_source()`, agent config would need commit SHA field
+- `src/runtime.rs` — repo checkout logic, calls `resolve_agent_source()`
 - `src/manifest.rs` — version/provenance metadata
