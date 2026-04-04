@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -10,6 +11,24 @@ pub struct AgentManifest {
     pub claude: ClaudeConfig,
     #[serde(default)]
     pub hooks: Option<HooksConfig>,
+    #[serde(default)]
+    pub env: BTreeMap<String, EnvVarDecl>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvVarDecl {
+    #[serde(rename = "default")]
+    pub default_value: Option<String>,
+    #[serde(default)]
+    pub interactive: bool,
+    #[serde(default)]
+    pub skippable: bool,
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub options: Vec<String>,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -187,6 +206,98 @@ mod tests {
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[hooks]\npre_launch = \"hooks/pre-launch.sh\"\npost_launch = \"bad\"\n",
+        )
+        .unwrap();
+
+        let error = AgentManifest::load(temp.path()).unwrap_err();
+
+        assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn loads_manifest_with_static_env() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.CLAUDE_ENV]\ndefault = \"docker\"\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        assert_eq!(manifest.env.len(), 1);
+        let var = &manifest.env["CLAUDE_ENV"];
+        assert_eq!(var.default_value.as_deref(), Some("docker"));
+        assert!(!var.interactive);
+    }
+
+    #[test]
+    fn loads_manifest_with_interactive_env() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.PROJECT]\ninteractive = true\nprompt = \"Select a project:\"\noptions = [\"project1\", \"project2\"]\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        let var = &manifest.env["PROJECT"];
+        assert!(var.interactive);
+        assert_eq!(var.prompt.as_deref(), Some("Select a project:"));
+        assert_eq!(var.options, vec!["project1", "project2"]);
+    }
+
+    #[test]
+    fn loads_manifest_with_env_depends_on() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.PROJECT]\ninteractive = true\nprompt = \"Select:\"\noptions = [\"a\", \"b\"]\n\n[env.BRANCH]\ninteractive = true\ndepends_on = [\"env.PROJECT\"]\nprompt = \"Branch:\"\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        let var = &manifest.env["BRANCH"];
+        assert_eq!(var.depends_on, vec!["env.PROJECT"]);
+    }
+
+    #[test]
+    fn loads_manifest_with_skippable_env() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.API_KEY]\ninteractive = true\nskippable = true\nprompt = \"API key (optional):\"\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        let var = &manifest.env["API_KEY"];
+        assert!(var.skippable);
+    }
+
+    #[test]
+    fn loads_manifest_without_env() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        assert!(manifest.env.is_empty());
+    }
+
+    #[test]
+    fn rejects_unknown_env_field() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\ndefault = \"bar\"\ntypo = true\n",
         )
         .unwrap();
 
