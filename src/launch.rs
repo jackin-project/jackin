@@ -660,6 +660,15 @@ fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
     frame.render_stateful_widget(agent_list, list_area, &mut agent_state);
 
     // Footer
+    render_agent_footer(frame, root[5]);
+}
+
+fn render_agent_footer(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    use ratatui::layout::Alignment;
+    use ratatui::style::{Modifier, Style};
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::Paragraph;
+
     let footer = Paragraph::new(Line::from(vec![
         Span::styled(
             "  Enter ",
@@ -691,7 +700,7 @@ fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         Span::styled("back", Style::default().fg(colors::DIM_GREEN)),
     ]))
     .alignment(Alignment::Center);
-    frame.render_widget(footer, root[5]);
+    frame.render_widget(footer, area);
 }
 
 // ── Layout helpers ─────────────────────────────────────────────────────
