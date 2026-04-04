@@ -58,16 +58,16 @@ pub fn resolve_path(path: &str) -> String {
 }
 
 pub fn parse_mount_spec(spec: &str) -> anyhow::Result<MountConfig> {
-    parse_mount_spec_inner(spec, false)
+    Ok(parse_mount_spec_inner(spec, false))
 }
 
 /// Like [`parse_mount_spec`] but also resolves relative paths to absolute.
 /// Use this for CLI arguments where the user may pass relative paths.
 pub fn parse_mount_spec_resolved(spec: &str) -> anyhow::Result<MountConfig> {
-    parse_mount_spec_inner(spec, true)
+    Ok(parse_mount_spec_inner(spec, true))
 }
 
-fn parse_mount_spec_inner(spec: &str, resolve: bool) -> anyhow::Result<MountConfig> {
+fn parse_mount_spec_inner(spec: &str, resolve: bool) -> MountConfig {
     let (raw, readonly) = spec
         .strip_suffix(":ro")
         .map_or((spec, false), |value| (value, true));
@@ -82,11 +82,11 @@ fn parse_mount_spec_inner(spec: &str, resolve: bool) -> anyhow::Result<MountConf
         dst.to_string()
     };
 
-    Ok(MountConfig {
+    MountConfig {
         src: expanded_src,
         dst,
         readonly,
-    })
+    }
 }
 
 /// Structural validation: absolute paths, no duplicate destinations.
