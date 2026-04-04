@@ -18,7 +18,7 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { Aside, Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 ## Why jackin?
 
@@ -48,6 +48,10 @@ That separation is the point. A backend agent and frontend agent can work on the
   </Card>
 </CardGrid>
 
+<Aside>
+jackin is intentionally transparent about its tradeoffs. It is a container-based isolation model, not a microVM sandbox. If you want the honest comparison with Docker Sandboxes and related approaches, read [Comparison with Alternatives](/jackin/guides/comparison/).
+</Aside>
+
 ## Quick start
 
 ```bash
@@ -69,4 +73,5 @@ jackin launch
   <LinkCard title="Core Concepts" href="/jackin/getting-started/concepts/" description="Understand operators, agents, and constructs" />
   <LinkCard title="Creating Agents" href="/jackin/developing/creating-agents/" description="Build your own agent repos" />
   <LinkCard title="Security Model" href="/jackin/guides/security-model/" description="How jackin keeps your system safe" />
+  <LinkCard title="Comparison" href="/jackin/guides/comparison/" description="jackin vs Docker Sandboxes and alternatives" />
 </CardGrid>
