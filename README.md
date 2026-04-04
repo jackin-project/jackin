@@ -12,6 +12,43 @@ AI coding agents are most productive when they can run without permission prompt
 
 jackin solves this by giving each agent its own isolated Docker container. The agent runs with full autonomy *inside* the container, but can only see the directories you explicitly mount and the tooling baked into its image. The operator controls the blast radius: which folders the agent can read or write, whether mounts are read-only, and which Docker network the agent lives on. The agent thinks it has free rein — but it's operating inside a construct you defined.
 
+## jackin vs Docker Sandboxes
+
+[Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) is the most relevant mainstream alternative. Both tools solve the same core problem — letting an agent run with real autonomy while you constrain the blast radius from the outside — but they optimize for different things.
+
+> For a detailed technical comparison including other alternatives, see [Comparison with Alternatives](https://donbeave.github.io/jackin/guides/comparison/).
+
+The most important difference is the isolation boundary:
+
+- **Docker Sandboxes** runs each sandbox in a lightweight microVM with its own kernel and private Docker daemon.
+- **jackin** runs each agent as a Docker container plus a privileged Docker-in-Docker sidecar on your existing Docker engine.
+
+That means Docker Sandboxes has the stronger boundary. jackin intentionally accepts a weaker boundary so it can stay open, inspectable, versionable, and centered on reusable agent classes plus named workspaces.
+
+### Where jackin is stronger
+
+- **Open source and inspectable.** jackin is Apache-2.0 licensed Rust code you can read, patch, and extend.
+- **Agent classes are reusable source artifacts.** A class is a git repo with a Dockerfile and manifest, which makes it versionable, reviewable, and shareable.
+- **Workspace and tooling are separated.** The same project can use different agent classes against the same workspace without collapsing everything into one giant image.
+- **Saved workspaces are first-class.** Reusable mount layouts, allowed agents, and defaults are part of the model.
+- **Multiple long-lived agents fit the design naturally.** Reattachable parallel agents are a normal workflow, not an edge case.
+- **Host-side cache reuse helps agent builds.** jackin builds agent images on the host Docker engine, so classes sharing layers can benefit from shared cache.
+- **Interactive TUI launcher.** `jackin launch` provides a visual workspace and agent picker.
+
+### Where Docker Sandboxes is stronger
+
+- **Harder isolation boundary.** MicroVMs and a private kernel are a stronger defense than plain containers sharing the host kernel.
+- **Zero-config start.** `docker sandbox run claude ~/my-project` works with an official template and no agent repo setup.
+- **Credential isolation for supported flows.** Docker Sandboxes can proxy credentials so the raw key never enters the sandbox. jackin does not have an equivalent mechanism yet.
+- **Network policy controls.** Docker Sandboxes provides outbound HTTP/HTTPS filtering, policy modes, and request logs. jackin currently isolates agent networks but does not do domain-level egress control.
+- **Sandbox state persists more broadly.** Docker Sandboxes persists installed packages and private Docker state until you remove the sandbox. jackin mainly persists Claude state and mounted workspace files.
+
+### Important nuance
+
+- Docker Sandboxes now supports multiple named sandboxes, multiple workspace mounts, read-only mounts, custom templates, snapshots, and a private Docker daemon. Older comparisons, including earlier jackin docs, understated that.
+- Docker does not publish a fixed per-sandbox RAM baseline in the docs. Still, the architecture implies materially higher resource usage than jackin because each sandbox carries its own VM, kernel, daemon, and cache.
+- jackin should not pretend to beat a microVM on raw isolation. Its real advantages are openness, reusable agent classes, named workspaces, and a better long-lived local workflow for operators who want to shape the environment themselves.
+
 ## Installation
 
 ### Homebrew (macOS/Linux)

@@ -1,113 +1,165 @@
 ---
 title: Security Model
-description: How jackin isolates agents and protects your system
+description: How jackin isolates agents and where that isolation stops
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
+## Honest boundary statement
+
+jackin provides a **container boundary**, not a **microVM boundary**.
+
+That distinction matters.
+
+jackin is useful when you trust the agent runtime itself but want to limit what it can touch on your machine. It is not the right tool to claim hypervisor-level isolation or to contain a fully hostile workload.
+
+If you need the hardest local isolation boundary available today, a microVM-based tool such as Docker Sandboxes is stronger by design.
+
 ## Isolation layers
 
-jackin's security model is built on multiple layers of isolation:
+jackin's security model is built on several layers that stack together:
 
 ### 1. Container isolation
 
 Each agent runs in its own Docker container with:
 
-- **Separate filesystem** — the agent can only see files inside the container plus explicitly mounted directories
-- **Separate process space** — the agent's processes are invisible to other containers and the host
-- **Separate network** — each agent gets its own Docker network (`jackin-{agent}-net`)
+- a separate filesystem
+- a separate process space
+- a separate Docker network
+
+The agent cannot see arbitrary host files unless you mount them.
 
 ### 2. Mount-based access control
 
-The agent can only access host directories you explicitly mount. Everything else is invisible:
+The agent can only access host paths you explicitly mount.
 
 ```bash
 # Agent can read/write ~/Projects/my-app
-# Agent can read (but not write) ~/reference
-# Agent CANNOT see ~/Documents, ~/.ssh, ~/.aws, etc.
-jackin load agent-smith ~/Projects/my-app --mount ~/reference:ro
+# Agent can read but not write ~/reference
+# Agent cannot see ~/.ssh, ~/.aws, ~/Documents, or other host paths
+jackin load agent-smith ~/Projects/my-app --mount ~/reference:/reference:ro
 ```
+
+This is the core blast-radius control in jackin.
 
 ### 3. Read-only enforcement
 
-Mounts can be marked read-only at the Docker level. This is enforced by the kernel — the agent literally cannot write to a read-only mount, regardless of what permissions Claude Code has.
+Mounts marked `:ro` are enforced by Docker and the kernel. The agent cannot write to those paths, regardless of Claude Code permissions.
 
-### 4. Network isolation
+### 4. Per-agent network separation
 
-Each agent's Docker network is isolated. The agent container and its DinD sidecar share a network, but they can't reach other agents' networks or your host network services (unless Docker is configured to allow it).
+Each runtime gets its own Docker network. The agent container and its DinD sidecar share that network, but different agents do not share a network by default.
+
+This reduces accidental cross-agent interference.
 
 ## What agents CAN do
 
-Inside their container, agents have full autonomy:
+Inside their boundary, agents have broad autonomy:
 
-- Execute any command
-- Install packages with `apt`, `npm`, `pip`, etc.
-- Build and run Docker containers (via DinD)
-- Create, modify, and delete files within their mounts
-- Access the internet (for pulling packages, cloning repos, etc.)
-- Use GitHub CLI if authenticated
+- execute arbitrary shell commands
+- install packages with `apt`, `npm`, `pip`, and similar tools
+- build and run containers through their DinD sidecar
+- modify files inside writable mounts
+- access the internet
+- use `gh` if authenticated inside the runtime
 
 ## What agents CANNOT do
 
-- Access files not mounted into the container
-- See your home directory, SSH keys, or credentials (unless you mount them)
-- Access other agents' containers or state
-- Modify files on read-only mounts
-- Access your host's Docker daemon (they use their own DinD)
-- Persist changes outside of mounted directories and the persisted state folder
+- access files that are not mounted
+- modify files on read-only mounts
+- directly access your host Docker daemon
+- directly see another agent's container or persisted state
+
+These guarantees are useful, but they are not absolute in the face of a kernel escape or Docker escape vulnerability.
 
 ## User mapping
 
-jackin maps the container user (`claude`) to your host UID/GID. This means:
+jackin remaps the container user to your host UID and GID. That means:
 
-- Files created by the agent in mounted directories are owned by your host user
-- No permission conflicts when you access files the agent created
-- The agent doesn't run as root
+- files created in mounted directories are owned by your host user
+- you avoid common permission conflicts after the agent edits files
+- the main runtime process does not run as root
 
 <Aside type="note">
-The current implementation creates the user in the construct image at UID 1000, then remaps to your host UID in the derived image. This is a known technical debt item being addressed.
+The current implementation creates the user in the construct image and then remaps it in the derived image. This is known technical debt and is on the roadmap to simplify.
 </Aside>
 
-## State persistence
+## What persists and what does not
 
-Agent state is stored at `~/.jackin/data/<container-name>/` on your host. This includes Claude's session history and settings, plugin state, and GitHub CLI state if you authenticate inside the container. This persisted state is:
+jackin persists state at `~/.jackin/data/<container-name>/`. Today that includes:
 
-- Local to your machine (not shared)
-- Mountable back into the container on next load
-- Deletable with `jackin purge` for a clean start
+- `.claude/`
+- `.claude.json`
+- `.config/gh/`
+- `plugins.json`
 
-This means Jackin does **not** mount host credentials by default, but credentials acquired by tools inside the container can persist for that agent instance across sessions.
+That means Claude conversation state and `gh` state can survive across sessions.
+
+But several important things do **not** persist:
+
+- the mutable root filesystem of the runtime container
+- packages installed interactively into the running container
+- DinD images and containers created during that session
+
+This is a deliberate trade-off. jackin is biased toward reproducible agent images and explicit workspace mounts, not long-lived mutable sandboxes.
+
+## Current implementation constraints
+
+These are the parts of the security story that should be stated bluntly.
+
+### Privileged DinD sidecar
+
+jackin launches a privileged `docker:dind` sidecar per agent. The agent talks to it over plain TCP inside the per-agent network.
+
+That keeps the agent away from your host Docker daemon, which is good. But it is still a privileged sidecar, and DinD TLS is not implemented yet.
+
+### Open outbound network by default
+
+jackin does not currently provide per-agent allowlists, denylists, private-network blocking, or request logs for outbound traffic.
+
+If an agent can read a mounted secret and the network path is open, jackin cannot stop exfiltration.
+
+### Direct bind mounts, not snapshots
+
+Mounted files are live host files. If the agent edits a mounted path, the host file changes immediately. There is no snapshot or rollback layer between the runtime and the mount.
+
+### Credentials obtained inside the runtime remain inside the runtime
+
+jackin does not mount host credentials by default, which is good.
+
+But if you authenticate a tool like `gh` inside the runtime, that credential becomes readable by that runtime and persists in jackin state until you purge it.
 
 ## Threat model
 
-jackin is designed to protect against:
+jackin is designed to reduce the most common operator risks:
 
-| Threat | Mitigation |
-|---|---|
-| Agent reads sensitive files | Only mounted directories are visible |
-| Agent modifies system files | Container filesystem is isolated |
-| Agent accesses host credentials | No host credentials unless explicitly mounted |
-| Agent installs malware | Contained within the ephemeral container |
-| Agent exfiltrates data | Only mounted data is accessible (network access is open) |
-| Agent affects other agents | Separate containers, networks, and state |
+| Threat | Mitigation | Residual risk |
+|---|---|---|
+| Agent reads unrelated host files | Only mounted paths are visible | Sensitive data inside mounted paths is still readable |
+| Agent edits system files | Runtime filesystem is isolated | Writable host mounts still change immediately |
+| Agent reaches host Docker daemon | Agent uses its own DinD sidecar | DinD sidecar itself is privileged |
+| Agent interferes with another agent | Separate containers, networks, and state | Shared host kernel remains a common lower layer |
+| Agent persists random system changes | Runtime root filesystem is ephemeral | Persisted tool state and mounted files still survive |
 
-### What jackin does NOT protect against
+## What jackin does NOT protect against
 
 <Aside type="caution">
-jackin provides container-level isolation, not VM-level isolation. Be aware of these limitations.
+This is where people often over-claim container isolation. Don't do that. jackin is useful, but it is not magical.
 </Aside>
 
-- **Container escape vulnerabilities** — if a Docker container escape 0-day exists, the agent could potentially break out. This is a Docker-level concern, not specific to jackin.
-- **Network exfiltration** — agents can access the internet. If an agent reads a sensitive file you mounted and sends it to an external server, jackin cannot prevent that. Mount only what the agent needs.
-- **Shared kernel** — containers share the host kernel. Kernel-level exploits could theoretically cross boundaries.
-- **DinD without TLS** — currently, the DinD sidecar runs without TLS authentication. Any container on the agent's network can access the DinD daemon. This is a known issue being addressed.
+- **Container escape vulnerabilities** — containers share the host kernel
+- **Kernel-level exploits** — there is no hypervisor boundary
+- **Network exfiltration** — outbound access is open by default
+- **Credentials stored inside the runtime** — if you log in inside the container, the agent can potentially read what that tool stores
+- **Host-file mistakes inside writable mounts** — if you give an agent write access to a project, it can delete or rewrite that project
 
 ## Best practices
 
-1. **Mount the minimum necessary.** Only mount directories the agent actually needs.
-2. **Use read-only mounts.** If the agent only needs to read something, mount it as `:ro`.
-3. **Don't mount credential directories.** Avoid mounting `~/.ssh`, `~/.aws`, `~/.config`, or `~/.gnupg`.
-4. **Review agent repos before loading.** The Dockerfile defines what gets installed — treat it like a dependency you're adding to your project.
-5. **Split agent classes by scope.** Keep frontend, backend, infra, or review-only environments separate when they need different tools or plugins.
-6. **Use `jackin purge` periodically.** Clear persisted state for agents you no longer use.
-7. **Keep Docker updated.** Container isolation is only as strong as the Docker runtime.
+1. **Mount the minimum necessary.** Smaller visibility is the biggest win.
+2. **Prefer read-only mounts.** If the agent only needs to inspect something, mount it as `:ro`.
+3. **Do not mount credential directories.** Avoid `~/.ssh`, `~/.aws`, `~/.gnupg`, and similar paths.
+4. **Treat runtime login as sensitive.** If you authenticate inside the runtime, assume the agent can read that state.
+5. **Review agent repos before loading.** The Dockerfile defines what the runtime contains.
+6. **Split agent classes by scope.** Keep frontend, backend, infra, and review workflows in separate environments when appropriate.
+7. **Use `jackin purge` when a runtime no longer needs its persisted state.**
+8. **Keep Docker updated.** Container isolation is only as strong as the Docker runtime underneath it.
