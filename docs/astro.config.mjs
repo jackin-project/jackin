@@ -46,6 +46,7 @@ export default defineConfig({
             { label: 'Mounts', slug: 'guides/mounts' },
             { label: 'Agent Repos', slug: 'guides/agent-repos' },
             { label: 'Security Model', slug: 'guides/security-model' },
+            { label: 'Comparison with Alternatives', slug: 'guides/comparison' },
           ],
         },
         {
