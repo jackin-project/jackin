@@ -48,7 +48,6 @@ Learn more: [Why jackin?](https://www.zhokhov.com/jackin/getting-started/why/) Â
 | [jackin](https://github.com/donbeave/jackin) | CLI source code (this repo) |
 | [jackin-agent-smith](https://github.com/donbeave/jackin-agent-smith) | Default general-purpose agent |
 | [jackin-the-architect](https://github.com/donbeave/jackin-the-architect) | Rust development agent (used for jackin development) |
-| [homebrew-tap](https://github.com/donbeave/homebrew-tap) | Homebrew formulae for installing jackin |
 | [construct image source](https://github.com/donbeave/jackin/tree/main/docker/construct) | Shared base Docker image for all agents |
 
 ## Documentation
