@@ -9,8 +9,8 @@ export default defineConfig({
       title: 'jackin',
       description: 'CLI for orchestrating AI coding agents at scale',
       logo: {
-        dark: './src/assets/logo-dark.png',
-        light: './src/assets/logo-light.png',
+        dark: './src/assets/logo-dark.svg',
+        light: './src/assets/logo-light.svg',
         replacesTitle: true,
       },
       social: [
