@@ -114,7 +114,10 @@ mod tests {
         let namespaced = ClassSelector::new(Some("chainargos"), "the-architect");
         let flat = ClassSelector::new(None, "chainargos-the-architect");
 
-        assert_ne!(primary_container_name(&namespaced), primary_container_name(&flat));
+        assert_ne!(
+            primary_container_name(&namespaced),
+            primary_container_name(&flat)
+        );
     }
 
     #[test]

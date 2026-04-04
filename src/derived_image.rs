@@ -136,8 +136,7 @@ mod tests {
     #[test]
     fn renders_derived_dockerfile_installs_claude_as_claude_user() {
         let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n");
-        let install =
-            "USER claude\nARG JACKIN_CACHE_BUST=0\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version";
+        let install = "USER claude\nARG JACKIN_CACHE_BUST=0\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version";
         let copy = "USER root\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh";
 
         assert!(dockerfile.contains(install));
