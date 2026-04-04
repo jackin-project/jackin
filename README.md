@@ -283,9 +283,9 @@ jackin load the-architect
 ## Roadmap
 
 - [x] Claude Code agent runtime
-- [ ] Kubernetes platform support
 - [ ] [Codex](https://github.com/openai/codex) agent runtime
 - [ ] [Amp Code](https://ampcode.com) agent runtime
+- [ ] Kubernetes platform support
 
 ## License
 
