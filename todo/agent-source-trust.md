@@ -22,6 +22,6 @@ A trust-on-first-use model similar to `mise trust`:
 
 ## Related Files
 
-- `src/runtime.rs` — `resolve_agent_source()`
-- `src/config.rs` — trust store format
+- `src/config.rs` — `resolve_agent_source()`, trust store format
+- `src/runtime.rs` — calls `resolve_agent_source()` during agent load
 - `src/selector.rs` — namespace/name parsing
