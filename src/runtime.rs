@@ -305,9 +305,11 @@ struct LaunchContext<'a> {
     state: &'a AgentState,
     git: &'a GitIdentity,
     debug: bool,
+    resolved_env: &'a crate::env_resolver::ResolvedEnv,
 }
 
 /// Create the Docker network, start `DinD`, and launch the agent container.
+#[allow(clippy::too_many_lines)]
 fn launch_agent_runtime(
     ctx: &LaunchContext<'_>,
     steps: &mut StepCounter,
@@ -324,6 +326,7 @@ fn launch_agent_runtime(
         state,
         git,
         debug,
+        resolved_env,
     } = ctx;
     // Clean up stale resources from a previous run that wasn't cleaned up
     // (e.g. terminal closed, process killed, Ctrl+C during docker run)
@@ -396,6 +399,14 @@ fn launch_agent_runtime(
     ];
     if *debug {
         run_args.extend_from_slice(&["-e", "CLAUDE_DEBUG=1"]);
+    }
+    let mut env_strings: Vec<String> = Vec::new();
+    for (key, value) in &resolved_env.vars {
+        env_strings.push(format!("{key}={value}"));
+    }
+    for env_str in &env_strings {
+        run_args.push("-e");
+        run_args.push(env_str);
     }
     run_args.extend_from_slice(&[
         "-v",
@@ -486,6 +497,14 @@ pub fn load_agent(
     tui::print_config_table(&config_rows);
     eprintln!();
 
+    // Resolve env vars (interactive prompts happen here, before build)
+    let resolved_env = if validated_repo.manifest.env.is_empty() {
+        crate::env_resolver::ResolvedEnv { vars: vec![] }
+    } else {
+        let prompter = crate::terminal_prompter::TerminalPrompter;
+        crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
+    };
+
     let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
     let load_result = (|| -> anyhow::Result<()> {
         // Step 2: Build Docker image
@@ -507,6 +526,7 @@ pub fn load_agent(
             state: &state,
             git: &git,
             debug: opts.debug,
+            resolved_env: &resolved_env,
         };
         launch_agent_runtime(&ctx, &mut steps, runner)?;
 
