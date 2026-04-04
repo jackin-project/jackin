@@ -8,6 +8,14 @@ pub struct AgentManifest {
     #[serde(default)]
     pub identity: Option<IdentityConfig>,
     pub claude: ClaudeConfig,
+    #[serde(default)]
+    pub hooks: Option<HooksConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HooksConfig {
+    pub pre_launch: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -134,6 +142,51 @@ mod tests {
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
             "dockerfile = \"Dockerfile\"\n\n[identity]\nname = \"Smith\"\ntypo = true\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let error = AgentManifest::load(temp.path()).unwrap_err();
+
+        assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn loads_manifest_with_hooks() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[hooks]\npre_launch = \"hooks/pre-launch.sh\"\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        assert_eq!(
+            manifest.hooks.as_ref().unwrap().pre_launch.as_deref(),
+            Some("hooks/pre-launch.sh")
+        );
+    }
+
+    #[test]
+    fn loads_manifest_without_hooks() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        assert!(manifest.hooks.is_none());
+    }
+
+    #[test]
+    fn rejects_unknown_hooks_field() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[hooks]\npre_launch = \"hooks/pre-launch.sh\"\npost_launch = \"bad\"\n",
         )
         .unwrap();
 
