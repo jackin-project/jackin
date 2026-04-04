@@ -7,7 +7,7 @@ import { Aside } from '@astrojs/starlight/components';
 
 ## What is the construct?
 
-`donbeave/jackin-construct:trixie` is the shared base Docker image for every agent. In The Matrix, the construct is the white void — the base simulation loaded before a mission. In jackin, it's the foundation layer that provides system tools, shell environment, and container infrastructure.
+`donbeave/jackin-construct:trixie` is the shared base Docker image for every agent. In The Matrix, the construct is the white void — the base simulation loaded before a mission. In jackin', it's the foundation layer that provides system tools, shell environment, and container infrastructure.
 
 Every agent Dockerfile starts from the construct:
 
@@ -61,7 +61,7 @@ The construct creates a `claude` user with:
 
 ## How it's built
 
-The construct source code lives at [`docker/construct/`](https://github.com/donbeave/jackin/tree/main/docker/construct) in the jackin repository. It's automatically built and pushed to Docker Hub via GitHub Actions when changes are made to that directory.
+The construct source code lives at [`docker/construct/`](https://github.com/donbeave/jackin/tree/main/docker/construct) in the jackin' repository. It's automatically built and pushed to Docker Hub via GitHub Actions when changes are made to that directory.
 
 The image is tagged as:
 - `donbeave/jackin-construct:trixie` — the stable tag
@@ -69,7 +69,7 @@ The image is tagged as:
 
 ## The derived image layer
 
-When you load an agent, jackin doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
+When you load an agent, jackin' doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
 
 1. **User remapping** — adjusts the `claude` user's UID/GID to match your host user
 2. **Claude Code installation** — installs the Claude Code CLI

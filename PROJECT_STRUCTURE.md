@@ -74,7 +74,7 @@ Maps 1:1 with the published site sidebar:
 
 | Section | Files | Covers |
 |---|---|---|
-| Getting Started | `getting-started/why.mdx` | Why jackin exists |
+| Getting Started | `getting-started/why.mdx` | Why jackin' exists |
 | | `getting-started/installation.mdx` | Install methods + prerequisites |
 | | `getting-started/quickstart.mdx` | First-run walkthrough |
 | | `getting-started/concepts.mdx` | Operators, agents, constructs, workspaces |

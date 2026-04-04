@@ -4,7 +4,7 @@
 
 ## Problem
 
-Jackin does not yet have a first-class way to integrate with 1Password for secrets an agent may need at runtime, such as API tokens, cloud credentials, or project-specific environment values. Today the operator has to manage these manually through mounts, shell setup, or ad-hoc environment injection.
+jackin' does not yet have a first-class way to integrate with 1Password for secrets an agent may need at runtime, such as API tokens, cloud credentials, or project-specific environment values. Today the operator has to manage these manually through mounts, shell setup, or ad-hoc environment injection.
 
 ## Why It Matters
 

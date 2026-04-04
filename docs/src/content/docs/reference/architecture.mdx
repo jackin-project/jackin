@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: How jackin orchestrates containers, networks, and persisted state
+description: How jackin' orchestrates containers, networks, and persisted state
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -39,14 +39,14 @@ import { Aside } from '@astrojs/starlight/components';
 └──────────────────────────────────────────────────────┘
 ```
 
-`jackin` deliberately uses your existing Docker engine as the operator control plane.
+jackin' deliberately uses your existing Docker engine as the operator control plane.
 
 That creates an important split:
 
 - **build time** happens on the host Docker engine
 - **runtime Docker commands issued by the agent** go to the per-instance DinD sidecar
 
-So jackin gets host-side cache reuse for building agent images, while still keeping the agent away from your host Docker daemon during runtime.
+So jackin' gets host-side cache reuse for building agent images, while still keeping the agent away from your host Docker daemon during runtime.
 
 ## Design constraints
 
@@ -56,7 +56,7 @@ jackin's architecture is shaped by a few explicit decisions:
 2. **Environment as source code.** Agent classes should be normal git repos reviewed like normal software.
 3. **Workspace boundary separate from tool profile.** File visibility and installed tooling are different control planes on purpose.
 4. **Operator-owned infrastructure, not black-box runtime.** The implementation should stay inspectable and patchable.
-5. **Container isolation is acceptable for the first target.** jackin does not claim a microVM boundary today.
+5. **Container isolation is acceptable for the first target.** jackin' does not claim a microVM boundary today.
 
 ## Image layers
 
@@ -82,9 +82,9 @@ jackin's architecture is shaped by a few explicit decisions:
 └─────────────────────────────────┘
 ```
 
-The agent repo owns the environment layer. jackin owns the derived runtime layer.
+The agent repo owns the environment layer. jackin' owns the derived runtime layer.
 
-That means an agent class defines the tools and conventions, while jackin injects the runtime-specific pieces such as Claude installation, the entrypoint, and UID/GID remapping.
+That means an agent class defines the tools and conventions, while jackin' injects the runtime-specific pieces such as Claude installation, the entrypoint, and UID/GID remapping.
 
 ## Container lifecycle
 
@@ -145,7 +145,7 @@ The DinD sidecar currently runs without TLS. Any container on that per-agent net
 This is what persists across sessions:
 
 - Claude history and settings
-- jackin plugin metadata
+- jackin' plugin metadata
 - `gh` state acquired inside the runtime
 
 This is what does **not** persist:
@@ -154,15 +154,15 @@ This is what does **not** persist:
 - ad-hoc root filesystem changes outside mounted paths
 - DinD images, containers, and cache
 
-That means jackin is biased toward **reproducible agent classes** rather than **mutable long-lived sandboxes**.
+That means jackin' is biased toward **reproducible agent classes** rather than **mutable long-lived sandboxes**.
 
 If a tool should always exist, put it in the agent repo Dockerfile instead of installing it ad hoc during a session.
 
 ## Why Docker instead of microVMs?
 
-Because jackin is solving a slightly different problem.
+Because jackin' is solving a slightly different problem.
 
-Using plain Docker lets jackin:
+Using plain Docker lets jackin':
 
 - reuse a toolchain developers already have
 - keep the implementation smaller and easier to inspect
@@ -184,12 +184,12 @@ If the main thing you need is the strongest local boundary for autonomous agents
 - **DinD transport is not authenticated.** The runtime reaches the sidecar over plain TCP.
 - **Claude installation is not fully pinned.** The derived image installs Claude Code from the upstream installer.
 - **Derived build context rejects symlinks.** Agent repos with symlink-heavy layouts are not supported yet.
-- **Cached agent repos must stay clean.** jackin refuses to build from a dirty or origin-mismatched cache.
+- **Cached agent repos must stay clean.** jackin' refuses to build from a dirty or origin-mismatched cache.
 - **Runtime mutability is intentionally thin.** That keeps sessions cleaner, but makes ad-hoc package installs non-persistent.
 
 ## Technology stack
 
-jackin itself is built in Rust:
+jackin' itself is built in Rust:
 
 | Component | Technology |
 |---|---|

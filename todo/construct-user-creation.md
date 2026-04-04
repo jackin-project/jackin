@@ -17,7 +17,7 @@ The construct image (`donbeave/jackin-construct:trixie`) creates the `claude` us
 
 1. **Move user creation to the derived layer**: The construct becomes a pure toolchain image (Debian + packages, no user). The derived Dockerfile creates the `claude` user with the correct host UID/GID from the start. No remapping needed. Tradeoff: agent authors can't `docker build .` their repo standalone without adding a user — but they could use a multi-stage approach or a test target.
 
-2. **Build construct locally instead of pulling**: jackin builds the construct from source as a build stage, passing UID/GID at build time. No published image needed. Tradeoff: first build is slower (installs all system packages), but Docker caches it locally. Breaks the agent repo standalone build contract.
+2. **Build construct locally instead of pulling**: jackin' builds the construct from source as a build stage, passing UID/GID at build time. No published image needed. Tradeoff: first build is slower (installs all system packages), but Docker caches it locally. Breaks the agent repo standalone build contract.
 
 3. **Keep construct as-is, just pull latest before build**: `docker pull donbeave/jackin-construct:trixie` before each build to keep it fresh. Doesn't fix the user remapping problem but prevents stale base images. Least disruptive.
 

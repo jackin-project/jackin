@@ -115,7 +115,7 @@ jackin config mount remove gradle-cache
 
 ## Mount precedence
 
-When multiple mount sources are resolved, Jackin combines them in this order:
+When multiple mount sources are resolved, jackin' combines them in this order:
 
 1. **Global mounts** (from `jackin config mount`)
 2. **Workspace mounts** (from `jackin workspace add`)
@@ -123,7 +123,7 @@ When multiple mount sources are resolved, Jackin combines them in this order:
 4. **Load-time mounts** (from `jackin load --mount`)
 
 <Aside type="caution">
-If two mounts target the same container destination, Jackin stops with an error. It does not silently let the later mount win. This is deliberate because mounts are part of the security boundary.
+If two mounts target the same container destination, jackin' stops with an error. It does not silently let the later mount win. This is deliberate because mounts are part of the security boundary.
 </Aside>
 
 ## Best practices

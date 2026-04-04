@@ -1,17 +1,17 @@
 ---
 title: Security Model
-description: How jackin isolates agents and where that isolation stops
+description: How jackin' isolates agents and where that isolation stops
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
 ## Honest boundary statement
 
-jackin provides a **container boundary**, not a **microVM boundary**.
+jackin' provides a **container boundary**, not a **microVM boundary**.
 
 That distinction matters.
 
-jackin is useful when you trust the agent runtime itself but want to limit what it can touch on your machine. It is not the right tool to claim hypervisor-level isolation or to contain a fully hostile workload.
+jackin' is useful when you trust the agent runtime itself but want to limit what it can touch on your machine. It is not the right tool to claim hypervisor-level isolation or to contain a fully hostile workload.
 
 If you need the hardest local isolation boundary available today, a microVM-based tool such as Docker Sandboxes is stronger by design.
 
@@ -40,7 +40,7 @@ The agent can only access host paths you explicitly mount.
 jackin load agent-smith ~/Projects/my-app --mount ~/reference:/reference:ro
 ```
 
-This is the core blast-radius control in jackin.
+This is the core blast-radius control in jackin'.
 
 ### 3. Read-only enforcement
 
@@ -74,7 +74,7 @@ These guarantees are useful, but they are not absolute in the face of a kernel e
 
 ## User mapping
 
-jackin remaps the container user to your host UID and GID. That means:
+jackin' remaps the container user to your host UID and GID. That means:
 
 - files created in mounted directories are owned by your host user
 - you avoid common permission conflicts after the agent edits files
@@ -86,7 +86,7 @@ The current implementation creates the user in the construct image and then rema
 
 ## What persists and what does not
 
-jackin persists state at `~/.jackin/data/<container-name>/`. Today that includes:
+jackin' persists state at `~/.jackin/data/<container-name>/`. Today that includes:
 
 - `.claude/`
 - `.claude.json`
@@ -101,7 +101,7 @@ But several important things do **not** persist:
 - packages installed interactively into the running container
 - DinD images and containers created during that session
 
-This is a deliberate trade-off. jackin is biased toward reproducible agent images and explicit workspace mounts, not long-lived mutable sandboxes.
+This is a deliberate trade-off. jackin' is biased toward reproducible agent images and explicit workspace mounts, not long-lived mutable sandboxes.
 
 ## Current implementation constraints
 
@@ -109,15 +109,15 @@ These are the parts of the security story that should be stated bluntly.
 
 ### Privileged DinD sidecar
 
-jackin launches a privileged `docker:dind` sidecar per agent. The agent talks to it over plain TCP inside the per-agent network.
+jackin' launches a privileged `docker:dind` sidecar per agent. The agent talks to it over plain TCP inside the per-agent network.
 
 That keeps the agent away from your host Docker daemon, which is good. But it is still a privileged sidecar, and DinD TLS is not implemented yet.
 
 ### Open outbound network by default
 
-jackin does not currently provide per-agent allowlists, denylists, private-network blocking, or request logs for outbound traffic.
+jackin' does not currently provide per-agent allowlists, denylists, private-network blocking, or request logs for outbound traffic.
 
-If an agent can read a mounted secret and the network path is open, jackin cannot stop exfiltration.
+If an agent can read a mounted secret and the network path is open, jackin' cannot stop exfiltration.
 
 ### Direct bind mounts, not snapshots
 
@@ -125,13 +125,13 @@ Mounted files are live host files. If the agent edits a mounted path, the host f
 
 ### Credentials obtained inside the runtime remain inside the runtime
 
-jackin does not mount host credentials by default, which is good.
+jackin' does not mount host credentials by default, which is good.
 
-But if you authenticate a tool like `gh` inside the runtime, that credential becomes readable by that runtime and persists in jackin state until you purge it.
+But if you authenticate a tool like `gh` inside the runtime, that credential becomes readable by that runtime and persists in jackin' state until you purge it.
 
 ## Threat model
 
-jackin is designed to reduce the most common operator risks:
+jackin' is designed to reduce the most common operator risks:
 
 | Threat | Mitigation | Residual risk |
 |---|---|---|
@@ -141,10 +141,10 @@ jackin is designed to reduce the most common operator risks:
 | Agent interferes with another agent | Separate containers, networks, and state | Shared host kernel remains a common lower layer |
 | Agent persists random system changes | Runtime root filesystem is ephemeral | Persisted tool state and mounted files still survive |
 
-## What jackin does NOT protect against
+## What jackin' does NOT protect against
 
 <Aside type="caution">
-This is where people often over-claim container isolation. Don't do that. jackin is useful, but it is not magical.
+This is where people often over-claim container isolation. Don't do that. jackin' is useful, but it is not magical.
 </Aside>
 
 - **Container escape vulnerabilities** — containers share the host kernel

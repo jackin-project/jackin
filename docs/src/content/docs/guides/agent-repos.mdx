@@ -12,7 +12,7 @@ An agent repo is a GitHub repository that defines a specific agent class. It con
 1. A **Dockerfile** — the agent's environment definition (tools, languages, SDKs)
 2. A **manifest file** (`jackin.agent.toml`) — metadata about the agent
 
-When you run `jackin load agent-smith`, jackin looks for a GitHub repo named `jackin-agent-smith` and builds a container from it.
+When you run `jackin load agent-smith`, jackin' looks for a GitHub repo named `jackin-agent-smith` and builds a container from it.
 
 An agent repo is where you decide what kind of worker you are creating. In most teams, that means creating role-specific environments rather than one universal image. A frontend-oriented agent repo can install browser tooling and UI-focused plugins, while a backend-oriented repo can install server toolchains and database clients.
 
@@ -72,17 +72,17 @@ This name appears in jackin's TUI and output. When omitted, the class selector n
 
 ## Caching
 
-Agent repos are cloned to `~/.jackin/agents/` on first load. Subsequent loads use the cached checkout. Jackin updates the repo on each load to keep the cache current.
+Agent repos are cloned to `~/.jackin/agents/` on first load. Subsequent loads use the cached checkout. jackin' updates the repo on each load to keep the cache current.
 
-Jackin is intentionally strict about that cache:
+jackin' is intentionally strict about that cache:
 
 - if the cached repo's `origin` no longer matches the configured source, load fails
 - if the cached repo contains local changes or extra files, load fails
 
-This avoids silently building from a tampered or stale cache. If you intentionally edited the cached repo, remove it and let Jackin clone again.
+This avoids silently building from a tampered or stale cache. If you intentionally edited the cached repo, remove it and let jackin' clone again.
 
 <Aside type="tip">
-Pass `--rebuild` to force jackin to rebuild the Docker image from scratch. This is useful when the construct base image or agent Dockerfile has changed.
+Pass `--rebuild` to force jackin' to rebuild the Docker image from scratch. This is useful when the construct base image or agent Dockerfile has changed.
 </Aside>
 
 ## The repo contract
@@ -104,7 +104,7 @@ Every agent repo must satisfy a contract:
 6. **No symlinks** — the derived build-context generator currently rejects symlinks
 
 <Aside type="caution">
-Agent repos only own their agent-specific environment layer. jackin owns everything else: validating the contract, generating the derived Dockerfile, installing Claude Code, injecting the entrypoint, mounting workspaces, and wiring Docker-in-Docker.
+Agent repos only own their agent-specific environment layer. jackin' owns everything else: validating the contract, generating the derived Dockerfile, installing Claude Code, injecting the entrypoint, mounting workspaces, and wiring Docker-in-Docker.
 </Aside>
 
 ## Example agent repo
@@ -131,4 +131,4 @@ RUN mise install node@22 && mise use --global node@22
 RUN npm install -g typescript tsx prettier eslint
 ```
 
-That's it. jackin handles the rest — Claude installation, entrypoint, user mapping, state persistence, and DinD setup.
+That's it. jackin' handles the rest — Claude installation, entrypoint, user mapping, state persistence, and DinD setup.

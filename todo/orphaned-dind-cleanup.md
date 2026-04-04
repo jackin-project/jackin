@@ -22,7 +22,7 @@ When an agent container fails to start (e.g. entrypoint error, Claude install fa
 
 4. **Add a `jackin gc` command**: Garbage collection for orphaned resources.
 
-5. **Automatic pre-launch garbage collection**: Before each `load`, scan for orphaned jackin-managed resources and clean them up. Handles all failure modes including hard kills and terminal closures.
+5. **Automatic pre-launch garbage collection**: Before each `load`, scan for orphaned jackin'-managed resources and clean them up. Handles all failure modes including hard kills and terminal closures.
 
 ## Related Files
 
