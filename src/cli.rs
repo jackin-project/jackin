@@ -610,8 +610,16 @@ mod tests {
     fn root_help_shows_all_commands() {
         let help = help_text(&["jackin", "--help"]);
         assert!(help.contains("Send agents into the Matrix"));
-        for cmd in ["load", "hardline", "eject", "exile", "purge", "launch", "workspace", "config"]
-        {
+        for cmd in [
+            "load",
+            "hardline",
+            "eject",
+            "exile",
+            "purge",
+            "launch",
+            "workspace",
+            "config",
+        ] {
             assert!(help.contains(cmd), "missing command: {cmd}");
         }
     }
@@ -673,10 +681,7 @@ mod tests {
             help.contains("automatically mounted"),
             "auto-mount behavior not documented"
         );
-        assert!(
-            help.contains("--no-workdir-mount"),
-            "opt-out flag missing"
-        );
+        assert!(help.contains("--no-workdir-mount"), "opt-out flag missing");
         assert!(help.contains("Examples:"));
         assert!(help.contains("jackin workspace add my-app --workdir ~/Projects/my-app"));
     }

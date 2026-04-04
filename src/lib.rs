@@ -21,7 +21,9 @@ use paths::JackinPaths;
 use selector::{ClassSelector, Selector};
 use std::io::ErrorKind;
 use std::path::Path;
-use workspace::{LoadWorkspaceInput, WorkspaceConfig, WorkspaceEdit, expand_tilde, parse_mount_spec};
+use workspace::{
+    LoadWorkspaceInput, WorkspaceConfig, WorkspaceEdit, expand_tilde, parse_mount_spec,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetKind {
@@ -73,20 +75,14 @@ fn find_dst_separator(target: &str) -> Option<usize> {
     None
 }
 
-fn resolve_target_name(
-    name: &str,
-    config: &AppConfig,
-    cwd: &Path,
-) -> Result<LoadWorkspaceInput> {
+fn resolve_target_name(name: &str, config: &AppConfig, cwd: &Path) -> Result<LoadWorkspaceInput> {
     let workspace_exists = config.workspaces.contains_key(name);
     let dir_exists = cwd.join(name).is_dir();
 
     match (workspace_exists, dir_exists) {
         (true, true) => {
             let choice = tui::prompt_choice(
-                &format!(
-                    "\"{name}\" matches both a saved workspace and a directory."
-                ),
+                &format!("\"{name}\" matches both a saved workspace and a directory."),
                 &[
                     &format!("Use workspace \"{name}\""),
                     &format!("Use directory ./{name}"),
@@ -120,7 +116,12 @@ fn resolve_target_name(
                 if config.workspaces.is_empty() {
                     "(none)".to_string()
                 } else {
-                    config.workspaces.keys().cloned().collect::<Vec<_>>().join(", ")
+                    config
+                        .workspaces
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 }
             );
         }
@@ -149,10 +150,7 @@ fn resolve_agent_from_context(
 
     if let Some((name, ws)) = matching_ws {
         // Try last_agent, then default_agent
-        let agent_key = ws
-            .last_agent
-            .as_deref()
-            .or(ws.default_agent.as_deref());
+        let agent_key = ws.last_agent.as_deref().or(ws.default_agent.as_deref());
 
         if let Some(key) = agent_key {
             let class = ClassSelector::parse(key)?;
@@ -165,8 +163,7 @@ fn resolve_agent_from_context(
             .keys()
             .filter_map(|k| ClassSelector::parse(k).ok())
             .filter(|agent| {
-                ws.allowed_agents.is_empty()
-                    || ws.allowed_agents.iter().any(|a| a == &agent.key())
+                ws.allowed_agents.is_empty() || ws.allowed_agents.iter().any(|a| a == &agent.key())
             })
             .collect();
 
@@ -360,7 +357,11 @@ pub fn run(cli: Cli) -> Result<()> {
                 } => {
                     let ro = if readonly { " (read-only)" } else { "" };
                     let scope_label = scope.as_deref().unwrap_or("global");
-                    let mount = config::MountConfig { src: src.clone(), dst: dst.clone(), readonly };
+                    let mount = config::MountConfig {
+                        src: src.clone(),
+                        dst: dst.clone(),
+                        readonly,
+                    };
                     config.add_mount(&name, mount, scope.as_deref());
                     config.save(&paths)?;
                     println!("Added mount {name:?} ({scope_label}): {src} -> {dst}{ro}");
@@ -402,7 +403,11 @@ pub fn run(cli: Cli) -> Result<()> {
                                 name: name.clone(),
                                 src: tui::shorten_home(&m.src),
                                 dst: m.dst.clone(),
-                                mode: if m.readonly { "read-only".to_string() } else { "read-write".to_string() },
+                                mode: if m.readonly {
+                                    "read-only".to_string()
+                                } else {
+                                    "read-write".to_string()
+                                },
                             })
                             .collect();
                         let mut table = Table::new(rows);
@@ -428,9 +433,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     .map(|value| parse_mount_spec(value))
                     .collect::<Result<Vec<_>>>()?;
                 if !no_workdir_mount {
-                    let already_mounted = all_mounts
-                        .iter()
-                        .any(|m| m.dst == expanded_workdir);
+                    let already_mounted = all_mounts.iter().any(|m| m.dst == expanded_workdir);
                     if !already_mounted {
                         all_mounts.insert(
                             0,
@@ -535,10 +538,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 } else {
                     workspace.allowed_agents.join(", ")
                 };
-                let default_agent = workspace
-                    .default_agent
-                    .as_deref()
-                    .unwrap_or("none");
+                let default_agent = workspace.default_agent.as_deref().unwrap_or("none");
 
                 let short_workdir = tui::shorten_home(&workspace.workdir);
                 let info = [
@@ -547,13 +547,12 @@ pub fn run(cli: Cli) -> Result<()> {
                     ("Allowed Agents", &allowed),
                     ("Default Agent", default_agent),
                 ];
-                let mut info_table = Table::builder(
-                    info.iter().map(|(k, v)| [*k, *v]),
-                )
-                .build();
+                let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
                 info_table
                     .with(Style::modern_rounded())
-                    .with(tabled::settings::Remove::row(tabled::settings::object::Rows::first()));
+                    .with(tabled::settings::Remove::row(
+                        tabled::settings::object::Rows::first(),
+                    ));
                 println!("{info_table}");
 
                 if !workspace.mounts.is_empty() {
