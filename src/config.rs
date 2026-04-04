@@ -10,11 +10,11 @@ pub use crate::workspace::MountConfig;
 const BUILTIN_AGENTS: &[(&str, &str)] = &[
     (
         "agent-smith",
-        "git@github.com:donbeave/jackin-agent-smith.git",
+        "https://github.com/donbeave/jackin-agent-smith.git",
     ),
     (
         "the-architect",
-        "git@github.com:donbeave/jackin-the-architect.git",
+        "https://github.com/donbeave/jackin-the-architect.git",
     ),
 ];
 
@@ -115,7 +115,7 @@ impl AppConfig {
             .ok_or_else(|| anyhow::anyhow!("unknown selector {}", selector.key()))?;
 
         let source = AgentSource {
-            git: format!("git@github.com:{namespace}/jackin-{}.git", selector.name),
+            git: format!("https://github.com/{namespace}/jackin-{}.git", selector.name),
         };
         self.agents.insert(selector.key(), source.clone());
         Ok((source, true))
@@ -373,11 +373,11 @@ mod tests {
 
         assert_eq!(
             config.agents.get("agent-smith").unwrap().git,
-            "git@github.com:donbeave/jackin-agent-smith.git"
+            "https://github.com/donbeave/jackin-agent-smith.git"
         );
         assert_eq!(
             config.agents.get("the-architect").unwrap().git,
-            "git@github.com:donbeave/jackin-the-architect.git"
+            "https://github.com/donbeave/jackin-the-architect.git"
         );
         assert!(paths.config_file.exists());
     }
@@ -404,12 +404,12 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         // Built-in entries are corrected
         assert_eq!(
             config.agents.get("agent-smith").unwrap().git,
-            "git@github.com:donbeave/jackin-agent-smith.git"
+            "https://github.com/donbeave/jackin-agent-smith.git"
         );
         // Missing built-in entries are added
         assert_eq!(
             config.agents.get("the-architect").unwrap().git,
-            "git@github.com:donbeave/jackin-the-architect.git"
+            "https://github.com/donbeave/jackin-the-architect.git"
         );
         // User-added entries are preserved
         assert_eq!(
@@ -460,7 +460,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
 
         assert_eq!(
             source.git,
-            "git@github.com:chainargos/jackin-the-architect.git"
+            "https://github.com/chainargos/jackin-the-architect.git"
         );
         assert!(is_new);
 
@@ -479,7 +479,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
     fn deserializes_global_docker_mounts() {
         let toml_str = r#"
 [agents.agent-smith]
-git = "git@github.com:donbeave/jackin-agent-smith.git"
+git = "https://github.com/donbeave/jackin-agent-smith.git"
 
 [docker.mounts]
 gradle-cache = { src = "~/.gradle/caches", dst = "/home/claude/.gradle/caches" }
@@ -505,7 +505,7 @@ gradle-wrapper = { src = "~/.gradle/wrapper", dst = "/home/claude/.gradle/wrappe
     fn deserializes_scoped_docker_mounts() {
         let toml_str = r#"
 [agents.agent-smith]
-git = "git@github.com:donbeave/jackin-agent-smith.git"
+git = "https://github.com/donbeave/jackin-agent-smith.git"
 
 [docker.mounts."chainargos/*"]
 chainargos-secrets = { src = "~/.chainargos/secrets", dst = "/secrets", readonly = true }
@@ -537,7 +537,7 @@ brown-config = { src = "~/.chainargos/brown", dst = "/config" }
     fn deserializes_saved_workspaces() {
         let toml_str = r#"
 [agents.agent-smith]
-git = "git@github.com:donbeave/jackin-agent-smith.git"
+git = "https://github.com/donbeave/jackin-agent-smith.git"
 
 [workspaces.big-monorepo]
 workdir = "/Users/donbeave/Projects/chainargos/big-monorepo"
@@ -646,7 +646,7 @@ readonly = true
             &paths.config_file,
             r#"
 [agents.agent-smith]
-git = "git@github.com:donbeave/jackin-agent-smith.git"
+git = "https://github.com/donbeave/jackin-agent-smith.git"
 
 [workspaces.big-monorepo]
 workdir = "/workspace/project"
@@ -677,7 +677,7 @@ dst = "/workspace/src"
         let toml_str = format!(
             r#"
 [agents.agent-smith]
-git = "git@github.com:donbeave/jackin-agent-smith.git"
+git = "https://github.com/donbeave/jackin-agent-smith.git"
 
 [workspaces.broken]
 workdir = "/workspace/project"
@@ -880,7 +880,7 @@ dst = "/workspace/src"
     fn resolve_mounts_collects_global_and_matching_scopes() {
         let toml_str = r#"
 [agents.agent-smith]
-git = "git@github.com:donbeave/jackin-agent-smith.git"
+git = "https://github.com/donbeave/jackin-agent-smith.git"
 
 [docker.mounts]
 gradle-cache = { src = "/tmp/gradle-caches", dst = "/home/claude/.gradle/caches" }
@@ -919,7 +919,7 @@ other-data = { src = "/tmp/other", dst = "/other" }
     fn resolve_mounts_exact_overrides_global_with_same_name() {
         let toml_str = r#"
 [agents.agent-smith]
-git = "git@github.com:donbeave/jackin-agent-smith.git"
+git = "https://github.com/donbeave/jackin-agent-smith.git"
 
 [docker.mounts]
 shared = { src = "/tmp/global", dst = "/data" }
@@ -1037,7 +1037,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
     fn resolve_mounts_matches_exact_scope_for_unscoped_selector() {
         let toml_str = r#"
 [agents.agent-smith]
-git = "git@github.com:donbeave/jackin-agent-smith.git"
+git = "https://github.com/donbeave/jackin-agent-smith.git"
 
 [docker.mounts]
 global-data = { src = "/tmp/global", dst = "/global" }
