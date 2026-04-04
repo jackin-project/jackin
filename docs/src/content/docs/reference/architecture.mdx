@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: How jackin orchestrates containers, networks, and state
+description: How jackin orchestrates containers, networks, and persisted state
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -12,7 +12,7 @@ import { Aside } from '@astrojs/starlight/components';
 │  Host Machine                                         │
 │                                                       │
 │  ┌─────────────┐                                      │
-│  │  jackin CLI  │  Operator interface                  │
+│  │  jackin CLI │  Operator interface                  │
 │  └──────┬──────┘                                      │
 │         │                                             │
 │         ▼                                             │
@@ -20,8 +20,8 @@ import { Aside } from '@astrojs/starlight/components';
 │  │  Docker Engine                                │     │
 │  │                                               │     │
 │  │  ┌─────────────────────────────────────────┐  │     │
-│  │  │  jackin-agent-smith-net (Docker network) │  │     │
-│  │  │                                          │  │     │
+│  │  │  jackin-agent-smith-net                 │  │     │
+│  │  │                                         │  │     │
 │  │  │  ┌──────────────┐  ┌─────────────────┐  │  │     │
 │  │  │  │ Agent         │  │ DinD Sidecar    │  │  │     │
 │  │  │  │ Container     │  │ (docker:dind)   │  │  │     │
@@ -33,11 +33,30 @@ import { Aside } from '@astrojs/starlight/components';
 │  │  └─────────────────────────────────────────┘  │     │
 │  └──────────────────────────────────────────────┘     │
 │                                                       │
-│  ~/.jackin/data/  (persisted state)                    │
-│  ~/.jackin/agents/ (cached repos)                     │
-│  ~/.config/jackin/ (operator config)                  │
+│  ~/.jackin/data/   persisted runtime state            │
+│  ~/.jackin/agents/ cached agent repos                 │
+│  ~/.config/jackin/ operator config                    │
 └──────────────────────────────────────────────────────┘
 ```
+
+`jackin` deliberately uses your existing Docker engine as the operator control plane.
+
+That creates an important split:
+
+- **build time** happens on the host Docker engine
+- **runtime Docker commands issued by the agent** go to the per-instance DinD sidecar
+
+So jackin gets host-side cache reuse for building agent images, while still keeping the agent away from your host Docker daemon during runtime.
+
+## Design constraints
+
+jackin's architecture is shaped by a few explicit decisions:
+
+1. **Local development first.** The first target is a developer machine that already knows how to run Docker.
+2. **Environment as source code.** Agent classes should be normal git repos reviewed like normal software.
+3. **Workspace boundary separate from tool profile.** File visibility and installed tooling are different control planes on purpose.
+4. **Operator-owned infrastructure, not black-box runtime.** The implementation should stay inspectable and patchable.
+5. **Container isolation is acceptable for the first target.** jackin does not claim a microVM boundary today.
 
 ## Image layers
 
@@ -47,7 +66,7 @@ import { Aside } from '@astrojs/starlight/components';
 │  - UID/GID remapping            │
 │  - Claude Code installation     │
 │  - Runtime entrypoint           │
-│  - Plugin installation          │
+│  - Plugin bootstrap             │
 ├─────────────────────────────────┤
 │  Agent Layer (agent repo)       │
 │  - Language runtimes            │
@@ -63,42 +82,48 @@ import { Aside } from '@astrojs/starlight/components';
 └─────────────────────────────────┘
 ```
 
+The agent repo owns the environment layer. jackin owns the derived runtime layer.
+
+That means an agent class defines the tools and conventions, while jackin injects the runtime-specific pieces such as Claude installation, the entrypoint, and UID/GID remapping.
+
 ## Container lifecycle
 
 ### Loading an agent
 
-1. **Resolve agent class** — map selector to GitHub repo, clone/update, verify cached repo origin, reject dirty cached checkouts
-2. **Validate contract** — check `jackin.agent.toml` and Dockerfile
-3. **Generate derived Dockerfile** — add Claude, entrypoint, user mapping
-4. **Build image** — Docker layer caching makes this fast after first build
-5. **Create network** — `jackin-{agent}-net` for container isolation
-6. **Start DinD sidecar** — `jackin-{agent}-dind` with Docker daemon
-7. **Start agent container** — with mounts, env vars, and DinD connection
-8. **Agent runs** — Claude Code starts with full permissions
+1. **Resolve agent class** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
+2. **Validate the repo contract** — require `jackin.agent.toml` and a valid Dockerfile path
+3. **Generate a derived build context** — copy the repo, inject runtime assets, and render a derived Dockerfile
+4. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
+5. **Create a per-agent Docker network**
+6. **Start a privileged `docker:dind` sidecar**
+7. **Start the agent container** — mounts, env vars, labels, and `DOCKER_HOST` all point at the sidecar
+8. **Run Claude Code with full permissions inside that boundary**
 
-### Reconnecting (hardline)
+### Reconnecting
 
-1. **Find running container** — by selector or container name
-2. **Attach** — `docker attach` to the running container
+`jackin hardline` simply attaches to the running agent container.
 
-### Stopping (eject)
+### Stopping
 
-1. **Stop agent container** — graceful shutdown
-2. **Stop DinD sidecar** — clean up the Docker daemon
-3. **Remove network** — clean up the isolated network
-4. *(Optional)* **Purge state** — delete persisted data
+`jackin eject` removes:
+
+1. the agent container
+2. the DinD sidecar
+3. the per-agent network
+
+Persisted state remains unless you also purge it.
 
 ## Networking
 
 Each agent gets an isolated Docker network:
 
-- Network name: derived from the runtime container name, for example `jackin-agent-smith-net` or `jackin-chainargos__the-architect-net`
-- The agent container and its DinD sidecar share this network
-- The agent connects to DinD via `DOCKER_HOST=tcp://{dind}:2375`
-- Agents cannot reach other agents' networks
+- network name is derived from the runtime container name
+- the agent container and DinD sidecar share that network
+- the agent reaches the daemon through `DOCKER_HOST=tcp://{dind}:2375`
+- different agents do not share a network by default
 
 <Aside type="note">
-The DinD sidecar currently runs without TLS. This means any container on the agent's network has unauthenticated access to the Docker daemon. TLS support is planned.
+The DinD sidecar currently runs without TLS. Any container on that per-agent network can reach the daemon. TLS support is on the roadmap.
 </Aside>
 
 ## State management
@@ -108,16 +133,59 @@ The DinD sidecar currently runs without TLS. This means any container on the age
 ├── agents/                        # Cached agent repos
 │   └── github.com/
 │       └── donbeave/
-│           └── jackin-agent-smith/ # Cloned repo
+│           └── jackin-agent-smith/
 ├── data/                          # Persisted state per instance
 │   └── jackin-agent-smith/
-│       ├── .claude/               # Session history
-│       ├── .claude.json           # Settings
-│       ├── .config/gh/            # GitHub CLI auth + config
-│       └── plugins.json           # Plugin list
+│       ├── .claude/
+│       ├── .claude.json
+│       ├── .config/gh/
+│       └── plugins.json
 ```
 
-State persistence allows agents to maintain context across sessions. The `.claude/` directory contains Claude Code's conversation history and project context — so when you load an agent again, it remembers what it was working on.
+This is what persists across sessions:
+
+- Claude history and settings
+- jackin plugin metadata
+- `gh` state acquired inside the runtime
+
+This is what does **not** persist:
+
+- packages installed interactively into the runtime container
+- ad-hoc root filesystem changes outside mounted paths
+- DinD images, containers, and cache
+
+That means jackin is biased toward **reproducible agent classes** rather than **mutable long-lived sandboxes**.
+
+If a tool should always exist, put it in the agent repo Dockerfile instead of installing it ad hoc during a session.
+
+## Why Docker instead of microVMs?
+
+Because jackin is solving a slightly different problem.
+
+Using plain Docker lets jackin:
+
+- reuse a toolchain developers already have
+- keep the implementation smaller and easier to inspect
+- build agent images with normal Docker workflows
+- share host-side build cache across agent classes
+- stay local-first without introducing a separate VM product layer
+
+The cost of that choice is straightforward:
+
+- weaker isolation than a microVM
+- shared host kernel
+- privileged DinD sidecars
+- no hypervisor boundary
+
+If the main thing you need is the strongest local boundary for autonomous agents on a laptop, microVM-based products such as Docker Sandboxes are ahead.
+
+## Current technical debt and limitations
+
+- **DinD transport is not authenticated.** The runtime reaches the sidecar over plain TCP.
+- **Claude installation is not fully pinned.** The derived image installs Claude Code from the upstream installer.
+- **Derived build context rejects symlinks.** Agent repos with symlink-heavy layouts are not supported yet.
+- **Cached agent repos must stay clean.** jackin refuses to build from a dirty or origin-mismatched cache.
+- **Runtime mutability is intentionally thin.** That keeps sessions cleaner, but makes ad-hoc package installs non-persistent.
 
 ## Technology stack
 
@@ -125,7 +193,7 @@ jackin itself is built in Rust:
 
 | Component | Technology |
 |---|---|
-| CLI parsing | `clap` with derive macros |
+| CLI parsing | `clap` |
 | Terminal UI | `ratatui` + `crossterm` |
 | Table output | `tabled` |
 | Configuration | `serde` + `toml` |
