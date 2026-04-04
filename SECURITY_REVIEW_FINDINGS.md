@@ -36,29 +36,15 @@ In `src/derived_image.rs`, the derived Dockerfile includes:
 
 ---
 
-### 3) Potential symlink escape in manifest Dockerfile path resolution
-`resolve_manifest_dockerfile_path()` blocks `..` components but does not canonicalize the final joined path before file check.
-
-**Risk**
-- A symlinked path component could resolve outside repo boundaries.
-
-**Recommendation**
-- Canonicalize joined path and enforce `canonical.starts_with(repo_canonical)`.
-- Reject symlink components for Dockerfile path resolution.
+### 3) ~~Potential symlink escape in manifest Dockerfile path resolution~~ ✅ Resolved
+`resolve_manifest_dockerfile_path()` now canonicalizes the joined path and enforces `canonical.starts_with(repo_canonical)`. Symlink components are rejected with a dedicated test.
 
 ---
 
 ## Medium-priority issues
 
-### 4) Config file permissions for secrets-adjacent state
-`config.save()` relies on default file permissions.Make
-
-**Risk**
-- Config may be too permissive under certain umask setups.
-
-**Recommendation**
-- On Unix, write with `0o600` using atomic write/rename.
-- Consider same policy for sensitive persisted runtime state.
+### 4) ~~Config file permissions for secrets-adjacent state~~ ✅ Resolved
+`config.save()` now uses `0o600` permissions on Unix with atomic write (temp file + `sync_all()` + rename).
 
 ---
 
@@ -74,26 +60,13 @@ In `src/derived_image.rs`, the derived Dockerfile includes:
 
 ---
 
-### 6) No timeout control for command execution
-`ShellRunner` uses blocking process calls (`status`/`output`) without timeout.
-
-**Risk**
-- CLI can hang indefinitely on stalled git/docker/network commands.
-
-**Recommendation**
-- Add command timeouts (global default + per-operation override).
+### 6) ~~No timeout control for command execution~~ ✅ Resolved
+`ShellRunner` now has `capture_timeout: Option<Duration>` with a 120s default and `wait_with_timeout()` that kills stalled processes.
 
 ---
 
-### 7) Silent config-save failures on last-agent persistence
-After load, `last_agent` persistence ignores save errors (`let _ = config.save(...)`).
-
-**Risk**
-- Hidden state inconsistency / degraded UX with no signal.
-
-**Recommendation**
-- Emit warning on persistence failure.
-- Optionally make this behavior explicit under debug mode.
+### 7) ~~Silent config-save failures on last-agent persistence~~ ✅ Resolved
+Both `last_agent` persistence sites now emit `eprintln!("warning: ...")` on save failure.
 
 ---
 
@@ -142,8 +115,8 @@ Current repo flow tracks moving branches by default.
 
 ## Suggested implementation order
 
-1. Fix Dockerfile path canonicalization/symlink boundary checks.
-2. Pin/verify remote installer script.
-3. Add git trust controls + optional commit pinning.
-4. Harden file permissions and atomic writes for config/state.
-5. Add command timeout support and robust cleanup handling.
+1. ~~Fix Dockerfile path canonicalization/symlink boundary checks.~~ ✅
+2. Pin/verify remote installer script. (see `SECURITY_EXCEPTIONS.md`)
+3. Add git trust controls + optional commit pinning. (see `todo/agent-source-trust.md`, `todo/reproducibility-pinning.md`)
+4. ~~Harden file permissions and atomic writes for config/state.~~ ✅
+5. ~~Add command timeout support~~ ✅ and robust cleanup handling. (see `todo/bollard-migration.md`)

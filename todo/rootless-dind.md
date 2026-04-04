@@ -1,0 +1,28 @@
+# Rootless DinD Research
+
+**Status**: Deferred — needs hands-on testing
+
+## Problem
+
+The current design uses a privileged `docker:dind` sidecar container, which grants broad host-level capabilities to the DinD daemon.
+
+## Why It Matters
+
+- Privileged mode gives the container nearly full host access
+- A compromised DinD daemon could escape container isolation
+- Docker provides `docker:dind-rootless` as an alternative with reduced privileges
+
+## Research Needed
+
+- Evaluate `docker:dind-rootless` compatibility with jackin's build and runtime operations
+- Identify limitations (e.g., certain storage drivers, network modes, build features)
+- Test whether agent Dockerfiles build correctly under rootless DinD
+- Assess performance impact
+- Consider alternative isolation approaches (sysbox, Kata containers)
+- Evaluate optional stricter network policy modes
+
+## Related Files
+
+- `src/runtime.rs` — DinD container startup
+- `docker/construct/Dockerfile` — base image that runs inside DinD
+- `docs/src/content/docs/guides/security-model.mdx`
