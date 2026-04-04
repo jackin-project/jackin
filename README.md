@@ -2,6 +2,8 @@
 
 `jackin` is a Matrix-inspired CLI for orchestrating AI coding agents at scale. Each agent runs in an isolated Docker container with Docker-in-Docker enabled — a self-contained world to think, build, and execute in. You're the Operator. They're already inside.
 
+Documentation: <https://www.zhokhov.com/jackin/>
+
 Reference: <https://matrix.fandom.com/wiki/Jacking_in>
 
 > **Current status:** jackin is built as a proof of concept around [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its first and only supported agent runtime. Support for additional agent runtimes — [Codex](https://github.com/openai/codex) and [Amp Code](https://ampcode.com) — is planned for future releases.
@@ -16,7 +18,7 @@ jackin solves this by giving each agent its own isolated Docker container. The a
 
 [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) is the most relevant mainstream alternative. Both tools solve the same core problem — letting an agent run with real autonomy while you constrain the blast radius from the outside — but they optimize for different things.
 
-> For a detailed technical comparison including other alternatives, see [Comparison with Alternatives](https://donbeave.github.io/jackin/guides/comparison/).
+> For a detailed technical comparison including other alternatives, see [Comparison with Alternatives](https://www.zhokhov.com/jackin/guides/comparison/).
 
 The most important difference is the isolation boundary:
 
