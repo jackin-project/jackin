@@ -2,6 +2,7 @@ pub mod cli;
 pub mod config;
 pub mod derived_image;
 pub mod docker;
+pub mod env_resolver;
 pub mod instance;
 pub mod launch;
 pub mod manifest;
