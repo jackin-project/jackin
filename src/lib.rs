@@ -11,6 +11,7 @@ pub mod repo;
 pub mod repo_contract;
 pub mod runtime;
 pub mod selector;
+pub mod terminal_prompter;
 pub mod tui;
 pub mod workspace;
 
