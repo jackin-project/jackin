@@ -7,7 +7,7 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 ## Overview
 
-Creating a custom agent lets you define a specialized environment for a specific type of work. A Rust agent includes the Rust toolchain. A Python data science agent includes Jupyter, pandas, and scipy. You define the tools — jackin handles the rest.
+Creating a custom agent lets you define a specialized environment for a specific type of work. A Rust agent includes the Rust toolchain. A Python data science agent includes Jupyter, pandas, and scipy. You define the tools — jackin' handles the rest.
 
 ## Step by step
 
@@ -65,7 +65,7 @@ FROM donbeave/jackin-construct:trixie
 ```
 
 <Aside type="caution">
-This is the literal string jackin checks for. `FROM donbeave/jackin-construct:latest` or any other tag will fail validation.
+This is the literal string jackin' checks for. `FROM donbeave/jackin-construct:latest` or any other tag will fail validation.
 </Aside>
 
 ### Multi-stage builds are supported
@@ -150,6 +150,6 @@ jackin load your-agent-name --rebuild --debug
 | Agent | Purpose | Repository |
 |---|---|---|
 | **Agent Smith** | Default general-purpose agent | [donbeave/jackin-agent-smith](https://github.com/donbeave/jackin-agent-smith) |
-| **The Architect** | Rust development (used for jackin itself) | [donbeave/jackin-the-architect](https://github.com/donbeave/jackin-the-architect) |
+| **The Architect** | Rust development (used for jackin' itself) | [donbeave/jackin-the-architect](https://github.com/donbeave/jackin-the-architect) |
 
 These repos are good starting points when creating your own agent. Agent Smith is intentionally minimal, while The Architect shows a more involved setup with Rust tooling and build dependencies.
