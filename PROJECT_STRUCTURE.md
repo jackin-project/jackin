@@ -11,12 +11,29 @@ Quick navigation reference for AI agents working in this repository.
 | `AGENTS.md` | Shared instructions for all AI agents (testing, pre-commit, security) |
 | `CLAUDE.md` | Claude-specific pointer to `AGENTS.md` |
 | `RULES.md` | Project-wide conventions (docs go in `AGENTS.md`, not tool-specific files) |
-| `TODO.md` | Active task tracking |
+| `TODO.md` | Index of open design/engineering items (individual files in `todo/`) |
+| `TESTING.md` | Test runner setup, commands, and pre-commit requirements |
 | `SECURITY_REVIEW_FINDINGS.md` | Security audit results |
 | `SECURITY_EXCEPTIONS.md` | Accepted security findings — do not re-flag |
 | `release.toml` | Release configuration |
 | `mise.toml` | Tool version management (bun) |
 | `.gitignore` | Git ignore rules |
+
+## Open Items — `todo/`
+
+Each file is a self-contained design document with problem statement, options, and related source files.
+
+| File | Topic |
+|---|---|
+| `construct-user-creation.md` | UID/GID remapping hack in derived images |
+| `dind-tls.md` | Unauthenticated Docker daemon on agent network |
+| `orphaned-dind-cleanup.md` | Sidecar left running when agent fails to start |
+| `onepassword-integration.md` | First-class secret injection at launch time |
+| `agent-source-trust.md` | Trust-on-first-use for third-party agent repos |
+| `bollard-migration.md` | Replace string-matched Docker errors with typed API |
+| `rootless-dind.md` | Reduce privileged container attack surface |
+| `sensitive-mount-warnings.md` | Warn before mounting `~/.ssh`, `~/.aws`, etc. |
+| `reproducibility-pinning.md` | Commit SHA pinning for agent repos |
 
 ## Source Code — `src/`
 
