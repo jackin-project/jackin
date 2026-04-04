@@ -1533,7 +1533,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let error = resolve_agent_repo(
             &paths,
             &selector,
-            "git@github.com:donbeave/jackin-agent-smith.git",
+            "https://github.com/donbeave/jackin-agent-smith.git",
             &mut runner,
         )
         .unwrap_err();
@@ -1566,7 +1566,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let error = resolve_agent_repo(
             &paths,
             &selector,
-            "git@github.com:donbeave/jackin-agent-smith.git",
+            "https://github.com/donbeave/jackin-agent-smith.git",
             &mut runner,
         )
         .unwrap_err();
