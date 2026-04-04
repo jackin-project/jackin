@@ -71,7 +71,13 @@ fn resolve_manifest_dockerfile_path(
         anyhow::bail!("invalid agent repo: missing {}", resolved.display());
     }
 
-    Ok(resolved)
+    let canonical_repo = repo_dir.canonicalize()?;
+    let canonical_resolved = resolved.canonicalize()?;
+    if !canonical_resolved.starts_with(&canonical_repo) {
+        anyhow::bail!("invalid agent repo: dockerfile path escapes the repo boundary");
+    }
+
+    Ok(canonical_resolved)
 }
 
 #[cfg(test)]
@@ -131,6 +137,24 @@ mod tests {
         let error = validate_agent_repo(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("must stay inside the repo"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_escaping_repo_boundary() {
+        let temp = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        std::fs::write(outside.path().join("Dockerfile"), "FROM debian:trixie\n").unwrap();
+        std::os::unix::fs::symlink(outside.path(), temp.path().join("escape")).unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            "dockerfile = \"escape/Dockerfile\"\n\n[claude]\nplugins = []\n",
+        )
+        .unwrap();
+
+        let error = validate_agent_repo(temp.path()).unwrap_err();
+
+        assert!(error.to_string().contains("escapes the repo boundary"));
     }
 
     #[test]

@@ -270,7 +270,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 && let Some(ws) = config.workspaces.get_mut(&ws_name)
             {
                 ws.last_agent = Some(class.key());
-                let _ = config.save(&paths);
+                if let Err(e) = config.save(&paths) {
+                    eprintln!("warning: failed to save last-used agent: {e}");
+                }
             }
             result
         }
@@ -287,7 +289,9 @@ pub fn run(cli: Cli) -> Result<()> {
             // Remember the last-used agent if this was a saved workspace
             if let Some(ws) = config.workspaces.get_mut(&workspace.label) {
                 ws.last_agent = Some(class.key());
-                let _ = config.save(&paths);
+                if let Err(e) = config.save(&paths) {
+                    eprintln!("warning: failed to save last-used agent: {e}");
+                }
             }
             result
         }
