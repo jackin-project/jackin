@@ -54,7 +54,11 @@ pub fn parse_mount_spec(spec: &str) -> anyhow::Result<MountConfig> {
         .split_once(':')
         .map_or_else(|| (raw, raw), |(s, d)| (s, d));
     let expanded_src = expand_tilde(src);
-    let dst = if src == dst { expanded_src.clone() } else { dst.to_string() };
+    let dst = if src == dst {
+        expanded_src.clone()
+    } else {
+        dst.to_string()
+    };
 
     Ok(MountConfig {
         src: expanded_src,
@@ -236,7 +240,11 @@ pub fn resolve_load_workspace(
 
     // Merge ad-hoc mounts after workspace mounts, checking for dst conflicts.
     for ad_hoc in ad_hoc_mounts {
-        if workspace.mounts.iter().any(|existing| existing.dst == ad_hoc.dst) {
+        if workspace
+            .mounts
+            .iter()
+            .any(|existing| existing.dst == ad_hoc.dst)
+        {
             anyhow::bail!(
                 "ad-hoc mount destination conflicts with workspace mount destination: {}",
                 ad_hoc.dst
@@ -249,8 +257,9 @@ pub fn resolve_load_workspace(
     validate_mount_paths(&workspace.mounts)?;
 
     let mut mounts = workspace.mounts.clone();
-    let global_mounts =
-        crate::config::AppConfig::expand_and_validate_named_mounts(&config.resolve_mounts(selector))?;
+    let global_mounts = crate::config::AppConfig::expand_and_validate_named_mounts(
+        &config.resolve_mounts(selector),
+    )?;
 
     for mount in global_mounts {
         if mounts.iter().any(|existing| existing.dst == mount.dst) {
@@ -509,7 +518,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(resolved.mounts.len(), 2);
-        assert!(resolved.mounts.iter().any(|m| m.dst == "/extra" && m.readonly));
+        assert!(
+            resolved
+                .mounts
+                .iter()
+                .any(|m| m.dst == "/extra" && m.readonly)
+        );
     }
 
     #[test]
@@ -548,6 +562,10 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("ad-hoc mount destination conflicts"));
+        assert!(
+            error
+                .to_string()
+                .contains("ad-hoc mount destination conflicts")
+        );
     }
 }
