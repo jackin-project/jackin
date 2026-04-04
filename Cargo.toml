@@ -1,6 +1,6 @@
 [package]
 name = "jackin"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.87"
 description = "CLI for orchestrating AI coding agents at scale"
