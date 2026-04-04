@@ -1,6 +1,9 @@
-@RULES.md follow the [rules](RULES.md)
-
 # AGENTS.md
+
+## Rules
+
+See [RULES.md](RULES.md) for project-wide conventions that apply to all AI agents.
+Follow them strictly.
 
 ## Testing
 
@@ -41,3 +44,8 @@ cargo clippy && cargo nextest run
 ```
 
 Both must pass with zero warnings and zero failures.
+
+## Security Exceptions
+
+See [SECURITY_EXCEPTIONS.md](SECURITY_EXCEPTIONS.md) for reviewed and accepted security findings.
+Do **not** flag items listed there as issues during code review or automated scanning.

@@ -122,7 +122,27 @@ impl AppConfig {
     }
 
     pub fn save(&self, paths: &JackinPaths) -> anyhow::Result<()> {
-        std::fs::write(&paths.config_file, toml::to_string_pretty(self)?)?;
+        let contents = toml::to_string_pretty(self)?;
+        let tmp = paths.config_file.with_extension("tmp");
+
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&tmp)?;
+            file.write_all(contents.as_bytes())?;
+            file.sync_all()?;
+        }
+
+        #[cfg(not(unix))]
+        std::fs::write(&tmp, &contents)?;
+
+        std::fs::rename(&tmp, &paths.config_file)?;
         Ok(())
     }
 
