@@ -1,13 +1,13 @@
 ---
 title: Core Concepts
-description: The mental model behind jackin — operators, agents, constructs, and workspaces
+description: The mental model behind jackin' — operators, agents, constructs, and workspaces
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
 ## The operator
 
-**You are the operator.** In The Matrix, the operator sits outside the simulation and controls what gets loaded into it. In jackin, you decide:
+**You are the operator.** In The Matrix, the operator sits outside the simulation and controls what gets loaded into it. In jackin', you decide:
 
 - Which agent to load
 - Which directories to mount (and whether they're read-only)
@@ -31,7 +31,7 @@ An **agent** is an AI coding runtime (like Claude Code) running inside an isolat
 An agent **class** is a reusable tool profile for creating agent containers. It's defined by a GitHub repository that contains a Dockerfile and a manifest file (`jackin.agent.toml`). For example:
 
 - `agent-smith` — the default agent class
-- `the-architect` — an agent with the full Rust toolchain (used for jackin development)
+- `the-architect` — an agent with the full Rust toolchain (used for jackin' development)
 - `chainargos/backend-engineer` — a namespaced agent for backend work in the chainargos organization
 
 The name `agent-smith` is just a project-specific example. In practice, agent class names can reflect the job they are designed for:
@@ -42,7 +42,7 @@ The name `agent-smith` is just a project-specific example. In practice, agent cl
 - `docs-writer`
 - `security-reviewer`
 
-When you run `jackin load agent-smith`, jackin clones the `jackin-agent-smith` repository, builds a Docker image from it, and launches a container.
+When you run `jackin load agent-smith`, jackin' clones the `jackin-agent-smith` repository, builds a Docker image from it, and launches a container.
 
 Think of an agent class as answering: "What kind of agent is this?"
 
@@ -59,7 +59,7 @@ A single agent class can have multiple running **instances**. Each instance is a
 
 ## The construct
 
-In The Matrix, the construct is the empty white space where programs are loaded before a mission. In jackin, the **construct** is the shared base Docker image that every agent starts from:
+In The Matrix, the construct is the empty white space where programs are loaded before a mission. In jackin', the **construct** is the shared base Docker image that every agent starts from:
 
 ```
 donbeave/jackin-construct:trixie
@@ -127,7 +127,7 @@ Workspaces can be:
 
 ## Derived images
 
-When you load an agent, jackin doesn't use the construct image directly. Instead, it generates a **derived Dockerfile** that:
+When you load an agent, jackin' doesn't use the construct image directly. Instead, it generates a **derived Dockerfile** that:
 
 1. Starts from the agent's Dockerfile (which itself starts from the construct)
 2. Remaps the container user to match your host UID/GID

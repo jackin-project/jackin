@@ -6,7 +6,7 @@ export default defineConfig({
   base: '/jackin',
   integrations: [
     starlight({
-      title: 'jackin',
+      title: "jackin'",
       description: 'Matrix-inspired CLI for orchestrating AI coding agents at scale',
       logo: {
         dark: './src/assets/logo-dark.svg',
@@ -33,7 +33,7 @@ export default defineConfig({
         {
           label: 'Getting Started',
           items: [
-            { label: 'Why Jackin?', slug: 'getting-started/why' },
+            { label: "Why jackin'?", slug: 'getting-started/why' },
             { label: 'Installation', slug: 'getting-started/installation' },
             { label: 'Quick Start', slug: 'getting-started/quickstart' },
             { label: 'Core Concepts', slug: 'getting-started/concepts' },

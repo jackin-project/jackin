@@ -715,7 +715,7 @@ pub fn fatal(msg: &str) {
 }
 
 pub fn set_terminal_title(title: &str) {
-    eprint!("\x1b]0;jackin \u{00b7} {title}\x07");
+    eprint!("\x1b]0;jackin' \u{00b7} {title}\x07");
     let _ = io::stderr().flush();
 }
 
