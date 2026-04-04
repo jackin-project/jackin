@@ -176,7 +176,10 @@ mod tests {
 
         assert_eq!(
             validated.dockerfile.dockerfile_path,
-            temp.path().join("docker/agent.Dockerfile")
+            temp.path()
+                .canonicalize()
+                .unwrap()
+                .join("docker/agent.Dockerfile")
         );
     }
 }

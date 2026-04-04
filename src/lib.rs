@@ -22,7 +22,8 @@ use selector::{ClassSelector, Selector};
 use std::io::ErrorKind;
 use std::path::Path;
 use workspace::{
-    LoadWorkspaceInput, WorkspaceConfig, WorkspaceEdit, expand_tilde, parse_mount_spec,
+    LoadWorkspaceInput, WorkspaceConfig, WorkspaceEdit, expand_tilde,
+    parse_mount_spec_resolved, resolve_path,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,7 +240,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
             let ad_hoc_mounts = mounts
                 .iter()
-                .map(|value| parse_mount_spec(value))
+                .map(|value| parse_mount_spec_resolved(value))
                 .collect::<Result<Vec<_>>>()?;
 
             let resolved_workspace = crate::workspace::resolve_load_workspace(
@@ -427,10 +428,10 @@ pub fn run(cli: Cli) -> Result<()> {
                 allowed_agents,
                 default_agent,
             } => {
-                let expanded_workdir = workspace::expand_tilde(&workdir);
+                let expanded_workdir = workspace::resolve_path(&workdir);
                 let mut all_mounts: Vec<_> = mounts
                     .iter()
-                    .map(|value| parse_mount_spec(value))
+                    .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
                 if !no_workdir_mount {
                     let already_mounted = all_mounts.iter().any(|m| m.dst == expanded_workdir);
@@ -590,7 +591,7 @@ pub fn run(cli: Cli) -> Result<()> {
             } => {
                 let upsert_mounts = mounts
                     .iter()
-                    .map(|value| parse_mount_spec(value))
+                    .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
 
                 // Collect what changed for the summary
@@ -627,7 +628,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 config.edit_workspace(
                     &name,
                     WorkspaceEdit {
-                        workdir,
+                        workdir: workdir.map(|w| resolve_path(&w)),
                         upsert_mounts,
                         remove_destinations,
                         allowed_agents_to_add: allowed_agents,

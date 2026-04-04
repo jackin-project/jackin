@@ -46,25 +46,47 @@ pub fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
+/// Expand tilde and resolve relative paths to absolute using the current working directory.
+pub fn resolve_path(path: &str) -> String {
+    let expanded = expand_tilde(path);
+    if !expanded.starts_with('/') {
+        if let Ok(cwd) = std::env::current_dir() {
+            return cwd.join(&expanded).display().to_string();
+        }
+    }
+    expanded
+}
+
 pub fn parse_mount_spec(spec: &str) -> anyhow::Result<MountConfig> {
+    Ok(parse_mount_spec_inner(spec, false))
+}
+
+/// Like [`parse_mount_spec`] but also resolves relative paths to absolute.
+/// Use this for CLI arguments where the user may pass relative paths.
+pub fn parse_mount_spec_resolved(spec: &str) -> anyhow::Result<MountConfig> {
+    Ok(parse_mount_spec_inner(spec, true))
+}
+
+fn parse_mount_spec_inner(spec: &str, resolve: bool) -> MountConfig {
     let (raw, readonly) = spec
         .strip_suffix(":ro")
         .map_or((spec, false), |value| (value, true));
     let (src, dst) = raw
         .split_once(':')
         .map_or_else(|| (raw, raw), |(s, d)| (s, d));
-    let expanded_src = expand_tilde(src);
+    let expand = if resolve { resolve_path } else { expand_tilde };
+    let expanded_src = expand(src);
     let dst = if src == dst {
         expanded_src.clone()
     } else {
         dst.to_string()
     };
 
-    Ok(MountConfig {
+    MountConfig {
         src: expanded_src,
         dst,
         readonly,
-    })
+    }
 }
 
 /// Structural validation: absolute paths, no duplicate destinations.
@@ -318,6 +340,49 @@ mod tests {
         assert_eq!(mount.src, format!("{home}/projects"));
         assert_eq!(mount.dst, format!("{home}/projects"));
         assert!(!mount.readonly);
+    }
+
+    #[test]
+    fn resolve_path_resolves_relative_to_cwd() {
+        let cwd = std::env::current_dir().unwrap();
+        let resolved = resolve_path("my-project");
+
+        assert_eq!(resolved, cwd.join("my-project").display().to_string());
+        assert!(resolved.starts_with('/'));
+    }
+
+    #[test]
+    fn resolve_path_leaves_absolute_unchanged() {
+        assert_eq!(resolve_path("/workspace/project"), "/workspace/project");
+    }
+
+    #[test]
+    fn parse_mount_spec_resolved_resolves_relative_src_and_dst() {
+        let cwd = std::env::current_dir().unwrap();
+        let mount = parse_mount_spec_resolved("my-project").unwrap();
+        let expected = cwd.join("my-project").display().to_string();
+
+        assert_eq!(mount.src, expected);
+        assert_eq!(mount.dst, expected);
+        assert!(!mount.readonly);
+    }
+
+    #[test]
+    fn parse_mount_spec_resolved_resolves_relative_src_with_explicit_dst() {
+        let cwd = std::env::current_dir().unwrap();
+        let mount = parse_mount_spec_resolved("my-project:/workspace/project").unwrap();
+
+        assert_eq!(mount.src, cwd.join("my-project").display().to_string());
+        assert_eq!(mount.dst, "/workspace/project");
+        assert!(!mount.readonly);
+    }
+
+    #[test]
+    fn parse_mount_spec_does_not_resolve_relative_paths() {
+        let mount = parse_mount_spec("my-project").unwrap();
+
+        assert_eq!(mount.src, "my-project");
+        assert_eq!(mount.dst, "my-project");
     }
 
     #[test]
