@@ -104,3 +104,92 @@ The agent container (`jackin-the-architect`) is gone, but its DinD sidecar (`jac
 4. **Read-only secret mount generation**: Materialize selected 1Password secrets into temporary files and mount them read-only into the container. This matches existing mount semantics well, but needs secure lifecycle cleanup and a good way to map secrets to destinations.
 
 **Decision**: Deferred. The right direction is probably operator-controlled launch-time resolution with non-persistent secret injection, but it needs design work around UX, persistence, and how it fits workspace and global mount configuration.
+
+## Agent Source Trust Model
+
+**Problem**: `resolve_agent_source()` auto-constructs a GitHub URL from namespace/name and clones directly without any trust verification. This exposes a typosquatting and untrusted repo execution risk.
+
+**Why it matters**:
+- Any namespace/name pair is accepted and cloned without confirmation
+- No mechanism to distinguish a trusted, previously-used agent from a novel one
+- Agents execute in a build context with access to the Dockerfile and build instructions
+
+**Desired behavior**: A trust-on-first-use model similar to `mise trust`:
+- First time an agent source is encountered, clone the repo but prompt the user for confirmation before running it
+- Store trusted sources in config (allowlist)
+- Subsequent runs of trusted agents proceed without prompts
+- Optional security mode: always show agent source output before running, allowing AI agent analysis of the content
+
+**Decision**: Deferred. Needs design work on the trust store format, UX for confirmation prompts, and how it interacts with workspace config.
+
+## Migrate Docker CLI to Bollard API Client
+
+**Problem**: All Docker operations use `ShellRunner` which shells out to the `docker` CLI. Error handling relies on string-matching stderr text (e.g., `"No such container"`, `"No such network"` in `is_missing_cleanup_error()`), which is brittle across Docker versions and locales.
+
+**Why it matters**:
+- String-matched error detection can break silently on Docker updates or non-English locales
+- No structured error codes from CLI — only exit code 1 for most failures
+- Blocking process calls without native timeout support
+- The `bollard` crate provides a typed Rust Docker API client over Unix socket/TCP with proper HTTP status codes (e.g., 404 for "not found" vs 500 for real errors)
+
+**Options to consider**:
+
+1. **Full migration to `bollard`**: Replace all `ShellRunner` Docker calls with `bollard` API calls. Gives structured responses, native async with timeouts, and proper error codes. Significant refactor.
+
+2. **Incremental migration**: Start with cleanup/lifecycle operations (where string matching is most problematic), keep CLI for `docker build` and `docker run -it` (where interactive TTY is needed).
+
+**Decision**: Deferred. Incremental migration (option 2) is the pragmatic path. Start with container/network lifecycle operations.
+
+## Rootless DinD Research
+
+**Problem**: The current design uses a privileged `docker:dind` sidecar container, which grants broad host-level capabilities to the DinD daemon.
+
+**Why it matters**:
+- Privileged mode gives the container nearly full host access
+- A compromised DinD daemon could escape container isolation
+- Docker provides `docker:dind-rootless` as an alternative with reduced privileges
+
+**Research needed**:
+- Evaluate `docker:dind-rootless` compatibility with jackin's build and runtime operations
+- Identify limitations (e.g., certain storage drivers, network modes, build features)
+- Test whether agent Dockerfiles build correctly under rootless DinD
+- Assess performance impact
+- Consider alternative isolation approaches (sysbox, Kata containers)
+- Evaluate optional stricter network policy modes
+
+**Decision**: Deferred. Needs hands-on testing to determine feasibility and compatibility.
+
+## Sensitive Mount Path Warnings
+
+**Problem**: Mount validation is structurally good, but there are no guardrails for sensitive host paths like `~/.ssh`, `~/.aws`, `~/.gnupg`, etc. An operator can accidentally expose credentials without any warning.
+
+**Why it matters**:
+- Mounting `~/.ssh` or `~/.aws` gives the agent container access to credentials that could be exfiltrated
+- Mistakes in mount config are easy to make and hard to notice
+- The isolation model is weakened if sensitive paths are mounted without awareness
+
+**Desired behavior**: Warning-and-confirm model:
+- When a mount path matches a known sensitive pattern, display a clear warning explaining the risk
+- Require explicit user confirmation before proceeding
+- Allow the mount if confirmed — operators who know what they're doing should not be blocked
+- Sensitive path patterns: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, `~/.kube`, `~/.docker`, etc.
+
+**Decision**: Deferred. Implement alongside the agent source trust model (#2 above) as part of a broader trust-and-confirm UX pattern.
+
+## Reproducibility and Provenance Pinning
+
+**Problem**: The current agent repo flow tracks moving branches (typically `main`) by default. There is no mechanism to pin to a specific commit, verify provenance, or control when updates are pulled.
+
+**Why it matters**:
+- An agent's behavior can change between runs without the operator's knowledge
+- No way to reproduce a previous run's exact environment
+- No audit trail of which commit was used for a given session
+
+**Desired behavior**:
+- Support lockfile-like pinning to commit SHAs in agent config
+- Display the resolved commit SHA during agent launch
+- Introduce explicit `--update` flag to pull latest (rather than auto-updating)
+- Record the commit SHA used in runtime state for audit/debugging
+- Integrate with the trust model: trust is granted at a specific commit, `--update` re-evaluates trust
+
+**Decision**: Deferred. Implement after the agent source trust model is in place, as pinning and trust are closely related.
