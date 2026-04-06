@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MountConfig {
@@ -46,15 +46,38 @@ pub fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
-/// Expand tilde and resolve relative paths to absolute using the current working directory.
-pub fn resolve_path(path: &str) -> String {
-    let expanded = expand_tilde(path);
-    if !expanded.starts_with('/') {
-        if let Ok(cwd) = std::env::current_dir() {
-            return cwd.join(&expanded).display().to_string();
+/// Normalize an absolute path by resolving `.` and `..` components without
+/// touching the filesystem (unlike [`std::fs::canonicalize`]).
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut parts: Vec<Component<'_>> = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                if let Some(Component::Normal(_)) = parts.last() {
+                    parts.pop();
+                }
+            }
+            Component::CurDir => {}
+            c => parts.push(c),
         }
     }
-    expanded
+    parts.iter().collect()
+}
+
+/// Expand tilde, resolve relative paths to absolute using the current working
+/// directory, and normalize `.` / `..` components.
+pub fn resolve_path(path: &str) -> String {
+    let expanded = expand_tilde(path);
+    let abs = if !expanded.starts_with('/') {
+        if let Ok(cwd) = std::env::current_dir() {
+            cwd.join(&expanded)
+        } else {
+            return expanded;
+        }
+    } else {
+        PathBuf::from(&expanded)
+    };
+    normalize_path(&abs).display().to_string()
 }
 
 pub fn parse_mount_spec(spec: &str) -> anyhow::Result<MountConfig> {
@@ -357,6 +380,44 @@ mod tests {
     }
 
     #[test]
+    fn resolve_path_normalizes_dot_to_cwd() {
+        let cwd = std::env::current_dir().unwrap();
+        let resolved = resolve_path(".");
+
+        assert_eq!(resolved, cwd.display().to_string());
+    }
+
+    #[test]
+    fn resolve_path_normalizes_parent_component() {
+        let cwd = std::env::current_dir().unwrap();
+        let resolved = resolve_path("../sibling");
+        let expected = cwd.parent().unwrap().join("sibling");
+
+        assert_eq!(resolved, expected.display().to_string());
+        assert!(!resolved.contains(".."));
+    }
+
+    #[test]
+    fn resolve_path_normalizes_absolute_with_dotdot() {
+        assert_eq!(
+            resolve_path("/a/b/../c"),
+            "/a/c"
+        );
+    }
+
+    #[test]
+    fn normalize_path_handles_multiple_parent_refs() {
+        let path = Path::new("/a/b/c/../../d");
+        assert_eq!(normalize_path(path), PathBuf::from("/a/d"));
+    }
+
+    #[test]
+    fn normalize_path_preserves_root_on_excessive_parents() {
+        let path = Path::new("/a/../../../b");
+        assert_eq!(normalize_path(path), PathBuf::from("/b"));
+    }
+
+    #[test]
     fn parse_mount_spec_resolved_resolves_relative_src_and_dst() {
         let cwd = std::env::current_dir().unwrap();
         let mount = parse_mount_spec_resolved("my-project").unwrap();
@@ -375,6 +436,26 @@ mod tests {
         assert_eq!(mount.src, cwd.join("my-project").display().to_string());
         assert_eq!(mount.dst, "/workspace/project");
         assert!(!mount.readonly);
+    }
+
+    #[test]
+    fn parse_mount_spec_resolved_normalizes_dotdot_in_relative_path() {
+        let cwd = std::env::current_dir().unwrap();
+        let mount = parse_mount_spec_resolved("../sibling-project").unwrap();
+        let expected = cwd.parent().unwrap().join("sibling-project");
+
+        assert_eq!(mount.src, expected.display().to_string());
+        assert_eq!(mount.dst, expected.display().to_string());
+        assert!(!mount.src.contains(".."));
+    }
+
+    #[test]
+    fn parse_mount_spec_resolved_normalizes_dot_path() {
+        let cwd = std::env::current_dir().unwrap();
+        let mount = parse_mount_spec_resolved(".").unwrap();
+
+        assert_eq!(mount.src, cwd.display().to_string());
+        assert_eq!(mount.dst, cwd.display().to_string());
     }
 
     #[test]
