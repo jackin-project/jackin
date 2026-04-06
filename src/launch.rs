@@ -309,7 +309,9 @@ fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
     use ratatui::widgets::Paragraph;
 
     let blue = Style::default().fg(colors::BRIGHT_BLUE);
-    let title = Style::default().fg(colors::WHITE).add_modifier(Modifier::BOLD);
+    let title = Style::default()
+        .fg(colors::WHITE)
+        .add_modifier(Modifier::BOLD);
     let sub = Style::default().fg(colors::DIM_BLUE);
 
     // The logo is 25 chars wide ("│ │╷│ │╷│ ╷  │╷│ │╷│ │╷│").
@@ -317,9 +319,18 @@ fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
     let w = 25;
     let lines = vec![
         Line::from(""),
-        Line::from(Span::styled(format!("{:<w$}", "│ │╷│ │╷│ ╷  │╷│ │╷│ │╷│"), blue)),
-        Line::from(Span::styled(format!("{:<w$}", "│ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│"), blue)),
-        Line::from(Span::styled(format!("{:<w$}", "╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵"), blue)),
+        Line::from(Span::styled(
+            format!("{:<w$}", "│ │╷│ │╷│ ╷  │╷│ │╷│ │╷│"),
+            blue,
+        )),
+        Line::from(Span::styled(
+            format!("{:<w$}", "│ ╵│ │╵│ ╵ ╷ ╵│ │╵│ │╵│"),
+            blue,
+        )),
+        Line::from(Span::styled(
+            format!("{:<w$}", "╵  ╵ ╵ ╵  │  ╵ ╵ ╵ ╵ ╵"),
+            blue,
+        )),
         Line::from(Span::styled(format!("{:<w$}", "           ╵"), blue)),
         Line::from(Span::styled(format!("{:^w$}", "j a c k i n"), title)),
         Line::from(Span::styled(format!("{:^w$}", "operator terminal"), sub)),
@@ -357,7 +368,7 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(BANNER_HEIGHT), // banner (includes bottom padding)
-            Constraint::Min(10),              // body
+            Constraint::Min(10),               // body
             Constraint::Length(2),             // footer
         ])
         .split(area);
@@ -373,7 +384,7 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         .constraints([
             Constraint::Length(list_height), // workspace list — fixed to item count
             Constraint::Length(1),           // gap between panels
-            Constraint::Min(6),             // details — fills remaining space
+            Constraint::Min(6),              // details — fills remaining space
         ])
         .split(root[1]);
 
@@ -489,10 +500,7 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
             if src_short == dst_short {
                 spans.push(Span::styled(src_short, Style::default().fg(colors::PATH)));
             } else {
-                spans.push(Span::styled(
-                    src_short,
-                    Style::default().fg(colors::PATH),
-                ));
+                spans.push(Span::styled(src_short, Style::default().fg(colors::PATH)));
                 spans.push(Span::styled(
                     " mounted as ",
                     Style::default().fg(colors::DIM_WHITE),
@@ -524,11 +532,26 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
 
     // Footer
     let footer = Paragraph::new(Line::from(vec![
-        Span::styled("  Enter ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  Enter ",
+            Style::default()
+                .fg(colors::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("select   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled("↑↓ ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "↑↓ ",
+            Style::default()
+                .fg(colors::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("navigate   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled("Esc ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Esc ",
+            Style::default()
+                .fg(colors::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("quit", Style::default().fg(colors::DIM_GREEN)),
     ]))
     .alignment(Alignment::Center);
@@ -555,10 +578,10 @@ fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(BANNER_HEIGHT),    // banner
-            Constraint::Length(ws_block_height),  // workspace context block
+            Constraint::Length(BANNER_HEIGHT),   // banner
+            Constraint::Length(ws_block_height), // workspace context block
             Constraint::Length(1),               // gap
-            Constraint::Length(list_height),      // agent list (fixed)
+            Constraint::Length(list_height),     // agent list (fixed)
             Constraint::Min(0),                  // remaining space
             Constraint::Length(2),               // footer
         ])
@@ -637,18 +660,47 @@ fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
     frame.render_stateful_widget(agent_list, list_area, &mut agent_state);
 
     // Footer
+    render_agent_footer(frame, root[5]);
+}
+
+fn render_agent_footer(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    use ratatui::layout::Alignment;
+    use ratatui::style::{Modifier, Style};
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::Paragraph;
+
     let footer = Paragraph::new(Line::from(vec![
-        Span::styled("  Enter ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  Enter ",
+            Style::default()
+                .fg(colors::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("load   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled("↑↓ ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "↑↓ ",
+            Style::default()
+                .fg(colors::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("navigate   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled("Type ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Type ",
+            Style::default()
+                .fg(colors::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("to filter   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled("Esc ", Style::default().fg(colors::PHOSPHOR_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Esc ",
+            Style::default()
+                .fg(colors::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("back", Style::default().fg(colors::DIM_GREEN)),
     ]))
     .alignment(Alignment::Center);
-    frame.render_widget(footer, root[5]);
+    frame.render_widget(footer, area);
 }
 
 // ── Layout helpers ─────────────────────────────────────────────────────

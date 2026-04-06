@@ -98,9 +98,9 @@ fn is_valid_class_segment(value: &str) -> bool {
 fn is_valid_container_name(value: &str) -> bool {
     value.strip_prefix("jackin-").is_some_and(|suffix| {
         !suffix.is_empty()
-            && suffix.chars().all(|ch| {
-                ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_'
-            })
+            && suffix
+                .chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_')
     })
 }
 

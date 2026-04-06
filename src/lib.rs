@@ -23,7 +23,10 @@ use paths::JackinPaths;
 use selector::{ClassSelector, Selector};
 use std::io::ErrorKind;
 use std::path::Path;
-use workspace::{LoadWorkspaceInput, WorkspaceConfig, WorkspaceEdit, expand_tilde, parse_mount_spec};
+use workspace::{
+    LoadWorkspaceInput, WorkspaceConfig, WorkspaceEdit, expand_tilde, parse_mount_spec_resolved,
+    resolve_path,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TargetKind {
@@ -75,20 +78,14 @@ fn find_dst_separator(target: &str) -> Option<usize> {
     None
 }
 
-fn resolve_target_name(
-    name: &str,
-    config: &AppConfig,
-    cwd: &Path,
-) -> Result<LoadWorkspaceInput> {
+fn resolve_target_name(name: &str, config: &AppConfig, cwd: &Path) -> Result<LoadWorkspaceInput> {
     let workspace_exists = config.workspaces.contains_key(name);
     let dir_exists = cwd.join(name).is_dir();
 
     match (workspace_exists, dir_exists) {
         (true, true) => {
             let choice = tui::prompt_choice(
-                &format!(
-                    "\"{name}\" matches both a saved workspace and a directory."
-                ),
+                &format!("\"{name}\" matches both a saved workspace and a directory."),
                 &[
                     &format!("Use workspace \"{name}\""),
                     &format!("Use directory ./{name}"),
@@ -122,7 +119,12 @@ fn resolve_target_name(
                 if config.workspaces.is_empty() {
                     "(none)".to_string()
                 } else {
-                    config.workspaces.keys().cloned().collect::<Vec<_>>().join(", ")
+                    config
+                        .workspaces
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 }
             );
         }
@@ -151,10 +153,7 @@ fn resolve_agent_from_context(
 
     if let Some((name, ws)) = matching_ws {
         // Try last_agent, then default_agent
-        let agent_key = ws
-            .last_agent
-            .as_deref()
-            .or(ws.default_agent.as_deref());
+        let agent_key = ws.last_agent.as_deref().or(ws.default_agent.as_deref());
 
         if let Some(key) = agent_key {
             let class = ClassSelector::parse(key)?;
@@ -167,8 +166,7 @@ fn resolve_agent_from_context(
             .keys()
             .filter_map(|k| ClassSelector::parse(k).ok())
             .filter(|agent| {
-                ws.allowed_agents.is_empty()
-                    || ws.allowed_agents.iter().any(|a| a == &agent.key())
+                ws.allowed_agents.is_empty() || ws.allowed_agents.iter().any(|a| a == &agent.key())
             })
             .collect();
 
@@ -244,7 +242,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
             let ad_hoc_mounts = mounts
                 .iter()
-                .map(|value| parse_mount_spec(value))
+                .map(|value| parse_mount_spec_resolved(value))
                 .collect::<Result<Vec<_>>>()?;
 
             let resolved_workspace = crate::workspace::resolve_load_workspace(
@@ -362,7 +360,12 @@ pub fn run(cli: Cli) -> Result<()> {
                 } => {
                     let ro = if readonly { " (read-only)" } else { "" };
                     let scope_label = scope.as_deref().unwrap_or("global");
-                    let mount = config::MountConfig { src: src.clone(), dst: dst.clone(), readonly };
+                    let resolved_src = resolve_path(&src);
+                    let mount = config::MountConfig {
+                        src: resolved_src,
+                        dst: dst.clone(),
+                        readonly,
+                    };
                     config.add_mount(&name, mount, scope.as_deref());
                     config.save(&paths)?;
                     println!("Added mount {name:?} ({scope_label}): {src} -> {dst}{ro}");
@@ -404,7 +407,11 @@ pub fn run(cli: Cli) -> Result<()> {
                                 name: name.clone(),
                                 src: tui::shorten_home(&m.src),
                                 dst: m.dst.clone(),
-                                mode: if m.readonly { "read-only".to_string() } else { "read-write".to_string() },
+                                mode: if m.readonly {
+                                    "read-only".to_string()
+                                } else {
+                                    "read-write".to_string()
+                                },
                             })
                             .collect();
                         let mut table = Table::new(rows);
@@ -424,15 +431,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 allowed_agents,
                 default_agent,
             } => {
-                let expanded_workdir = workspace::expand_tilde(&workdir);
+                let expanded_workdir = workspace::resolve_path(&workdir);
                 let mut all_mounts: Vec<_> = mounts
                     .iter()
-                    .map(|value| parse_mount_spec(value))
+                    .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
                 if !no_workdir_mount {
-                    let already_mounted = all_mounts
-                        .iter()
-                        .any(|m| m.dst == expanded_workdir);
+                    let already_mounted = all_mounts.iter().any(|m| m.dst == expanded_workdir);
                     if !already_mounted {
                         all_mounts.insert(
                             0,
@@ -537,10 +542,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 } else {
                     workspace.allowed_agents.join(", ")
                 };
-                let default_agent = workspace
-                    .default_agent
-                    .as_deref()
-                    .unwrap_or("none");
+                let default_agent = workspace.default_agent.as_deref().unwrap_or("none");
 
                 let short_workdir = tui::shorten_home(&workspace.workdir);
                 let info = [
@@ -549,13 +551,12 @@ pub fn run(cli: Cli) -> Result<()> {
                     ("Allowed Agents", &allowed),
                     ("Default Agent", default_agent),
                 ];
-                let mut info_table = Table::builder(
-                    info.iter().map(|(k, v)| [*k, *v]),
-                )
-                .build();
+                let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
                 info_table
                     .with(Style::modern_rounded())
-                    .with(tabled::settings::Remove::row(tabled::settings::object::Rows::first()));
+                    .with(tabled::settings::Remove::row(
+                        tabled::settings::object::Rows::first(),
+                    ));
                 println!("{info_table}");
 
                 if !workspace.mounts.is_empty() {
@@ -593,7 +594,7 @@ pub fn run(cli: Cli) -> Result<()> {
             } => {
                 let upsert_mounts = mounts
                     .iter()
-                    .map(|value| parse_mount_spec(value))
+                    .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
 
                 // Collect what changed for the summary
@@ -630,7 +631,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 config.edit_workspace(
                     &name,
                     WorkspaceEdit {
-                        workdir,
+                        workdir: workdir.map(|w| resolve_path(&w)),
                         upsert_mounts,
                         remove_destinations,
                         allowed_agents_to_add: allowed_agents,
@@ -790,5 +791,148 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("neither a saved workspace nor a directory"));
+    }
+
+    /// Simulates `jackin workspace add jackin --workdir jackin --mount sibling-project`
+    /// from a parent directory. Both relative workdir and mount must be resolved to
+    /// absolute paths so that `add_workspace` validation passes.
+    #[test]
+    fn workspace_add_resolves_relative_workdir_and_mounts() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir_dir = temp.path().join("jackin");
+        let mount_dir = temp.path().join("sibling-project");
+        std::fs::create_dir_all(&workdir_dir).unwrap();
+        std::fs::create_dir_all(&mount_dir).unwrap();
+
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp.path()).unwrap();
+
+        let expanded_workdir = workspace::resolve_path("jackin");
+        let mount = parse_mount_spec_resolved("sibling-project").unwrap();
+
+        let mut config = config::AppConfig::default();
+        let result = config.add_workspace(
+            "jackin",
+            WorkspaceConfig {
+                workdir: expanded_workdir.clone(),
+                mounts: vec![
+                    workspace::MountConfig {
+                        src: expanded_workdir.clone(),
+                        dst: expanded_workdir.clone(),
+                        readonly: false,
+                    },
+                    mount,
+                ],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+            },
+        );
+
+        std::env::set_current_dir(original_cwd).unwrap();
+
+        result.unwrap();
+        let ws = config.workspaces.get("jackin").unwrap();
+        assert!(ws.workdir.starts_with('/'));
+        assert!(!ws.workdir.contains(".."));
+        assert!(ws.mounts.iter().all(|m| m.src.starts_with('/')));
+    }
+
+    /// Simulates `jackin workspace add jackin --workdir . --mount ../jackin-agent-smith`
+    /// from inside the project directory. Dot-workdir and parent-relative mount must both
+    /// resolve to clean absolute paths.
+    #[test]
+    fn workspace_add_resolves_dot_workdir_and_dotdot_mount() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir_dir = temp.path().join("jackin");
+        let sibling_dir = temp.path().join("jackin-agent-smith");
+        std::fs::create_dir_all(&workdir_dir).unwrap();
+        std::fs::create_dir_all(&sibling_dir).unwrap();
+
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&workdir_dir).unwrap();
+
+        let expanded_workdir = workspace::resolve_path(".");
+        let mount = parse_mount_spec_resolved("../jackin-agent-smith").unwrap();
+
+        let mut config = config::AppConfig::default();
+        let result = config.add_workspace(
+            "jackin",
+            WorkspaceConfig {
+                workdir: expanded_workdir.clone(),
+                mounts: vec![
+                    workspace::MountConfig {
+                        src: expanded_workdir.clone(),
+                        dst: expanded_workdir.clone(),
+                        readonly: false,
+                    },
+                    mount.clone(),
+                ],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+            },
+        );
+
+        std::env::set_current_dir(original_cwd).unwrap();
+
+        result.unwrap();
+        let ws = config.workspaces.get("jackin").unwrap();
+        assert!(ws.workdir.starts_with('/'));
+        assert!(!ws.workdir.contains(".."));
+        assert!(!mount.src.contains(".."), "mount src must not contain '..'");
+        assert!(mount.src.ends_with("/jackin-agent-smith"));
+    }
+
+    /// Simulates `jackin workspace edit jackin --mount sibling-dev` where the mount
+    /// is a relative directory name. The resolved mount must pass validation.
+    #[test]
+    fn workspace_edit_resolves_relative_mount() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir_dir = temp.path().join("jackin");
+        let dev_dir = temp.path().join("jackin-dev");
+        std::fs::create_dir_all(&workdir_dir).unwrap();
+        std::fs::create_dir_all(&dev_dir).unwrap();
+
+        let workdir_abs = workdir_dir.display().to_string();
+
+        let mut config = config::AppConfig::default();
+        config
+            .add_workspace(
+                "jackin",
+                WorkspaceConfig {
+                    workdir: workdir_abs.clone(),
+                    mounts: vec![workspace::MountConfig {
+                        src: workdir_abs.clone(),
+                        dst: workdir_abs.clone(),
+                        readonly: false,
+                    }],
+                    allowed_agents: vec![],
+                    default_agent: None,
+                    last_agent: None,
+                },
+            )
+            .unwrap();
+
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp.path()).unwrap();
+
+        let mount = parse_mount_spec_resolved("jackin-dev").unwrap();
+
+        let result = config.edit_workspace(
+            "jackin",
+            WorkspaceEdit {
+                upsert_mounts: vec![mount.clone()],
+                ..WorkspaceEdit::default()
+            },
+        );
+
+        std::env::set_current_dir(original_cwd).unwrap();
+
+        result.unwrap();
+        let ws = config.workspaces.get("jackin").unwrap();
+        assert_eq!(ws.mounts.len(), 2);
+        assert!(ws.mounts[1].src.starts_with('/'));
+        assert!(ws.mounts[1].src.ends_with("/jackin-dev"));
     }
 }

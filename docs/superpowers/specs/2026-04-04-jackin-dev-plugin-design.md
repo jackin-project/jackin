@@ -20,8 +20,6 @@ All three platforms read `AGENTS.md`, which serves as the universal entry point.
 jackin-dev/
   .claude-plugin/
     plugin.json
-  .cursor-plugin/
-    plugin.json
   .codex/
     INSTALL.md
   skills/
