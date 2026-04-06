@@ -2,6 +2,9 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+pub const JACKIN_RUNTIME_ENV_NAME: &str = "CLAUDE_ENV";
+pub const JACKIN_RUNTIME_ENV_VALUE: &str = "jackin";
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentManifest {
@@ -72,6 +75,12 @@ impl AgentManifest {
         let mut warnings = Vec::new();
 
         for (name, decl) in &self.env {
+            if name == JACKIN_RUNTIME_ENV_NAME {
+                anyhow::bail!(
+                    "env var {name}: reserved for jackin runtime metadata and set automatically to {JACKIN_RUNTIME_ENV_VALUE}"
+                );
+            }
+
             // Non-interactive without default is an error
             if !decl.interactive && decl.default_value.is_none() {
                 anyhow::bail!("env var {name}: non-interactive variable must have a default value");
@@ -398,7 +407,7 @@ post_launch = "bad"
 [claude]
 plugins = []
 
-[env.CLAUDE_ENV]
+[env.RUNTIME]
 default = "docker"
 "#,
         )
@@ -407,7 +416,7 @@ default = "docker"
         let manifest = AgentManifest::load(temp.path()).unwrap();
 
         assert_eq!(manifest.env.len(), 1);
-        let var = &manifest.env["CLAUDE_ENV"];
+        let var = &manifest.env["RUNTIME"];
         assert_eq!(var.default_value.as_deref(), Some("docker"));
         assert!(!var.interactive);
     }
@@ -696,7 +705,7 @@ prompt = "Branch:"
 [claude]
 plugins = []
 
-[env.CLAUDE_ENV]
+[env.RUNTIME]
 default = "docker"
 
 [env.PROJECT]
@@ -717,6 +726,29 @@ default = "main"
         let warnings = manifest.validate().unwrap();
 
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn validate_rejects_reserved_claude_env_name() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.CLAUDE_ENV]
+default = "docker"
+"#,
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let result = manifest.validate();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("CLAUDE_ENV"));
     }
 
     #[test]
