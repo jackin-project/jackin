@@ -126,12 +126,17 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
@@ -149,12 +154,17 @@ mod tests {
 
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\", \"feature-dev@claude-plugins-official\"]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["code-review@claude-plugins-official", "feature-dev@claude-plugins-official"]
+"#,
         )
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
 
@@ -164,7 +174,12 @@ mod tests {
         assert!(state.jackin_dir.is_dir());
         assert_eq!(
             std::fs::read_to_string(&state.plugins_json).unwrap(),
-            "{\n  \"plugins\": [\n    \"code-review@claude-plugins-official\",\n    \"feature-dev@claude-plugins-official\"\n  ]\n}"
+            r#"{
+  "plugins": [
+    "code-review@claude-plugins-official",
+    "feature-dev@claude-plugins-official"
+  ]
+}"#
         );
     }
 }
