@@ -358,8 +358,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 } => {
                     let ro = if readonly { " (read-only)" } else { "" };
                     let scope_label = scope.as_deref().unwrap_or("global");
+                    let resolved_src = resolve_path(&src);
                     let mount = config::MountConfig {
-                        src: src.clone(),
+                        src: resolved_src,
                         dst: dst.clone(),
                         readonly,
                     };
@@ -788,5 +789,148 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("neither a saved workspace nor a directory"));
+    }
+
+    /// Simulates `jackin workspace add jackin --workdir jackin --mount sibling-project`
+    /// from a parent directory. Both relative workdir and mount must be resolved to
+    /// absolute paths so that `add_workspace` validation passes.
+    #[test]
+    fn workspace_add_resolves_relative_workdir_and_mounts() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir_dir = temp.path().join("jackin");
+        let mount_dir = temp.path().join("sibling-project");
+        std::fs::create_dir_all(&workdir_dir).unwrap();
+        std::fs::create_dir_all(&mount_dir).unwrap();
+
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp.path()).unwrap();
+
+        let expanded_workdir = workspace::resolve_path("jackin");
+        let mount = parse_mount_spec_resolved("sibling-project").unwrap();
+
+        let mut config = config::AppConfig::default();
+        let result = config.add_workspace(
+            "jackin",
+            WorkspaceConfig {
+                workdir: expanded_workdir.clone(),
+                mounts: vec![
+                    workspace::MountConfig {
+                        src: expanded_workdir.clone(),
+                        dst: expanded_workdir.clone(),
+                        readonly: false,
+                    },
+                    mount,
+                ],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+            },
+        );
+
+        std::env::set_current_dir(original_cwd).unwrap();
+
+        result.unwrap();
+        let ws = config.workspaces.get("jackin").unwrap();
+        assert!(ws.workdir.starts_with('/'));
+        assert!(!ws.workdir.contains(".."));
+        assert!(ws.mounts.iter().all(|m| m.src.starts_with('/')));
+    }
+
+    /// Simulates `jackin workspace add jackin --workdir . --mount ../jackin-agent-smith`
+    /// from inside the project directory. Dot-workdir and parent-relative mount must both
+    /// resolve to clean absolute paths.
+    #[test]
+    fn workspace_add_resolves_dot_workdir_and_dotdot_mount() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir_dir = temp.path().join("jackin");
+        let sibling_dir = temp.path().join("jackin-agent-smith");
+        std::fs::create_dir_all(&workdir_dir).unwrap();
+        std::fs::create_dir_all(&sibling_dir).unwrap();
+
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&workdir_dir).unwrap();
+
+        let expanded_workdir = workspace::resolve_path(".");
+        let mount = parse_mount_spec_resolved("../jackin-agent-smith").unwrap();
+
+        let mut config = config::AppConfig::default();
+        let result = config.add_workspace(
+            "jackin",
+            WorkspaceConfig {
+                workdir: expanded_workdir.clone(),
+                mounts: vec![
+                    workspace::MountConfig {
+                        src: expanded_workdir.clone(),
+                        dst: expanded_workdir.clone(),
+                        readonly: false,
+                    },
+                    mount.clone(),
+                ],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+            },
+        );
+
+        std::env::set_current_dir(original_cwd).unwrap();
+
+        result.unwrap();
+        let ws = config.workspaces.get("jackin").unwrap();
+        assert!(ws.workdir.starts_with('/'));
+        assert!(!ws.workdir.contains(".."));
+        assert!(!mount.src.contains(".."), "mount src must not contain '..'");
+        assert!(mount.src.ends_with("/jackin-agent-smith"));
+    }
+
+    /// Simulates `jackin workspace edit jackin --mount sibling-dev` where the mount
+    /// is a relative directory name. The resolved mount must pass validation.
+    #[test]
+    fn workspace_edit_resolves_relative_mount() {
+        let temp = tempfile::tempdir().unwrap();
+        let workdir_dir = temp.path().join("jackin");
+        let dev_dir = temp.path().join("jackin-dev");
+        std::fs::create_dir_all(&workdir_dir).unwrap();
+        std::fs::create_dir_all(&dev_dir).unwrap();
+
+        let workdir_abs = workdir_dir.display().to_string();
+
+        let mut config = config::AppConfig::default();
+        config
+            .add_workspace(
+                "jackin",
+                WorkspaceConfig {
+                    workdir: workdir_abs.clone(),
+                    mounts: vec![workspace::MountConfig {
+                        src: workdir_abs.clone(),
+                        dst: workdir_abs.clone(),
+                        readonly: false,
+                    }],
+                    allowed_agents: vec![],
+                    default_agent: None,
+                    last_agent: None,
+                },
+            )
+            .unwrap();
+
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp.path()).unwrap();
+
+        let mount = parse_mount_spec_resolved("jackin-dev").unwrap();
+
+        let result = config.edit_workspace(
+            "jackin",
+            WorkspaceEdit {
+                upsert_mounts: vec![mount.clone()],
+                ..WorkspaceEdit::default()
+            },
+        );
+
+        std::env::set_current_dir(original_cwd).unwrap();
+
+        result.unwrap();
+        let ws = config.workspaces.get("jackin").unwrap();
+        assert_eq!(ws.mounts.len(), 2);
+        assert!(ws.mounts[1].src.starts_with('/'));
+        assert!(ws.mounts[1].src.ends_with("/jackin-dev"));
     }
 }
