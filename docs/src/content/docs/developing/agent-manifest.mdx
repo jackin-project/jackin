@@ -7,22 +7,34 @@ import { Aside } from '@astrojs/starlight/components';
 
 ## Overview
 
-Every agent repo must contain a `jackin.agent.toml` file at the repository root. This manifest tells jackin' how to build and identify the agent.
+Every agent repo must contain a `jackin.agent.toml` file at the repository root. This manifest tells jackin' how to build, configure, and identify the agent.
+
+jackin' enforces **strict parsing** — unknown fields are rejected with an error. This catches typos and prevents silent misconfiguration.
 
 ## Full schema
 
 ```toml title="jackin.agent.toml"
 dockerfile = "Dockerfile"
 
+[identity]
+name = "The Architect"
+
 [claude]
-# Claude plugins to install by plugin ID (required table, list may be empty)
 plugins = ["code-review@claude-plugins-official"]
 
-[identity]
-# Display name for the agent (optional)
-# Used in the TUI launcher and output
-# Falls back to the class selector name when omitted
-name = "Agent Smith"
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+
+[env.PROJECT]
+interactive = true
+options = ["project1", "project2"]
+prompt = "Select a project:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch name:"
+default = "main"
 ```
 
 ## Top-level fields
@@ -56,13 +68,134 @@ plugins = [
 ]
 ```
 
-### `[identity]`
+## `[identity]`
 
 | Field | Required | Description |
 |---|---|---|
 | `name` | No | Human-readable display name for the agent |
 
-When omitted, jackin' uses the class selector name. For example, an agent loaded as `agent-smith` would display as "agent-smith" in the TUI.
+When omitted, jackin' uses the class selector name.
+
+## `[hooks]`
+
+| Field | Required | Description |
+|---|---|---|
+| `pre_launch` | No | Relative path to a bash script run before Claude starts |
+
+The pre-launch hook runs inside the container after plugin installation but before Claude Code launches. It has access to all resolved environment variables.
+
+The script path must:
+
+- Be relative (no absolute paths)
+- Stay inside the repository (no `../` escapes)
+- Point to an existing, non-empty file
+- Not be a symlink
+
+Example:
+
+```toml title="jackin.agent.toml"
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+```
+
+```bash title="hooks/pre-launch.sh"
+#!/bin/bash
+set -euo pipefail
+
+# Configure Context7 MCP if API key is available
+if [ -n "${CONTEXT7_API_KEY:-}" ]; then
+    ctx7 setup --claude --mcp --api-key "$CONTEXT7_API_KEY" -y
+fi
+```
+
+## `[env.<NAME>]`
+
+Declare environment variables that the agent needs at runtime. Each variable is a TOML table under `[env]`.
+
+### Fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `default` | String | — | Default value (used if no prompt or user accepts default) |
+| `interactive` | bool | `false` | Whether to prompt the user at launch time |
+| `skippable` | bool | `false` | Whether the user can skip this prompt |
+| `prompt` | String | Variable name | Text shown when prompting |
+| `options` | String[] | `[]` | Options for a select-style prompt |
+| `depends_on` | String[] | `[]` | Variables that must be resolved first (use `env.` prefix) |
+
+### Validation rules
+
+- A non-interactive variable **must** have a `default` value
+- `options` requires `interactive = true`
+- `depends_on` entries must use the `env.` prefix (e.g., `"env.PROJECT"`)
+- `depends_on` must reference variables declared in the same manifest
+- `CLAUDE_ENV` is reserved for jackin and cannot be declared in `[env]`
+- Circular dependencies are rejected
+
+### Runtime-managed variables
+
+jackin sets `CLAUDE_ENV=jackin` automatically inside the container to mark the isolated runtime. Do not declare `CLAUDE_ENV` in `[env]`.
+
+### Interactive text input
+
+Prompt the user for a free-text value:
+
+```toml
+[env.GIT_BRANCH]
+interactive = true
+prompt = "Branch name:"
+
+[env.BRANCH_WITH_DEFAULT]
+interactive = true
+prompt = "Branch name:"
+default = "main"
+```
+
+### Interactive select
+
+Present a list of options:
+
+```toml
+[env.PROJECT]
+interactive = true
+options = ["frontend", "backend", "infra"]
+prompt = "Select a project:"
+```
+
+### Skippable prompts
+
+Allow the user to skip a prompt. The variable won't be set:
+
+```toml
+[env.API_KEY]
+interactive = true
+skippable = true
+prompt = "API key (optional):"
+```
+
+### Dependencies
+
+Control prompt ordering and skip cascading:
+
+```toml
+[env.PROJECT]
+interactive = true
+skippable = true
+options = ["frontend", "backend"]
+prompt = "Select a project:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch to work on:"
+default = "main"
+```
+
+If a skippable variable is skipped, all variables that depend on it are also skipped — regardless of their own `skippable` setting.
+
+<Aside type="tip">
+Interactive prompts happen before the Docker image build, so you won't wait through a build before being asked questions. If you cancel, no build resources are wasted.
+</Aside>
 
 ## Minimal example
 
@@ -80,13 +213,32 @@ plugins = []
 ```toml title="jackin.agent.toml"
 dockerfile = "docker/Dockerfile.agent"
 
+[identity]
+name = "The Architect"
+
 [claude]
 plugins = ["code-review@claude-plugins-official"]
 
-[identity]
-name = "The Architect"
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+
+[env.CONTEXT7_API_KEY]
+interactive = true
+skippable = true
+prompt = "Context7 API key:"
+
+[env.PROJECT]
+interactive = true
+options = ["frontend", "backend", "infra"]
+prompt = "Select a project to clone"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch name:"
+default = "main"
 ```
 
 <Aside type="tip">
-Keep manifests simple. The Dockerfile does the heavy lifting — the manifest just points jackin' to it and provides metadata.
+Keep manifests focused. The Dockerfile installs tools, the manifest declares what configuration the agent needs at launch time.
 </Aside>
