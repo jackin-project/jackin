@@ -10,7 +10,17 @@ pub struct DerivedBuildContext {
     pub dockerfile_path: PathBuf,
 }
 
-pub fn render_derived_dockerfile(base_dockerfile: &str) -> String {
+pub fn render_derived_dockerfile(base_dockerfile: &str, pre_launch_hook: Option<&str>) -> String {
+    let hook_section = pre_launch_hook.map_or_else(String::new, |hook_path| {
+        format!(
+            "\
+USER root
+COPY {hook_path} /home/claude/.jackin-runtime/pre-launch.sh
+RUN chmod +x /home/claude/.jackin-runtime/pre-launch.sh
+USER claude
+"
+        )
+    });
     format!(
         "\
 {base_dockerfile}
@@ -31,7 +41,7 @@ USER claude
 ARG JACKIN_CACHE_BUST=0
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN claude --version
-USER root
+{hook_section}USER root
 COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh
 RUN chmod +x /home/claude/entrypoint.sh
 USER claude
@@ -52,12 +62,18 @@ pub fn create_derived_build_context(
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
 
+    let pre_launch_hook = validated
+        .manifest
+        .hooks
+        .as_ref()
+        .and_then(|h| h.pre_launch.as_deref());
+
     let dockerfile_path = context_dir.join(".jackin-runtime/DerivedDockerfile");
     std::fs::write(
         &dockerfile_path,
-        render_derived_dockerfile(&validated.dockerfile.dockerfile_contents),
+        render_derived_dockerfile(&validated.dockerfile.dockerfile_contents, pre_launch_hook),
     )?;
-    ensure_runtime_assets_are_included(&context_dir)?;
+    ensure_runtime_assets_are_included(&context_dir, pre_launch_hook)?;
 
     Ok(DerivedBuildContext {
         temp_dir,
@@ -66,7 +82,10 @@ pub fn create_derived_build_context(
     })
 }
 
-fn ensure_runtime_assets_are_included(context_dir: &Path) -> anyhow::Result<()> {
+fn ensure_runtime_assets_are_included(
+    context_dir: &Path,
+    pre_launch_hook: Option<&str>,
+) -> anyhow::Result<()> {
     let dockerignore_path = context_dir.join(".dockerignore");
     let mut dockerignore = if dockerignore_path.exists() {
         std::fs::read_to_string(&dockerignore_path)?
@@ -74,11 +93,16 @@ fn ensure_runtime_assets_are_included(context_dir: &Path) -> anyhow::Result<()> 
         String::new()
     };
 
-    for rule in [
-        "!.jackin-runtime/",
-        "!.jackin-runtime/entrypoint.sh",
-        "!.jackin-runtime/DerivedDockerfile",
-    ] {
+    let mut rules = vec![
+        "!.jackin-runtime/".to_string(),
+        "!.jackin-runtime/entrypoint.sh".to_string(),
+        "!.jackin-runtime/DerivedDockerfile".to_string(),
+    ];
+    if let Some(hook_path) = pre_launch_hook {
+        rules.push(format!("!{hook_path}"));
+    }
+
+    for rule in &rules {
         if !dockerignore.lines().any(|line| line == rule) {
             if !dockerignore.is_empty() && !dockerignore.ends_with('\n') {
                 dockerignore.push('\n');
@@ -123,7 +147,7 @@ mod tests {
 
     #[test]
     fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
-        let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n");
+        let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n", None);
 
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(!dockerfile.contains("WORKDIR"));
@@ -135,9 +159,13 @@ mod tests {
 
     #[test]
     fn renders_derived_dockerfile_installs_claude_as_claude_user() {
-        let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n");
-        let install = "USER claude\nARG JACKIN_CACHE_BUST=0\nRUN curl -fsSL https://claude.ai/install.sh | bash\nRUN claude --version";
-        let copy = "USER root\nCOPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh";
+        let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n", None);
+        let install = r#"USER claude
+ARG JACKIN_CACHE_BUST=0
+RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN claude --version"#;
+        let copy = r#"USER root
+COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh"#;
 
         assert!(dockerfile.contains(install));
         assert!(dockerfile.contains(copy));
@@ -145,13 +173,39 @@ mod tests {
 
     #[test]
     fn renders_derived_dockerfile_rewrites_claude_uid_and_gid() {
-        let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n");
+        let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n", None);
 
         assert!(dockerfile.contains("ARG JACKIN_HOST_UID=1000"));
         assert!(dockerfile.contains("ARG JACKIN_HOST_GID=1000"));
         assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" claude"));
         assert!(dockerfile.contains("usermod -g \"$JACKIN_HOST_GID\" claude"));
         assert!(dockerfile.contains("usermod -o -u \"$JACKIN_HOST_UID\" claude"));
+    }
+
+    #[test]
+    fn renders_derived_dockerfile_with_pre_launch_hook() {
+        let dockerfile = render_derived_dockerfile(
+            "FROM donbeave/jackin-construct:trixie\n",
+            Some("hooks/pre-launch.sh"),
+        );
+
+        assert!(
+            dockerfile
+                .contains("COPY hooks/pre-launch.sh /home/claude/.jackin-runtime/pre-launch.sh")
+        );
+        assert!(dockerfile.contains("RUN chmod +x /home/claude/.jackin-runtime/pre-launch.sh"));
+    }
+
+    #[test]
+    fn renders_derived_dockerfile_without_pre_launch_hook() {
+        let dockerfile = render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n", None);
+
+        assert!(!dockerfile.contains("pre-launch.sh"));
+    }
+
+    #[test]
+    fn entrypoint_does_not_override_claude_env() {
+        assert!(!ENTRYPOINT_SH.contains("CLAUDE_ENV="));
     }
 
     #[test]
@@ -164,7 +218,11 @@ mod tests {
         .unwrap();
         std::fs::write(
             repo.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -189,10 +247,20 @@ mod tests {
             "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
-        std::fs::write(repo.path().join(".dockerignore"), ".*\n.jackin-runtime\n").unwrap();
+        std::fs::write(
+            repo.path().join(".dockerignore"),
+            r#".*
+.jackin-runtime
+"#,
+        )
+        .unwrap();
         std::fs::write(
             repo.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -217,7 +285,11 @@ mod tests {
         .unwrap();
         std::fs::write(
             repo.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
         std::fs::write(repo.path().join("shared.txt"), "hello\n").unwrap();
