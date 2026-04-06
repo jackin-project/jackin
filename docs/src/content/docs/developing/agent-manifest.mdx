@@ -25,9 +25,6 @@ plugins = ["code-review@claude-plugins-official"]
 [hooks]
 pre_launch = "hooks/pre-launch.sh"
 
-[env.CLAUDE_ENV]
-default = "docker"
-
 [env.PROJECT]
 interactive = true
 options = ["project1", "project2"]
@@ -132,16 +129,12 @@ Declare environment variables that the agent needs at runtime. Each variable is 
 - `options` requires `interactive = true`
 - `depends_on` entries must use the `env.` prefix (e.g., `"env.PROJECT"`)
 - `depends_on` must reference variables declared in the same manifest
+- `CLAUDE_ENV` is reserved for jackin and cannot be declared in `[env]`
 - Circular dependencies are rejected
 
-### Static variables
+### Runtime-managed variables
 
-Set automatically with no user interaction:
-
-```toml
-[env.CLAUDE_ENV]
-default = "docker"
-```
+jackin sets `CLAUDE_ENV=jackin` automatically inside the container to mark the isolated runtime. Do not declare `CLAUDE_ENV` in `[env]`.
 
 ### Interactive text input
 
@@ -228,9 +221,6 @@ plugins = ["code-review@claude-plugins-official"]
 
 [hooks]
 pre_launch = "hooks/pre-launch.sh"
-
-[env.CLAUDE_ENV]
-default = "docker"
 
 [env.CONTEXT7_API_KEY]
 interactive = true
