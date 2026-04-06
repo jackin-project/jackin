@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MountConfig {
@@ -46,21 +46,68 @@ pub fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
+/// Normalize an absolute path by resolving `.` and `..` components without
+/// touching the filesystem (unlike [`std::fs::canonicalize`]).
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut parts: Vec<Component<'_>> = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                if let Some(Component::Normal(_)) = parts.last() {
+                    parts.pop();
+                }
+            }
+            Component::CurDir => {}
+            c => parts.push(c),
+        }
+    }
+    parts.iter().collect()
+}
+
+/// Expand tilde, resolve relative paths to absolute using the current working
+/// directory, and normalize `.` / `..` components.
+pub fn resolve_path(path: &str) -> String {
+    let expanded = expand_tilde(path);
+    let abs = if expanded.starts_with('/') {
+        PathBuf::from(&expanded)
+    } else if let Ok(cwd) = std::env::current_dir() {
+        cwd.join(&expanded)
+    } else {
+        return expanded;
+    };
+    normalize_path(&abs).display().to_string()
+}
+
 pub fn parse_mount_spec(spec: &str) -> anyhow::Result<MountConfig> {
+    Ok(parse_mount_spec_inner(spec, false))
+}
+
+/// Like [`parse_mount_spec`] but also resolves relative paths to absolute.
+/// Use this for CLI arguments where the user may pass relative paths.
+pub fn parse_mount_spec_resolved(spec: &str) -> anyhow::Result<MountConfig> {
+    Ok(parse_mount_spec_inner(spec, true))
+}
+
+fn parse_mount_spec_inner(spec: &str, resolve: bool) -> MountConfig {
     let (raw, readonly) = spec
         .strip_suffix(":ro")
         .map_or((spec, false), |value| (value, true));
     let (src, dst) = raw
         .split_once(':')
         .map_or_else(|| (raw, raw), |(s, d)| (s, d));
-    let expanded_src = expand_tilde(src);
-    let dst = if src == dst { expanded_src.clone() } else { dst.to_string() };
+    let expand = if resolve { resolve_path } else { expand_tilde };
+    let expanded_src = expand(src);
+    let dst = if src == dst {
+        expanded_src.clone()
+    } else {
+        dst.to_string()
+    };
 
-    Ok(MountConfig {
+    MountConfig {
         src: expanded_src,
         dst,
         readonly,
-    })
+    }
 }
 
 /// Structural validation: absolute paths, no duplicate destinations.
@@ -236,7 +283,11 @@ pub fn resolve_load_workspace(
 
     // Merge ad-hoc mounts after workspace mounts, checking for dst conflicts.
     for ad_hoc in ad_hoc_mounts {
-        if workspace.mounts.iter().any(|existing| existing.dst == ad_hoc.dst) {
+        if workspace
+            .mounts
+            .iter()
+            .any(|existing| existing.dst == ad_hoc.dst)
+        {
             anyhow::bail!(
                 "ad-hoc mount destination conflicts with workspace mount destination: {}",
                 ad_hoc.dst
@@ -249,8 +300,9 @@ pub fn resolve_load_workspace(
     validate_mount_paths(&workspace.mounts)?;
 
     let mut mounts = workspace.mounts.clone();
-    let global_mounts =
-        crate::config::AppConfig::expand_and_validate_named_mounts(&config.resolve_mounts(selector))?;
+    let global_mounts = crate::config::AppConfig::expand_and_validate_named_mounts(
+        &config.resolve_mounts(selector),
+    )?;
 
     for mount in global_mounts {
         if mounts.iter().any(|existing| existing.dst == mount.dst) {
@@ -309,6 +361,107 @@ mod tests {
         assert_eq!(mount.src, format!("{home}/projects"));
         assert_eq!(mount.dst, format!("{home}/projects"));
         assert!(!mount.readonly);
+    }
+
+    #[test]
+    fn resolve_path_resolves_relative_to_cwd() {
+        let cwd = std::env::current_dir().unwrap();
+        let resolved = resolve_path("my-project");
+
+        assert_eq!(resolved, cwd.join("my-project").display().to_string());
+        assert!(resolved.starts_with('/'));
+    }
+
+    #[test]
+    fn resolve_path_leaves_absolute_unchanged() {
+        assert_eq!(resolve_path("/workspace/project"), "/workspace/project");
+    }
+
+    #[test]
+    fn resolve_path_normalizes_dot_to_cwd() {
+        let cwd = std::env::current_dir().unwrap();
+        let resolved = resolve_path(".");
+
+        assert_eq!(resolved, cwd.display().to_string());
+    }
+
+    #[test]
+    fn resolve_path_normalizes_parent_component() {
+        let cwd = std::env::current_dir().unwrap();
+        let resolved = resolve_path("../sibling");
+        let expected = cwd.parent().unwrap().join("sibling");
+
+        assert_eq!(resolved, expected.display().to_string());
+        assert!(!resolved.contains(".."));
+    }
+
+    #[test]
+    fn resolve_path_normalizes_absolute_with_dotdot() {
+        assert_eq!(
+            resolve_path("/a/b/../c"),
+            "/a/c"
+        );
+    }
+
+    #[test]
+    fn normalize_path_handles_multiple_parent_refs() {
+        let path = Path::new("/a/b/c/../../d");
+        assert_eq!(normalize_path(path), PathBuf::from("/a/d"));
+    }
+
+    #[test]
+    fn normalize_path_preserves_root_on_excessive_parents() {
+        let path = Path::new("/a/../../../b");
+        assert_eq!(normalize_path(path), PathBuf::from("/b"));
+    }
+
+    #[test]
+    fn parse_mount_spec_resolved_resolves_relative_src_and_dst() {
+        let cwd = std::env::current_dir().unwrap();
+        let mount = parse_mount_spec_resolved("my-project").unwrap();
+        let expected = cwd.join("my-project").display().to_string();
+
+        assert_eq!(mount.src, expected);
+        assert_eq!(mount.dst, expected);
+        assert!(!mount.readonly);
+    }
+
+    #[test]
+    fn parse_mount_spec_resolved_resolves_relative_src_with_explicit_dst() {
+        let cwd = std::env::current_dir().unwrap();
+        let mount = parse_mount_spec_resolved("my-project:/workspace/project").unwrap();
+
+        assert_eq!(mount.src, cwd.join("my-project").display().to_string());
+        assert_eq!(mount.dst, "/workspace/project");
+        assert!(!mount.readonly);
+    }
+
+    #[test]
+    fn parse_mount_spec_resolved_normalizes_dotdot_in_relative_path() {
+        let cwd = std::env::current_dir().unwrap();
+        let mount = parse_mount_spec_resolved("../sibling-project").unwrap();
+        let expected = cwd.parent().unwrap().join("sibling-project");
+
+        assert_eq!(mount.src, expected.display().to_string());
+        assert_eq!(mount.dst, expected.display().to_string());
+        assert!(!mount.src.contains(".."));
+    }
+
+    #[test]
+    fn parse_mount_spec_resolved_normalizes_dot_path() {
+        let cwd = std::env::current_dir().unwrap();
+        let mount = parse_mount_spec_resolved(".").unwrap();
+
+        assert_eq!(mount.src, cwd.display().to_string());
+        assert_eq!(mount.dst, cwd.display().to_string());
+    }
+
+    #[test]
+    fn parse_mount_spec_does_not_resolve_relative_paths() {
+        let mount = parse_mount_spec("my-project").unwrap();
+
+        assert_eq!(mount.src, "my-project");
+        assert_eq!(mount.dst, "my-project");
     }
 
     #[test]
@@ -509,7 +662,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(resolved.mounts.len(), 2);
-        assert!(resolved.mounts.iter().any(|m| m.dst == "/extra" && m.readonly));
+        assert!(
+            resolved
+                .mounts
+                .iter()
+                .any(|m| m.dst == "/extra" && m.readonly)
+        );
     }
 
     #[test]
@@ -548,6 +706,10 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("ad-hoc mount destination conflicts"));
+        assert!(
+            error
+                .to_string()
+                .contains("ad-hoc mount destination conflicts")
+        );
     }
 }
