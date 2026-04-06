@@ -67,11 +67,7 @@ pub fn validate_agent_repo(repo_dir: &Path) -> anyhow::Result<ValidatedAgentRepo
     })
 }
 
-fn validate_relative_path(
-    repo_dir: &Path,
-    path_str: &str,
-    label: &str,
-) -> anyhow::Result<PathBuf> {
+fn validate_relative_path(repo_dir: &Path, path_str: &str, label: &str) -> anyhow::Result<PathBuf> {
     let path = Path::new(path_str);
 
     if path.is_absolute() {
@@ -144,7 +140,11 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"docker/agent.Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "docker/agent.Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -158,7 +158,11 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"../Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "../Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -172,11 +176,20 @@ mod tests {
     fn rejects_symlink_escaping_repo_boundary() {
         let temp = tempdir().unwrap();
         let outside = tempdir().unwrap();
-        std::fs::write(outside.path().join("Dockerfile"), "FROM debian:trixie\n").unwrap();
+        std::fs::write(
+            outside.path().join("Dockerfile"),
+            r#"FROM debian:trixie
+"#,
+        )
+        .unwrap();
         std::os::unix::fs::symlink(outside.path(), temp.path().join("escape")).unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"escape/Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "escape/Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -191,12 +204,17 @@ mod tests {
         std::fs::create_dir_all(temp.path().join("docker")).unwrap();
         std::fs::write(
             temp.path().join("docker/agent.Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"docker/agent.Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "docker/agent.Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -217,23 +235,41 @@ mod tests {
         std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
         std::fs::write(
             temp.path().join("hooks/pre-launch.sh"),
-            "#!/bin/bash\necho hello\n",
+            r#"#!/bin/bash
+echo hello
+"#,
         )
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[hooks]\npre_launch = \"hooks/pre-launch.sh\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+"#,
         )
         .unwrap();
 
         let validated = validate_agent_repo(temp.path()).unwrap();
 
-        assert!(validated.manifest.hooks.as_ref().unwrap().pre_launch.is_some());
+        assert!(
+            validated
+                .manifest
+                .hooks
+                .as_ref()
+                .unwrap()
+                .pre_launch
+                .is_some()
+        );
     }
 
     #[test]
@@ -241,12 +277,20 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[hooks]\npre_launch = \"../escape.sh\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+pre_launch = "../escape.sh"
+"#,
         )
         .unwrap();
 
@@ -260,12 +304,20 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[hooks]\npre_launch = \"hooks/missing.sh\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+pre_launch = "hooks/missing.sh"
+"#,
         )
         .unwrap();
 
@@ -279,12 +331,20 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[hooks]\npre_launch = \"/etc/evil.sh\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+pre_launch = "/etc/evil.sh"
+"#,
         )
         .unwrap();
 
@@ -300,12 +360,20 @@ mod tests {
         std::fs::write(temp.path().join("hooks/pre-launch.sh"), "").unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[hooks]\npre_launch = \"hooks/pre-launch.sh\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+"#,
         )
         .unwrap();
 

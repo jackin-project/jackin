@@ -262,7 +262,8 @@ fn build_agent_image(
         eprintln!(
             "{}",
             format!(
-                "[debug] DerivedDockerfile ({}):\n{}",
+                r"[debug] DerivedDockerfile ({}):
+{}",
                 build.dockerfile_path.display(),
                 std::fs::read_to_string(&build.dockerfile_path).unwrap_or_default()
             )
@@ -917,12 +918,17 @@ mod tests {
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+"#,
         )
         .unwrap();
 
@@ -1064,9 +1070,9 @@ mod tests {
 
     #[test]
     fn exile_all_ejects_all_managed_agents() {
-        let mut runner = FakeRunner::with_capture_queue([
-            "jackin-agent-smith\njackin-agent-smith-clone-1".to_string(),
-        ]);
+        let mut runner = FakeRunner::with_capture_queue([r#"jackin-agent-smith
+jackin-agent-smith-clone-1"#
+            .to_string()]);
 
         exile_all(&mut runner).unwrap();
 
@@ -1099,7 +1105,9 @@ mod tests {
                 ),
             ],
             capture_queue: VecDeque::from(vec![
-                "jackin-agent-smith\njackin-agent-smith-clone-1".to_string(),
+                r#"jackin-agent-smith
+jackin-agent-smith-clone-1"#
+                    .to_string(),
             ]),
             ..Default::default()
         };
@@ -1134,12 +1142,17 @@ mod tests {
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1213,12 +1226,17 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+"#,
         )
         .unwrap();
 
@@ -1293,12 +1311,17 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1357,12 +1380,17 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1427,12 +1455,17 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+"#,
         )
         .unwrap();
 
@@ -1491,12 +1524,17 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1578,12 +1616,17 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1613,12 +1656,17 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1766,12 +1814,20 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            r#"FROM donbeave/jackin-construct:trixie
+"#,
         )
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[identity]\nname = \"Agent Smith\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[identity]
+name = "Agent Smith"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 

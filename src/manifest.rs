@@ -74,22 +74,20 @@ impl AgentManifest {
         for (name, decl) in &self.env {
             // Non-interactive without default is an error
             if !decl.interactive && decl.default_value.is_none() {
-                anyhow::bail!(
-                    "env var {name}: non-interactive variable must have a default value"
-                );
+                anyhow::bail!("env var {name}: non-interactive variable must have a default value");
             }
 
             // options without interactive is an error
             if !decl.interactive && !decl.options.is_empty() {
-                anyhow::bail!(
-                    "env var {name}: options requires interactive = true"
-                );
+                anyhow::bail!("env var {name}: options requires interactive = true");
             }
 
             // prompt without interactive is a warning
             if !decl.interactive && decl.prompt.is_some() {
                 warnings.push(ManifestWarning {
-                    message: format!("env var {name}: prompt is ignored without interactive = true"),
+                    message: format!(
+                        "env var {name}: prompt is ignored without interactive = true"
+                    ),
                 });
             }
 
@@ -191,7 +189,11 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+"#,
         )
         .unwrap();
 
@@ -207,7 +209,14 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[identity]\nname = \"Agent Smith\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[identity]
+name = "Agent Smith"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -221,7 +230,14 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[identity]\nname = \"Agent Smith\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[identity]
+name = "Agent Smith"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -235,7 +251,11 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -249,7 +269,12 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\nunknown_field = true\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+unknown_field = true
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -263,7 +288,12 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\ntypo = \"oops\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+typo = "oops"
+"#,
         )
         .unwrap();
 
@@ -277,7 +307,15 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[identity]\nname = \"Smith\"\ntypo = true\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[identity]
+name = "Smith"
+typo = true
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -291,7 +329,14 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[hooks]\npre_launch = \"hooks/pre-launch.sh\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+"#,
         )
         .unwrap();
 
@@ -308,7 +353,11 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -322,7 +371,15 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[hooks]\npre_launch = \"hooks/pre-launch.sh\"\npost_launch = \"bad\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+post_launch = "bad"
+"#,
         )
         .unwrap();
 
@@ -336,7 +393,14 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.CLAUDE_ENV]\ndefault = \"docker\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.CLAUDE_ENV]
+default = "docker"
+"#,
         )
         .unwrap();
 
@@ -353,7 +417,16 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.PROJECT]\ninteractive = true\nprompt = \"Select a project:\"\noptions = [\"project1\", \"project2\"]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.PROJECT]
+interactive = true
+prompt = "Select a project:"
+options = ["project1", "project2"]
+"#,
         )
         .unwrap();
 
@@ -370,7 +443,21 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.PROJECT]\ninteractive = true\nprompt = \"Select:\"\noptions = [\"a\", \"b\"]\n\n[env.BRANCH]\ninteractive = true\ndepends_on = [\"env.PROJECT\"]\nprompt = \"Branch:\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.PROJECT]
+interactive = true
+prompt = "Select:"
+options = ["a", "b"]
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch:"
+"#,
         )
         .unwrap();
 
@@ -385,7 +472,16 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.API_KEY]\ninteractive = true\nskippable = true\nprompt = \"API key (optional):\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.API_KEY]
+interactive = true
+skippable = true
+prompt = "API key (optional):"
+"#,
         )
         .unwrap();
 
@@ -400,7 +496,11 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -414,7 +514,15 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\ndefault = \"bar\"\ntypo = true\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.FOO]
+default = "bar"
+typo = true
+"#,
         )
         .unwrap();
 
@@ -428,7 +536,13 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.FOO]
+"#,
         )
         .unwrap();
 
@@ -444,7 +558,15 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\ndefault = \"bar\"\noptions = [\"a\", \"b\"]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.FOO]
+default = "bar"
+options = ["a", "b"]
+"#,
         )
         .unwrap();
 
@@ -460,7 +582,16 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.BRANCH]\ninteractive = true\ndepends_on = [\"env.NONEXISTENT\"]\nprompt = \"Branch:\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.NONEXISTENT"]
+prompt = "Branch:"
+"#,
         )
         .unwrap();
 
@@ -476,7 +607,16 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\ninteractive = true\ndepends_on = [\"env.FOO\"]\nprompt = \"Value:\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.FOO]
+interactive = true
+depends_on = ["env.FOO"]
+prompt = "Value:"
+"#,
         )
         .unwrap();
 
@@ -492,7 +632,21 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.A]\ninteractive = true\ndepends_on = [\"env.B\"]\nprompt = \"A:\"\n\n[env.B]\ninteractive = true\ndepends_on = [\"env.A\"]\nprompt = \"B:\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.A]
+interactive = true
+depends_on = ["env.B"]
+prompt = "A:"
+
+[env.B]
+interactive = true
+depends_on = ["env.A"]
+prompt = "B:"
+"#,
         )
         .unwrap();
 
@@ -508,7 +662,20 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.PROJECT]\ninteractive = true\nprompt = \"Project:\"\n\n[env.BRANCH]\ninteractive = true\ndepends_on = [\"PROJECT\"]\nprompt = \"Branch:\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.PROJECT]
+interactive = true
+prompt = "Project:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["PROJECT"]
+prompt = "Branch:"
+"#,
         )
         .unwrap();
 
@@ -524,7 +691,25 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.CLAUDE_ENV]\ndefault = \"docker\"\n\n[env.PROJECT]\ninteractive = true\noptions = [\"a\", \"b\"]\nprompt = \"Pick:\"\n\n[env.BRANCH]\ninteractive = true\ndepends_on = [\"env.PROJECT\"]\nprompt = \"Branch:\"\ndefault = \"main\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.CLAUDE_ENV]
+default = "docker"
+
+[env.PROJECT]
+interactive = true
+options = ["a", "b"]
+prompt = "Pick:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch:"
+default = "main"
+"#,
         )
         .unwrap();
 
@@ -539,7 +724,15 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\ndefault = \"bar\"\nprompt = \"This is ignored\"\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.FOO]
+default = "bar"
+prompt = "This is ignored"
+"#,
         )
         .unwrap();
 
@@ -555,7 +748,15 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n\n[env.FOO]\ndefault = \"bar\"\nskippable = true\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.FOO]
+default = "bar"
+skippable = true
+"#,
         )
         .unwrap();
 

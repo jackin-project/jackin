@@ -49,7 +49,12 @@ mod tests {
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            "FROM rust:1.87 AS builder\nRUN cargo build\n\nFROM donbeave/jackin-construct:trixie AS runtime\nCOPY --from=builder /app /workspace/app\n",
+            r#"FROM rust:1.87 AS builder
+RUN cargo build
+
+FROM donbeave/jackin-construct:trixie AS runtime
+COPY --from=builder /app /workspace/app
+"#,
         )
         .unwrap();
 
@@ -63,7 +68,12 @@ mod tests {
     fn rejects_final_stage_on_other_image() {
         let temp = tempdir().unwrap();
         let dockerfile = temp.path().join("Dockerfile");
-        std::fs::write(&dockerfile, "FROM debian:trixie\n").unwrap();
+        std::fs::write(
+            &dockerfile,
+            r#"FROM debian:trixie
+"#,
+        )
+        .unwrap();
 
         let error = validate_agent_dockerfile(&dockerfile).unwrap_err();
 
@@ -80,7 +90,9 @@ mod tests {
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            "ARG BASE=donbeave/jackin-construct:trixie\nFROM ${BASE}\n",
+            r#"ARG BASE=donbeave/jackin-construct:trixie
+FROM ${BASE}
+"#,
         )
         .unwrap();
 
