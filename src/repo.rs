@@ -176,12 +176,7 @@ plugins = []
     fn rejects_symlink_escaping_repo_boundary() {
         let temp = tempdir().unwrap();
         let outside = tempdir().unwrap();
-        std::fs::write(
-            outside.path().join("Dockerfile"),
-            r#"FROM debian:trixie
-"#,
-        )
-        .unwrap();
+        std::fs::write(outside.path().join("Dockerfile"), "FROM debian:trixie\n").unwrap();
         std::os::unix::fs::symlink(outside.path(), temp.path().join("escape")).unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
@@ -204,8 +199,7 @@ plugins = []
         std::fs::create_dir_all(temp.path().join("docker")).unwrap();
         std::fs::write(
             temp.path().join("docker/agent.Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -242,8 +236,7 @@ echo hello
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -277,8 +270,7 @@ pre_launch = "hooks/pre-launch.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -304,8 +296,7 @@ pre_launch = "../escape.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -331,8 +322,7 @@ pre_launch = "hooks/missing.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -360,8 +350,7 @@ pre_launch = "/etc/evil.sh"
         std::fs::write(temp.path().join("hooks/pre-launch.sh"), "").unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(

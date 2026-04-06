@@ -918,8 +918,7 @@ mod tests {
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -1142,8 +1141,7 @@ jackin-agent-smith-clone-1"#
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -1226,8 +1224,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -1311,8 +1308,7 @@ plugins = ["code-review@claude-plugins-official"]
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -1380,8 +1376,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -1455,8 +1450,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -1524,8 +1518,7 @@ plugins = ["code-review@claude-plugins-official"]
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -1616,8 +1609,7 @@ plugins = []
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -1656,8 +1648,7 @@ plugins = []
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -1814,8 +1805,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            r#"FROM donbeave/jackin-construct:trixie
-"#,
+            "FROM donbeave/jackin-construct:trixie\n",
         )
         .unwrap();
         std::fs::write(

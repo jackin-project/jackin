@@ -68,12 +68,7 @@ COPY --from=builder /app /workspace/app
     fn rejects_final_stage_on_other_image() {
         let temp = tempdir().unwrap();
         let dockerfile = temp.path().join("Dockerfile");
-        std::fs::write(
-            &dockerfile,
-            r#"FROM debian:trixie
-"#,
-        )
-        .unwrap();
+        std::fs::write(&dockerfile, "FROM debian:trixie\n").unwrap();
 
         let error = validate_agent_dockerfile(&dockerfile).unwrap_err();
 
