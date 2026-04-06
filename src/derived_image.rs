@@ -204,9 +204,8 @@ COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh"#;
     }
 
     #[test]
-    fn entrypoint_preserves_existing_claude_env() {
-        assert!(ENTRYPOINT_SH.contains("CLAUDE_ENV=\"${CLAUDE_ENV:-docker}\""));
-        assert!(!ENTRYPOINT_SH.contains("CLAUDE_ENV=docker claude"));
+    fn entrypoint_does_not_override_claude_env() {
+        assert!(!ENTRYPOINT_SH.contains("CLAUDE_ENV="));
     }
 
     #[test]
