@@ -397,10 +397,7 @@ mod tests {
 
     #[test]
     fn resolve_path_normalizes_absolute_with_dotdot() {
-        assert_eq!(
-            resolve_path("/a/b/../c"),
-            "/a/c"
-        );
+        assert_eq!(resolve_path("/a/b/../c"), "/a/c");
     }
 
     #[test]
