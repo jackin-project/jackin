@@ -204,6 +204,12 @@ COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh"#;
     }
 
     #[test]
+    fn entrypoint_preserves_existing_claude_env() {
+        assert!(ENTRYPOINT_SH.contains("CLAUDE_ENV=\"${CLAUDE_ENV:-docker}\""));
+        assert!(!ENTRYPOINT_SH.contains("CLAUDE_ENV=docker claude"));
+    }
+
+    #[test]
     fn creates_temp_context_with_repo_copy_and_runtime_assets() {
         let repo = tempdir().unwrap();
         std::fs::write(
