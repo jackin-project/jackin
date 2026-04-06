@@ -41,4 +41,4 @@ fi
 
 printf '\033[2J\033[H'
 
-exec env CLAUDE_ENV=docker claude --dangerously-skip-permissions --verbose
+exec env CLAUDE_ENV="${CLAUDE_ENV:-docker}" claude --dangerously-skip-permissions --verbose
