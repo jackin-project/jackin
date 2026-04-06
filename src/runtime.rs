@@ -418,7 +418,15 @@ fn launch_agent_runtime(
         run_args.extend_from_slice(&["-e", "CLAUDE_DEBUG=1"]);
     }
     let mut env_strings: Vec<String> = Vec::new();
+    env_strings.push(format!(
+        "{}={}",
+        crate::manifest::JACKIN_RUNTIME_ENV_NAME,
+        crate::manifest::JACKIN_RUNTIME_ENV_VALUE
+    ));
     for (key, value) in &resolved_env.vars {
+        if key == crate::manifest::JACKIN_RUNTIME_ENV_NAME {
+            continue;
+        }
         env_strings.push(format!("{key}={value}"));
     }
     for env_str in &env_strings {
@@ -1838,5 +1846,56 @@ plugins = []
             .find(|call| call.contains("docker run -it"))
             .unwrap();
         assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
+    }
+
+    #[test]
+    fn load_agent_sets_claude_env_to_jackin() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -it"))
+            .unwrap();
+        assert!(run_cmd.contains("-e CLAUDE_ENV=jackin"));
     }
 }
