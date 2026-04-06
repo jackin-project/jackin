@@ -262,7 +262,8 @@ fn build_agent_image(
         eprintln!(
             "{}",
             format!(
-                "[debug] DerivedDockerfile ({}):\n{}",
+                r"[debug] DerivedDockerfile ({}):
+{}",
                 build.dockerfile_path.display(),
                 std::fs::read_to_string(&build.dockerfile_path).unwrap_or_default()
             )
@@ -321,9 +322,11 @@ struct LaunchContext<'a> {
     state: &'a AgentState,
     git: &'a GitIdentity,
     debug: bool,
+    resolved_env: &'a crate::env_resolver::ResolvedEnv,
 }
 
 /// Create the Docker network, start `DinD`, and launch the agent container.
+#[allow(clippy::too_many_lines)]
 fn launch_agent_runtime(
     ctx: &LaunchContext<'_>,
     steps: &mut StepCounter,
@@ -340,6 +343,7 @@ fn launch_agent_runtime(
         state,
         git,
         debug,
+        resolved_env,
     } = ctx;
     // Clean up stale resources from a previous run that wasn't cleaned up
     // (e.g. terminal closed, process killed, Ctrl+C during docker run)
@@ -412,6 +416,22 @@ fn launch_agent_runtime(
     ];
     if *debug {
         run_args.extend_from_slice(&["-e", "CLAUDE_DEBUG=1"]);
+    }
+    let mut env_strings: Vec<String> = Vec::new();
+    env_strings.push(format!(
+        "{}={}",
+        crate::manifest::JACKIN_RUNTIME_ENV_NAME,
+        crate::manifest::JACKIN_RUNTIME_ENV_VALUE
+    ));
+    for (key, value) in &resolved_env.vars {
+        if key == crate::manifest::JACKIN_RUNTIME_ENV_NAME {
+            continue;
+        }
+        env_strings.push(format!("{key}={value}"));
+    }
+    for env_str in &env_strings {
+        run_args.push("-e");
+        run_args.push(env_str);
     }
     run_args.extend_from_slice(&[
         "-v",
@@ -501,6 +521,14 @@ pub fn load_agent(
     tui::print_config_table(&config_rows);
     eprintln!();
 
+    // Resolve env vars (interactive prompts happen here, before build)
+    let resolved_env = if validated_repo.manifest.env.is_empty() {
+        crate::env_resolver::ResolvedEnv { vars: vec![] }
+    } else {
+        let prompter = crate::terminal_prompter::TerminalPrompter;
+        crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
+    };
+
     let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
     let load_result = (|| -> anyhow::Result<()> {
         // Step 2: Build Docker image
@@ -529,6 +557,7 @@ pub fn load_agent(
             state: &state,
             git: &git,
             debug: opts.debug,
+            resolved_env: &resolved_env,
         };
         launch_agent_runtime(&ctx, &mut steps, runner)?;
 
@@ -902,7 +931,11 @@ mod tests {
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+"#,
         )
         .unwrap();
 
@@ -1044,9 +1077,9 @@ mod tests {
 
     #[test]
     fn exile_all_ejects_all_managed_agents() {
-        let mut runner = FakeRunner::with_capture_queue([
-            "jackin-agent-smith\njackin-agent-smith-clone-1".to_string(),
-        ]);
+        let mut runner = FakeRunner::with_capture_queue([r#"jackin-agent-smith
+jackin-agent-smith-clone-1"#
+            .to_string()]);
 
         exile_all(&mut runner).unwrap();
 
@@ -1079,7 +1112,9 @@ mod tests {
                 ),
             ],
             capture_queue: VecDeque::from(vec![
-                "jackin-agent-smith\njackin-agent-smith-clone-1".to_string(),
+                r#"jackin-agent-smith
+jackin-agent-smith-clone-1"#
+                    .to_string(),
             ]),
             ..Default::default()
         };
@@ -1119,7 +1154,11 @@ mod tests {
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1198,7 +1237,11 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+"#,
         )
         .unwrap();
 
@@ -1278,7 +1321,11 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1342,7 +1389,11 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1412,7 +1463,11 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = [\"code-review@claude-plugins-official\"]\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+"#,
         )
         .unwrap();
 
@@ -1476,7 +1531,11 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1563,7 +1622,11 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1598,7 +1661,11 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1751,7 +1818,14 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.agent.toml"),
-            "dockerfile = \"Dockerfile\"\n\n[identity]\nname = \"Agent Smith\"\n\n[claude]\nplugins = []\n",
+            r#"dockerfile = "Dockerfile"
+
+[identity]
+name = "Agent Smith"
+
+[claude]
+plugins = []
+"#,
         )
         .unwrap();
 
@@ -1772,5 +1846,56 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
             .find(|call| call.contains("docker run -it"))
             .unwrap();
         assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
+    }
+
+    #[test]
+    fn load_agent_sets_claude_env_to_jackin() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -it"))
+            .unwrap();
+        assert!(run_cmd.contains("-e CLAUDE_ENV=jackin"));
     }
 }
