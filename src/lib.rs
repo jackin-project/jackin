@@ -2,6 +2,7 @@ pub mod cli;
 pub mod config;
 pub mod derived_image;
 pub mod docker;
+pub mod env_resolver;
 pub mod instance;
 pub mod launch;
 pub mod manifest;
@@ -10,6 +11,7 @@ pub mod repo;
 pub mod repo_contract;
 pub mod runtime;
 pub mod selector;
+pub mod terminal_prompter;
 pub mod tui;
 pub mod workspace;
 

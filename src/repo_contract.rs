@@ -49,7 +49,12 @@ mod tests {
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            "FROM rust:1.87 AS builder\nRUN cargo build\n\nFROM donbeave/jackin-construct:trixie AS runtime\nCOPY --from=builder /app /workspace/app\n",
+            r#"FROM rust:1.87 AS builder
+RUN cargo build
+
+FROM donbeave/jackin-construct:trixie AS runtime
+COPY --from=builder /app /workspace/app
+"#,
         )
         .unwrap();
 
@@ -80,7 +85,9 @@ mod tests {
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            "ARG BASE=donbeave/jackin-construct:trixie\nFROM ${BASE}\n",
+            r#"ARG BASE=donbeave/jackin-construct:trixie
+FROM ${BASE}
+"#,
         )
         .unwrap();
 

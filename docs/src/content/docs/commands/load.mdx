@@ -62,11 +62,17 @@ jackin load agent-smith ~/app --mount ~/cache:/cache:ro
 ## What happens
 
 1. Resolves the agent class and clones/updates its repository
-2. Validates the agent repo contract (`jackin.agent.toml` + Dockerfile)
-3. Generates and builds a derived Docker image (cached if unchanged)
-4. Creates a per-agent Docker network and DinD sidecar
-5. Launches the agent container with all resolved mounts
-6. Starts Claude Code with `--dangerously-skip-permissions`
+2. Validates the agent repo contract (`jackin.agent.toml` + Dockerfile) with strict manifest parsing
+3. Prompts for interactive environment variables declared in the manifest
+4. Generates and builds a derived Docker image (cached if unchanged)
+5. Creates a per-agent Docker network and DinD sidecar
+6. Launches the agent container with all resolved mounts and environment variables
+7. Runs the pre-launch hook if declared
+8. Starts Claude Code with `--dangerously-skip-permissions`
+
+<Aside type="note">
+If the agent manifest declares interactive environment variables, `jackin load` prompts for their values before building the Docker image. This ensures no build time is wasted if you cancel.
+</Aside>
 
 <Aside type="note">
 If the cached agent repo has been locally modified, contains extra files, or its git `origin` no longer matches the configured source, `jackin load` stops with an error instead of trusting that cache.
