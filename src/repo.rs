@@ -87,6 +87,9 @@ fn validate_relative_path(repo_dir: &Path, path_str: &str, label: &str) -> anyho
     if !resolved.is_file() {
         anyhow::bail!("invalid agent repo: missing {}", resolved.display());
     }
+    if std::fs::symlink_metadata(&resolved)?.file_type().is_symlink() {
+        anyhow::bail!("invalid agent repo: {label} path must not be a symlink");
+    }
 
     let canonical_repo = repo_dir.canonicalize()?;
     let canonical_resolved = resolved.canonicalize()?;
@@ -369,5 +372,40 @@ pre_launch = "hooks/pre-launch.sh"
         let error = validate_agent_repo(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("empty"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_pre_launch_hook_inside_repo() {
+        let temp = tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
+        std::fs::write(temp.path().join("real-hook.sh"), "#!/bin/bash\necho hi\n").unwrap();
+        std::os::unix::fs::symlink(
+            temp.path().join("real-hook.sh"),
+            temp.path().join("hooks/pre-launch.sh"),
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM donbeave/jackin-construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+"#,
+        )
+        .unwrap();
+
+        let error = validate_agent_repo(temp.path()).unwrap_err();
+
+        assert!(error.to_string().contains("symlink"));
+        assert!(error.to_string().contains("pre_launch"));
     }
 }
