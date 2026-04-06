@@ -87,7 +87,10 @@ fn validate_relative_path(repo_dir: &Path, path_str: &str, label: &str) -> anyho
     if !resolved.is_file() {
         anyhow::bail!("invalid agent repo: missing {}", resolved.display());
     }
-    if std::fs::symlink_metadata(&resolved)?.file_type().is_symlink() {
+    if std::fs::symlink_metadata(&resolved)?
+        .file_type()
+        .is_symlink()
+    {
         anyhow::bail!("invalid agent repo: {label} path must not be a symlink");
     }
 
