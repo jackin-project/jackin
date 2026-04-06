@@ -70,7 +70,11 @@ pub fn resolve_env(
                 vars.push((name.clone(), value));
             }
             PromptResult::Skipped => {
-                skipped.insert(name.clone());
+                if decl.skippable {
+                    skipped.insert(name.clone());
+                } else {
+                    anyhow::bail!("env var {name}: required prompt cannot be skipped");
+                }
             }
         }
     }
@@ -253,6 +257,21 @@ mod tests {
         let resolved = resolve_env(&decls, &prompter).unwrap();
 
         assert!(resolved.vars.is_empty());
+    }
+
+    #[test]
+    fn required_var_cannot_be_skipped() {
+        let mut decls = BTreeMap::new();
+        decls.insert("BRANCH".to_string(), interactive_text("Branch:"));
+        let prompter = MockPrompter::new(vec![PromptResult::Skipped]);
+
+        let error = match resolve_env(&decls, &prompter) {
+            Ok(_) => panic!("required skipped var should fail"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("BRANCH"));
+        assert!(error.to_string().contains("skip"));
     }
 
     #[test]
