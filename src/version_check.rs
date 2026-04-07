@@ -13,7 +13,9 @@ fn npm_cache_path(paths: &JackinPaths) -> PathBuf {
 
 /// File that records the Claude Code version baked into a given Docker image.
 fn image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
-    paths.cache_dir.join(format!("image-claude-version/{image}"))
+    paths
+        .cache_dir
+        .join(format!("image-claude-version/{image}"))
 }
 
 /// Query npm for the latest published `@anthropic-ai/claude-code` version,
@@ -50,7 +52,9 @@ pub fn latest_claude_version(
 /// Read the Claude Code version we stored for a previously-built image.
 pub fn stored_image_version(paths: &JackinPaths, image: &str) -> Option<String> {
     let path = image_version_path(paths, image);
-    std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 /// Persist the Claude Code version that was just installed into an image.
@@ -66,13 +70,11 @@ pub fn needs_claude_update(
     image: &str,
     runner: &mut impl CommandRunner,
 ) -> bool {
-    let installed = match stored_image_version(paths, image) {
-        Some(v) => v,
-        None => return false, // first build — let it proceed normally
+    let Some(installed) = stored_image_version(paths, image) else {
+        return false; // first build — let it proceed normally
     };
-    let latest = match latest_claude_version(paths, runner) {
-        Some(v) => v,
-        None => return false, // npm unavailable — don't force a rebuild
+    let Some(latest) = latest_claude_version(paths, runner) else {
+        return false; // npm unavailable — don't force a rebuild
     };
     installed != latest
 }
@@ -132,7 +134,11 @@ mod tests {
         let _ = write_cached(&cache, "2.1.92");
 
         let mut runner = StubRunner("2.1.92".to_string());
-        assert!(needs_claude_update(&paths, "jackin-agent-smith", &mut runner));
+        assert!(needs_claude_update(
+            &paths,
+            "jackin-agent-smith",
+            &mut runner
+        ));
     }
 
     #[test]
@@ -146,7 +152,11 @@ mod tests {
         let _ = write_cached(&cache, "2.1.92");
 
         let mut runner = StubRunner("2.1.92".to_string());
-        assert!(!needs_claude_update(&paths, "jackin-agent-smith", &mut runner));
+        assert!(!needs_claude_update(
+            &paths,
+            "jackin-agent-smith",
+            &mut runner
+        ));
     }
 
     #[test]
@@ -157,7 +167,11 @@ mod tests {
 
         let mut runner = StubRunner("2.1.92".to_string());
         // No stored version yet → should not force rebuild
-        assert!(!needs_claude_update(&paths, "jackin-agent-smith", &mut runner));
+        assert!(!needs_claude_update(
+            &paths,
+            "jackin-agent-smith",
+            &mut runner
+        ));
     }
 
     #[test]
