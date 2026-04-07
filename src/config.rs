@@ -609,11 +609,9 @@ readonly = true
         let error =
             crate::workspace::validate_workspace_config("big-monorepo", &workspace).unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("must be equal to or inside one of the workspace mount destinations")
-        );
+        assert!(error.to_string().contains(
+            "must be equal to, inside, or a parent of one of the workspace mount destinations"
+        ));
     }
 
     #[test]
@@ -649,11 +647,9 @@ readonly = true
             )
             .unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("must be equal to or inside one of the workspace mount destinations")
-        );
+        assert!(error.to_string().contains(
+            "must be equal to, inside, or a parent of one of the workspace mount destinations"
+        ));
         assert_eq!(
             config.workspaces.get("big-monorepo").unwrap().workdir,
             "/workspace/project"
@@ -683,11 +679,9 @@ dst = "/workspace/src"
 
         let error = AppConfig::load_or_init(&paths).unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("must be equal to or inside one of the workspace mount destinations")
-        );
+        assert!(error.to_string().contains(
+            "must be equal to, inside, or a parent of one of the workspace mount destinations"
+        ));
     }
 
     #[test]
@@ -716,7 +710,7 @@ dst = "/workspace/src"
         std::fs::write(&paths.config_file, toml_str).unwrap();
 
         let err = AppConfig::load_or_init(&paths).unwrap_err();
-        assert!(err.to_string().contains("workspace \"broken\" workdir must be equal to or inside one of the workspace mount destinations"));
+        assert!(err.to_string().contains("workspace \"broken\" workdir must be equal to, inside, or a parent of one of the workspace mount destinations"));
     }
 
     #[test]
@@ -748,10 +742,9 @@ dst = "/workspace/src"
             )
             .unwrap_err();
 
-        assert!(
-            err.to_string()
-                .contains("must be equal to or inside one of the workspace mount destinations")
-        );
+        assert!(err.to_string().contains(
+            "must be equal to, inside, or a parent of one of the workspace mount destinations"
+        ));
         assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
     }
 
