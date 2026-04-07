@@ -2,7 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: 'https://donbeave.github.io',
+  site: 'https://jackin-project.github.io',
   base: '/jackin',
   integrations: [
     starlight({
@@ -25,7 +25,7 @@ export default defineConfig({
           tag: 'meta',
           attrs: {
             property: 'og:image',
-            content: 'https://donbeave.github.io/jackin/og-image.png',
+            content: 'https://jackin-project.github.io/jackin/og-image.png',
           },
         },
       ],
