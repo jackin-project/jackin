@@ -165,10 +165,7 @@ pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> any
         let dst = mount.dst.trim_end_matches('/');
         workspace.workdir == dst
             || workspace.workdir.starts_with(&format!("{dst}/"))
-            || dst.starts_with(&format!(
-                "{}/",
-                workspace.workdir.trim_end_matches('/')
-            ))
+            || dst.starts_with(&format!("{}/", workspace.workdir.trim_end_matches('/')))
     });
     anyhow::ensure!(
         covers_workdir,
