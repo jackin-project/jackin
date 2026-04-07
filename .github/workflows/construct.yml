@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: donbeave/jackin-construct
+  IMAGE_NAME: projectjackin/construct
 
 jobs:
   build-and-push:

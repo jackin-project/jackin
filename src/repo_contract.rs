@@ -1,7 +1,7 @@
 use dockerfile_parser::{Dockerfile, Instruction};
 use std::path::{Path, PathBuf};
 
-pub const CONSTRUCT_IMAGE: &str = "donbeave/jackin-construct:trixie";
+pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
 
 #[derive(Debug, Clone)]
 pub struct ValidatedDockerfile {
@@ -52,7 +52,7 @@ mod tests {
             r#"FROM rust:1.87 AS builder
 RUN cargo build
 
-FROM donbeave/jackin-construct:trixie AS runtime
+FROM projectjackin/construct:trixie AS runtime
 COPY --from=builder /app /workspace/app
 "#,
         )
@@ -75,7 +75,7 @@ COPY --from=builder /app /workspace/app
         assert!(
             error
                 .to_string()
-                .contains("donbeave/jackin-construct:trixie")
+                .contains("projectjackin/construct:trixie")
         );
     }
 
@@ -85,7 +85,7 @@ COPY --from=builder /app /workspace/app
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            r#"ARG BASE=donbeave/jackin-construct:trixie
+            r#"ARG BASE=projectjackin/construct:trixie
 FROM ${BASE}
 "#,
         )
@@ -96,7 +96,7 @@ FROM ${BASE}
         assert!(
             error
                 .to_string()
-                .contains("literal FROM donbeave/jackin-construct:trixie")
+                .contains("literal FROM projectjackin/construct:trixie")
         );
     }
 }

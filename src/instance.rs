@@ -135,7 +135,7 @@ plugins = []
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
@@ -162,7 +162,7 @@ plugins = ["code-review@claude-plugins-official", "feature-dev@claude-plugins-of
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
 

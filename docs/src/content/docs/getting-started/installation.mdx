@@ -68,7 +68,7 @@ On macOS, [OrbStack](https://orbstack.dev/) is a lightweight alternative to Dock
 
 jackin' itself is a single binary. When you first load an agent, jackin' will:
 
-1. **Pull the construct image** (`donbeave/jackin-construct:trixie`) — a Debian-based image with system tools, Docker CLI, git, and more
+1. **Pull the construct image** (`projectjackin/construct:trixie`) — a Debian-based image with system tools, Docker CLI, git, and more
 2. **Clone the agent repo** — cached at `~/.jackin/agents/`
 3. **Build a derived image** — layers the agent's tools and Claude Code on top of the construct
 4. **Create a Docker network** — per-agent isolation
