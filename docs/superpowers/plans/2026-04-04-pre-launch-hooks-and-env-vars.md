@@ -855,7 +855,7 @@ fn accepts_manifest_with_valid_pre_launch_hook() {
     .unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM donbeave/jackin-construct:trixie\n",
+        "FROM projectjackin/construct:trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -874,7 +874,7 @@ fn rejects_pre_launch_hook_outside_repo() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM donbeave/jackin-construct:trixie\n",
+        "FROM projectjackin/construct:trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -893,7 +893,7 @@ fn rejects_pre_launch_hook_that_does_not_exist() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM donbeave/jackin-construct:trixie\n",
+        "FROM projectjackin/construct:trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -912,7 +912,7 @@ fn rejects_absolute_pre_launch_hook_path() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM donbeave/jackin-construct:trixie\n",
+        "FROM projectjackin/construct:trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -933,7 +933,7 @@ fn rejects_empty_pre_launch_hook() {
     std::fs::write(temp.path().join("hooks/pre-launch.sh"), "").unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM donbeave/jackin-construct:trixie\n",
+        "FROM projectjackin/construct:trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -1450,7 +1450,7 @@ Add to the `mod tests` block in `src/derived_image.rs`:
 #[test]
 fn renders_derived_dockerfile_with_pre_launch_hook() {
     let dockerfile =
-        render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n", Some("hooks/pre-launch.sh"));
+        render_derived_dockerfile("FROM projectjackin/construct:trixie\n", Some("hooks/pre-launch.sh"));
 
     assert!(dockerfile.contains(
         "COPY hooks/pre-launch.sh /home/claude/.jackin-runtime/pre-launch.sh"
@@ -1463,7 +1463,7 @@ fn renders_derived_dockerfile_with_pre_launch_hook() {
 #[test]
 fn renders_derived_dockerfile_without_pre_launch_hook() {
     let dockerfile =
-        render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n", None);
+        render_derived_dockerfile("FROM projectjackin/construct:trixie\n", None);
 
     assert!(!dockerfile.contains("pre-launch.sh"));
 }
@@ -1599,7 +1599,7 @@ fn ensure_runtime_assets_are_included(
 
 Update existing tests that call `render_derived_dockerfile` to pass `None`:
 
-- `renders_derived_dockerfile_with_workspace_and_entrypoint` → `render_derived_dockerfile("FROM donbeave/jackin-construct:trixie\n", None)`
+- `renders_derived_dockerfile_with_workspace_and_entrypoint` → `render_derived_dockerfile("FROM projectjackin/construct:trixie\n", None)`
 - `renders_derived_dockerfile_installs_claude_as_claude_user` → same
 - `renders_derived_dockerfile_rewrites_claude_uid_and_gid` → same
 
@@ -1903,7 +1903,7 @@ The Dockerfile path must:
 - Be relative (no absolute paths)
 - Stay inside the repository (no `../` escapes)
 - Point to a valid Dockerfile
-- Have a final stage that starts with `FROM donbeave/jackin-construct:trixie`
+- Have a final stage that starts with `FROM projectjackin/construct:trixie`
 
 ## `[claude]`
 
@@ -2205,7 +2205,7 @@ cat > test-agent/hooks/pre-launch.sh << 'HOOK'
 echo "Pre-launch hook running"
 HOOK
 cat > test-agent/Dockerfile << 'DF'
-FROM donbeave/jackin-construct:trixie
+FROM projectjackin/construct:trixie
 DF
 cat > test-agent/jackin.agent.toml << 'TOML'
 dockerfile = "Dockerfile"
