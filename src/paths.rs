@@ -8,6 +8,7 @@ pub struct JackinPaths {
     pub config_file: PathBuf,
     pub agents_dir: PathBuf,
     pub data_dir: PathBuf,
+    pub cache_dir: PathBuf,
 }
 
 impl JackinPaths {
@@ -21,6 +22,7 @@ impl JackinPaths {
             config_file: config_dir.join("config.toml"),
             agents_dir: home_dir.join(".jackin/agents"),
             data_dir: home_dir.join(".jackin/data"),
+            cache_dir: home_dir.join(".jackin/cache"),
             home_dir,
             config_dir,
         })
@@ -33,6 +35,7 @@ impl JackinPaths {
             config_file: config_dir.join("config.toml"),
             agents_dir: home_dir.join(".jackin/agents"),
             data_dir: home_dir.join(".jackin/data"),
+            cache_dir: home_dir.join(".jackin/cache"),
             home_dir,
             config_dir,
         }
@@ -42,6 +45,7 @@ impl JackinPaths {
         std::fs::create_dir_all(&self.config_dir)?;
         std::fs::create_dir_all(&self.agents_dir)?;
         std::fs::create_dir_all(&self.data_dir)?;
+        std::fs::create_dir_all(&self.cache_dir)?;
         Ok(())
     }
 }
