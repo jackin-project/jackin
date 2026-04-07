@@ -161,15 +161,18 @@ pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> any
 
     validate_mount_specs(&workspace.mounts)?;
 
-    let within_mount = workspace.mounts.iter().any(|mount| {
-        workspace.workdir == mount.dst
-            || workspace
-                .workdir
-                .starts_with(&format!("{}/", mount.dst.trim_end_matches('/')))
+    let covers_workdir = workspace.mounts.iter().any(|mount| {
+        let dst = mount.dst.trim_end_matches('/');
+        workspace.workdir == dst
+            || workspace.workdir.starts_with(&format!("{dst}/"))
+            || dst.starts_with(&format!(
+                "{}/",
+                workspace.workdir.trim_end_matches('/')
+            ))
     });
     anyhow::ensure!(
-        within_mount,
-        "workspace {name:?} workdir must be equal to or inside one of the workspace mount destinations"
+        covers_workdir,
+        "workspace {name:?} workdir must be equal to, inside, or a parent of one of the workspace mount destinations"
     );
 
     if let Some(default_agent) = &workspace.default_agent
@@ -708,5 +711,119 @@ mod tests {
                 .to_string()
                 .contains("ad-hoc mount destination conflicts")
         );
+    }
+
+    // -- validate_workspace_config: workdir vs mount destination coverage ------
+
+    fn workspace_with_workdir_and_dst(workdir: &str, dst: &str) -> WorkspaceConfig {
+        WorkspaceConfig {
+            workdir: workdir.to_string(),
+            mounts: vec![MountConfig {
+                src: "/tmp/src".to_string(),
+                dst: dst.to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+        }
+    }
+
+    #[test]
+    fn validate_workdir_equal_to_mount_dst() {
+        let ws = workspace_with_workdir_and_dst("/workspace/project", "/workspace/project");
+        validate_workspace_config("test", &ws).unwrap();
+    }
+
+    #[test]
+    fn validate_workdir_inside_mount_dst() {
+        let ws = workspace_with_workdir_and_dst("/workspace/project/src", "/workspace/project");
+        validate_workspace_config("test", &ws).unwrap();
+    }
+
+    #[test]
+    fn validate_workdir_deeply_nested_inside_mount_dst() {
+        let ws =
+            workspace_with_workdir_and_dst("/workspace/project/src/main", "/workspace/project");
+        validate_workspace_config("test", &ws).unwrap();
+    }
+
+    #[test]
+    fn validate_workdir_parent_of_mount_dst() {
+        let ws = workspace_with_workdir_and_dst("/workspace", "/workspace/project");
+        validate_workspace_config("test", &ws).unwrap();
+    }
+
+    #[test]
+    fn validate_workdir_grandparent_of_mount_dst() {
+        let ws = workspace_with_workdir_and_dst("/workspace", "/workspace/project/src");
+        validate_workspace_config("test", &ws).unwrap();
+    }
+
+    #[test]
+    fn validate_workdir_parent_with_trailing_slash_on_dst() {
+        let ws = workspace_with_workdir_and_dst("/workspace", "/workspace/project/");
+        validate_workspace_config("test", &ws).unwrap();
+    }
+
+    #[test]
+    fn validate_rejects_workdir_sibling_of_mount_dst() {
+        let ws = workspace_with_workdir_and_dst("/workspace/other", "/workspace/project");
+        let err = validate_workspace_config("test", &ws).unwrap_err();
+        assert!(err.to_string().contains(
+            "must be equal to, inside, or a parent of one of the workspace mount destinations"
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_workdir_with_prefix_overlap_but_not_parent() {
+        // /workspace/project-v2 is NOT inside /workspace/project
+        let ws = workspace_with_workdir_and_dst("/workspace/project-v2", "/workspace/project");
+        let err = validate_workspace_config("test", &ws).unwrap_err();
+        assert!(err.to_string().contains(
+            "must be equal to, inside, or a parent of one of the workspace mount destinations"
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_mount_dst_with_prefix_overlap_but_not_child() {
+        // /workspace/project is NOT a parent of /workspace/project-v2
+        let ws = workspace_with_workdir_and_dst("/workspace/project", "/workspace/project-v2");
+        let err = validate_workspace_config("test", &ws).unwrap_err();
+        assert!(err.to_string().contains(
+            "must be equal to, inside, or a parent of one of the workspace mount destinations"
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_completely_unrelated_workdir() {
+        let ws = workspace_with_workdir_and_dst("/home/user", "/workspace/project");
+        let err = validate_workspace_config("test", &ws).unwrap_err();
+        assert!(err.to_string().contains(
+            "must be equal to, inside, or a parent of one of the workspace mount destinations"
+        ));
+    }
+
+    #[test]
+    fn validate_workdir_parent_of_any_mount_dst() {
+        let ws = WorkspaceConfig {
+            workdir: "/workspace".to_string(),
+            mounts: vec![
+                MountConfig {
+                    src: "/tmp/a".to_string(),
+                    dst: "/other/path".to_string(),
+                    readonly: false,
+                },
+                MountConfig {
+                    src: "/tmp/b".to_string(),
+                    dst: "/workspace/project".to_string(),
+                    readonly: false,
+                },
+            ],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+        };
+        validate_workspace_config("test", &ws).unwrap();
     }
 }
