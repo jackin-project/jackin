@@ -13,6 +13,7 @@ pub mod runtime;
 pub mod selector;
 pub mod terminal_prompter;
 pub mod tui;
+pub mod version_check;
 pub mod workspace;
 
 use anyhow::Result;
