@@ -1,5 +1,12 @@
 use owo_colors::OwoColorize;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_debug_mode(enabled: bool) {
+    DEBUG_MODE.store(enabled, Ordering::Relaxed);
+}
 
 // ── Color palette ────────────────────────────────────────────────────────
 
@@ -607,7 +614,13 @@ where
     let mut last_err = None;
     let mut frame_idx: usize = 0;
 
+    let debug = DEBUG_MODE.load(Ordering::Relaxed);
     for _attempt in 0..max_attempts {
+        // In debug mode, clear the spinner line before polling so debug output appears cleanly
+        if debug {
+            eprint!("\r\x1b[2K");
+            let _ = io::stderr().flush();
+        }
         match poll() {
             Ok(()) => {
                 eprint!("\r\x1b[2K");
@@ -724,6 +737,9 @@ pub fn set_terminal_title(title: &str) {
 }
 
 pub fn clear_screen() {
+    if DEBUG_MODE.load(Ordering::Relaxed) {
+        return;
+    }
     eprint!("\x1b[2J\x1b[H");
     let _ = io::stderr().flush();
 }
