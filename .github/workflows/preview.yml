@@ -32,6 +32,7 @@ jobs:
         with:
           repository: jackin-project/jackin
           ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 0
 
       - name: Compute preview metadata
         id: meta
@@ -40,13 +41,14 @@ jobs:
           base_version=${base_version%-dev}
           full_sha="${{ steps.source.outputs.sha }}"
           short_sha=$(printf '%s' "$full_sha" | cut -c1-7)
+          commit_count=$(git rev-list --count HEAD)
           tarball_url="https://github.com/jackin-project/jackin/archive/${full_sha}.tar.gz"
           curl -fL "$tarball_url" -o jackin-preview.tar.gz
           sha256=$(shasum -a 256 jackin-preview.tar.gz | awk '{print $1}')
           {
             echo "full_sha=$full_sha"
             echo "short_sha=$short_sha"
-            echo "version=${base_version}-preview+${short_sha}"
+            echo "version=${base_version}-preview.${commit_count}+${short_sha}"
             echo "tarball_url=$tarball_url"
             echo "sha256=$sha256"
           } >> "$GITHUB_OUTPUT"
