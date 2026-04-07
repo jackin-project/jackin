@@ -205,7 +205,7 @@ plugins = []
         std::fs::create_dir_all(temp.path().join("docker")).unwrap();
         std::fs::write(
             temp.path().join("docker/agent.Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -242,7 +242,7 @@ echo hello
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -276,7 +276,7 @@ pre_launch = "hooks/pre-launch.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -302,7 +302,7 @@ pre_launch = "../escape.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -328,7 +328,7 @@ pre_launch = "hooks/missing.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -356,7 +356,7 @@ pre_launch = "/etc/evil.sh"
         std::fs::write(temp.path().join("hooks/pre-launch.sh"), "").unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -390,7 +390,7 @@ pre_launch = "hooks/pre-launch.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM donbeave/jackin-construct:trixie\n",
+            "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
