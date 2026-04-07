@@ -247,7 +247,7 @@ fn resolve_agent_repo(
 }
 
 /// Build the Docker image for the agent. Returns the image name.
-#[allow(clippy::similar_names)]
+#[allow(clippy::similar_names, clippy::too_many_arguments)]
 fn build_agent_image(
     paths: &JackinPaths,
     selector: &ClassSelector,
