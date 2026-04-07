@@ -1,6 +1,6 @@
 # Construct Image
 
-This directory contains the source for `donbeave/jackin-construct:trixie` — the shared base Docker image that every [jackin](https://github.com/donbeave/jackin) agent starts from.
+This directory contains the source for `projectjackin/construct:trixie` — the shared base Docker image that every [jackin](https://github.com/donbeave/jackin) agent starts from.
 
 In The Matrix, the construct is the base simulated environment loaded before a mission. In jackin, it's the foundation layer providing system tools, shell environment, and container infrastructure that all agents inherit.
 
@@ -34,8 +34,8 @@ Agent repos build on top of the construct. jackin then generates a derived layer
 
 The image is automatically built and pushed to Docker Hub via GitHub Actions when changes are made to this directory. Tags:
 
-- `donbeave/jackin-construct:trixie` — stable tag
-- `donbeave/jackin-construct:trixie-{sha}` — commit-specific tags
+- `projectjackin/construct:trixie` — stable tag
+- `projectjackin/construct:trixie-{sha}` — commit-specific tags
 
 ## Related
 

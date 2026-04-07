@@ -4,7 +4,7 @@
 
 ## Problem
 
-The construct image (`donbeave/jackin-construct:trixie`) creates the `claude` user at UID/GID 1000 during its build. The derived image then has to remap the user with `usermod`/`groupmod` to match the host user's UID/GID. This is a hack — the construct makes assumptions about the user that the derived layer immediately undoes.
+The construct image (`projectjackin/construct:trixie`) creates the `claude` user at UID/GID 1000 during its build. The derived image then has to remap the user with `usermod`/`groupmod` to match the host user's UID/GID. This is a hack — the construct makes assumptions about the user that the derived layer immediately undoes.
 
 ## Why It Matters
 
@@ -19,9 +19,9 @@ The construct image (`donbeave/jackin-construct:trixie`) creates the `claude` us
 
 2. **Build construct locally instead of pulling**: jackin' builds the construct from source as a build stage, passing UID/GID at build time. No published image needed. Tradeoff: first build is slower (installs all system packages), but Docker caches it locally. Breaks the agent repo standalone build contract.
 
-3. **Keep construct as-is, just pull latest before build**: `docker pull donbeave/jackin-construct:trixie` before each build to keep it fresh. Doesn't fix the user remapping problem but prevents stale base images. Least disruptive.
+3. **Keep construct as-is, just pull latest before build**: `docker pull projectjackin/construct:trixie` before each build to keep it fresh. Doesn't fix the user remapping problem but prevents stale base images. Least disruptive.
 
-4. **Hybrid**: Construct stays published without a user. A thin `jackin-base` local image adds the user. Agent Dockerfiles still `FROM donbeave/jackin-construct:trixie` for their build stages, but the final runtime stage uses the local base. Preserves the agent author contract while fixing the user problem.
+4. **Hybrid**: Construct stays published without a user. A thin `jackin-base` local image adds the user. Agent Dockerfiles still `FROM projectjackin/construct:trixie` for their build stages, but the final runtime stage uses the local base. Preserves the agent author contract while fixing the user problem.
 
 ## Related Files
 
