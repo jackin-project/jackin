@@ -28,7 +28,7 @@ const BANNER: &str = concat!(
 
 /// Send agents into the Matrix
 #[derive(Debug, Parser)]
-#[command(name = "jackin", version, styles = HELP_STYLES, before_help = BANNER)]
+#[command(name = "jackin", version = env!("JACKIN_VERSION"), styles = HELP_STYLES, before_help = BANNER)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
