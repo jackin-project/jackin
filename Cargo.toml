@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.87"
 description = "Matrix-inspired CLI for orchestrating AI coding agents at scale"
 homepage = "https://www.zhokhov.com/jackin/"
-repository = "https://github.com/donbeave/jackin"
+repository = "https://github.com/jackin-project/jackin"
 license = "Apache-2.0"
 publish = false
 
