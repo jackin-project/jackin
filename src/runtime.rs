@@ -6,6 +6,7 @@ use crate::paths::JackinPaths;
 use crate::repo::{CachedRepo, validate_agent_repo};
 use crate::selector::ClassSelector;
 use crate::tui;
+use crate::version_check;
 use owo_colors::OwoColorize;
 
 pub struct LoadOptions {
@@ -246,8 +247,9 @@ fn resolve_agent_repo(
 }
 
 /// Build the Docker image for the agent. Returns the image name.
-#[allow(clippy::similar_names)]
+#[allow(clippy::similar_names, clippy::too_many_arguments)]
 fn build_agent_image(
+    paths: &JackinPaths,
     selector: &ClassSelector,
     cached_repo: &CachedRepo,
     validated_repo: &crate::repo::ValidatedAgentRepo,
@@ -305,6 +307,7 @@ fn build_agent_image(
         let version = version.trim();
         if !version.is_empty() {
             eprintln!("        Claude {version}");
+            version_check::store_image_version(paths, &image, version);
         }
     }
 
@@ -535,13 +538,22 @@ pub fn load_agent(
     let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
     let load_result = (|| -> anyhow::Result<()> {
         // Step 2: Build Docker image
+        let rebuild = opts.rebuild || {
+            let img = image_name(selector);
+            let needs_update = version_check::needs_claude_update(paths, &img, runner);
+            if needs_update {
+                eprintln!("        Claude update available — rebuilding image");
+            }
+            needs_update
+        };
         steps.next("Building Docker image");
         let image = build_agent_image(
+            paths,
             selector,
             &cached_repo,
             &validated_repo,
             &host,
-            opts.rebuild,
+            rebuild,
             opts.debug,
             runner,
         )?;
