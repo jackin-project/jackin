@@ -124,7 +124,7 @@ jobs:
       - uses: mislav/bump-homebrew-formula-action@v4
         with:
           formula-name: jackin
-          homebrew-tap: donbeave/homebrew-tap
+          homebrew-tap: jackin-project/homebrew-tap
           tag-name: v${{ needs.check-version.outputs.version }}
         env:
           COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

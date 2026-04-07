@@ -4,15 +4,20 @@ Jack your AI coding agents into the Matrix — their own isolated worlds, scoped
 
 Documentation: <https://www.zhokhov.com/jackin/>
 
-Source code: <https://github.com/donbeave/jackin>
+Source code: <https://github.com/jackin-project/jackin>
 
 > **Current status:** jackin' is built as a proof of concept around [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its first and only supported agent runtime. Support for additional runtimes is [on the roadmap](https://www.zhokhov.com/jackin/reference/roadmap/).
 
 ## Install
 
 ```sh
-brew tap donbeave/tap
+brew tap jackin-project/tap
+
+# Stable
 brew install jackin
+
+# OR rolling preview channel
+brew install jackin@preview
 ```
 
 Or [build from source](https://www.zhokhov.com/jackin/getting-started/installation/) if you prefer.
@@ -45,10 +50,10 @@ Learn more: [Why jackin'?](https://www.zhokhov.com/jackin/getting-started/why/) 
 
 | Repository | Description |
 |---|---|
-| [jackin](https://github.com/donbeave/jackin) | CLI source code (this repo) |
+| [jackin](https://github.com/jackin-project/jackin) | CLI source code (this repo) |
 | [jackin-agent-smith](https://github.com/donbeave/jackin-agent-smith) | Default general-purpose agent |
 | [jackin-the-architect](https://github.com/donbeave/jackin-the-architect) | Rust development agent (used for jackin' development) |
-| [construct image source](https://github.com/donbeave/jackin/tree/main/docker/construct) | Shared base Docker image for all agents |
+| [construct image source](https://github.com/jackin-project/jackin/tree/main/docker/construct) | Shared base Docker image for all agents |
 
 ## Documentation
 

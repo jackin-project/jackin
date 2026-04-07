@@ -14,10 +14,10 @@ export default defineConfig({
         replacesTitle: true,
       },
       social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/donbeave/jackin' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/jackin-project/jackin' },
       ],
       editLink: {
-        baseUrl: 'https://github.com/donbeave/jackin/edit/main/docs/',
+        baseUrl: 'https://github.com/jackin-project/jackin/edit/main/docs/',
       },
       customCss: ['./src/styles/custom.css'],
       head: [

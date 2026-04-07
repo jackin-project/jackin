@@ -1,0 +1,102 @@
+name: Publish Homebrew Preview
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homebrew-tap-publish
+  cancel-in-progress: true
+
+jobs:
+  publish-preview:
+    if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve source SHA
+        id: source
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          repository: jackin-project/jackin
+          ref: ${{ steps.source.outputs.sha }}
+
+      - name: Compute preview metadata
+        id: meta
+        run: |
+          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          base_version=${base_version%-dev}
+          full_sha="${{ steps.source.outputs.sha }}"
+          short_sha=$(printf '%s' "$full_sha" | cut -c1-7)
+          tarball_url="https://github.com/jackin-project/jackin/archive/${full_sha}.tar.gz"
+          curl -fL "$tarball_url" -o jackin-preview.tar.gz
+          sha256=$(shasum -a 256 jackin-preview.tar.gz | awk '{print $1}')
+          {
+            echo "full_sha=$full_sha"
+            echo "short_sha=$short_sha"
+            echo "version=${base_version}-preview+${short_sha}"
+            echo "tarball_url=$tarball_url"
+            echo "sha256=$sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: jackin-project/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Verify preview alias
+        run: |
+          test -L homebrew-tap/Aliases/jackin@preview
+          test "$(readlink homebrew-tap/Aliases/jackin@preview)" = "../Formula/jackin-preview.rb"
+
+      - name: Rewrite preview formula
+        run: |
+          cat > homebrew-tap/Formula/jackin-preview.rb <<EOF
+          class JackinPreview < Formula
+            desc "CLI for orchestrating AI coding agents at scale"
+            homepage "https://github.com/jackin-project/jackin"
+            url "${{ steps.meta.outputs.tarball_url }}"
+            version "${{ steps.meta.outputs.version }}"
+            sha256 "${{ steps.meta.outputs.sha256 }}"
+            license "Apache-2.0"
+
+            depends_on "rust" => :build
+            depends_on "docker" => :optional
+
+            conflicts_with "jackin-project/tap/jackin", because: "preview and stable install the same binary"
+
+            def install
+              system "cargo", "install", *std_cargo_args
+            end
+
+            test do
+              assert_match "jackin", shell_output("#{bin}/jackin --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push tap update
+        working-directory: homebrew-tap
+        run: |
+          git add Formula/jackin-preview.rb
+          if git diff --cached --quiet --exit-code; then
+            echo "Preview formula already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "jackin@preview ${{ steps.meta.outputs.version }}"
+          git push
