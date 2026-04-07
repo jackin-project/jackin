@@ -75,6 +75,8 @@ jobs:
         run: cargo install cross --locked
 
       - name: Build
+        env:
+          JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
             cross build --release --locked --target ${{ matrix.target }}
