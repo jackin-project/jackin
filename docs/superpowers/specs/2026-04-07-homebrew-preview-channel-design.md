@@ -98,7 +98,7 @@ The workflow should:
    - `short_sha`
    - `preview_version="${base_version}-preview+${short_sha}"`
 5. Download the commit tarball from GitHub:
-   - `https://github.com/donbeave/jackin/archive/${full_sha}.tar.gz`
+   - `https://github.com/jackin-project/jackin/archive/${full_sha}.tar.gz`
 6. Compute `sha256` for that tarball.
 7. Clone `jackin-project/homebrew-tap` using `HOMEBREW_TAP_TOKEN`.
 8. Rewrite `Formula/jackin@preview.rb` with the new version, URL, and checksum.
@@ -125,8 +125,8 @@ Expected structure:
 ```ruby
 class JackinATPreview < Formula
   desc "Matrix-inspired CLI for orchestrating AI coding agents at scale"
-  homepage "https://github.com/donbeave/jackin"
-  url "https://github.com/donbeave/jackin/archive/<fullsha>.tar.gz"
+  homepage "https://github.com/jackin-project/jackin"
+  url "https://github.com/jackin-project/jackin/archive/<fullsha>.tar.gz"
   version "0.5.0-preview+abc1234"
   sha256 "..."
   license "Apache-2.0"
