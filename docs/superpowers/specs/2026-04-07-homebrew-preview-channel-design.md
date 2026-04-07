@@ -67,7 +67,7 @@ The preview publication flow is:
 5. It computes `preview_version = <base>-preview+<shortsha>`.
 6. It downloads the source tarball for the exact commit SHA.
 7. It computes the tarball `sha256`.
-8. It updates `Formula/jackin@preview.rb` in `donbeave/homebrew-tap`.
+8. It updates `Formula/jackin@preview.rb` in `jackin-project/homebrew-tap`.
 9. It commits and pushes the tap change if the formula content changed.
 
 ## `jackin` Repository Changes
@@ -100,7 +100,7 @@ The workflow should:
 5. Download the commit tarball from GitHub:
    - `https://github.com/donbeave/jackin/archive/${full_sha}.tar.gz`
 6. Compute `sha256` for that tarball.
-7. Clone `donbeave/homebrew-tap` using `HOMEBREW_TAP_TOKEN`.
+7. Clone `jackin-project/homebrew-tap` using `HOMEBREW_TAP_TOKEN`.
 8. Rewrite `Formula/jackin@preview.rb` with the new version, URL, and checksum.
 9. Commit and push only when the resulting file differs from the current one.
 
@@ -108,7 +108,7 @@ The workflow should:
 
 The workflow will use the existing tap automation model:
 
-- `HOMEBREW_TAP_TOKEN` with permission to push to `donbeave/homebrew-tap`
+- `HOMEBREW_TAP_TOKEN` with permission to push to `jackin-project/homebrew-tap`
 
 No new external service is required.
 
@@ -150,7 +150,7 @@ end
 
 The separate formula provides:
 
-- a clear install surface for preview users: `brew install donbeave/tap/jackin@preview`
+- a clear install surface for preview users: `brew install jackin-project/tap/jackin@preview`
 - isolation from the stable update path
 - a reproducible, pinned formula for each published preview state
 
@@ -214,7 +214,7 @@ When implementing this design, verify the following:
    `<base>-preview+<shortsha>` format.
 3. `Formula/jackin@preview.rb` is updated correctly in the tap.
 4. `brew audit --strict --formula jackin@preview` passes in the tap repository.
-5. A local install of `donbeave/tap/jackin@preview` succeeds.
+5. A local install of `jackin-project/tap/jackin@preview` succeeds.
 6. The existing stable release workflow still updates only `jackin`.
 
 ## Implementation Summary
