@@ -454,7 +454,10 @@ fn launch_agent_runtime(
         run_args.push(ms);
     }
     run_args.push(image);
-    runner.run("docker", &run_args, None)?;
+    let result = runner.run("docker", &run_args, None);
+    // Ensure cleanup debug logs start on a fresh line after the interactive session
+    eprintln!();
+    result?;
 
     Ok(())
 }
@@ -586,13 +589,13 @@ pub fn load_agent(
 }
 
 fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: &LoadOptions) {
-    tui::clear_screen();
-    let remaining = list_running_agent_display_names(runner).unwrap_or_default();
     if opts.no_intro {
-        tui::simple_outro(agent_display_name, &remaining);
-    } else {
-        tui::matrix_outro(agent_display_name, &remaining);
+        return;
     }
+    tui::matrix_outro(
+        agent_display_name,
+        &list_running_agent_display_names(runner).unwrap_or_default(),
+    );
 }
 
 pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {

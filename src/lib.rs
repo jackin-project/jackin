@@ -216,6 +216,7 @@ pub fn run(cli: Cli) -> Result<()> {
             debug,
         } => {
             runner.debug = debug;
+            tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
 
             let (class, workspace_input) = if let Some(sel) = selector {
@@ -253,7 +254,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 &ad_hoc_mounts,
             )?;
             let opts = runtime::LoadOptions {
-                no_intro,
+                no_intro: no_intro || debug,
                 debug,
                 rebuild,
             };
