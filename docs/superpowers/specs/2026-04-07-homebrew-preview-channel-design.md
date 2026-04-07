@@ -5,6 +5,19 @@ The goal is to make the latest successful commit from `main` easy to install and
 test locally via the existing tap, while keeping the stable release flow
 separate and unchanged.
 
+## Implemented Detail
+
+Homebrew does not support a literal `Formula/jackin@preview.rb` file for a
+non-numeric `@preview` suffix because formula class-name mapping only special-
+cases `@` followed by digits. The implemented tap layout therefore uses:
+
+- `Formula/jackin-preview.rb` as the canonical preview formula file
+- `Aliases/jackin@preview` as a symlink so users still run
+  `brew install jackin@preview`
+
+The preview workflow rewrites `Formula/jackin-preview.rb` and verifies the
+`jackin@preview` alias exists before pushing tap updates.
+
 ## Goals
 
 - Add a `jackin@preview` formula in the Homebrew tap.
@@ -67,7 +80,7 @@ The preview publication flow is:
 5. It computes `preview_version = <base>-preview+<shortsha>`.
 6. It downloads the source tarball for the exact commit SHA.
 7. It computes the tarball `sha256`.
-8. It updates `Formula/jackin@preview.rb` in `jackin-project/homebrew-tap`.
+8. It updates `Formula/jackin-preview.rb` in `jackin-project/homebrew-tap`.
 9. It commits and pushes the tap change if the formula content changed.
 
 ## `jackin` Repository Changes
@@ -101,7 +114,7 @@ The workflow should:
    - `https://github.com/jackin-project/jackin/archive/${full_sha}.tar.gz`
 6. Compute `sha256` for that tarball.
 7. Clone `jackin-project/homebrew-tap` using `HOMEBREW_TAP_TOKEN`.
-8. Rewrite `Formula/jackin@preview.rb` with the new version, URL, and checksum.
+8. Rewrite `Formula/jackin-preview.rb` with the new version, URL, and checksum.
 9. Commit and push only when the resulting file differs from the current one.
 
 ### Secrets
@@ -114,7 +127,8 @@ No new external service is required.
 
 ## Tap Changes
 
-Add a new formula at `Formula/jackin@preview.rb`.
+Add a new canonical preview formula at `Formula/jackin-preview.rb` and expose
+it through `Aliases/jackin@preview`.
 
 ### Formula Shape
 
@@ -123,7 +137,7 @@ The preview formula should intentionally mirror the stable formula closely.
 Expected structure:
 
 ```ruby
-class JackinATPreview < Formula
+class JackinPreview < Formula
   desc "CLI for orchestrating AI coding agents at scale"
   homepage "https://github.com/jackin-project/jackin"
   url "https://github.com/jackin-project/jackin/archive/<fullsha>.tar.gz"
@@ -212,7 +226,8 @@ When implementing this design, verify the following:
 1. The new preview workflow runs only after successful CI on `main`.
 2. The generated preview version string matches the expected
    `<base>-preview+<shortsha>` format.
-3. `Formula/jackin@preview.rb` is updated correctly in the tap.
+3. `Formula/jackin-preview.rb` is updated correctly in the tap and the
+   `jackin@preview` alias still resolves to it.
 4. `brew audit --strict --formula jackin@preview` passes in the tap repository.
 5. A local install of `jackin-project/tap/jackin@preview` succeeds.
 6. The existing stable release workflow still updates only `jackin`.
@@ -222,7 +237,7 @@ When implementing this design, verify the following:
 Implementation will involve:
 
 - adding `.github/workflows/preview.yml` in `jackin`
-- adding `Formula/jackin@preview.rb` in `homebrew-tap`
+- adding `Formula/jackin-preview.rb` and `Aliases/jackin@preview` in `homebrew-tap`
 - documenting preview installation in the tap README and relevant project docs
 
 No changes are required to the stable release formula beyond leaving it in
