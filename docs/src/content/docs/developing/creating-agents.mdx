@@ -31,7 +31,7 @@ Creating a custom agent lets you define a specialized environment for a specific
 3. **Create the Dockerfile**
 
    ```dockerfile title="Dockerfile"
-   FROM donbeave/jackin-construct:trixie
+   FROM projectjackin/construct:trixie
 
    # Install Rust via mise
    RUN mise install rust@stable && mise use --global rust@stable
@@ -61,11 +61,11 @@ Creating a custom agent lets you define a specialized environment for a specific
 Your final stage **must** start from the construct image:
 
 ```dockerfile
-FROM donbeave/jackin-construct:trixie
+FROM projectjackin/construct:trixie
 ```
 
 <Aside type="caution">
-This is the literal string jackin' checks for. `FROM donbeave/jackin-construct:latest` or any other tag will fail validation.
+This is the literal string jackin' checks for. `FROM projectjackin/construct:latest` or any other tag will fail validation.
 </Aside>
 
 ### Multi-stage builds are supported
@@ -80,7 +80,7 @@ COPY tools/ .
 RUN cargo build --release
 
 # Final stage — must use the construct
-FROM donbeave/jackin-construct:trixie
+FROM projectjackin/construct:trixie
 COPY --from=builder /build/target/release/my-tool /usr/local/bin/
 ```
 
