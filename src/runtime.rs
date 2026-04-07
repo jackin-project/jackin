@@ -592,7 +592,10 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
     if opts.no_intro {
         return;
     }
-    tui::matrix_outro(agent_display_name, &list_running_agent_display_names(runner).unwrap_or_default());
+    tui::matrix_outro(
+        agent_display_name,
+        &list_running_agent_display_names(runner).unwrap_or_default(),
+    );
 }
 
 pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
