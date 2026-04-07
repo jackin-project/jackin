@@ -2,8 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: 'https://jackin-project.github.io',
-  base: '/jackin',
+  site: 'https://jackin.tailrocks.com',
   integrations: [
     starlight({
       title: "jackin'",
@@ -25,7 +24,7 @@ export default defineConfig({
           tag: 'meta',
           attrs: {
             property: 'og:image',
-            content: 'https://jackin-project.github.io/jackin/og-image.png',
+            content: 'https://jackin.tailrocks.com/og-image.png',
           },
         },
       ],
