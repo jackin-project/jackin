@@ -12,7 +12,12 @@ Source code: <https://github.com/jackin-project/jackin>
 
 ```sh
 brew tap jackin-project/tap
+
+# Stable
 brew install jackin
+
+# OR rolling preview channel
+brew install jackin@preview
 ```
 
 Or [build from source](https://www.zhokhov.com/jackin/getting-started/installation/) if you prefer.
