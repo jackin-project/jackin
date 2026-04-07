@@ -62,7 +62,7 @@ Rust CLI binary. All modules are flat (no subdirectories).
 
 Astro Starlight site. **Lives alongside source code intentionally** — update docs in the same commit as code changes.
 
-- Published at: https://jackin-project.github.io/jackin/
+- Published at: https://jackin.tailrocks.com/
 - Dev server: `cd docs && bun run dev`
 - Build: `cd docs && bun run build`
 - Package manager: **bun only** (not npm/pnpm/yarn)
