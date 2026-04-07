@@ -6,6 +6,8 @@
 
 **Architecture:** Keep the stable and preview channels separate. The stable path continues to use the existing tagged release workflow, but it must target `jackin-project/homebrew-tap`. The preview path adds a new workflow in the `jackin` repo that rewrites `jackin@preview` in the sibling tap repo using a pinned commit tarball and a Ghostty-style version string (`<base>-preview+<shortsha>`).
 
+**Implementation note:** Homebrew does not support a literal `Formula/jackin@preview.rb` file for a non-numeric `@preview` suffix. The implemented tap layout therefore uses `Formula/jackin-preview.rb` as the canonical formula file plus an `Aliases/jackin@preview` symlink so users still install the preview channel as `jackin@preview`.
+
 **Tech Stack:** GitHub Actions, Homebrew formulae, shell scripting, Rust project metadata from `Cargo.toml`, Astro Starlight docs, Bun.
 
 **Assumption:** This plan only migrates GitHub organization references for the `jackin` source repository and the Homebrew tap. It does not change Docker Hub image namespaces or agent repository URLs such as `jackin-agent-smith` until those are confirmed separately.
@@ -22,7 +24,8 @@
 - Modify: `docs/src/content/docs/getting-started/installation.mdx` — update Homebrew/source install instructions and add preview install instructions.
 - Modify: `docs/src/content/docs/index.mdx` — update Homebrew quick-start commands and repository links, and add the preview channel command.
 - Modify: `../homebrew-tap/Formula/jackin.rb` — update `homepage`, `url`, and `head` to `jackin-project/jackin`.
-- Create: `../homebrew-tap/Formula/jackin@preview.rb` — add the rolling preview formula.
+- Create: `../homebrew-tap/Formula/jackin-preview.rb` — add the rolling preview formula.
+- Create: `../homebrew-tap/Aliases/jackin@preview` — expose the preview formula under the user-facing channel name.
 - Modify: `../homebrew-tap/README.md` — update the tap namespace and add preview installation instructions.
 
 ### Task 1: Migrate `jackin` Homebrew-Facing Org References
@@ -174,7 +177,8 @@ git commit -m "chore: move homebrew publishing to jackin-project"
 
 **Files:**
 - Modify: `../homebrew-tap/Formula/jackin.rb`
-- Create: `../homebrew-tap/Formula/jackin@preview.rb`
+- Create: `../homebrew-tap/Formula/jackin-preview.rb`
+- Create: `../homebrew-tap/Aliases/jackin@preview`
 - Modify: `../homebrew-tap/README.md`
 
 - [ ] **Step 1: Create a dedicated branch in the sibling tap repo**
@@ -187,16 +191,17 @@ git -C ../homebrew-tap checkout -b feature/homebrew-preview-channel
 
 Expected: Git reports `Switched to a new branch 'feature/homebrew-preview-channel'`.
 
-- [ ] **Step 2: Confirm the stable tap formula and README still point at `donbeave` and that `jackin@preview.rb` does not exist yet**
+- [ ] **Step 2: Confirm the stable tap formula and README still point at `donbeave` and that the preview formula and alias do not exist yet**
 
 Run:
 
 ```bash
 rg -n "donbeave|jackin-project" ../homebrew-tap/Formula/jackin.rb ../homebrew-tap/README.md
-test ! -f ../homebrew-tap/Formula/jackin@preview.rb
+test ! -f ../homebrew-tap/Formula/jackin-preview.rb
+test ! -L ../homebrew-tap/Aliases/jackin@preview
 ```
 
-Expected: `rg` shows `donbeave` matches in the stable formula and README, and `test` succeeds because `jackin@preview.rb` is not present yet.
+Expected: `rg` shows `donbeave` matches in the stable formula and README, and both `test` commands succeed because the preview formula and alias are not present yet.
 
 - [ ] **Step 3: Update the stable tap formula to the `jackin-project` organization**
 
@@ -224,7 +229,7 @@ class Jackin < Formula
 end
 ```
 
-- [ ] **Step 4: Generate the initial `jackin@preview` formula from the current `origin/main` commit of `jackin`**
+- [ ] **Step 4: Generate the initial preview formula and alias from the current `origin/main` commit of `jackin`**
 
 Run from the `jackin` repo root:
 
@@ -238,8 +243,8 @@ TARBALL_URL="https://github.com/jackin-project/jackin/archive/${FULL_SHA}.tar.gz
 TMP_TARBALL=$(mktemp /tmp/jackin-preview.XXXXXX.tar.gz)
 curl -L "$TARBALL_URL" -o "$TMP_TARBALL"
 SHA256=$(shasum -a 256 "$TMP_TARBALL" | awk '{print $1}')
-cat > ../homebrew-tap/Formula/jackin@preview.rb <<EOF
-class JackinATPreview < Formula
+cat > ../homebrew-tap/Formula/jackin-preview.rb <<EOF
+class JackinPreview < Formula
   desc "Matrix-inspired CLI for orchestrating AI coding agents at scale"
   homepage "https://github.com/jackin-project/jackin"
   url "${TARBALL_URL}"
@@ -261,6 +266,8 @@ class JackinATPreview < Formula
   end
 end
 EOF
+mkdir -p ../homebrew-tap/Aliases
+ln -sfn ../Formula/jackin-preview.rb ../homebrew-tap/Aliases/jackin@preview
 rm -f "$TMP_TARBALL"
 ```
 
@@ -329,7 +336,7 @@ Expected: Homebrew builds `jackin@preview` successfully and `jackin --version` p
 Run:
 
 ```bash
-git -C ../homebrew-tap add Formula/jackin.rb Formula/jackin@preview.rb README.md
+git -C ../homebrew-tap add Formula/jackin.rb Formula/jackin-preview.rb Aliases/jackin@preview README.md
 git -C ../homebrew-tap commit -m "feat: add jackin preview formula"
 ```
 
@@ -408,13 +415,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: jackin-project/homebrew-tap
+          ref: main
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-tap
 
+      - name: Verify preview alias
+        run: |
+          test -L homebrew-tap/Aliases/jackin@preview
+          test "$(readlink homebrew-tap/Aliases/jackin@preview)" = "../Formula/jackin-preview.rb"
+
       - name: Rewrite preview formula
         run: |
-          cat > homebrew-tap/Formula/jackin@preview.rb <<EOF
-          class JackinATPreview < Formula
+          cat > homebrew-tap/Formula/jackin-preview.rb <<EOF
+          class JackinPreview < Formula
             desc "Matrix-inspired CLI for orchestrating AI coding agents at scale"
             homepage "https://github.com/jackin-project/jackin"
             url "${{ steps.meta.outputs.tarball_url }}"
@@ -440,13 +453,13 @@ jobs:
       - name: Commit and push tap update
         working-directory: homebrew-tap
         run: |
-          if git diff --quiet -- Formula/jackin@preview.rb; then
+          if git diff --quiet -- Formula/jackin-preview.rb; then
             echo "Preview formula already up to date"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/jackin@preview.rb
+          git add Formula/jackin-preview.rb
           git commit -m "jackin@preview ${{ steps.meta.outputs.version }}"
           git push
 ```
@@ -524,7 +537,8 @@ git commit -m "feat: publish homebrew preview channel"
 - Verify only: `.github/workflows/release.yml`
 - Verify only: `.github/workflows/preview.yml`
 - Verify only: `../homebrew-tap/Formula/jackin.rb`
-- Verify only: `../homebrew-tap/Formula/jackin@preview.rb`
+- Verify only: `../homebrew-tap/Formula/jackin-preview.rb`
+- Verify only: `../homebrew-tap/Aliases/jackin@preview`
 - Verify only: `../homebrew-tap/README.md`
 
 - [ ] **Step 1: Verify the stable and preview tap files now point to `jackin-project`**
@@ -539,7 +553,8 @@ rg -n "github.com/jackin-project/jackin|jackin-project/homebrew-tap|jackin-proje
   docs/src/content/docs/getting-started/installation.mdx \
   docs/src/content/docs/index.mdx \
   ../homebrew-tap/Formula/jackin.rb \
-  ../homebrew-tap/Formula/jackin@preview.rb \
+  ../homebrew-tap/Formula/jackin-preview.rb \
+  ../homebrew-tap/Aliases/jackin@preview \
   ../homebrew-tap/README.md
 ```
 
