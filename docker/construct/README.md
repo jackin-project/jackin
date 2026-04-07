@@ -4,7 +4,7 @@ This directory contains the source for `donbeave/jackin-construct:trixie` — th
 
 In The Matrix, the construct is the base simulated environment loaded before a mission. In jackin, it's the foundation layer providing system tools, shell environment, and container infrastructure that all agents inherit.
 
-For full details — including what's installed, the image layer architecture, and how to extend it — see the [Construct Image](https://www.zhokhov.com/jackin/developing/construct-image/) documentation.
+For full details — including what's installed, the image layer architecture, and how to extend it — see the [Construct Image](https://jackin-project.github.io/jackin/developing/construct-image/) documentation.
 
 ## Files
 
@@ -28,7 +28,7 @@ The runtime entrypoint that launches Claude Code is at [`docker/runtime/entrypoi
 └─────────────────────────────────┘
 ```
 
-Agent repos build on top of the construct. jackin then generates a derived layer on top of that. See [Architecture](https://www.zhokhov.com/jackin/reference/architecture/) for the full picture.
+Agent repos build on top of the construct. jackin then generates a derived layer on top of that. See [Architecture](https://jackin-project.github.io/jackin/reference/architecture/) for the full picture.
 
 ## Building
 
@@ -39,6 +39,6 @@ The image is automatically built and pushed to Docker Hub via GitHub Actions whe
 
 ## Related
 
-- [Creating Agents](https://www.zhokhov.com/jackin/developing/creating-agents/) — how to build agent repos on top of the construct
+- [Creating Agents](https://jackin-project.github.io/jackin/developing/creating-agents/) — how to build agent repos on top of the construct
 - [jackin-agent-smith](https://github.com/donbeave/jackin-agent-smith) — default agent (example of extending the construct)
 - [jackin-the-architect](https://github.com/donbeave/jackin-the-architect) — Rust development agent (another example)
