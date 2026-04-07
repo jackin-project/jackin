@@ -20,9 +20,17 @@ Never commit directly to `main`.
 See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for a navigational map of the codebase, documentation site, Docker assets, and CI workflows.
 Use it to quickly locate files and understand which docs to update alongside code changes.
 
-## Testing
+## Pre-commit Verification
 
-See [TESTING.md](TESTING.md) for test runner setup, commands, and pre-commit verification requirements.
+Before committing **any** change, run all three checks and ensure zero warnings and zero failures:
+
+```sh
+cargo fmt -- --check && cargo clippy && cargo nextest run
+```
+
+If formatting fails, run `cargo fmt` to fix it, then re-run the checks.
+
+See [TESTING.md](TESTING.md) for test runner setup, commands, and additional details.
 
 ## Security Exceptions
 
