@@ -23,8 +23,6 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-    env:
-      CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-amd64
 
     steps:
       - name: Checkout repository
@@ -49,13 +47,21 @@ jobs:
       - name: Bootstrap buildx
         run: just construct-init-buildx
 
+      - name: Expose GitHub Actions cache runtime
+        if: github.event_name == 'pull_request'
+        uses: crazy-max/ghaction-github-runtime@v3
+
       - name: Build amd64 for pull requests
         if: github.event_name == 'pull_request'
+        env:
+          CACHE_FROM: type=gha,scope=construct-pr-amd64
+          CACHE_TO: type=gha,scope=construct-pr-amd64,mode=max
         run: just construct-build-platform amd64
 
       - name: Push amd64 image by digest
         if: github.event_name != 'pull_request'
         env:
+          CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-amd64
           CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-amd64,mode=max
         run: just construct-push-platform amd64
 
@@ -73,8 +79,6 @@ jobs:
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
-    env:
-      CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-arm64
 
     steps:
       - name: Checkout repository
@@ -99,13 +103,21 @@ jobs:
       - name: Bootstrap buildx
         run: just construct-init-buildx
 
+      - name: Expose GitHub Actions cache runtime
+        if: github.event_name == 'pull_request'
+        uses: crazy-max/ghaction-github-runtime@v3
+
       - name: Build arm64 for pull requests
         if: github.event_name == 'pull_request'
+        env:
+          CACHE_FROM: type=gha,scope=construct-pr-arm64
+          CACHE_TO: type=gha,scope=construct-pr-arm64,mode=max
         run: just construct-build-platform arm64
 
       - name: Push arm64 image by digest
         if: github.event_name != 'pull_request'
         env:
+          CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-arm64
           CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-arm64,mode=max
         run: just construct-push-platform arm64
 
