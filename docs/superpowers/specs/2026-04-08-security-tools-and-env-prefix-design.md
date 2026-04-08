@@ -144,6 +144,34 @@ ENV JACKIN_DISABLE_SHELLFIRM=1
 Both shell hooks and MCP server registration check the same variables. The
 convention follows the existing `1`/`0` pattern used by `JACKIN_DEBUG`.
 
+## Version Management and CI
+
+Tool versions are stored in `docker/construct/versions.env`:
+
+```
+TIRITH_VERSION=0.2.12
+SHELLFIRM_VERSION=0.3.9
+```
+
+The construct workflow (`.github/workflows/construct.yml`) loads this file and
+passes the values as Docker build-args. Because the file lives under
+`docker/construct/`, version bumps automatically trigger the construct image
+rebuild via the existing `paths` filter.
+
+The workflow changes:
+
+```yaml
+- name: Load tool versions
+  run: cat docker/construct/versions.env >> "$GITHUB_ENV"
+
+- name: Build and push
+  uses: docker/build-push-action@v6
+  with:
+    build-args: |
+      TIRITH_VERSION=${{ env.TIRITH_VERSION }}
+      SHELLFIRM_VERSION=${{ env.SHELLFIRM_VERSION }}
+```
+
 ## README Update
 
 The `docker/construct/README.md` files table is updated to reflect the new
