@@ -4,7 +4,7 @@ This directory contains the source for `projectjackin/construct:trixie` — the 
 
 In The Matrix, the construct is the base simulated environment loaded before a mission. In jackin, it's the foundation layer providing system tools, shell environment, and container infrastructure that all agents inherit.
 
-For full details — including what's installed, the image layer architecture, and how to extend it — see the [Construct Image](https://jackin.tailrocks.com/developing/construct-image/) documentation.
+For full details — including what's installed, how it is built, the image layer architecture, and how to extend it — see the [Construct Image](https://jackin.tailrocks.com/developing/construct-image/) documentation.
 
 ## Files
 
@@ -35,7 +35,7 @@ Agent repos build on top of the construct. jackin then generates a derived layer
 
 Construct image builds are defined by the repo-root `docker-bake.hcl` file and wrapped by the repo-root `Justfile`.
 
-The supported local validation flow, architecture-specific debugging commands, publish rehearsal workflow, CI behavior, and published tags are documented on the [Construct Image](https://jackin.tailrocks.com/developing/construct-image/) page.
+The supported local validation flow, architecture-specific debugging commands, advanced publish rehearsal workflow, CI behavior, and published tags are documented on the [Construct Image](https://jackin.tailrocks.com/developing/construct-image/) page.
 
 ## Related
 
