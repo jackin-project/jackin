@@ -331,12 +331,13 @@ smallest robust design.
 ## Verification Plan
 
 1. `just construct-init-buildx` succeeds on a fresh contributor machine.
-2. `just construct-build-local` produces a locally loadable construct image.
+2. `just construct-build-local` produces a locally loadable construct image
+   under the isolated default `jackin-local/construct:trixie` tag.
 3. `just construct-build-platform amd64` and
    `just construct-build-platform arm64` both work when supported by the local
    builder setup.
 4. Pull requests validate both native architectures without pushing.
-5. Pushes to `main` build both native platform images and publish a final
-   multi-platform manifest.
+5. Pushes to `main` build both native platform images, record their digests,
+   and publish a final multi-platform manifest from those digests.
 6. `docker buildx imagetools inspect projectjackin/construct:trixie` shows both
    `linux/amd64` and `linux/arm64` after publish.
