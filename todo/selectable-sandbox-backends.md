@@ -718,6 +718,367 @@ The next design pass should turn this TODO into a full implementation design wit
 - provider selection rules for Linux/macOS
 - rollout plan for experimental vs stable support
 
+## OrbStack VM Backend Research (April 2026)
+
+This section documents research into using OrbStack Linux VMs as a concrete, macOS-focused alternative to the Kata/Apple Containerization providers described above.
+
+### Why OrbStack
+
+The original design proposed two separate VM providers requiring two separate implementations: Kata Containers on Linux and Apple Containerization on macOS. OrbStack collapses the macOS story into a single, production-ready tool that already solves most of the hard problems: fast VM boot, file sharing, networking, and Docker-inside-VM.
+
+The trade-off is that OrbStack is **macOS-only**, which means it cannot be the universal answer. But since the majority of jackin users are Mac developers, and the security comparison gap with Docker Sandboxes is most relevant on developer laptops, OrbStack is a pragmatic first target.
+
+### OrbStack Capabilities Summary
+
+OrbStack provides lightweight Linux VMs on macOS via the `orb` CLI.
+
+Key properties relevant to jackin:
+
+- **VM lifecycle**: `orb create`, `orb start`, `orb stop`, `orb delete` — fully scriptable, no GUI needed
+- **Supported distros**: 15 distros including Debian (trixie confirmed working), Ubuntu, Alpine, Fedora, Arch, etc.
+- **Boot time**: ~2 seconds — comparable to container startup
+- **File sharing**: Host `/Users/...` automatically visible at the same path inside the VM via VirtioFS
+- **Networking**: VM services auto-accessible at `localhost`; DNS at `{name}.orb.local`; full internet access
+- **Docker inside VM**: Standard `apt install docker.io` gives a full Docker daemon — no sidecar needed
+- **Provisioning**: Cloud-init support (`orb create debian:trixie my-vm -c cloud-init.yml`)
+- **Resource overhead**: Dynamic memory allocation — idle VMs use near-zero resources
+- **Command execution**: `orb -m {name} <command>` runs commands inside the VM; SSH also available
+- **Architecture**: Apple Silicon primary; Intel Mac supported; Rosetta for x86_64 emulation
+
+### Proposed OrbStack VM Flow
+
+The current DinD flow:
+
+```
+Host Docker → build image → create network → start docker:dind sidecar → start agent container
+             → agent talks to DinD via DOCKER_HOST=tcp://dind:2375
+             → workspace via bind mounts
+```
+
+The proposed OrbStack VM flow:
+
+```
+Host Docker → build image → export image as tar
+→ orb create debian:trixie jackin-{name} -c cloud-init.yml
+→ inside VM: install Docker, load image, start agent container
+→ agent talks to Docker via unix:///var/run/docker.sock (real daemon, not sidecar)
+→ workspace via OrbStack's automatic VirtioFS mount
+```
+
+Key simplification: inside the VM, there is no need for a DinD sidecar at all. The VM's own Docker daemon is the isolated engine. The agent can use `DOCKER_HOST=unix:///var/run/docker.sock` instead of a TCP connection to a sidecar.
+
+### Implementation Shape
+
+#### 1. VM Creation and Provisioning
+
+```bash
+orb create debian:trixie jackin-{name} -c /tmp/jackin-cloud-init.yml
+```
+
+Cloud-init template:
+
+```yaml
+#cloud-config
+packages:
+  - docker.io
+runcmd:
+  - systemctl enable docker
+  - systemctl start docker
+  - usermod -aG docker debian
+```
+
+#### 2. Image Transfer
+
+Since OrbStack's VirtioFS makes host files visible inside the VM, the image tar does not need to be explicitly copied:
+
+```bash
+# Build on host (reuse current flow)
+docker build -t jackin-{slug} ...
+
+# Export to a host path visible from inside the VM
+docker save jackin-{slug} -o ~/.jackin/cache/jackin-{slug}.tar
+
+# Inside VM, load from the same path
+orb -m jackin-{name} docker load -i /Users/{user}/.jackin/cache/jackin-{slug}.tar
+```
+
+#### 3. Agent Launch Inside VM
+
+```bash
+orb -m jackin-{name} docker run -it --name agent \
+  -e DOCKER_HOST=unix:///var/run/docker.sock \
+  -e GIT_AUTHOR_NAME="{git_user_name}" \
+  -e GIT_AUTHOR_EMAIL="{git_user_email}" \
+  -e JACKIN_CLAUDE_ENV=jackin \
+  -v /Users/{user}/Projects/myapp:/Users/{user}/Projects/myapp \
+  -v /Users/{user}/.jackin/data/jackin-{name}/.claude:/home/claude/.claude \
+  -v /Users/{user}/.jackin/data/jackin-{name}/.claude.json:/home/claude/.claude.json \
+  -v /Users/{user}/.jackin/data/jackin-{name}/.config/gh:/home/claude/.config/gh \
+  jackin-{slug}
+```
+
+#### 4. Attach / Detach
+
+```bash
+# Reattach to running agent
+orb -m jackin-{name} docker attach agent
+```
+
+#### 5. Cleanup
+
+```bash
+# Stop VM (preserves state for fast restart)
+orb stop jackin-{name}
+
+# Or delete entirely
+orb delete jackin-{name}
+```
+
+### Suggested Backend Names
+
+Rather than the generic `microvm` label, the backend should be named after what it actually is:
+
+- `dind` — current behavior, Docker-in-Docker sidecar (cross-platform)
+- `orbstack-vm` — OrbStack VM with native Docker inside (macOS only)
+
+Config shape:
+
+```toml
+[runtime]
+default_backend = "dind"  # or "orbstack-vm" or "auto"
+```
+
+CLI shape:
+
+```sh
+jackin load agent-smith --backend dind
+jackin load agent-smith --backend orbstack-vm
+jackin load agent-smith --backend auto
+```
+
+Runtime output:
+
+- `backend: dind`
+- `backend: orbstack-vm (debian trixie)`
+
+### Architecture Comparison: DinD vs OrbStack VM
+
+| Aspect | DinD (current) | OrbStack VM (proposed) |
+|---|---|---|
+| Isolation boundary | Container (shared host kernel, `--privileged` DinD) | Full VM (separate kernel, separate userland) |
+| Docker access | TCP sidecar (`tcp://dind:2375`), no TLS | Native daemon (`unix:///var/run/docker.sock`) |
+| Workspace delivery | Direct host bind mounts | OrbStack VirtioFS (host paths at same absolute paths) |
+| State persistence | Host dirs mounted into container | Host dirs visible via VirtioFS, mounted into container inside VM |
+| Container escape risk | Privileged sidecar = root-equivalent host access | Escape stays inside VM boundary |
+| Startup time | Seconds (container pull + DinD readiness) | ~2s VM boot + ~30-60s first-time provisioning |
+| Platform | macOS, Linux, WSL2 | macOS only |
+| External dependency | Docker (already required) | Docker + OrbStack |
+
+### Docker Sandboxes Deep Comparison
+
+Docker Sandboxes (released January 2026, Docker Desktop 4.58) provides the most complete agent sandbox model available today. Understanding its architecture is essential for honest positioning of any jackin backend.
+
+#### Docker Sandboxes Architecture
+
+Docker Sandboxes implements four distinct isolation layers:
+
+1. **Hypervisor isolation**: Each sandbox runs in a lightweight microVM with its own Linux kernel. Uses Apple Virtualization.framework on macOS, Hyper-V on Windows. Processes inside the VM are invisible to the host and other sandboxes.
+
+2. **Filesystem isolation**: Only the declared workspace directory is shared via filesystem passthrough. The workspace is mounted at the same absolute path inside the sandbox. Symlinks pointing outside the workspace scope are not followed. The rest of the host filesystem is completely invisible.
+
+3. **Network isolation**: All HTTP/HTTPS traffic routes through a host-side proxy. Raw TCP, UDP, and ICMP are blocked at the network layer. Traffic to private IPs, loopback, and link-local addresses is prohibited. Sandboxes cannot reach each other or the host's localhost. Only domains explicitly listed in network policies are reachable.
+
+4. **Credential isolation**: The host-side proxy intercepts outbound API requests and injects authentication headers (API keys, tokens). Credential values never enter the VM. The proxy acts as a MITM for HTTPS, terminating TLS and re-encrypting with its own CA, allowing policy enforcement and credential injection.
+
+Each sandbox also gets its own dedicated Docker Engine, completely isolated from the host Docker daemon. The agent cannot mount the host Docker socket.
+
+#### Docker Sandboxes CLI
+
+```bash
+# Basic usage
+docker sandbox run claude .
+
+# With extra read-only workspaces
+docker sandbox run claude ~/project-a ~/shared-libs:ro ~/docs:ro
+
+# Named sandbox
+docker sandbox run --name my-project claude .
+
+# Custom base image
+docker sandbox run --template python:3-alpine claude .
+
+# With agent arguments
+docker sandbox run claude . -- -p "What version are you running?"
+
+# Lifecycle
+docker sandbox ls
+docker sandbox rm my-project
+```
+
+Workspaces are mounted at the same absolute path as on the host. Additional workspaces can be appended as arguments with optional `:ro` suffix.
+
+#### Side-by-Side: Docker Sandboxes vs OrbStack VM
+
+| Isolation Layer | Docker Sandboxes | OrbStack VM (proposed) | Gap |
+|---|---|---|---|
+| **VM boundary** | microVM per sandbox, own kernel | Full Linux VM per agent, own kernel | Equivalent |
+| **Filesystem scope** | Only declared workspace shared; symlinks outside scope blocked | Entire `/Users` shared automatically; cannot be disabled | Critical gap |
+| **Network** | HTTP/HTTPS only via host proxy; raw TCP/UDP/ICMP blocked; domain allowlist | Full unrestricted network access | Significant gap |
+| **Credentials** | Host proxy injects auth headers; keys never enter VM | Keys passed as env vars or mounted files; they enter the VM | Significant gap |
+| **Inner Docker** | Separate dockerd per sandbox; no host socket access | Separate dockerd in VM; no host socket access | Equivalent |
+| **Platform** | macOS + Windows | macOS only | Minor gap |
+
+#### Honest Security Positioning
+
+| Backend | Security model |
+|---|---|
+| `dind` (current) | Container isolation with privileged sidecar — weakest boundary |
+| `orbstack-vm` (proposed) | VM kernel boundary — genuinely stronger, but full host filesystem and network access |
+| Docker Sandboxes | VM + scoped filesystem + network proxy + credential isolation — strongest |
+
+The OrbStack VM backend provides a real and meaningful security improvement over DinD. The `--privileged` flag on the current DinD sidecar effectively gives the agent root-equivalent access to the host kernel. With OrbStack VMs, even a container escape stays inside the VM boundary.
+
+However, it is not equivalent to Docker Sandboxes. The three missing layers (filesystem scope, network policy, credential injection) are what make Docker Sandboxes a defense-in-depth solution rather than just a VM wrapper.
+
+### Known Limitations and Gaps
+
+#### Filesystem: `/Users` Auto-Mount Cannot Be Disabled
+
+OrbStack automatically mounts the macOS `/Users` directory into all Linux VMs via VirtioFS. There is no setting, CLI flag, or per-machine option to disable this.
+
+- [orbstack/orbstack#169](https://github.com/orbstack/orbstack/issues/169) (2023) — OrbStack developer said it was "mostly implemented internally" but never shipped
+- [orbstack/orbstack#1243](https://github.com/orbstack/orbstack/issues/1243) (2024) — closed as duplicate
+- [orbstack/orbstack#2308](https://github.com/orbstack/orbstack/issues/2308) (January 2026) — open, no team response
+
+Possible workarounds:
+
+- `umount -l /Users && umount -l /mnt/mac` inside the VM via cloud-init — fragile, OrbStack may remount on restart
+- Use `orb push` for explicit file transfer instead of relying on the shared mount — slower but controllable
+- Wait for OrbStack to ship the mount control feature — unreliable timeline (2.5+ years pending)
+
+This is the most critical gap for security positioning.
+
+#### Network: No Restrictions
+
+OrbStack VMs have full unrestricted network access. A compromised agent could exfiltrate data to any endpoint. Partial mitigation is possible via iptables rules configured through cloud-init, but this is not as clean as Docker Sandboxes' host-side proxy model.
+
+#### Credentials: Must Enter the VM
+
+Without a host-side proxy to inject credentials, API keys and tokens must be passed as environment variables or mounted files. A compromised agent has direct access to them.
+
+Building a proxy similar to Docker Sandboxes' approach would be a significant project. Short-term, credentials in the VM is the pragmatic path.
+
+#### Resource Limits Are Global
+
+OrbStack's CPU and memory limits are global across all VMs, not per-machine. A runaway agent in one VM could affect others. This is acceptable for developer workstations but worth documenting.
+
+#### macOS Only
+
+OrbStack does not run on Linux. Linux users would remain on the `dind` backend. A future Linux VM backend would still need Kata or a similar provider.
+
+### Closing the Gaps Incrementally
+
+The gaps between OrbStack VM and Docker Sandboxes can be narrowed over time:
+
+1. **Filesystem scope** (critical): Depends on OrbStack shipping mount controls. The `umount` workaround can be used as an interim measure with documented fragility. Once OrbStack supports per-machine mount configuration, this gap closes.
+
+2. **Network policy** (significant): jackin could configure iptables inside the VM via cloud-init to restrict outbound traffic. A basic allowlist of required domains (GitHub, Claude API, npm/PyPI registries) would cover the most important cases.
+
+3. **Credential injection** (significant): A lightweight host-side proxy that intercepts outbound HTTPS from the VM and injects auth headers is a longer-term project. It would require intercepting traffic at the OrbStack network layer or configuring the VM to route through a local proxy.
+
+4. **Per-VM resource limits**: Not solvable at the jackin level while OrbStack only supports global limits.
+
+### Open Design Questions
+
+1. **VM lifecycle strategy**: Create/delete per session, or keep VMs alive and stop/start? Keeping alive is faster but consumes disk. Recommendation: stop/start by default, delete on explicit `jackin eject --purge`.
+
+2. **Image transfer optimization**: `docker save` + load through shared filesystem is simple but slow for large images. Could explore running a local registry that the VM pulls from, or using OrbStack's Docker integration for image sharing.
+
+3. **Attach UX**: Currently `docker attach` gives the terminal directly. With OrbStack VM, it becomes `orb -m jackin-{name} docker attach agent` — an extra layer. Need to verify that Ctrl+P,Q detach works through the `orb` wrapper.
+
+4. **State persistence**: Should `~/.jackin/data/{name}` be mounted into the VM's agent container via VirtioFS (same path), or should state live inside the VM? VirtioFS mount is simpler and consistent with current behavior.
+
+5. **Multiple agents**: One VM per agent (cleaner isolation, higher resource use) or one shared VM (more efficient, weaker isolation between agents)?
+
+6. **First-launch latency**: First VM creation downloads a distro image (~1 min) and cloud-init installs Docker (~30-60s). Mitigations: pre-warm a jackin VM template, or keep VMs alive across sessions.
+
+### Revised Implementation Phases
+
+Given this research, the implementation phases should be revised:
+
+#### Phase 1: Backend Abstraction (unchanged)
+
+- Extract a backend trait from the current runtime flow
+- Move current code into `src/backend/dind.rs`
+- Add backend-neutral instance persistence
+- Introduce `--backend` CLI flag
+
+#### Phase 2: OrbStack VM Backend (new)
+
+- Detect OrbStack availability (`orb version`)
+- VM lifecycle: create (with cloud-init), start, stop, delete
+- Image transfer: `docker save` on host → `docker load` inside VM
+- Agent launch inside VM using the VM's native Docker daemon
+- Basic attach/detach via `orb -m ... docker attach`
+- Cleanup: stop or delete VM on eject
+
+#### Phase 3: Hardening (new)
+
+- Filesystem: `umount` workaround via cloud-init, then selective workspace exposure
+- Network: iptables rules inside VM for basic outbound restriction
+- VM caching: stop/start instead of create/delete for faster re-launch
+- State persistence validation
+
+#### Phase 4: Auto Mode
+
+- `auto` detects OrbStack → uses `orbstack-vm`; otherwise falls back to `dind`
+- Clear runtime output showing which backend and why
+
+#### Phase 5: Docs and Positioning
+
+- Document `dind` vs `orbstack-vm` with honest security comparison
+- Explain the gap with Docker Sandboxes and what jackin does and does not provide
+- Document OrbStack installation requirements
+
+### Revised Operator Scenarios
+
+#### Scenario: OrbStack VM on Mac
+
+```sh
+jackin load the-architect --backend orbstack-vm
+```
+
+Outcome:
+
+- OrbStack VM created with Debian trixie
+- Docker daemon running natively inside VM
+- Agent launched inside VM's Docker with workspace mounted
+- Runtime output: `backend: orbstack-vm (debian trixie)`
+
+#### Scenario: Auto Fallback
+
+```sh
+jackin load agent-smith --backend auto
+```
+
+On a Mac with OrbStack installed: uses `orbstack-vm`.
+On a Mac without OrbStack, or on Linux: falls back to `dind` with a message.
+
+### Revised Provider Matrix
+
+| Topic | `dind` | `orbstack-vm` |
+|---|---|---|
+| Platform | macOS, Linux, WSL2 | macOS only |
+| External dependency | Docker | Docker + OrbStack |
+| Isolation boundary | Container (privileged) | VM (separate kernel) |
+| Inner Docker | TCP sidecar | Native daemon in VM |
+| Workspace model | Host bind mount | VirtioFS (same absolute paths) |
+| Provisioning | None needed | Cloud-init |
+| VM distro | N/A | Debian trixie (recommended) |
+| First integration style | Current code, refactored | Shell out to `orb` CLI |
+| Main blocker | None (already working) | `/Users` auto-mount cannot be disabled |
+| Best first milestone | Refactored into backend trait | Experimental `orbstack-vm` mode |
+
 ## Related Files
 
 - `src/runtime.rs` - current launch, attach, cleanup, and runtime coupling
