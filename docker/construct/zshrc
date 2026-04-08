@@ -1,2 +1,6 @@
 export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 eval "$(starship init zsh)"
+
+# Security tools (disable with JACKIN_DISABLE_TIRITH=1 / JACKIN_DISABLE_SHELLFIRM=1)
+[[ "${JACKIN_DISABLE_TIRITH:-0}" != "1" ]] && eval "$(tirith init --shell zsh)"
+[[ "${JACKIN_DISABLE_SHELLFIRM:-0}" != "1" ]] && eval "$(shellfirm init --shell zsh)"

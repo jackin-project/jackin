@@ -129,12 +129,12 @@ Declare environment variables that the agent needs at runtime. Each variable is 
 - `options` requires `interactive = true`
 - `depends_on` entries must use the `env.` prefix (e.g., `"env.PROJECT"`)
 - `depends_on` must reference variables declared in the same manifest
-- `CLAUDE_ENV` is reserved for jackin and cannot be declared in `[env]`
+- `JACKIN_CLAUDE_ENV` is reserved for jackin and cannot be declared in `[env]`
 - Circular dependencies are rejected
 
 ### Runtime-managed variables
 
-jackin sets `CLAUDE_ENV=jackin` automatically inside the container to mark the isolated runtime. Do not declare `CLAUDE_ENV` in `[env]`.
+jackin sets `JACKIN_CLAUDE_ENV=jackin` automatically inside the container to mark the isolated runtime. Do not declare `JACKIN_CLAUDE_ENV` in `[env]`.
 
 ### Interactive text input
 
