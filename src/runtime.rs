@@ -1911,6 +1911,6 @@ plugins = []
             .iter()
             .find(|call| call.contains("docker run -it"))
             .unwrap();
-        assert!(run_cmd.contains("-e CLAUDE_ENV=jackin"));
+        assert!(run_cmd.contains("-e JACKIN_CLAUDE_ENV=jackin"));
     }
 }
