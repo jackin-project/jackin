@@ -36,10 +36,10 @@ impl EnvPrompter for TerminalPrompter {
 
         let mut select = Select::new().with_prompt(title).items(&items);
 
-        if let Some(d) = default {
-            if let Some(idx) = options.iter().position(|o| o == d) {
-                select = select.default(idx);
-            }
+        if let Some(d) = default
+            && let Some(idx) = options.iter().position(|o| o == d)
+        {
+            select = select.default(idx);
         }
 
         match select.interact() {

@@ -42,16 +42,16 @@ pub fn validate_agent_repo(repo_dir: &Path) -> anyhow::Result<ValidatedAgentRepo
     let dockerfile = validate_agent_dockerfile(&dockerfile_path)?;
 
     // Validate pre-launch hook path if declared
-    if let Some(ref hooks) = manifest.hooks {
-        if let Some(ref pre_launch) = hooks.pre_launch {
-            let hook_path = validate_relative_path(repo_dir, pre_launch, "pre_launch hook")?;
-            let contents = std::fs::read_to_string(&hook_path)?;
-            if contents.is_empty() {
-                anyhow::bail!(
-                    "invalid agent repo: pre_launch hook is empty: {}",
-                    hook_path.display()
-                );
-            }
+    if let Some(ref hooks) = manifest.hooks
+        && let Some(ref pre_launch) = hooks.pre_launch
+    {
+        let hook_path = validate_relative_path(repo_dir, pre_launch, "pre_launch hook")?;
+        let contents = std::fs::read_to_string(&hook_path)?;
+        if contents.is_empty() {
+            anyhow::bail!(
+                "invalid agent repo: pre_launch hook is empty: {}",
+                hook_path.display()
+            );
         }
     }
 
