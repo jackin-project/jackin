@@ -209,6 +209,18 @@ COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh"#;
     }
 
     #[test]
+    fn entrypoint_registers_security_tool_mcp_servers() {
+        assert!(ENTRYPOINT_SH.contains("claude mcp add tirith -- tirith mcp-server"));
+        assert!(ENTRYPOINT_SH.contains("claude mcp add shellfirm -- shellfirm mcp-server"));
+    }
+
+    #[test]
+    fn entrypoint_mcp_registration_respects_disable_guards() {
+        assert!(ENTRYPOINT_SH.contains("JACKIN_DISABLE_TIRITH"));
+        assert!(ENTRYPOINT_SH.contains("JACKIN_DISABLE_SHELLFIRM"));
+    }
+
+    #[test]
     fn creates_temp_context_with_repo_copy_and_runtime_assets() {
         let repo = tempdir().unwrap();
         std::fs::write(
