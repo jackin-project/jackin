@@ -33,6 +33,14 @@ fi
 
 run_maybe_quiet /home/claude/install-plugins.sh
 
+# Register security tool MCP servers
+if [[ "${JACKIN_DISABLE_TIRITH:-0}" != "1" ]]; then
+    run_maybe_quiet claude mcp add tirith -- tirith mcp-server
+fi
+if [[ "${JACKIN_DISABLE_SHELLFIRM:-0}" != "1" ]]; then
+    run_maybe_quiet claude mcp add shellfirm -- shellfirm mcp-server
+fi
+
 # Run pre-launch hook if present
 if [ -x /home/claude/.jackin-runtime/pre-launch.sh ]; then
     echo "Running pre-launch hook..."
