@@ -718,6 +718,740 @@ The next design pass should turn this TODO into a full implementation design wit
 - provider selection rules for Linux/macOS
 - rollout plan for experimental vs stable support
 
+## OrbStack VM Backend Research (April 2026)
+
+This section documents research into using OrbStack Linux VMs as a concrete, macOS-focused alternative to the Kata/Apple Containerization providers described above.
+
+### Why OrbStack
+
+The original design proposed two separate VM providers requiring two separate implementations: Kata Containers on Linux and Apple Containerization on macOS. OrbStack collapses the macOS story into a single, production-ready tool that already solves most of the hard problems: fast VM boot, file sharing, networking, and Docker-inside-VM.
+
+The trade-off is that OrbStack is **macOS-only**, which means it cannot be the universal answer. But since the majority of jackin users are Mac developers, and the security comparison gap with Docker Sandboxes is most relevant on developer laptops, OrbStack is a pragmatic first target.
+
+### OrbStack Capabilities Summary
+
+OrbStack provides lightweight Linux VMs on macOS via the `orb` CLI.
+
+Key properties relevant to jackin:
+
+- **VM lifecycle**: `orb create`, `orb start`, `orb stop`, `orb delete` — fully scriptable, no GUI needed
+- **Supported distros**: 15 distros including Debian (trixie confirmed working), Ubuntu, Alpine, Fedora, Arch, etc.
+- **Boot time**: ~2 seconds — comparable to container startup
+- **File sharing**: Host `/Users/...` automatically visible at the same path inside the VM via VirtioFS
+- **Networking**: VM services auto-accessible at `localhost`; DNS at `{name}.orb.local`; full internet access
+- **Docker inside VM**: Standard `apt install docker.io` gives a full Docker daemon — no sidecar needed
+- **Provisioning**: Cloud-init support (`orb create debian:trixie my-vm -c cloud-init.yml`)
+- **Resource overhead**: Dynamic memory allocation — idle VMs use near-zero resources
+- **Command execution**: `orb -m {name} <command>` runs commands inside the VM; SSH also available
+- **Architecture**: Apple Silicon primary; Intel Mac supported; Rosetta for x86_64 emulation
+
+### Proposed OrbStack VM Flow
+
+The current DinD flow:
+
+```
+Host Docker → build image → create network → start docker:dind sidecar → start agent container
+             → agent talks to DinD via DOCKER_HOST=tcp://dind:2375
+             → workspace via bind mounts
+```
+
+The proposed OrbStack VM flow:
+
+```
+Host Docker → build image → export image as tar
+→ orb create debian:trixie jackin-{name} -c cloud-init.yml
+→ inside VM: install Docker, load image, start agent container
+→ agent talks to Docker via unix:///var/run/docker.sock (real daemon, not sidecar)
+→ workspace via OrbStack's automatic VirtioFS mount
+```
+
+Key simplification: inside the VM, there is no need for a DinD sidecar at all. The VM's own Docker daemon is the isolated engine. The agent can use `DOCKER_HOST=unix:///var/run/docker.sock` instead of a TCP connection to a sidecar.
+
+### Implementation Shape
+
+#### 1. VM Creation and Provisioning
+
+```bash
+orb create debian:trixie jackin-{name} -c /tmp/jackin-cloud-init.yml
+```
+
+Cloud-init template:
+
+```yaml
+#cloud-config
+packages:
+  - docker.io
+runcmd:
+  - systemctl enable docker
+  - systemctl start docker
+  - usermod -aG docker debian
+```
+
+#### 2. Image Transfer
+
+Since OrbStack's VirtioFS makes host files visible inside the VM, the image tar does not need to be explicitly copied:
+
+```bash
+# Build on host (reuse current flow)
+docker build -t jackin-{slug} ...
+
+# Export to a host path visible from inside the VM
+docker save jackin-{slug} -o ~/.jackin/cache/jackin-{slug}.tar
+
+# Inside VM, load from the same path
+orb -m jackin-{name} docker load -i /Users/{user}/.jackin/cache/jackin-{slug}.tar
+```
+
+#### 3. Agent Launch Inside VM
+
+```bash
+orb -m jackin-{name} docker run -it --name agent \
+  -e DOCKER_HOST=unix:///var/run/docker.sock \
+  -e GIT_AUTHOR_NAME="{git_user_name}" \
+  -e GIT_AUTHOR_EMAIL="{git_user_email}" \
+  -e JACKIN_CLAUDE_ENV=jackin \
+  -v /Users/{user}/Projects/myapp:/Users/{user}/Projects/myapp \
+  -v /Users/{user}/.jackin/data/jackin-{name}/.claude:/home/claude/.claude \
+  -v /Users/{user}/.jackin/data/jackin-{name}/.claude.json:/home/claude/.claude.json \
+  -v /Users/{user}/.jackin/data/jackin-{name}/.config/gh:/home/claude/.config/gh \
+  jackin-{slug}
+```
+
+#### 4. Attach / Detach
+
+```bash
+# Reattach to running agent
+orb -m jackin-{name} docker attach agent
+```
+
+#### 5. Cleanup
+
+```bash
+# Stop VM (preserves state for fast restart)
+orb stop jackin-{name}
+
+# Or delete entirely
+orb delete jackin-{name}
+```
+
+### Suggested Backend Names
+
+Rather than the generic `microvm` label, the backend should be named after what it actually is:
+
+- `dind` — current behavior, Docker-in-Docker sidecar (cross-platform)
+- `orbstack-vm` — OrbStack VM with native Docker inside (macOS only)
+
+Config shape:
+
+```toml
+[runtime]
+default_backend = "dind"  # or "orbstack-vm" or "auto"
+```
+
+CLI shape:
+
+```sh
+jackin load agent-smith --backend dind
+jackin load agent-smith --backend orbstack-vm
+jackin load agent-smith --backend auto
+```
+
+Runtime output:
+
+- `backend: dind`
+- `backend: orbstack-vm (debian trixie)`
+
+### Architecture Comparison: DinD vs OrbStack VM
+
+| Aspect | DinD (current) | OrbStack VM (proposed) |
+|---|---|---|
+| Isolation boundary | Container (shared host kernel, `--privileged` DinD) | Full VM (separate kernel, separate userland) |
+| Docker access | TCP sidecar (`tcp://dind:2375`), no TLS | Native daemon (`unix:///var/run/docker.sock`) |
+| Workspace delivery | Direct host bind mounts | OrbStack VirtioFS (host paths at same absolute paths) |
+| State persistence | Host dirs mounted into container | Host dirs visible via VirtioFS, mounted into container inside VM |
+| Container escape risk | Privileged sidecar = root-equivalent host access | Escape stays inside VM boundary |
+| Startup time | Seconds (container pull + DinD readiness) | ~2s VM boot + ~30-60s first-time provisioning |
+| Platform | macOS, Linux, WSL2 | macOS only |
+| External dependency | Docker (already required) | Docker + OrbStack |
+
+### Docker Sandboxes Deep Comparison
+
+Docker Sandboxes (released January 2026, Docker Desktop 4.58) provides the most complete agent sandbox model available today. Understanding its architecture is essential for honest positioning of any jackin backend.
+
+#### Docker Sandboxes Architecture
+
+Docker Sandboxes implements four distinct isolation layers:
+
+1. **Hypervisor isolation**: Each sandbox runs in a lightweight microVM with its own Linux kernel. Uses Apple Virtualization.framework on macOS, Hyper-V on Windows. Processes inside the VM are invisible to the host and other sandboxes.
+
+2. **Filesystem isolation**: Only the declared workspace directory is shared via filesystem passthrough. The workspace is mounted at the same absolute path inside the sandbox. Symlinks pointing outside the workspace scope are not followed. The rest of the host filesystem is completely invisible.
+
+3. **Network isolation**: All HTTP/HTTPS traffic routes through a host-side proxy. Raw TCP, UDP, and ICMP are blocked at the network layer. Traffic to private IPs, loopback, and link-local addresses is prohibited. Sandboxes cannot reach each other or the host's localhost. Only domains explicitly listed in network policies are reachable.
+
+4. **Credential isolation**: The host-side proxy intercepts outbound API requests and injects authentication headers (API keys, tokens). Credential values never enter the VM. The proxy acts as a MITM for HTTPS, terminating TLS and re-encrypting with its own CA, allowing policy enforcement and credential injection.
+
+Each sandbox also gets its own dedicated Docker Engine, completely isolated from the host Docker daemon. The agent cannot mount the host Docker socket.
+
+#### Docker Sandboxes CLI
+
+```bash
+# Basic usage
+docker sandbox run claude .
+
+# With extra read-only workspaces
+docker sandbox run claude ~/project-a ~/shared-libs:ro ~/docs:ro
+
+# Named sandbox
+docker sandbox run --name my-project claude .
+
+# Custom base image
+docker sandbox run --template python:3-alpine claude .
+
+# With agent arguments
+docker sandbox run claude . -- -p "What version are you running?"
+
+# Lifecycle
+docker sandbox ls
+docker sandbox rm my-project
+```
+
+Workspaces are mounted at the same absolute path as on the host. Additional workspaces can be appended as arguments with optional `:ro` suffix.
+
+#### Side-by-Side: Docker Sandboxes vs OrbStack VM
+
+| Isolation Layer | Docker Sandboxes | OrbStack VM (proposed) | Gap |
+|---|---|---|---|
+| **VM boundary** | microVM per sandbox, own kernel | Full Linux VM per agent, own kernel | Equivalent |
+| **Filesystem scope** | Only declared workspace shared; symlinks outside scope blocked | Entire `/Users` shared automatically; cannot be disabled | Critical gap |
+| **Network** | HTTP/HTTPS only via host proxy; raw TCP/UDP/ICMP blocked; domain allowlist | Full unrestricted network access | Significant gap |
+| **Credentials** | Host proxy injects auth headers; keys never enter VM | Keys passed as env vars or mounted files; they enter the VM | Significant gap |
+| **Inner Docker** | Separate dockerd per sandbox; no host socket access | Separate dockerd in VM; no host socket access | Equivalent |
+| **Platform** | macOS + Windows | macOS only | Minor gap |
+
+#### Honest Security Positioning
+
+| Backend | Security model |
+|---|---|
+| `dind` (current) | Container isolation with privileged sidecar — weakest boundary |
+| `orbstack-vm` (proposed) | VM kernel boundary — genuinely stronger, but full host filesystem and network access |
+| Docker Sandboxes | VM + scoped filesystem + network proxy + credential isolation — strongest |
+
+The OrbStack VM backend provides a real and meaningful security improvement over DinD. The `--privileged` flag on the current DinD sidecar effectively gives the agent root-equivalent access to the host kernel. With OrbStack VMs, even a container escape stays inside the VM boundary.
+
+However, it is not equivalent to Docker Sandboxes. The three missing layers (filesystem scope, network policy, credential injection) are what make Docker Sandboxes a defense-in-depth solution rather than just a VM wrapper.
+
+### Known Limitations and Gaps
+
+#### Filesystem: `/Users` Auto-Mount Cannot Be Disabled
+
+OrbStack automatically mounts the macOS `/Users` directory into all Linux VMs via VirtioFS. There is no setting, CLI flag, or per-machine option to disable this.
+
+- [orbstack/orbstack#169](https://github.com/orbstack/orbstack/issues/169) (2023) — OrbStack developer said it was "mostly implemented internally" but never shipped
+- [orbstack/orbstack#1243](https://github.com/orbstack/orbstack/issues/1243) (2024) — closed as duplicate
+- [orbstack/orbstack#2308](https://github.com/orbstack/orbstack/issues/2308) (January 2026) — open, no team response
+
+Possible workarounds:
+
+- `umount -l /Users && umount -l /mnt/mac` inside the VM via cloud-init — fragile, OrbStack may remount on restart
+- Use `orb push` for explicit file transfer instead of relying on the shared mount — slower but controllable
+- Wait for OrbStack to ship the mount control feature — unreliable timeline (2.5+ years pending)
+
+This is the most critical gap for security positioning.
+
+#### Network: No Restrictions
+
+OrbStack VMs have full unrestricted network access. A compromised agent could exfiltrate data to any endpoint. Partial mitigation is possible via iptables rules configured through cloud-init, but this is not as clean as Docker Sandboxes' host-side proxy model.
+
+#### Credentials: Must Enter the VM
+
+Without a host-side proxy to inject credentials, API keys and tokens must be passed as environment variables or mounted files. A compromised agent has direct access to them.
+
+Building a proxy similar to Docker Sandboxes' approach would be a significant project. Short-term, credentials in the VM is the pragmatic path.
+
+#### Resource Limits Are Global
+
+OrbStack's CPU and memory limits are global across all VMs, not per-machine. A runaway agent in one VM could affect others. This is acceptable for developer workstations but worth documenting.
+
+#### macOS Only
+
+OrbStack does not run on Linux. Linux users would remain on the `dind` backend. A future Linux VM backend would still need Kata or a similar provider.
+
+### Closing the Gaps Incrementally
+
+The gaps between OrbStack VM and Docker Sandboxes can be narrowed over time:
+
+1. **Filesystem scope** (critical): Depends on OrbStack shipping mount controls. The `umount` workaround can be used as an interim measure with documented fragility. Once OrbStack supports per-machine mount configuration, this gap closes.
+
+2. **Network policy** (significant): jackin could configure iptables inside the VM via cloud-init to restrict outbound traffic. A basic allowlist of required domains (GitHub, Claude API, npm/PyPI registries) would cover the most important cases.
+
+3. **Credential injection** (significant): A lightweight host-side proxy that intercepts outbound HTTPS from the VM and injects auth headers is a longer-term project. It would require intercepting traffic at the OrbStack network layer or configuring the VM to route through a local proxy.
+
+4. **Per-VM resource limits**: Not solvable at the jackin level while OrbStack only supports global limits.
+
+### Open Design Questions
+
+1. **VM lifecycle strategy**: Create/delete per session, or keep VMs alive and stop/start? Keeping alive is faster but consumes disk. Recommendation: stop/start by default, delete on explicit `jackin eject --purge`.
+
+2. **Image transfer optimization**: `docker save` + load through shared filesystem is simple but slow for large images. Could explore running a local registry that the VM pulls from, or using OrbStack's Docker integration for image sharing.
+
+3. **Attach UX**: Currently `docker attach` gives the terminal directly. With OrbStack VM, it becomes `orb -m jackin-{name} docker attach agent` — an extra layer. Need to verify that Ctrl+P,Q detach works through the `orb` wrapper.
+
+4. **State persistence**: Should `~/.jackin/data/{name}` be mounted into the VM's agent container via VirtioFS (same path), or should state live inside the VM? VirtioFS mount is simpler and consistent with current behavior.
+
+5. **Multiple agents**: One VM per agent (cleaner isolation, higher resource use) or one shared VM (more efficient, weaker isolation between agents)?
+
+6. **First-launch latency**: First VM creation downloads a distro image (~1 min) and cloud-init installs Docker (~30-60s). Mitigations: pre-warm a jackin VM template, or keep VMs alive across sessions.
+
+### Revised Implementation Phases
+
+Given this research, the implementation phases should be revised:
+
+#### Phase 1: Backend Abstraction (unchanged)
+
+- Extract a backend trait from the current runtime flow
+- Move current code into `src/backend/dind.rs`
+- Add backend-neutral instance persistence
+- Introduce `--backend` CLI flag
+
+#### Phase 2: OrbStack VM Backend (new)
+
+- Detect OrbStack availability (`orb version`)
+- VM lifecycle: create (with cloud-init), start, stop, delete
+- Image transfer: `docker save` on host → `docker load` inside VM
+- Agent launch inside VM using the VM's native Docker daemon
+- Basic attach/detach via `orb -m ... docker attach`
+- Cleanup: stop or delete VM on eject
+
+#### Phase 3: Hardening (new)
+
+- Filesystem: `umount` workaround via cloud-init, then selective workspace exposure
+- Network: iptables rules inside VM for basic outbound restriction
+- VM caching: stop/start instead of create/delete for faster re-launch
+- State persistence validation
+
+#### Phase 4: Auto Mode
+
+- `auto` detects OrbStack → uses `orbstack-vm`; otherwise falls back to `dind`
+- Clear runtime output showing which backend and why
+
+#### Phase 5: Docs and Positioning
+
+- Document `dind` vs `orbstack-vm` with honest security comparison
+- Explain the gap with Docker Sandboxes and what jackin does and does not provide
+- Document OrbStack installation requirements
+
+### Revised Operator Scenarios
+
+#### Scenario: OrbStack VM on Mac
+
+```sh
+jackin load the-architect --backend orbstack-vm
+```
+
+Outcome:
+
+- OrbStack VM created with Debian trixie
+- Docker daemon running natively inside VM
+- Agent launched inside VM's Docker with workspace mounted
+- Runtime output: `backend: orbstack-vm (debian trixie)`
+
+#### Scenario: Auto Fallback
+
+```sh
+jackin load agent-smith --backend auto
+```
+
+On a Mac with OrbStack installed: uses `orbstack-vm`.
+On a Mac without OrbStack, or on Linux: falls back to `dind` with a message.
+
+### Revised Provider Matrix
+
+| Topic | `dind` | `orbstack-vm` |
+|---|---|---|
+| Platform | macOS, Linux, WSL2 | macOS only |
+| External dependency | Docker | Docker + OrbStack |
+| Isolation boundary | Container (privileged) | VM (separate kernel) |
+| Inner Docker | TCP sidecar | Native daemon in VM |
+| Workspace model | Host bind mount | VirtioFS (same absolute paths) |
+| Provisioning | None needed | Cloud-init |
+| VM distro | N/A | Debian trixie (recommended) |
+| First integration style | Current code, refactored | Shell out to `orb` CLI |
+| Main blocker | None (already working) | `/Users` auto-mount cannot be disabled |
+| Best first milestone | Refactored into backend trait | Experimental `orbstack-vm` mode |
+
+## mvm as a VM Backend Library (April 2026)
+
+This section documents research into using [auser/mvm](https://github.com/auser/mvm) as the underlying VM management layer for jackin's sandbox backend, replacing the OrbStack-only approach with a multi-platform, multi-hypervisor solution.
+
+### Why mvm Changes the Picture
+
+The OrbStack VM approach researched above has a critical limitation: it is macOS-only and cannot disable the automatic `/Users` mount, which undermines the security story. mvm solves both problems:
+
+1. **Cross-platform**: Firecracker on Linux (native KVM), Apple Virtualization.framework on macOS 26+, Docker as universal fallback, Lima+Firecracker for legacy macOS
+2. **Controlled filesystem**: Uses block devices (ext4 images) for rootfs, config, secrets, and data — only explicitly declared volumes enter the VM
+3. **Same language**: Pure Rust, 7-crate workspace, Apache 2.0 license
+4. **Library-friendly**: Exposes `mvm-core` types with zero runtime deps, plus a `VmBackend` trait that jackin could implement or consume
+
+### mvm Architecture Overview
+
+mvm ("Manage Firecracker microVMs on macOS/Linux via Lima — one command from zero to SSH session") is organized as a 7-crate Cargo workspace:
+
+| Crate | Purpose | Key Feature |
+|---|---|---|
+| `mvm-core` | Types, IDs, config, protocol, `VmBackend` trait | Zero runtime deps — safe for embedding |
+| `mvm-guest` | Vsock protocol, guest agent binaries | Guest-host communication without SSH |
+| `mvm-build` | Nix builder pipeline, artifact cache | Reproducible image builds |
+| `mvm-runtime` | VM lifecycle, Lima/Firecracker/Apple/Docker management | All backend implementations |
+| `mvm-security` | Command gating, threat classification, rate limiting | Seccomp profiles, audit logging |
+| `mvm-apple-container` | Apple Virtualization.framework FFI (macOS 26+) | Native macOS hypervisor via `objc2-virtualization` |
+| `mvm-cli` | Clap CLI, bootstrap, templates | End-user interface |
+
+### The VmBackend Trait
+
+The core abstraction at `mvm-core/src/vm_backend.rs`:
+
+```rust
+pub trait VmBackend: Send + Sync {
+    fn name(&self) -> &str;
+    fn capabilities(&self) -> VmCapabilities;
+    fn start(&self, config: &VmStartConfig) -> Result<VmId>;
+    fn stop(&self, id: &VmId) -> Result<()>;
+    fn stop_all(&self) -> Result<()>;
+    fn status(&self, id: &VmId) -> Result<VmStatus>;
+    fn list(&self) -> Result<Vec<VmInfo>>;
+    fn logs(&self, id: &VmId, lines: u32, hypervisor: bool) -> Result<String>;
+    fn is_available(&self) -> Result<bool>;
+    fn install(&self) -> Result<()>;
+    fn network_info(&self, id: &VmId) -> Result<VmNetworkInfo>;
+    fn guest_channel_info(&self, id: &VmId) -> Result<GuestChannelInfo>;
+}
+```
+
+`VmStartConfig` is backend-agnostic and describes what to run:
+
+```rust
+pub struct VmStartConfig {
+    pub name: String,
+    pub rootfs_path: String,          // ext4 image
+    pub kernel_path: Option<String>,  // vmlinux (Firecracker needs this)
+    pub initrd_path: Option<String>,  // NixOS stage-1
+    pub cpus: u32,
+    pub memory_mib: u32,
+    pub ports: Vec<VmPortMapping>,
+    pub volumes: Vec<VmVolume>,       // host:guest volume mounts
+    pub config_files: Vec<VmFile>,    // injected config
+    pub secret_files: Vec<VmFile>,    // injected secrets (ephemeral)
+    // ...
+}
+```
+
+### Four Backend Implementations
+
+#### 1. Firecracker (Primary — Linux/WSL2)
+
+- Direct `/dev/kvm` usage on Linux with native KVM
+- Full REST API over Unix socket for VM configuration
+- TAP networking with per-VM IP allocation
+- Vsock for guest communication (no SSH)
+- Seccomp profiles and jailer for additional sandboxing
+- Snapshot/resume support for sub-second warm start
+
+#### 2. Apple Virtualization.framework (macOS 26+)
+
+- Native hypervisor via `objc2-virtualization` Rust bindings — no Swift helper needed
+- Sub-second startup
+- Vsock for guest communication
+- Uses vmnet for networking
+- Boots from same kernel + ext4 rootfs as Firecracker
+
+#### 3. Docker (Universal Fallback)
+
+- Loads OCI tarballs or imports raw ext4
+- Unix socket for guest communication (volume-mounted, no vsock)
+- Native Docker `-p` for port forwarding
+- Containers labeled with `mvm.managed=true`
+- Works on any platform with Docker
+
+#### 4. Lima + Firecracker (Legacy macOS < 26)
+
+- Shells out to `limactl` to create a Linux VM
+- Runs Firecracker nested inside Lima
+- Automatic setup of kernel, rootfs, and network via Lima YAML templates
+
+### Auto-Selection Logic
+
+```
+Linux (KVM available):     → Firecracker (direct)
+macOS 26+ Apple Silicon:   → Apple Virtualization.framework
+Docker available:          → Docker (universal fallback)
+macOS < 26:                → Lima → Firecracker
+Linux (no KVM):            → Lima → Firecracker
+```
+
+### File Sharing Model — The Key Security Advantage
+
+Unlike OrbStack (which auto-mounts all of `/Users`), mvm uses **block devices** for all guest storage:
+
+| Device | Purpose | Persistence | Permissions |
+|---|---|---|---|
+| `/dev/vda` | Rootfs (from Nix build) | Read-only ext4 | Immutable |
+| `/dev/vdb` | Config drive (instance metadata) | Read-only ext4 (4MB) | Read-only |
+| `/dev/vdc` | Secrets drive | Ephemeral — recreated every start, deleted on stop | `0600`, `ro,noexec,nodev,nosuid` |
+| `/dev/vdd` | Data drive | Persistent ext4, read-write | Per-instance |
+
+Additional volumes can be declared explicitly:
+
+```bash
+mvmctl up --flake . -v /home/user/workspace:/workspace:10G
+```
+
+This means **only explicitly declared paths enter the VM**. The host filesystem is completely invisible by default. This is architecturally equivalent to Docker Sandboxes' filesystem isolation.
+
+### Guest Communication — No SSH
+
+mvm uses vsock (Firecracker, Apple VZ) or unix sockets (Docker) for all guest communication. The guest agent protocol supports:
+
+```rust
+GuestRequest::Exec { command, stdin, timeout_secs }
+GuestRequest::SleepPrep { drain_timeout_secs }
+GuestRequest::Wake
+GuestRequest::FsDiff
+GuestRequest::StartPortForward { guest_port }
+GuestRequest::ConsoleOpen { cols, rows }    // Interactive PTY
+```
+
+This is relevant for jackin because `ConsoleOpen` provides interactive terminal access — equivalent to `docker attach` but over vsock.
+
+### Security Features
+
+mvm includes several security layers:
+
+1. **Seccomp profiles**: Tiered (essential → minimal → standard → network → unrestricted) applied at Firecracker launch
+2. **Jailer**: Firecracker runs in an unprivileged jail with namespace isolation and cgroup limits
+3. **Ephemeral secrets**: Never persisted to disk (tmpfs-backed), mounted read-only with `0600` permissions
+4. **Audit logging**: All operations logged to `~/.mvm/log/audit.jsonl`
+5. **Signing**: Ed25519 signatures for config integrity and tamper detection
+6. **Network policies**: Configurable per-instance (in `FlakeRunConfig`)
+
+### How jackin Would Use mvm
+
+#### Integration Option A: Depend on mvm crates as a library
+
+jackin adds `mvm-core` and `mvm-runtime` as Cargo dependencies:
+
+```toml
+[dependencies]
+mvm-core = { version = "0.10" }
+mvm-runtime = { version = "0.10" }
+```
+
+Then jackin uses the `VmBackend` trait directly:
+
+```rust
+use mvm_core::vm_backend::{VmBackend, VmStartConfig};
+use mvm_runtime::vm::backend::AnyBackend;
+
+// Auto-select best backend for current platform
+let backend = AnyBackend::auto_select();
+
+let config = VmStartConfig {
+    name: format!("jackin-{}", agent_slug),
+    rootfs_path: jackin_rootfs_path,
+    cpus: 2,
+    memory_mib: 4096,
+    volumes: vec![workspace_volume],
+    secret_files: vec![credentials_file],
+    ..Default::default()
+};
+
+let vm_id = backend.start(&config)?;
+// ... later
+backend.stop(&vm_id)?;
+```
+
+Advantages:
+
+- Direct Rust API, no shell-out overhead
+- Type-safe configuration
+- Access to all backends through a single interface
+- Automatic platform detection and backend selection
+- Guest communication via vsock/unix socket
+
+Considerations:
+
+- mvm currently requires Nix for image builds — jackin uses Docker
+- mvm's rootfs is a Nix-built ext4 image, not an OCI container image
+- jackin would need to either adopt Nix for its agent images or build a bridge between Docker images and mvm's ext4 rootfs format
+
+#### Integration Option B: Build a custom VmBackend for jackin
+
+jackin implements its own `VmBackend` that wraps mvm's primitives but adapts the image format:
+
+1. Build agent image with Docker (current flow)
+2. Convert OCI image to ext4 rootfs (using `docker export` + `mkfs.ext4`)
+3. Use mvm's Firecracker/Apple VZ backend to boot the rootfs
+4. Install Docker inside the rootfs for agent Docker workflows
+
+This is more work but avoids the Nix dependency.
+
+#### Integration Option C: Use mvm as an external CLI tool
+
+jackin shells out to `mvmctl` commands:
+
+```bash
+mvmctl up --flake . --name jackin-agent-smith -p 2375:2375 -v /workspace:/workspace:10G
+mvmctl console jackin-agent-smith   # interactive PTY
+mvmctl down jackin-agent-smith
+```
+
+Simplest integration but loses type safety and adds a CLI dependency.
+
+### Comparison: mvm vs OrbStack vs Docker Sandboxes
+
+| Aspect | mvm (proposed) | OrbStack (previous research) | Docker Sandboxes |
+|---|---|---|---|
+| **Platform** | macOS + Linux + WSL2 | macOS only | macOS + Windows |
+| **Hypervisor** | Firecracker / Apple VZ / Docker | OrbStack (Apple VZ underneath) | Apple VZ / Hyper-V |
+| **Filesystem isolation** | Block devices — only declared volumes | Entire `/Users` auto-mounted | Only declared workspace |
+| **Network isolation** | TAP with per-VM IP; configurable policies | Full unrestricted access | HTTP/HTTPS proxy with domain allowlist |
+| **Credential handling** | Ephemeral secrets drive (tmpfs, `0600`, deleted on stop) | Env vars / mounted files (persist in VM) | Host proxy injects headers; keys never enter VM |
+| **Inner Docker** | Can install dockerd in rootfs | Native daemon in VM | Separate dockerd per sandbox |
+| **Guest communication** | Vsock / unix socket (no SSH) | `orb` CLI / SSH | Docker SDK |
+| **Image format** | Nix-built ext4 rootfs | Standard distro + cloud-init | OCI images |
+| **Dependency** | Rust library (embeddable) | Commercial macOS app | Docker Desktop (commercial) |
+| **License** | Apache 2.0 | Proprietary | Proprietary |
+| **Language** | Rust | Closed source | Closed source |
+
+### Key Advantages of mvm Over OrbStack for jackin
+
+1. **Filesystem isolation by design**: Block devices mean the host filesystem is invisible unless explicitly shared. No `/Users` auto-mount problem.
+
+2. **Cross-platform**: Works on Linux (Firecracker + KVM), macOS (Apple VZ on 26+, Lima on older), and WSL2. OrbStack is macOS-only.
+
+3. **Same language, embeddable**: jackin is Rust, mvm is Rust. Can depend on crates directly instead of shelling out to a CLI.
+
+4. **Open source (Apache 2.0)**: No commercial dependency risk. jackin can fork, patch, or contribute upstream.
+
+5. **Secrets handling**: Ephemeral secrets drive that is never persisted to disk and deleted on VM stop. Much closer to Docker Sandboxes' credential isolation.
+
+6. **Security-first**: Seccomp profiles, jailer, audit logging, config signing — features that would take significant effort to build on OrbStack.
+
+7. **No SSH**: All guest communication via vsock or unix socket. Smaller attack surface than SSH-based approaches.
+
+### Challenges and Open Questions
+
+#### 1. Image Format Gap
+
+mvm builds rootfs images via Nix (`mkGuest`). jackin builds agent images via Docker. Bridging this gap is the main integration challenge.
+
+Options:
+
+- **A. Adopt Nix for jackin agent builds**: Highest compatibility with mvm, but introduces Nix as a dependency for all jackin users. Significant migration cost.
+
+- **B. Convert Docker images to ext4**: `docker export` a container to a tarball, then create an ext4 image from it. This preserves jackin's Docker build flow while producing mvm-compatible rootfs images. The conversion step adds complexity but is straightforward to automate.
+
+- **C. Use mvm's Docker backend**: mvm already has a Docker backend that loads OCI tarballs. jackin could use this for the Docker fallback path and only use Firecracker/Apple VZ when the image format is compatible.
+
+- **D. Build a jackin-specific rootfs**: Create a minimal Debian/Alpine ext4 rootfs with Docker pre-installed, then layer the agent image inside it as a Docker image that runs under the VM's local Docker daemon.
+
+Option D is likely the most practical:
+
+```
+[Host] docker build → jackin-{slug} image (OCI)
+[Host] docker save → jackin-{slug}.tar
+[Host] prepare rootfs.ext4 with: Debian base + dockerd + jackin entrypoint
+[mvm]  boot rootfs.ext4 with Firecracker/Apple VZ
+[VM]   docker load < /dev/vdb (config drive with image tar)
+[VM]   docker run jackin-{slug}
+```
+
+This preserves the entire existing agent Dockerfile contract while running inside an mvm-managed VM.
+
+#### 2. Nix Dependency
+
+mvm's build pipeline relies on Nix. If jackin takes the ext4 rootfs approach (Option D above), it can pre-build a base rootfs and distribute it, avoiding the Nix dependency for end users. The base rootfs only needs to change when the VM environment itself changes, not on every agent build.
+
+#### 3. Guest Agent
+
+mvm's guest agent protocol provides `ConsoleOpen` for interactive PTY sessions. jackin would need to integrate this for `jackin hardline` (reattach). The vsock-based approach is more robust than `docker attach` through an OrbStack wrapper.
+
+#### 4. Network Policy
+
+mvm includes a `NetworkPolicy` type in `FlakeRunConfig`. jackin could use this to restrict outbound traffic from the VM, partially closing the gap with Docker Sandboxes' network isolation. This is already part of mvm's architecture — no additional invention required.
+
+#### 5. First-Launch Experience
+
+Firecracker requires kernel and rootfs images. On first launch, mvm downloads these (~50MB total). For macOS 26+ with Apple VZ, the same kernel + rootfs are used. This adds a one-time setup cost but subsequent launches are fast (sub-second for Firecracker warm starts via snapshots).
+
+### Revised Recommendation
+
+mvm is a significantly better foundation than OrbStack for jackin's VM backend:
+
+| Criterion | OrbStack | mvm |
+|---|---|---|
+| Filesystem isolation | Cannot disable `/Users` mount | Only declared volumes enter VM |
+| Platform support | macOS only | macOS + Linux + WSL2 |
+| Integration model | Shell out to proprietary CLI | Embed Rust crates (Apache 2.0) |
+| Security features | None built-in | Seccomp, jailer, ephemeral secrets, audit |
+| Network policy | None | Built-in policy type |
+| Image format | Standard distro + cloud-init | Nix ext4 (bridge needed for Docker images) |
+
+The main trade-off is the image format bridge: jackin's Docker-based agent builds need to be packaged into mvm-compatible ext4 rootfs images. This is solvable (Option D above) and is a one-time engineering investment rather than a fundamental architectural limitation.
+
+### Revised Implementation Phases (with mvm)
+
+#### Phase 1: Backend Abstraction
+
+- Extract a backend trait from the current runtime flow
+- Move current code into `src/backend/dind.rs`
+- Add `mvm-core` as a dependency for shared types (`VmBackend`, `VmStartConfig`, etc.)
+- Introduce `--backend` CLI flag: `dind`, `microvm`, `auto`
+
+#### Phase 2: Base Rootfs Engineering
+
+- Build a minimal Debian-based ext4 rootfs with Docker pre-installed
+- Include jackin's entrypoint, Claude installation, and runtime dependencies
+- Package as a downloadable artifact (versioned, cached locally)
+- Test that current agent Docker images run correctly inside this rootfs
+
+#### Phase 3: mvm Integration
+
+- Add `mvm-runtime` as a dependency
+- Implement `microvm` backend using `AnyBackend::auto_select()`
+- Image flow: `docker build` → `docker save` → inject into VM via config/data drive → `docker load` + `docker run` inside VM
+- Workspace: declare as explicit volume in `VmStartConfig`
+- State: mount `~/.jackin/data/{name}` as a data volume
+- Attach: use vsock `ConsoleOpen` for interactive PTY
+
+#### Phase 4: Security Hardening
+
+- Configure network policies per agent/workspace
+- Use mvm's secrets drive for credentials (ephemeral, never persisted)
+- Enable seccomp profiles appropriate for agent workloads
+- Add audit logging integration
+
+#### Phase 5: Auto Mode and Polish
+
+- `auto` detects platform → selects Firecracker (Linux KVM), Apple VZ (macOS 26+), Docker (fallback), or DinD (no mvm)
+- Clear runtime output: `backend: microvm (firecracker)`, `backend: microvm (apple-vz)`, `backend: dind`
+- VM snapshot/resume for fast re-launch
+
+#### Phase 6: Docs and Positioning
+
+- Document `dind` vs `microvm` with honest security comparison
+- Position against Docker Sandboxes: "jackin microvm provides VM-level isolation with scoped filesystem access and ephemeral secrets. It does not include a network proxy layer for credential injection."
+- Document platform support matrix and requirements
+
+### Revised Security Positioning
+
+| Backend | Isolation | Filesystem | Network | Credentials | Rating |
+|---|---|---|---|---|---|
+| `dind` | Container (privileged) | Full host via bind mounts | Unrestricted | In container | Basic |
+| `microvm` (mvm) | VM (separate kernel) | Only declared volumes | Configurable policy | Ephemeral secrets drive | Strong |
+| Docker Sandboxes | VM (separate kernel) | Only declared workspace | Proxy with domain allowlist | Host proxy injection | Strongest |
+
+With mvm, jackin's `microvm` backend achieves isolation parity with Docker Sandboxes on three of four layers (VM boundary, filesystem scope, credential handling). The remaining gap is network isolation — Docker Sandboxes' host-side HTTPS proxy with credential injection is a more complete solution than mvm's network policies. This gap could be closed in the future by building a host-side proxy component, but is not required for an honest security improvement over DinD.
+
 ## Related Files
 
 - `src/runtime.rs` - current launch, attach, cleanup, and runtime coupling
