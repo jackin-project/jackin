@@ -38,7 +38,7 @@ jobs:
           driver: docker-container
 
       - name: Log in to Docker Hub
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -48,25 +48,25 @@ jobs:
         run: just construct-init-buildx
 
       - name: Expose GitHub Actions cache runtime
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
         uses: crazy-max/ghaction-github-runtime@v3
 
-      - name: Build amd64 for pull requests
-        if: github.event_name == 'pull_request'
+      - name: Build amd64 without push
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
         env:
           CACHE_FROM: type=gha,scope=construct-pr-amd64
           CACHE_TO: type=gha,scope=construct-pr-amd64,mode=max
         run: just construct-build-platform amd64
 
       - name: Push amd64 image by digest
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
         env:
           CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-amd64
           CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-amd64,mode=max
         run: just construct-push-platform amd64
 
       - name: Upload amd64 digest
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
         uses: actions/upload-artifact@v4
         with:
           name: construct-digest-amd64
@@ -94,7 +94,7 @@ jobs:
           driver: docker-container
 
       - name: Log in to Docker Hub
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -104,25 +104,25 @@ jobs:
         run: just construct-init-buildx
 
       - name: Expose GitHub Actions cache runtime
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
         uses: crazy-max/ghaction-github-runtime@v3
 
-      - name: Build arm64 for pull requests
-        if: github.event_name == 'pull_request'
+      - name: Build arm64 without push
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
         env:
           CACHE_FROM: type=gha,scope=construct-pr-arm64
           CACHE_TO: type=gha,scope=construct-pr-arm64,mode=max
         run: just construct-build-platform arm64
 
       - name: Push arm64 image by digest
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
         env:
           CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-arm64
           CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-arm64,mode=max
         run: just construct-push-platform arm64
 
       - name: Upload arm64 digest
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
         uses: actions/upload-artifact@v4
         with:
           name: construct-digest-arm64
@@ -132,7 +132,7 @@ jobs:
 
   publish-manifest:
     name: publish manifest
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     needs: [build-amd64, build-arm64]
     runs-on: ubuntu-24.04
     permissions:

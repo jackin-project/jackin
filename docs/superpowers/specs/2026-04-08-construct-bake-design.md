@@ -211,7 +211,7 @@ should use:
 
 This supports debugging architecture-specific issues without editing CI files.
 
-### Optional Advanced Local Publishing
+### Optional Advanced Publish Rehearsal
 
 Advanced contributors who want to rehearse the full release flow can use:
 
@@ -262,6 +262,15 @@ images. This validates the construct on both platforms before merge.
 Pull request validation should prefer the GitHub Actions cache backend so cache
 state stays inside Actions. Registry-backed cache should be reserved for actual
 publish flows on `main`.
+
+### Manual Dispatch Behavior
+
+Manual workflow runs against non-`main` branches should follow the same
+non-push validation path as pull requests.
+
+Manual workflow runs against `main` can reuse the real publish path when a
+maintainer explicitly wants to re-run or rehearse the release workflow from the
+canonical branch.
 
 ## Manifest Strategy
 
@@ -343,8 +352,10 @@ smallest robust design.
 3. `just construct-build-platform amd64` and
    `just construct-build-platform arm64` both work when supported by the local
    builder setup.
-4. Pull requests validate both native architectures without pushing.
-5. Pushes to `main` build both native platform images, record their digests,
-   and publish a final multi-platform manifest from those digests.
+4. Pull requests and manual workflow runs against non-`main` branches validate
+   both native architectures without pushing.
+5. Pushes to `main`, plus manual workflow runs against `main`, build both
+   native platform images, record their digests, and publish a final
+   multi-platform manifest from those digests.
 6. `docker buildx imagetools inspect projectjackin/construct:trixie` shows both
    `linux/amd64` and `linux/arm64` after publish.
