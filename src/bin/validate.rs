@@ -35,10 +35,10 @@ fn main() -> ExitCode {
 
     // Validate Dockerfile
     let dockerfile_path = repo_dir.join("Dockerfile");
-    if dockerfile_path.exists() {
-        if let Err(e) = validate_agent_dockerfile(&dockerfile_path) {
-            errors.push(format!("Dockerfile: {e}"));
-        }
+    if dockerfile_path.exists()
+        && let Err(e) = validate_agent_dockerfile(&dockerfile_path)
+    {
+        errors.push(format!("Dockerfile: {e}"));
     }
 
     // Validate manifest
