@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # Trace all commands in debug mode
-if [ "${CLAUDE_DEBUG:-0}" = "1" ]; then
+if [ "${JACKIN_DEBUG:-0}" = "1" ]; then
     set -x
 fi
 
 run_maybe_quiet() {
-    if [ "${CLAUDE_DEBUG:-0}" = "1" ]; then
+    if [ "${JACKIN_DEBUG:-0}" = "1" ]; then
         "$@"
     else
         "$@" > /dev/null 2>&1
