@@ -1,4 +1,4 @@
-name: Build and Push Construct Image
+name: Construct Image
 
 on:
   push:
@@ -19,6 +19,7 @@ on:
 
 jobs:
   build-amd64:
+    name: amd64
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -55,6 +56,7 @@ jobs:
         run: just construct-push-platform amd64
 
   build-arm64:
+    name: arm64
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -91,6 +93,7 @@ jobs:
         run: just construct-push-platform arm64
 
   publish-manifest:
+    name: publish manifest
     if: github.event_name != 'pull_request'
     needs: [build-amd64, build-arm64]
     runs-on: ubuntu-24.04
