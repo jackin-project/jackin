@@ -17,6 +17,8 @@ Quick navigation reference for AI agents working in this repository.
 | `SECURITY_EXCEPTIONS.md` | Accepted security findings — do not re-flag |
 | `release.toml` | Release configuration |
 | `mise.toml` | Tool version management (bun) |
+| `Justfile` | Construct image build commands — contributor-facing `just` wrapper |
+| `docker-bake.hcl` | Declarative Docker Bake build graph for the construct image |
 | `.gitignore` | Git ignore rules |
 
 ## Open Items — `todo/`
