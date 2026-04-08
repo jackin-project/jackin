@@ -3,12 +3,16 @@
 // ---------------------------------------------------------------------------
 // Usage:
 //   docker buildx bake --file docker-bake.hcl construct-local
-//   docker buildx bake --file docker-bake.hcl construct-publish --push
+//   docker buildx bake --file docker-bake.hcl --set 'construct-publish.output=type=image,name=user/app,push=true' construct-publish
 //   docker buildx bake --file docker-bake.hcl --print   (inspect resolved config)
 // ---------------------------------------------------------------------------
 
 variable "REGISTRY_IMAGE" {
   default = "projectjackin/construct"
+}
+
+variable "LOCAL_REGISTRY_IMAGE" {
+  default = "jackin-local/construct"
 }
 
 variable "STABLE_TAG" {
@@ -71,20 +75,19 @@ target "_construct-common" {
 target "construct-local" {
   inherits = ["_construct-common"]
   tags = [
-    "${REGISTRY_IMAGE}:${STABLE_TAG}",
-    "${REGISTRY_IMAGE}:${SHA_TAG}",
+    "${LOCAL_REGISTRY_IMAGE}:${STABLE_TAG}",
+    "${LOCAL_REGISTRY_IMAGE}:${SHA_TAG}",
   ]
   platforms = [LOCAL_PLATFORM]
 }
 
 // ---------------------------------------------------------------------------
-// Publish build — multi-platform, intended for --push
+// Publish build — multi-platform, intended for digest pushes and manifest assembly
 // ---------------------------------------------------------------------------
 target "construct-publish" {
   inherits = ["_construct-common"]
-  tags = [
-    "${REGISTRY_IMAGE}:${STABLE_TAG}",
-    "${REGISTRY_IMAGE}:${SHA_TAG}",
+  output = [
+    "type=image,name=${REGISTRY_IMAGE}",
   ]
   platforms = split(",", PLATFORMS)
 }

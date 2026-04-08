@@ -53,11 +53,20 @@ jobs:
         if: github.event_name == 'pull_request'
         run: just construct-build-platform amd64
 
-      - name: Push amd64 staging image
+      - name: Push amd64 image by digest
         if: github.event_name != 'pull_request'
         env:
           CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-amd64,mode=max
         run: just construct-push-platform amd64
+
+      - name: Upload amd64 digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: construct-digest-amd64
+          path: /tmp/jackin-construct-digests/amd64.digest
+          if-no-files-found: error
+          retention-days: 1
 
   build-arm64:
     name: arm64
@@ -94,11 +103,20 @@ jobs:
         if: github.event_name == 'pull_request'
         run: just construct-build-platform arm64
 
-      - name: Push arm64 staging image
+      - name: Push arm64 image by digest
         if: github.event_name != 'pull_request'
         env:
           CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-arm64,mode=max
         run: just construct-push-platform arm64
+
+      - name: Upload arm64 digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: construct-digest-arm64
+          path: /tmp/jackin-construct-digests/arm64.digest
+          if-no-files-found: error
+          retention-days: 1
 
   publish-manifest:
     name: publish manifest
@@ -129,6 +147,13 @@ jobs:
 
       - name: Bootstrap buildx
         run: just construct-init-buildx
+
+      - name: Download platform digests
+        uses: actions/download-artifact@v5
+        with:
+          pattern: construct-digest-*
+          path: /tmp/jackin-construct-digests
+          merge-multiple: true
 
       - name: Publish multi-platform manifest
         run: just construct-publish-manifest

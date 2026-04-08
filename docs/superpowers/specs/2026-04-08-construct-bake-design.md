@@ -127,6 +127,8 @@ without editing files:
 
 - `REGISTRY_IMAGE`
   - default: `projectjackin/construct`
+- `LOCAL_REGISTRY_IMAGE`
+  - default: `jackin-local/construct`
 - `STABLE_TAG`
   - default: `trixie`
 - `SHA_TAG`
@@ -194,7 +196,10 @@ The normal contributor flow for construct work should be:
 2. `just construct-build-local`
 
 This is optimized for the developer's current machine and should avoid pushing
-anything to a registry.
+anything to a registry. It should also avoid overwriting the canonical
+`projectjackin/construct:trixie` tag in the developer's local Docker daemon by
+default. Maintainers can still opt into canonical local tags explicitly when
+they need to test `jackin` against a locally built construct.
 
 ### Explicit Single-Platform Debugging
 
@@ -215,7 +220,8 @@ Advanced contributors who want to rehearse the full release flow can use:
 3. `just construct-publish-manifest`
 
 This mirrors the CI publish model but remains optional for day-to-day
-development.
+development. The per-platform push step should record digests for later
+manifest assembly instead of relying on public architecture-suffixed tags.
 
 ## CI Workflow Design
 
@@ -263,6 +269,7 @@ Responsibilities of `just construct-publish-manifest`:
 - collect the expected platform image references
 - create a multi-arch manifest from those platform-specific images
 - push the stable public tags
+- consume per-platform digests rather than public `-amd64` / `-arm64` tags
 
 The public tag surface should stay intentionally small:
 
@@ -271,7 +278,8 @@ The public tag surface should stay intentionally small:
 
 V1 does not publish permanent `-amd64` or `-arm64` public convenience tags.
 That keeps the registry surface simpler and avoids encouraging consumers to pin
-the wrong shape.
+the wrong shape. Split CI jobs should therefore push platform images by digest
+and assemble the final manifest from those digests.
 
 ## Buildx Bootstrap
 
