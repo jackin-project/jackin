@@ -86,6 +86,15 @@ target "construct-local" {
 // ---------------------------------------------------------------------------
 target "construct-publish" {
   inherits = ["_construct-common"]
+  attest = [
+    {
+      type = "provenance"
+      mode = "max"
+    },
+    {
+      type = "sbom"
+    },
+  ]
   output = [
     "type=image,name=${REGISTRY_IMAGE}",
   ]
