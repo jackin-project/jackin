@@ -74,17 +74,6 @@ To develop jackin' itself, use [The Architect](https://github.com/donbeave/jacki
 jackin load the-architect
 ```
 
-## Construct Image Development
-
-Construct image changes use checked-in Docker build tooling instead of workflow-only commands. Contributors working on the base image should install [`just`](https://github.com/casey/just), bootstrap buildx once, and validate the image locally before opening a pull request:
-
-```sh
-just construct-init-buildx
-just construct-build-local
-```
-
-The declarative build graph lives in `docker-bake.hcl`, and GitHub Actions reuses the same `just` commands for native `amd64` and `arm64` builds.
-
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
