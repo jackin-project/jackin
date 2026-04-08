@@ -15,12 +15,14 @@ _default_shellfirm_version := `awk -F= '$1 == "SHELLFIRM_VERSION" { print $2 }' 
 
 # Resolved build variables — env-var overrides take priority
 REGISTRY_IMAGE := env_var_or_default("REGISTRY_IMAGE", "projectjackin/construct")
+LOCAL_REGISTRY_IMAGE := env_var_or_default("LOCAL_REGISTRY_IMAGE", "jackin-local/construct")
 STABLE_TAG := env_var_or_default("STABLE_TAG", "trixie")
 GIT_SHA := env_var_or_default("GIT_SHA", _default_git_sha)
 SHA_TAG := STABLE_TAG + "-" + GIT_SHA
 LOCAL_PLATFORM := env_var_or_default("LOCAL_PLATFORM", _default_local_platform)
 TIRITH_VERSION := env_var_or_default("TIRITH_VERSION", _default_tirith_version)
 SHELLFIRM_VERSION := env_var_or_default("SHELLFIRM_VERSION", _default_shellfirm_version)
+DIGEST_DIR := env_var_or_default("DIGEST_DIR", "/tmp/jackin-construct-digests")
 
 default:
     @just --list
@@ -68,7 +70,7 @@ construct-build-platform platform:
     args+=(construct-local)
     "${args[@]}"
 
-# Push a single-platform image to the registry (CI-only for canonical registry)
+# Push a single-platform image by digest (CI-only for canonical registry)
 construct-push-platform platform:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -80,18 +82,21 @@ construct-push-platform platform:
         exit 1
         ;;
     esac
-    staging_tag="${SHA_TAG}-{{platform}}"
     if [ -z "${CI:-}" ] && [ "$REGISTRY_IMAGE" = "projectjackin/construct" ]; then
       printf "Set REGISTRY_IMAGE to your own namespace before using construct-push-platform locally.\n" >&2
       exit 1
     fi
+    mkdir -p "${DIGEST_DIR}"
+    metadata_file="$(mktemp "${TMPDIR:-/tmp}/jackin-construct-{{platform}}.XXXXXX.json")"
+    trap 'rm -f "${metadata_file}"' EXIT
+    digest_file="${DIGEST_FILE:-${DIGEST_DIR}/{{platform}}.digest}"
     export PLATFORMS="$docker_platform"
     args=(
       docker buildx bake
       --builder "{{buildx_builder}}"
       --file docker-bake.hcl
-      --push
-      --set "construct-publish.tags=${REGISTRY_IMAGE}:${staging_tag}"
+      --metadata-file "${metadata_file}"
+      --set "construct-publish.output=type=image,name=${REGISTRY_IMAGE},push-by-digest=true,name-canonical=true,push=true"
     )
     if [ -n "${CACHE_FROM:-}" ]; then
       args+=(--set "construct-publish.cache-from=${CACHE_FROM}")
@@ -101,10 +106,15 @@ construct-push-platform platform:
     fi
     args+=(construct-publish)
     "${args[@]}"
+    digest="$(tr -d '[:space:]' < "${metadata_file}" | sed -n 's/.*"containerimage.digest":"\([^"]*\)".*/\1/p')"
+    if [ -z "${digest}" ]; then
+      printf "Unable to determine pushed digest from %s\n" "${metadata_file}" >&2
+      exit 1
+    fi
+    printf '%s\n' "${digest}" > "${digest_file}"
+    printf 'Wrote %s digest to %s\n' "{{platform}}" "${digest_file}"
 
-# NOTE: platform suffixes (-amd64, -arm64) are coupled to the PLATFORMS list in docker-bake.hcl.
-#
-# Combine per-platform staging images into a multi-platform manifest (CI-only for canonical registry)
+# Combine per-platform digest pushes into a multi-platform manifest (CI-only for canonical registry)
 construct-publish-manifest:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -112,11 +122,25 @@ construct-publish-manifest:
       printf "Set REGISTRY_IMAGE to your own namespace before using construct-publish-manifest locally.\n" >&2
       exit 1
     fi
+    refs=()
+    for platform in amd64 arm64; do
+      digest_file="${DIGEST_DIR}/${platform}.digest"
+      if [ ! -f "${digest_file}" ]; then
+        printf "Missing digest file for %s at %s\n" "${platform}" "${digest_file}" >&2
+        printf "Run construct-push-platform %s first or set DIGEST_DIR to the downloaded digest artifacts.\n" "${platform}" >&2
+        exit 1
+      fi
+      digest="$(tr -d '[:space:]' < "${digest_file}")"
+      if [ -z "${digest}" ]; then
+        printf "Digest file %s is empty\n" "${digest_file}" >&2
+        exit 1
+      fi
+      refs+=("${REGISTRY_IMAGE}@${digest}")
+    done
     docker buildx imagetools create \
       --tag "${REGISTRY_IMAGE}:${STABLE_TAG}" \
       --tag "${REGISTRY_IMAGE}:${SHA_TAG}" \
-      "${REGISTRY_IMAGE}:${SHA_TAG}-amd64" \
-      "${REGISTRY_IMAGE}:${SHA_TAG}-arm64"
+      "${refs[@]}"
     docker buildx imagetools inspect "${REGISTRY_IMAGE}:${SHA_TAG}"
 
 # Print the resolved Bake configuration (dry-run inspection)
