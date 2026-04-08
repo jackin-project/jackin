@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    env:
+      CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-amd64
 
     steps:
       - name: Checkout repository
@@ -53,6 +55,8 @@ jobs:
 
       - name: Push amd64 staging image
         if: github.event_name != 'pull_request'
+        env:
+          CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-amd64,mode=max
         run: just construct-push-platform amd64
 
   build-arm64:
@@ -60,6 +64,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
+    env:
+      CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-arm64
 
     steps:
       - name: Checkout repository
@@ -90,6 +96,8 @@ jobs:
 
       - name: Push arm64 staging image
         if: github.event_name != 'pull_request'
+        env:
+          CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-arm64,mode=max
         run: just construct-push-platform arm64
 
   publish-manifest:
