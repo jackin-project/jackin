@@ -4,20 +4,22 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/construct.yml'
+      - 'Justfile'
+      - 'docker-bake.hcl'
       - 'docker/construct/**'
   pull_request:
     branches: [main]
     paths:
+      - '.github/workflows/construct.yml'
+      - 'Justfile'
+      - 'docker-bake.hcl'
       - 'docker/construct/**'
   workflow_dispatch:
 
-env:
-  IMAGE_NAME: projectjackin/construct
-
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-
+  build-amd64:
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 
@@ -25,8 +27,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Set up Docker Buildx
+      - name: Install just
+        uses: extractions/setup-just@v3
+
+      - name: Install Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          name: jackin-construct
+          driver: docker-container
 
       - name: Log in to Docker Hub
         if: github.event_name != 'pull_request'
@@ -35,27 +43,81 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=trixie
-            type=sha,prefix=trixie-
+      - name: Bootstrap buildx
+        run: just construct-init-buildx
 
-      - name: Load tool versions
-        run: cat docker/construct/versions.env >> "$GITHUB_ENV"
+      - name: Build amd64 for pull requests
+        if: github.event_name == 'pull_request'
+        run: just construct-build-platform amd64
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
+      - name: Push amd64 staging image
+        if: github.event_name != 'pull_request'
+        run: just construct-push-platform amd64
+
+  build-arm64:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install just
+        uses: extractions/setup-just@v3
+
+      - name: Install Docker Buildx
+        uses: docker/setup-buildx-action@v3
         with:
-          context: docker/construct
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            TIRITH_VERSION=${{ env.TIRITH_VERSION }}
-            SHELLFIRM_VERSION=${{ env.SHELLFIRM_VERSION }}
+          name: jackin-construct
+          driver: docker-container
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Bootstrap buildx
+        run: just construct-init-buildx
+
+      - name: Build arm64 for pull requests
+        if: github.event_name == 'pull_request'
+        run: just construct-build-platform arm64
+
+      - name: Push arm64 staging image
+        if: github.event_name != 'pull_request'
+        run: just construct-push-platform arm64
+
+  publish-manifest:
+    if: github.event_name != 'pull_request'
+    needs: [build-amd64, build-arm64]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install just
+        uses: extractions/setup-just@v3
+
+      - name: Install Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          name: jackin-construct
+          driver: docker-container
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Bootstrap buildx
+        run: just construct-init-buildx
+
+      - name: Publish multi-platform manifest
+        run: just construct-publish-manifest
