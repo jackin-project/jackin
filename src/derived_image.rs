@@ -205,7 +205,7 @@ COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh"#;
 
     #[test]
     fn entrypoint_does_not_override_claude_env() {
-        assert!(!ENTRYPOINT_SH.contains("CLAUDE_ENV="));
+        assert!(!ENTRYPOINT_SH.contains("JACKIN_CLAUDE_ENV="));
     }
 
     #[test]
