@@ -78,6 +78,10 @@ just construct-init-buildx
 just construct-build-local
 ```
 
+By default, local validation loads the image into your Docker daemon as `jackin-local/construct:trixie`, so it does not silently replace the canonical `projectjackin/construct:trixie` base image that normal `jackin` workflows consume.
+
+If you intentionally want to test `jackin` against your local construct build, rerun the build with `LOCAL_REGISTRY_IMAGE=projectjackin/construct`.
+
 Use `just construct-inspect` to print the fully resolved Bake config without building the image.
 
 ### Platform-specific debugging
@@ -88,6 +92,8 @@ To force a specific target architecture during local debugging:
 just construct-build-platform amd64
 just construct-build-platform arm64
 ```
+
+These commands work when your buildx builder supports the target platform natively or through emulation.
 
 ### Publish rehearsal
 
@@ -107,7 +113,7 @@ REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER just construct-publish-manifest
 
 GitHub Actions reuses the same `just` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI triggers when changes touch `docker/construct/**`, `docker-bake.hcl`, `Justfile`, or `.github/workflows/construct.yml`.
 
-Pull requests build both architectures natively without pushing images. Pushes to `main` publish per-platform staging images first, then assemble the final multi-platform manifest.
+Pull requests build both architectures natively without pushing images. Pushes to `main` publish each platform by digest first, then assemble the final multi-platform manifest from those digests. That keeps the public tag surface limited to the canonical release tags instead of leaving permanent public `-amd64` and `-arm64` tags behind.
 
 The published tags are:
 - `projectjackin/construct:trixie` — the stable tag
