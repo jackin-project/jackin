@@ -5,7 +5,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set export
 
-buildx_builder := "jackin-construct"
+buildx_builder := env_var_or_default("BUILDX_BUILDER", "jackin-construct")
 
 # Computed defaults — fallbacks ensure `just --list` works in partial checkouts
 _default_git_sha := `git rev-parse --short=12 HEAD 2>/dev/null || echo dev`
@@ -38,6 +38,21 @@ construct-init-buildx:
       docker buildx inspect "{{buildx_builder}}" --bootstrap
     fi
 
+# Inspect the configured Buildx builder and list available builders
+construct-doctor-buildx:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    docker buildx ls
+    docker buildx inspect "{{buildx_builder}}" --bootstrap
+
+# Recreate the configured Buildx builder from scratch
+construct-reset-buildx:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    docker buildx rm --force "{{buildx_builder}}" >/dev/null 2>&1 || true
+    docker buildx create --name "{{buildx_builder}}" --driver docker-container --use
+    docker buildx inspect "{{buildx_builder}}" --bootstrap
+
 # Build the construct image for the host platform and load it locally
 construct-build-local:
     docker buildx bake \
@@ -66,6 +81,9 @@ construct-build-platform platform:
     )
     if [ -n "${CACHE_FROM:-}" ]; then
       args+=(--set "construct-local.cache-from=${CACHE_FROM}")
+    fi
+    if [ -n "${CACHE_TO:-}" ]; then
+      args+=(--set "construct-local.cache-to=${CACHE_TO}")
     fi
     args+=(construct-local)
     "${args[@]}"
