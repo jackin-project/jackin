@@ -418,7 +418,7 @@ fn launch_agent_runtime(
         &git_author_email,
     ];
     if *debug {
-        run_args.extend_from_slice(&["-e", "CLAUDE_DEBUG=1"]);
+        run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
     }
     let mut env_strings: Vec<String> = Vec::new();
     env_strings.push(format!(
