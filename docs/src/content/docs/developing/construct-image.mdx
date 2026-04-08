@@ -61,7 +61,25 @@ The construct creates a `claude` user with:
 
 ## How it's built
 
-The construct source code lives at [`docker/construct/`](https://github.com/donbeave/jackin/tree/main/docker/construct) in the jackin' repository. It's automatically built and pushed to Docker Hub via GitHub Actions when changes are made to that directory.
+The construct source code lives at [`docker/construct/`](https://github.com/jackin-project/jackin/tree/main/docker/construct) in the jackin' repository. The declarative build definition lives in the repo-root `docker-bake.hcl`, and the supported command wrapper is the repo-root `Justfile`.
+
+Before opening a pull request for construct changes, validate the image locally:
+
+```bash
+just construct-init-buildx
+just construct-build-local
+```
+
+To force a specific target architecture during local debugging:
+
+```bash
+just construct-build-platform amd64
+just construct-build-platform arm64
+```
+
+`docker/construct/versions.env` remains the source of truth for the pinned `tirith` and `shellfirm` build args used by `docker/construct/Dockerfile`.
+
+GitHub Actions reuses the same `just` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI triggers when changes touch `docker/construct/**`, `docker-bake.hcl`, `Justfile`, or `.github/workflows/construct.yml`.
 
 The image is tagged as:
 - `projectjackin/construct:trixie` — the stable tag

@@ -33,10 +33,34 @@ Agent repos build on top of the construct. jackin then generates a derived layer
 
 ## Building
 
-The image is automatically built and pushed to Docker Hub via GitHub Actions when changes are made to this directory. Tags:
+Construct image builds are defined by the repo-root `docker-bake.hcl` file and wrapped by the repo-root `Justfile`. Install [`just`](https://github.com/casey/just), then bootstrap buildx and build the image locally:
+
+```sh
+just construct-init-buildx
+just construct-build-local
+```
+
+To debug a specific architecture locally, run one of these commands:
+
+```sh
+just construct-build-platform amd64
+just construct-build-platform arm64
+```
+
+To rehearse publishing, point `REGISTRY_IMAGE` at your own namespace instead of the canonical `projectjackin/construct` repository:
+
+```sh
+REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER just construct-push-platform amd64
+REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER just construct-push-platform arm64
+REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER just construct-publish-manifest
+```
+
+Construct CI now triggers when changes touch any construct build input, including `docker/construct/**`, `docker-bake.hcl`, `Justfile`, and `.github/workflows/construct.yml`.
+
+Public tags remain:
 
 - `projectjackin/construct:trixie` — stable tag
-- `projectjackin/construct:trixie-{sha}` — commit-specific tags
+- `projectjackin/construct:trixie-<sha>` — commit-specific tag
 
 ## Related
 
