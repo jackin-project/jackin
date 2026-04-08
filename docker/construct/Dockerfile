@@ -1,4 +1,15 @@
+FROM rust:trixie AS security-tools
+
+ARG TIRITH_VERSION
+ARG SHELLFIRM_VERSION
+
+RUN cargo install tirith --version "${TIRITH_VERSION}" --locked && \
+    cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked
+
 FROM debian:trixie
+
+COPY --from=security-tools /usr/local/cargo/bin/tirith /usr/local/bin/tirith
+COPY --from=security-tools /usr/local/cargo/bin/shellfirm /usr/local/bin/shellfirm
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
