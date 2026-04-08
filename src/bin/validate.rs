@@ -42,16 +42,19 @@ fn main() -> ExitCode {
     }
 
     // Validate manifest
-    match AgentManifest::load(&repo_dir) {
-        Ok(manifest) => match manifest.validate() {
-            Ok(warnings) => {
-                for w in &warnings {
-                    eprintln!("warning: {}", w.message);
+    let manifest_path = repo_dir.join("jackin.agent.toml");
+    if manifest_path.exists() {
+        match AgentManifest::load(&repo_dir) {
+            Ok(manifest) => match manifest.validate() {
+                Ok(warnings) => {
+                    for w in &warnings {
+                        eprintln!("warning: {}", w.message);
+                    }
                 }
-            }
-            Err(e) => errors.push(format!("manifest validation: {e}")),
-        },
-        Err(e) => errors.push(format!("manifest load: {e}")),
+                Err(e) => errors.push(format!("manifest validation: {e}")),
+            },
+            Err(e) => errors.push(format!("manifest load: {e}")),
+        }
     }
 
     if errors.is_empty() {
