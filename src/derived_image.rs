@@ -205,7 +205,19 @@ COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh"#;
 
     #[test]
     fn entrypoint_does_not_override_claude_env() {
-        assert!(!ENTRYPOINT_SH.contains("CLAUDE_ENV="));
+        assert!(!ENTRYPOINT_SH.contains("JACKIN_CLAUDE_ENV="));
+    }
+
+    #[test]
+    fn entrypoint_registers_security_tool_mcp_servers() {
+        assert!(ENTRYPOINT_SH.contains("claude mcp add tirith -- tirith mcp-server"));
+        assert!(ENTRYPOINT_SH.contains("claude mcp add shellfirm -- shellfirm mcp-server"));
+    }
+
+    #[test]
+    fn entrypoint_mcp_registration_respects_disable_guards() {
+        assert!(ENTRYPOINT_SH.contains("JACKIN_DISABLE_TIRITH"));
+        assert!(ENTRYPOINT_SH.contains("JACKIN_DISABLE_SHELLFIRM"));
     }
 
     #[test]

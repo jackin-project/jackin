@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-pub const JACKIN_RUNTIME_ENV_NAME: &str = "CLAUDE_ENV";
+pub const JACKIN_RUNTIME_ENV_NAME: &str = "JACKIN_CLAUDE_ENV";
 pub const JACKIN_RUNTIME_ENV_VALUE: &str = "jackin";
 
 #[derive(Debug, Clone, Deserialize)]
@@ -738,7 +738,7 @@ default = "main"
 [claude]
 plugins = []
 
-[env.CLAUDE_ENV]
+[env.JACKIN_CLAUDE_ENV]
 default = "docker"
 "#,
         )
@@ -748,7 +748,12 @@ default = "docker"
         let result = manifest.validate();
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("CLAUDE_ENV"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("JACKIN_CLAUDE_ENV")
+        );
     }
 
     #[test]
