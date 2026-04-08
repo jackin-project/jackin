@@ -78,6 +78,10 @@ instead of memorizing Bake target names or GitHub Actions YAML.
 - `Justfile` — contributor-facing wrapper for construct build, push, and
   manifest commands.
 
+Placing these files at the repo root is a discoverability and reuse choice, not
+a repo-wide Docker standardization effort. V1 still defines only
+construct-specific targets and recipes.
+
 No new binary or Rust-based wrapper is introduced in v1.
 
 ## Bake File Responsibilities
@@ -91,7 +95,10 @@ It should define:
 - Shared tags for the stable `trixie` tag and commit-specific tag.
 - Shared labels and build metadata.
 - Shared context and Dockerfile path pointing at `docker/construct/`.
-- Shared default multi-platform configuration containing:
+- Shared build args sourced from `docker/construct/versions.env`:
+  - `TIRITH_VERSION`
+  - `SHELLFIRM_VERSION`
+- Shared publish-oriented multi-platform configuration containing:
   - `linux/amd64`
   - `linux/arm64`
 - Separate targets for local loading and publish-oriented builds.
@@ -103,19 +110,23 @@ The Bake file should define a small target set, for example:
 - `_construct-common`
   - internal shared target
   - context: `docker/construct`
+  - dockerfile: `docker/construct/Dockerfile`
+  - build args derived from wrapper-loaded variables
   - tags and labels derived from variables
-  - default platforms: `linux/amd64`, `linux/arm64`
 
 - `construct-local`
   - inherits from `_construct-common`
   - intended for local development
+  - defaults to exactly one platform via `LOCAL_PLATFORM`
   - no registry push by default
-  - used with `--load` and optional platform override
+  - used with `--load`
 
 - `construct-publish`
   - inherits from `_construct-common`
   - intended for publish flows
+  - defaults to `linux/amd64,linux/arm64`
   - used with `--push` in CI or advanced local workflows
+  - split native CI jobs override the target to one platform at a time
 
 This separation keeps local and publish workflows obvious without duplicating
 the actual build configuration.
@@ -129,25 +140,49 @@ without editing files:
   - default: `projectjackin/construct`
 - `STABLE_TAG`
   - default: `trixie`
+- `GIT_SHA`
+  - default: wrapper-provided `git rev-parse --short=12 HEAD`
 - `SHA_TAG`
-  - default derived from the current commit hash via environment or wrapper
+  - default: `trixie-${GIT_SHA}`
+- `LOCAL_PLATFORM`
+  - default: wrapper-derived host platform, either `linux/amd64` or
+    `linux/arm64`
 - `PLATFORMS`
   - default: `linux/amd64,linux/arm64`
+- `TIRITH_VERSION`
+  - loaded from `docker/construct/versions.env`
+- `SHELLFIRM_VERSION`
+  - loaded from `docker/construct/versions.env`
 
-The wrapper layer can set these variables before calling Bake so both local and
-CI usage stay consistent.
+`docker/construct/versions.env` remains the checked-in source of truth for the
+construct tool versions required by `docker/construct/Dockerfile`.
+
+The wrapper layer loads these variables before calling Bake so both local and
+CI usage stay consistent. Explicit environment overrides may exist for advanced
+debugging, but the default path should come from the checked-in file rather
+than duplicating version declarations in GitHub Actions.
 
 ## Justfile Responsibilities
 
 The `Justfile` is the supported human-facing interface. It should be documented
 as a contributor prerequisite for construct image work.
 
+It is also responsible for the small amount of orchestration that should not be
+buried in GitHub Actions YAML:
+
+- loading `docker/construct/versions.env`
+- mapping user-facing platform names like `amd64` and `arm64` to Docker platform
+  strings like `linux/amd64` and `linux/arm64`
+- supplying the named buildx builder to Bake commands
+- applying safe defaults so local commands build or load, while CI commands push
+
 ### Command Surface
 
 The command surface should be explicit and small:
 
 - `just construct-init-buildx`
-  - ensure a usable buildx builder exists locally
+  - ensure a usable buildx builder named `jackin-construct` exists locally
+  - inspect or bootstrap it for subsequent recipes
 
 - `just construct-build-local`
   - build the construct for the default local platform
@@ -161,14 +196,16 @@ The command surface should be explicit and small:
 
 - `just construct-push-platform platform`
   - push exactly one platform image
+  - publishes a staging tag of the form `REGISTRY_IMAGE:trixie-<sha>-<platform>`
   - used by split native CI jobs and optional advanced local publishing
 
 - `just construct-publish-manifest`
   - assemble the final multi-platform manifest from previously pushed platform
     images
+  - consume staging tags for `amd64` and `arm64`
   - publish:
-    - `projectjackin/construct:trixie`
-    - `projectjackin/construct:trixie-<sha>`
+    - `REGISTRY_IMAGE:trixie`
+    - `REGISTRY_IMAGE:trixie-<sha>`
 
 - `just construct-inspect`
   - print the resolved Bake config or available Bake targets for debugging
@@ -215,12 +252,46 @@ Advanced contributors who want to rehearse the full release flow can use:
 3. `just construct-publish-manifest`
 
 This mirrors the CI publish model but remains optional for day-to-day
-development.
+development. Local publish-oriented commands should default to a
+developer-controlled `REGISTRY_IMAGE` override. Publishing to the canonical
+`projectjackin/construct` repository is reserved for CI.
 
 ## CI Workflow Design
 
 The construct workflow should stop embedding raw Docker build logic and instead
 call the same `just` commands contributors use locally.
+
+### Trigger Scope
+
+Because the build definition moves partly to repo-root files, the workflow path
+filters should expand beyond `docker/construct/**`.
+
+At minimum, construct CI should trigger when changes affect:
+
+- `docker/construct/**`
+- `docker-bake.hcl`
+- `Justfile`
+- `.github/workflows/construct.yml`
+- any helper script introduced specifically for construct builds
+
+Docs-only changes should not trigger this workflow unless they also touch one
+of the build inputs above.
+
+### Workflow Boundary
+
+GitHub Actions should remain responsible for runner selection, checkout,
+registry authentication, and optional GitHub Actions cache wiring.
+
+Bake plus Just should own:
+
+- tags
+- labels
+- build args
+- platform selection
+- manifest assembly inputs
+
+That means v1 should stop relying on `docker/metadata-action` for the construct
+image tag model.
 
 ### Build Jobs
 
@@ -230,12 +301,12 @@ Replace the current single publish job in
 - `build-amd64`
   - runs on `ubuntu-24.04`
   - runs `just construct-push-platform amd64` on `main`
-  - runs the non-push local-equivalent validation path on pull requests
+  - runs `just construct-build-platform amd64` on pull requests
 
 - `build-arm64`
   - runs on `ubuntu-24.04-arm`
   - runs `just construct-push-platform arm64` on `main`
-  - runs the non-push local-equivalent validation path on pull requests
+  - runs `just construct-build-platform arm64` on pull requests
 
 ### Manifest Job
 
@@ -243,6 +314,8 @@ Add a final `publish-manifest` job that:
 
 - depends on both native build jobs
 - runs only after both succeed
+- runs only for publish-capable events
+- consumes the staging tags pushed by the per-platform jobs
 - creates and publishes the multi-platform manifest tags
 
 This ensures there is no partial release where only one architecture is
@@ -251,7 +324,12 @@ published.
 ### Pull Request Behavior
 
 Pull requests should build both architectures natively but should not push
-images. This validates the construct on both platforms before merge.
+images. Concretely, the PR path is:
+
+1. `just construct-build-platform amd64` on `ubuntu-24.04`
+2. `just construct-build-platform arm64` on `ubuntu-24.04-arm`
+
+This validates the construct on both platforms before merge.
 
 ## Manifest Strategy
 
@@ -260,9 +338,18 @@ per-platform build steps.
 
 Responsibilities of `just construct-publish-manifest`:
 
-- collect the expected platform image references
+- collect the expected staging image references
 - create a multi-arch manifest from those platform-specific images
 - push the stable public tags
+
+The staging tags should be explicit and commit-scoped:
+
+- `REGISTRY_IMAGE:trixie-<sha>-amd64`
+- `REGISTRY_IMAGE:trixie-<sha>-arm64`
+
+These are implementation-detail handoff tags for split native CI jobs and
+optional local rehearsal. They are not part of the supported public consumer
+interface.
 
 The public tag surface should stay intentionally small:
 
@@ -280,7 +367,9 @@ Local reproducibility requires a predictable buildx bootstrap path.
 `just construct-init-buildx` should:
 
 - create a named buildx builder if one does not exist
-- select it for subsequent commands
+- use a stable builder name: `jackin-construct`
+- make that builder available to subsequent recipes via explicit `--builder`
+  usage rather than relying on shell-local selection state
 - inspect or bootstrap it so contributors can verify the local setup quickly
 
 This replaces the implicit GitHub Actions-only buildx setup with a documented
@@ -301,6 +390,11 @@ The docs should explain:
 
 - `just` is the supported command wrapper for construct image builds
 - Bake is the underlying declarative build definition
+- `docker/construct/versions.env` remains the version source of truth for the
+  construct Docker build
+- construct image automation is triggered by construct-related build inputs,
+  including the new root-level build files, not only by edits inside
+  `docker/construct/`
 - local contributors should validate construct changes with `just` before
   opening a pull request
 
