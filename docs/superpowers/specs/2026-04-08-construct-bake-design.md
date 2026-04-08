@@ -259,6 +259,10 @@ published.
 Pull requests should build both architectures natively but should not push
 images. This validates the construct on both platforms before merge.
 
+Pull request validation should prefer the GitHub Actions cache backend so cache
+state stays inside Actions. Registry-backed cache should be reserved for actual
+publish flows on `main`.
+
 ## Manifest Strategy
 
 The manifest publish step should remain explicit and separate from the native
@@ -270,6 +274,7 @@ Responsibilities of `just construct-publish-manifest`:
 - create a multi-arch manifest from those platform-specific images
 - push the stable public tags
 - consume per-platform digests rather than public `-amd64` / `-arm64` tags
+- attach explicit provenance and SBOM attestations to published images
 
 The public tag surface should stay intentionally small:
 
@@ -290,6 +295,8 @@ Local reproducibility requires a predictable buildx bootstrap path.
 - create a named buildx builder if one does not exist
 - select it for subsequent commands
 - inspect or bootstrap it so contributors can verify the local setup quickly
+- allow the builder name to be overridden with `BUILDX_BUILDER`
+- provide a documented reset/doctor path when local builder state becomes stale
 
 This replaces the implicit GitHub Actions-only buildx setup with a documented
 local command.
