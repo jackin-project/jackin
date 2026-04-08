@@ -63,7 +63,7 @@ The full documentation lives at **<https://jackin.tailrocks.com/>** and covers:
 - [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) — operators, agents, constructs, and workspaces
 - [Commands](https://jackin.tailrocks.com/commands/load/) — complete CLI reference
 - [Creating Agents](https://jackin.tailrocks.com/developing/creating-agents/) — build your own agent repos
-- [The Construct Image](https://jackin.tailrocks.com/developing/construct-image/) — what's inside the shared base image
+- [The Construct Image](https://jackin.tailrocks.com/developing/construct-image/) — what's inside the shared base image and how it is built
 - [Architecture](https://jackin.tailrocks.com/reference/architecture/) — how jackin' orchestrates containers and networks
 
 ## Development

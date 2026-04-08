@@ -1,61 +1,171 @@
-name: Build and Push Construct Image
+name: Construct Image
 
 on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/construct.yml'
+      - 'Justfile'
+      - 'docker-bake.hcl'
       - 'docker/construct/**'
   pull_request:
     branches: [main]
     paths:
+      - '.github/workflows/construct.yml'
+      - 'Justfile'
+      - 'docker-bake.hcl'
       - 'docker/construct/**'
   workflow_dispatch:
 
-env:
-  IMAGE_NAME: projectjackin/construct
-
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-
+  build-amd64:
+    name: amd64
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Install just
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3.1.0
+
+      - name: Install Docker Buildx
+        uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
+        with:
+          name: jackin-construct
+          driver: docker-container
 
       - name: Log in to Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=trixie
-            type=sha,prefix=trixie-
+      - name: Bootstrap buildx
+        run: just construct-init-buildx
 
-      - name: Load tool versions
-        run: cat docker/construct/versions.env >> "$GITHUB_ENV"
+      - name: Expose GitHub Actions cache runtime
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+        uses: crazy-max/ghaction-github-runtime@3cb05d89e1f492524af3d41a1c98c83bc3025124 # v3.1.0
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
+      - name: Build amd64 without push
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+        env:
+          CACHE_FROM: type=gha,scope=construct-pr-amd64
+          CACHE_TO: type=gha,scope=construct-pr-amd64,mode=max
+        run: just construct-build-platform amd64
+
+      - name: Push amd64 image by digest
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        env:
+          CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-amd64
+          CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-amd64,mode=max
+        run: just construct-push-platform amd64
+
+      - name: Upload amd64 digest
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          context: docker/construct
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            TIRITH_VERSION=${{ env.TIRITH_VERSION }}
-            SHELLFIRM_VERSION=${{ env.SHELLFIRM_VERSION }}
+          name: construct-digest-amd64
+          path: /tmp/jackin-construct-digests/amd64.digest
+          if-no-files-found: error
+          retention-days: 1
+
+  build-arm64:
+    name: arm64
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Install just
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3.1.0
+
+      - name: Install Docker Buildx
+        uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
+        with:
+          name: jackin-construct
+          driver: docker-container
+
+      - name: Log in to Docker Hub
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Bootstrap buildx
+        run: just construct-init-buildx
+
+      - name: Expose GitHub Actions cache runtime
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+        uses: crazy-max/ghaction-github-runtime@3cb05d89e1f492524af3d41a1c98c83bc3025124 # v3.1.0
+
+      - name: Build arm64 without push
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+        env:
+          CACHE_FROM: type=gha,scope=construct-pr-arm64
+          CACHE_TO: type=gha,scope=construct-pr-arm64,mode=max
+        run: just construct-build-platform arm64
+
+      - name: Push arm64 image by digest
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        env:
+          CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-arm64
+          CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-arm64,mode=max
+        run: just construct-push-platform arm64
+
+      - name: Upload arm64 digest
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: construct-digest-arm64
+          path: /tmp/jackin-construct-digests/arm64.digest
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-manifest:
+    name: publish manifest
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    needs: [build-amd64, build-arm64]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Install just
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3.1.0
+
+      - name: Install Docker Buildx
+        uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
+        with:
+          name: jackin-construct
+          driver: docker-container
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Bootstrap buildx
+        run: just construct-init-buildx
+
+      - name: Download platform digests
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: construct-digest-*
+          path: /tmp/jackin-construct-digests
+          merge-multiple: true
+
+      - name: Publish multi-platform manifest
+        run: just construct-publish-manifest
