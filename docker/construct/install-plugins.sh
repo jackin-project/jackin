@@ -4,7 +4,7 @@ set -euo pipefail
 plugins_file="/home/claude/.jackin/plugins.json"
 
 run_maybe_quiet() {
-    if [ "${CLAUDE_DEBUG:-0}" = "1" ]; then
+    if [ "${JACKIN_DEBUG:-0}" = "1" ]; then
         "$@"
     else
         "$@" > /dev/null 2>&1
