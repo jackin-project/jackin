@@ -56,11 +56,17 @@ construct-build-platform platform:
         exit 1
         ;;
     esac
-    docker buildx bake \
-      --builder "{{buildx_builder}}" \
-      --file docker-bake.hcl \
-      --load \
-      construct-local
+    args=(
+      docker buildx bake
+      --builder "{{buildx_builder}}"
+      --file docker-bake.hcl
+      --load
+    )
+    if [ -n "${CACHE_FROM:-}" ]; then
+      args+=(--set "construct-local.cache-from=${CACHE_FROM}")
+    fi
+    args+=(construct-local)
+    "${args[@]}"
 
 # Push a single-platform image to the registry (CI-only for canonical registry)
 construct-push-platform platform:
@@ -80,12 +86,21 @@ construct-push-platform platform:
       exit 1
     fi
     export PLATFORMS="$docker_platform"
-    docker buildx bake \
-      --builder "{{buildx_builder}}" \
-      --file docker-bake.hcl \
-      --push \
-      --set "construct-publish.tags=${REGISTRY_IMAGE}:${staging_tag}" \
-      construct-publish
+    args=(
+      docker buildx bake
+      --builder "{{buildx_builder}}"
+      --file docker-bake.hcl
+      --push
+      --set "construct-publish.tags=${REGISTRY_IMAGE}:${staging_tag}"
+    )
+    if [ -n "${CACHE_FROM:-}" ]; then
+      args+=(--set "construct-publish.cache-from=${CACHE_FROM}")
+    fi
+    if [ -n "${CACHE_TO:-}" ]; then
+      args+=(--set "construct-publish.cache-to=${CACHE_TO}")
+    fi
+    args+=(construct-publish)
+    "${args[@]}"
 
 # NOTE: platform suffixes (-amd64, -arm64) are coupled to the PLATFORMS list in docker-bake.hcl.
 #
