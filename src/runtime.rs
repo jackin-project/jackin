@@ -307,7 +307,11 @@ fn build_agent_image(
         let version = version.trim();
         if !version.is_empty() {
             eprintln!("        Claude {version}");
-            version_check::store_image_version(paths, &image, version);
+            if let Some(semver) = version_check::parse_claude_version(version) {
+                version_check::store_image_version(paths, &image, semver);
+            } else {
+                eprintln!("warning: unexpected claude --version output: {version:?}");
+            }
         }
     }
 
