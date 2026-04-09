@@ -79,6 +79,19 @@ pub fn needs_claude_update(
     installed != latest
 }
 
+/// Extract a bare semver string from `claude --version` output.
+///
+/// The command returns e.g. `"2.1.96 (Claude Code)"` but we only need the
+/// `"2.1.96"` portion to compare against the npm registry.  Returns `None`
+/// when the output doesn't look like a version string.
+pub fn parse_claude_version(raw: &str) -> Option<&str> {
+    let token = raw.split_whitespace().next()?;
+    if token.split('.').count() < 2 || !token.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(token)
+}
+
 // ── helpers ────────────────────────────────────────────────────────────
 
 /// Read a cache file only if it was modified within `ttl`.
@@ -194,6 +207,31 @@ mod tests {
             read_if_fresh(&cache_file, NPM_CACHE_TTL),
             Some("2.1.92".to_string())
         );
+    }
+
+    #[test]
+    fn parse_claude_version_strips_suffix() {
+        assert_eq!(parse_claude_version("2.1.96 (Claude Code)"), Some("2.1.96"));
+    }
+
+    #[test]
+    fn parse_claude_version_bare_semver() {
+        assert_eq!(parse_claude_version("2.1.96"), Some("2.1.96"));
+    }
+
+    #[test]
+    fn parse_claude_version_two_part() {
+        assert_eq!(parse_claude_version("1.0"), Some("1.0"));
+    }
+
+    #[test]
+    fn parse_claude_version_rejects_garbage() {
+        assert_eq!(parse_claude_version("not-a-version"), None);
+    }
+
+    #[test]
+    fn parse_claude_version_rejects_empty() {
+        assert_eq!(parse_claude_version(""), None);
     }
 
     /// Minimal [`CommandRunner`] that returns a fixed string for any `capture`.
