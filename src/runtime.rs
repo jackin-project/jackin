@@ -307,7 +307,11 @@ fn build_agent_image(
         let version = version.trim();
         if !version.is_empty() {
             eprintln!("        Claude {version}");
-            version_check::store_image_version(paths, &image, version);
+            // `claude --version` returns e.g. "2.1.96 (Claude Code)" but the npm
+            // cache stores just the semver ("2.1.96"). Strip the suffix so the
+            // comparison in `needs_claude_update` works correctly.
+            let semver = version.split_whitespace().next().unwrap_or(version);
+            version_check::store_image_version(paths, &image, semver);
         }
     }
 
