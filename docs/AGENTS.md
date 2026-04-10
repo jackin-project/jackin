@@ -3,14 +3,15 @@
 ## Stack
 
 - This directory is a Vocs documentation site (React + Vite).
-- Package manager and lockfile: `bun` preferred, `pnpm` as fallback.
+- Package manager and lockfile: `bun` and `bun.lock`.
 - Framework: `vocs` with `vite`.
-- Styling: `tailwindcss` v4 (CSS-first configuration in `src/pages/_root.css`).
+- Styling: `tailwindcss` v4 (CSS-first configuration in `pages/_root.css`).
 
 ## Package Management
 
 - Use `bun install`, `bun add`, and `bun remove` for dependency changes.
-- If bun has compatibility issues with Vocs, use `pnpm` instead.
+- Do not use `npm`, `pnpm`, or `yarn` in this directory.
+- Keep `bun.lock` as the only lockfile in `docs/`.
 
 ## Common Commands
 
