@@ -1,21 +1,21 @@
 {
   "name": "jackin-docs",
+  "private": true,
   "type": "module",
-  "version": "0.0.1",
   "scripts": {
-    "dev": "astro dev",
-    "start": "astro dev",
-    "build": "astro build",
-    "preview": "astro preview",
-    "astro": "astro",
-    "generate-logos": "bun run scripts/generate-logos.mjs"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.38.2",
-    "astro": "^6.1.3",
-    "sharp": "^0.34.5"
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "vocs": "^1.4.1"
   },
   "devDependencies": {
-    "@resvg/resvg-js": "^2.6.2"
+    "@vitejs/plugin-react": "^5.2.0",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "vite": "^7.1.11"
   }
 }
