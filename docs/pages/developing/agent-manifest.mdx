@@ -19,11 +19,19 @@ dockerfile = "Dockerfile"
 name = "The Architect"
 
 [claude]
-plugins = ["superpowers@superpowers-marketplace"]
+plugins = [
+  "code-review@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "feature-dev@claude-plugins-official",
+  "jackin-dev@jackin-marketplace",
+]
 
 [[claude.marketplaces]]
 source = "obra/superpowers-marketplace"
 sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
 
 [hooks]
 pre_launch = "hooks/pre-launch.sh"
@@ -67,8 +75,10 @@ dockerfile = "Dockerfile"
 
 [claude]
 plugins = [
+  "code-review@claude-plugins-official",
   "superpowers@superpowers-marketplace",
-  "jackin-dev@jackin-marketplace"
+  "feature-dev@claude-plugins-official",
+  "jackin-dev@jackin-marketplace",
 ]
 
 [[claude.marketplaces]]
@@ -94,11 +104,19 @@ Example:
 
 ```toml [jackin.agent.toml]
 [claude]
-plugins = ["superpowers@superpowers-marketplace"]
+plugins = [
+  "code-review@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "feature-dev@claude-plugins-official",
+  "jackin-dev@jackin-marketplace",
+]
 
 [[claude.marketplaces]]
 source = "obra/superpowers-marketplace"
 sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
 ```
 
 ## `[identity]`
@@ -251,7 +269,9 @@ name = "The Architect"
 
 [claude]
 plugins = [
+  "code-review@claude-plugins-official",
   "superpowers@superpowers-marketplace",
+  "feature-dev@claude-plugins-official",
   "jackin-dev@jackin-marketplace",
 ]
 
