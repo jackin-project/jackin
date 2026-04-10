@@ -3,3 +3,7 @@
 @source "./";
 
 @custom-variant dark (&:where([style*="color-scheme: dark"], [style*="color-scheme: dark"] *));
+
+.vocs_DesktopTopNav_logoWrapper {
+  display: none;
+}
