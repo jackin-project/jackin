@@ -19,7 +19,11 @@ dockerfile = "Dockerfile"
 name = "The Architect"
 
 [claude]
-plugins = ["code-review@claude-plugins-official"]
+plugins = ["superpowers@superpowers-marketplace"]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
 
 [hooks]
 pre_launch = "hooks/pre-launch.sh"
@@ -54,6 +58,7 @@ The Dockerfile path must:
 | Field | Required | Description |
 |---|---|---|
 | `plugins` | No | List of Claude plugin identifiers to install at runtime |
+| `marketplaces` | No | List of marketplace registrations to add before plugin installation |
 
 Example values:
 
@@ -62,9 +67,38 @@ dockerfile = "Dockerfile"
 
 [claude]
 plugins = [
-  "code-review@claude-plugins-official",
-  "feature-dev@claude-plugins-official"
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace"
 ]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "donbeave/jackin-marketplace"
+```
+
+Each `[[claude.marketplaces]]` block maps to `claude plugin marketplace add <source>`. If `sparse` is set, jackin passes those paths as `claude plugin marketplace add <source> --sparse path1 path2`.
+
+### `[[claude.marketplaces]]`
+
+Each marketplace block declares one Claude marketplace source to register before plugin installation.
+
+| Field | Required | Description |
+|---|---|---|
+| `source` | Yes | Raw marketplace source passed to `claude plugin marketplace add` |
+| `sparse` | No | Optional sparse-checkout paths for monorepo-backed marketplaces |
+
+Example:
+
+```toml [jackin.agent.toml]
+[claude]
+plugins = ["superpowers@superpowers-marketplace"]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
 ```
 
 ## `[identity]`
@@ -216,7 +250,17 @@ dockerfile = "docker/Dockerfile.agent"
 name = "The Architect"
 
 [claude]
-plugins = ["code-review@claude-plugins-official"]
+plugins = [
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "donbeave/jackin-marketplace"
 
 [hooks]
 pre_launch = "hooks/pre-launch.sh"

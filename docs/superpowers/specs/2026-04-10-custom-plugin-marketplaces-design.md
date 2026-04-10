@@ -23,7 +23,6 @@ claude plugin install superpowers@superpowers-marketplace
 
 - Replacing Claude Code's own marketplace validation rules.
 - Introducing local aliases or renaming marketplaces inside `jackin`.
-- Supporting extra CLI flags such as `--sparse` in v1.
 - Reworking plugin installation into a separate build-time or image-baked
   system.
 
@@ -76,7 +75,7 @@ claude plugin marketplace add <source>
 If `sparse` is present, `jackin` should append the corresponding CLI flags:
 
 ```bash
-claude plugin marketplace add <source> --sparse <path1> --sparse <path2>
+claude plugin marketplace add <source> --sparse <path1> <path2>
 ```
 
 This keeps `jackin` as a thin wrapper around Claude Code rather than creating
@@ -217,7 +216,7 @@ The updated script behavior should be:
    where each marketplace entry expands to:
 
    - required source argument from `.source`
-   - zero or more `--sparse <path>` flags from `.sparse[]`
+   - an optional `--sparse <path1> <path2> ...` segment built from `.sparse[]`
 
 3. Read `.plugins[]` from `plugins.json` and run:
 
