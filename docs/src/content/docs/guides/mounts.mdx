@@ -62,7 +62,7 @@ These mounts are one-time — they apply only to this specific container launch.
 Save mounts as part of a workspace definition:
 
 ```bash
-jackin workspace add my-app \
+jackin workspace create my-app \
   --workdir ~/Projects/my-app \
   --mount ~/cache:/cache:ro
 ```
@@ -118,7 +118,7 @@ jackin config mount remove gradle-cache
 When multiple mount sources are resolved, jackin' combines them in this order:
 
 1. **Global mounts** (from `jackin config mount`)
-2. **Workspace mounts** (from `jackin workspace add`)
+2. **Workspace mounts** (from `jackin workspace create`)
 3. **Auto-mounted workdir** (unless `--no-workdir-mount`)
 4. **Load-time mounts** (from `jackin load --mount`)
 

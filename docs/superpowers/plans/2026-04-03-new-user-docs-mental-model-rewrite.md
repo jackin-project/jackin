@@ -117,7 +117,7 @@ One project may intentionally use several agent classes. That is not redundancy.
 
 - [ ] **Step 3: Expand the `## Workspaces` section so saved workspaces feel operationally useful**
 
-Replace the paragraph that begins `Think of a workspace as answering:` through the numbered list ending with `Created with jackin workspace add and reusable across sessions.` with the following content:
+Replace the paragraph that begins `Think of a workspace as answering:` through the numbered list ending with `Created with jackin workspace create and reusable across sessions.` with the following content:
 
 ```mdx
 Think of a workspace as answering: "Which project files can this agent see, and where do they appear in the container?"

@@ -159,7 +159,7 @@ pub enum ConfigCommand {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum WorkspaceCommand {
-    /// Save a new workspace definition
+    /// Create a new workspace definition
     ///
     /// By default the workdir path is automatically mounted into the container
     /// at the same location (host path = container path). Use --no-workdir-mount
@@ -169,12 +169,12 @@ pub enum WorkspaceCommand {
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
-  jackin workspace add my-app --workdir ~/Projects/my-app
-  jackin workspace add my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
-  jackin workspace add monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
-  jackin workspace add restricted --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith"
+  jackin workspace create my-app --workdir ~/Projects/my-app
+  jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
+  jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
+  jackin workspace create restricted --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith"
     )]
-    Add {
+    Create {
         /// Unique name for this workspace
         name: String,
         /// Working directory (automatically mounted at the same path unless --no-workdir-mount)
@@ -217,6 +217,7 @@ Examples:
   jackin workspace edit my-app --workdir ~/new-dir
   jackin workspace edit my-app --mount ~/cache:/cache:ro
   jackin workspace edit my-app --remove-destination /old-mount
+  jackin workspace edit my-app --no-workdir-mount
   jackin workspace edit my-app --allowed-agent chainargos/the-architect
   jackin workspace edit my-app --default-agent agent-smith
   jackin workspace edit my-app --clear-default-agent"
@@ -233,6 +234,9 @@ Examples:
         /// Remove a mount by its container destination path (repeatable)
         #[arg(long = "remove-destination")]
         remove_destinations: Vec<String>,
+        /// Remove the auto-mounted workdir (the mount where src = dst = workdir)
+        #[arg(long, default_value_t = false)]
+        no_workdir_mount: bool,
         /// Grant an agent access to this workspace (repeatable)
         #[arg(long = "allowed-agent")]
         allowed_agents: Vec<String>,
@@ -470,11 +474,11 @@ mod tests {
     }
 
     #[test]
-    fn parses_workspace_add_command() {
+    fn parses_workspace_create_command() {
         let cli = Cli::try_parse_from([
             "jackin",
             "workspace",
-            "add",
+            "create",
             "big-monorepo",
             "--workdir",
             "/workspace/project",
@@ -492,17 +496,17 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Workspace {
-                command: WorkspaceCommand::Add { .. }
+                command: WorkspaceCommand::Create { .. }
             }
         ));
     }
 
     #[test]
-    fn parses_workspace_add_with_workdir_only() {
+    fn parses_workspace_create_with_workdir_only() {
         let cli = Cli::try_parse_from([
             "jackin",
             "workspace",
-            "add",
+            "create",
             "my-app",
             "--workdir",
             "/tmp/my-app",
@@ -512,8 +516,34 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Workspace {
-                command: WorkspaceCommand::Add {
+                command: WorkspaceCommand::Create {
                     no_workdir_mount: false,
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_workspace_create_with_no_workdir_mount() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "create",
+            "monorepo",
+            "--workdir",
+            "/workspace",
+            "--no-workdir-mount",
+            "--mount",
+            "/tmp/src:/workspace",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Workspace {
+                command: WorkspaceCommand::Create {
+                    no_workdir_mount: true,
                     ..
                 }
             }
@@ -538,6 +568,28 @@ mod tests {
             cli.command,
             Command::Workspace {
                 command: WorkspaceCommand::Edit { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_workspace_edit_with_no_workdir_mount() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "edit",
+            "my-app",
+            "--no-workdir-mount",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::Workspace {
+                command: WorkspaceCommand::Edit {
+                    no_workdir_mount: true,
+                    ..
+                }
             }
         ));
     }
@@ -675,20 +727,20 @@ mod tests {
     // ── Workspace subcommand help ───────────────────────────────────────
 
     #[test]
-    fn workspace_add_help_shows_auto_mount_and_examples() {
-        let help = help_text(&["jackin", "workspace", "add", "--help"]);
+    fn workspace_create_help_shows_auto_mount_and_examples() {
+        let help = help_text(&["jackin", "workspace", "create", "--help"]);
         assert!(
             help.contains("automatically mounted"),
             "auto-mount behavior not documented"
         );
         assert!(help.contains("--no-workdir-mount"), "opt-out flag missing");
         assert!(help.contains("Examples:"));
-        assert!(help.contains("jackin workspace add my-app --workdir ~/Projects/my-app"));
+        assert!(help.contains("jackin workspace create my-app --workdir ~/Projects/my-app"));
     }
 
     #[test]
-    fn workspace_add_help_shows_mount_format() {
-        let help = help_text(&["jackin", "workspace", "add", "--help"]);
+    fn workspace_create_help_shows_mount_format() {
+        let help = help_text(&["jackin", "workspace", "create", "--help"]);
         assert!(
             help.contains("path[:ro]") && help.contains("src:dst[:ro]"),
             "mount format missing"
@@ -753,7 +805,7 @@ mod tests {
             vec!["jackin", "exile", "--help"],
             vec!["jackin", "purge", "--help"],
             vec!["jackin", "launch", "--help"],
-            vec!["jackin", "workspace", "add", "--help"],
+            vec!["jackin", "workspace", "create", "--help"],
             vec!["jackin", "workspace", "list", "--help"],
             vec!["jackin", "workspace", "show", "--help"],
             vec!["jackin", "workspace", "edit", "--help"],

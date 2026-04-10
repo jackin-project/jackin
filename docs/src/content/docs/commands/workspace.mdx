@@ -15,13 +15,13 @@ A workspace describes project access, not agent tooling. It answers: which host 
 
 ## Subcommands
 
-### `workspace add`
+### `workspace create`
 
 ```bash
-jackin workspace add <NAME> --workdir <PATH> [OPTIONS]
+jackin workspace create <NAME> --workdir <PATH> [OPTIONS]
 ```
 
-Save a new workspace definition.
+Create a new workspace definition.
 
 | Option | Description |
 |---|---|
@@ -32,10 +32,10 @@ Save a new workspace definition.
 | `--default-agent <NAME>` | Agent class to auto-select |
 
 ```bash
-jackin workspace add my-app --workdir ~/Projects/my-app
-jackin workspace add my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
-jackin workspace add monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
-jackin workspace add restricted --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith
+jackin workspace create my-app --workdir ~/Projects/my-app
+jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
+jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
+jackin workspace create restricted --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith
 ```
 
 ### `workspace list`

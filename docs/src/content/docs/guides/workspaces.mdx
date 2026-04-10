@@ -50,7 +50,7 @@ If you regularly work on the same project, a saved workspace turns your mount la
 For projects you work on regularly, save a workspace:
 
 ```bash
-jackin workspace add my-app --workdir ~/Projects/my-app
+jackin workspace create my-app --workdir ~/Projects/my-app
 ```
 
 Now you can load agents into it from anywhere:
@@ -83,7 +83,7 @@ The auto-mount keeps host and container paths identical, which avoids confusion 
 Workspaces can include additional directories beyond the workdir:
 
 ```bash
-jackin workspace add my-app \
+jackin workspace create my-app \
   --workdir ~/Projects/my-app \
   --mount ~/cache:/cache:ro \
   --mount ~/shared-libs:/libs:ro
@@ -94,7 +94,7 @@ jackin workspace add my-app \
 If you need the container layout to differ from your host:
 
 ```bash
-jackin workspace add monorepo \
+jackin workspace create monorepo \
   --workdir /workspace \
   --no-workdir-mount \
   --mount ~/src:/workspace
@@ -140,7 +140,7 @@ jackin workspace remove my-app
 You can limit which agents are allowed to use a workspace:
 
 ```bash
-jackin workspace add secure-api \
+jackin workspace create secure-api \
   --workdir ~/Projects/secure-api \
   --allowed-agent agent-smith \
   --default-agent agent-smith
