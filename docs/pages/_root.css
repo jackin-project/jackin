@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+@source "./";
+
+@custom-variant dark (&:where([style*="color-scheme: dark"], [style*="color-scheme: dark"] *));
