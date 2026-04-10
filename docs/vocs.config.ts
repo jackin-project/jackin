@@ -8,7 +8,7 @@ export default defineConfig({
   baseUrl: 'https://jackin.tailrocks.com',
   editLink: {
     pattern:
-      'https://github.com/jackin-project/jackin/edit/main/docs/src/pages/:path',
+      'https://github.com/jackin-project/jackin/edit/main/docs/pages/:path',
     text: 'Edit on GitHub',
   },
   socials: [
