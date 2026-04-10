@@ -130,6 +130,30 @@ name = "My Agent"
 
 These plugin IDs are written into the agent's runtime state and installed automatically when the container starts.
 
+If you need plugins from a custom marketplace, declare the marketplace separately and keep plugin IDs fully qualified:
+
+```toml [jackin.agent.toml]
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = [
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "donbeave/jackin-marketplace"
+
+[identity]
+name = "My Agent"
+```
+
+jackin adds each declared marketplace at container startup, then installs each plugin ID exactly as written.
+
 ## Testing your agent
 
 The fastest way to test is to load it:
