@@ -1,0 +1,167 @@
+---
+description: The problem jackin' solves and why it needs to exist
+---
+
+# Why jackin'?
+
+## The problem
+
+AI coding agents are transforming software development. Tools like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), and [Amp Code](https://ampcode.com) can read your codebase, write code, run tests, install dependencies, and execute arbitrary shell commands — all autonomously.
+
+But there's a catch: **these agents are most productive when they run without guardrails.**
+
+Claude Code has a mode called `--dangerously-skip-permissions` that removes all confirmation prompts. No "are you sure?" dialogs. No permission gates. The agent just *does things*. And that's exactly what you want when you're trying to get work done — an agent that can move fast without waiting for you to click "Allow" every ten seconds.
+
+**The problem is what "doing things" means on your host machine:**
+
+- The agent can read **every file** on your filesystem — your SSH keys, your `.env` files, your browser cookies
+- It can run **any command** — `rm -rf /`, `curl` data to external servers, modify system configs
+- It can install **any package** — potentially pulling in malicious dependencies
+- It has your **credentials** — Docker Hub tokens, AWS keys, GitHub tokens, anything in your shell environment
+
+Running an unrestricted AI agent directly on your host is like inviting a brilliant but unpredictable contractor into your home and saying "do whatever you want." They might build something amazing — or they might accidentally (or intentionally) cause damage you never anticipated.
+
+## The solution
+
+**jackin' gives each agent its own isolated world to operate in.**
+
+Instead of running on your host, each agent runs inside a Docker container with Docker-in-Docker (DinD) enabled. From the agent's perspective, it has full autonomy — it can execute commands, install packages, build Docker images, run tests. But from *your* perspective as the operator, you've defined exactly what the agent can see and touch.
+
+::::steps
+
+### You define the boundaries
+
+Which directories to mount, whether they're read-only or read-write, what tools are available in the container image
+
+### The agent runs freely inside those boundaries
+
+No permission prompts, no restrictions, full `--dangerously-skip-permissions` mode
+
+### Your host system stays untouched
+
+The agent can't see your home directory, can't access your credentials, can't modify files outside its mounts
+
+::::
+
+Think of it this way: you're not restricting the agent's *capabilities*. You're restricting its *blast radius*.
+
+jackin' also helps you restrict the agent's *context*. You are not forced to put every language toolchain, helper script, and Claude plugin into one universal environment. You can build smaller agent classes for specific kinds of work and point them at the same workspace when needed.
+
+## What jackin' optimizes for
+
+jackin' is opinionated about what matters most in day-to-day agent work:
+
+- **local development first** — your laptop is the first control plane
+- **open source over black box** — the tool itself should be inspectable and patchable
+- **environment as code** — agent classes should live in normal git repos with normal code review
+- **workspace boundaries as first-class objects** — file access should be an explicit operator decision
+- **many parallel agents** — different projects, branches, or roles should coexist cleanly
+
+That means jackin' is not trying to win every dimension. It is not trying to be the hardest isolation boundary you can put on a laptop. It is trying to make isolated local agent development feel deliberate, reusable, and pleasant.
+
+## Why separate agent classes from workspaces?
+
+This is the part new users usually need spelled out.
+
+A **workspace** controls file visibility. It says which project paths are mounted into the container.
+
+An **agent class** controls environment and behavior. It says which tools, shells, plugins, and defaults exist in that container image.
+
+Those are different concerns, and separating them is useful for two reasons.
+
+First, it keeps the blast radius clear. The workspace decides which files the agent can reach.
+
+Second, it keeps the agent's working environment focused. The agent class decides which tools, conventions, helper scripts, and plugins are even present. That matters because a giant all-in-one image creates noise. The model can inspect too many tools, too many conventions, and too much irrelevant context before it decides what to do.
+
+Imagine one company with a shared monorepo:
+
+- the frontend team uses a `chainargos/frontend-engineer` agent class with Node, Playwright, design-system utilities, and UI-oriented Claude plugins
+- the backend team uses a `chainargos/backend-engineer` agent class with Rust or Go toolchains, database clients, and API-oriented plugins
+- both teams can still point those agent classes at the same monorepo workspace when needed
+
+That split keeps the visible project files and the installed toolchain independently controllable.
+
+In practice, this often produces better results than one kitchen-sink agent image. A narrower environment gives the agent fewer irrelevant cues and makes it more likely that the tools and plugins it discovers actually match the task.
+
+It also helps with Claude Code plugins. A tool like Superpowers can be extremely useful, but it brings hooks and behavior that you may not want in every task. The most reliable way to keep it out of scope is not to "mostly disable" it, but to use a different agent class where it simply is not installed.
+
+## The Matrix analogy
+
+The name "jackin'" comes from [jacking in](https://matrix.fandom.com/wiki/Jacking_in) to The Matrix. In the films, an operator loads a person into a simulated environment — the construct — where they can train, fight, and operate with superhuman abilities. But they're not actually modifying the real world. The operator controls what the simulation contains.
+
+That's exactly what jackin' does:
+
+| Matrix | jackin' |
+|---|---|
+| **Operator** | You — the developer running jackin' |
+| **The Construct** | The base Docker image with system tools |
+| **Jacking in** | `jackin load agent-smith` |
+| **The agent inside** | Claude Code running with full permissions |
+| **The real world** | Your host machine, untouched |
+| **Hardline** | `jackin hardline` — reconnecting to a running agent |
+| **Pulling out** | `jackin eject` — stopping an agent |
+| **Exile** | `jackin exile` — pulling everyone out at once |
+
+Every command in jackin' maps to a concept from The Matrix. This isn't just for fun — it makes the mental model intuitive. When you "load" an agent, you're loading it into a construct. When you "eject" it, you're pulling it out. The vocabulary reinforces what's actually happening.
+
+## Why not just use Docker Sandboxes?
+
+Because the problem is not only isolation.
+
+Products like [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) are strong at what they are designed for: quick-start agent sandboxes with a microVM boundary, a private Docker daemon, credential proxying for supported flows, and outbound network policy controls.
+
+jackin' exists because many operators also want:
+
+- agent environments they can define as normal source code
+- explicit workspace objects with reusable mount layouts and access rules
+- multiple role-specific agent classes against the same project
+- an open tool they can extend instead of only consume
+
+So the honest comparison is this:
+
+- if you want the **strongest local isolation boundary**, Docker Sandboxes is ahead
+- if you want **open, local-first agent orchestration**, jackin' is the better fit
+
+For a deeper comparison, including adjacent approaches and where jackin' is weaker today, see [Comparison with Alternatives](/guides/comparison).
+
+## What jackin' is NOT
+
+:::warning
+jackin' is not a general-purpose container orchestrator. It's specifically designed for AI coding agents.
+:::
+
+- **Not a VM** — agents share the host kernel via Docker. The isolation is at the container level, not the hypervisor level. If you need hypervisor-level isolation, use a microVM-based approach instead.
+- **Not a sandbox for untrusted code execution** — it's for running *trusted agent runtimes* (Claude Code, Codex) in a controlled environment. The agent binary itself is trusted; it's the agent's *actions* you want to contain.
+- **Not Kubernetes** — jackin' runs on a single machine with Docker. Kubernetes support is on the roadmap for teams that need multi-node orchestration.
+
+That last point is deliberate. jackin' starts with local Docker because that is the shortest path to a useful operator experience. Over time, the same model can grow toward Kubernetes-backed workflows for production debug containers and team-scale orchestration, but local development is the first job.
+
+## Who is it for?
+
+**Individual developers** who want to run AI agents at full speed without risking their host machine. You can give Claude Code complete autonomy inside a container, knowing it can't accidentally delete your SSH keys or push to production. If you work on multiple projects or branches simultaneously, jackin' lets you run separate agents in parallel without resource pressure.
+
+**Teams** that want to standardize how AI agents are deployed. Define agent repos with the tools each project needs, save workspace configurations, and every developer gets the same isolated environment. Agent classes are git repos — version them, review them in PRs, share them across the organization.
+
+**Agent developers** who want to build custom agent configurations. Create a Dockerfile with your preferred toolchain, declare it in a manifest, and anyone can load your agent with `jackin load`.
+
+**Open source advocates** who prefer tools they can audit, modify, and contribute to. jackin' is built in Rust under Apache 2.0. When an AI agent has full autonomy inside an isolation boundary, being able to read and verify exactly how that boundary works is a meaningful advantage over proprietary alternatives.
+
+## Why Rust?
+
+jackin' is built in Rust for three reasons:
+
+1. **Performance and safety.** An orchestrator that launches and manages Docker containers, parses Dockerfiles, renders TUI interfaces, and handles concurrent agent state needs to be fast and correct. Rust's ownership model and `unsafe_code = "forbid"` policy mean jackin' has zero unsafe code and catches entire classes of bugs at compile time.
+
+2. **Growing ecosystem.** Rust's adoption in infrastructure tooling, container runtimes, and CLI tools has accelerated significantly. The libraries jackin' depends on — `clap`, `ratatui`, `serde`, `dockerfile-parser` — are mature and actively maintained.
+
+3. **AI-friendly.** From practical experience, AI coding agents produce more reliable Rust code than most other systems languages. The strong type system and compiler feedback loop gives agents clear signals about what's wrong and how to fix it — leading to better AI-assisted contributions to the project itself.
+
+## Current status
+
+:::note
+jackin' is currently a proof of concept with Claude Code as its only supported agent runtime. Support for Codex and Amp Code is planned.
+:::
+
+The core isolation model works, workspaces and mounts are configurable, the interactive TUI launcher is functional, and the agent class system supports namespaced, team-shareable environments. It's licensed under Apache 2.0.
+
+The vision is local-first development with excellent tooling and UX, eventually expanding to deployment ecosystems — Kubernetes support is planned for using jackin' as a debug container in production environments to safely explore issues with AI agent assistance.

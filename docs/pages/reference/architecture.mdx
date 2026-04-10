@@ -1,0 +1,205 @@
+---
+description: How jackin' orchestrates containers, networks, and persisted state
+---
+
+# Architecture
+
+## High-level architecture
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Host Machine                                         │
+│                                                       │
+│  ┌─────────────┐                                      │
+│  │  jackin CLI │  Operator interface                  │
+│  └──────┬──────┘                                      │
+│         │                                             │
+│         ▼                                             │
+│  ┌──────────────────────────────────────────────┐     │
+│  │  Docker Engine                                │     │
+│  │                                               │     │
+│  │  ┌─────────────────────────────────────────┐  │     │
+│  │  │  jackin-agent-smith-net                 │  │     │
+│  │  │                                         │  │     │
+│  │  │  ┌──────────────┐  ┌─────────────────┐  │  │     │
+│  │  │  │ Agent         │  │ DinD Sidecar    │  │  │     │
+│  │  │  │ Container     │  │ (docker:dind)   │  │  │     │
+│  │  │  │               │  │                 │  │  │     │
+│  │  │  │ Claude Code   │──│ Docker daemon   │  │  │     │
+│  │  │  │ Agent tools   │  │ tcp://...:2375  │  │  │     │
+│  │  │  │ Mounted dirs  │  │                 │  │  │     │
+│  │  │  └──────────────┘  └─────────────────┘  │  │     │
+│  │  └─────────────────────────────────────────┘  │     │
+│  └──────────────────────────────────────────────┘     │
+│                                                       │
+│  ~/.jackin/data/   persisted runtime state            │
+│  ~/.jackin/agents/ cached agent repos                 │
+│  ~/.config/jackin/ operator config                    │
+└──────────────────────────────────────────────────────┘
+```
+
+jackin' deliberately uses your existing Docker engine as the operator control plane.
+
+That creates an important split:
+
+- **build time** happens on the host Docker engine
+- **runtime Docker commands issued by the agent** go to the per-instance DinD sidecar
+
+So jackin' gets host-side cache reuse for building agent images, while still keeping the agent away from your host Docker daemon during runtime.
+
+## Design constraints
+
+jackin's architecture is shaped by a few explicit decisions:
+
+1. **Local development first.** The first target is a developer machine that already knows how to run Docker.
+2. **Environment as source code.** Agent classes should be normal git repos reviewed like normal software.
+3. **Workspace boundary separate from tool profile.** File visibility and installed tooling are different control planes on purpose.
+4. **Operator-owned infrastructure, not black-box runtime.** The implementation should stay inspectable and patchable.
+5. **Container isolation is acceptable for the first target.** jackin' does not claim a microVM boundary today.
+
+## Image layers
+
+```
+┌─────────────────────────────────┐
+│  Derived Layer (jackin-managed) │
+│  - UID/GID remapping            │
+│  - Claude Code installation     │
+│  - Pre-launch hook (if declared)│
+│  - Runtime entrypoint           │
+│  - Plugin bootstrap             │
+├─────────────────────────────────┤
+│  Agent Layer (agent repo)       │
+│  - Language runtimes            │
+│  - Development tools            │
+│  - Custom configuration         │
+├─────────────────────────────────┤
+│  Construct Base                 │
+│  - Debian Trixie                │
+│  - Docker CLI + Compose         │
+│  - Git, GitHub CLI              │
+│  - mise, ripgrep, fd, fzf       │
+│  - zsh + Oh My Zsh              │
+└─────────────────────────────────┘
+```
+
+The agent repo owns the environment layer. jackin' owns the derived runtime layer.
+
+That means an agent class defines the tools and conventions, while jackin' injects the runtime-specific pieces such as Claude installation, the entrypoint, and UID/GID remapping.
+
+## Container lifecycle
+
+### Loading an agent
+
+1. **Resolve agent class** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
+2. **Validate the repo contract** — require `jackin.agent.toml` and a valid Dockerfile path, validate manifest strictly
+3. **Resolve environment variables** — prompt the user for interactive env vars declared in the manifest
+4. **Generate a derived build context** — copy the repo, inject runtime assets (entrypoint + pre-launch hook), and render a derived Dockerfile
+5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
+6. **Create a per-agent Docker network**
+7. **Start a privileged `docker:dind` sidecar**
+8. **Start the agent container** — mounts, resolved env vars, labels, and `DOCKER_HOST` all point at the sidecar
+9. **Run Claude Code with full permissions inside that boundary**
+
+### Reconnecting
+
+`jackin hardline` simply attaches to the running agent container.
+
+### Stopping
+
+`jackin eject` removes:
+
+1. the agent container
+2. the DinD sidecar
+3. the per-agent network
+
+Persisted state remains unless you also purge it.
+
+## Networking
+
+Each agent gets an isolated Docker network:
+
+- network name is derived from the runtime container name
+- the agent container and DinD sidecar share that network
+- the agent reaches the daemon through `DOCKER_HOST=tcp://{dind}:2375`
+- different agents do not share a network by default
+
+:::note
+The DinD sidecar currently runs without TLS. Any container on that per-agent network can reach the daemon. TLS support is on the roadmap.
+:::
+
+## State management
+
+```
+~/.jackin/
+├── agents/                        # Cached agent repos
+│   └── github.com/
+│       └── donbeave/
+│           └── jackin-agent-smith/
+├── data/                          # Persisted state per instance
+│   └── jackin-agent-smith/
+│       ├── .claude/
+│       ├── .claude.json
+│       ├── .config/gh/
+│       └── plugins.json
+```
+
+This is what persists across sessions:
+
+- Claude history and settings
+- jackin' plugin metadata
+- `gh` state acquired inside the runtime
+
+This is what does **not** persist:
+
+- packages installed interactively into the runtime container
+- ad-hoc root filesystem changes outside mounted paths
+- DinD images, containers, and cache
+
+That means jackin' is biased toward **reproducible agent classes** rather than **mutable long-lived sandboxes**.
+
+If a tool should always exist, put it in the agent repo Dockerfile instead of installing it ad hoc during a session.
+
+## Why Docker instead of microVMs?
+
+Because jackin' is solving a slightly different problem.
+
+Using plain Docker lets jackin':
+
+- reuse a toolchain developers already have
+- keep the implementation smaller and easier to inspect
+- build agent images with normal Docker workflows
+- share host-side build cache across agent classes
+- stay local-first without introducing a separate VM product layer
+
+The cost of that choice is straightforward:
+
+- weaker isolation than a microVM
+- shared host kernel
+- privileged DinD sidecars
+- no hypervisor boundary
+
+If the main thing you need is the strongest local boundary for autonomous agents on a laptop, microVM-based products such as Docker Sandboxes are ahead.
+
+## Current technical debt and limitations
+
+- **DinD transport is not authenticated.** The runtime reaches the sidecar over plain TCP.
+- **Claude installation is not fully pinned.** The derived image installs Claude Code from the upstream installer.
+- **Derived build context rejects symlinks.** Agent repos with symlink-heavy layouts are not supported yet.
+- **Cached agent repos must stay clean.** jackin' refuses to build from a dirty or origin-mismatched cache.
+- **Runtime mutability is intentionally thin.** That keeps sessions cleaner, but makes ad-hoc package installs non-persistent.
+
+## Technology stack
+
+jackin' itself is built in Rust:
+
+| Component | Technology |
+|---|---|
+| CLI parsing | `clap` |
+| Terminal UI | `ratatui` + `crossterm` |
+| Table output | `tabled` |
+| Configuration | `serde` + `toml` |
+| Dockerfile parsing | `dockerfile-parser` |
+| Error handling | `anyhow` + `thiserror` |
+| Colored output | `owo-colors` |
+
+The project targets Rust edition 2024 with Rust 1.87+ and forbids unsafe code.
