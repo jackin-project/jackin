@@ -416,8 +416,8 @@ jackin launch
 | Repository | Description |
 |---|---|
 | [jackin](https://github.com/jackin-project/jackin) | CLI source code |
-| [jackin-agent-smith](https://github.com/donbeave/jackin-agent-smith) | Default general-purpose agent |
-| [jackin-the-architect](https://github.com/donbeave/jackin-the-architect) | Rust development agent (used for jackin' development) |
+| [jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) | Default general-purpose agent |
+| [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) | Rust development agent (used for jackin' development) |
 | [homebrew-tap](https://github.com/jackin-project/homebrew-tap) | Homebrew formulae for installing jackin' |
 ```
 

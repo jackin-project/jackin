@@ -2,7 +2,7 @@
 
 A Claude Code plugin for simplifying jackin development. Provides skills for release management, with room to grow into other development workflows (testing, security review, Docker construct validation, etc.).
 
-Distributed as a standalone repository: `donbeave/jackin-dev`.
+Distributed as a standalone repository: `jackin-project/jackin-dev`.
 
 ## Platform Support
 
@@ -49,8 +49,8 @@ jackin-dev/
   "author": {
     "name": "Alexey Zhokhov"
   },
-  "homepage": "https://github.com/donbeave/jackin-dev",
-  "repository": "https://github.com/donbeave/jackin-dev",
+  "homepage": "https://github.com/jackin-project/jackin-dev",
+  "repository": "https://github.com/jackin-project/jackin-dev",
   "license": "Apache-2.0",
   "keywords": ["release", "changelog", "validation", "cargo-release", "rust"]
 }
@@ -105,10 +105,10 @@ jackin-dev/
    ## [Unreleased]
 
    ### Added
-   - Add TUI launcher for interactive agent selection ([#12](https://github.com/donbeave/jackin/pull/12))
+   - Add TUI launcher for interactive agent selection ([#12](https://github.com/jackin-project/jackin/pull/12))
 
    ### Fixed
-   - Fix symlink escape in container mounts ([#15](https://github.com/donbeave/jackin/pull/15))
+   - Fix symlink escape in container mounts ([#15](https://github.com/jackin-project/jackin/pull/15))
 
    ### Ungrouped commits (not from PRs)
    - `205875a` docs: fix resolve_agent_source references
@@ -181,7 +181,7 @@ Step 7: Post-release
 
 ## Changes Required in the jackin Repository
 
-These changes are prerequisites in the `donbeave/jackin` repo, not part of the plugin:
+These changes are prerequisites in the `jackin-project/jackin` repo, not part of the plugin:
 
 ### 1. New CI workflow: `.github/workflows/ci.yml`
 

@@ -76,7 +76,7 @@ source = "obra/superpowers-marketplace"
 sparse = ["plugins", ".claude-plugin"]
 
 [[claude.marketplaces]]
-source = "donbeave/jackin-marketplace"
+source = "jackin-project/jackin-marketplace"
 ```
 
 Each `[[claude.marketplaces]]` block maps to `claude plugin marketplace add <source>`. If `sparse` is set, jackin passes those paths as `claude plugin marketplace add <source> --sparse path1 path2`.
@@ -260,7 +260,7 @@ source = "obra/superpowers-marketplace"
 sparse = ["plugins", ".claude-plugin"]
 
 [[claude.marketplaces]]
-source = "donbeave/jackin-marketplace"
+source = "jackin-project/jackin-marketplace"
 
 [hooks]
 pre_launch = "hooks/pre-launch.sh"
