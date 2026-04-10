@@ -28,6 +28,11 @@ AI coding agents like Claude Code are most productive when they can run **withou
 
 **jackin' solves this** by giving each agent its own isolated Docker container with Docker-in-Docker enabled. The agent thinks it has free rein — but it's operating inside a construct you defined.
 
+- **Isolated by default** — Each agent runs in its own Docker container. It can only see directories you explicitly mount and tools baked into its image.
+- **Full autonomy inside** — Agents run with `--dangerously-skip-permissions` inside the container boundary. Claude is unrestricted there, but the container still limits its world.
+- **Operator control** — You control the blast radius: which folders agents read/write, whether mounts are read-only, and which Docker network they use.
+- **Scale with confidence** — Run multiple agents simultaneously, each in their own isolated environment with separate state and networking.
+
 ## Think in two dimensions
 
 - **Agent class** = the tool profile. Which image, plugins, defaults, and runtime behavior should this agent have?
