@@ -98,7 +98,7 @@ plugins = []
 plugins = []
 
 [[claude.marketplaces]]
-source = "donbeave/jackin-marketplace"
+source = "jackin-project/jackin-marketplace"
 "#,
         )
         .unwrap();
@@ -313,7 +313,7 @@ fn install_plugins_script_adds_marketplaces_before_installing_plugins() {
       "sparse": ["plugins", ".claude-plugin"]
     },
     {
-      "source": "donbeave/jackin-marketplace",
+      "source": "jackin-project/jackin-marketplace",
       "sparse": []
     }
   ],
@@ -395,7 +395,7 @@ else:
         fs::read_to_string(log_file).unwrap(),
         "plugin marketplace add anthropics/claude-plugins-official\n\
 plugin marketplace add obra/superpowers-marketplace --sparse plugins --sparse .claude-plugin\n\
-plugin marketplace add donbeave/jackin-marketplace\n\
+plugin marketplace add jackin-project/jackin-marketplace\n\
 plugin install superpowers@superpowers-marketplace\n\
 plugin install jackin-dev@jackin-marketplace\n"
     );
@@ -521,7 +521,7 @@ source = "obra/superpowers-marketplace"
 sparse = ["plugins", ".claude-plugin"]
 
 [[claude.marketplaces]]
-source = "donbeave/jackin-marketplace"
+source = "jackin-project/jackin-marketplace"
 
 [identity]
 name = "My Agent"
@@ -546,7 +546,7 @@ Resolved
 
 ## Problem
 
-`jackin.agent.toml` could declare Claude plugin IDs, but the runtime bootstrap only added the official Anthropic marketplace. Custom marketplaces such as `donbeave/jackin-marketplace` still required manual `/plugin marketplace add` steps inside the container.
+`jackin.agent.toml` could declare Claude plugin IDs, but the runtime bootstrap only added the official Anthropic marketplace. Custom marketplaces such as `jackin-project/jackin-marketplace` still required manual `/plugin marketplace add` steps inside the container.
 
 ## Why It Matters
 
