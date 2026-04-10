@@ -1,0 +1,129 @@
+---
+description: Load your first agent in under a minute
+---
+
+# Quick Start
+
+## Load your first agent
+
+In jackin', the first thing you choose is usually an **agent class**. That is the tool profile you want to run. `agent-smith` is the default starter class included by this project.
+
+::::steps
+
+### Navigate to your project directory
+
+```bash
+cd ~/Projects/my-app
+```
+
+### Load an agent
+
+```bash
+jackin load agent-smith
+```
+
+The first time you run this, jackin' will:
+- Pull the construct base image
+- Clone the agent-smith repository
+- Build a derived Docker image with Claude Code installed
+- Create an isolated Docker network
+- Launch the container with your current directory mounted
+
+### You're inside
+
+Claude Code starts automatically with full permissions inside the container. Your project directory is mounted at the same path, so the agent sees the same file layout you do.
+
+### Exit when done
+
+Press `Ctrl+C` or type `/exit` in Claude Code to leave. The container stops, but its state is persisted for next time.
+
+::::
+
+If you already know you want a more specialized agent class, swap `agent-smith` for something else such as `the-architect`.
+
+## Use the interactive launcher
+
+If you prefer a visual interface:
+
+```bash
+jackin launch
+```
+
+This opens a TUI where you can:
+- Pick from saved workspaces or use the current directory
+- Preview which directories will be mounted
+- Choose which agent to load
+
+:::tip
+`launch` is the human-first flow — visual and interactive. `load` is the terminal-first flow — explicit and scriptable.
+:::
+
+## Reconnect to a running agent
+
+If you close your terminal but the agent is still running:
+
+```bash
+jackin hardline agent-smith
+```
+
+This reattaches your terminal to the running container's session.
+
+## Stop an agent
+
+```bash
+# Stop a specific agent
+jackin eject agent-smith
+
+# Stop ALL running agents
+jackin exile
+```
+
+## Common workflows
+
+:::code-group
+
+```bash [Daily development]
+# Start of day — load agent into your project
+jackin load agent-smith ~/Projects/my-app
+
+# Work with Claude Code inside the container...
+
+# End of day — stop the agent
+jackin eject agent-smith
+```
+
+```bash [Multiple projects]
+# Save workspaces for your projects
+jackin workspace create frontend --workdir ~/Projects/frontend
+jackin workspace create backend --workdir ~/Projects/backend
+
+# Load agents into different workspaces
+jackin load agent-smith frontend
+jackin load agent-smith backend
+
+# Both agents run simultaneously in isolated containers
+```
+
+```bash [One workspace, different agents]
+# Same project access boundary, different tool profiles
+jackin workspace create monorepo --workdir ~/Projects/monorepo
+
+jackin load agent-smith monorepo
+jackin load the-architect monorepo
+
+# Same files, different environment and plugins
+```
+
+```bash [Read-only access]
+# Mount a reference codebase as read-only
+jackin load agent-smith ~/Projects/my-app \
+  --mount ~/Projects/shared-lib:/shared:ro
+```
+
+:::
+
+## Next steps
+
+- Learn the [Core Concepts](/getting-started/concepts) behind jackin's architecture
+- Set up [Workspaces](/guides/workspaces) for your projects
+- Understand the [Security Model](/guides/security-model)
