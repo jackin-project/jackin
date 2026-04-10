@@ -53,6 +53,11 @@ jackin's architecture is runtime-agnostic. The construct and workspace system wo
 
 - **Construct user creation optimization** — move user creation to the derived layer to eliminate UID/GID remapping
 - **1Password integration** — inject secrets from 1Password vaults without exposing them as files in the container
+- **DinD hostname env var (`JACKIN_DIND_HOSTNAME`)** — expose the DinD sidecar's hostname so agents can connect to docker-compose services without parsing `DOCKER_HOST`
+
+:::tip
+Detailed design documents for individual TODO items live in the [`todo/`](https://github.com/jackin-project/jackin/tree/main/todo) directory. Each file is a self-contained proposal with problem statement, options, and related files.
+:::
 
 ## Vision
 
