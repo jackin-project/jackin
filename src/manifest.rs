@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -46,9 +46,19 @@ pub struct IdentityConfig {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ClaudeMarketplaceConfig {
+    pub source: String,
+    #[serde(default)]
+    pub sparse: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClaudeConfig {
+    #[serde(default)]
+    pub marketplaces: Vec<ClaudeMarketplaceConfig>,
     #[serde(default)]
     pub plugins: Vec<String>,
 }
@@ -209,8 +219,92 @@ plugins = ["code-review@claude-plugins-official"]
         let manifest = AgentManifest::load(temp.path()).unwrap();
 
         assert_eq!(manifest.dockerfile, "Dockerfile");
+        assert!(manifest.claude.marketplaces.is_empty());
         assert_eq!(manifest.claude.plugins.len(), 1);
         assert!(manifest.identity.is_none());
+    }
+
+    #[test]
+    fn loads_manifest_with_marketplaces_and_plugins() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["superpowers@superpowers-marketplace"]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+"#,
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        assert_eq!(
+            manifest.claude.plugins,
+            vec!["superpowers@superpowers-marketplace"]
+        );
+        assert_eq!(manifest.claude.marketplaces.len(), 1);
+        assert_eq!(
+            manifest.claude.marketplaces[0],
+            ClaudeMarketplaceConfig {
+                source: "obra/superpowers-marketplace".to_string(),
+                sparse: vec!["plugins".to_string(), ".claude-plugin".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn loads_manifest_marketplace_without_sparse() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[[claude.marketplaces]]
+source = "donbeave/jackin-marketplace"
+"#,
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        assert_eq!(manifest.claude.marketplaces.len(), 1);
+        assert_eq!(
+            manifest.claude.marketplaces[0],
+            ClaudeMarketplaceConfig {
+                source: "donbeave/jackin-marketplace".to_string(),
+                sparse: vec![],
+            }
+        );
+        assert!(manifest.claude.plugins.is_empty());
+    }
+
+    #[test]
+    fn loads_manifest_without_plugins_defaults_to_empty() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+"#,
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        assert!(manifest.claude.plugins.is_empty());
+        assert_eq!(manifest.claude.marketplaces.len(), 1);
     }
 
     #[test]

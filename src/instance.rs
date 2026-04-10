@@ -1,4 +1,4 @@
-use crate::manifest::AgentManifest;
+use crate::manifest::{AgentManifest, ClaudeMarketplaceConfig};
 use crate::paths::JackinPaths;
 use crate::selector::ClassSelector;
 use serde::Serialize;
@@ -16,6 +16,7 @@ pub struct AgentState {
 
 #[derive(Debug, Serialize)]
 struct PluginState<'a> {
+    marketplaces: &'a [ClaudeMarketplaceConfig],
     plugins: &'a [String],
 }
 
@@ -42,6 +43,7 @@ impl AgentState {
         std::fs::write(
             &plugins_json,
             serde_json::to_string_pretty(&PluginState {
+                marketplaces: &manifest.claude.marketplaces,
                 plugins: &manifest.claude.plugins,
             })?,
         )?;
@@ -94,6 +96,7 @@ mod tests {
     use super::*;
     use crate::paths::JackinPaths;
     use crate::selector::ClassSelector;
+    use serde_json::json;
     use tempfile::tempdir;
 
     #[test]
@@ -170,14 +173,59 @@ plugins = ["code-review@claude-plugins-official", "feature-dev@claude-plugins-of
         let state = AgentState::prepare(&paths, "jackin-agent-smith", &manifest).unwrap();
 
         assert!(state.jackin_dir.is_dir());
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&state.plugins_json).unwrap()).unwrap();
+        assert_eq!(value["marketplaces"], json!([]));
         assert_eq!(
-            std::fs::read_to_string(&state.plugins_json).unwrap(),
-            r#"{
-  "plugins": [
-    "code-review@claude-plugins-official",
-    "feature-dev@claude-plugins-official"
-  ]
-}"#
+            value["plugins"],
+            json!([
+                "code-review@claude-plugins-official",
+                "feature-dev@claude-plugins-official"
+            ])
+        );
+    }
+
+    #[test]
+    fn prepares_plugins_json_with_marketplaces_for_runtime_bootstrap() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["superpowers@superpowers-marketplace"]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+
+        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
+        let state = AgentState::prepare(&paths, "jackin-agent-smith", &manifest).unwrap();
+
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&state.plugins_json).unwrap()).unwrap();
+        assert_eq!(
+            value["marketplaces"],
+            json!([
+                {
+                    "source": "obra/superpowers-marketplace",
+                    "sparse": ["plugins", ".claude-plugin"]
+                }
+            ])
+        );
+        assert_eq!(
+            value["plugins"],
+            json!(["superpowers@superpowers-marketplace"])
         );
     }
 }

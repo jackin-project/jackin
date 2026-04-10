@@ -1,42 +1,21 @@
 # Custom Plugin Marketplace Support in Agent Config
 
+## Status
+
+Resolved
+
 ## Problem
 
-`jackin.agent.toml` only supports plugins from `claude-plugins-official`. There is no way to declare custom or GitHub-hosted plugin marketplaces, so agents like `the-architect` cannot auto-install project-specific plugins like `jackin-dev`.
+`jackin.agent.toml` could declare Claude plugin IDs, but jackin only added the official Anthropic marketplace during runtime bootstrap. Custom marketplaces still required manual `/plugin marketplace add` commands inside the container before project-specific plugins could be installed.
 
-Currently, users must manually run `/plugin marketplace add` and `/plugin install` inside the container after launch.
+## Why It Matters
 
-## Desired Behavior
-
-Support a marketplace declaration in `jackin.agent.toml` so custom plugins are installed automatically at agent construction time:
-
-```toml
-[claude.marketplaces]
-jackin-marketplace = "donbeave/jackin-marketplace"
-
-[claude]
-plugins = [
-  "superpowers@claude-plugins-official",
-  "jackin-dev@jackin-marketplace",
-]
-```
-
-## Current Workaround
-
-From inside the container, run these Claude Code slash commands:
-
-```
-/plugin marketplace add donbeave/jackin-marketplace
-/plugin install jackin-dev@jackin-marketplace
-/reload-plugins
-```
-
-## Marketplace Repository
-
-The marketplace is at [donbeave/jackin-marketplace](https://github.com/donbeave/jackin-marketplace). It contains a `.claude-plugin/marketplace.json` that points to plugin repos via GitHub URLs, following the same pattern as [obra/superpowers-marketplace](https://github.com/obra/superpowers-marketplace).
+Agent repos need reproducible startup. Without manifest-declared marketplaces, teams could not ship a self-contained agent config that automatically installs project-specific plugins such as `jackin-dev`, especially when the marketplace lived in a monorepo and needed sparse checkout paths.
 
 ## Related Files
 
-- `src/agent.rs` — agent config parsing
-- `src/construct.rs` — agent image construction (where plugins are installed)
-- `jackin-the-architect` repo — `jackin.agent.toml` would be first consumer
+- `src/manifest.rs`
+- `src/instance.rs`
+- `docker/construct/install-plugins.sh`
+- `docs/pages/developing/agent-manifest.mdx`
+- `docs/pages/developing/creating-agents.mdx`
