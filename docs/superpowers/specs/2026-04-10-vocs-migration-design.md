@@ -118,13 +118,13 @@ No changes to actual documentation prose — only component wrappers change.
 
 | Package | Version | Purpose |
 |---|---|---|
-| `vocs` | ^1.4.1 | Docs framework |
-| `react` | ^19.0.0 | Peer dependency |
-| `react-dom` | ^19.0.0 | Peer dependency |
-| `@vitejs/plugin-react` | ^4.0.0 | React Vite plugin |
-| `tailwindcss` | ^4.0.0 | Styling |
-| `typescript` | ^5.7.0 | Type checking |
-| `vite` | ^7.0.0 | Build tool |
+| `vocs` | ^1.4.1 | Docs framework (bundles Vite 7 internally) |
+| `react` | ^19.2.5 | Peer dependency |
+| `react-dom` | ^19.2.5 | Peer dependency |
+| `@vitejs/plugin-react` | ^5.2.0 | React Vite plugin (last version supporting Vite 7) |
+| `tailwindcss` | ^4.2.2 | Styling (CSS-first v4) |
+| `typescript` | ^6.0.2 | Type checking |
+| `vite` | ^7.1.11 | Build tool (pinned to 7.x — vocs requires it) |
 
 ## Files to Delete
 
