@@ -27,6 +27,7 @@ pub struct WorkspaceEdit {
     pub workdir: Option<String>,
     pub upsert_mounts: Vec<MountConfig>,
     pub remove_destinations: Vec<String>,
+    pub no_workdir_mount: bool,
     pub allowed_agents_to_add: Vec<String>,
     pub allowed_agents_to_remove: Vec<String>,
     pub default_agent: Option<Option<String>>,

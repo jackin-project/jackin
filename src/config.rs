@@ -256,7 +256,11 @@ impl AppConfig {
         result
     }
 
-    pub fn add_workspace(&mut self, name: &str, workspace: WorkspaceConfig) -> anyhow::Result<()> {
+    pub fn create_workspace(
+        &mut self,
+        name: &str,
+        workspace: WorkspaceConfig,
+    ) -> anyhow::Result<()> {
         if self.workspaces.contains_key(name) {
             anyhow::bail!("workspace {name:?} already exists; use `workspace edit`");
         }
@@ -288,6 +292,17 @@ impl AppConfig {
             workspace.mounts.retain(|mount| mount.dst != dst);
             if workspace.mounts.len() == original_len {
                 anyhow::bail!("unknown workspace mount destination: {dst}");
+            }
+        }
+
+        if edit.no_workdir_mount {
+            let workdir = &workspace.workdir;
+            let original_len = workspace.mounts.len();
+            workspace
+                .mounts
+                .retain(|mount| !(mount.src == *workdir && mount.dst == *workdir));
+            if workspace.mounts.len() == original_len {
+                anyhow::bail!("no auto-mounted workdir found (mount where src = dst = {workdir})");
             }
         }
 
@@ -621,7 +636,7 @@ readonly = true
         let src = temp.path().display().to_string();
 
         config
-            .add_workspace(
+            .create_workspace(
                 "big-monorepo",
                 WorkspaceConfig {
                     workdir: "/workspace/project".to_string(),
@@ -729,7 +744,7 @@ dst = "/workspace/src"
             last_agent: None,
         };
         config
-            .add_workspace("big-monorepo", original.clone())
+            .create_workspace("big-monorepo", original.clone())
             .unwrap();
 
         let err = config
@@ -749,7 +764,7 @@ dst = "/workspace/src"
     }
 
     #[test]
-    fn add_workspace_rejects_duplicate_name_and_preserves_existing_value() {
+    fn create_workspace_rejects_duplicate_name_and_preserves_existing_value() {
         let temp = tempdir().unwrap();
         let mut config = AppConfig::default();
         let original = WorkspaceConfig {
@@ -764,11 +779,11 @@ dst = "/workspace/src"
             last_agent: None,
         };
         config
-            .add_workspace("big-monorepo", original.clone())
+            .create_workspace("big-monorepo", original.clone())
             .unwrap();
 
         let err = config
-            .add_workspace(
+            .create_workspace(
                 "big-monorepo",
                 WorkspaceConfig {
                     workdir: "/workspace/other".to_string(),
@@ -811,7 +826,7 @@ dst = "/workspace/src"
             last_agent: None,
         };
         config
-            .add_workspace("big-monorepo", original.clone())
+            .create_workspace("big-monorepo", original.clone())
             .unwrap();
 
         let err = config
@@ -861,7 +876,7 @@ dst = "/workspace/src"
             last_agent: None,
         };
         config
-            .add_workspace("big-monorepo", original.clone())
+            .create_workspace("big-monorepo", original.clone())
             .unwrap();
 
         let err = config
