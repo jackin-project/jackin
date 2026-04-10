@@ -1,0 +1,73 @@
+---
+description: What's done and what's coming next
+---
+
+# Roadmap
+
+## Current status
+
+jackin' is a functional proof of concept with Claude Code as its first supported agent runtime, namespaced agent classes, workspace management, and an interactive TUI launcher.
+
+## Completed
+
+- Claude Code agent runtime with full permission mode
+- Docker container isolation with Docker-in-Docker
+- Interactive TUI launcher with workspace and agent selection
+- Workspace management (add, edit, remove, list, show)
+- Global mount configuration with agent scoping
+- Agent repo contract validation
+- Derived Dockerfile generation with UID/GID remapping
+- State persistence across sessions
+- Agent identity (display names)
+- UID/GID host user mapping
+- GitHub CLI authentication passthrough
+- Homebrew installation
+- Namespaced agent classes (e.g., `chainargos/frontend-engineer`)
+- Last-agent memory per workspace
+
+## Planned
+
+### Agent runtimes
+
+:::note
+jackin's architecture is runtime-agnostic. The construct and workspace system work the same regardless of which AI agent runs inside.
+:::
+
+- **[Codex](https://github.com/openai/codex) runtime** — OpenAI's lightweight terminal-based coding agent. Codex stands out for its tiered autonomy model (suggest, auto-edit, and full-auto modes) and strong built-in sandboxing — in full-auto mode commands run network-disabled and confined to the working directory, with platform-specific hardening via Apple Seatbelt on macOS and Docker on Linux. It also supports multimodal input (screenshots and diagrams) and multiple LLM providers beyond OpenAI.
+- **[Amp Code](https://ampcode.com) runtime** — Sourcegraph's AI coding agent. Amp stands out for its polished CLI experience and thoughtful design — it is model-agnostic (supporting Claude, GPT, and Gemini), gives the operator fine-grained control over which model powers the agent, and provides one of the cleanest terminal-based agentic workflows available. Its emphasis on developer control and CLI-first design makes it a natural fit for jackin's operator model.
+
+### Platform expansion
+
+- **Kubernetes platform support** — run agents on Kubernetes clusters instead of local Docker, enabling team-scale deployments and production debug containers. The vision is to use jackin' as a debug container in production environments — safely exploring issues with AI agent assistance inside a controlled Kubernetes pod.
+
+### Security improvements
+
+- **DinD TLS authentication** — secure the Docker-in-Docker daemon with auto-generated certificates
+- **Orphaned container cleanup** — automatic garbage collection of DinD containers when agent startup fails
+- **Network policy controls** — outbound domain filtering per agent class, similar to Docker Sandboxes' network policies
+- **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
+- **Runtime pinning and supply-chain hardening** — make agent runtime installation more reproducible and auditable
+- **Alternative isolation tiers** — explore stronger backends beyond plain container isolation for users who need them
+
+### Infrastructure improvements
+
+- **Construct user creation optimization** — move user creation to the derived layer to eliminate UID/GID remapping
+- **1Password integration** — inject secrets from 1Password vaults without exposing them as files in the container
+
+## Vision
+
+jackin' is designed as a **local-first development tool** with a focus on excellent UX and practical isolation. The near-term goal is to be the best way to run AI coding agents in parallel on a local machine — lightweight, composable, and open source.
+
+The longer-term vision extends to deployment ecosystems. Kubernetes support will enable jackin' as a debug container platform — loading an AI agent into a production pod to safely investigate issues, with the same workspace and mount controls that make local use safe.
+
+The project welcomes suggestions and contributions. If jackin' works for your use case — or almost works but needs something different — [open an issue](https://github.com/donbeave/jackin/issues) or submit a pull request.
+
+## Contributing
+
+jackin' is open source under the Apache 2.0 license. To develop and test jackin' itself, use [The Architect](https://github.com/donbeave/jackin-the-architect) — a dedicated agent with the full Rust toolchain:
+
+```bash
+jackin load the-architect
+```
+
+The project uses `cargo-nextest` for testing and requires all clippy lints to pass before committing.
