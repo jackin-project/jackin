@@ -130,6 +130,32 @@ name = "My Agent"
 
 These plugin IDs are written into the agent's runtime state and installed automatically when the container starts.
 
+If you need plugins from a custom marketplace, declare the marketplace separately and keep plugin IDs fully qualified:
+
+```toml [jackin.agent.toml]
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+
+[identity]
+name = "My Agent"
+```
+
+jackin adds each declared marketplace at container startup, then installs each plugin ID exactly as written.
+
 ## Testing your agent
 
 The fastest way to test is to load it:
@@ -150,7 +176,7 @@ jackin load your-agent-name --rebuild --debug
 
 | Agent | Purpose | Repository |
 |---|---|---|
-| **Agent Smith** | Default general-purpose agent | [donbeave/jackin-agent-smith](https://github.com/donbeave/jackin-agent-smith) |
-| **The Architect** | Rust development (used for jackin' itself) | [donbeave/jackin-the-architect](https://github.com/donbeave/jackin-the-architect) |
+| **Agent Smith** | Default general-purpose agent | [jackin-project/jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) |
+| **The Architect** | Rust development (used for jackin' itself) | [jackin-project/jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) |
 
 These repos are good starting points when creating your own agent. Agent Smith is intentionally minimal, while The Architect shows a more involved setup with Rust tooling and build dependencies.
