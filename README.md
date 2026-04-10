@@ -51,8 +51,8 @@ Learn more: [Why jackin'?](https://jackin.tailrocks.com/getting-started/why/) ·
 | Repository | Description |
 |---|---|
 | [jackin](https://github.com/jackin-project/jackin) | CLI source code (this repo) |
-| [jackin-agent-smith](https://github.com/donbeave/jackin-agent-smith) | Default general-purpose agent |
-| [jackin-the-architect](https://github.com/donbeave/jackin-the-architect) | Rust development agent (used for jackin' development) |
+| [jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) | Default general-purpose agent |
+| [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) | Rust development agent (used for jackin' development) |
 | [construct image source](https://github.com/jackin-project/jackin/tree/main/docker/construct) | Shared base Docker image for all agents |
 
 ## Documentation
@@ -68,7 +68,7 @@ The full documentation lives at **<https://jackin.tailrocks.com/>** and covers:
 
 ## Development
 
-To develop jackin' itself, use [The Architect](https://github.com/donbeave/jackin-the-architect) — a dedicated agent with the full Rust toolchain:
+To develop jackin' itself, use [The Architect](https://github.com/jackin-project/jackin-the-architect) — a dedicated agent with the full Rust toolchain:
 
 ```sh
 jackin load the-architect

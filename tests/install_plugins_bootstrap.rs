@@ -61,7 +61,7 @@ fn install_plugins_script_adds_marketplaces_before_installing_plugins() {
       "sparse": ["plugins", ".claude-plugin"]
     },
     {
-      "source": "donbeave/jackin-marketplace",
+      "source": "jackin-project/jackin-marketplace",
       "sparse": []
     }
   ],
@@ -106,7 +106,7 @@ fn install_plugins_script_adds_marketplaces_before_installing_plugins() {
         fs::read_to_string(log_file).unwrap(),
         "plugin marketplace add anthropics/claude-plugins-official\n\
 plugin marketplace add obra/superpowers-marketplace --sparse plugins .claude-plugin\n\
-plugin marketplace add donbeave/jackin-marketplace\n\
+plugin marketplace add jackin-project/jackin-marketplace\n\
 plugin install superpowers@superpowers-marketplace\n\
 plugin install jackin-dev@jackin-marketplace\n"
     );

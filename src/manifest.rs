@@ -268,7 +268,7 @@ sparse = ["plugins", ".claude-plugin"]
 plugins = []
 
 [[claude.marketplaces]]
-source = "donbeave/jackin-marketplace"
+source = "jackin-project/jackin-marketplace"
 "#,
         )
         .unwrap();
@@ -279,7 +279,7 @@ source = "donbeave/jackin-marketplace"
         assert_eq!(
             manifest.claude.marketplaces[0],
             ClaudeMarketplaceConfig {
-                source: "donbeave/jackin-marketplace".to_string(),
+                source: "jackin-project/jackin-marketplace".to_string(),
                 sparse: vec![],
             }
         );

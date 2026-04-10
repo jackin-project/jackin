@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Create a Claude Code plugin (`donbeave/jackin-dev`) with three release skills: `/release-check`, `/release-notes`, and `/release`.
+**Goal:** Create a Claude Code plugin (`jackin-project/jackin-dev`) with three release skills: `/release-check`, `/release-notes`, and `/release`.
 
 **Architecture:** A standalone plugin repo with `skills/` directory containing three SKILL.md files. Cross-agent support via `AGENTS.md` (for Codex and Amp) and `.claude-plugin/plugin.json` (for Claude Code native discovery). No scripts or dependencies — skills are pure markdown runbooks that agents follow.
 
 **Tech Stack:** Claude Code plugin format, YAML frontmatter, markdown, `gh` CLI commands, `cargo-release`
 
-**Spec:** `docs/superpowers/specs/2026-04-04-jackin-dev-plugin-design.md` in the `donbeave/jackin` repo.
+**Spec:** `docs/superpowers/specs/2026-04-04-jackin-dev-plugin-design.md` in the `jackin-project/jackin` repo.
 
 ---
 
@@ -48,7 +48,7 @@ jackin-dev/
 - Create: `.codex/INSTALL.md`
 - Create: `hooks/hooks.json`
 
-**Prerequisite:** The user has created the `donbeave/jackin-dev` GitHub repository and cloned it locally.
+**Prerequisite:** The user has created the `jackin-project/jackin-dev` GitHub repository and cloned it locally.
 
 - [ ] **Step 1: Create the plugin manifest**
 
@@ -62,8 +62,8 @@ Create `.claude-plugin/plugin.json`:
   "author": {
     "name": "Alexey Zhokhov"
   },
-  "homepage": "https://github.com/donbeave/jackin-dev",
-  "repository": "https://github.com/donbeave/jackin-dev",
+  "homepage": "https://github.com/jackin-project/jackin-dev",
+  "repository": "https://github.com/jackin-project/jackin-dev",
   "license": "Apache-2.0",
   "keywords": ["release", "changelog", "validation", "cargo-release", "rust"]
 }
@@ -84,7 +84,7 @@ Create `README.md`:
 ```markdown
 # jackin-dev
 
-Development workflow plugin for the [jackin](https://github.com/donbeave/jackin) project. Provides skills for release management, validation, and changelog generation.
+Development workflow plugin for the [jackin](https://github.com/jackin-project/jackin) project. Provides skills for release management, validation, and changelog generation.
 
 ## Skills
 
@@ -120,7 +120,7 @@ Amp reads `AGENTS.md` and discovers skills from `.claude/skills/` compatibility 
 
 ## Requirements
 
-These skills are designed for the `donbeave/jackin` repository and expect:
+These skills are designed for the `jackin-project/jackin` repository and expect:
 
 - `cargo-release` installed (`cargo install cargo-release`)
 - `gh` CLI authenticated (`gh auth login`)
@@ -159,7 +159,7 @@ Create `AGENTS.md`:
 ```markdown
 # AGENTS.md
 
-This is a Claude Code plugin providing development workflow skills for the [jackin](https://github.com/donbeave/jackin) project.
+This is a Claude Code plugin providing development workflow skills for the [jackin](https://github.com/jackin-project/jackin) project.
 
 ## Available Skills
 
@@ -206,7 +206,7 @@ Codex does not have a native plugin system. To use these skills:
 
 1. Clone this repo alongside your project:
    ```sh
-   git clone https://github.com/donbeave/jackin-dev.git
+   git clone https://github.com/jackin-project/jackin-dev.git
    ```
 
 2. Reference the skills in your project's `AGENTS.md`:
@@ -527,13 +527,13 @@ Format as Keep a Changelog with PR links:
 ## [Unreleased]
 
 ### Added
-- Add TUI launcher for interactive agent selection ([#12](https://github.com/donbeave/jackin/pull/12))
+- Add TUI launcher for interactive agent selection ([#12](https://github.com/jackin-project/jackin/pull/12))
 
 ### Fixed
-- Fix symlink escape in container mounts ([#15](https://github.com/donbeave/jackin/pull/15))
+- Fix symlink escape in container mounts ([#15](https://github.com/jackin-project/jackin/pull/15))
 
 ### Changed
-- Extract testing instructions into TESTING.md ([#18](https://github.com/donbeave/jackin/pull/18))
+- Extract testing instructions into TESTING.md ([#18](https://github.com/jackin-project/jackin/pull/18))
 ```
 
 Only include sections that have entries. Do not include empty sections.
@@ -746,7 +746,7 @@ Remind the user:
 > - Create the GitHub Release with artifacts
 > - Update the Homebrew tap
 >
-> Monitor at: https://github.com/donbeave/jackin/actions/workflows/release.yml"
+> Monitor at: https://github.com/jackin-project/jackin/actions/workflows/release.yml"
 
 ## Error Recovery
 
@@ -768,12 +768,12 @@ git commit -m "feat: add release orchestrator skill"
 
 ### Task 5: Apply Prerequisites to the jackin Repository
 
-This task applies changes to the `donbeave/jackin` repo (not the plugin repo).
+This task applies changes to the `jackin-project/jackin` repo (not the plugin repo).
 
 **Files:**
-- Create: `donbeave/jackin/.github/workflows/ci.yml`
-- Modify: `donbeave/jackin/release.toml`
-- Create: `donbeave/jackin/CHANGELOG.md`
+- Create: `jackin-project/jackin/.github/workflows/ci.yml`
+- Modify: `jackin-project/jackin/release.toml`
+- Create: `jackin-project/jackin/CHANGELOG.md`
 
 - [ ] **Step 1: Create the CI workflow**
 
