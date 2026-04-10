@@ -1,6 +1,6 @@
 node_modules/
 dist/
 .vocs/
-src/pages.gen.ts
+pages.gen.ts
 *.local
 package-lock.json

@@ -8,5 +8,5 @@
     "paths": { "~/*": ["./src/*"] },
     "types": ["vite/client", "vocs/globals"]
   },
-  "include": ["src/"]
+  "include": ["pages/", "src/"]
 }
