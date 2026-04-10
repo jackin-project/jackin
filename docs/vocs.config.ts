@@ -14,6 +14,12 @@ export default defineConfig({
   socials: [
     { icon: 'github', link: 'https://github.com/jackin-project/jackin' },
   ],
+  topNav: [
+    { text: 'Docs', link: '/getting-started/why', match: '/getting-started' },
+    { text: 'Guides', link: '/guides/workspaces', match: '/guides' },
+    { text: 'Commands', link: '/commands/load', match: '/commands' },
+    { text: 'Reference', link: '/reference/configuration', match: '/reference' },
+  ],
   sidebar: [
     {
       text: 'Getting Started',
