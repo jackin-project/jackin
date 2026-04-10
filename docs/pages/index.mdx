@@ -1,0 +1,78 @@
+---
+layout: landing
+---
+
+import { HomePage } from 'vocs/components'
+
+<HomePage.Root>
+  <HomePage.Logo />
+  <HomePage.Tagline>Isolate AI coding agents in Docker containers. You're the Operator. They're already inside.</HomePage.Tagline>
+  <HomePage.Buttons>
+    <HomePage.Button href="/getting-started/why" variant="accent">
+      Get Started
+    </HomePage.Button>
+    <HomePage.Button href="https://github.com/jackin-project/jackin">
+      GitHub
+    </HomePage.Button>
+  </HomePage.Buttons>
+</HomePage.Root>
+
+## Why jackin'?
+
+AI coding agents like Claude Code are most productive when they can run **without permission prompts** — reading files, executing commands, installing packages freely. But giving an agent unrestricted access to your host machine means it can see your entire filesystem, access your credentials, and modify anything.
+
+**jackin' solves this** by giving each agent its own isolated Docker container with Docker-in-Docker enabled. The agent thinks it has free rein — but it's operating inside a construct you defined.
+
+- **Isolated by default** — Each agent runs in its own Docker container. It can only see directories you explicitly mount and tools baked into its image.
+- **Full autonomy inside** — Agents run with `--dangerously-skip-permissions` inside the container boundary. Claude is unrestricted there, but the container still limits its world.
+- **Operator control** — You control the blast radius: which folders agents read/write, whether mounts are read-only, and which Docker network they use.
+- **Scale with confidence** — Run multiple agents simultaneously, each in their own isolated environment with separate state and networking.
+
+## Think in two dimensions
+
+- **Agent class** = the tool profile. Which image, plugins, defaults, and runtime behavior should this agent have?
+- **Workspace** = the access boundary. Which project files should this agent be allowed to see?
+
+That separation is the point. A backend agent and frontend agent can work on the same repository workspace without sharing one giant all-knowing image.
+
+:::note
+jackin' is intentionally transparent about its tradeoffs. It is a container-based isolation model, not a microVM sandbox. If you want the honest comparison with Docker Sandboxes and related approaches, read [Comparison with Alternatives](/guides/comparison/).
+:::
+
+## Quick start
+
+```bash
+# Install via Homebrew
+brew tap jackin-project/tap
+
+# Stable
+brew install jackin
+
+# Or install the rolling preview channel
+brew install jackin@preview
+
+# Load an agent into the current directory
+jackin load agent-smith
+
+# Or use the interactive launcher
+jackin launch
+```
+
+`agent-smith` is just the default starter agent class name in this project. Your own classes might be named `frontend`, `backend`, or `review-only`.
+
+## Explore
+
+- [Installation](/getting-started/installation) — All the ways to install jackin'
+- [Core Concepts](/getting-started/concepts) — Understand operators, agents, and constructs
+- [Creating Agents](/developing/creating-agents) — Build your own agent repos
+- [Security Model](/guides/security-model) — How jackin' keeps your system safe
+- [Comparison](/guides/comparison/) — jackin' vs Docker Sandboxes and alternatives
+
+## Ecosystem
+
+| Repository | Description |
+|---|---|
+| [jackin](https://github.com/jackin-project/jackin) | CLI source code |
+| [jackin-agent-smith](https://github.com/donbeave/jackin-agent-smith) | Default general-purpose agent |
+| [jackin-the-architect](https://github.com/donbeave/jackin-the-architect) | Rust development agent (used for jackin' development) |
+| [homebrew-tap](https://github.com/jackin-project/homebrew-tap) | Homebrew formulae for installing jackin' |
