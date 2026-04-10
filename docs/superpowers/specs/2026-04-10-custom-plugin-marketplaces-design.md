@@ -62,7 +62,7 @@ source = "obra/superpowers-marketplace"
 sparse = ["plugins", ".claude-plugin"]
 
 [[claude.marketplaces]]
-source = "donbeave/jackin-marketplace"
+source = "jackin-project/jackin-marketplace"
 ```
 
 Each marketplace block maps to a `claude plugin marketplace add` invocation.
@@ -105,7 +105,7 @@ marketplace's own `.claude-plugin/marketplace.json`.
 For example, the source string may be:
 
 ```text
-donbeave/jackin-marketplace
+jackin-project/jackin-marketplace
 ```
 
 while the plugin ID remains:
