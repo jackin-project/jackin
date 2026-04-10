@@ -24,6 +24,7 @@ jackin' is a functional proof of concept with Claude Code as its first supported
 - Homebrew installation
 - Namespaced agent classes (e.g., `chainargos/frontend-engineer`)
 - Last-agent memory per workspace
+- Custom Claude plugin marketplaces in `jackin.agent.toml`
 
 ## Planned
 
@@ -65,11 +66,11 @@ jackin' is designed as a **local-first development tool** with a focus on excell
 
 The longer-term vision extends to deployment ecosystems. Kubernetes support will enable jackin' as a debug container platform — loading an AI agent into a production pod to safely investigate issues, with the same workspace and mount controls that make local use safe.
 
-The project welcomes suggestions and contributions. If jackin' works for your use case — or almost works but needs something different — [open an issue](https://github.com/donbeave/jackin/issues) or submit a pull request.
+The project welcomes suggestions and contributions. If jackin' works for your use case — or almost works but needs something different — [open an issue](https://github.com/jackin-project/jackin/issues) or submit a pull request.
 
 ## Contributing
 
-jackin' is open source under the Apache 2.0 license. To develop and test jackin' itself, use [The Architect](https://github.com/donbeave/jackin-the-architect) — a dedicated agent with the full Rust toolchain:
+jackin' is open source under the Apache 2.0 license. To develop and test jackin' itself, use [The Architect](https://github.com/jackin-project/jackin-the-architect) — a dedicated agent with the full Rust toolchain:
 
 ```bash
 jackin load the-architect

@@ -118,7 +118,7 @@ fn repo_matches(expected: &str, actual: &str) -> bool {
     }
 }
 
-/// Derive a short repository name from a git remote URL (e.g. `donbeave/jackin`).
+/// Derive a short repository name from a git remote URL (e.g. `jackin-project/jackin`).
 fn git_repo_name(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
     let dir_str = dir.display().to_string();
     let url = try_capture(
@@ -1594,28 +1594,28 @@ plugins = []
     #[test]
     fn parse_repo_name_extracts_owner_repo_from_ssh_url() {
         assert_eq!(
-            parse_repo_name("git@github.com:donbeave/jackin.git"),
-            Some("donbeave/jackin".to_string())
+            parse_repo_name("git@github.com:jackin-project/jackin.git"),
+            Some("jackin-project/jackin".to_string())
         );
     }
 
     #[test]
     fn parse_repo_name_extracts_owner_repo_from_https_url() {
         assert_eq!(
-            parse_repo_name("https://github.com/donbeave/jackin.git"),
-            Some("donbeave/jackin".to_string())
+            parse_repo_name("https://github.com/jackin-project/jackin.git"),
+            Some("jackin-project/jackin".to_string())
         );
     }
 
     #[test]
     fn parse_repo_name_handles_url_without_git_suffix() {
         assert_eq!(
-            parse_repo_name("https://github.com/donbeave/jackin"),
-            Some("donbeave/jackin".to_string())
+            parse_repo_name("https://github.com/jackin-project/jackin"),
+            Some("jackin-project/jackin".to_string())
         );
         assert_eq!(
-            parse_repo_name("git@github.com:donbeave/jackin"),
-            Some("donbeave/jackin".to_string())
+            parse_repo_name("git@github.com:jackin-project/jackin"),
+            Some("jackin-project/jackin".to_string())
         );
     }
 
@@ -1654,7 +1654,7 @@ plugins = []
         let error = resolve_agent_repo(
             &paths,
             &selector,
-            "https://github.com/donbeave/jackin-agent-smith.git",
+            "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
         )
         .unwrap_err();
@@ -1689,13 +1689,13 @@ plugins = []
         .unwrap();
 
         let mut runner = FakeRunner::with_capture_queue([
-            "git@github.com:donbeave/jackin-agent-smith.git".to_string(),
+            "git@github.com:jackin-project/jackin-agent-smith.git".to_string(),
             "?? scratch.txt".to_string(),
         ]);
         let error = resolve_agent_repo(
             &paths,
             &selector,
-            "https://github.com/donbeave/jackin-agent-smith.git",
+            "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
         )
         .unwrap_err();

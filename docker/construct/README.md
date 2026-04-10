@@ -40,5 +40,5 @@ The supported local validation flow, architecture-specific debugging commands, a
 ## Related
 
 - [Creating Agents](https://jackin.tailrocks.com/developing/creating-agents/) — how to build agent repos on top of the construct
-- [jackin-agent-smith](https://github.com/donbeave/jackin-agent-smith) — default agent (example of extending the construct)
-- [jackin-the-architect](https://github.com/donbeave/jackin-the-architect) — Rust development agent (another example)
+- [jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) — default agent (example of extending the construct)
+- [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) — Rust development agent (another example)
