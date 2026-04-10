@@ -44,8 +44,8 @@ been added manually inside the container.
 
 ## Chosen Approach
 
-Add a `marketplaces` string list under `[claude]` and treat each entry as a raw
-Claude marketplace source.
+Add structured `[[claude.marketplaces]]` blocks while keeping `[claude].plugins`
+as raw Claude plugin install strings.
 
 Example:
 
@@ -53,24 +53,34 @@ Example:
 dockerfile = "Dockerfile"
 
 [claude]
-marketplaces = [
-  "obra/superpowers-marketplace",
-  "donbeave/jackin-marketplace",
-]
 plugins = [
   "superpowers@superpowers-marketplace",
   "jackin-dev@jackin-marketplace",
 ]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "donbeave/jackin-marketplace"
 ```
 
-Each string is passed directly to:
+Each marketplace block maps to a `claude plugin marketplace add` invocation.
+The `source` value is passed directly to:
 
 ```bash
 claude plugin marketplace add <source>
 ```
 
-This keeps `jackin` as a thin wrapper around Claude Code rather than creating a
-new marketplace abstraction.
+If `sparse` is present, `jackin` should append the corresponding CLI flags:
+
+```bash
+claude plugin marketplace add <source> --sparse <path1> --sparse <path2>
+```
+
+This keeps `jackin` as a thin wrapper around Claude Code rather than creating
+new marketplace naming or install rules.
 
 ## Why This Shape
 
@@ -83,8 +93,9 @@ claude plugin marketplace add <source>
 claude plugin install <plugin>@<marketplace-name>
 ```
 
-Using raw marketplace source strings in the manifest mirrors that workflow
-exactly.
+Using raw plugin install strings in the manifest mirrors the install workflow
+exactly, while marketplace blocks preserve the add workflow and its
+marketplace-specific options.
 
 ### Avoid Alias Drift
 
@@ -107,6 +118,20 @@ jackin-dev@jackin-marketplace
 The suffix comes from the marketplace's declared `name`, not from a local
 manifest alias.
 
+### Keep Marketplace Options Attached To The Marketplace
+
+The `sparse` option belongs to marketplace registration, not plugin
+installation. A flat `marketplaces = []` string list cannot express this cleanly
+without inventing a custom mini-language.
+
+Using `[[claude.marketplaces]]` blocks keeps marketplace-specific data together:
+
+```toml
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+```
+
 ### Delegate Source Validation To Claude
 
 Claude Code already knows how to interpret marketplace sources such as GitHub
@@ -119,10 +144,15 @@ shorthand. `jackin` should persist and pass through the source string, then let
 
 Extend `ClaudeConfig` with:
 
-- `marketplaces: Vec<String>`
 - `plugins: Vec<String>`
+- `marketplaces: Vec<ClaudeMarketplaceConfig>`
 
 Both fields default to empty lists.
+
+`ClaudeMarketplaceConfig` should contain:
+
+- `source: String`
+- `sparse: Vec<String>`
 
 This preserves backwards compatibility for existing agent manifests that only
 declare plugins or no plugins at all.
@@ -137,6 +167,7 @@ Current shape:
 
 ```json
 {
+  "marketplaces": [],
   "plugins": ["code-review@claude-plugins-official"]
 }
 ```
@@ -145,7 +176,12 @@ New shape:
 
 ```json
 {
-  "marketplaces": ["obra/superpowers-marketplace"],
+  "marketplaces": [
+    {
+      "source": "obra/superpowers-marketplace",
+      "sparse": ["plugins", ".claude-plugin"]
+    }
+  ],
   "plugins": ["superpowers@superpowers-marketplace"]
 }
 ```
@@ -172,11 +208,16 @@ The updated script behavior should be:
    claude plugin marketplace add anthropics/claude-plugins-official
    ```
 
-2. Read `.marketplaces[]` from `plugins.json` and run:
+2. Read `.marketplaces[]` from `plugins.json` and run one command per entry:
 
    ```bash
-   claude plugin marketplace add "$marketplace"
+   claude plugin marketplace add "$source"
    ```
+
+   where each marketplace entry expands to:
+
+   - required source argument from `.source`
+   - zero or more `--sparse <path>` flags from `.sparse[]`
 
 3. Read `.plugins[]` from `plugins.json` and run:
 
@@ -192,6 +233,8 @@ The ordering matters: marketplaces must be added before plugin installation.
 
 - If a custom marketplace source is invalid or inaccessible, the bootstrap
   command should fail the same way a manual Claude command would fail.
+- If a `sparse` path is invalid for a given marketplace, the Claude CLI command
+  should fail and surface the Claude error directly.
 - If a plugin references a marketplace name that has not been registered
   successfully, `claude plugin install` should fail and surface the Claude
   error.
@@ -208,11 +251,14 @@ Add focused regression tests at the existing state and manifest layers.
 ### Manifest Tests
 
 - Parsing a manifest that omits `marketplaces` still yields an empty list.
-- Parsing a manifest with both `marketplaces` and `plugins` loads both fields.
+- Parsing a manifest with marketplace blocks and plugins loads both fields.
+- Parsing a marketplace block without `sparse` yields an empty sparse list.
+- Parsing a marketplace block with `sparse` preserves the declared paths.
 
 ### Runtime State Tests
 
-- `AgentState::prepare` writes `plugins.json` with both arrays.
+- `AgentState::prepare` writes `plugins.json` with marketplace objects and the
+  plugin array.
 
 ### Runtime Command Tests
 
@@ -236,6 +282,18 @@ Also resolve the tracked TODO item and keep project planning docs aligned:
 
 ## Alternatives Considered
 
+### Flat `marketplaces = []` Strings
+
+Example:
+
+```toml
+[claude]
+marketplaces = ["obra/superpowers-marketplace"]
+```
+
+Rejected because it cannot naturally support marketplace-specific options such
+as `sparse`.
+
 ### TOML Map Of Marketplace Aliases
 
 Example:
@@ -248,17 +306,19 @@ superpowers-marketplace = "obra/superpowers-marketplace"
 Rejected because it duplicates marketplace naming already owned by Claude and
 creates room for mismatch between TOML keys and marketplace metadata.
 
-### Structured Marketplace Objects
+### Grouping Plugins Inside Marketplace Blocks
 
 Example:
 
 ```toml
 [[claude.marketplaces]]
 source = "obra/superpowers-marketplace"
+plugins = ["superpowers"]
 ```
 
-Rejected for v1 because the extra structure does not buy anything once we have
-decided not to support extra options such as `sparse` yet.
+Rejected because `jackin` would have to derive the final install string, such as
+`superpowers@superpowers-marketplace`, from marketplace metadata it does not own.
+Keeping `[claude].plugins` as raw Claude install strings avoids that coupling.
 
 ### Writing Claude Settings Instead Of Using The CLI
 
