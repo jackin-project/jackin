@@ -1,5 +1,7 @@
-use dockerfile_parser::{Dockerfile, Instruction};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
+
+use dockerfile_parser_rs::{Dockerfile, Instruction};
 
 pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
 
@@ -13,28 +15,41 @@ pub struct ValidatedDockerfile {
 
 pub fn validate_agent_dockerfile(dockerfile_path: &Path) -> anyhow::Result<ValidatedDockerfile> {
     let dockerfile_contents = std::fs::read_to_string(dockerfile_path)?;
-    let dockerfile = Dockerfile::parse(&dockerfile_contents).map_err(|error| {
+    let dockerfile = Dockerfile::from_str(&dockerfile_contents).map_err(|error| {
         anyhow::anyhow!("invalid agent repo: unable to parse Dockerfile: {error}")
     })?;
 
-    let final_stage = dockerfile.iter_stages().last().ok_or_else(|| {
-        anyhow::anyhow!("invalid agent repo: Dockerfile must contain at least one FROM instruction")
-    })?;
+    let Some((platform, image, alias)) =
+        dockerfile
+            .instructions
+            .iter()
+            .rev()
+            .find_map(|instruction| {
+                let Instruction::From {
+                    platform,
+                    image,
+                    alias,
+                } = instruction
+                else {
+                    return None;
+                };
 
-    let Some(Instruction::From(from)) = final_stage.instructions.first() else {
+                Some((platform, image, alias))
+            })
+    else {
         anyhow::bail!("invalid agent repo: Dockerfile must contain at least one FROM instruction")
     };
 
     anyhow::ensure!(
-        from.flags.is_empty() && from.image.as_ref() == CONSTRUCT_IMAGE,
+        platform.is_none() && image == CONSTRUCT_IMAGE,
         "invalid agent repo: final Dockerfile stage must use literal FROM {CONSTRUCT_IMAGE}"
     );
 
     Ok(ValidatedDockerfile {
         dockerfile_path: dockerfile_path.to_path_buf(),
         dockerfile_contents,
-        final_stage_image: from.image.to_string(),
-        final_stage_alias: from.alias.as_ref().map(ToString::to_string),
+        final_stage_image: image.clone(),
+        final_stage_alias: alias.clone(),
     })
 }
 
