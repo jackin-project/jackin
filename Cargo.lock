@@ -455,23 +455,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "doc-comment"
-version = "0.3.4"
+name = "dockerfile-parser-rs"
+version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "780955b8b195a21ab8e4ac6b60dd1dbdcec1dc6c51c0617964b08c81785e12c9"
-
-[[package]]
-name = "dockerfile-parser"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa53f9cb1532d7d7c19e269848ede84d7c80d59264c658469f0051a1d88c2780"
+checksum = "6eebbb3337addb19f9c9049615b1883f6fd292a6b727ac7180280e5c367975b6"
 dependencies = [
- "enquote",
- "lazy_static",
- "pest",
- "pest_derive",
+ "clap",
  "regex",
- "snafu",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -494,15 +486,6 @@ name = "encode_unicode"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
-
-[[package]]
-name = "enquote"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06c36cb11dbde389f4096111698d8b567c0720e3452fd5ac3e6b4e47e1939932"
-dependencies = [
- "thiserror 1.0.69",
-]
 
 [[package]]
 name = "equivalent"
@@ -773,7 +756,7 @@ dependencies = [
  "crossterm",
  "dialoguer",
  "directories",
- "dockerfile-parser",
+ "dockerfile-parser-rs",
  "owo-colors",
  "predicates",
  "ratatui",
@@ -1573,27 +1556,6 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
-
-[[package]]
-name = "snafu"
-version = "0.6.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eab12d3c261b2308b0d80c26fffb58d17eba81a4be97890101f416b478c79ca7"
-dependencies = [
- "doc-comment",
- "snafu-derive",
-]
-
-[[package]]
-name = "snafu-derive"
-version = "0.6.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1508efa03c362e23817f96cde18abed596a25219a8b2c66e8db33c03543d315b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
 
 [[package]]
 name = "static_assertions"
