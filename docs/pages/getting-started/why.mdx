@@ -152,7 +152,7 @@ jackin' is built in Rust for three reasons:
 
 1. **Performance and safety.** An orchestrator that launches and manages Docker containers, parses Dockerfiles, renders TUI interfaces, and handles concurrent agent state needs to be fast and correct. Rust's ownership model and `unsafe_code = "forbid"` policy mean jackin' has zero unsafe code and catches entire classes of bugs at compile time.
 
-2. **Growing ecosystem.** Rust's adoption in infrastructure tooling, container runtimes, and CLI tools has accelerated significantly. The libraries jackin' depends on — `clap`, `ratatui`, `serde`, `dockerfile-parser` — are mature and actively maintained.
+2. **Growing ecosystem.** Rust's adoption in infrastructure tooling, container runtimes, and CLI tools has accelerated significantly. The libraries jackin' depends on — `clap`, `ratatui`, `serde`, `dockerfile-parser-rs` — are mature and actively maintained.
 
 3. **AI-friendly.** From practical experience, AI coding agents produce more reliable Rust code than most other systems languages. The strong type system and compiler feedback loop gives agents clear signals about what's wrong and how to fix it — leading to better AI-assisted contributions to the project itself.
 
