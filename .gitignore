@@ -6,6 +6,7 @@
 
 # Claude Code
 .worktrees/
+.claude/settings.local.json
 
 # Temporary files
 /tmp/
