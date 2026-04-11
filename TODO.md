@@ -10,7 +10,7 @@ Individual items are tracked in [`todo/`](todo/). Each file is a self-contained 
 - [Migrate Docker CLI to Bollard API Client](todo/bollard-migration.md) — replace string-matched error handling with typed API
 - [Rootless DinD Research](todo/rootless-dind.md) — reduce privileged container attack surface
 - [Selectable Sandbox Backends: DinD and MicroVM](todo/selectable-sandbox-backends.md) — operator-selectable runtime modes with backend-neutral lifecycle design
-- [Reproducibility and Provenance Pinning](todo/reproducibility-pinning.md) — commit SHA pinning for agent repos
+- [Reproducibility and Provenance Pinning](todo/reproducibility-pinning.md) — version pinning for agent repos (needs design)
 
 ## Resolved
 
