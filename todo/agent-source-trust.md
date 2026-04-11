@@ -1,6 +1,8 @@
 # Agent Source Trust Model
 
-**Status**: Deferred — needs design work
+**Status**: Resolved
+
+Implemented. The sections below preserve the original design rationale.
 
 ## Problem
 
@@ -12,16 +14,18 @@
 - No mechanism to distinguish a trusted, previously-used agent from a novel one
 - Agents execute in a build context with access to the Dockerfile and build instructions
 
-## Desired Behavior
+## Implementation
 
-A trust-on-first-use model similar to `mise trust`:
-- First time an agent source is encountered, clone the repo but prompt the user for confirmation before running it
-- Store trusted sources in config (allowlist)
-- Subsequent runs of trusted agents proceed without prompts
-- Optional security mode: always show agent source output before running, allowing AI agent analysis of the content
+A trust-on-first-use model:
+- `AgentSource` now carries a `trusted: bool` field, persisted in config TOML
+- Built-in agents (`agent-smith`, `the-architect`) are always marked trusted by `sync_builtin_agents()`
+- New third-party (namespaced) agents default to `trusted = false`
+- On first load of an untrusted agent, the operator sees a warning with the agent name and git URL, and must confirm before the build proceeds
+- Non-interactive sessions (no terminal) bail with an error for untrusted agents
+- Once confirmed, the `trusted = true` flag is saved to config — subsequent runs proceed without prompts
 
 ## Related Files
 
-- `src/config.rs` — `resolve_agent_source()`, trust store format
-- `src/runtime.rs` — calls `resolve_agent_source()` during agent load
+- `src/config.rs` — `AgentSource.trusted`, `trust_agent()`, `resolve_agent_source()`
+- `src/runtime.rs` — `confirm_agent_trust()`, trust gate in `load_agent()`
 - `src/selector.rs` — namespace/name parsing
