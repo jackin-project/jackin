@@ -121,6 +121,7 @@ Each agent gets an isolated Docker network:
 - network name is derived from the runtime container name
 - the agent container and DinD sidecar share that network
 - the agent reaches the daemon through `DOCKER_HOST=tcp://{dind}:2375`
+- the agent reaches published services launched via DinD through `JACKIN_DIND_HOSTNAME={dind}`
 - different agents do not share a network by default
 
 :::note
