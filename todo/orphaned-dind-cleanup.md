@@ -1,6 +1,6 @@
 # Orphaned DinD Container on Agent Launch Failure
 
-**Status**: Deferred — option 5 (automatic GC) is probably the best UX
+**Status**: Resolved — implemented option 5 (automatic pre-launch GC)
 
 ## Problem
 

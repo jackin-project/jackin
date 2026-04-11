@@ -6,7 +6,6 @@ Individual items are tracked in [`todo/`](todo/). Each file is a self-contained 
 
 - [Construct Image: User Creation Responsibility](todo/construct-user-creation.md) — UID/GID remapping hack in derived images
 - [DinD Running Without TLS Authentication](todo/dind-tls.md) — unauthenticated Docker daemon on agent network
-- [Orphaned DinD Container on Agent Launch Failure](todo/orphaned-dind-cleanup.md) — sidecar left running when agent fails to start
 - [1Password Integration for Agent Secrets](todo/onepassword-integration.md) — first-class secret injection at launch time
 - [Agent Source Trust Model](todo/agent-source-trust.md) — trust-on-first-use for third-party agent repos
 - [Migrate Docker CLI to Bollard API Client](todo/bollard-migration.md) — replace string-matched error handling with typed API
@@ -17,6 +16,7 @@ Individual items are tracked in [`todo/`](todo/). Each file is a self-contained 
 
 ## Resolved
 
+- [Orphaned DinD Container Cleanup](todo/orphaned-dind-cleanup.md) — automatic pre-launch GC for orphaned DinD sidecars and networks
 - [Sensitive Mount Path Warnings](todo/sensitive-mount-warnings.md) — warn before mounting `~/.ssh`, `~/.aws`, etc.
 - [Custom Plugin Marketplace Support](todo/custom-plugin-marketplace.md) — auto-install custom Claude marketplaces and plugins from `jackin.agent.toml`
 - [Expose DinD Hostname as `JACKIN_DIND_HOSTNAME`](todo/dind-hostname-env-var.md) — agents can reach DinD-backed services without parsing `DOCKER_HOST`
