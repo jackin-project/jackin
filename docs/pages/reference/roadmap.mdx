@@ -26,6 +26,7 @@ jackin' is a functional proof of concept with Claude Code as its first supported
 - Last-agent memory per workspace
 - Custom Claude plugin marketplaces in `jackin.agent.toml`
 - Sensitive mount path warnings (warn-and-confirm for `~/.ssh`, `~/.aws`, etc.)
+- Automatic orphaned DinD cleanup (pre-launch garbage collection)
 
 ## Planned
 
@@ -45,7 +46,6 @@ jackin's architecture is runtime-agnostic. The construct and workspace system wo
 ### Security improvements
 
 - **DinD TLS authentication** — secure the Docker-in-Docker daemon with auto-generated certificates
-- **Orphaned container cleanup** — automatic garbage collection of DinD containers when agent startup fails
 - **Network policy controls** — outbound domain filtering per agent class, similar to Docker Sandboxes' network policies
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
 - **Runtime pinning and supply-chain hardening** — make agent runtime installation more reproducible and auditable
