@@ -434,6 +434,7 @@ fn launch_agent_runtime(
     let class_label = format!("jackin.class={}", selector.key());
     let display_label = format!("jackin.display_name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2375");
+    let dind_hostname = format!("{}={dind}", crate::manifest::JACKIN_DIND_HOSTNAME_ENV_NAME);
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let claude_dir_mount = format!("{}:/home/claude/.claude", state.claude_dir.display());
@@ -461,8 +462,11 @@ fn launch_agent_runtime(
         &display_label,
         "--workdir",
         &workspace.workdir,
+        // JACKIN_* runtime metadata is injected by jackin, not declared in agent manifests.
         "-e",
         &docker_host,
+        "-e",
+        &dind_hostname,
         "-e",
         &git_author_name,
         "-e",
@@ -478,7 +482,9 @@ fn launch_agent_runtime(
         crate::manifest::JACKIN_RUNTIME_ENV_VALUE
     ));
     for (key, value) in &resolved_env.vars {
-        if key == crate::manifest::JACKIN_RUNTIME_ENV_NAME {
+        if key == crate::manifest::JACKIN_RUNTIME_ENV_NAME
+            || key == crate::manifest::JACKIN_DIND_HOSTNAME_ENV_NAME
+        {
             continue;
         }
         env_strings.push(format!("{key}={value}"));
@@ -2101,6 +2107,7 @@ plugins = []
             .find(|call| call.contains("docker run -it"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_CLAUDE_ENV=jackin"));
+        assert!(run_cmd.contains("-e JACKIN_DIND_HOSTNAME=jackin-agent-smith-dind"));
         assert!(!run_cmd.contains("JACKIN_DEBUG"));
     }
 
