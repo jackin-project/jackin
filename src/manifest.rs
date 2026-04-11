@@ -82,32 +82,21 @@ fn is_valid_env_var_name(name: &str) -> bool {
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-/// Detect bare `$VAR` references (single dollar without braces).
+/// Extract env var names from `${env.VAR_NAME}` interpolation placeholders.
 ///
-/// Matches `$` followed by an ASCII letter or underscore (the start of a valid
-/// env var name), but NOT followed by `{` (which is the `${VAR}` interpolation syntax).
-fn contains_bare_dollar_ref(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    for i in 0..bytes.len().saturating_sub(1) {
-        if bytes[i] == b'$'
-            && bytes[i + 1] != b'{'
-            && (bytes[i + 1].is_ascii_alphabetic() || bytes[i + 1] == b'_')
-        {
-            return true;
-        }
-    }
-    false
-}
-
-/// Extract variable names from `${VAR_NAME}` interpolation placeholders in a string.
+/// Returns the var name portion (after `env.`) for each match.  Non-`env.`
+/// references like `${other.FOO}` are ignored — only the `env` namespace is
+/// recognised for interpolation.
 fn extract_interpolation_refs(s: &str) -> Vec<&str> {
     let mut refs = Vec::new();
     let mut rest = s;
     while let Some(start) = rest.find("${") {
         let after_open = &rest[start + 2..];
         if let Some(end) = after_open.find('}') {
-            let var_name = &after_open[..end];
-            if !var_name.is_empty() {
+            let ref_expr = &after_open[..end];
+            if let Some(var_name) = ref_expr.strip_prefix("env.")
+                && !var_name.is_empty()
+            {
                 refs.push(var_name);
             }
             rest = &after_open[end + 1..];
@@ -181,7 +170,7 @@ impl AgentManifest {
                 });
             }
 
-            self.validate_env_interpolation(name, decl, &mut warnings)?;
+            self.validate_env_interpolation(name, decl)?;
         }
 
         // Cycle detection via topological sort (Kahn's algorithm)
@@ -190,36 +179,13 @@ impl AgentManifest {
         Ok(warnings)
     }
 
-    fn validate_env_interpolation(
-        &self,
-        name: &str,
-        decl: &EnvVarDecl,
-        warnings: &mut Vec<ManifestWarning>,
-    ) -> anyhow::Result<()> {
+    fn validate_env_interpolation(&self, name: &str, decl: &EnvVarDecl) -> anyhow::Result<()> {
         // Reject ${...} interpolation placeholders in options (options are always static)
         for option in &decl.options {
             if !extract_interpolation_refs(option).is_empty() {
                 anyhow::bail!(
                     "env var {name}: options cannot contain interpolation placeholders — options are static"
                 );
-            }
-        }
-
-        // Warn on bare $VAR (no braces) in prompt and default — reserved for future
-        // host env passthrough syntax, currently has no effect
-        for (field, value) in [
-            ("prompt", decl.prompt.as_deref()),
-            ("default", decl.default_value.as_deref()),
-        ] {
-            if let Some(v) = value
-                && contains_bare_dollar_ref(v)
-            {
-                warnings.push(ManifestWarning {
-                    message: format!(
-                        "env var {name}: {field} contains bare $VAR reference — \
-                         use ${{VAR}} for interpolation; bare $VAR is reserved for future host env passthrough"
-                    ),
-                });
             }
         }
 
@@ -264,12 +230,12 @@ impl AgentManifest {
             for ref_name in extract_interpolation_refs(value) {
                 if !self.env.contains_key(ref_name) {
                     anyhow::bail!(
-                        "env var {name}: {field} references unknown env var \"${{{ref_name}}}\""
+                        "env var {name}: {field} references unknown env var \"${{env.{ref_name}}}\""
                     );
                 }
                 if !dep_names.contains(ref_name) {
                     anyhow::bail!(
-                        "env var {name}: {field} references \"${{{ref_name}}}\" which is not listed in depends_on"
+                        "env var {name}: {field} references \"${{env.{ref_name}}}\" which is not listed in depends_on"
                     );
                 }
             }
@@ -352,30 +318,9 @@ mod tests {
     }
 
     #[test]
-    fn contains_bare_dollar_ref_detects_simple_cases() {
-        assert!(contains_bare_dollar_ref("$HOME"));
-        assert!(contains_bare_dollar_ref("prefix-$VAR-suffix"));
-        assert!(contains_bare_dollar_ref("$_PRIVATE"));
-    }
-
-    #[test]
-    fn contains_bare_dollar_ref_ignores_braced_syntax() {
-        assert!(!contains_bare_dollar_ref("${VAR}"));
-        assert!(!contains_bare_dollar_ref("prefix-${VAR}-suffix"));
-    }
-
-    #[test]
-    fn contains_bare_dollar_ref_ignores_dollar_without_identifier() {
-        assert!(!contains_bare_dollar_ref("$"));
-        assert!(!contains_bare_dollar_ref("$$"));
-        assert!(!contains_bare_dollar_ref("$1"));
-        assert!(!contains_bare_dollar_ref("price is $5"));
-    }
-
-    #[test]
     fn extract_interpolation_refs_finds_single_ref() {
         assert_eq!(
-            extract_interpolation_refs("Branch for ${PROJECT}:"),
+            extract_interpolation_refs("Branch for ${env.PROJECT}:"),
             vec!["PROJECT"]
         );
     }
@@ -383,7 +328,7 @@ mod tests {
     #[test]
     fn extract_interpolation_refs_finds_multiple_refs() {
         assert_eq!(
-            extract_interpolation_refs("${TEAM}/${PROJECT}"),
+            extract_interpolation_refs("${env.TEAM}/${env.PROJECT}"),
             vec!["TEAM", "PROJECT"]
         );
     }
@@ -394,13 +339,19 @@ mod tests {
     }
 
     #[test]
-    fn extract_interpolation_refs_skips_empty_braces() {
-        assert!(extract_interpolation_refs("${}").is_empty());
+    fn extract_interpolation_refs_ignores_non_env_namespace() {
+        assert!(extract_interpolation_refs("${other.FOO}").is_empty());
+        assert!(extract_interpolation_refs("${FOO}").is_empty());
+    }
+
+    #[test]
+    fn extract_interpolation_refs_skips_empty_env_ref() {
+        assert!(extract_interpolation_refs("${env.}").is_empty());
     }
 
     #[test]
     fn extract_interpolation_refs_handles_unclosed_brace() {
-        assert!(extract_interpolation_refs("${OPEN").is_empty());
+        assert!(extract_interpolation_refs("${env.OPEN").is_empty());
     }
 
     #[test]
@@ -1144,8 +1095,8 @@ prompt = "Select a project:"
 [env.BRANCH]
 interactive = true
 depends_on = ["env.PROJECT"]
-prompt = "Branch name for ${PROJECT}:"
-default = "feature/${PROJECT}"
+prompt = "Branch name for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
 "#,
         )
         .unwrap();
@@ -1169,7 +1120,7 @@ plugins = []
 [env.BRANCH]
 interactive = true
 depends_on = []
-prompt = "Branch for ${NONEXISTENT}:"
+prompt = "Branch for ${env.NONEXISTENT}:"
 "#,
         )
         .unwrap();
@@ -1198,7 +1149,7 @@ prompt = "Select:"
 
 [env.BRANCH]
 interactive = true
-prompt = "Branch for ${PROJECT}:"
+prompt = "Branch for ${env.PROJECT}:"
 "#,
         )
         .unwrap();
@@ -1225,7 +1176,7 @@ plugins = []
 [env.BRANCH]
 interactive = true
 depends_on = []
-default = "feature/${GHOST}"
+default = "feature/${env.GHOST}"
 prompt = "Branch:"
 "#,
         )
@@ -1330,7 +1281,7 @@ prompt = "Pick:"
 [env.BRANCH]
 interactive = true
 depends_on = ["env.PROJECT"]
-options = ["${PROJECT}-main", "${PROJECT}-dev"]
+options = ["${env.PROJECT}-main", "${env.PROJECT}-dev"]
 prompt = "Branch:"
 "#,
         )
@@ -1349,31 +1300,7 @@ prompt = "Branch:"
     }
 
     #[test]
-    fn validate_warns_on_bare_dollar_var_in_prompt() {
-        let temp = tempdir().unwrap();
-        std::fs::write(
-            temp.path().join("jackin.agent.toml"),
-            r#"dockerfile = "Dockerfile"
-
-[claude]
-plugins = []
-
-[env.API_KEY]
-interactive = true
-prompt = "Key for $SERVICE:"
-"#,
-        )
-        .unwrap();
-
-        let manifest = AgentManifest::load(temp.path()).unwrap();
-        let warnings = manifest.validate().unwrap();
-
-        assert!(!warnings.is_empty());
-        assert!(warnings[0].message.contains("bare $VAR"));
-    }
-
-    #[test]
-    fn validate_warns_on_bare_dollar_var_in_default() {
+    fn validate_ignores_non_env_namespace_in_interpolation() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.agent.toml"),
@@ -1383,7 +1310,8 @@ prompt = "Key for $SERVICE:"
 plugins = []
 
 [env.FOO]
-default = "$HOME/projects"
+interactive = true
+prompt = "Value (use ${other.THING} for other):"
 "#,
         )
         .unwrap();
@@ -1391,37 +1319,7 @@ default = "$HOME/projects"
         let manifest = AgentManifest::load(temp.path()).unwrap();
         let warnings = manifest.validate().unwrap();
 
-        assert!(!warnings.is_empty());
-        assert!(warnings[0].message.contains("bare $VAR"));
-    }
-
-    #[test]
-    fn validate_does_not_warn_on_braced_interpolation() {
-        let temp = tempdir().unwrap();
-        std::fs::write(
-            temp.path().join("jackin.agent.toml"),
-            r#"dockerfile = "Dockerfile"
-
-[claude]
-plugins = []
-
-[env.PROJECT]
-interactive = true
-options = ["a", "b"]
-prompt = "Pick:"
-
-[env.BRANCH]
-interactive = true
-depends_on = ["env.PROJECT"]
-prompt = "Branch for ${PROJECT}:"
-default = "feature/${PROJECT}"
-"#,
-        )
-        .unwrap();
-
-        let manifest = AgentManifest::load(temp.path()).unwrap();
-        let warnings = manifest.validate().unwrap();
-
+        // ${other.THING} is not an env. ref, so no error or warning
         assert!(warnings.is_empty());
     }
 }

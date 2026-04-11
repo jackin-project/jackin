@@ -21,10 +21,11 @@ pub trait EnvPrompter {
     ) -> PromptResult;
 }
 
-/// Replace `${VAR_NAME}` placeholders with values from already-resolved vars.
+/// Replace `${env.VAR_NAME}` placeholders with values from already-resolved vars.
 ///
 /// Uses a single left-to-right scan so that replacement values containing `${...}`
-/// are never re-interpreted as placeholders.
+/// are never re-interpreted as placeholders.  Only `${env.*}` references are
+/// resolved; other `${...}` forms are preserved as-is.
 fn interpolate(template: &str, resolved: &[(String, String)]) -> String {
     let resolved_map: std::collections::HashMap<&str, &str> = resolved
         .iter()
@@ -38,11 +39,16 @@ fn interpolate(template: &str, resolved: &[(String, String)]) -> String {
         result.push_str(&rest[..start]);
         let after_open = &rest[start + 2..];
         if let Some(end) = after_open.find('}') {
-            let var_name = &after_open[..end];
-            if let Some(&value) = resolved_map.get(var_name) {
-                result.push_str(value);
+            let ref_expr = &after_open[..end];
+            if let Some(var_name) = ref_expr.strip_prefix("env.") {
+                if let Some(&value) = resolved_map.get(var_name) {
+                    result.push_str(value);
+                } else {
+                    // Known namespace but unknown var — preserve as-is
+                    result.push_str(&rest[start..=start + 2 + end]);
+                }
             } else {
-                // Unknown placeholder — preserve as-is
+                // Not an env. reference — preserve as-is
                 result.push_str(&rest[start..=start + 2 + end]);
             }
             rest = &after_open[end + 1..];
@@ -409,7 +415,7 @@ mod tests {
             interactive_select("Select a project:", vec!["alpha", "beta"]),
         );
 
-        let mut branch = interactive_text("Branch for ${PROJECT}:");
+        let mut branch = interactive_text("Branch for ${env.PROJECT}:");
         branch.depends_on = vec!["env.PROJECT".to_string()];
         decls.insert("BRANCH".to_string(), branch);
 
@@ -433,7 +439,7 @@ mod tests {
         );
 
         let branch = EnvVarDecl {
-            default_value: Some("feature/${PROJECT}".to_string()),
+            default_value: Some("feature/${env.PROJECT}".to_string()),
             interactive: true,
             skippable: false,
             prompt: Some("Branch:".to_string()),
@@ -462,7 +468,7 @@ mod tests {
         );
 
         let derived = EnvVarDecl {
-            default_value: Some("${PROJECT}-derived".to_string()),
+            default_value: Some("${env.PROJECT}-derived".to_string()),
             interactive: false,
             skippable: false,
             prompt: None,
@@ -494,10 +500,10 @@ mod tests {
         );
 
         let label = EnvVarDecl {
-            default_value: Some("${TEAM}/${PROJECT}".to_string()),
+            default_value: Some("${env.TEAM}/${env.PROJECT}".to_string()),
             interactive: true,
             skippable: false,
-            prompt: Some("Label for ${TEAM}/${PROJECT}:".to_string()),
+            prompt: Some("Label for ${env.TEAM}/${env.PROJECT}:".to_string()),
             options: vec![],
             depends_on: vec!["env.TEAM".to_string(), "env.PROJECT".to_string()],
         };
@@ -522,11 +528,11 @@ mod tests {
         let mut decls = BTreeMap::new();
 
         // A resolves to a value that looks like an interpolation placeholder
-        decls.insert("A".to_string(), static_var("${B}"));
+        decls.insert("A".to_string(), static_var("${env.B}"));
         decls.insert("B".to_string(), static_var("secret"));
 
         let c = EnvVarDecl {
-            default_value: Some("prefix-${A}-suffix".to_string()),
+            default_value: Some("prefix-${env.A}-suffix".to_string()),
             interactive: false,
             skippable: false,
             prompt: None,
@@ -539,9 +545,9 @@ mod tests {
 
         let resolved = resolve_env(&decls, &prompter).unwrap();
 
-        // C should be "prefix-${B}-suffix" (literal), NOT "prefix-secret-suffix"
+        // C should be "prefix-${env.B}-suffix" (literal), NOT "prefix-secret-suffix"
         let c_value = resolved.vars.iter().find(|(k, _)| k == "C").unwrap();
-        assert_eq!(c_value.1, "prefix-${B}-suffix");
+        assert_eq!(c_value.1, "prefix-${env.B}-suffix");
     }
 
     #[test]
