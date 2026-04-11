@@ -153,9 +153,9 @@ These are the parts of the security story that should be stated bluntly.
 
 ### Privileged DinD sidecar
 
-jackin' launches a privileged `docker:dind` sidecar per agent. The agent talks to it over plain TCP inside the per-agent network.
+jackin' launches a privileged `docker:dind` sidecar per agent. The sidecar auto-generates TLS certificates at startup and shares client certs with the agent container via a Docker volume. The agent connects over TLS-authenticated TCP (`DOCKER_HOST=tcp://...:2376` with `DOCKER_TLS_VERIFY=1`).
 
-That keeps the agent away from your host Docker daemon, which is good. But it is still a privileged sidecar, and DinD TLS is not implemented yet.
+That keeps the agent away from your host Docker daemon and prevents unauthenticated access to the DinD daemon on the per-agent network. But it is still a privileged sidecar, and the auto-generated certificates are session-scoped (not pinned to an external CA).
 
 ### Open outbound network by default
 
