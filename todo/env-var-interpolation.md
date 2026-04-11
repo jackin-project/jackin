@@ -1,6 +1,6 @@
 # Interactive Env Vars and Resolution
 
-**Status**: Deferred — future enhancement to env var system
+**Status**: Resolved — `${env.VAR}` interpolation implemented; operator-side resolution and secret backends remain future work
 
 ## Problem
 
@@ -9,29 +9,46 @@ When an agent manifest declares interactive environment variables with `depends_
 ## Why It Matters
 
 - A prompt like "Branch name for project2:" is more contextual than "Branch name for this project:"
-- Default values that derive from prior selections (e.g., `feature/${PROJECT_TO_CLONE}`) reduce typing and enforce conventions
+- Default values that derive from prior selections (e.g., `feature/${env.PROJECT_TO_CLONE}`) reduce typing and enforce conventions
 - The dependency chain already implies a relationship — interpolation makes it explicit in the UI
 
-## Proposed Design
+## Implementation
 
-Allow `${VAR_NAME}` syntax in `title` and `default_value` fields of `[env.*]` entries in `jackin.agent.toml`:
+`${env.VAR_NAME}` syntax is now supported in `prompt` and `default` fields of `[env.*]` entries in `jackin.agent.toml`. The `env.` prefix is consistent with the `depends_on` syntax and creates a clear namespace for future expansion (e.g., `${host.VAR}`, `${secret.VAR}`).
 
 ```toml
 [env.PROJECT_TO_CLONE]
 interactive = true
 options = ["project1", "project2"]
-title = "Select a project:"
+prompt = "Select a project:"
 
 [env.BRANCH_TO_CREATE]
 interactive = true
 depends_on = ["env.PROJECT_TO_CLONE"]
-title = "Branch name for ${PROJECT_TO_CLONE}:"
-default_value = "feature/${PROJECT_TO_CLONE}"
+prompt = "Branch name for ${env.PROJECT_TO_CLONE}:"
+default = "feature/${env.PROJECT_TO_CLONE}"
 ```
 
-Interpolation would be limited to `title` and `default_value` fields only. Options arrays remain static.
+Interpolation is limited to `prompt` and `default` fields only. Options arrays remain static. Non-`env.` namespaces (e.g., `${other.FOO}`) are preserved as-is.
 
-## Operator-Side Resolution and Overrides
+### Validation
+
+The manifest validator ensures that `${env.VAR_NAME}` references:
+- Point to declared env vars (rejects unknown references)
+- Are listed in `depends_on` (guarantees topological ordering so the value is available at prompt time)
+
+Additional safety checks:
+- **Env var names** must match `[A-Za-z_][A-Za-z0-9_]*` — prevents parser ambiguity from special characters like `$`, `{`, `}`
+- **Options arrays** reject `${env.*}` placeholders — options are always static to keep validation possible
+- **No re-interpolation** — the interpolation engine uses a single left-to-right scan, so resolved values containing `${...}` are never re-interpreted as placeholders
+
+### How It Works
+
+Since env vars are already resolved in topological (dependency) order, the `resolve_env` function interpolates `${env.VAR_NAME}` placeholders in `prompt` and `default` fields using already-resolved values before presenting the prompt to the user. Static (non-interactive) vars also have their `default` values interpolated.
+
+## Remaining Work
+
+### Operator-Side Resolution and Overrides
 
 Env vars declared in the agent manifest need to be overridable at multiple levels. Proposed resolution order (highest priority wins):
 
@@ -44,15 +61,15 @@ Env vars declared in the agent manifest need to be overridable at multiple level
    ```toml
    [env]
    JACKIN_CLAUDE_ENV = "docker-staging"
-   CONTEXT7_API_KEY = "$CONTEXT7_API_KEY"   # host env passthrough
+   CONTEXT7_API_KEY = "sk-..."              # literal value
    ```
 3. **Agent manifest default** (`jackin.agent.toml`):
    ```toml
    [env.JACKIN_CLAUDE_ENV]
-   default_value = "docker"
+   default = "docker"
    ```
 
-The `$VAR` syntax (single dollar, no braces) means "resolve from host environment at launch time," mirroring `docker run -e` behavior.
+Host env passthrough syntax is TBD — could use `${host.VAR}` to stay consistent with the `${env.VAR}` namespace convention.
 
 ### Secret Resolution (Future)
 
@@ -65,7 +82,7 @@ This needs its own design pass — see [1Password Integration](onepassword-integ
 
 ## Related Files
 
-- `src/manifest.rs` — env var declaration parsing
-- `src/runtime.rs` — launch-time env var resolution
+- `src/manifest.rs` — env var declaration parsing and interpolation validation
+- `src/env_resolver.rs` — launch-time env var resolution with `${env.VAR}` interpolation
 - `src/config.rs` — operator config and workspace config
 - `src/workspace.rs` — workspace-level overrides

@@ -44,8 +44,8 @@ prompt = "Select a project:"
 [env.BRANCH]
 interactive = true
 depends_on = ["env.PROJECT"]
-prompt = "Branch name:"
-default = "main"
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
 ```
 
 ## Top-level fields
@@ -176,10 +176,13 @@ Declare environment variables that the agent needs at runtime. Each variable is 
 
 ### Validation rules
 
+- Variable names must contain only ASCII letters, digits, and underscores, and cannot start with a digit
 - A non-interactive variable **must** have a `default` value
 - `options` requires `interactive = true`
+- `options` cannot contain `${env.*}` interpolation — options are always static
 - `depends_on` entries must use the `env.` prefix (e.g., `"env.PROJECT"`)
 - `depends_on` must reference variables declared in the same manifest
+- `${env.*}` references in `prompt` and `default` must point to declared variables that are listed in `depends_on`
 - `JACKIN_CLAUDE_ENV` is reserved for jackin and cannot be declared in `[env]`
 - `JACKIN_DIND_HOSTNAME` is reserved for jackin and cannot be declared in `[env]`
 - Circular dependencies are rejected
@@ -248,6 +251,32 @@ default = "main"
 
 If a skippable variable is skipped, all variables that depend on it are also skipped — regardless of their own `skippable` setting.
 
+### Interpolation
+
+Use `${env.VAR_NAME}` in `prompt` and `default` fields to reference the resolved value of a dependency:
+
+```toml
+[env.PROJECT]
+interactive = true
+options = ["frontend", "backend"]
+prompt = "Select a project:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
+```
+
+When the user selects `frontend`, the branch prompt becomes `"Branch for frontend:"` with default `"feature/frontend"`.
+
+Interpolation rules:
+
+- Only `${env.*}` references are resolved — other `${...}` forms are preserved as-is
+- Every `${env.*}` reference must point to a variable declared in the same manifest **and** listed in `depends_on`
+- `options` arrays cannot contain `${env.*}` references — options are always static
+- Resolved values are never re-interpreted, so a value containing `${env.*}` is treated as literal text
+
 :::tip
 Interactive prompts happen before the Docker image build, so you won't wait through a build before being asked questions. If you cancel, no build resources are wasted.
 :::
@@ -297,13 +326,13 @@ prompt = "Context7 API key:"
 [env.PROJECT]
 interactive = true
 options = ["frontend", "backend", "infra"]
-prompt = "Select a project to clone"
+prompt = "Select a project to clone:"
 
 [env.BRANCH]
 interactive = true
 depends_on = ["env.PROJECT"]
-prompt = "Branch name:"
-default = "main"
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
 ```
 
 :::tip
