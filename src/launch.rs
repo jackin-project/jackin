@@ -743,6 +743,7 @@ mod tests {
             "agent-smith".to_string(),
             crate::config::AgentSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+                trusted: true,
             },
         );
         config.workspaces.insert(

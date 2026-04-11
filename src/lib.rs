@@ -435,6 +435,48 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
             },
+            cli::ConfigCommand::Trust { command: trust_cmd } => match trust_cmd {
+                cli::TrustCommand::Grant { selector } => {
+                    let class = ClassSelector::parse(&selector)?;
+                    config.resolve_agent_source(&class)?;
+                    if config.trust_agent(&class.key()) {
+                        config.save(&paths)?;
+                        println!("Trusted {}.", class.key());
+                    } else {
+                        println!("{} is already trusted.", class.key());
+                    }
+                    Ok(())
+                }
+                cli::TrustCommand::Revoke { selector } => {
+                    let class = ClassSelector::parse(&selector)?;
+                    if AppConfig::is_builtin_agent(&class.key()) {
+                        anyhow::bail!("{} is a built-in agent and is always trusted.", class.key());
+                    }
+                    if config.untrust_agent(&class.key()) {
+                        config.save(&paths)?;
+                        println!("Revoked trust for {}.", class.key());
+                    } else {
+                        println!("{} is not currently trusted.", class.key());
+                    }
+                    Ok(())
+                }
+                cli::TrustCommand::List => {
+                    let agents: Vec<_> = config
+                        .agents
+                        .iter()
+                        .filter(|(_, source)| source.trusted)
+                        .map(|(key, _)| key.clone())
+                        .collect();
+                    if agents.is_empty() {
+                        println!("No trusted agents.");
+                    } else {
+                        for key in agents {
+                            println!("{key}");
+                        }
+                    }
+                    Ok(())
+                }
+            },
         },
         Command::Workspace { command } => match command {
             WorkspaceCommand::Create {

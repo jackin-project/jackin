@@ -155,6 +155,12 @@ pub enum ConfigCommand {
         #[command(subcommand)]
         command: MountCommand,
     },
+    /// Manage trust for third-party agent sources
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Trust {
+        #[command(subcommand)]
+        command: TrustCommand,
+    },
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -316,6 +322,43 @@ Examples:
     List,
 }
 
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum TrustCommand {
+    /// Mark a third-party agent source as trusted
+    ///
+    /// Trust controls whether jackin' will build and run an agent without
+    /// prompting.  Untrusted agents require interactive confirmation on
+    /// every load.
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin config trust grant chainargos/the-architect"
+    )]
+    Grant {
+        /// Agent class selector (e.g. `chainargos/agent-brown`)
+        selector: String,
+    },
+    /// Revoke trust for a third-party agent source
+    ///
+    /// The next `jackin load` will prompt for confirmation again.
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin config trust revoke chainargos/the-architect"
+    )]
+    Revoke {
+        /// Agent class selector (e.g. `chainargos/agent-brown`)
+        selector: String,
+    },
+    /// List all currently trusted agent sources
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    List,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,6 +412,59 @@ mod tests {
             Command::Config {
                 command: ConfigCommand::Mount {
                     command: MountCommand::List
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_config_trust_grant() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "config",
+            "trust",
+            "grant",
+            "chainargos/the-architect",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Config {
+                command: ConfigCommand::Trust {
+                    command: TrustCommand::Grant { .. }
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_config_trust_revoke() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "config",
+            "trust",
+            "revoke",
+            "chainargos/the-architect",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Config {
+                command: ConfigCommand::Trust {
+                    command: TrustCommand::Revoke { .. }
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_config_trust_list() {
+        let cli = Cli::try_parse_from(["jackin", "config", "trust", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Config {
+                command: ConfigCommand::Trust {
+                    command: TrustCommand::List
                 }
             }
         ));
