@@ -61,7 +61,7 @@ Env vars declared in the agent manifest need to be overridable at multiple level
    ```toml
    [env]
    JACKIN_CLAUDE_ENV = "docker-staging"
-   CONTEXT7_API_KEY = "$CONTEXT7_API_KEY"   # host env passthrough
+   CONTEXT7_API_KEY = "sk-..."              # literal value
    ```
 3. **Agent manifest default** (`jackin.agent.toml`):
    ```toml

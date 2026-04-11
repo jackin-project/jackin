@@ -182,6 +182,7 @@ impl AgentManifest {
         }
 
         // Validate depends_on entries
+        let mut seen_deps: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for dep in &decl.depends_on {
             let Some(dep_name) = dep.strip_prefix("env.") else {
                 anyhow::bail!(
@@ -191,6 +192,10 @@ impl AgentManifest {
 
             if dep_name == name {
                 anyhow::bail!("env var {name}: depends_on cannot reference self");
+            }
+
+            if !seen_deps.insert(dep_name) {
+                anyhow::bail!("env var {name}: depends_on contains duplicate entry \"{dep_name}\"");
             }
 
             self.validate_env_ref(name, "depends_on", dep_name)?;
@@ -1458,5 +1463,35 @@ prompt = "Value:"
                 .to_string()
                 .contains("invalid env var name")
         );
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_depends_on() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.PROJECT]
+interactive = true
+options = ["a", "b"]
+prompt = "Select:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT", "env.PROJECT"]
+prompt = "Branch:"
+"#,
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let result = manifest.validate();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("duplicate"));
     }
 }
