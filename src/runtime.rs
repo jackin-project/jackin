@@ -10,6 +10,19 @@ use crate::version_check;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
+// ── Docker label keys ─────────────────────────────────────────────────────
+//
+// Used to tag and filter jackin-managed containers and networks.
+
+/// Applied to agent containers, `DinD` sidecars, and networks.
+const LABEL_MANAGED: &str = "jackin.managed=true";
+/// `DinD` sidecars only — distinguishes them from agent containers.
+const LABEL_ROLE_DIND: &str = "jackin.role=dind";
+/// Filter expression for `docker ps --filter` to find managed containers.
+const FILTER_MANAGED: &str = "label=jackin.managed=true";
+/// Filter expression for `docker ps --filter` to find `DinD` sidecars.
+const FILTER_ROLE_DIND: &str = "label=jackin.role=dind";
+
 pub struct LoadOptions {
     pub no_intro: bool,
     pub debug: bool,
@@ -406,23 +419,22 @@ fn launch_agent_runtime(
     let _ = run_cleanup_command(runner, &["network", "rm", network]);
 
     // Create Docker network
-    let net_agent_label = format!("jackin.agent={container_name}");
+    let agent_label = format!("jackin.agent={container_name}");
     runner.capture(
         "docker",
         &[
             "network",
             "create",
             "--label",
-            "jackin.managed=true",
+            LABEL_MANAGED,
             "--label",
-            &net_agent_label,
+            &agent_label,
             network,
         ],
         None,
     )?;
 
     // Start Docker-in-Docker
-    let dind_agent_label = format!("jackin.agent={container_name}");
     let dind_args: Vec<&str> = vec![
         "run",
         "-d",
@@ -432,11 +444,11 @@ fn launch_agent_runtime(
         network,
         "--privileged",
         "--label",
-        "jackin.managed=true",
+        LABEL_MANAGED,
         "--label",
-        "jackin.role=dind",
+        LABEL_ROLE_DIND,
         "--label",
-        &dind_agent_label,
+        &agent_label,
         "-e",
         "DOCKER_TLS_CERTDIR=",
         "docker:dind",
@@ -475,7 +487,7 @@ fn launch_agent_runtime(
         "--network",
         network,
         "--label",
-        "jackin.managed=true",
+        LABEL_MANAGED,
         "--label",
         &class_label,
         "--label",
@@ -734,7 +746,7 @@ fn list_agent_names(
                 "ps",
                 "-a",
                 "--filter",
-                "label=jackin.managed=true",
+                FILTER_MANAGED,
                 "--format",
                 "{{.Names}}",
             ],
@@ -743,13 +755,7 @@ fn list_agent_names(
     } else {
         runner.capture(
             "docker",
-            &[
-                "ps",
-                "--filter",
-                "label=jackin.managed=true",
-                "--format",
-                "{{.Names}}",
-            ],
+            &["ps", "--filter", FILTER_MANAGED, "--format", "{{.Names}}"],
             None,
         )?
     };
@@ -773,7 +779,7 @@ pub fn list_running_agent_display_names(
         &[
             "ps",
             "--filter",
-            "label=jackin.managed=true",
+            FILTER_MANAGED,
             "--format",
             "{{.Names}}\t{{.Label \"jackin.display_name\"}}",
         ],
@@ -876,7 +882,7 @@ fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<
             "ps",
             "-a",
             "--filter",
-            "label=jackin.role=dind",
+            FILTER_ROLE_DIND,
             "--format",
             "{{.Names}}\t{{.Label \"jackin.agent\"}}",
         ],
@@ -907,14 +913,14 @@ fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<
 
     Ok(sidecars
         .into_iter()
-        .filter(|info| !running.iter().any(|r| r == &info.agent))
+        .filter(|info| !running.contains(&info.agent))
         .collect())
 }
 
 /// Remove orphaned `DinD` containers, their associated agent containers, and
 /// networks.  Errors are logged but do not abort the launch — GC is
 /// best-effort.
-pub fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
+fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
     let Ok(orphaned) = collect_orphaned_dind(runner) else {
         return;
     };
@@ -948,7 +954,7 @@ fn gc_orphaned_networks(runner: &mut impl CommandRunner) {
             "network",
             "ls",
             "--filter",
-            "label=jackin.managed=true",
+            FILTER_MANAGED,
             "--format",
             "{{.Name}}\t{{.Label \"jackin.agent\"}}",
         ],
@@ -1070,15 +1076,17 @@ impl FakeRunner {
         }
     }
 
-    /// Prefixes the capture queue with empty responses for the pre-launch GC
-    /// queries (2 empty: orphaned DinD scan + orphaned network scan) and
-    /// identity lookups (4 empty: `git config user.name`, `git config
-    /// user.email`, `id -u`, `id -g`) that `load_agent` performs before any
-    /// docker commands.
+    /// Number of capture calls `load_agent` makes before reaching agent-
+    /// specific logic: 2 GC queries (orphaned DinD scan + orphaned network
+    /// scan) + 4 identity lookups (`git config user.name`, `git config
+    /// user.email`, `id -u`, `id -g`).
+    const LOAD_PREAMBLE_CAPTURES: usize = 6;
+
+    /// Prefixes the capture queue with empty responses for the `load_agent`
+    /// preamble queries so tests can focus on the agent-specific output.
     fn for_load_agent<const N: usize>(outputs: [String; N]) -> Self {
-        // 2 GC queries + 4 identity lookups
-        let mut queue = VecDeque::with_capacity(6 + N);
-        for _ in 0..6 {
+        let mut queue = VecDeque::with_capacity(Self::LOAD_PREAMBLE_CAPTURES + N);
+        for _ in 0..Self::LOAD_PREAMBLE_CAPTURES {
             queue.push_back(String::new());
         }
         queue.extend(outputs);
