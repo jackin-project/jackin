@@ -1,6 +1,8 @@
 # Expose DinD Hostname as `JACKIN_DIND_HOSTNAME`
 
-**Status**: Proposed
+**Status**: Resolved
+
+Implemented. The sections below preserve the original design rationale.
 
 ## Problem
 
