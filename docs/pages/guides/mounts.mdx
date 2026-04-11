@@ -125,6 +125,23 @@ When multiple mount sources are resolved, jackin' combines them in this order:
 If two mounts target the same container destination, jackin' stops with an error. It does not silently let the later mount win. This is deliberate because mounts are part of the security boundary.
 :::
 
+## Sensitive path warnings
+
+jackin' detects when a mount source matches a known sensitive directory and warns before proceeding:
+
+- `~/.ssh` — SSH keys and configuration
+- `~/.aws` — AWS credentials and configuration
+- `~/.gnupg` — GPG keys and trust database
+- `~/.config/gcloud` — Google Cloud credentials
+- `~/.kube` — Kubernetes credentials and configuration
+- `~/.docker` — Docker credentials and configuration
+
+When a sensitive path is detected, you'll see a warning explaining the risk and must confirm before the mount is applied. This applies to all mount types — load-time, workspace, and global mounts.
+
+:::warning
+The warning defaults to "no". If stdin is not a terminal (e.g. in a script), jackin' aborts rather than silently mounting sensitive paths.
+:::
+
 ## Best practices
 
 - **Mount only what the agent needs.** Don't mount your entire home directory. Be specific about which project directories the agent should access.
