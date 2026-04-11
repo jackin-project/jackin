@@ -12,10 +12,10 @@ Individual items are tracked in [`todo/`](todo/). Each file is a self-contained 
 - [Rootless DinD Research](todo/rootless-dind.md) — reduce privileged container attack surface
 - [Selectable Sandbox Backends: DinD and MicroVM](todo/selectable-sandbox-backends.md) — operator-selectable runtime modes with backend-neutral lifecycle design
 - [Reproducibility and Provenance Pinning](todo/reproducibility-pinning.md) — commit SHA pinning for agent repos
-- [Interactive Env Vars and Resolution](todo/env-var-interpolation.md) — interactive prompts, workspace overrides, and secret resolution for env vars
 
 ## Resolved
 
+- [Interactive Env Var Interpolation](todo/env-var-interpolation.md) — `${env.VAR}` interpolation in prompt and default fields for dependent env vars
 - [Orphaned DinD Container Cleanup](todo/orphaned-dind-cleanup.md) — automatic pre-launch GC for orphaned DinD sidecars and networks
 - [Sensitive Mount Path Warnings](todo/sensitive-mount-warnings.md) — warn before mounting `~/.ssh`, `~/.aws`, etc.
 - [Custom Plugin Marketplace Support](todo/custom-plugin-marketplace.md) — auto-install custom Claude marketplaces and plugins from `jackin.agent.toml`
