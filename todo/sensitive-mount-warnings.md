@@ -1,6 +1,6 @@
 # Sensitive Mount Path Warnings
 
-**Status**: Deferred — implement alongside the agent source trust model
+**Status**: Resolved
 
 ## Problem
 
