@@ -156,7 +156,7 @@ This is where people often over-claim container isolation. Don't do that. jackin
 
 1. **Mount the minimum necessary.** Smaller visibility is the biggest win.
 2. **Prefer read-only mounts.** If the agent only needs to inspect something, mount it as `:ro`.
-3. **Do not mount credential directories.** Avoid `~/.ssh`, `~/.aws`, `~/.gnupg`, and similar paths.
+3. **Do not mount credential directories.** Avoid `~/.ssh`, `~/.aws`, `~/.gnupg`, and similar paths. jackin' warns and asks for confirmation when it detects these, but avoiding them entirely is the safest approach.
 4. **Treat runtime login as sensitive.** If you authenticate inside the runtime, assume the agent can read that state.
 5. **Review agent repos before loading.** The Dockerfile defines what the runtime contains.
 6. **Split agent classes by scope.** Keep frontend, backend, infra, and review workflows in separate environments when appropriate.

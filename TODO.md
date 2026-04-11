@@ -12,11 +12,11 @@ Individual items are tracked in [`todo/`](todo/). Each file is a self-contained 
 - [Migrate Docker CLI to Bollard API Client](todo/bollard-migration.md) — replace string-matched error handling with typed API
 - [Rootless DinD Research](todo/rootless-dind.md) — reduce privileged container attack surface
 - [Selectable Sandbox Backends: DinD and MicroVM](todo/selectable-sandbox-backends.md) — operator-selectable runtime modes with backend-neutral lifecycle design
-- [Sensitive Mount Path Warnings](todo/sensitive-mount-warnings.md) — warn before mounting `~/.ssh`, `~/.aws`, etc.
 - [Reproducibility and Provenance Pinning](todo/reproducibility-pinning.md) — commit SHA pinning for agent repos
 - [Interactive Env Vars and Resolution](todo/env-var-interpolation.md) — interactive prompts, workspace overrides, and secret resolution for env vars
 
 ## Resolved
 
+- [Sensitive Mount Path Warnings](todo/sensitive-mount-warnings.md) — warn before mounting `~/.ssh`, `~/.aws`, etc.
 - [Custom Plugin Marketplace Support](todo/custom-plugin-marketplace.md) — auto-install custom Claude marketplaces and plugins from `jackin.agent.toml`
 - [Expose DinD Hostname as `JACKIN_DIND_HOSTNAME`](todo/dind-hostname-env-var.md) — agents can reach DinD-backed services without parsing `DOCKER_HOST`

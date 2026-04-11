@@ -62,12 +62,13 @@ jackin load agent-smith ~/app --mount ~/cache:/cache:ro
 
 1. Resolves the agent class and clones/updates its repository
 2. Validates the agent repo contract (`jackin.agent.toml` + Dockerfile) with strict manifest parsing
-3. Prompts for interactive environment variables declared in the manifest
-4. Generates and builds a derived Docker image (cached if unchanged)
-5. Creates a per-agent Docker network and DinD sidecar
-6. Launches the agent container with all resolved mounts and environment variables
-7. Runs the pre-launch hook if declared
-8. Starts Claude Code with `--dangerously-skip-permissions`
+3. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
+4. Prompts for interactive environment variables declared in the manifest
+5. Generates and builds a derived Docker image (cached if unchanged)
+6. Creates a per-agent Docker network and DinD sidecar
+7. Launches the agent container with all resolved mounts and environment variables
+8. Runs the pre-launch hook if declared
+9. Starts Claude Code with `--dangerously-skip-permissions`
 
 :::note
 If the agent manifest declares interactive environment variables, `jackin load` prompts for their values before building the Docker image. This ensures no build time is wasted if you cancel.
