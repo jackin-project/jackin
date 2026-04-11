@@ -18,9 +18,17 @@ const BUILTIN_AGENTS: &[(&str, &str)] = &[
     ),
 ];
 
+/// Serde helper: `skip_serializing_if` requires `fn(&T) -> bool`.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+const fn is_false(v: &bool) -> bool {
+    !*v
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSource {
     pub git: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub trusted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +127,7 @@ impl AppConfig {
                 "https://github.com/{namespace}/jackin-{}.git",
                 selector.name
             ),
+            trusted: false,
         };
         self.agents.insert(selector.key(), source.clone());
         Ok((source, true))
@@ -375,6 +384,36 @@ impl AppConfig {
         Ok(())
     }
 
+    /// Mark an agent source as trusted.  Returns `true` when the flag changed.
+    pub fn trust_agent(&mut self, key: &str) -> bool {
+        if let Some(source) = self.agents.get_mut(key)
+            && !source.trusted
+        {
+            source.trusted = true;
+            return true;
+        }
+        false
+    }
+
+    /// Revoke trust for an agent source.  Returns `true` when the flag changed.
+    /// Note: does not prevent revoking builtins — the caller should check
+    /// [`is_builtin_agent`] first.
+    pub fn untrust_agent(&mut self, key: &str) -> bool {
+        if let Some(source) = self.agents.get_mut(key)
+            && source.trusted
+        {
+            source.trusted = false;
+            return true;
+        }
+        false
+    }
+
+    /// Returns `true` when `key` matches a built-in agent shipped with the
+    /// binary.  Built-in agents are always trusted and cannot be revoked.
+    pub fn is_builtin_agent(key: &str) -> bool {
+        BUILTIN_AGENTS.iter().any(|&(name, _)| name == key)
+    }
+
     /// Ensures all built-in agent entries match the current binary version.
     /// Returns `true` if any entries were added or updated.
     fn sync_builtin_agents(&mut self) -> bool {
@@ -382,9 +421,10 @@ impl AppConfig {
         for &(name, git) in BUILTIN_AGENTS {
             let expected = AgentSource {
                 git: git.to_string(),
+                trusted: true,
             };
             match self.agents.get(name) {
-                Some(existing) if existing.git == expected.git => {}
+                Some(existing) if existing.git == expected.git && existing.trusted => {}
                 _ => {
                     self.agents.insert(name.to_string(), expected);
                     changed = true;
@@ -509,6 +549,140 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
                 .unwrap()
                 .contains("[agents.\"chainargos/the-architect\"]")
         );
+    }
+
+    // --- Trust model tests ---
+
+    #[test]
+    fn builtin_agents_are_trusted_on_bootstrap() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+
+        let config = AppConfig::load_or_init(&paths).unwrap();
+
+        assert!(config.agents.get("agent-smith").unwrap().trusted);
+        assert!(config.agents.get("the-architect").unwrap().trusted);
+    }
+
+    #[test]
+    fn new_namespaced_agent_is_not_trusted() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+
+        let (source, _) = config.resolve_agent_source(&selector).unwrap();
+
+        assert!(!source.trusted);
+    }
+
+    #[test]
+    fn trust_agent_marks_source_as_trusted() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+
+        config.resolve_agent_source(&selector).unwrap();
+        assert!(
+            !config
+                .agents
+                .get("chainargos/the-architect")
+                .unwrap()
+                .trusted
+        );
+
+        let changed = config.trust_agent("chainargos/the-architect");
+        assert!(changed);
+        assert!(
+            config
+                .agents
+                .get("chainargos/the-architect")
+                .unwrap()
+                .trusted
+        );
+
+        // Second call is idempotent
+        let changed_again = config.trust_agent("chainargos/the-architect");
+        assert!(!changed_again);
+    }
+
+    #[test]
+    fn untrust_agent_revokes_trust() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+
+        config.resolve_agent_source(&selector).unwrap();
+        config.trust_agent("chainargos/the-architect");
+        assert!(
+            config
+                .agents
+                .get("chainargos/the-architect")
+                .unwrap()
+                .trusted
+        );
+
+        let changed = config.untrust_agent("chainargos/the-architect");
+        assert!(changed);
+        assert!(
+            !config
+                .agents
+                .get("chainargos/the-architect")
+                .unwrap()
+                .trusted
+        );
+
+        // Second call is idempotent
+        let changed_again = config.untrust_agent("chainargos/the-architect");
+        assert!(!changed_again);
+    }
+
+    #[test]
+    fn trusted_flag_round_trips_through_toml() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+
+        config.resolve_agent_source(&selector).unwrap();
+        config.trust_agent("chainargos/the-architect");
+        config.save(&paths).unwrap();
+
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        assert!(
+            reloaded
+                .agents
+                .get("chainargos/the-architect")
+                .unwrap()
+                .trusted
+        );
+    }
+
+    #[test]
+    fn sync_upgrades_untrusted_builtins() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        // Simulate a config from a pre-trust version (no trusted field)
+        std::fs::write(
+            &paths.config_file,
+            r#"[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+
+[agents.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+"#,
+        )
+        .unwrap();
+
+        let config = AppConfig::load_or_init(&paths).unwrap();
+
+        // Builtins should be upgraded to trusted
+        assert!(config.agents.get("agent-smith").unwrap().trusted);
+        assert!(config.agents.get("the-architect").unwrap().trusted);
     }
 
     // --- Task 3: Deserialization tests ---

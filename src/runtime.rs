@@ -204,6 +204,66 @@ fn build_config_rows(
     rows
 }
 
+// ── Agent source trust ───────────────────────────────────────────────────
+
+/// Display an untrusted-agent warning and ask the operator to confirm.
+/// Aborts when stdin is not a terminal or the operator declines.
+fn confirm_agent_trust(
+    selector: &ClassSelector,
+    source: &crate::config::AgentSource,
+) -> anyhow::Result<()> {
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "untrusted agent source \"{selector}\" from {}\n\
+             Trust it first: `jackin config trust grant {selector}`, or add `trusted = true` in config.toml.",
+            source.git,
+        );
+    }
+
+    eprintln!();
+    eprintln!("{}", "!! Untrusted agent source !!".red().bold());
+    eprintln!();
+    eprintln!("  agent:  {}", selector.to_string().bold());
+    eprintln!("  source: {}", source.git.yellow());
+    eprintln!();
+    eprintln!(
+        "  {}",
+        "jackin' has never loaded this agent before. Trusting it means:".bold()
+    );
+    eprintln!(
+        "    {} Its {} will be executed during the image build",
+        "-".dimmed(),
+        "Dockerfile".bold()
+    );
+    eprintln!(
+        "    {} Arbitrary commands in that Dockerfile will run {}",
+        "-".dimmed(),
+        "on your machine".bold()
+    );
+    eprintln!(
+        "    {} The agent will have access to your {}",
+        "-".dimmed(),
+        "mounted workspace files".bold()
+    );
+    eprintln!();
+    eprintln!("  {}", "Review the repository before trusting it.".dimmed());
+    eprintln!();
+
+    let confirmed = dialoguer::Confirm::new()
+        .with_prompt("Do you trust this agent source and want to proceed?")
+        .default(false)
+        .interact()?;
+
+    if !confirmed {
+        anyhow::bail!(
+            "agent source \"{selector}\" not trusted — aborting.\n\
+             To trust it later, run `jackin config trust grant {selector}` or try loading again."
+        );
+    }
+
+    Ok(())
+}
+
 /// Resolve the agent repository: clone if missing, pull if already present.
 /// Returns the validated repo metadata and cached repo paths.
 /// Prompt the user to confirm cached-repo removal when running in an
@@ -563,6 +623,27 @@ pub fn load_agent(
     runner: &mut impl CommandRunner,
     opts: &LoadOptions,
 ) -> anyhow::Result<()> {
+    load_agent_with(
+        paths,
+        config,
+        selector,
+        workspace,
+        runner,
+        opts,
+        confirm_agent_trust,
+    )
+}
+
+#[allow(clippy::too_many_lines)]
+fn load_agent_with(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    selector: &ClassSelector,
+    workspace: &crate::workspace::ResolvedWorkspace,
+    runner: &mut impl CommandRunner,
+    opts: &LoadOptions,
+    confirm_trust: impl FnOnce(&ClassSelector, &crate::config::AgentSource) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
     // Pre-launch garbage collection: remove orphaned DinD containers and
     // networks left behind by hard kills, terminal closures, or startup
     // failures.  Best-effort — errors are silently ignored.
@@ -590,8 +671,17 @@ pub fn load_agent(
 
     let (cached_repo, validated_repo) = resolve_agent_repo(paths, selector, &source.git, runner)?;
 
-    // Persist config only when the agent was newly registered
-    if is_new {
+    // Trust gate: prompt the operator before running an untrusted third-party agent
+    let newly_trusted = if source.trusted {
+        false
+    } else {
+        confirm_trust(selector, &source)?;
+        config.trust_agent(&selector.key());
+        true
+    };
+
+    // Persist config when the agent was newly registered or newly trusted
+    if is_new || newly_trusted {
         config.save(paths)?;
     }
 
@@ -1171,7 +1261,42 @@ mod tests {
     }
 
     #[test]
-    fn load_owner_repo_registers_source_and_builds_commands() {
+    fn trust_gate_rejects_untrusted_agent_in_non_interactive_context() {
+        let selector = ClassSelector::new(Some("evil-org"), "backdoor");
+        let source = crate::config::AgentSource {
+            git: "https://github.com/evil-org/jackin-backdoor.git".to_string(),
+            trusted: false,
+        };
+
+        let error = confirm_agent_trust(&selector, &source).unwrap_err();
+        let message = error.to_string();
+
+        assert!(
+            message.contains("untrusted agent source"),
+            "expected 'untrusted agent source' in: {message}"
+        );
+        assert!(
+            message.contains("evil-org/backdoor"),
+            "expected agent selector in error: {message}"
+        );
+        assert!(
+            message.contains("evil-org/jackin-backdoor.git"),
+            "expected git URL in error: {message}"
+        );
+    }
+
+    /// Helper: trust callback that always accepts.
+    fn auto_trust(_: &ClassSelector, _: &crate::config::AgentSource) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Helper: trust callback that always declines.
+    fn deny_trust(_: &ClassSelector, _: &crate::config::AgentSource) -> anyhow::Result<()> {
+        anyhow::bail!("agent source not trusted — aborting")
+    }
+
+    #[test]
+    fn load_namespaced_agent_registers_source_and_trusts_on_accept() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -1199,21 +1324,21 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent(
+        load_agent_with(
             &paths,
             &mut config,
             &selector,
             &workspace,
             &mut runner,
             &LoadOptions::default(),
+            auto_trust,
         )
         .unwrap();
 
-        assert!(
-            std::fs::read_to_string(&paths.config_file)
-                .unwrap()
-                .contains("chainargos/the-architect")
-        );
+        // Source was auto-registered and persisted with trust
+        let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(persisted.contains("chainargos/the-architect"));
+        assert!(persisted.contains("trusted = true"));
         assert!(
             runner
                 .recorded
@@ -1243,6 +1368,58 @@ plugins = ["code-review@claude-plugins-official"]
                 .recorded
                 .iter()
                 .any(|call| call.contains("claude plugin install"))
+        );
+    }
+
+    #[test]
+    fn load_namespaced_agent_aborts_when_trust_declined() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(Some("evil-org"), "backdoor");
+        let mut runner = FakeRunner::for_load_agent([String::new(), String::new()]);
+
+        let repo_dir = paths.agents_dir.join("evil-org").join("backdoor");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        let error = load_agent_with(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+            deny_trust,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("not trusted"));
+
+        // Source was NOT persisted when trust was declined
+        let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!persisted.contains("evil-org/backdoor"));
+
+        // No Docker build or run commands were issued
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker build") || call.contains("docker run"))
         );
     }
 
@@ -1427,6 +1604,7 @@ plugins = []
 
         let config_content = r#"[agents."chainargos/agent-brown"]
 git = "git@github.com:chainargos/jackin-agent-brown.git"
+trusted = true
 "#;
         std::fs::write(&paths.config_file, config_content).unwrap();
         let mut config = AppConfig::load_or_init(&paths).unwrap();

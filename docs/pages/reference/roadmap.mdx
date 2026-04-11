@@ -28,6 +28,8 @@ jackin' is a functional proof of concept with Claude Code as its first supported
 - Sensitive mount path warnings (warn-and-confirm for `~/.ssh`, `~/.aws`, etc.)
 - Automatic orphaned DinD cleanup (pre-launch garbage collection)
 - `${env.VAR}` interpolation in env var prompts and defaults for dependent variables
+- `JACKIN_DIND_HOSTNAME` environment variable for agents to discover the DinD sidecar hostname
+- Agent source trust model (trust-on-first-use verification for third-party agent repos)
 
 ## Planned
 
@@ -55,6 +57,7 @@ jackin's architecture is runtime-agnostic. The construct and workspace system wo
 ### Infrastructure improvements
 
 - **Construct user creation optimization** — move user creation to the derived layer to eliminate UID/GID remapping
+- **Docker API migration** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling
 - **1Password integration** — inject secrets from 1Password vaults without exposing them as files in the container
 
 :::tip
