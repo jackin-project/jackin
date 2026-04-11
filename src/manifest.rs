@@ -209,7 +209,7 @@ impl AgentManifest {
             }
         }
 
-        // Validate ${VAR_NAME} interpolation references in prompt and default_value
+        // Validate ${env.VAR_NAME} interpolation references in prompt and default_value
         let dep_names: std::collections::HashSet<&str> = decl
             .depends_on
             .iter()
