@@ -51,7 +51,7 @@ jackin's architecture is runtime-agnostic. The construct and workspace system wo
 - **DinD TLS authentication** — secure the Docker-in-Docker daemon with auto-generated certificates
 - **Network policy controls** — outbound domain filtering per agent class, similar to Docker Sandboxes' network policies
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
-- **Runtime pinning and supply-chain hardening** — make agent runtime installation more reproducible and auditable
+- **Agent version pinning** — pin agent repos to tagged versions for reproducible builds, with explicit `--update` to advance (design in progress)
 - **Alternative isolation tiers** — explore stronger backends beyond plain container isolation for users who need them
 
 ### Infrastructure improvements
