@@ -177,8 +177,24 @@ impl AgentManifest {
         Ok(warnings)
     }
 
+    /// Validate a single `env.VAR_NAME` reference: non-empty, valid name, and declared.
+    fn validate_env_ref(&self, owner: &str, context: &str, ref_name: &str) -> anyhow::Result<()> {
+        if ref_name.is_empty() {
+            anyhow::bail!("env var {owner}: {context} contains empty env reference \"env.\"");
+        }
+        if !is_valid_env_var_name(ref_name) {
+            anyhow::bail!(
+                "env var {owner}: {context} contains invalid env var name \"{ref_name}\""
+            );
+        }
+        if !self.env.contains_key(ref_name) {
+            anyhow::bail!("env var {owner}: {context} references unknown env var \"{ref_name}\"");
+        }
+        Ok(())
+    }
+
     fn validate_env_interpolation(&self, name: &str, decl: &EnvVarDecl) -> anyhow::Result<()> {
-        // Reject ${...} interpolation placeholders in options (options are always static)
+        // Reject ${env.*} interpolation placeholders in options (options are always static)
         for option in &decl.options {
             if !extract_interpolation_refs(option).is_empty() {
                 anyhow::bail!(
@@ -189,35 +205,16 @@ impl AgentManifest {
 
         // Validate depends_on entries
         for dep in &decl.depends_on {
-            // Must have env. prefix
             let Some(dep_name) = dep.strip_prefix("env.") else {
                 anyhow::bail!(
                     "env var {name}: depends_on entry \"{dep}\" must use env. prefix (e.g., \"env.{dep}\")"
                 );
             };
 
-            // Empty name
-            if dep_name.is_empty() {
-                anyhow::bail!("env var {name}: depends_on contains empty reference \"env.\"");
-            }
+            self.validate_env_ref(name, "depends_on", dep_name)?;
 
-            // Invalid name
-            if !is_valid_env_var_name(dep_name) {
-                anyhow::bail!(
-                    "env var {name}: depends_on contains invalid env var name \"{dep_name}\""
-                );
-            }
-
-            // Self-reference
             if dep_name == name {
                 anyhow::bail!("env var {name}: depends_on cannot reference self");
-            }
-
-            // Must exist
-            if !self.env.contains_key(dep_name) {
-                anyhow::bail!(
-                    "env var {name}: depends_on references unknown env var \"{dep_name}\""
-                );
             }
         }
 
@@ -228,35 +225,18 @@ impl AgentManifest {
             .filter_map(|d| d.strip_prefix("env."))
             .collect();
 
-        let fields_to_check: Vec<(&str, &str)> = [
-            decl.prompt.as_deref().map(|v| ("prompt", v)),
-            decl.default_value.as_deref().map(|v| ("default", v)),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-
-        for (field, value) in fields_to_check {
-            for ref_name in extract_interpolation_refs(value) {
-                if ref_name.is_empty() {
-                    anyhow::bail!(
-                        "env var {name}: {field} contains empty interpolation reference \"${{env.}}\""
-                    );
-                }
-                if !is_valid_env_var_name(ref_name) {
-                    anyhow::bail!(
-                        "env var {name}: {field} contains invalid env var name in \"${{env.{ref_name}}}\""
-                    );
-                }
-                if !self.env.contains_key(ref_name) {
-                    anyhow::bail!(
-                        "env var {name}: {field} references unknown env var \"${{env.{ref_name}}}\""
-                    );
-                }
-                if !dep_names.contains(ref_name) {
-                    anyhow::bail!(
-                        "env var {name}: {field} references \"${{env.{ref_name}}}\" which is not listed in depends_on"
-                    );
+        for (field, value) in [
+            ("prompt", decl.prompt.as_deref()),
+            ("default", decl.default_value.as_deref()),
+        ] {
+            if let Some(v) = value {
+                for ref_name in extract_interpolation_refs(v) {
+                    self.validate_env_ref(name, field, ref_name)?;
+                    if !dep_names.contains(ref_name) {
+                        anyhow::bail!(
+                            "env var {name}: {field} references \"{ref_name}\" which is not listed in depends_on"
+                        );
+                    }
                 }
             }
         }
