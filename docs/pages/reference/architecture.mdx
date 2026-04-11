@@ -26,7 +26,7 @@ description: How jackin' orchestrates containers, networks, and persisted state
 │  │  │  │ Container     │  │ (docker:dind)   │  │  │     │
 │  │  │  │               │  │                 │  │  │     │
 │  │  │  │ Claude Code   │──│ Docker daemon   │  │  │     │
-│  │  │  │ Agent tools   │  │ tcp://...:2375  │  │  │     │
+│  │  │  │ Agent tools   │  │ tcp://...:2376  │  │  │     │
 │  │  │  │ Mounted dirs  │  │                 │  │  │     │
 │  │  │  └──────────────┘  └─────────────────┘  │  │     │
 │  │  └─────────────────────────────────────────┘  │     │
@@ -96,8 +96,8 @@ That means an agent class defines the tools and conventions, while jackin' injec
 4. **Generate a derived build context** — copy the repo, inject runtime assets (entrypoint + pre-launch hook), and render a derived Dockerfile
 5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
 6. **Create a per-agent Docker network**
-7. **Start a privileged `docker:dind` sidecar**
-8. **Start the agent container** — mounts, resolved env vars, labels, and `DOCKER_HOST` all point at the sidecar
+7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume
+8. **Start the agent container** — mounts, resolved env vars, TLS client certs, labels, and `DOCKER_HOST` all point at the sidecar
 9. **Run Claude Code with full permissions inside that boundary**
 
 ### Reconnecting
@@ -120,13 +120,11 @@ Each agent gets an isolated Docker network:
 
 - network name is derived from the runtime container name
 - the agent container and DinD sidecar share that network
-- the agent reaches the daemon through `DOCKER_HOST=tcp://{dind}:2375`
+- the agent reaches the daemon through `DOCKER_HOST=tcp://{dind}:2376` with TLS mutual authentication
 - the agent reaches published services launched via DinD through `JACKIN_DIND_HOSTNAME={dind}`
 - different agents do not share a network by default
 
-:::note
-The DinD sidecar currently runs without TLS. Any container on that per-agent network can reach the daemon. TLS support is on the roadmap.
-:::
+The DinD sidecar auto-generates TLS certificates at startup into a shared Docker volume. The agent container mounts the client certificates read-only and sets `DOCKER_TLS_VERIFY=1` so all Docker CLI commands are authenticated.
 
 ## State management
 
@@ -183,7 +181,7 @@ If the main thing you need is the strongest local boundary for autonomous agents
 
 ## Current technical debt and limitations
 
-- **DinD transport is not authenticated.** The runtime reaches the sidecar over plain TCP.
+- **DinD transport uses auto-generated TLS certificates.** The certificates are generated per-session and not pinned to a CA chain you control.
 - **Claude installation is not fully pinned.** The derived image installs Claude Code from the upstream installer.
 - **Derived build context rejects symlinks.** Agent repos with symlink-heavy layouts are not supported yet.
 - **Cached agent repos must stay clean.** jackin' refuses to build from a dirty or origin-mismatched cache.

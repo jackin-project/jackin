@@ -10,6 +10,10 @@ pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
 const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_RUNTIME_ENV_NAME, Some(JACKIN_RUNTIME_ENV_VALUE)),
     (JACKIN_DIND_HOSTNAME_ENV_NAME, None),
+    // Docker TLS vars injected by jackin — must not be overridden by manifests.
+    ("DOCKER_HOST", None),
+    ("DOCKER_TLS_VERIFY", None),
+    ("DOCKER_CERT_PATH", None),
 ];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -973,6 +977,36 @@ default = "sidecar"
                 .to_string()
                 .contains("JACKIN_DIND_HOSTNAME")
         );
+    }
+
+    #[test]
+    fn validate_rejects_reserved_docker_tls_env_vars() {
+        for var in ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"] {
+            let temp = tempdir().unwrap();
+            std::fs::write(
+                temp.path().join("jackin.agent.toml"),
+                format!(
+                    r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.{var}]
+default = "override"
+"#
+                ),
+            )
+            .unwrap();
+
+            let manifest = AgentManifest::load(temp.path()).unwrap();
+            let result = manifest.validate();
+
+            assert!(result.is_err(), "{var} should be rejected as reserved");
+            assert!(
+                result.unwrap_err().to_string().contains(var),
+                "error message should mention {var}"
+            );
+        }
     }
 
     #[test]

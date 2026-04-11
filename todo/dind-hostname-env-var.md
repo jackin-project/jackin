@@ -26,7 +26,7 @@ Export `JACKIN_DIND_HOSTNAME` with the DinD container's hostname on the shared n
 
 ```rust
 let dind = format!("{container_name}-dind");
-let docker_host = format!("DOCKER_HOST=tcp://{dind}:2375");
+let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
 let dind_hostname = format!("JACKIN_DIND_HOSTNAME={dind}");  // new
 ```
 
@@ -46,7 +46,7 @@ export POSTGRESQL_DB_HOST="$JACKIN_DIND_HOSTNAME"
 
 ## What NOT to add
 
-- `JACKIN_DIND_PORT` — always 2375, already in `DOCKER_HOST`, no standalone use case
+- `JACKIN_DIND_PORT` — always 2376 (TLS), already in `DOCKER_HOST`, no standalone use case
 - `JACKIN_NETWORK_NAME` — internal Docker plumbing, agents shouldn't need it
 - Domain-specific vars like `POSTGRESQL_DB_HOST` — that's the agent's responsibility
 

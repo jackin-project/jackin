@@ -23,6 +23,13 @@ const FILTER_MANAGED: &str = "label=jackin.managed=true";
 /// Filter expression for `docker ps --filter` to find `DinD` sidecars.
 const FILTER_ROLE_DIND: &str = "label=jackin.role=dind";
 
+/// Environment variables owned by the jackin runtime that must not be
+/// overridden by agent manifests.  These are injected as `-e` flags in
+/// `launch_agent_runtime` and are silently skipped if a manifest declares them.
+/// The corresponding manifest-time validation lives in
+/// `manifest::RESERVED_RUNTIME_ENV_VARS`.
+const RUNTIME_OWNED_ENV_VARS: &[&str] = &["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"];
+
 pub struct LoadOptions {
     pub no_intro: bool,
     pub debug: bool,
@@ -474,8 +481,10 @@ fn launch_agent_runtime(
     } = ctx;
     // Clean up stale resources from a previous run that wasn't cleaned up
     // (e.g. terminal closed, process killed, Ctrl+C during docker run)
+    let certs_volume = dind_certs_volume(container_name);
     let _ = run_cleanup_command(runner, &["rm", "-f", container_name]);
     let _ = run_cleanup_command(runner, &["rm", "-f", dind]);
+    let _ = run_cleanup_command(runner, &["volume", "rm", &certs_volume]);
     let _ = run_cleanup_command(runner, &["network", "rm", network]);
 
     // Create Docker network
@@ -494,7 +503,8 @@ fn launch_agent_runtime(
         None,
     )?;
 
-    // Start Docker-in-Docker
+    // Start Docker-in-Docker with TLS
+    let certs_dind_mount = format!("{certs_volume}:/certs/client");
     let dind_args: Vec<&str> = vec![
         "run",
         "-d",
@@ -510,12 +520,14 @@ fn launch_agent_runtime(
         "--label",
         &agent_label,
         "-e",
-        "DOCKER_TLS_CERTDIR=",
+        "DOCKER_TLS_CERTDIR=/certs",
+        "-v",
+        &certs_dind_mount,
         "docker:dind",
     ];
     runner.capture("docker", &dind_args, None)?;
 
-    wait_for_dind(dind, runner, *debug)?;
+    wait_for_dind(dind, &certs_volume, runner, *debug)?;
 
     // Step 4: Mount volumes and launch
     steps.next("Launching agent");
@@ -525,7 +537,7 @@ fn launch_agent_runtime(
 
     let class_label = format!("jackin.class={}", selector.key());
     let display_label = format!("jackin.display_name={agent_display_name}");
-    let docker_host = format!("DOCKER_HOST=tcp://{dind}:2375");
+    let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
     let dind_hostname = format!("{}={dind}", crate::manifest::JACKIN_DIND_HOSTNAME_ENV_NAME);
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
@@ -536,6 +548,7 @@ fn launch_agent_runtime(
         "{}:/home/claude/.jackin/plugins.json:ro",
         state.plugins_json.display()
     );
+    let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
 
     let mut run_args: Vec<&str> = vec![
         "run",
@@ -558,6 +571,10 @@ fn launch_agent_runtime(
         "-e",
         &docker_host,
         "-e",
+        "DOCKER_TLS_VERIFY=1",
+        "-e",
+        "DOCKER_CERT_PATH=/certs/client",
+        "-e",
         &dind_hostname,
         "-e",
         &git_author_name,
@@ -576,6 +593,7 @@ fn launch_agent_runtime(
     for (key, value) in &resolved_env.vars {
         if key == crate::manifest::JACKIN_RUNTIME_ENV_NAME
             || key == crate::manifest::JACKIN_DIND_HOSTNAME_ENV_NAME
+            || RUNTIME_OWNED_ENV_VARS.contains(&key.as_str())
         {
             continue;
         }
@@ -586,6 +604,8 @@ fn launch_agent_runtime(
         run_args.push(env_str);
     }
     run_args.extend_from_slice(&[
+        "-v",
+        &certs_agent_mount,
         "-v",
         &claude_dir_mount,
         "-v",
@@ -720,7 +740,13 @@ fn load_agent_with(
         crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
     };
 
-    let mut cleanup = LoadCleanup::new(container_name.clone(), dind.clone(), network.clone());
+    let certs_volume = dind_certs_volume(&container_name);
+    let mut cleanup = LoadCleanup::new(
+        container_name.clone(),
+        dind.clone(),
+        certs_volume,
+        network.clone(),
+    );
     let load_result = (|| -> anyhow::Result<()> {
         // Step 2: Build Docker image
         let rebuild = opts.rebuild || {
@@ -801,9 +827,11 @@ pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> 
 
 fn wait_for_dind(
     dind_name: &str,
+    certs_volume: &str,
     runner: &mut impl CommandRunner,
     _debug: bool,
 ) -> anyhow::Result<()> {
+    // Wait for the DinD daemon to become ready (TLS handshake included).
     tui::spin_wait(
         "Waiting for Docker-in-Docker to be ready",
         30,
@@ -814,7 +842,25 @@ fn wait_for_dind(
                 .map(|_| ())
         },
     )
-    .map_err(|_| anyhow::anyhow!("timed out waiting for Docker-in-Docker sidecar {dind_name}"))
+    .map_err(|_| anyhow::anyhow!("timed out waiting for Docker-in-Docker sidecar {dind_name}"))?;
+
+    // Verify TLS client certificates were generated on the shared volume.
+    // The DinD entrypoint writes certs before starting dockerd, so this
+    // should succeed immediately after `docker info` passes.
+    runner
+        .capture(
+            "docker",
+            &["exec", dind_name, "test", "-f", "/certs/client/ca.pem"],
+            None,
+        )
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "DinD TLS client certificates not found on volume {certs_volume} — \
+                 the DinD sidecar may have started without generating certificates"
+            )
+        })?;
+
+    Ok(())
 }
 
 pub fn list_running_agent_names(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<String>> {
@@ -931,10 +977,12 @@ pub fn purge_class_data(paths: &JackinPaths, selector: &ClassSelector) -> anyhow
 
 pub fn eject_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     let dind = format!("{container_name}-dind");
+    let certs_volume = dind_certs_volume(container_name);
     let network = format!("{container_name}-net");
 
     run_cleanup_command(runner, &["rm", "-f", container_name])?;
     run_cleanup_command(runner, &["rm", "-f", &dind])?;
+    run_cleanup_command(runner, &["volume", "rm", &certs_volume])?;
     run_cleanup_command(runner, &["network", "rm", &network])?;
 
     Ok(())
@@ -950,7 +998,9 @@ fn run_cleanup_command(runner: &mut impl CommandRunner, args: &[&str]) -> anyhow
 
 fn is_missing_cleanup_error(error: &anyhow::Error) -> bool {
     let message = error.to_string();
-    message.contains("No such container") || message.contains("No such network")
+    message.contains("No such container")
+        || message.contains("No such volume")
+        || message.contains("No such network")
 }
 
 // ── Orphaned resource garbage collection ─────────────────────────────────
@@ -1007,20 +1057,22 @@ fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<
         .collect())
 }
 
-/// Remove orphaned `DinD` containers, their associated agent containers, and
-/// networks.  Errors are logged but do not abort the launch — GC is
-/// best-effort.
+/// Remove orphaned `DinD` containers, their associated agent containers, cert
+/// volumes, and networks.  Errors are logged but do not abort the launch — GC
+/// is best-effort.
 fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
     let Ok(orphaned) = collect_orphaned_dind(runner) else {
         return;
     };
 
     for info in &orphaned {
+        let certs_volume = dind_certs_volume(&info.agent);
         let network = format!("{}-net", info.agent);
 
-        // Remove stopped agent container, DinD sidecar, and network.
+        // Remove stopped agent container, DinD sidecar, cert volume, and network.
         let _ = run_cleanup_command(runner, &["rm", "-f", &info.agent]);
         let _ = run_cleanup_command(runner, &["rm", "-f", &info.name]);
+        let _ = run_cleanup_command(runner, &["volume", "rm", &certs_volume]);
         let _ = run_cleanup_command(runner, &["network", "rm", &network]);
 
         eprintln!(
@@ -1088,18 +1140,31 @@ fn image_name(selector: &ClassSelector) -> String {
     format!("jackin-{}", crate::instance::runtime_slug(selector))
 }
 
+/// Docker volume name for the TLS client certificates shared between the
+/// `DinD` sidecar (writer) and the agent container (reader).
+fn dind_certs_volume(container_name: &str) -> String {
+    format!("{container_name}-dind-certs")
+}
+
 struct LoadCleanup {
     container_name: String,
     dind: String,
+    certs_volume: String,
     network: String,
     armed: bool,
 }
 
 impl LoadCleanup {
-    const fn new(container_name: String, dind: String, network: String) -> Self {
+    const fn new(
+        container_name: String,
+        dind: String,
+        certs_volume: String,
+        network: String,
+    ) -> Self {
         Self {
             container_name,
             dind,
+            certs_volume,
             network,
             armed: true,
         }
@@ -1119,6 +1184,9 @@ impl LoadCleanup {
         }
         if let Err(e) = run_cleanup_command(runner, &["rm", "-f", &self.dind]) {
             tui::step_fail(&format!("cleanup failed (dind): {e}"));
+        }
+        if let Err(e) = run_cleanup_command(runner, &["volume", "rm", &self.certs_volume]) {
+            tui::step_fail(&format!("cleanup failed (certs volume): {e}"));
         }
         if let Err(e) = run_cleanup_command(runner, &["network", "rm", &self.network]) {
             tui::step_fail(&format!("cleanup failed (network): {e}"));
@@ -1472,6 +1540,7 @@ plugins = []
             vec![
                 "docker rm -f jackin-agent-smith",
                 "docker rm -f jackin-agent-smith-dind",
+                "docker volume rm jackin-agent-smith-dind-certs",
                 "docker network rm jackin-agent-smith-net",
             ]
         );
@@ -1491,6 +1560,11 @@ plugins = []
                         .to_string(),
                 ),
                 (
+                    "docker volume rm jackin-agent-smith-dind-certs".to_string(),
+                    "Error response from daemon: No such volume: jackin-agent-smith-dind-certs"
+                        .to_string(),
+                ),
+                (
                     "docker network rm jackin-agent-smith-net".to_string(),
                     "Error response from daemon: No such network: jackin-agent-smith-net"
                         .to_string(),
@@ -1506,6 +1580,7 @@ plugins = []
             vec![
                 "docker rm -f jackin-agent-smith",
                 "docker rm -f jackin-agent-smith-dind",
+                "docker volume rm jackin-agent-smith-dind-certs",
                 "docker network rm jackin-agent-smith-net",
             ]
         );
@@ -1525,9 +1600,11 @@ jackin-agent-smith-clone-1"#
                 "docker ps -a --filter label=jackin.managed=true --format {{.Names}}",
                 "docker rm -f jackin-agent-smith",
                 "docker rm -f jackin-agent-smith-dind",
+                "docker volume rm jackin-agent-smith-dind-certs",
                 "docker network rm jackin-agent-smith-net",
                 "docker rm -f jackin-agent-smith-clone-1",
                 "docker rm -f jackin-agent-smith-clone-1-dind",
+                "docker volume rm jackin-agent-smith-clone-1-dind-certs",
                 "docker network rm jackin-agent-smith-clone-1-net",
             ]
         );
@@ -1563,9 +1640,11 @@ jackin-agent-smith-clone-1"#
                 "docker ps -a --filter label=jackin.managed=true --format {{.Names}}",
                 "docker rm -f jackin-agent-smith",
                 "docker rm -f jackin-agent-smith-dind",
+                "docker volume rm jackin-agent-smith-dind-certs",
                 "docker network rm jackin-agent-smith-net",
                 "docker rm -f jackin-agent-smith-clone-1",
                 "docker rm -f jackin-agent-smith-clone-1-dind",
+                "docker volume rm jackin-agent-smith-clone-1-dind-certs",
                 "docker network rm jackin-agent-smith-clone-1-net",
             ]
         );
@@ -1940,6 +2019,12 @@ plugins = ["code-review@claude-plugins-official"]
             runner
                 .recorded
                 .iter()
+                .any(|call| call == "docker volume rm jackin-agent-smith-dind-certs")
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
                 .any(|call| call == "docker network rm jackin-agent-smith-net")
         );
     }
@@ -2007,6 +2092,122 @@ plugins = []
             .position(|call| call.contains("docker exec jackin-agent-smith-dind docker info"))
             .unwrap();
         assert!(dind_start < dind_check);
+
+        // TLS cert verification runs after docker info check
+        assert!(runner.recorded.iter().any(|call| {
+            call.contains("docker exec jackin-agent-smith-dind test -f /certs/client/ca.pem")
+        }));
+    }
+
+    #[test]
+    fn dind_certs_volume_derives_from_container_name() {
+        assert_eq!(
+            dind_certs_volume("jackin-agent-smith"),
+            "jackin-agent-smith-dind-certs"
+        );
+        assert_eq!(
+            dind_certs_volume("jackin-chainargos__the-architect-clone-2"),
+            "jackin-chainargos__the-architect-clone-2-dind-certs"
+        );
+    }
+
+    #[test]
+    fn is_missing_cleanup_error_tolerates_all_resource_types() {
+        let container_err =
+            anyhow::anyhow!("Error response from daemon: No such container: jackin-agent-smith");
+        let volume_err = anyhow::anyhow!(
+            "Error response from daemon: No such volume: jackin-agent-smith-dind-certs"
+        );
+        let network_err =
+            anyhow::anyhow!("Error response from daemon: No such network: jackin-agent-smith-net");
+        let real_err = anyhow::anyhow!("Error response from daemon: permission denied");
+
+        assert!(is_missing_cleanup_error(&container_err));
+        assert!(is_missing_cleanup_error(&volume_err));
+        assert!(is_missing_cleanup_error(&network_err));
+        assert!(!is_missing_cleanup_error(&real_err));
+    }
+
+    #[test]
+    fn load_agent_configures_dind_with_tls() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        // DinD sidecar: TLS enabled with cert volume
+        let dind_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d --name jackin-agent-smith-dind"))
+            .unwrap();
+        assert!(
+            dind_cmd.contains("DOCKER_TLS_CERTDIR=/certs"),
+            "DinD must enable TLS cert generation"
+        );
+        assert!(
+            dind_cmd.contains("jackin-agent-smith-dind-certs:/certs/client"),
+            "DinD must mount cert volume"
+        );
+
+        // Agent container: TLS client config
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -it"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("DOCKER_HOST=tcp://jackin-agent-smith-dind:2376"),
+            "agent must use TLS port 2376"
+        );
+        assert!(
+            run_cmd.contains("DOCKER_TLS_VERIFY=1"),
+            "agent must verify TLS"
+        );
+        assert!(
+            run_cmd.contains("DOCKER_CERT_PATH=/certs/client"),
+            "agent must know cert path"
+        );
+        assert!(
+            run_cmd.contains("jackin-agent-smith-dind-certs:/certs/client:ro"),
+            "agent must mount cert volume read-only"
+        );
     }
 
     #[test]
@@ -2535,6 +2736,12 @@ plugins = []
             runner
                 .recorded
                 .iter()
+                .any(|c| c.contains("docker volume rm jackin-agent-smith-dind-certs"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
                 .any(|c| c.contains("docker network rm jackin-agent-smith-net"))
         );
     }
@@ -2618,7 +2825,19 @@ plugins = []
             runner
                 .recorded
                 .iter()
+                .any(|c| c.contains("docker volume rm jackin-agent-smith-dind-certs"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
                 .any(|c| c.contains("docker rm -f jackin-neo-dind"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker volume rm jackin-neo-dind-certs"))
         );
         assert!(
             runner
