@@ -18,10 +18,16 @@ const BUILTIN_AGENTS: &[(&str, &str)] = &[
     ),
 ];
 
+/// Serde helper: `skip_serializing_if` requires `fn(&T) -> bool`.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+const fn is_false(v: &bool) -> bool {
+    !*v
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSource {
     pub git: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub trusted: bool,
 }
 
@@ -378,8 +384,6 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Ensures all built-in agent entries match the current binary version.
-    /// Returns `true` if any entries were added or updated.
     /// Mark an agent source as trusted.  Returns `true` when the flag changed.
     pub fn trust_agent(&mut self, key: &str) -> bool {
         if let Some(source) = self.agents.get_mut(key)

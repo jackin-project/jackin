@@ -651,13 +651,16 @@ pub fn load_agent(
     let (cached_repo, validated_repo) = resolve_agent_repo(paths, selector, &source.git, runner)?;
 
     // Trust gate: prompt the operator before running an untrusted third-party agent
-    if !source.trusted {
+    let newly_trusted = if source.trusted {
+        false
+    } else {
         confirm_agent_trust(selector, &source)?;
         config.trust_agent(&selector.key());
-    }
+        true
+    };
 
     // Persist config when the agent was newly registered or newly trusted
-    if is_new || !source.trusted {
+    if is_new || newly_trusted {
         config.save(paths)?;
     }
 
@@ -1234,6 +1237,31 @@ mod tests {
                 readonly: false,
             }],
         }
+    }
+
+    #[test]
+    fn trust_gate_rejects_untrusted_agent_in_non_interactive_context() {
+        let selector = ClassSelector::new(Some("evil-org"), "backdoor");
+        let source = crate::config::AgentSource {
+            git: "https://github.com/evil-org/jackin-backdoor.git".to_string(),
+            trusted: false,
+        };
+
+        let error = confirm_agent_trust(&selector, &source).unwrap_err();
+        let message = error.to_string();
+
+        assert!(
+            message.contains("untrusted agent source"),
+            "expected 'untrusted agent source' in: {message}"
+        );
+        assert!(
+            message.contains("evil-org/backdoor"),
+            "expected agent selector in error: {message}"
+        );
+        assert!(
+            message.contains("evil-org/jackin-backdoor.git"),
+            "expected git URL in error: {message}"
+        );
     }
 
     #[test]

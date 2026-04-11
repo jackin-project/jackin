@@ -45,7 +45,35 @@ This is the core blast-radius control in jackin'.
 
 Mounts marked `:ro` are enforced by Docker and the kernel. The agent cannot write to those paths, regardless of Claude Code permissions.
 
-### 4. Per-agent network separation
+### 4. Agent source trust
+
+jackin' uses a trust-on-first-use model for third-party agent sources.
+
+Built-in agents (`agent-smith`, `the-architect`) are always trusted. When you load a third-party agent (a namespaced selector like `org/agent-name`) for the first time, jackin' prompts you to review and confirm the source before building:
+
+```
+!! Untrusted agent source !!
+
+  agent:  org/agent-name
+  source: https://github.com/org/jackin-agent-name.git
+
+  jackin' has never loaded this agent before. Trusting it means:
+    - Its Dockerfile will be executed during the image build
+    - Arbitrary commands in that Dockerfile will run on your machine
+    - The agent will have access to your mounted workspace files
+```
+
+Once you confirm, the trust decision is saved to `~/.config/jackin/config.toml` and subsequent loads proceed without prompting.
+
+For non-interactive environments (CI, automation), pre-trust an agent by adding `trusted = true` to its config entry:
+
+```toml
+[agents."org/agent-name"]
+git = "https://github.com/org/jackin-agent-name.git"
+trusted = true
+```
+
+### 5. Per-agent network separation
 
 Each runtime gets its own Docker network. The agent container and its DinD sidecar share that network, but different agents do not share a network by default.
 
@@ -139,6 +167,7 @@ jackin' is designed to reduce the most common operator risks:
 | Agent reaches host Docker daemon | Agent uses its own DinD sidecar | DinD sidecar itself is privileged |
 | Agent interferes with another agent | Separate containers, networks, and state | Shared host kernel remains a common lower layer |
 | Agent persists random system changes | Runtime root filesystem is ephemeral | Persisted tool state and mounted files still survive |
+| Typosquatted or malicious agent repo | Trust-on-first-use prompt before building | User must review the source; trusted flag persists |
 
 ## What jackin' does NOT protect against
 
@@ -158,7 +187,7 @@ This is where people often over-claim container isolation. Don't do that. jackin
 2. **Prefer read-only mounts.** If the agent only needs to inspect something, mount it as `:ro`.
 3. **Do not mount credential directories.** Avoid `~/.ssh`, `~/.aws`, `~/.gnupg`, and similar paths. jackin' warns and asks for confirmation when it detects these, but avoiding them entirely is the safest approach.
 4. **Treat runtime login as sensitive.** If you authenticate inside the runtime, assume the agent can read that state.
-5. **Review agent repos before loading.** The Dockerfile defines what the runtime contains.
+5. **Review agent repos before loading.** The Dockerfile defines what the runtime contains. jackin' prompts for trust confirmation on first use of third-party agents, but you should inspect the repository yourself before confirming.
 6. **Split agent classes by scope.** Keep frontend, backend, infra, and review workflows in separate environments when appropriate.
 7. **Use `jackin purge` when a runtime no longer needs its persisted state.**
 8. **Keep Docker updated.** Container isolation is only as strong as the Docker runtime underneath it.

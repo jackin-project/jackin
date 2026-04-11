@@ -62,16 +62,21 @@ jackin load agent-smith ~/app --mount ~/cache:/cache:ro
 
 1. Resolves the agent class and clones/updates its repository
 2. Validates the agent repo contract (`jackin.agent.toml` + Dockerfile) with strict manifest parsing
-3. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
-4. Prompts for interactive environment variables declared in the manifest
-5. Generates and builds a derived Docker image (cached if unchanged)
-6. Creates a per-agent Docker network and DinD sidecar
-7. Launches the agent container with all resolved mounts and environment variables
-8. Runs the pre-launch hook if declared
-9. Starts Claude Code with `--dangerously-skip-permissions`
+3. **If the agent source has never been trusted**, prompts the operator to review and confirm before proceeding (see [Agent source trust](/guides/security-model#agent-source-trust))
+4. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
+5. Prompts for interactive environment variables declared in the manifest
+6. Generates and builds a derived Docker image (cached if unchanged)
+7. Creates a per-agent Docker network and DinD sidecar
+8. Launches the agent container with all resolved mounts and environment variables
+9. Runs the pre-launch hook if declared
+10. Starts Claude Code with `--dangerously-skip-permissions`
 
 :::note
 If the agent manifest declares interactive environment variables, `jackin load` prompts for their values before building the Docker image. This ensures no build time is wasted if you cancel.
+:::
+
+:::warning
+Third-party agents (namespaced selectors like `org/agent-name`) require trust confirmation on first use. jackin' will show the agent name and git URL and ask you to confirm before building. In non-interactive environments (CI, scripts), pre-trust the agent by adding `trusted = true` to its entry in `~/.config/jackin/config.toml`.
 :::
 
 :::note
