@@ -44,8 +44,8 @@ prompt = "Select a project:"
 [env.BRANCH]
 interactive = true
 depends_on = ["env.PROJECT"]
-prompt = "Branch name:"
-default = "main"
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
 ```
 
 ## Top-level fields
@@ -326,13 +326,13 @@ prompt = "Context7 API key:"
 [env.PROJECT]
 interactive = true
 options = ["frontend", "backend", "infra"]
-prompt = "Select a project to clone"
+prompt = "Select a project to clone:"
 
 [env.BRANCH]
 interactive = true
 depends_on = ["env.PROJECT"]
-prompt = "Branch name:"
-default = "main"
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
 ```
 
 :::tip
