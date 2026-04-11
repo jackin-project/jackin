@@ -254,6 +254,12 @@ pub fn run(cli: Cli) -> Result<()> {
                 workspace_input,
                 &ad_hoc_mounts,
             )?;
+
+            let sensitive = crate::workspace::find_sensitive_mounts(&resolved_workspace.mounts);
+            if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
+                anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+            }
+
             let opts = runtime::LoadOptions {
                 no_intro: no_intro || debug,
                 debug,
@@ -281,6 +287,12 @@ pub fn run(cli: Cli) -> Result<()> {
         Command::Launch => {
             let cwd = std::env::current_dir()?;
             let (class, workspace) = crate::launch::run_launch(&config, &cwd)?;
+
+            let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
+            if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
+                anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+            }
+
             let opts = runtime::LoadOptions {
                 no_intro: false,
                 debug: false,
