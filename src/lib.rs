@@ -676,27 +676,40 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
         },
-        Command::Trust { selector } => {
+        Command::Trust {
+            selector,
+            untrust,
+            show,
+        } => {
             let class = ClassSelector::parse(&selector)?;
             let mut config = AppConfig::load_or_init(&paths)?;
-            // Ensure the source exists (register if new, but don't clone yet)
-            config.resolve_agent_source(&class)?;
-            if config.trust_agent(&class.key()) {
-                config.save(&paths)?;
-                println!("Trusted {}.", class.key());
-            } else {
-                println!("{} is already trusted.", class.key());
+
+            if show {
+                let trusted = config.agents.get(&class.key()).is_some_and(|s| s.trusted);
+                println!(
+                    "{}: {}",
+                    class.key(),
+                    if trusted { "trusted" } else { "untrusted" }
+                );
+                return Ok(());
             }
-            Ok(())
-        }
-        Command::Untrust { selector } => {
-            let class = ClassSelector::parse(&selector)?;
-            let mut config = AppConfig::load_or_init(&paths)?;
-            if config.untrust_agent(&class.key()) {
-                config.save(&paths)?;
-                println!("Revoked trust for {}.", class.key());
+
+            if untrust {
+                if config.untrust_agent(&class.key()) {
+                    config.save(&paths)?;
+                    println!("Revoked trust for {}.", class.key());
+                } else {
+                    println!("{} is not currently trusted.", class.key());
+                }
             } else {
-                println!("{} is not currently trusted.", class.key());
+                // Ensure the source exists (register if new, but don't clone yet)
+                config.resolve_agent_source(&class)?;
+                if config.trust_agent(&class.key()) {
+                    config.save(&paths)?;
+                    println!("Trusted {}.", class.key());
+                } else {
+                    println!("{} is already trusted.", class.key());
+                }
             }
             Ok(())
         }

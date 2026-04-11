@@ -72,7 +72,10 @@ You can also manage trust from the command line:
 jackin trust chainargos/the-architect
 
 # Revoke trust (next load will prompt again)
-jackin untrust chainargos/the-architect
+jackin trust chainargos/the-architect --untrust
+
+# Check current trust status
+jackin trust chainargos/the-architect --show
 ```
 
 For non-interactive environments (CI, automation), pre-trust an agent by adding `trusted = true` to its config entry:
