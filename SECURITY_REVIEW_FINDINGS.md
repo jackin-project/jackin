@@ -23,16 +23,8 @@ In `src/derived_image.rs`, the derived Dockerfile includes:
 
 ---
 
-### 2) Git source trust is broad for first clone
-`resolve_agent_source()` auto-constructs GitHub URL from namespace/name and clones directly.
-
-**Risk**
-- Typosquatting / untrusted repo execution in build context.
-
-**Recommendation**
-- Add optional allowlist for namespaces/orgs.
-- Require explicit confirmation for first-time non-builtin agents.
-- Support commit/tag pinning in config (`git + rev`).
+### 2) ~~Git source trust is broad for first clone~~ ✅ Resolved
+Trust-on-first-use model implemented. Untrusted third-party agents now require explicit operator confirmation before building. Built-in agents are always trusted. Trust state is persisted in config.
 
 ---
 
@@ -117,6 +109,6 @@ Current repo flow tracks moving branches by default.
 
 1. ~~Fix Dockerfile path canonicalization/symlink boundary checks.~~ ✅
 2. Pin/verify remote installer script. (see `SECURITY_EXCEPTIONS.md`)
-3. Add git trust controls + optional commit pinning. (see `todo/agent-source-trust.md`, `todo/reproducibility-pinning.md`)
+3. ~~Add git trust controls~~ ✅ + optional commit pinning. (see `todo/reproducibility-pinning.md`)
 4. ~~Harden file permissions and atomic writes for config/state.~~ ✅
 5. ~~Add command timeout support~~ ✅ and robust cleanup handling. (see `todo/bollard-migration.md`)

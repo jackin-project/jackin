@@ -204,6 +204,45 @@ fn build_config_rows(
     rows
 }
 
+// ── Agent source trust ───────────────────────────────────────────────────
+
+/// Display an untrusted-agent warning and ask the operator to confirm.
+/// Aborts when stdin is not a terminal or the operator declines.
+fn confirm_agent_trust(
+    selector: &ClassSelector,
+    source: &crate::config::AgentSource,
+) -> anyhow::Result<()> {
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "untrusted agent source {selector} — cannot prompt for trust confirmation (stdin is not a terminal)"
+        );
+    }
+
+    eprintln!(
+        "\n{}",
+        "⚠  Untrusted agent source detected:".yellow().bold()
+    );
+    eprintln!("     agent:  {}", selector.to_string().bold());
+    eprintln!("     source: {}", source.git.dimmed());
+    eprintln!(
+        "   {}",
+        "This is a third-party agent. Its Dockerfile and build instructions will be executed on your machine."
+            .dimmed()
+    );
+    eprintln!();
+
+    let confirmed = dialoguer::Confirm::new()
+        .with_prompt("Do you trust this agent source?")
+        .default(false)
+        .interact()?;
+
+    if !confirmed {
+        anyhow::bail!("agent source not trusted — aborting");
+    }
+
+    Ok(())
+}
+
 /// Resolve the agent repository: clone if missing, pull if already present.
 /// Returns the validated repo metadata and cached repo paths.
 /// Prompt the user to confirm cached-repo removal when running in an
@@ -590,8 +629,14 @@ pub fn load_agent(
 
     let (cached_repo, validated_repo) = resolve_agent_repo(paths, selector, &source.git, runner)?;
 
-    // Persist config only when the agent was newly registered
-    if is_new {
+    // Trust gate: prompt the operator before running an untrusted third-party agent
+    if !source.trusted {
+        confirm_agent_trust(selector, &source)?;
+        config.trust_agent(&selector.key());
+    }
+
+    // Persist config when the agent was newly registered or newly trusted
+    if is_new || !source.trusted {
         config.save(paths)?;
     }
 
@@ -1176,6 +1221,16 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+        // Pre-trust the third-party agent so the non-interactive test doesn't
+        // hit the trust prompt.
+        config.agents.insert(
+            "chainargos/the-architect".to_string(),
+            crate::config::AgentSource {
+                git: "https://github.com/chainargos/jackin-the-architect.git".to_string(),
+                trusted: true,
+            },
+        );
+        config.save(&paths).unwrap();
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             "jackin-chainargos__the-architect".to_string(),
@@ -1427,6 +1482,7 @@ plugins = []
 
         let config_content = r#"[agents."chainargos/agent-brown"]
 git = "git@github.com:chainargos/jackin-agent-brown.git"
+trusted = true
 "#;
         std::fs::write(&paths.config_file, config_content).unwrap();
         let mut config = AppConfig::load_or_init(&paths).unwrap();
