@@ -4,6 +4,12 @@ use std::path::Path;
 
 pub const JACKIN_RUNTIME_ENV_NAME: &str = "JACKIN_CLAUDE_ENV";
 pub const JACKIN_RUNTIME_ENV_VALUE: &str = "jackin";
+pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
+
+const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
+    (JACKIN_RUNTIME_ENV_NAME, Some(JACKIN_RUNTIME_ENV_VALUE)),
+    (JACKIN_DIND_HOSTNAME_ENV_NAME, None),
+];
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -85,10 +91,15 @@ impl AgentManifest {
         let mut warnings = Vec::new();
 
         for (name, decl) in &self.env {
-            if name == JACKIN_RUNTIME_ENV_NAME {
-                anyhow::bail!(
-                    "env var {name}: reserved for jackin runtime metadata and set automatically to {JACKIN_RUNTIME_ENV_VALUE}"
+            if let Some((_, value)) = RESERVED_RUNTIME_ENV_VARS
+                .iter()
+                .find(|(reserved, _)| name == reserved)
+            {
+                let detail = value.as_ref().map_or_else(
+                    || " and set automatically by jackin at runtime".to_string(),
+                    |value| format!(" and set automatically to {value}"),
                 );
+                anyhow::bail!("env var {name}: reserved for jackin runtime metadata{detail}");
             }
 
             // Non-interactive without default is an error
@@ -847,6 +858,34 @@ default = "docker"
                 .unwrap_err()
                 .to_string()
                 .contains("JACKIN_CLAUDE_ENV")
+        );
+    }
+
+    #[test]
+    fn validate_rejects_reserved_dind_hostname_env_name() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[env.JACKIN_DIND_HOSTNAME]
+default = "sidecar"
+"#,
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let result = manifest.validate();
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("JACKIN_DIND_HOSTNAME")
         );
     }
 
