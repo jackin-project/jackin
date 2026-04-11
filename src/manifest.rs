@@ -1,3 +1,4 @@
+use crate::env_resolver::extract_interpolation_refs;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -80,29 +81,6 @@ fn is_valid_env_var_name(name: &str) -> bool {
         && name.is_ascii()
         && !name.as_bytes()[0].is_ascii_digit()
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
-}
-
-/// Extract env var names from `${env.VAR_NAME}` interpolation placeholders.
-///
-/// Returns the var name portion (after `env.`) for each match.  Non-`env.`
-/// references like `${other.FOO}` are ignored — only the `env` namespace is
-/// recognised for interpolation.
-fn extract_interpolation_refs(s: &str) -> Vec<&str> {
-    let mut refs = Vec::new();
-    let mut rest = s;
-    while let Some(start) = rest.find("${") {
-        let after_open = &rest[start + 2..];
-        if let Some(end) = after_open.find('}') {
-            let ref_expr = &after_open[..end];
-            if let Some(var_name) = ref_expr.strip_prefix("env.") {
-                refs.push(var_name);
-            }
-            rest = &after_open[end + 1..];
-        } else {
-            break;
-        }
-    }
-    refs
 }
 
 impl AgentManifest {
@@ -211,11 +189,11 @@ impl AgentManifest {
                 );
             };
 
-            self.validate_env_ref(name, "depends_on", dep_name)?;
-
             if dep_name == name {
                 anyhow::bail!("env var {name}: depends_on cannot reference self");
             }
+
+            self.validate_env_ref(name, "depends_on", dep_name)?;
         }
 
         // Validate ${env.VAR_NAME} interpolation references in prompt and default_value
@@ -315,43 +293,6 @@ mod tests {
         assert!(!is_valid_env_var_name("MY.VAR"));
         assert!(!is_valid_env_var_name("MY$VAR"));
         assert!(!is_valid_env_var_name("A}B"));
-    }
-
-    #[test]
-    fn extract_interpolation_refs_finds_single_ref() {
-        assert_eq!(
-            extract_interpolation_refs("Branch for ${env.PROJECT}:"),
-            vec!["PROJECT"]
-        );
-    }
-
-    #[test]
-    fn extract_interpolation_refs_finds_multiple_refs() {
-        assert_eq!(
-            extract_interpolation_refs("${env.TEAM}/${env.PROJECT}"),
-            vec!["TEAM", "PROJECT"]
-        );
-    }
-
-    #[test]
-    fn extract_interpolation_refs_returns_empty_for_no_refs() {
-        assert!(extract_interpolation_refs("plain text").is_empty());
-    }
-
-    #[test]
-    fn extract_interpolation_refs_ignores_non_env_namespace() {
-        assert!(extract_interpolation_refs("${other.FOO}").is_empty());
-        assert!(extract_interpolation_refs("${FOO}").is_empty());
-    }
-
-    #[test]
-    fn extract_interpolation_refs_returns_empty_name_for_empty_env_ref() {
-        assert_eq!(extract_interpolation_refs("${env.}"), vec![""]);
-    }
-
-    #[test]
-    fn extract_interpolation_refs_handles_unclosed_brace() {
-        assert!(extract_interpolation_refs("${env.OPEN").is_empty());
     }
 
     #[test]

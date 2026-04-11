@@ -21,6 +21,33 @@ pub trait EnvPrompter {
     ) -> PromptResult;
 }
 
+/// Extract env var names from `${env.VAR_NAME}` interpolation placeholders.
+///
+/// Returns the var name portion (after `env.`) for each match.  Non-`env.`
+/// references like `${other.FOO}` are ignored — only the `env` namespace is
+/// recognised for interpolation.
+///
+/// The scanning logic here mirrors [`interpolate`] — both parse `${...}` the
+/// same way so that validation and runtime resolution agree on what constitutes
+/// a reference.
+pub(crate) fn extract_interpolation_refs(s: &str) -> Vec<&str> {
+    let mut refs = Vec::new();
+    let mut rest = s;
+    while let Some(start) = rest.find("${") {
+        let after_open = &rest[start + 2..];
+        if let Some(end) = after_open.find('}') {
+            let ref_expr = &after_open[..end];
+            if let Some(var_name) = ref_expr.strip_prefix("env.") {
+                refs.push(var_name);
+            }
+            rest = &after_open[end + 1..];
+        } else {
+            break;
+        }
+    }
+    refs
+}
+
 /// Replace `${env.VAR_NAME}` placeholders with values from already-resolved vars.
 ///
 /// Uses a single left-to-right scan so that replacement values containing `${...}`
@@ -180,6 +207,43 @@ fn topological_sort(declarations: &BTreeMap<String, EnvVarDecl>) -> anyhow::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_interpolation_refs_finds_single_ref() {
+        assert_eq!(
+            extract_interpolation_refs("Branch for ${env.PROJECT}:"),
+            vec!["PROJECT"]
+        );
+    }
+
+    #[test]
+    fn extract_interpolation_refs_finds_multiple_refs() {
+        assert_eq!(
+            extract_interpolation_refs("${env.TEAM}/${env.PROJECT}"),
+            vec!["TEAM", "PROJECT"]
+        );
+    }
+
+    #[test]
+    fn extract_interpolation_refs_returns_empty_for_no_refs() {
+        assert!(extract_interpolation_refs("plain text").is_empty());
+    }
+
+    #[test]
+    fn extract_interpolation_refs_ignores_non_env_namespace() {
+        assert!(extract_interpolation_refs("${other.FOO}").is_empty());
+        assert!(extract_interpolation_refs("${FOO}").is_empty());
+    }
+
+    #[test]
+    fn extract_interpolation_refs_returns_empty_name_for_empty_env_ref() {
+        assert_eq!(extract_interpolation_refs("${env.}"), vec![""]);
+    }
+
+    #[test]
+    fn extract_interpolation_refs_handles_unclosed_brace() {
+        assert!(extract_interpolation_refs("${env.OPEN").is_empty());
+    }
 
     struct MockPrompter {
         responses: std::cell::RefCell<Vec<PromptResult>>,
