@@ -311,7 +311,12 @@ pub fn resolve_load_workspace(
         }
         LoadWorkspaceInput::Path { src, dst } => {
             let expanded_src = expand_tilde(&src);
-            let canonical_src = Path::new(&expanded_src)
+            let abs_src = if Path::new(&expanded_src).is_absolute() {
+                PathBuf::from(&expanded_src)
+            } else {
+                cwd.join(&expanded_src)
+            };
+            let canonical_src = abs_src
                 .canonicalize()
                 .map_err(|e| anyhow::anyhow!("cannot resolve path {expanded_src}: {e}"))?;
             let src_str = canonical_src.display().to_string();
@@ -634,12 +639,12 @@ mod tests {
     #[test]
     fn resolves_same_path_relative_target_to_absolute_workdir() {
         let temp = tempdir().unwrap();
-        let original_cwd = std::env::current_dir().unwrap();
         let project_dir = temp.path().join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
-        std::env::set_current_dir(temp.path()).unwrap();
 
-        let result = resolve_load_workspace(
+        // The cwd parameter is used to resolve relative paths — no need
+        // to mutate the global process CWD.
+        let resolved = resolve_load_workspace(
             &crate::config::AppConfig::default(),
             &crate::selector::ClassSelector::new(None, "agent-smith"),
             temp.path(),
@@ -648,11 +653,9 @@ mod tests {
                 dst: "./project".to_string(),
             },
             &[],
-        );
+        )
+        .unwrap();
 
-        std::env::set_current_dir(original_cwd).unwrap();
-
-        let resolved = result.unwrap();
         let expected = project_dir.canonicalize().unwrap().display().to_string();
         assert_eq!(resolved.workdir, expected);
         assert_eq!(resolved.mounts[0].dst, expected);

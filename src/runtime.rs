@@ -10,6 +10,19 @@ use crate::version_check;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
+// ── Docker label keys ─────────────────────────────────────────────────────
+//
+// Used to tag and filter jackin-managed containers and networks.
+
+/// Applied to agent containers, `DinD` sidecars, and networks.
+const LABEL_MANAGED: &str = "jackin.managed=true";
+/// `DinD` sidecars only — distinguishes them from agent containers.
+const LABEL_ROLE_DIND: &str = "jackin.role=dind";
+/// Filter expression for `docker ps --filter` to find managed containers.
+const FILTER_MANAGED: &str = "label=jackin.managed=true";
+/// Filter expression for `docker ps --filter` to find `DinD` sidecars.
+const FILTER_ROLE_DIND: &str = "label=jackin.role=dind";
+
 pub struct LoadOptions {
     pub no_intro: bool,
     pub debug: bool,
@@ -406,7 +419,20 @@ fn launch_agent_runtime(
     let _ = run_cleanup_command(runner, &["network", "rm", network]);
 
     // Create Docker network
-    runner.capture("docker", &["network", "create", network], None)?;
+    let agent_label = format!("jackin.agent={container_name}");
+    runner.capture(
+        "docker",
+        &[
+            "network",
+            "create",
+            "--label",
+            LABEL_MANAGED,
+            "--label",
+            &agent_label,
+            network,
+        ],
+        None,
+    )?;
 
     // Start Docker-in-Docker
     let dind_args: Vec<&str> = vec![
@@ -417,6 +443,12 @@ fn launch_agent_runtime(
         "--network",
         network,
         "--privileged",
+        "--label",
+        LABEL_MANAGED,
+        "--label",
+        LABEL_ROLE_DIND,
+        "--label",
+        &agent_label,
         "-e",
         "DOCKER_TLS_CERTDIR=",
         "docker:dind",
@@ -455,7 +487,7 @@ fn launch_agent_runtime(
         "--network",
         network,
         "--label",
-        "jackin.managed=true",
+        LABEL_MANAGED,
         "--label",
         &class_label,
         "--label",
@@ -522,6 +554,7 @@ fn launch_agent_runtime(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn load_agent(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -530,6 +563,11 @@ pub fn load_agent(
     runner: &mut impl CommandRunner,
     opts: &LoadOptions,
 ) -> anyhow::Result<()> {
+    // Pre-launch garbage collection: remove orphaned DinD containers and
+    // networks left behind by hard kills, terminal closures, or startup
+    // failures.  Best-effort — errors are silently ignored.
+    gc_orphaned_resources(runner);
+
     let git = load_git_identity(runner);
     let host = load_host_identity(runner);
 
@@ -708,7 +746,7 @@ fn list_agent_names(
                 "ps",
                 "-a",
                 "--filter",
-                "label=jackin.managed=true",
+                FILTER_MANAGED,
                 "--format",
                 "{{.Names}}",
             ],
@@ -717,13 +755,7 @@ fn list_agent_names(
     } else {
         runner.capture(
             "docker",
-            &[
-                "ps",
-                "--filter",
-                "label=jackin.managed=true",
-                "--format",
-                "{{.Names}}",
-            ],
+            &["ps", "--filter", FILTER_MANAGED, "--format", "{{.Names}}"],
             None,
         )?
     };
@@ -747,7 +779,7 @@ pub fn list_running_agent_display_names(
         &[
             "ps",
             "--filter",
-            "label=jackin.managed=true",
+            FILTER_MANAGED,
             "--format",
             "{{.Names}}\t{{.Label \"jackin.display_name\"}}",
         ],
@@ -829,6 +861,129 @@ fn run_cleanup_command(runner: &mut impl CommandRunner, args: &[&str]) -> anyhow
 fn is_missing_cleanup_error(error: &anyhow::Error) -> bool {
     let message = error.to_string();
     message.contains("No such container") || message.contains("No such network")
+}
+
+// ── Orphaned resource garbage collection ─────────────────────────────────
+
+/// Parsed row from `docker ps` for a `DinD` sidecar.
+struct DindInfo {
+    name: String,
+    agent: String,
+}
+
+/// Return `DinD` sidecar containers whose corresponding agent container is no
+/// longer running.  These are leftovers from hard kills, terminal closures,
+/// or startup failures.
+fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<DindInfo>> {
+    // List all DinD sidecars (running + stopped) by label.
+    let dind_output = runner.capture(
+        "docker",
+        &[
+            "ps",
+            "-a",
+            "--filter",
+            FILTER_ROLE_DIND,
+            "--format",
+            "{{.Names}}\t{{.Label \"jackin.agent\"}}",
+        ],
+        None,
+    )?;
+
+    let sidecars: Vec<DindInfo> = dind_output
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let (name, agent) = line.split_once('\t')?;
+            if agent.is_empty() {
+                return None;
+            }
+            Some(DindInfo {
+                name: name.to_string(),
+                agent: agent.to_string(),
+            })
+        })
+        .collect();
+
+    if sidecars.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Running agent containers (label filter excludes DinD sidecars).
+    let running = list_agent_names(runner, false)?;
+
+    Ok(sidecars
+        .into_iter()
+        .filter(|info| !running.contains(&info.agent))
+        .collect())
+}
+
+/// Remove orphaned `DinD` containers, their associated agent containers, and
+/// networks.  Errors are logged but do not abort the launch — GC is
+/// best-effort.
+fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
+    let Ok(orphaned) = collect_orphaned_dind(runner) else {
+        return;
+    };
+
+    for info in &orphaned {
+        let network = format!("{}-net", info.agent);
+
+        // Remove stopped agent container, DinD sidecar, and network.
+        let _ = run_cleanup_command(runner, &["rm", "-f", &info.agent]);
+        let _ = run_cleanup_command(runner, &["rm", "-f", &info.name]);
+        let _ = run_cleanup_command(runner, &["network", "rm", &network]);
+
+        eprintln!(
+            "        {} orphaned resources for {}",
+            "cleaned up".dimmed(),
+            info.agent
+        );
+    }
+
+    // Clean up any orphaned networks that survived without a DinD container
+    // (e.g. the DinD container was manually removed but the network lingers).
+    gc_orphaned_networks(runner);
+}
+
+/// Remove jackin-managed Docker networks whose owning agent container no
+/// longer exists.
+fn gc_orphaned_networks(runner: &mut impl CommandRunner) {
+    let Ok(net_output) = runner.capture(
+        "docker",
+        &[
+            "network",
+            "ls",
+            "--filter",
+            FILTER_MANAGED,
+            "--format",
+            "{{.Name}}\t{{.Label \"jackin.agent\"}}",
+        ],
+        None,
+    ) else {
+        return;
+    };
+
+    let networks: Vec<(&str, &str)> = net_output
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|l| l.split_once('\t'))
+        .filter(|(_, agent)| !agent.is_empty())
+        .collect();
+
+    if networks.is_empty() {
+        return;
+    }
+
+    let Ok(running) = list_agent_names(runner, false) else {
+        return;
+    };
+
+    for (net_name, agent) in networks {
+        if running.iter().any(|r| r == agent) {
+            continue;
+        }
+        let _ = run_cleanup_command(runner, &["network", "rm", net_name]);
+    }
 }
 
 pub fn exile_all(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
@@ -921,12 +1076,17 @@ impl FakeRunner {
         }
     }
 
-    /// Prefixes the capture queue with empty responses for the identity lookups
-    /// (`git config user.name`, `git config user.email`, `id -u`, `id -g`)
-    /// that `load_agent` performs before any docker commands.
+    /// Number of capture calls `load_agent` makes before reaching agent-
+    /// specific logic: 2 GC queries (orphaned DinD scan + orphaned network
+    /// scan) + 4 identity lookups (`git config user.name`, `git config
+    /// user.email`, `id -u`, `id -g`).
+    const LOAD_PREAMBLE_CAPTURES: usize = 6;
+
+    /// Prefixes the capture queue with empty responses for the `load_agent`
+    /// preamble queries so tests can focus on the agent-specific output.
     fn for_load_agent<const N: usize>(outputs: [String; N]) -> Self {
-        let mut queue = VecDeque::with_capacity(4 + N);
-        for _ in 0..4 {
+        let mut queue = VecDeque::with_capacity(Self::LOAD_PREAMBLE_CAPTURES + N);
+        for _ in 0..Self::LOAD_PREAMBLE_CAPTURES {
             queue.push_back(String::new());
         }
         queue.extend(outputs);
@@ -2164,5 +2324,129 @@ plugins = []
             .find(|call| call.contains("docker run -it"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_DEBUG=1"));
+    }
+
+    // -- orphaned resource GC -------------------------------------------------
+
+    #[test]
+    fn gc_removes_orphaned_dind_and_network() {
+        let mut runner = FakeRunner::with_capture_queue([
+            // collect_orphaned_dind: docker ps -a --filter label=jackin.role=dind
+            "jackin-agent-smith-dind\tjackin-agent-smith".to_string(),
+            // collect_orphaned_dind: list_agent_names (running)
+            String::new(),
+            // gc_orphaned_networks: docker network ls
+            String::new(),
+        ]);
+
+        gc_orphaned_resources(&mut runner);
+
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker rm -f jackin-agent-smith-dind"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker rm -f jackin-agent-smith"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker network rm jackin-agent-smith-net"))
+        );
+    }
+
+    #[test]
+    fn gc_skips_dind_when_agent_is_running() {
+        let mut runner = FakeRunner::with_capture_queue([
+            // collect_orphaned_dind: docker ps -a --filter label=jackin.role=dind
+            "jackin-agent-smith-dind\tjackin-agent-smith".to_string(),
+            // collect_orphaned_dind: list_agent_names (running) — agent IS running
+            "jackin-agent-smith".to_string(),
+            // gc_orphaned_networks: docker network ls
+            String::new(),
+        ]);
+
+        gc_orphaned_resources(&mut runner);
+
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker rm -f jackin-agent-smith-dind"))
+        );
+    }
+
+    #[test]
+    fn gc_does_nothing_when_no_orphans() {
+        let mut runner = FakeRunner::with_capture_queue([
+            // collect_orphaned_dind: no DinD sidecars
+            String::new(),
+            // gc_orphaned_networks: no networks
+            String::new(),
+        ]);
+
+        gc_orphaned_resources(&mut runner);
+
+        assert!(!runner.recorded.iter().any(|c| c.contains("docker rm")));
+    }
+
+    #[test]
+    fn gc_removes_orphaned_network_without_dind() {
+        let mut runner = FakeRunner::with_capture_queue([
+            // collect_orphaned_dind: no DinD sidecars
+            String::new(),
+            // gc_orphaned_networks: docker network ls — has a network
+            "jackin-agent-smith-net\tjackin-agent-smith".to_string(),
+            // gc_orphaned_networks: list_agent_names (running) — agent not running
+            String::new(),
+        ]);
+
+        gc_orphaned_resources(&mut runner);
+
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker network rm jackin-agent-smith-net"))
+        );
+    }
+
+    #[test]
+    fn gc_cleans_multiple_orphans() {
+        let mut runner = FakeRunner::with_capture_queue([
+            // collect_orphaned_dind: two orphaned DinD sidecars
+            "jackin-agent-smith-dind\tjackin-agent-smith\njackin-neo-dind\tjackin-neo".to_string(),
+            // collect_orphaned_dind: list_agent_names (running)
+            String::new(),
+            // gc_orphaned_networks: no additional networks
+            String::new(),
+        ]);
+
+        gc_orphaned_resources(&mut runner);
+
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker rm -f jackin-agent-smith-dind"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker rm -f jackin-neo-dind"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker network rm jackin-neo-net"))
+        );
     }
 }
