@@ -842,16 +842,7 @@ fn wait_for_dind(
     runner
         .capture(
             "docker",
-            &[
-                "run",
-                "--rm",
-                "-v",
-                &format!("{certs_volume}:/certs/client:ro"),
-                "docker:dind",
-                "test",
-                "-f",
-                "/certs/client/ca.pem",
-            ],
+            &["exec", dind_name, "test", "-f", "/certs/client/ca.pem"],
             None,
         )
         .map_err(|_| {
@@ -2093,6 +2084,105 @@ plugins = []
             .position(|call| call.contains("docker exec jackin-agent-smith-dind docker info"))
             .unwrap();
         assert!(dind_start < dind_check);
+
+        // TLS cert verification runs after docker info check
+        assert!(runner.recorded.iter().any(|call| {
+            call.contains("docker exec jackin-agent-smith-dind test -f /certs/client/ca.pem")
+        }));
+    }
+
+    #[test]
+    fn dind_certs_volume_derives_from_container_name() {
+        assert_eq!(
+            dind_certs_volume("jackin-agent-smith"),
+            "jackin-agent-smith-dind-certs"
+        );
+        assert_eq!(
+            dind_certs_volume("jackin-chainargos__the-architect-clone-2"),
+            "jackin-chainargos__the-architect-clone-2-dind-certs"
+        );
+    }
+
+    #[test]
+    fn load_agent_configures_dind_with_tls() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        // DinD sidecar: TLS enabled with cert volume
+        let dind_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d --name jackin-agent-smith-dind"))
+            .unwrap();
+        assert!(
+            dind_cmd.contains("DOCKER_TLS_CERTDIR=/certs"),
+            "DinD must enable TLS cert generation"
+        );
+        assert!(
+            dind_cmd.contains("jackin-agent-smith-dind-certs:/certs/client"),
+            "DinD must mount cert volume"
+        );
+
+        // Agent container: TLS client config
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -it"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("DOCKER_HOST=tcp://jackin-agent-smith-dind:2376"),
+            "agent must use TLS port 2376"
+        );
+        assert!(
+            run_cmd.contains("DOCKER_TLS_VERIFY=1"),
+            "agent must verify TLS"
+        );
+        assert!(
+            run_cmd.contains("DOCKER_CERT_PATH=/certs/client"),
+            "agent must know cert path"
+        );
+        assert!(
+            run_cmd.contains("jackin-agent-smith-dind-certs:/certs/client:ro"),
+            "agent must mount cert volume read-only"
+        );
     }
 
     #[test]
@@ -2621,6 +2711,12 @@ plugins = []
             runner
                 .recorded
                 .iter()
+                .any(|c| c.contains("docker volume rm jackin-agent-smith-dind-certs"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
                 .any(|c| c.contains("docker network rm jackin-agent-smith-net"))
         );
     }
@@ -2704,7 +2800,19 @@ plugins = []
             runner
                 .recorded
                 .iter()
+                .any(|c| c.contains("docker volume rm jackin-agent-smith-dind-certs"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
                 .any(|c| c.contains("docker rm -f jackin-neo-dind"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker volume rm jackin-neo-dind-certs"))
         );
         assert!(
             runner
