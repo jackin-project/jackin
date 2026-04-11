@@ -1,6 +1,6 @@
 # DinD Running Without TLS Authentication
 
-**Status**: Deferred — option 1 (TLS with auto-generated certs) is the correct long-term solution
+**Status**: Resolved — option 1 (TLS with auto-generated certs) implemented
 
 ## Problem
 

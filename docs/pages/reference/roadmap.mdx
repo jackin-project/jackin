@@ -30,6 +30,7 @@ jackin' is a functional proof of concept with Claude Code as its first supported
 - `${env.VAR}` interpolation in env var prompts and defaults for dependent variables
 - `JACKIN_DIND_HOSTNAME` environment variable for agents to discover the DinD sidecar hostname
 - Agent source trust model (trust-on-first-use verification for third-party agent repos)
+- DinD TLS authentication with auto-generated certificates
 
 ## Planned
 
@@ -48,7 +49,6 @@ jackin's architecture is runtime-agnostic. The construct and workspace system wo
 
 ### Security improvements
 
-- **DinD TLS authentication** — secure the Docker-in-Docker daemon with auto-generated certificates
 - **Network policy controls** — outbound domain filtering per agent class, similar to Docker Sandboxes' network policies
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
 - **Agent version pinning** — pin agent repos to tagged versions for reproducible builds, with explicit `--update` to advance (design in progress)
