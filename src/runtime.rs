@@ -23,6 +23,13 @@ const FILTER_MANAGED: &str = "label=jackin.managed=true";
 /// Filter expression for `docker ps --filter` to find `DinD` sidecars.
 const FILTER_ROLE_DIND: &str = "label=jackin.role=dind";
 
+/// Environment variables owned by the jackin runtime that must not be
+/// overridden by agent manifests.  These are injected as `-e` flags in
+/// `launch_agent_runtime` and are silently skipped if a manifest declares them.
+/// The corresponding manifest-time validation lives in
+/// `manifest::RESERVED_RUNTIME_ENV_VARS`.
+const RUNTIME_OWNED_ENV_VARS: &[&str] = &["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"];
+
 pub struct LoadOptions {
     pub no_intro: bool,
     pub debug: bool,
@@ -586,6 +593,7 @@ fn launch_agent_runtime(
     for (key, value) in &resolved_env.vars {
         if key == crate::manifest::JACKIN_RUNTIME_ENV_NAME
             || key == crate::manifest::JACKIN_DIND_HOSTNAME_ENV_NAME
+            || RUNTIME_OWNED_ENV_VARS.contains(&key.as_str())
         {
             continue;
         }
@@ -1049,9 +1057,9 @@ fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<
         .collect())
 }
 
-/// Remove orphaned `DinD` containers, their associated agent containers, and
-/// networks.  Errors are logged but do not abort the launch — GC is
-/// best-effort.
+/// Remove orphaned `DinD` containers, their associated agent containers, cert
+/// volumes, and networks.  Errors are logged but do not abort the launch — GC
+/// is best-effort.
 fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
     let Ok(orphaned) = collect_orphaned_dind(runner) else {
         return;
