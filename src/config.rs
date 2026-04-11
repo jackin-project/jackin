@@ -395,6 +395,17 @@ impl AppConfig {
         false
     }
 
+    /// Revoke trust for an agent source.  Returns `true` when the flag changed.
+    pub fn untrust_agent(&mut self, key: &str) -> bool {
+        if let Some(source) = self.agents.get_mut(key)
+            && source.trusted
+        {
+            source.trusted = false;
+            return true;
+        }
+        false
+    }
+
     /// Ensures all built-in agent entries match the current binary version.
     /// Returns `true` if any entries were added or updated.
     fn sync_builtin_agents(&mut self) -> bool {
@@ -585,6 +596,38 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
 
         // Second call is idempotent
         let changed_again = config.trust_agent("chainargos/the-architect");
+        assert!(!changed_again);
+    }
+
+    #[test]
+    fn untrust_agent_revokes_trust() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+
+        config.resolve_agent_source(&selector).unwrap();
+        config.trust_agent("chainargos/the-architect");
+        assert!(
+            config
+                .agents
+                .get("chainargos/the-architect")
+                .unwrap()
+                .trusted
+        );
+
+        let changed = config.untrust_agent("chainargos/the-architect");
+        assert!(changed);
+        assert!(
+            !config
+                .agents
+                .get("chainargos/the-architect")
+                .unwrap()
+                .trusted
+        );
+
+        // Second call is idempotent
+        let changed_again = config.untrust_agent("chainargos/the-architect");
         assert!(!changed_again);
     }
 

@@ -130,6 +130,30 @@ Examples:
         #[arg(long)]
         all: bool,
     },
+    /// Mark a third-party agent source as trusted
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin trust chainargos/the-architect"
+    )]
+    Trust {
+        /// Agent class selector (e.g. `chainargos/agent-brown`)
+        selector: String,
+    },
+    /// Revoke trust for an agent source
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin untrust chainargos/the-architect"
+    )]
+    Untrust {
+        /// Agent class selector (e.g. `chainargos/agent-brown`)
+        selector: String,
+    },
     /// Open the interactive TUI launcher to pick a workspace and agent
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Launch,

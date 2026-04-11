@@ -676,6 +676,30 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
         },
+        Command::Trust { selector } => {
+            let class = ClassSelector::parse(&selector)?;
+            let mut config = AppConfig::load_or_init(&paths)?;
+            // Ensure the source exists (register if new, but don't clone yet)
+            config.resolve_agent_source(&class)?;
+            if config.trust_agent(&class.key()) {
+                config.save(&paths)?;
+                println!("Trusted {}.", class.key());
+            } else {
+                println!("{} is already trusted.", class.key());
+            }
+            Ok(())
+        }
+        Command::Untrust { selector } => {
+            let class = ClassSelector::parse(&selector)?;
+            let mut config = AppConfig::load_or_init(&paths)?;
+            if config.untrust_agent(&class.key()) {
+                config.save(&paths)?;
+                println!("Revoked trust for {}.", class.key());
+            } else {
+                println!("{} is not currently trusted.", class.key());
+            }
+            Ok(())
+        }
         Command::Purge { selector, all } => match Selector::parse(&selector)? {
             Selector::Container(container) => {
                 remove_data_dir_if_exists(&paths.data_dir.join(&container))?;

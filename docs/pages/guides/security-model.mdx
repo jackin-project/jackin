@@ -65,6 +65,16 @@ Built-in agents (`agent-smith`, `the-architect`) are always trusted. When you lo
 
 Once you confirm, the trust decision is saved to `~/.config/jackin/config.toml` and subsequent loads proceed without prompting.
 
+You can also manage trust from the command line:
+
+```bash
+# Pre-trust an agent without loading it
+jackin trust chainargos/the-architect
+
+# Revoke trust (next load will prompt again)
+jackin untrust chainargos/the-architect
+```
+
 For non-interactive environments (CI, automation), pre-trust an agent by adding `trusted = true` to its config entry:
 
 ```toml
@@ -72,6 +82,10 @@ For non-interactive environments (CI, automation), pre-trust an agent by adding 
 git = "https://github.com/org/jackin-agent-name.git"
 trusted = true
 ```
+
+:::note
+Trust is tied to the agent selector (e.g., `org/agent-name`), not the git URL. If an agent's cached repo URL no longer matches the configured source, jackin' rejects it with a separate remote-mismatch error regardless of trust status.
+:::
 
 ### 5. Per-agent network separation
 

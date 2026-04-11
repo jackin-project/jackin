@@ -76,7 +76,7 @@ If the agent manifest declares interactive environment variables, `jackin load` 
 :::
 
 :::warning
-Third-party agents (namespaced selectors like `org/agent-name`) require trust confirmation on first use. jackin' will show the agent name and git URL and ask you to confirm before building. In non-interactive environments (CI, scripts), pre-trust the agent by adding `trusted = true` to its entry in `~/.config/jackin/config.toml`.
+Third-party agents (namespaced selectors like `org/agent-name`) require trust confirmation on first use. jackin' will show the agent name and git URL and ask you to confirm before building. You can pre-trust with `jackin trust org/agent-name` or revoke with `jackin untrust`. See [Agent source trust](/guides/security-model#4-agent-source-trust) for details.
 :::
 
 :::note
