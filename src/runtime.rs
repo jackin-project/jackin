@@ -8,6 +8,7 @@ use crate::selector::ClassSelector;
 use crate::tui;
 use crate::version_check;
 use owo_colors::OwoColorize;
+use std::io::IsTerminal;
 
 pub struct LoadOptions {
     pub no_intro: bool,
@@ -192,11 +193,39 @@ fn build_config_rows(
 
 /// Resolve the agent repository: clone if missing, pull if already present.
 /// Returns the validated repo metadata and cached repo paths.
+/// Prompt the user to confirm cached-repo removal when running in an
+/// interactive terminal.  Returns `true` when the user accepts.
+fn confirm_repo_removal_interactive() -> anyhow::Result<bool> {
+    if !std::io::stdin().is_terminal() {
+        return Ok(false);
+    }
+    Ok(dialoguer::Confirm::new()
+        .with_prompt("Remove the cached repo and re-clone from the configured source?")
+        .default(false)
+        .interact()?)
+}
+
 fn resolve_agent_repo(
     paths: &JackinPaths,
     selector: &ClassSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
+) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo)> {
+    resolve_agent_repo_with(
+        paths,
+        selector,
+        git_url,
+        runner,
+        confirm_repo_removal_interactive,
+    )
+}
+
+fn resolve_agent_repo_with(
+    paths: &JackinPaths,
+    selector: &ClassSelector,
+    git_url: &str,
+    runner: &mut impl CommandRunner,
+    confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo)> {
     let cached_repo = CachedRepo::new(paths, selector);
     let repo_parent = cached_repo.repo_dir.parent().ok_or_else(|| {
@@ -214,10 +243,28 @@ fn resolve_agent_repo(
             &["-C", &repo_path, "remote", "get-url", "origin"],
             None,
         )?;
-        anyhow::ensure!(
-            repo_matches(git_url, &remote_url),
-            "cached agent repo remote does not match configured source: expected {git_url}, found {remote_url}. Remove the cached repo and try again."
-        );
+        if !repo_matches(git_url, &remote_url) {
+            let repo_display = cached_repo.repo_dir.display();
+            eprintln!(
+                "{} cached agent repo remote does not match configured source",
+                "error:".red().bold()
+            );
+            eprintln!("  expected: {}", git_url.green());
+            eprintln!("  found:    {}", remote_url.yellow());
+            eprintln!();
+            eprintln!("To fix this, remove the cached repo and try again:");
+            eprintln!("  rm -rf {repo_display}");
+            eprintln!();
+
+            if confirm_removal()? {
+                std::fs::remove_dir_all(&cached_repo.repo_dir)?;
+                runner.capture("git", &["clone", git_url, &repo_path], None)?;
+                let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
+                return Ok((cached_repo, validated_repo));
+            }
+
+            anyhow::bail!("cached agent repo remote mismatch — aborting");
+        }
 
         let status = runner.capture(
             "git",
@@ -832,13 +879,31 @@ impl LoadCleanup {
 use std::collections::VecDeque;
 
 #[cfg(test)]
-#[derive(Default)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,
     pub run_recorded: Vec<String>,
     pub fail_on: Vec<String>,
     pub fail_with: Vec<(String, String)>,
     pub capture_queue: VecDeque<String>,
+    /// Optional callbacks keyed by a substring of the command.  When a
+    /// captured command matches the key, the callback is invoked before the
+    /// output is returned.  This is useful for simulating filesystem
+    /// side-effects (e.g. `git clone` creating repo files on disk).
+    pub side_effects: Vec<(String, Box<dyn FnOnce()>)>,
+}
+
+#[cfg(test)]
+impl Default for FakeRunner {
+    fn default() -> Self {
+        Self {
+            recorded: Vec::new(),
+            run_recorded: Vec::new(),
+            fail_on: Vec::new(),
+            fail_with: Vec::new(),
+            capture_queue: VecDeque::new(),
+            side_effects: Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -868,16 +933,25 @@ impl FakeRunner {
 
 #[cfg(test)]
 impl FakeRunner {
-    fn check_command(&self, command: &str) -> anyhow::Result<()> {
+    fn check_command(&mut self, command: &str) -> anyhow::Result<()> {
         if let Some((_, message)) = self
             .fail_with
             .iter()
             .find(|(pattern, _)| command.contains(pattern))
         {
+            let message = message.clone();
             anyhow::bail!("{message}");
         }
         if self.fail_on.iter().any(|pattern| command.contains(pattern)) {
             anyhow::bail!("command failed: {command}");
+        }
+        if let Some(pos) = self
+            .side_effects
+            .iter()
+            .position(|(pattern, _)| command.contains(pattern))
+        {
+            let (_, callback) = self.side_effects.remove(pos);
+            callback();
         }
         Ok(())
     }
@@ -1662,8 +1736,119 @@ plugins = []
         assert!(
             error
                 .to_string()
-                .contains("cached agent repo remote does not match")
+                .contains("cached agent repo remote mismatch")
         );
+    }
+
+    #[test]
+    fn resolve_agent_repo_recovers_when_user_confirms_removal() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        // The capture queue provides: 1) the wrong remote URL, then 2) a
+        // successful clone response (empty output).  After the user confirms,
+        // the function removes the stale dir and re-clones.
+        let mut runner = FakeRunner::with_capture_queue([
+            "git@github.com:evil/agent-smith.git".to_string(),
+            String::new(), // clone output
+        ]);
+
+        // Simulate what `git clone` would produce on disk: recreate the repo
+        // files when the clone command is captured by FakeRunner.
+        let repo_dir_clone = repo_dir.clone();
+        runner.side_effects.push((
+            "clone".to_string(),
+            Box::new(move || {
+                std::fs::create_dir_all(repo_dir_clone.join(".git")).unwrap();
+                std::fs::write(
+                    repo_dir_clone.join("Dockerfile"),
+                    "FROM projectjackin/construct:trixie\n",
+                )
+                .unwrap();
+                std::fs::write(
+                    repo_dir_clone.join("jackin.agent.toml"),
+                    r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+                )
+                .unwrap();
+            }),
+        ));
+
+        let result = resolve_agent_repo_with(
+            &paths,
+            &selector,
+            "https://github.com/jackin-project/jackin-agent-smith.git",
+            &mut runner,
+            || Ok(true), // user confirms removal
+        );
+
+        assert!(result.is_ok(), "expected recovery to succeed: {result:?}");
+        assert!(
+            runner.recorded.iter().any(|c| c.contains("clone")),
+            "expected a git clone after removal"
+        );
+    }
+
+    #[test]
+    fn resolve_agent_repo_aborts_when_user_declines_removal() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let mut runner =
+            FakeRunner::with_capture_queue(["git@github.com:evil/agent-smith.git".to_string()]);
+        let error = resolve_agent_repo_with(
+            &paths,
+            &selector,
+            "https://github.com/jackin-project/jackin-agent-smith.git",
+            &mut runner,
+            || Ok(false), // user declines
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("cached agent repo remote mismatch")
+        );
+        // The cached repo directory should still exist
+        assert!(repo_dir.join(".git").is_dir());
     }
 
     #[test]
