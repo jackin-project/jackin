@@ -396,6 +396,8 @@ impl AppConfig {
     }
 
     /// Revoke trust for an agent source.  Returns `true` when the flag changed.
+    /// Note: does not prevent revoking builtins — the caller should check
+    /// [`is_builtin_agent`] first.
     pub fn untrust_agent(&mut self, key: &str) -> bool {
         if let Some(source) = self.agents.get_mut(key)
             && source.trusted
@@ -404,6 +406,12 @@ impl AppConfig {
             return true;
         }
         false
+    }
+
+    /// Returns `true` when `key` matches a built-in agent shipped with the
+    /// binary.  Built-in agents are always trusted and cannot be revoked.
+    pub fn is_builtin_agent(key: &str) -> bool {
+        BUILTIN_AGENTS.iter().any(|&(name, _)| name == key)
     }
 
     /// Ensures all built-in agent entries match the current binary version.

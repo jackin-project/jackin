@@ -354,7 +354,7 @@ Examples:
         /// Agent class selector (e.g. `chainargos/agent-brown`)
         selector: String,
     },
-    /// Show current trust status for all known agent sources
+    /// List all currently trusted agent sources
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     List,
 }
@@ -412,6 +412,59 @@ mod tests {
             Command::Config {
                 command: ConfigCommand::Mount {
                     command: MountCommand::List
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_config_trust_grant() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "config",
+            "trust",
+            "grant",
+            "chainargos/the-architect",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Config {
+                command: ConfigCommand::Trust {
+                    command: TrustCommand::Grant { .. }
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_config_trust_revoke() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "config",
+            "trust",
+            "revoke",
+            "chainargos/the-architect",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Config {
+                command: ConfigCommand::Trust {
+                    command: TrustCommand::Revoke { .. }
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_config_trust_list() {
+        let cli = Cli::try_parse_from(["jackin", "config", "trust", "list"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Config {
+                command: ConfigCommand::Trust {
+                    command: TrustCommand::List
                 }
             }
         ));

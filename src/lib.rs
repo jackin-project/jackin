@@ -449,6 +449,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
                 cli::TrustCommand::Revoke { selector } => {
                     let class = ClassSelector::parse(&selector)?;
+                    if AppConfig::is_builtin_agent(&class.key()) {
+                        anyhow::bail!("{} is a built-in agent and is always trusted.", class.key());
+                    }
                     if config.untrust_agent(&class.key()) {
                         config.save(&paths)?;
                         println!("Revoked trust for {}.", class.key());
