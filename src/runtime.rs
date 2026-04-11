@@ -1265,7 +1265,7 @@ mod tests {
     }
 
     #[test]
-    fn load_owner_repo_registers_source_and_builds_commands() {
+    fn load_trusted_namespaced_agent_builds_and_runs() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();

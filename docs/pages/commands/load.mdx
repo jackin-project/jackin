@@ -62,7 +62,7 @@ jackin load agent-smith ~/app --mount ~/cache:/cache:ro
 
 1. Resolves the agent class and clones/updates its repository
 2. Validates the agent repo contract (`jackin.agent.toml` + Dockerfile) with strict manifest parsing
-3. **If the agent source has never been trusted**, prompts the operator to review and confirm before proceeding (see [Agent source trust](/guides/security-model#agent-source-trust))
+3. **If the agent source has never been trusted**, prompts the operator to review and confirm before proceeding (see [Agent source trust](/guides/security-model#4-agent-source-trust))
 4. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
 5. Prompts for interactive environment variables declared in the manifest
 6. Generates and builds a derived Docker image (cached if unchanged)
