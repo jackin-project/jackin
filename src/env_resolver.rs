@@ -11,14 +11,19 @@ pub enum PromptResult {
 }
 
 pub trait EnvPrompter {
-    fn prompt_text(&self, title: &str, default: Option<&str>, skippable: bool) -> PromptResult;
+    fn prompt_text(
+        &self,
+        title: &str,
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<PromptResult>;
     fn prompt_select(
         &self,
         title: &str,
         options: &[String],
         default: Option<&str>,
         skippable: bool,
-    ) -> PromptResult;
+    ) -> anyhow::Result<PromptResult>;
 }
 
 /// Extract env var names from `${env.VAR_NAME}` interpolation placeholders.
@@ -136,7 +141,7 @@ pub fn resolve_env(
                 interpolated_default.as_deref(),
                 decl.skippable,
             )
-        };
+        }?;
 
         match result {
             PromptResult::Value(value) => {
@@ -267,12 +272,12 @@ mod tests {
             title: &str,
             default: Option<&str>,
             _skippable: bool,
-        ) -> PromptResult {
+        ) -> anyhow::Result<PromptResult> {
             self.captured_titles.borrow_mut().push(title.to_string());
             self.captured_defaults
                 .borrow_mut()
                 .push(default.map(String::from));
-            self.responses.borrow_mut().remove(0)
+            Ok(self.responses.borrow_mut().remove(0))
         }
 
         fn prompt_select(
@@ -281,12 +286,35 @@ mod tests {
             _options: &[String],
             default: Option<&str>,
             _skippable: bool,
-        ) -> PromptResult {
+        ) -> anyhow::Result<PromptResult> {
             self.captured_titles.borrow_mut().push(title.to_string());
             self.captured_defaults
                 .borrow_mut()
                 .push(default.map(String::from));
-            self.responses.borrow_mut().remove(0)
+            Ok(self.responses.borrow_mut().remove(0))
+        }
+    }
+
+    struct ErrorPrompter;
+
+    impl EnvPrompter for ErrorPrompter {
+        fn prompt_text(
+            &self,
+            _title: &str,
+            _default: Option<&str>,
+            _skippable: bool,
+        ) -> anyhow::Result<PromptResult> {
+            anyhow::bail!("prompt I/O failed")
+        }
+
+        fn prompt_select(
+            &self,
+            _title: &str,
+            _options: &[String],
+            _default: Option<&str>,
+            _skippable: bool,
+        ) -> anyhow::Result<PromptResult> {
+            anyhow::bail!("prompt I/O failed")
         }
     }
 
@@ -394,6 +422,19 @@ mod tests {
 
         assert!(error.to_string().contains("BRANCH"));
         assert!(error.to_string().contains("skip"));
+    }
+
+    #[test]
+    fn prompt_errors_are_propagated() {
+        let mut decls = BTreeMap::new();
+        decls.insert("BRANCH".to_string(), interactive_text("Branch:"));
+
+        let error = match resolve_env(&decls, &ErrorPrompter) {
+            Ok(_) => panic!("prompt I/O failures should bubble up"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("prompt I/O failed"));
     }
 
     #[test]
