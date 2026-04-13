@@ -6,6 +6,9 @@ use std::time::Duration;
 /// Default timeout for commands that capture output (git, docker inspect, etc.).
 const DEFAULT_CAPTURE_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// Timeout for long-running commands such as `docker build`.
+pub const DOCKER_BUILD_TIMEOUT: Duration = Duration::from_secs(900);
+
 pub trait CommandRunner {
     fn run(&mut self, program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<()>;
     fn run_capture_stderr(
@@ -15,6 +18,18 @@ pub trait CommandRunner {
         cwd: Option<&Path>,
     ) -> anyhow::Result<()> {
         self.run(program, args, cwd)
+    }
+    /// Like [`run_capture_stderr`](Self::run_capture_stderr) but with an
+    /// explicit timeout. The default implementation ignores the timeout and
+    /// delegates to `run_capture_stderr`.
+    fn run_capture_stderr_with_timeout(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+        _timeout: Duration,
+    ) -> anyhow::Result<()> {
+        self.run_capture_stderr(program, args, cwd)
     }
     fn capture(
         &mut self,
@@ -205,6 +220,56 @@ impl CommandRunner for ShellRunner {
             eprintln!("{}", format!("[debug] -> {first_line}").dimmed());
         }
         Ok(stdout)
+    }
+
+    fn run_capture_stderr_with_timeout(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+        timeout: Duration,
+    ) -> anyhow::Result<()> {
+        self.log_command(program, args, cwd);
+        let mut child = Self::build_command(program, args, cwd)
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            anyhow::anyhow!(
+                "failed to capture stderr for {} {}",
+                program,
+                args.join(" ")
+            )
+        })?;
+        let stderr_handle = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
+            let mut reader = std::io::BufReader::new(stderr);
+            let mut output = Vec::new();
+            let mut buf = [0_u8; 8192];
+            let mut writer = std::io::stderr().lock();
+            loop {
+                let read = reader.read(&mut buf)?;
+                if read == 0 {
+                    break;
+                }
+                std::io::Write::write_all(&mut writer, &buf[..read])?;
+                output.extend_from_slice(&buf[..read]);
+            }
+            Ok(output)
+        });
+        let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
+        let stderr = stderr_handle
+            .join()
+            .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
+        if !status.success() {
+            if String::from_utf8_lossy(&stderr).trim().is_empty() {
+                anyhow::bail!("command failed: {} {}", program, args.join(" "));
+            }
+            anyhow::bail!(
+                "command failed: {} {} (see stderr above)",
+                program,
+                args.join(" ")
+            );
+        }
+        Ok(())
     }
 }
 

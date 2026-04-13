@@ -427,7 +427,12 @@ fn build_agent_image(
         build_args.extend(["--build-arg", &cache_bust]);
     }
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
-    runner.run_capture_stderr("docker", &build_args, None)?;
+    runner.run_capture_stderr_with_timeout(
+        "docker",
+        &build_args,
+        None,
+        crate::docker::DOCKER_BUILD_TIMEOUT,
+    )?;
 
     // Extract and display the Claude version from the built image
     if let Ok(version) = runner.capture(
