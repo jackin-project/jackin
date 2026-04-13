@@ -427,7 +427,7 @@ fn build_agent_image(
         build_args.extend(["--build-arg", &cache_bust]);
     }
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
-    runner.run("docker", &build_args, None)?;
+    runner.run_capture_stderr("docker", &build_args, None)?;
 
     // Extract and display the Claude version from the built image
     if let Ok(version) = runner.capture(
@@ -1309,6 +1309,7 @@ use std::collections::VecDeque;
 pub struct FakeRunner {
     pub recorded: Vec<String>,
     pub run_recorded: Vec<String>,
+    pub run_capture_stderr_recorded: Vec<String>,
     pub fail_on: Vec<String>,
     pub fail_with: Vec<(String, String)>,
     pub capture_queue: VecDeque<String>,
@@ -1325,6 +1326,7 @@ impl Default for FakeRunner {
         Self {
             recorded: Vec::new(),
             run_recorded: Vec::new(),
+            run_capture_stderr_recorded: Vec::new(),
             fail_on: Vec::new(),
             fail_with: Vec::new(),
             capture_queue: VecDeque::new(),
@@ -1399,6 +1401,18 @@ impl CommandRunner for FakeRunner {
     ) -> anyhow::Result<()> {
         let command = format!("{} {}", program, args.join(" "));
         self.run_recorded.push(command.clone());
+        self.recorded.push(command.clone());
+        self.check_command(&command)
+    }
+
+    fn run_capture_stderr(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        _cwd: Option<&std::path::Path>,
+    ) -> anyhow::Result<()> {
+        let command = format!("{} {}", program, args.join(" "));
+        self.run_capture_stderr_recorded.push(command.clone());
         self.recorded.push(command.clone());
         self.check_command(&command)
     }
@@ -1891,9 +1905,14 @@ plugins = ["code-review@claude-plugins-official"]
                 |call| call.contains("docker build ") && call.contains("-t jackin-agent-smith")
             )
         );
-        // Docker build always streams output via run (not capture)
         assert!(
             runner
+                .run_capture_stderr_recorded
+                .iter()
+                .any(|call| call.contains("docker build "))
+        );
+        assert!(
+            !runner
                 .run_recorded
                 .iter()
                 .any(|call| call.contains("docker build "))
@@ -2051,9 +2070,14 @@ plugins = []
         assert!(build_call.contains("--build-arg JACKIN_HOST_UID="));
         assert!(build_call.contains("--build-arg JACKIN_HOST_GID="));
 
-        // Docker build always streams output via run (not capture)
         assert!(
             runner
+                .run_capture_stderr_recorded
+                .iter()
+                .any(|call| call.contains("docker build "))
+        );
+        assert!(
+            !runner
                 .run_recorded
                 .iter()
                 .any(|call| call.contains("docker build "))
