@@ -144,21 +144,27 @@ fn resolve_agent_from_context(
     config: &AppConfig,
     cwd: &Path,
 ) -> Result<(ClassSelector, LoadWorkspaceInput)> {
-    let cwd_str = cwd.display().to_string();
-
-    // Find a workspace whose workdir matches cwd
     let matching_ws = config
         .workspaces
         .iter()
-        .find(|(_, ws)| ws.workdir == cwd_str);
+        .filter_map(|(name, ws)| {
+            crate::workspace::saved_workspace_match_depth(ws, cwd).map(|depth| (name, ws, depth))
+        })
+        .max_by_key(|(_, _, depth)| *depth);
 
-    if let Some((name, ws)) = matching_ws {
+    if let Some((name, ws, _)) = matching_ws {
         // Try last_agent, then default_agent
         let agent_key = ws.last_agent.as_deref().or(ws.default_agent.as_deref());
 
-        if let Some(key) = agent_key {
+        if let Some(key) = agent_key
+            && config.agents.contains_key(key)
+        {
             let class = ClassSelector::parse(key)?;
-            return Ok((class, LoadWorkspaceInput::Saved(name.clone())));
+            let allowed = ws.allowed_agents.is_empty()
+                || ws.allowed_agents.iter().any(|allowed| allowed == key);
+            if allowed {
+                return Ok((class, LoadWorkspaceInput::Saved(name.clone())));
+            }
         }
 
         // No remembered agent — find eligible agents
@@ -199,6 +205,27 @@ fn resolve_agent_from_context(
          Run jackin load <agent> to use the current directory, or\n\
          run jackin launch for the interactive launcher."
     );
+}
+
+fn remember_last_agent(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    workspace_name: Option<&str>,
+    class: &ClassSelector,
+    load_result: &Result<()>,
+) {
+    if load_result.is_err() {
+        return;
+    }
+
+    if let Some(workspace_name) = workspace_name
+        && let Some(workspace) = config.workspaces.get_mut(workspace_name)
+    {
+        workspace.last_agent = Some(class.key());
+        if let Err(error) = config.save(paths) {
+            eprintln!("warning: failed to save last-used agent: {error}");
+        }
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -273,15 +300,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 &mut runner,
                 &opts,
             );
-            // Remember the last-used agent for this workspace
-            if let Some(ws_name) = saved_workspace_name
-                && let Some(ws) = config.workspaces.get_mut(&ws_name)
-            {
-                ws.last_agent = Some(class.key());
-                if let Err(e) = config.save(&paths) {
-                    eprintln!("warning: failed to save last-used agent: {e}");
-                }
-            }
+            remember_last_agent(
+                &paths,
+                &mut config,
+                saved_workspace_name.as_deref(),
+                &class,
+                &result,
+            );
             result
         }
         Command::Launch => {
@@ -300,13 +325,7 @@ pub fn run(cli: Cli) -> Result<()> {
             };
             let result =
                 runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts);
-            // Remember the last-used agent if this was a saved workspace
-            if let Some(ws) = config.workspaces.get_mut(&workspace.label) {
-                ws.last_agent = Some(class.key());
-                if let Err(e) = config.save(&paths) {
-                    eprintln!("warning: failed to save last-used agent: {e}");
-                }
-            }
+            remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
             result
         }
         Command::Hardline { selector } => {
@@ -852,6 +871,152 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("neither a saved workspace nor a directory"));
+    }
+
+    #[test]
+    fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let project_dir = temp.path().join("project");
+        let nested_dir = project_dir.join("src/bin");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+
+        let mut config = config::AppConfig::default();
+        config.agents.insert(
+            "agent-smith".to_string(),
+            config::AgentSource {
+                git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+                trusted: true,
+            },
+        );
+        config.workspaces.insert(
+            "my-app".to_string(),
+            workspace::WorkspaceConfig {
+                workdir: "/workspace".to_string(),
+                mounts: vec![workspace::MountConfig {
+                    src: project_dir.display().to_string(),
+                    dst: "/workspace".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec!["agent-smith".to_string()],
+                default_agent: Some("agent-smith".to_string()),
+                last_agent: None,
+            },
+        );
+
+        let resolved = resolve_agent_from_context(&config, &nested_dir).unwrap();
+
+        assert_eq!(resolved.0.key(), "agent-smith");
+        assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_string()));
+    }
+
+    #[test]
+    fn resolve_agent_from_context_ignores_stale_last_agent() {
+        let temp = tempfile::tempdir().unwrap();
+        let project_dir = temp.path().join("project");
+        let nested_dir = project_dir.join("src/bin");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+
+        let mut config = config::AppConfig::default();
+        config.agents.insert(
+            "agent-smith".to_string(),
+            config::AgentSource {
+                git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+                trusted: true,
+            },
+        );
+        config.workspaces.insert(
+            "my-app".to_string(),
+            workspace::WorkspaceConfig {
+                workdir: "/workspace".to_string(),
+                mounts: vec![workspace::MountConfig {
+                    src: project_dir.display().to_string(),
+                    dst: "/workspace".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec!["agent-smith".to_string()],
+                default_agent: None,
+                last_agent: Some("ghost-agent".to_string()),
+            },
+        );
+
+        let resolved = resolve_agent_from_context(&config, &nested_dir).unwrap();
+
+        assert_eq!(resolved.0.key(), "agent-smith");
+        assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_string()));
+    }
+
+    #[test]
+    fn remember_last_agent_persists_successful_loads() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let mut config = config::AppConfig::default();
+        config.workspaces.insert(
+            "my-app".to_string(),
+            workspace::WorkspaceConfig {
+                workdir: "/workspace".to_string(),
+                mounts: vec![workspace::MountConfig {
+                    src: temp.path().display().to_string(),
+                    dst: "/workspace".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+            },
+        );
+
+        remember_last_agent(
+            &paths,
+            &mut config,
+            Some("my-app"),
+            &ClassSelector::new(None, "agent-smith"),
+            &Ok(()),
+        );
+
+        assert_eq!(
+            config
+                .workspaces
+                .get("my-app")
+                .and_then(|workspace| workspace.last_agent.as_deref()),
+            Some("agent-smith")
+        );
+    }
+
+    #[test]
+    fn remember_last_agent_skips_failed_loads() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let mut config = config::AppConfig::default();
+        config.workspaces.insert(
+            "my-app".to_string(),
+            workspace::WorkspaceConfig {
+                workdir: "/workspace".to_string(),
+                mounts: vec![workspace::MountConfig {
+                    src: temp.path().display().to_string(),
+                    dst: "/workspace".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+            },
+        );
+
+        remember_last_agent(
+            &paths,
+            &mut config,
+            Some("my-app"),
+            &ClassSelector::new(None, "agent-smith"),
+            &Err(anyhow::anyhow!("load failed")),
+        );
+
+        assert_eq!(
+            config
+                .workspaces
+                .get("my-app")
+                .and_then(|workspace| workspace.last_agent.as_deref()),
+            None
+        );
     }
 
     /// Simulates `jackin workspace create jackin --workdir jackin --mount sibling-project`
