@@ -243,6 +243,7 @@ mod tests {
             _program: &str,
             _args: &[&str],
             _cwd: Option<&std::path::Path>,
+            _opts: &crate::docker::RunOptions,
         ) -> anyhow::Result<()> {
             Ok(())
         }
