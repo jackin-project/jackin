@@ -8,6 +8,14 @@ const DEFAULT_CAPTURE_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub trait CommandRunner {
     fn run(&mut self, program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<()>;
+    fn run_capture_stderr(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+    ) -> anyhow::Result<()> {
+        self.run(program, args, cwd)
+    }
     fn capture(
         &mut self,
         program: &str,
@@ -89,6 +97,56 @@ impl CommandRunner for ShellRunner {
         Ok(())
     }
 
+    fn run_capture_stderr(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+    ) -> anyhow::Result<()> {
+        self.log_command(program, args, cwd);
+        let timeout = self.capture_timeout.unwrap_or(DEFAULT_CAPTURE_TIMEOUT);
+        let mut child = Self::build_command(program, args, cwd)
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            anyhow::anyhow!(
+                "failed to capture stderr for {} {}",
+                program,
+                args.join(" ")
+            )
+        })?;
+        let stderr_handle = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
+            let mut reader = std::io::BufReader::new(stderr);
+            let mut output = Vec::new();
+            let mut buf = [0_u8; 8192];
+            let mut writer = std::io::stderr().lock();
+            loop {
+                let read = reader.read(&mut buf)?;
+                if read == 0 {
+                    break;
+                }
+                std::io::Write::write_all(&mut writer, &buf[..read])?;
+                output.extend_from_slice(&buf[..read]);
+            }
+            Ok(output)
+        });
+        let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
+        let stderr = stderr_handle
+            .join()
+            .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
+        if !status.success() {
+            if String::from_utf8_lossy(&stderr).trim().is_empty() {
+                anyhow::bail!("command failed: {} {}", program, args.join(" "));
+            }
+            anyhow::bail!(
+                "command failed: {} {} (see stderr above)",
+                program,
+                args.join(" ")
+            );
+        }
+        Ok(())
+    }
+
     fn capture(
         &mut self,
         program: &str,
@@ -153,6 +211,18 @@ impl CommandRunner for ShellRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn run_capture_stderr_returns_hint_after_streaming_stderr() {
+        let mut runner = ShellRunner::default();
+
+        let error = runner
+            .run_capture_stderr("sh", &["-c", "printf 'region blocked\n' >&2; exit 2"], None)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("see stderr above"));
+    }
 
     #[cfg(unix)]
     #[test]
