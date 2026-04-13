@@ -296,6 +296,23 @@ pub struct ResolvedWorkspace {
     pub mounts: Vec<MountConfig>,
 }
 
+pub fn saved_workspace_match_depth(workspace: &WorkspaceConfig, cwd: &Path) -> Option<usize> {
+    let canonical_cwd = cwd.canonicalize().ok()?;
+
+    workspace
+        .mounts
+        .iter()
+        .filter_map(|mount| {
+            let canonical_src = Path::new(&mount.src).canonicalize().ok()?;
+            if canonical_cwd == canonical_src || canonical_cwd.starts_with(&canonical_src) {
+                Some(canonical_src.components().count())
+            } else {
+                None
+            }
+        })
+        .max()
+}
+
 pub fn resolve_load_workspace(
     config: &crate::config::AppConfig,
     selector: &crate::selector::ClassSelector,
