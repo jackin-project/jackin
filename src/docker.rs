@@ -1,4 +1,5 @@
 use owo_colors::OwoColorize;
+use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
@@ -18,7 +19,7 @@ pub trait CommandRunner {
 #[derive(Default)]
 pub struct ShellRunner {
     pub debug: bool,
-    /// Override the default timeout for `capture` calls. `None` uses
+    /// Override the default timeout for child-process calls. `None` uses
     /// [`DEFAULT_CAPTURE_TIMEOUT`].
     pub capture_timeout: Option<Duration>,
 }
@@ -76,7 +77,9 @@ impl ShellRunner {
 impl CommandRunner for ShellRunner {
     fn run(&mut self, program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<()> {
         self.log_command(program, args, cwd);
-        let status = Self::build_command(program, args, cwd).status()?;
+        let timeout = self.capture_timeout.unwrap_or(DEFAULT_CAPTURE_TIMEOUT);
+        let mut child = Self::build_command(program, args, cwd).spawn()?;
+        let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
         anyhow::ensure!(
             status.success(),
             "command failed: {} {}",
@@ -98,20 +101,85 @@ impl CommandRunner for ShellRunner {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            anyhow::anyhow!(
+                "failed to capture stdout for {} {}",
+                program,
+                args.join(" ")
+            )
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            anyhow::anyhow!(
+                "failed to capture stderr for {} {}",
+                program,
+                args.join(" ")
+            )
+        })?;
+        let stdout_handle = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
+            let mut reader = std::io::BufReader::new(stdout);
+            let mut output = Vec::new();
+            reader.read_to_end(&mut output)?;
+            Ok(output)
+        });
+        let stderr_handle = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
+            let mut reader = std::io::BufReader::new(stderr);
+            let mut output = Vec::new();
+            reader.read_to_end(&mut output)?;
+            Ok(output)
+        });
         let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
-        let output = child.wait_with_output()?;
+        let stdout = stdout_handle
+            .join()
+            .map_err(|_| anyhow::anyhow!("stdout reader thread panicked"))??;
+        let stderr = stderr_handle
+            .join()
+            .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
         if !status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
             if stderr.is_empty() {
                 anyhow::bail!("command failed: {} {}", program, args.join(" "));
             }
             anyhow::bail!("command failed: {} {}: {}", program, args.join(" "), stderr);
         }
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
         if self.debug && !stdout.is_empty() {
             let first_line = stdout.lines().next().unwrap_or("");
             eprintln!("{}", format!("[debug] -> {first_line}").dimmed());
         }
         Ok(stdout)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn capture_handles_large_stdout_without_timing_out() {
+        let mut runner = ShellRunner {
+            capture_timeout: Some(Duration::from_secs(2)),
+            ..Default::default()
+        };
+
+        let output = runner
+            .capture("sh", &["-c", "yes x | head -c 200000"], None)
+            .unwrap();
+
+        assert!(output.len() >= 190000);
+        assert!(output.starts_with('x'));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_respects_timeout() {
+        let mut runner = ShellRunner {
+            capture_timeout: Some(Duration::from_millis(50)),
+            ..Default::default()
+        };
+
+        let error = runner.run("sh", &["-c", "sleep 1"], None).unwrap_err();
+
+        assert!(error.to_string().contains("command timed out after"));
     }
 }
