@@ -3,34 +3,32 @@ use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
-/// Default timeout for commands that capture output (git, docker inspect, etc.).
-const DEFAULT_CAPTURE_TIMEOUT: Duration = Duration::from_secs(120);
+/// Default timeout for commands (git, docker inspect, etc.).
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Timeout for long-running commands such as `docker build`.
 pub const DOCKER_BUILD_TIMEOUT: Duration = Duration::from_secs(900);
 
+/// Options that control how a command is executed.
+#[derive(Clone, Debug, Default)]
+pub struct RunOptions {
+    /// When `true`, stderr is piped, streamed to the terminal in real time,
+    /// and captured so it can be included in error messages.  When `false`
+    /// (the default), stderr is inherited directly from the parent process.
+    pub capture_stderr: bool,
+    /// Override the default timeout for this command. `None` uses the runner's
+    /// default.
+    pub timeout: Option<Duration>,
+}
+
 pub trait CommandRunner {
-    fn run(&mut self, program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<()>;
-    fn run_capture_stderr(
+    fn run(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
-    ) -> anyhow::Result<()> {
-        self.run(program, args, cwd)
-    }
-    /// Like [`run_capture_stderr`](Self::run_capture_stderr) but with an
-    /// explicit timeout. The default implementation ignores the timeout and
-    /// delegates to `run_capture_stderr`.
-    fn run_capture_stderr_with_timeout(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        cwd: Option<&Path>,
-        _timeout: Duration,
-    ) -> anyhow::Result<()> {
-        self.run_capture_stderr(program, args, cwd)
-    }
+        opts: &RunOptions,
+    ) -> anyhow::Result<()>;
     fn capture(
         &mut self,
         program: &str,
@@ -43,8 +41,8 @@ pub trait CommandRunner {
 pub struct ShellRunner {
     pub debug: bool,
     /// Override the default timeout for child-process calls. `None` uses
-    /// [`DEFAULT_CAPTURE_TIMEOUT`].
-    pub capture_timeout: Option<Duration>,
+    /// [`DEFAULT_TIMEOUT`].
+    pub timeout: Option<Duration>,
 }
 
 impl ShellRunner {
@@ -95,66 +93,69 @@ impl ShellRunner {
             }
         }
     }
+
+    fn resolve_timeout(&self, opts: &RunOptions) -> Duration {
+        opts.timeout.or(self.timeout).unwrap_or(DEFAULT_TIMEOUT)
+    }
 }
 
 impl CommandRunner for ShellRunner {
-    fn run(&mut self, program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<()> {
-        self.log_command(program, args, cwd);
-        let timeout = self.capture_timeout.unwrap_or(DEFAULT_CAPTURE_TIMEOUT);
-        let mut child = Self::build_command(program, args, cwd).spawn()?;
-        let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
-        anyhow::ensure!(
-            status.success(),
-            "command failed: {} {}",
-            program,
-            args.join(" ")
-        );
-        Ok(())
-    }
-
-    fn run_capture_stderr(
+    fn run(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
+        opts: &RunOptions,
     ) -> anyhow::Result<()> {
         self.log_command(program, args, cwd);
-        let timeout = self.capture_timeout.unwrap_or(DEFAULT_CAPTURE_TIMEOUT);
-        let mut child = Self::build_command(program, args, cwd)
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
-        let stderr = child.stderr.take().ok_or_else(|| {
-            anyhow::anyhow!(
-                "failed to capture stderr for {} {}",
-                program,
-                args.join(" ")
-            )
-        })?;
-        let stderr_handle = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
-            let mut reader = std::io::BufReader::new(stderr);
-            let mut output = Vec::new();
-            let mut buf = [0_u8; 8192];
-            let mut writer = std::io::stderr().lock();
-            loop {
-                let read = reader.read(&mut buf)?;
-                if read == 0 {
-                    break;
+        let timeout = self.resolve_timeout(opts);
+
+        if opts.capture_stderr {
+            let mut child = Self::build_command(program, args, cwd)
+                .stderr(std::process::Stdio::piped())
+                .spawn()?;
+            let stderr = child.stderr.take().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "failed to capture stderr for {} {}",
+                    program,
+                    args.join(" ")
+                )
+            })?;
+            let stderr_handle = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
+                let mut reader = std::io::BufReader::new(stderr);
+                let mut output = Vec::new();
+                let mut buf = [0_u8; 8192];
+                let mut writer = std::io::stderr().lock();
+                loop {
+                    let read = reader.read(&mut buf)?;
+                    if read == 0 {
+                        break;
+                    }
+                    std::io::Write::write_all(&mut writer, &buf[..read])?;
+                    output.extend_from_slice(&buf[..read]);
                 }
-                std::io::Write::write_all(&mut writer, &buf[..read])?;
-                output.extend_from_slice(&buf[..read]);
+                Ok(output)
+            });
+            let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
+            let stderr = stderr_handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
+            if !status.success() {
+                if String::from_utf8_lossy(&stderr).trim().is_empty() {
+                    anyhow::bail!("command failed: {} {}", program, args.join(" "));
+                }
+                anyhow::bail!(
+                    "command failed: {} {} (see stderr above)",
+                    program,
+                    args.join(" ")
+                );
             }
-            Ok(output)
-        });
-        let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
-        let stderr = stderr_handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
-        if !status.success() {
-            if String::from_utf8_lossy(&stderr).trim().is_empty() {
-                anyhow::bail!("command failed: {} {}", program, args.join(" "));
-            }
-            anyhow::bail!(
-                "command failed: {} {} (see stderr above)",
+        } else {
+            let mut child = Self::build_command(program, args, cwd).spawn()?;
+            let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
+            anyhow::ensure!(
+                status.success(),
+                "command failed: {} {}",
                 program,
                 args.join(" ")
             );
@@ -169,7 +170,7 @@ impl CommandRunner for ShellRunner {
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
         self.log_command(program, args, cwd);
-        let timeout = self.capture_timeout.unwrap_or(DEFAULT_CAPTURE_TIMEOUT);
+        let timeout = self.resolve_timeout(&RunOptions::default());
         let mut child = Self::build_command(program, args, cwd)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -221,56 +222,6 @@ impl CommandRunner for ShellRunner {
         }
         Ok(stdout)
     }
-
-    fn run_capture_stderr_with_timeout(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        cwd: Option<&Path>,
-        timeout: Duration,
-    ) -> anyhow::Result<()> {
-        self.log_command(program, args, cwd);
-        let mut child = Self::build_command(program, args, cwd)
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
-        let stderr = child.stderr.take().ok_or_else(|| {
-            anyhow::anyhow!(
-                "failed to capture stderr for {} {}",
-                program,
-                args.join(" ")
-            )
-        })?;
-        let stderr_handle = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
-            let mut reader = std::io::BufReader::new(stderr);
-            let mut output = Vec::new();
-            let mut buf = [0_u8; 8192];
-            let mut writer = std::io::stderr().lock();
-            loop {
-                let read = reader.read(&mut buf)?;
-                if read == 0 {
-                    break;
-                }
-                std::io::Write::write_all(&mut writer, &buf[..read])?;
-                output.extend_from_slice(&buf[..read]);
-            }
-            Ok(output)
-        });
-        let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
-        let stderr = stderr_handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
-        if !status.success() {
-            if String::from_utf8_lossy(&stderr).trim().is_empty() {
-                anyhow::bail!("command failed: {} {}", program, args.join(" "));
-            }
-            anyhow::bail!(
-                "command failed: {} {} (see stderr above)",
-                program,
-                args.join(" ")
-            );
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -281,9 +232,18 @@ mod tests {
     #[test]
     fn run_capture_stderr_returns_hint_after_streaming_stderr() {
         let mut runner = ShellRunner::default();
+        let opts = RunOptions {
+            capture_stderr: true,
+            ..Default::default()
+        };
 
         let error = runner
-            .run_capture_stderr("sh", &["-c", "printf 'region blocked\n' >&2; exit 2"], None)
+            .run(
+                "sh",
+                &["-c", "printf 'region blocked\n' >&2; exit 2"],
+                None,
+                &opts,
+            )
             .unwrap_err();
 
         assert!(error.to_string().contains("see stderr above"));
@@ -293,7 +253,7 @@ mod tests {
     #[test]
     fn capture_handles_large_stdout_without_timing_out() {
         let mut runner = ShellRunner {
-            capture_timeout: Some(Duration::from_secs(2)),
+            timeout: Some(Duration::from_secs(2)),
             ..Default::default()
         };
 
@@ -309,11 +269,13 @@ mod tests {
     #[test]
     fn run_respects_timeout() {
         let mut runner = ShellRunner {
-            capture_timeout: Some(Duration::from_millis(50)),
+            timeout: Some(Duration::from_millis(50)),
             ..Default::default()
         };
 
-        let error = runner.run("sh", &["-c", "sleep 1"], None).unwrap_err();
+        let error = runner
+            .run("sh", &["-c", "sleep 1"], None, &RunOptions::default())
+            .unwrap_err();
 
         assert!(error.to_string().contains("command timed out after"));
     }

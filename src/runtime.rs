@@ -1,6 +1,6 @@
 use crate::config::AppConfig;
 use crate::derived_image::create_derived_build_context;
-use crate::docker::CommandRunner;
+use crate::docker::{CommandRunner, RunOptions};
 use crate::instance::{AgentState, next_container_name};
 use crate::paths::JackinPaths;
 use crate::repo::{CachedRepo, validate_agent_repo};
@@ -342,7 +342,12 @@ fn resolve_agent_repo_with(
 
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
-                runner.run("git", &["clone", git_url, &repo_path], None)?;
+                runner.run(
+                    "git",
+                    &["clone", git_url, &repo_path],
+                    None,
+                    &RunOptions::default(),
+                )?;
                 let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
                 return Ok((cached_repo, validated_repo));
             }
@@ -368,9 +373,19 @@ fn resolve_agent_repo_with(
             cached_repo.repo_dir.display()
         );
 
-        runner.run("git", &["-C", &repo_path, "pull", "--ff-only"], None)?;
+        runner.run(
+            "git",
+            &["-C", &repo_path, "pull", "--ff-only"],
+            None,
+            &RunOptions::default(),
+        )?;
     } else {
-        runner.run("git", &["clone", git_url, &repo_path], None)?;
+        runner.run(
+            "git",
+            &["clone", git_url, &repo_path],
+            None,
+            &RunOptions::default(),
+        )?;
     }
 
     let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
@@ -427,11 +442,14 @@ fn build_agent_image(
         build_args.extend(["--build-arg", &cache_bust]);
     }
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
-    runner.run_capture_stderr_with_timeout(
+    runner.run(
         "docker",
         &build_args,
         None,
-        crate::docker::DOCKER_BUILD_TIMEOUT,
+        &RunOptions {
+            capture_stderr: true,
+            timeout: Some(crate::docker::DOCKER_BUILD_TIMEOUT),
+        },
     )?;
 
     // Extract and display the Claude version from the built image
@@ -510,6 +528,7 @@ fn launch_agent_runtime(
             network,
         ],
         None,
+        &RunOptions::default(),
     )?;
 
     // Start Docker-in-Docker with TLS
@@ -534,7 +553,7 @@ fn launch_agent_runtime(
         &certs_dind_mount,
         "docker:dind",
     ];
-    runner.run("docker", &dind_args, None)?;
+    runner.run("docker", &dind_args, None, &RunOptions::default())?;
 
     wait_for_dind(dind, &certs_volume, runner, *debug)?;
 
@@ -637,7 +656,7 @@ fn launch_agent_runtime(
         run_args.push(ms);
     }
     run_args.push(image);
-    let result = runner.run("docker", &run_args, None);
+    let result = runner.run("docker", &run_args, None, &RunOptions::default());
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
     result?;
@@ -833,7 +852,12 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
 }
 
 pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
-    runner.run("docker", &["attach", container_name], None)
+    runner.run(
+        "docker",
+        &["attach", container_name],
+        None,
+        &RunOptions::default(),
+    )
 }
 
 fn wait_for_dind(
@@ -1314,7 +1338,6 @@ use std::collections::VecDeque;
 pub struct FakeRunner {
     pub recorded: Vec<String>,
     pub run_recorded: Vec<String>,
-    pub run_capture_stderr_recorded: Vec<String>,
     pub fail_on: Vec<String>,
     pub fail_with: Vec<(String, String)>,
     pub capture_queue: VecDeque<String>,
@@ -1331,7 +1354,6 @@ impl Default for FakeRunner {
         Self {
             recorded: Vec::new(),
             run_recorded: Vec::new(),
-            run_capture_stderr_recorded: Vec::new(),
             fail_on: Vec::new(),
             fail_with: Vec::new(),
             capture_queue: VecDeque::new(),
@@ -1403,21 +1425,10 @@ impl CommandRunner for FakeRunner {
         program: &str,
         args: &[&str],
         _cwd: Option<&std::path::Path>,
+        _opts: &RunOptions,
     ) -> anyhow::Result<()> {
         let command = format!("{} {}", program, args.join(" "));
         self.run_recorded.push(command.clone());
-        self.recorded.push(command.clone());
-        self.check_command(&command)
-    }
-
-    fn run_capture_stderr(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        _cwd: Option<&std::path::Path>,
-    ) -> anyhow::Result<()> {
-        let command = format!("{} {}", program, args.join(" "));
-        self.run_capture_stderr_recorded.push(command.clone());
         self.recorded.push(command.clone());
         self.check_command(&command)
     }
@@ -1912,12 +1923,6 @@ plugins = ["code-review@claude-plugins-official"]
         );
         assert!(
             runner
-                .run_capture_stderr_recorded
-                .iter()
-                .any(|call| call.contains("docker build "))
-        );
-        assert!(
-            !runner
                 .run_recorded
                 .iter()
                 .any(|call| call.contains("docker build "))
@@ -2077,12 +2082,6 @@ plugins = []
 
         assert!(
             runner
-                .run_capture_stderr_recorded
-                .iter()
-                .any(|call| call.contains("docker build "))
-        );
-        assert!(
-            !runner
                 .run_recorded
                 .iter()
                 .any(|call| call.contains("docker build "))
