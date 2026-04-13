@@ -67,11 +67,25 @@ impl LaunchState {
 
         let selected_workspace = workspaces
             .iter()
-            .position(|choice| {
-                choice.name != "Current directory"
-                    && choice.workspace.workdir == cwd.display().to_string()
+            .enumerate()
+            .filter_map(|(index, choice)| {
+                if choice.name == "Current directory" {
+                    return None;
+                }
+
+                match &choice.input {
+                    LoadWorkspaceInput::Saved(name) => config
+                        .workspaces
+                        .get(name)
+                        .and_then(|workspace| {
+                            crate::workspace::saved_workspace_match_depth(workspace, cwd)
+                        })
+                        .map(|depth| (index, depth)),
+                    _ => None,
+                }
             })
-            .unwrap_or(0);
+            .max_by_key(|(_, depth)| *depth)
+            .map_or(0, |(index, _)| index);
 
         Ok(Self {
             stage: LaunchStage::Workspace,
@@ -762,6 +776,41 @@ mod tests {
         );
 
         let state = LaunchState::new(&config, &project_dir).unwrap();
+        assert_eq!(state.selected_workspace_name(), Some("big-monorepo"));
+    }
+
+    #[test]
+    fn preselects_saved_workspace_for_nested_directory_under_mount_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let project_dir = temp.path().join("project");
+        let nested_dir = project_dir.join("src/lib");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+        let nested_dir = nested_dir.canonicalize().unwrap();
+
+        let mut config = crate::config::AppConfig::default();
+        config.agents.insert(
+            "agent-smith".to_string(),
+            crate::config::AgentSource {
+                git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+                trusted: true,
+            },
+        );
+        config.workspaces.insert(
+            "big-monorepo".to_string(),
+            crate::workspace::WorkspaceConfig {
+                workdir: "/workspace".to_string(),
+                mounts: vec![crate::workspace::MountConfig {
+                    src: project_dir.canonicalize().unwrap().display().to_string(),
+                    dst: "/workspace".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec!["agent-smith".to_string()],
+                default_agent: Some("agent-smith".to_string()),
+                last_agent: None,
+            },
+        );
+
+        let state = LaunchState::new(&config, &nested_dir).unwrap();
         assert_eq!(state.selected_workspace_name(), Some("big-monorepo"));
     }
 
