@@ -4,7 +4,12 @@ use dialoguer::{Input, Select};
 pub struct TerminalPrompter;
 
 impl EnvPrompter for TerminalPrompter {
-    fn prompt_text(&self, title: &str, default: Option<&str>, skippable: bool) -> PromptResult {
+    fn prompt_text(
+        &self,
+        title: &str,
+        default: Option<&str>,
+        skippable: bool,
+    ) -> anyhow::Result<PromptResult> {
         let mut input = Input::<String>::new().with_prompt(title);
 
         if let Some(d) = default {
@@ -16,9 +21,9 @@ impl EnvPrompter for TerminalPrompter {
         }
 
         match input.interact_text() {
-            Ok(value) if value.is_empty() && skippable => PromptResult::Skipped,
-            Ok(value) => PromptResult::Value(value),
-            Err(_) => PromptResult::Skipped,
+            Ok(value) if value.is_empty() && skippable => Ok(PromptResult::Skipped),
+            Ok(value) => Ok(PromptResult::Value(value)),
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -28,7 +33,7 @@ impl EnvPrompter for TerminalPrompter {
         options: &[String],
         default: Option<&str>,
         skippable: bool,
-    ) -> PromptResult {
+    ) -> anyhow::Result<PromptResult> {
         let mut items: Vec<&str> = options.iter().map(String::as_str).collect();
         if skippable {
             items.push("(skip)");
@@ -43,9 +48,9 @@ impl EnvPrompter for TerminalPrompter {
         }
 
         match select.interact() {
-            Ok(idx) if skippable && idx == options.len() => PromptResult::Skipped,
-            Ok(idx) => PromptResult::Value(options[idx].clone()),
-            Err(_) => PromptResult::Skipped,
+            Ok(idx) if skippable && idx == options.len() => Ok(PromptResult::Skipped),
+            Ok(idx) => Ok(PromptResult::Value(options[idx].clone())),
+            Err(error) => Err(error.into()),
         }
     }
 }

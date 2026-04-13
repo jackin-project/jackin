@@ -16,10 +16,14 @@ use std::io::IsTerminal;
 
 /// Applied to agent containers, `DinD` sidecars, and networks.
 const LABEL_MANAGED: &str = "jackin.managed=true";
+/// Agent containers only — distinguishes them from `DinD` sidecars.
+const LABEL_ROLE_AGENT: &str = "jackin.role=agent";
 /// `DinD` sidecars only — distinguishes them from agent containers.
 const LABEL_ROLE_DIND: &str = "jackin.role=dind";
 /// Filter expression for `docker ps --filter` to find managed containers.
 const FILTER_MANAGED: &str = "label=jackin.managed=true";
+/// Filter expression for `docker ps --filter` to find agent containers.
+const FILTER_ROLE_AGENT: &str = "label=jackin.role=agent";
 /// Filter expression for `docker ps --filter` to find `DinD` sidecars.
 const FILTER_ROLE_DIND: &str = "label=jackin.role=dind";
 
@@ -338,7 +342,7 @@ fn resolve_agent_repo_with(
 
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
-                runner.capture("git", &["clone", git_url, &repo_path], None)?;
+                runner.run("git", &["clone", git_url, &repo_path], None)?;
                 let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
                 return Ok((cached_repo, validated_repo));
             }
@@ -364,9 +368,9 @@ fn resolve_agent_repo_with(
             cached_repo.repo_dir.display()
         );
 
-        runner.capture("git", &["-C", &repo_path, "pull", "--ff-only"], None)?;
+        runner.run("git", &["-C", &repo_path, "pull", "--ff-only"], None)?;
     } else {
-        runner.capture("git", &["clone", git_url, &repo_path], None)?;
+        runner.run("git", &["clone", git_url, &repo_path], None)?;
     }
 
     let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
@@ -489,7 +493,7 @@ fn launch_agent_runtime(
 
     // Create Docker network
     let agent_label = format!("jackin.agent={container_name}");
-    runner.capture(
+    runner.run(
         "docker",
         &[
             "network",
@@ -525,7 +529,7 @@ fn launch_agent_runtime(
         &certs_dind_mount,
         "docker:dind",
     ];
-    runner.capture("docker", &dind_args, None)?;
+    runner.run("docker", &dind_args, None)?;
 
     wait_for_dind(dind, &certs_volume, runner, *debug)?;
 
@@ -561,6 +565,8 @@ fn launch_agent_runtime(
         network,
         "--label",
         LABEL_MANAGED,
+        "--label",
+        LABEL_ROLE_AGENT,
         "--label",
         &class_label,
         "--label",
@@ -871,18 +877,63 @@ pub fn list_managed_agent_names(runner: &mut impl CommandRunner) -> anyhow::Resu
     list_agent_names(runner, true)
 }
 
+fn capture_managed_container_rows(
+    runner: &mut impl CommandRunner,
+    include_stopped: bool,
+    format: &str,
+) -> anyhow::Result<String> {
+    if include_stopped {
+        runner.capture(
+            "docker",
+            &["ps", "-a", "--filter", FILTER_MANAGED, "--format", format],
+            None,
+        )
+    } else {
+        runner.capture(
+            "docker",
+            &["ps", "--filter", FILTER_MANAGED, "--format", format],
+            None,
+        )
+    }
+}
+
+fn list_legacy_managed_agent_names(
+    runner: &mut impl CommandRunner,
+    include_stopped: bool,
+) -> anyhow::Result<Vec<String>> {
+    let output = capture_managed_container_rows(
+        runner,
+        include_stopped,
+        "{{.Names}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.role\"}}",
+    )?;
+
+    Ok(output
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(3, '\t');
+            let name = parts.next()?;
+            let agent = parts.next().unwrap_or("");
+            let role = parts.next().unwrap_or("");
+            if name.is_empty() || !agent.is_empty() || !role.is_empty() {
+                return None;
+            }
+            Some(name.to_string())
+        })
+        .collect())
+}
+
 fn list_agent_names(
     runner: &mut impl CommandRunner,
     include_stopped: bool,
 ) -> anyhow::Result<Vec<String>> {
-    let output = if include_stopped {
+    let role_output = if include_stopped {
         runner.capture(
             "docker",
             &[
                 "ps",
                 "-a",
                 "--filter",
-                FILTER_MANAGED,
+                FILTER_ROLE_AGENT,
                 "--format",
                 "{{.Names}}",
             ],
@@ -891,16 +942,24 @@ fn list_agent_names(
     } else {
         runner.capture(
             "docker",
-            &["ps", "--filter", FILTER_MANAGED, "--format", "{{.Names}}"],
+            &[
+                "ps",
+                "--filter",
+                FILTER_ROLE_AGENT,
+                "--format",
+                "{{.Names}}",
+            ],
             None,
         )?
     };
 
-    Ok(output
+    let mut names: Vec<String> = role_output
         .lines()
         .filter(|line| !line.is_empty())
         .map(String::from)
-        .collect())
+        .collect();
+    names.extend(list_legacy_managed_agent_names(runner, include_stopped)?);
+    Ok(names)
 }
 
 /// List running agents with human-friendly display names.
@@ -915,14 +974,14 @@ pub fn list_running_agent_display_names(
         &[
             "ps",
             "--filter",
-            FILTER_MANAGED,
+            FILTER_ROLE_AGENT,
             "--format",
             "{{.Names}}\t{{.Label \"jackin.display_name\"}}",
         ],
         None,
     )?;
 
-    Ok(output
+    let mut names: Vec<String> = output
         .lines()
         .filter(|line| !line.is_empty())
         .map(|line| {
@@ -931,7 +990,26 @@ pub fn list_running_agent_display_names(
             let display_name = parts.get(1).unwrap_or(&"");
             format_agent_display(container_name, display_name)
         })
-        .collect())
+        .collect();
+
+    let legacy_output = capture_managed_container_rows(
+        runner,
+        false,
+        "{{.Names}}\t{{.Label \"jackin.display_name\"}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.role\"}}",
+    )?;
+    names.extend(legacy_output.lines().filter_map(|line| {
+        let mut parts = line.splitn(4, '\t');
+        let container_name = parts.next()?;
+        let display_name = parts.next().unwrap_or("");
+        let agent = parts.next().unwrap_or("");
+        let role = parts.next().unwrap_or("");
+        if container_name.is_empty() || !agent.is_empty() || !role.is_empty() {
+            return None;
+        }
+        Some(format_agent_display(container_name, display_name))
+    }));
+
+    Ok(names)
 }
 
 /// Format a human-friendly agent name from a container name and its display label.
@@ -1011,11 +1089,7 @@ struct DindInfo {
     agent: String,
 }
 
-/// Return `DinD` sidecar containers whose corresponding agent container is no
-/// longer running.  These are leftovers from hard kills, terminal closures,
-/// or startup failures.
-fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<DindInfo>> {
-    // List all DinD sidecars (running + stopped) by label.
+fn collect_labeled_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<DindInfo>> {
     let dind_output = runner.capture(
         "docker",
         &[
@@ -1029,7 +1103,7 @@ fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<
         None,
     )?;
 
-    let sidecars: Vec<DindInfo> = dind_output
+    Ok(dind_output
         .lines()
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
@@ -1042,7 +1116,41 @@ fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<
                 agent: agent.to_string(),
             })
         })
-        .collect();
+        .collect())
+}
+
+fn collect_legacy_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<DindInfo>> {
+    let output = capture_managed_container_rows(
+        runner,
+        true,
+        "{{.Names}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.role\"}}",
+    )?;
+
+    Ok(output
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let mut parts = line.splitn(3, '\t');
+            let name = parts.next()?;
+            let agent = parts.next().unwrap_or("");
+            let role = parts.next().unwrap_or("");
+            if name.is_empty() || agent.is_empty() || !role.is_empty() {
+                return None;
+            }
+            Some(DindInfo {
+                name: name.to_string(),
+                agent: agent.to_string(),
+            })
+        })
+        .collect())
+}
+
+/// Return `DinD` sidecar containers whose corresponding agent container is no
+/// longer running.  These are leftovers from hard kills, terminal closures,
+/// or startup failures.
+fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<DindInfo>> {
+    let mut sidecars = collect_labeled_dind(runner)?;
+    sidecars.extend(collect_legacy_dind(runner)?);
 
     if sidecars.is_empty() {
         return Ok(vec![]);
@@ -1417,7 +1525,7 @@ plugins = ["code-review@claude-plugins-official"]
             call.contains("docker build ") && call.contains("-t jackin-chainargos__the-architect")
         }));
         assert!(runner.recorded.iter().any(|call| {
-            call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
+            call == "docker ps -a --filter label=jackin.role=agent --format {{.Names}}"
         }));
         assert!(
             runner
@@ -1588,16 +1696,20 @@ plugins = []
 
     #[test]
     fn exile_all_ejects_all_managed_agents() {
-        let mut runner = FakeRunner::with_capture_queue([r#"jackin-agent-smith
+        let mut runner = FakeRunner::with_capture_queue([
+            r#"jackin-agent-smith
 jackin-agent-smith-clone-1"#
-            .to_string()]);
+                .to_string(),
+            String::new(),
+        ]);
 
         exile_all(&mut runner).unwrap();
 
         assert_eq!(
             runner.recorded,
             vec![
-                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}",
+                "docker ps -a --filter label=jackin.role=agent --format {{.Names}}",
+                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.role\"}}",
                 "docker rm -f jackin-agent-smith",
                 "docker rm -f jackin-agent-smith-dind",
                 "docker volume rm jackin-agent-smith-dind-certs",
@@ -1628,6 +1740,7 @@ jackin-agent-smith-clone-1"#
                 r#"jackin-agent-smith
 jackin-agent-smith-clone-1"#
                     .to_string(),
+                String::new(),
             ]),
             ..Default::default()
         };
@@ -1637,7 +1750,8 @@ jackin-agent-smith-clone-1"#
         assert_eq!(
             runner.recorded,
             vec![
-                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}",
+                "docker ps -a --filter label=jackin.role=agent --format {{.Names}}",
+                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.role\"}}",
                 "docker rm -f jackin-agent-smith",
                 "docker rm -f jackin-agent-smith-dind",
                 "docker volume rm jackin-agent-smith-dind-certs",
@@ -1785,7 +1899,7 @@ plugins = ["code-review@claude-plugins-official"]
                 .any(|call| call.contains("docker build "))
         );
         assert!(runner.recorded.iter().any(|call| {
-            call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}"
+            call == "docker ps -a --filter label=jackin.role=agent --format {{.Names}}"
         }));
         assert!(
             runner
@@ -1798,12 +1912,6 @@ plugins = ["code-review@claude-plugins-official"]
                 .recorded
                 .iter()
                 .any(|call| call.contains("/home/claude/.jackin/plugins.json:ro"))
-        );
-        assert!(
-            !runner
-                .recorded
-                .iter()
-                .any(|call| call == "docker rm -f jackin-agent-smith")
         );
         assert!(
             !runner
@@ -2434,6 +2542,150 @@ plugins = []
     }
 
     #[test]
+    fn resolve_agent_repo_uses_run_for_clone_after_recovery() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let mut runner =
+            FakeRunner::with_capture_queue(["git@github.com:evil/agent-smith.git".to_string()]);
+        let repo_dir_clone = repo_dir.clone();
+        runner.side_effects.push((
+            "clone".to_string(),
+            Box::new(move || {
+                std::fs::create_dir_all(repo_dir_clone.join(".git")).unwrap();
+                std::fs::write(
+                    repo_dir_clone.join("Dockerfile"),
+                    "FROM projectjackin/construct:trixie\n",
+                )
+                .unwrap();
+                std::fs::write(
+                    repo_dir_clone.join("jackin.agent.toml"),
+                    r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+                )
+                .unwrap();
+            }),
+        ));
+
+        let result = resolve_agent_repo_with(
+            &paths,
+            &selector,
+            "https://github.com/jackin-project/jackin-agent-smith.git",
+            &mut runner,
+            || Ok(true),
+        );
+
+        assert!(result.is_ok(), "expected recovery to succeed: {result:?}");
+        assert!(runner.run_recorded.iter().any(|call| {
+            call.contains("git clone https://github.com/jackin-project/jackin-agent-smith.git")
+        }));
+    }
+
+    #[test]
+    fn resolve_agent_repo_uses_run_for_pull_on_clean_repo() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let mut runner = FakeRunner::with_capture_queue([
+            "git@github.com:jackin-project/jackin-agent-smith.git".to_string(),
+            String::new(),
+        ]);
+
+        let result = resolve_agent_repo(
+            &paths,
+            &selector,
+            "https://github.com/jackin-project/jackin-agent-smith.git",
+            &mut runner,
+        );
+
+        assert!(
+            result.is_ok(),
+            "expected clean repo update to succeed: {result:?}"
+        );
+        assert!(
+            runner
+                .run_recorded
+                .iter()
+                .any(|call| call.contains("git -C") && call.contains("pull --ff-only"))
+        );
+    }
+
+    #[test]
+    fn list_managed_agent_names_excludes_dind_sidecars() {
+        let mut runner = FakeRunner::with_capture_queue(["jackin-agent-smith".to_string()]);
+
+        let names = list_managed_agent_names(&mut runner).unwrap();
+
+        assert_eq!(names, vec!["jackin-agent-smith"]);
+        assert!(runner.recorded.iter().any(|call| {
+            call == "docker ps -a --filter label=jackin.role=agent --format {{.Names}}"
+        }));
+    }
+
+    #[test]
+    fn list_managed_agent_names_includes_legacy_agents_without_role_label() {
+        let mut runner =
+            FakeRunner::with_capture_queue([String::new(), "jackin-agent-smith\t\t".to_string()]);
+
+        let names = list_managed_agent_names(&mut runner).unwrap();
+
+        assert_eq!(names, vec!["jackin-agent-smith"]);
+        assert!(runner.recorded.iter().any(|call| {
+            call == "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.role\"}}"
+        }));
+    }
+
+    #[test]
+    fn list_running_agent_display_names_excludes_dind_sidecars() {
+        let mut runner =
+            FakeRunner::with_capture_queue(["jackin-agent-smith\tAgent Smith".to_string()]);
+
+        let names = list_running_agent_display_names(&mut runner).unwrap();
+
+        assert_eq!(names, vec!["Agent Smith"]);
+        assert!(runner.recorded.iter().any(|call| {
+            call == "docker ps --filter label=jackin.role=agent --format {{.Names}}\t{{.Label \"jackin.display_name\"}}"
+        }));
+    }
+
+    #[test]
     fn config_rows_show_repo_and_branch_for_git_directory() {
         // Use the jackin repo itself as a known git directory
         let cwd = std::env::current_dir().unwrap();
@@ -2751,8 +3003,12 @@ plugins = []
         let mut runner = FakeRunner::with_capture_queue([
             // collect_orphaned_dind: docker ps -a --filter label=jackin.role=dind
             "jackin-agent-smith-dind\tjackin-agent-smith".to_string(),
-            // collect_orphaned_dind: list_agent_names (running) — agent IS running
+            // collect_orphaned_dind: legacy managed sidecars without role labels
+            String::new(),
+            // collect_orphaned_dind: running role-labeled agents — agent IS running
             "jackin-agent-smith".to_string(),
+            // collect_orphaned_dind: running legacy agents without role labels
+            String::new(),
             // gc_orphaned_networks: docker network ls
             String::new(),
         ]);
@@ -2844,6 +3100,37 @@ plugins = []
                 .recorded
                 .iter()
                 .any(|c| c.contains("docker network rm jackin-neo-net"))
+        );
+    }
+
+    #[test]
+    fn gc_removes_legacy_orphaned_dind_without_role_label() {
+        let mut runner = FakeRunner::with_capture_queue([
+            // collect_orphaned_dind: role-labeled DinD sidecars
+            String::new(),
+            // collect_orphaned_dind: legacy managed sidecars without role labels
+            "jackin-agent-smith-dind\tjackin-agent-smith\t".to_string(),
+            // collect_orphaned_dind: running role-labeled agents
+            String::new(),
+            // collect_orphaned_dind: running legacy agents without role labels
+            String::new(),
+            // gc_orphaned_networks: no additional networks
+            String::new(),
+        ]);
+
+        gc_orphaned_resources(&mut runner);
+
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker rm -f jackin-agent-smith-dind"))
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker rm -f jackin-agent-smith"))
         );
     }
 }
