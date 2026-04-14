@@ -42,6 +42,11 @@ elif flt == ".source":
 elif flt == ".sparse[]?":
     for item in data.get("sparse", []):
         print(item)
+elif flt == ".[].id":
+    if isinstance(data, list):
+        for item in data:
+            if "id" in item:
+                print(item["id"])
 else:
     raise SystemExit(f"unsupported filter: {flt}")
 "#,
@@ -80,11 +85,17 @@ fn install_plugins_script_adds_marketplaces_before_installing_plugins() {
     let claude_path = bin_dir.join("claude");
     write_executable(
         &claude_path,
-        format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n",
+        &format!(
+            r#"#!/bin/sh
+# Return empty JSON array for "plugin list --json" (no plugins installed)
+if [ "$1" = "plugin" ] && [ "$2" = "list" ] && [ "$3" = "--json" ]; then
+    echo '[]'
+    exit 0
+fi
+printf '%s\n' "$*" >> '{}'
+"#,
             log_file.display()
-        )
-        .as_str(),
+        ),
     );
 
     let jq_path = bin_dir.join("jq");
@@ -139,11 +150,21 @@ fn install_plugins_script_surfaces_custom_marketplace_failures() {
     let claude_path = bin_dir.join("claude");
     write_executable(
         &claude_path,
-        format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nif [ \"$1\" = \"plugin\" ] && [ \"$2\" = \"marketplace\" ] && [ \"$3\" = \"add\" ] && [ \"$4\" = \"obra/superpowers-marketplace\" ]; then\n  echo 'failed to add marketplace' >&2\n  exit 1\nfi\n",
+        &format!(
+            r#"#!/bin/sh
+# Return empty JSON array for "plugin list --json"
+if [ "$1" = "plugin" ] && [ "$2" = "list" ] && [ "$3" = "--json" ]; then
+    echo '[]'
+    exit 0
+fi
+printf '%s\n' "$*" >> '{}'
+if [ "$1" = "plugin" ] && [ "$2" = "marketplace" ] && [ "$3" = "add" ] && [ "$4" = "obra/superpowers-marketplace" ]; then
+  echo 'failed to add marketplace' >&2
+  exit 1
+fi
+"#,
             log_file.display()
-        )
-        .as_str(),
+        ),
     );
 
     let jq_path = bin_dir.join("jq");

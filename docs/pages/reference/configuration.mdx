@@ -16,6 +16,26 @@ description: "The config.toml schema and storage locations"
 
 The configuration file is TOML format at `~/.config/jackin/config.toml`. It's managed through CLI commands — you generally don't need to edit it by hand.
 
+### Claude Code settings
+
+```toml
+[claude]
+auth_forward = "copy"  # "copy" (default), "sync", or "ignore"
+```
+
+| Field | Description | Default |
+|---|---|---|
+| `auth_forward` | How the host's Claude Code credentials are forwarded into agent containers. See [Authentication Forwarding](/guides/authentication). | `copy` |
+
+Per-agent overrides are set under the agent's `[claude]` section:
+
+```toml
+[agents.agent-smith.claude]
+auth_forward = "ignore"
+```
+
+Resolution order: per-agent override > global `[claude]` > `copy`.
+
 ### Workspaces
 
 ```toml
@@ -68,9 +88,10 @@ Each agent instance stores state at `~/.jackin/data/<container-name>/`:
 | File/Directory | Purpose |
 |---|---|
 | `.claude/` | Claude Code session history, conversation context |
-| `.claude.json` | Claude Code settings |
+| `.claude/.credentials.json` | Claude Code OAuth credentials (forwarded from host or obtained via in-container login) |
+| `.claude.json` | Claude Code account metadata and preferences |
 | `.config/gh/` | GitHub CLI authentication and settings |
-| `plugins.json` | Installed Claude plugins list |
+| `.jackin/plugins.json` | Installed Claude plugins list |
 
 This state is mounted back into the container on subsequent loads, so the agent resumes where it left off.
 
