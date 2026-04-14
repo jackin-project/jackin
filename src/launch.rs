@@ -758,6 +758,7 @@ mod tests {
             crate::config::AgentSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
+                claude: None,
             },
         );
         config.workspaces.insert(
@@ -793,6 +794,7 @@ mod tests {
             crate::config::AgentSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
+                claude: None,
             },
         );
         config.workspaces.insert(
