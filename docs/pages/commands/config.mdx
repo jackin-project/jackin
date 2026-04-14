@@ -10,7 +10,7 @@ description: "View and modify operator configuration"
 jackin config <SUBCOMMAND>
 ```
 
-Manage global operator configuration. Currently supports global mount management.
+Manage global operator configuration — mounts, agent trust, and Claude Code authentication forwarding.
 
 ## `config mount`
 
@@ -73,4 +73,52 @@ Unregister a global mount.
 ```bash
 jackin config mount remove gradle-cache
 jackin config mount remove secrets --scope "chainargos/*"
+```
+
+## `config auth`
+
+Manage Claude Code authentication forwarding from the host machine into agent containers. See the [Authentication Forwarding](/guides/authentication) guide for full details.
+
+### `config auth set`
+
+```bash
+jackin config auth set <MODE> [OPTIONS]
+```
+
+Set the authentication forwarding mode.
+
+| Mode | Description |
+|---|---|
+| `copy` | Copy host auth on first container creation (default) |
+| `sync` | Overwrite from host on each launch when host auth exists; preserve container auth when absent |
+| `ignore` | Never forward; revoke any previously forwarded credentials |
+
+| Option | Description |
+|---|---|
+| `--agent <SELECTOR>` | Apply to a specific agent instead of globally |
+
+```bash
+# Set global default
+jackin config auth set copy
+
+# Override for a specific agent
+jackin config auth set ignore --agent agent-smith
+jackin config auth set sync --agent chainargos/the-architect
+```
+
+### `config auth show`
+
+```bash
+jackin config auth show [OPTIONS]
+```
+
+Show the current authentication forwarding mode.
+
+| Option | Description |
+|---|---|
+| `--agent <SELECTOR>` | Show effective mode for a specific agent (includes per-agent override) |
+
+```bash
+jackin config auth show
+jackin config auth show --agent agent-smith
 ```
