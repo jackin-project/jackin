@@ -35,6 +35,7 @@ export default defineConfig({
       items: [
         { text: 'Workspaces', link: '/guides/workspaces' },
         { text: 'Mounts', link: '/guides/mounts' },
+        { text: 'Authentication', link: '/guides/authentication' },
         { text: 'Agent Repos', link: '/guides/agent-repos' },
         { text: 'Security Model', link: '/guides/security-model' },
         { text: 'Comparison', link: '/guides/comparison' },

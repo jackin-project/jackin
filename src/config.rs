@@ -24,11 +24,66 @@ const fn is_false(v: &bool) -> bool {
     !*v
 }
 
+/// Controls how the host's `~/.claude.json` is forwarded into agent containers.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthForwardMode {
+    /// Revoke any forwarded auth and never copy — container starts with `{}`.
+    Ignore,
+    /// Copy host auth on first container creation only; never overwrite afterwards.
+    #[default]
+    Copy,
+    /// Overwrite container auth from host on each launch when host auth
+    /// exists; preserve container auth when host auth is absent.
+    Sync,
+}
+
+impl std::fmt::Display for AuthForwardMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ignore => write!(f, "ignore"),
+            Self::Copy => write!(f, "copy"),
+            Self::Sync => write!(f, "sync"),
+        }
+    }
+}
+
+impl std::str::FromStr for AuthForwardMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "ignore" => Ok(Self::Ignore),
+            "copy" => Ok(Self::Copy),
+            "sync" => Ok(Self::Sync),
+            other => Err(format!(
+                "invalid auth_forward mode {other:?}; expected one of: ignore, copy, sync"
+            )),
+        }
+    }
+}
+
+/// Global Claude Code configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ClaudeConfig {
+    #[serde(default)]
+    pub auth_forward: AuthForwardMode,
+}
+
+/// Per-agent Claude Code configuration override.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ClaudeAgentConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_forward: Option<AuthForwardMode>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSource {
     pub git: String,
     #[serde(default, skip_serializing_if = "is_false")]
     pub trusted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude: Option<ClaudeAgentConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +134,8 @@ pub struct DockerConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
+    pub claude: ClaudeConfig,
+    #[serde(default)]
     pub agents: BTreeMap<String, AgentSource>,
     #[serde(default)]
     pub docker: DockerConfig,
@@ -128,9 +185,29 @@ impl AppConfig {
                 selector.name
             ),
             trusted: false,
+            claude: None,
         };
         self.agents.insert(selector.key(), source.clone());
         Ok((source, true))
+    }
+
+    /// Resolve the effective `AuthForwardMode` for a given agent.
+    ///
+    /// Resolution order: per-agent override → global default → `Copy`.
+    pub fn resolve_auth_forward_mode(&self, agent_key: &str) -> AuthForwardMode {
+        self.agents
+            .get(agent_key)
+            .and_then(|a| a.claude.as_ref())
+            .and_then(|c| c.auth_forward)
+            .unwrap_or(self.claude.auth_forward)
+    }
+
+    /// Set the per-agent auth forward mode override.
+    pub fn set_agent_auth_forward(&mut self, key: &str, mode: AuthForwardMode) {
+        if let Some(source) = self.agents.get_mut(key) {
+            let claude = source.claude.get_or_insert_with(ClaudeAgentConfig::default);
+            claude.auth_forward = Some(mode);
+        }
     }
 
     pub fn save(&self, paths: &JackinPaths) -> anyhow::Result<()> {
@@ -419,9 +496,11 @@ impl AppConfig {
     fn sync_builtin_agents(&mut self) -> bool {
         let mut changed = false;
         for &(name, git) in BUILTIN_AGENTS {
+            let existing_claude = self.agents.get(name).and_then(|a| a.claude.clone());
             let expected = AgentSource {
                 git: git.to_string(),
                 trusted: true,
+                claude: existing_claude,
             };
             match self.agents.get(name) {
                 Some(existing) if existing.git == expected.git && existing.trusted => {}
@@ -1256,5 +1335,138 @@ smith-data = { src = "/tmp/smith", dst = "/smith" }
         assert_eq!(resolved.len(), 2);
         assert!(resolved.iter().any(|(_, m)| m.dst == "/global"));
         assert!(resolved.iter().any(|(_, m)| m.dst == "/smith"));
+    }
+
+    // ── Auth forwarding config tests ────────────────────────────────────
+
+    #[test]
+    fn auth_forward_defaults_to_copy() {
+        let config = AppConfig::default();
+        assert_eq!(config.claude.auth_forward, AuthForwardMode::Copy);
+    }
+
+    #[test]
+    fn deserializes_global_claude_auth_forward() {
+        let toml_str = r#"
+[claude]
+auth_forward = "sync"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.claude.auth_forward, AuthForwardMode::Sync);
+    }
+
+    #[test]
+    fn deserializes_per_agent_claude_auth_forward() {
+        let toml_str = r#"
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+
+[agents.agent-smith.claude]
+auth_forward = "ignore"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        let agent = config.agents.get("agent-smith").unwrap();
+        assert_eq!(
+            agent.claude.as_ref().unwrap().auth_forward,
+            Some(AuthForwardMode::Ignore)
+        );
+    }
+
+    #[test]
+    fn resolve_auth_forward_defaults_to_copy() {
+        let config = AppConfig::default();
+        assert_eq!(
+            config.resolve_auth_forward_mode("nonexistent"),
+            AuthForwardMode::Copy
+        );
+    }
+
+    #[test]
+    fn resolve_auth_forward_uses_global_setting() {
+        let toml_str = r#"
+[claude]
+auth_forward = "sync"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(
+            config.resolve_auth_forward_mode("agent-smith"),
+            AuthForwardMode::Sync
+        );
+    }
+
+    #[test]
+    fn resolve_auth_forward_per_agent_overrides_global() {
+        let toml_str = r#"
+[claude]
+auth_forward = "sync"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+
+[agents.agent-smith.claude]
+auth_forward = "ignore"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(
+            config.resolve_auth_forward_mode("agent-smith"),
+            AuthForwardMode::Ignore
+        );
+    }
+
+    #[test]
+    fn auth_forward_round_trips_through_toml() {
+        let toml_str = r#"
+[claude]
+auth_forward = "sync"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+
+[agents.agent-smith.claude]
+auth_forward = "ignore"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        let reloaded: AppConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(reloaded.claude.auth_forward, AuthForwardMode::Sync);
+        assert_eq!(
+            reloaded.resolve_auth_forward_mode("agent-smith"),
+            AuthForwardMode::Ignore
+        );
+    }
+
+    #[test]
+    fn set_agent_auth_forward_creates_claude_section() {
+        let toml_str = r#"
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+"#;
+        let mut config: AppConfig = toml::from_str(toml_str).unwrap();
+        config.set_agent_auth_forward("agent-smith", AuthForwardMode::Sync);
+        assert_eq!(
+            config.resolve_auth_forward_mode("agent-smith"),
+            AuthForwardMode::Sync
+        );
+    }
+
+    #[test]
+    fn existing_config_without_claude_section_deserializes_with_defaults() {
+        let toml_str = r#"
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.claude.auth_forward, AuthForwardMode::Copy);
+        assert_eq!(
+            config.resolve_auth_forward_mode("agent-smith"),
+            AuthForwardMode::Copy
+        );
     }
 }

@@ -496,6 +496,34 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
             },
+            cli::ConfigCommand::Auth { command: auth_cmd } => match auth_cmd {
+                cli::AuthCommand::Set { mode, agent } => {
+                    let parsed_mode: config::AuthForwardMode =
+                        mode.parse().map_err(|e: String| anyhow::anyhow!("{e}"))?;
+                    if let Some(agent_selector) = agent {
+                        let class = ClassSelector::parse(&agent_selector)?;
+                        config.resolve_agent_source(&class)?;
+                        config.set_agent_auth_forward(&class.key(), parsed_mode);
+                        config.save(&paths)?;
+                        println!("Set auth forwarding for {} to {parsed_mode}.", class.key());
+                    } else {
+                        config.claude.auth_forward = parsed_mode;
+                        config.save(&paths)?;
+                        println!("Set global auth forwarding to {parsed_mode}.");
+                    }
+                    Ok(())
+                }
+                cli::AuthCommand::Show { agent } => {
+                    if let Some(agent_selector) = agent {
+                        let class = ClassSelector::parse(&agent_selector)?;
+                        let effective = config.resolve_auth_forward_mode(&class.key());
+                        println!("{effective}");
+                    } else {
+                        println!("{}", config.claude.auth_forward);
+                    }
+                    Ok(())
+                }
+            },
         },
         Command::Workspace { command } => match command {
             WorkspaceCommand::Create {
@@ -886,6 +914,7 @@ mod tests {
             config::AgentSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
+                claude: None,
             },
         );
         config.workspaces.insert(
@@ -922,6 +951,7 @@ mod tests {
             config::AgentSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
+                claude: None,
             },
         );
         config.workspaces.insert(

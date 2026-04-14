@@ -79,6 +79,27 @@ pub fn needs_claude_update(
     installed != latest
 }
 
+/// File that records the last `JACKIN_CACHE_BUST` value used to build an image.
+fn cache_bust_path(paths: &JackinPaths, image: &str) -> PathBuf {
+    paths.cache_dir.join(format!("image-cache-bust/{image}"))
+}
+
+/// Read the last `JACKIN_CACHE_BUST` value used for an image build.
+pub fn stored_cache_bust(paths: &JackinPaths, image: &str) -> Option<String> {
+    let path = cache_bust_path(paths, image);
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+/// Persist the `JACKIN_CACHE_BUST` value used for a build so that
+/// subsequent non-rebuild launches replay the same value and hit the
+/// same Docker cache layer.
+pub fn store_cache_bust(paths: &JackinPaths, image: &str, value: &str) {
+    let path = cache_bust_path(paths, image);
+    let _ = write_cached(&path, value);
+}
+
 /// Extract a bare semver string from `claude --version` output.
 ///
 /// The command returns e.g. `"2.1.96 (Claude Code)"` but we only need the

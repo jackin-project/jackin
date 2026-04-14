@@ -24,11 +24,16 @@ fi
 
 # Authenticate with GitHub if gh is installed in the container
 if [ -x /usr/bin/gh ]; then
-    if ! gh auth status &>/dev/null; then
+    if gh auth status &>/dev/null; then
+        echo "[entrypoint] GitHub CLI already authenticated"
+    else
+        echo "[entrypoint] GitHub CLI not authenticated — starting gh auth login"
         gh auth login
     fi
     gh auth setup-git
     git config --global url."https://github.com/".insteadOf "git@github.com:"
+else
+    echo "[entrypoint] GitHub CLI not installed — skipping auth"
 fi
 
 run_maybe_quiet /home/claude/install-plugins.sh
@@ -36,15 +41,28 @@ run_maybe_quiet /home/claude/install-plugins.sh
 # Register security tool MCP servers (ignore "already exists" on subsequent runs)
 if [[ "${JACKIN_DISABLE_TIRITH:-0}" != "1" ]]; then
     run_maybe_quiet claude mcp add tirith -- tirith mcp-server || true
+else
+    echo "[entrypoint] tirith disabled (JACKIN_DISABLE_TIRITH=1)"
 fi
 if [[ "${JACKIN_DISABLE_SHELLFIRM:-0}" != "1" ]]; then
     run_maybe_quiet claude mcp add shellfirm -- shellfirm mcp-server || true
+else
+    echo "[entrypoint] shellfirm disabled (JACKIN_DISABLE_SHELLFIRM=1)"
 fi
 
 # Run pre-launch hook if present
 if [ -x /home/claude/.jackin-runtime/pre-launch.sh ]; then
     echo "Running pre-launch hook..."
     /home/claude/.jackin-runtime/pre-launch.sh
+fi
+
+# In debug mode, pause so the operator can review logs before Claude clears the screen
+if [ "${JACKIN_DEBUG:-0}" = "1" ]; then
+    set +x
+    echo ""
+    echo "[entrypoint] Setup complete. Press Enter to launch Claude..."
+    read -r
+    set -x
 fi
 
 printf '\033[2J\033[H'

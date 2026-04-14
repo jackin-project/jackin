@@ -1,12 +1,13 @@
 use crate::config::AppConfig;
 use crate::derived_image::create_derived_build_context;
 use crate::docker::{CommandRunner, RunOptions};
-use crate::instance::{AgentState, next_container_name};
+use crate::instance::{AgentState, primary_container_name};
 use crate::paths::JackinPaths;
 use crate::repo::{CachedRepo, validate_agent_repo};
 use crate::selector::ClassSelector;
 use crate::tui;
 use crate::version_check;
+use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
@@ -96,6 +97,108 @@ fn try_capture(runner: &mut impl CommandRunner, program: &str, args: &[&str]) ->
         .capture(program, args, None)
         .ok()
         .filter(|s| !s.is_empty())
+}
+
+// ── Terminal / terminfo resolution ────────────────────────────────────────
+//
+// Modern terminals (Ghostty, Kitty, WezTerm) define custom TERM values
+// whose terminfo entries don't ship in Debian's ncurses-base.  Rather
+// than falling back to xterm-256color (which loses terminal-specific
+// capabilities), we export the host's terminfo entry, compile it into a
+// cache directory, and mount it read-only into the container.
+
+/// Terminal types that ship with Debian's `ncurses-base` package and can
+/// be forwarded into the container without an extra terminfo mount.
+const STANDARD_TERMS: &[&str] = &[
+    "ansi",
+    "dumb",
+    "linux",
+    "rxvt",
+    "rxvt-unicode",
+    "rxvt-unicode-256color",
+    "screen",
+    "screen-256color",
+    "tmux",
+    "tmux-256color",
+    "vt100",
+    "vt220",
+    "xterm",
+    "xterm-256color",
+    "xterm-color",
+];
+
+/// Resolve the TERM value and an optional terminfo bind-mount for the
+/// container.
+///
+/// Returns `(term_value, Some(mount_string))` when the host's terminfo
+/// was exported, or `(term_value, None)` when the TERM is standard or
+/// export failed (in which case `term_value` is the safe fallback).
+fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String>) {
+    let host_term = std::env::var("TERM").unwrap_or_default();
+
+    if host_term.is_empty() {
+        return ("xterm-256color".to_string(), None);
+    }
+
+    if STANDARD_TERMS.contains(&host_term.as_str()) {
+        return (host_term, None);
+    }
+
+    // Exotic terminal — try to export and compile the terminfo entry.
+    export_host_terminfo(&host_term, cache_dir).map_or_else(
+        |_| ("xterm-256color".to_string(), None),
+        |terminfo_dir| {
+            let mount = format!("{}:/home/claude/.terminfo:ro", terminfo_dir.display());
+            (host_term, Some(mount))
+        },
+    )
+}
+
+/// Export the host's terminfo entry for `term` into `cache_dir/terminfo/`.
+///
+/// Uses `infocmp -x` to dump the source and `tic -x -o` to compile it.
+/// The compiled output is a small architecture-independent binary that
+/// can be mounted directly into any container.
+fn export_host_terminfo(
+    term: &str,
+    cache_dir: &std::path::Path,
+) -> anyhow::Result<std::path::PathBuf> {
+    let terminfo_dir = cache_dir.join("terminfo");
+
+    // Check if already cached (first letter dir + entry file).
+    let first_char = term.chars().next().unwrap_or('x');
+    let entry_path = terminfo_dir.join(first_char.to_string()).join(term);
+    if entry_path.exists() {
+        return Ok(terminfo_dir);
+    }
+
+    // Export the source from the host.
+    let infocmp = std::process::Command::new("infocmp")
+        .args(["-x", term])
+        .output()?;
+    anyhow::ensure!(infocmp.status.success(), "infocmp failed for {term}");
+
+    std::fs::create_dir_all(&terminfo_dir)?;
+
+    // Compile into the cache directory.
+    let tic = std::process::Command::new("tic")
+        .args(["-x", "-o"])
+        .arg(&terminfo_dir)
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .spawn();
+    let mut tic = tic?;
+    if let Some(ref mut stdin) = tic.stdin {
+        use std::io::Write;
+        stdin.write_all(&infocmp.stdout)?;
+    }
+    let status = tic.wait()?;
+    anyhow::ensure!(
+        status.success(),
+        "tic failed to compile terminfo for {term}"
+    );
+
+    Ok(terminfo_dir)
 }
 
 fn load_git_identity(runner: &mut impl CommandRunner) -> GitIdentity {
@@ -294,7 +397,7 @@ fn resolve_agent_repo(
     selector: &ClassSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
-) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo)> {
+) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo, std::fs::File)> {
     resolve_agent_repo_with(
         paths,
         selector,
@@ -310,7 +413,7 @@ fn resolve_agent_repo_with(
     git_url: &str,
     runner: &mut impl CommandRunner,
     confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
-) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo)> {
+) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo, std::fs::File)> {
     let cached_repo = CachedRepo::new(paths, selector);
     let repo_parent = cached_repo.repo_dir.parent().ok_or_else(|| {
         anyhow::anyhow!(
@@ -319,6 +422,20 @@ fn resolve_agent_repo_with(
         )
     })?;
     std::fs::create_dir_all(repo_parent)?;
+
+    // Short-lived lock around git operations on the shared repo directory.
+    // Multiple `jackin load` commands may run in parallel for the same
+    // agent class (spawning clones); the lock serializes only the git
+    // clone/fetch/merge so they don't race on the same working tree.
+    // The lock is released as soon as the git section completes.
+    let lock_path = paths
+        .data_dir
+        .join(format!("{}.repo.lock", primary_container_name(selector)));
+    std::fs::create_dir_all(&paths.data_dir)?;
+    let lock_file = std::fs::File::create(&lock_path)?;
+    lock_file
+        .lock_exclusive()
+        .map_err(|e| anyhow::anyhow!("failed to acquire repo lock for {}: {e}", selector.key()))?;
 
     let repo_path = cached_repo.repo_dir.display().to_string();
     if cached_repo.repo_dir.join(".git").is_dir() {
@@ -349,7 +466,7 @@ fn resolve_agent_repo_with(
                     &RunOptions::default(),
                 )?;
                 let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
-                return Ok((cached_repo, validated_repo));
+                return Ok((cached_repo, validated_repo, lock_file));
             }
 
             anyhow::bail!("cached agent repo remote mismatch — aborting");
@@ -373,9 +490,20 @@ fn resolve_agent_repo_with(
             cached_repo.repo_dir.display()
         );
 
+        // Fetch + merge instead of pull to avoid "Cannot fast-forward to
+        // multiple branches" errors that occur with `git pull` when the
+        // remote has multiple branches.
+        let branch =
+            git_branch(&cached_repo.repo_dir, runner).unwrap_or_else(|| "main".to_string());
         runner.run(
             "git",
-            &["-C", &repo_path, "pull", "--ff-only"],
+            &["-C", &repo_path, "fetch", "origin", &branch],
+            None,
+            &RunOptions::default(),
+        )?;
+        runner.run(
+            "git",
+            &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
             None,
             &RunOptions::default(),
         )?;
@@ -389,7 +517,12 @@ fn resolve_agent_repo_with(
     }
 
     let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
-    Ok((cached_repo, validated_repo))
+
+    // Return the repo lock so the caller can hold it until the build
+    // context (a snapshot copy of the repo) is created.  This prevents
+    // a parallel load from fast-forwarding the shared repo between
+    // validation and context creation.
+    Ok((cached_repo, validated_repo, lock_file))
 }
 
 /// Build the Docker image for the agent. Returns the image name.
@@ -403,8 +536,13 @@ fn build_agent_image(
     rebuild: bool,
     debug: bool,
     runner: &mut impl CommandRunner,
+    repo_lock: std::fs::File,
 ) -> anyhow::Result<String> {
+    // create_derived_build_context copies the repo into a temp directory,
+    // creating an immutable snapshot.  After this point the shared cached
+    // repo can be safely modified by a parallel load.
     let build = create_derived_build_context(&cached_repo.repo_dir, validated_repo)?;
+    drop(repo_lock);
 
     if debug {
         eprintln!(
@@ -422,12 +560,27 @@ fn build_agent_image(
 
     let build_arg_uid = format!("JACKIN_HOST_UID={}", host.uid);
     let build_arg_gid = format!("JACKIN_HOST_GID={}", host.gid);
-    let cache_bust = format!(
-        "JACKIN_CACHE_BUST={}",
-        std::time::SystemTime::now()
+    // Always pass the cache-bust arg so Docker matches the correct layer.
+    //
+    // When rebuilding (update available / --rebuild), generate a fresh
+    // timestamp to invalidate the cached Claude Code install layer, and
+    // persist it so subsequent non-rebuild builds reuse the same layer.
+    //
+    // When NOT rebuilding, replay the stored bust value.  Without this,
+    // Docker resolves the Dockerfile default `JACKIN_CACHE_BUST=0` and
+    // hits the original pre-bust layer, causing the installed Claude
+    // version to ping-pong between old and new on alternate launches.
+    let cache_bust_value = if rebuild {
+        let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs())
-    );
+            .to_string();
+        version_check::store_cache_bust(paths, &image, &ts);
+        ts
+    } else {
+        version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_string())
+    };
+    let cache_bust = format!("JACKIN_CACHE_BUST={cache_bust_value}");
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
 
@@ -437,10 +590,9 @@ fn build_agent_image(
         &build_arg_uid,
         "--build-arg",
         &build_arg_gid,
+        "--build-arg",
+        &cache_bust,
     ];
-    if rebuild {
-        build_args.extend(["--build-arg", &cache_bust]);
-    }
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
     runner.run(
         "docker",
@@ -483,6 +635,7 @@ struct LaunchContext<'a> {
     git: &'a GitIdentity,
     debug: bool,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
+    cache_dir: &'a std::path::Path,
 }
 
 /// Create the Docker network, start `DinD`, and launch the agent container.
@@ -504,14 +657,10 @@ fn launch_agent_runtime(
         git,
         debug,
         resolved_env,
+        cache_dir,
     } = ctx;
-    // Clean up stale resources from a previous run that wasn't cleaned up
-    // (e.g. terminal closed, process killed, Ctrl+C during docker run)
+
     let certs_volume = dind_certs_volume(container_name);
-    let _ = run_cleanup_command(runner, &["rm", "-f", container_name]);
-    let _ = run_cleanup_command(runner, &["rm", "-f", dind]);
-    let _ = run_cleanup_command(runner, &["volume", "rm", &certs_volume]);
-    let _ = run_cleanup_command(runner, &["network", "rm", network]);
 
     // Create Docker network
     let agent_label = format!("jackin.agent={container_name}");
@@ -577,6 +726,17 @@ fn launch_agent_runtime(
     );
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
 
+    // Forward the host TERM so the container's terminal type matches what the
+    // terminal emulator actually supports.  Docker defaults to TERM=xterm which
+    // can cause input handling issues (e.g. paste not working) in applications
+    // that adjust behaviour based on terminal capabilities.
+    //
+    // For exotic terminals (Ghostty, Kitty, WezTerm, etc.) whose terminfo
+    // entries don't ship in Debian's ncurses-base, we export and compile the
+    // host's terminfo into a cache directory and mount it into the container.
+    let (resolved_term, terminfo_mount) = resolve_terminal_setup(cache_dir);
+    let container_term = format!("TERM={resolved_term}");
+
     let mut run_args: Vec<&str> = vec![
         "run",
         "-it",
@@ -609,10 +769,26 @@ fn launch_agent_runtime(
         &git_author_name,
         "-e",
         &git_author_email,
+        "-e",
+        &container_term,
     ];
     if *debug {
         run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
     }
+
+    // Forward JACKIN_DISABLE_* env vars from the host so the operator can
+    // disable security tools (tirith, shellfirm) without rebuilding the image.
+    let mut passthrough_strings: Vec<String> = Vec::new();
+    for (key, value) in std::env::vars() {
+        if key.starts_with("JACKIN_DISABLE_") {
+            passthrough_strings.push(format!("{key}={value}"));
+        }
+    }
+    for env_str in &passthrough_strings {
+        run_args.push("-e");
+        run_args.push(env_str);
+    }
+
     let mut env_strings: Vec<String> = Vec::new();
     env_strings.push(format!(
         "{}={}",
@@ -644,6 +820,10 @@ fn launch_agent_runtime(
         "-v",
         &plugins_mount,
     ]);
+
+    if let Some(ref ti_mount) = terminfo_mount {
+        run_args.extend_from_slice(&["-v", ti_mount]);
+    }
 
     let mut mount_strings: Vec<String> = Vec::new();
     for mount in &workspace.mounts {
@@ -718,7 +898,8 @@ fn load_agent_with(
     // Step 1: Resolve agent identity (clone or update repo)
     steps.next("Resolving agent identity");
 
-    let (cached_repo, validated_repo) = resolve_agent_repo(paths, selector, &source.git, runner)?;
+    let (cached_repo, validated_repo, repo_lock) =
+        resolve_agent_repo(paths, selector, &source.git, runner)?;
 
     // Trust gate: prompt the operator before running an untrusted third-party agent
     let newly_trusted = if source.trusted {
@@ -734,27 +915,22 @@ fn load_agent_with(
         config.save(paths)?;
     }
 
-    let existing = list_managed_agent_names(runner)?;
-    let container_name = next_container_name(selector, &existing);
-    let state = AgentState::prepare(paths, &container_name, &validated_repo.manifest)?;
-
-    let network = format!("{container_name}-net");
-    let dind = format!("{container_name}-dind");
-
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.agent_name.clone_from(&agent_display_name);
 
     // Logo (if present in agent repo)
     tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
 
-    // Configuration summary
-    let image = image_name(selector);
+    // Show a preliminary config summary (container name will be
+    // confirmed after the image build, right before launch).
+    let image_tag = image_name(selector);
+    let preliminary_name = primary_container_name(selector);
     let config_rows = build_config_rows(
         &agent_display_name,
-        &container_name,
+        &preliminary_name,
         workspace,
         &git,
-        &image,
+        &image_tag,
         runner,
     );
     eprintln!();
@@ -769,13 +945,6 @@ fn load_agent_with(
         crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
     };
 
-    let certs_volume = dind_certs_volume(&container_name);
-    let mut cleanup = LoadCleanup::new(
-        container_name.clone(),
-        dind.clone(),
-        certs_volume,
-        network.clone(),
-    );
     let load_result = (|| -> anyhow::Result<()> {
         // Step 2: Build Docker image
         let rebuild = opts.rebuild || {
@@ -796,7 +965,59 @@ fn load_agent_with(
             rebuild,
             opts.debug,
             runner,
+            repo_lock,
         )?;
+
+        // Claim a unique container name using an exclusive lock file.
+        // Each candidate name gets a lock file at `~/.jackin/data/<name>.lock`.
+        // If `try_lock_exclusive` succeeds, we own the name for this
+        // session.  If it fails (another instance holds it), we skip to
+        // the next clone name.  The lock is held for the entire run and
+        // released on exit (or process crash).
+        let (container_name, _name_lock) = claim_container_name(paths, selector, runner)?;
+
+        let auth_mode = config.resolve_auth_forward_mode(&selector.key());
+        let (state, auth_outcome) = AgentState::prepare(
+            paths,
+            &container_name,
+            &validated_repo.manifest,
+            auth_mode,
+            &paths.home_dir,
+        )?;
+
+        match auth_outcome {
+            crate::instance::AuthProvisionOutcome::Copied => {
+                eprintln!(
+                    "[jackin] Copied host Claude Code authentication into agent state \
+                     (auth_forward=copy). Use `jackin config auth set ignore` to disable."
+                );
+            }
+            crate::instance::AuthProvisionOutcome::Synced => {
+                eprintln!(
+                    "[jackin] Synced host Claude Code authentication into agent state \
+                     (auth_forward=sync)."
+                );
+            }
+            crate::instance::AuthProvisionOutcome::HostMissing => match auth_mode {
+                crate::config::AuthForwardMode::Copy => {
+                    eprintln!(
+                        "[jackin] auth_forward=copy but no host credentials found; \
+                             agent will need to authenticate manually via /login."
+                    );
+                }
+                crate::config::AuthForwardMode::Sync => {
+                    eprintln!(
+                        "[jackin] auth_forward=sync but no host credentials found; \
+                             preserving existing container auth if present."
+                    );
+                }
+                crate::config::AuthForwardMode::Ignore => {}
+            },
+            crate::instance::AuthProvisionOutcome::Skipped => {}
+        }
+
+        let network = format!("{container_name}-net");
+        let dind = format!("{container_name}-dind");
 
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");
@@ -813,27 +1034,36 @@ fn load_agent_with(
             git: &git,
             debug: opts.debug,
             resolved_env: &resolved_env,
+            cache_dir: &paths.cache_dir,
         };
-        launch_agent_runtime(&ctx, &mut steps, runner)?;
+        let certs_volume = dind_certs_volume(&container_name);
+        let mut cleanup = LoadCleanup::new(
+            container_name.clone(),
+            dind.clone(),
+            certs_volume,
+            network.clone(),
+        );
+        let launch_result = launch_agent_runtime(&ctx, &mut steps, runner);
+        if launch_result.is_err() {
+            cleanup.run(runner);
+        }
+        launch_result?;
+
+        if list_running_agent_names(runner)?.contains(&container_name) {
+            cleanup.disarm();
+        } else {
+            cleanup.run(runner);
+        }
 
         Ok(())
     })();
 
     match load_result {
         Ok(()) => {
-            if list_running_agent_names(runner)?
-                .iter()
-                .any(|name| name == &container_name)
-            {
-                cleanup.disarm();
-            } else {
-                cleanup.run(runner);
-                render_exit(&agent_display_name, runner, opts);
-            }
+            render_exit(&agent_display_name, runner, opts);
             Ok(())
         }
         Err(error) => {
-            cleanup.run(runner);
             render_exit(&agent_display_name, runner, opts);
             Err(error)
         }
@@ -1276,6 +1506,51 @@ fn image_name(selector: &ClassSelector) -> String {
     format!("jackin-{}", crate::instance::runtime_slug(selector))
 }
 
+/// Claim a unique container name for this agent class by acquiring an
+/// exclusive lock file.
+///
+/// Tries the primary name first, then clone-1, clone-2, etc.  For each
+/// candidate, a lock file at `~/.jackin/data/<name>.lock` is created and
+/// `try_lock_exclusive` is attempted.  If the lock succeeds, the name is
+/// ours for this session.  If another process already holds it (parallel
+/// load), we skip to the next candidate.
+///
+/// The returned `File` holds the lock — it must be kept alive for the
+/// duration of the agent session.  The lock is automatically released
+/// when the file is dropped (normal exit or crash).
+fn claim_container_name(
+    paths: &JackinPaths,
+    selector: &ClassSelector,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<(String, std::fs::File)> {
+    let existing = list_managed_agent_names(runner)?;
+    let primary = primary_container_name(selector);
+
+    std::fs::create_dir_all(&paths.data_dir)?;
+
+    // Try primary name first, then clone-1, clone-2, ... (unbounded).
+    let mut clone_index = 0_u32;
+    loop {
+        let name = if clone_index == 0 {
+            primary.clone()
+        } else {
+            format!("{primary}-clone-{clone_index}")
+        };
+
+        // Skip names that have an existing container (running or stopped)
+        if !existing.contains(&name) {
+            let lock_path = paths.data_dir.join(format!("{name}.lock"));
+            let lock_file = std::fs::File::create(&lock_path)?;
+            if lock_file.try_lock_exclusive().is_ok() {
+                return Ok((name, lock_file));
+            }
+            // Lock held by another process — try next name
+        }
+
+        clone_index += 1;
+    }
+}
+
 /// Docker volume name for the TLS client certificates shared between the
 /// `DinD` sidecar (writer) and the agent container (reader).
 fn dind_certs_volume(container_name: &str) -> String {
@@ -1471,6 +1746,7 @@ mod tests {
         let source = crate::config::AgentSource {
             git: "https://github.com/evil-org/jackin-backdoor.git".to_string(),
             trusted: false,
+            claude: None,
         };
 
         let error = confirm_agent_trust(&selector, &source).unwrap_err();
@@ -2652,7 +2928,8 @@ plugins = []
 
         let mut runner = FakeRunner::with_capture_queue([
             "git@github.com:jackin-project/jackin-agent-smith.git".to_string(),
-            String::new(),
+            String::new(),      // git status --porcelain (clean)
+            "main".to_string(), // git rev-parse --abbrev-ref HEAD
         ]);
 
         let result = resolve_agent_repo(
@@ -2670,7 +2947,17 @@ plugins = []
             runner
                 .run_recorded
                 .iter()
-                .any(|call| call.contains("git -C") && call.contains("pull --ff-only"))
+                .any(|call| call.contains("git -C") && call.contains("fetch origin")),
+            "expected a git fetch: {:?}",
+            runner.run_recorded
+        );
+        assert!(
+            runner
+                .run_recorded
+                .iter()
+                .any(|call| call.contains("git -C") && call.contains("merge --ff-only")),
+            "expected a git merge --ff-only: {:?}",
+            runner.run_recorded
         );
     }
 

@@ -126,6 +126,23 @@ Each agent gets an isolated Docker network:
 
 The DinD sidecar auto-generates TLS certificates at startup into a shared Docker volume. The agent container mounts the client certificates read-only and sets `DOCKER_TLS_VERIFY=1` so all Docker CLI commands are authenticated.
 
+## Terminal forwarding
+
+jackin' forwards the host's `$TERM` environment variable into the agent container so that terminal capabilities (colors, keyboard protocols, mouse support) work correctly.
+
+Standard terminal types like `xterm-256color`, `screen-256color`, and `tmux-256color` ship with Debian's `ncurses-base` and are forwarded as-is.
+
+Modern terminals — Ghostty (`xterm-ghostty`), Kitty (`xterm-kitty`), WezTerm, and others — define custom `$TERM` values whose terminfo entries are not included in the container's base image. For these terminals, jackin' automatically:
+
+1. Exports the host's terminfo entry using `infocmp -x`
+2. Compiles it into a cache directory (`~/.jackin/cache/terminfo/`) using `tic -x`
+3. Mounts the compiled terminfo read-only at `/home/claude/.terminfo` inside the container
+4. Forwards the original `$TERM` value
+
+This means terminal-specific features (such as Ghostty's Kitty keyboard protocol or extended color support) work inside the container without any manual setup. The compiled terminfo is cached and reused across agent launches.
+
+If the export fails (e.g. `infocmp` is not installed or the terminfo entry is missing), jackin' falls back to `xterm-256color`.
+
 ## State management
 
 ```
@@ -134,17 +151,21 @@ The DinD sidecar auto-generates TLS certificates at startup into a shared Docker
 │   └── github.com/
 │       └── jackin-project/
 │           └── jackin-agent-smith/
+├── cache/                         # Shared caches (terminfo, version checks)
+│   └── terminfo/
 ├── data/                          # Persisted state per instance
 │   └── jackin-agent-smith/
-│       ├── .claude/
-│       ├── .claude.json
-│       ├── .config/gh/
-│       └── plugins.json
+│       ├── .claude/               # Claude Code session history, context
+│       │   └── .credentials.json  # OAuth tokens (forwarded or container-local)
+│       ├── .claude.json           # Claude Code account metadata and preferences
+│       ├── .config/gh/            # GitHub CLI authentication
+│       └── .jackin/
+│           └── plugins.json       # Installed Claude plugins list
 ```
 
 This is what persists across sessions:
 
-- Claude history and settings
+- Claude history, settings, and authentication
 - jackin' plugin metadata
 - `gh` state acquired inside the runtime
 
