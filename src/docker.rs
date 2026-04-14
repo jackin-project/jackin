@@ -1,13 +1,6 @@
 use owo_colors::OwoColorize;
 use std::io::Read;
 use std::path::Path;
-use std::time::Duration;
-
-/// Default timeout for commands (git, docker inspect, etc.).
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
-
-/// Timeout for long-running commands such as `docker build`.
-pub const DOCKER_BUILD_TIMEOUT: Duration = Duration::from_secs(900);
 
 /// Options that control how a command is executed.
 #[derive(Clone, Debug, Default)]
@@ -16,9 +9,6 @@ pub struct RunOptions {
     /// and captured so it can be included in error messages.  When `false`
     /// (the default), stderr is inherited directly from the parent process.
     pub capture_stderr: bool,
-    /// Override the default timeout for this command. `None` uses the runner's
-    /// default.
-    pub timeout: Option<Duration>,
 }
 
 pub trait CommandRunner {
@@ -40,9 +30,6 @@ pub trait CommandRunner {
 #[derive(Default)]
 pub struct ShellRunner {
     pub debug: bool,
-    /// Override the default timeout for child-process calls. `None` uses
-    /// [`DEFAULT_TIMEOUT`].
-    pub timeout: Option<Duration>,
 }
 
 impl ShellRunner {
@@ -68,35 +55,6 @@ impl ShellRunner {
             }
         }
     }
-
-    fn wait_with_timeout(
-        child: &mut std::process::Child,
-        timeout: Duration,
-        program: &str,
-        args: &[&str],
-    ) -> anyhow::Result<std::process::ExitStatus> {
-        let start = std::time::Instant::now();
-        loop {
-            match child.try_wait()? {
-                Some(status) => return Ok(status),
-                None if start.elapsed() >= timeout => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    anyhow::bail!(
-                        "command timed out after {}s: {} {}",
-                        timeout.as_secs(),
-                        program,
-                        args.join(" ")
-                    );
-                }
-                None => std::thread::sleep(Duration::from_millis(50)),
-            }
-        }
-    }
-
-    fn resolve_timeout(&self, opts: &RunOptions) -> Duration {
-        opts.timeout.or(self.timeout).unwrap_or(DEFAULT_TIMEOUT)
-    }
 }
 
 impl CommandRunner for ShellRunner {
@@ -108,7 +66,6 @@ impl CommandRunner for ShellRunner {
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
         self.log_command(program, args, cwd);
-        let timeout = self.resolve_timeout(opts);
 
         if opts.capture_stderr {
             let mut child = Self::build_command(program, args, cwd)
@@ -136,7 +93,7 @@ impl CommandRunner for ShellRunner {
                 }
                 Ok(output)
             });
-            let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
+            let status = child.wait()?;
             let stderr = stderr_handle
                 .join()
                 .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
@@ -152,7 +109,7 @@ impl CommandRunner for ShellRunner {
             }
         } else {
             let mut child = Self::build_command(program, args, cwd).spawn()?;
-            let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
+            let status = child.wait()?;
             anyhow::ensure!(
                 status.success(),
                 "command failed: {} {}",
@@ -170,7 +127,6 @@ impl CommandRunner for ShellRunner {
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
         self.log_command(program, args, cwd);
-        let timeout = self.resolve_timeout(&RunOptions::default());
         let mut child = Self::build_command(program, args, cwd)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -201,7 +157,7 @@ impl CommandRunner for ShellRunner {
             reader.read_to_end(&mut output)?;
             Ok(output)
         });
-        let status = Self::wait_with_timeout(&mut child, timeout, program, args)?;
+        let status = child.wait()?;
         let stdout = stdout_handle
             .join()
             .map_err(|_| anyhow::anyhow!("stdout reader thread panicked"))??;
@@ -234,7 +190,6 @@ mod tests {
         let mut runner = ShellRunner::default();
         let opts = RunOptions {
             capture_stderr: true,
-            ..Default::default()
         };
 
         let error = runner
@@ -251,11 +206,8 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn capture_handles_large_stdout_without_timing_out() {
-        let mut runner = ShellRunner {
-            timeout: Some(Duration::from_secs(2)),
-            ..Default::default()
-        };
+    fn capture_handles_large_stdout() {
+        let mut runner = ShellRunner::default();
 
         let output = runner
             .capture("sh", &["-c", "yes x | head -c 200000"], None)
@@ -263,20 +215,5 @@ mod tests {
 
         assert!(output.len() >= 190000);
         assert!(output.starts_with('x'));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn run_respects_timeout() {
-        let mut runner = ShellRunner {
-            timeout: Some(Duration::from_millis(50)),
-            ..Default::default()
-        };
-
-        let error = runner
-            .run("sh", &["-c", "sleep 1"], None, &RunOptions::default())
-            .unwrap_err();
-
-        assert!(error.to_string().contains("command timed out after"));
     }
 }
