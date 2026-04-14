@@ -448,7 +448,6 @@ fn build_agent_image(
         None,
         &RunOptions {
             capture_stderr: true,
-            timeout: Some(crate::docker::DOCKER_BUILD_TIMEOUT),
         },
     )?;
 
