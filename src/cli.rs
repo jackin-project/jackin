@@ -161,6 +161,54 @@ pub enum ConfigCommand {
         #[command(subcommand)]
         command: TrustCommand,
     },
+    /// Manage Claude Code authentication forwarding from host
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommand,
+    },
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum AuthCommand {
+    /// Set the authentication forwarding mode
+    ///
+    /// Controls how the host's ~/.claude.json is forwarded into agent containers.
+    /// Modes: ignore (revoke and never copy), copy (copy on first creation, default),
+    /// sync (overwrite from host on each launch when host auth exists; preserve
+    /// container auth when host auth is absent).
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin config auth set copy
+  jackin config auth set sync
+  jackin config auth set ignore
+  jackin config auth set copy --agent agent-smith
+  jackin config auth set sync --agent chainargos/the-architect"
+    )]
+    Set {
+        /// Authentication forwarding mode: ignore, copy, or sync
+        mode: String,
+        /// Apply to a specific agent instead of globally
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Show the current authentication forwarding mode
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin config auth show
+  jackin config auth show --agent agent-smith"
+    )]
+    Show {
+        /// Show mode for a specific agent (including inheritance)
+        #[arg(long)]
+        agent: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -890,6 +938,77 @@ mod tests {
         assert!(help.contains("jackin config mount remove gradle-cache"));
     }
 
+    // ── Config auth help ─────────────────────────────────────────────────
+
+    #[test]
+    fn config_auth_set_help_shows_examples() {
+        let help = help_text(&["jackin", "config", "auth", "set", "--help"]);
+        assert!(help.contains("Examples:"));
+        assert!(help.contains("jackin config auth set copy"));
+        assert!(help.contains("--agent"));
+    }
+
+    #[test]
+    fn config_auth_show_help_shows_examples() {
+        let help = help_text(&["jackin", "config", "auth", "show", "--help"]);
+        assert!(help.contains("Examples:"));
+        assert!(help.contains("jackin config auth show"));
+    }
+
+    #[test]
+    fn parses_config_auth_set_global() {
+        let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "copy"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Config {
+                command: ConfigCommand::Auth {
+                    command: AuthCommand::Set {
+                        ref mode,
+                        agent: None,
+                    }
+                }
+            } if mode == "copy"
+        ));
+    }
+
+    #[test]
+    fn parses_config_auth_set_per_agent() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "config",
+            "auth",
+            "set",
+            "sync",
+            "--agent",
+            "agent-smith",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Config {
+                command: ConfigCommand::Auth {
+                    command: AuthCommand::Set {
+                        ref mode,
+                        agent: Some(ref agent),
+                    }
+                }
+            } if mode == "sync" && agent == "agent-smith"
+        ));
+    }
+
+    #[test]
+    fn parses_config_auth_show() {
+        let cli = Cli::try_parse_from(["jackin", "config", "auth", "show"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Config {
+                command: ConfigCommand::Auth {
+                    command: AuthCommand::Show { agent: None }
+                }
+            }
+        ));
+    }
+
     // ── Subcommand banner consistency ───────────────────────────────────
 
     #[test]
@@ -909,6 +1028,8 @@ mod tests {
             vec!["jackin", "config", "mount", "add", "--help"],
             vec!["jackin", "config", "mount", "remove", "--help"],
             vec!["jackin", "config", "mount", "list", "--help"],
+            vec!["jackin", "config", "auth", "set", "--help"],
+            vec!["jackin", "config", "auth", "show", "--help"],
         ];
         for args in &subcommands {
             let help = help_text(args);
