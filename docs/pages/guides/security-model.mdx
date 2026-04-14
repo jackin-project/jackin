@@ -132,12 +132,12 @@ The current implementation creates the user in the construct image and then rema
 
 jackin' persists state at `~/.jackin/data/<container-name>/`. Today that includes:
 
-- `.claude/`
-- `.claude.json`
+- `.claude/` (session history, and `.credentials.json` with OAuth tokens)
+- `.claude.json` (account metadata and preferences)
 - `.config/gh/`
-- `plugins.json`
+- `.jackin/plugins.json`
 
-That means Claude conversation state and `gh` state can survive across sessions.
+That means Claude conversation state, authentication, and `gh` state can survive across sessions.
 
 But several important things do **not** persist:
 
@@ -167,11 +167,17 @@ If an agent can read a mounted secret and the network path is open, jackin' cann
 
 Mounted files are live host files. If the agent edits a mounted path, the host file changes immediately. There is no snapshot or rollback layer between the runtime and the mount.
 
+### Authentication forwarding
+
+By default, jackin' forwards the host's Claude Code OAuth credentials into new agent containers (`auth_forward = "copy"`). This means agents start pre-authenticated but also means OAuth tokens are stored on disk in the agent state directory with `0600` permissions.
+
+You can control this behavior globally or per-agent — see [Authentication Forwarding](/guides/authentication). Setting `auth_forward = "ignore"` revokes any previously forwarded credentials and returns to the legacy behavior of manual in-container login.
+
 ### Credentials obtained inside the runtime remain inside the runtime
 
-jackin' does not mount host credentials by default, which is good.
+Whether credentials were forwarded from the host or obtained via in-container login, they persist in jackin' state until you purge it.
 
-But if you authenticate a tool like `gh` inside the runtime, that credential becomes readable by that runtime and persists in jackin' state until you purge it.
+If you authenticate a tool like `gh` inside the runtime, that credential becomes readable by that runtime as well.
 
 ## Threat model
 
