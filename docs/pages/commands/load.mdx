@@ -88,5 +88,5 @@ If two resolved mounts target the same container destination, `jackin load` fail
 :::
 
 :::tip
-If no selector is given and the current directory matches a saved workspace with a default agent, that agent is used automatically.
+If no selector is given and the current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace's default or last-used agent is used automatically.
 :::

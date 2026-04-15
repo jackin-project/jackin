@@ -33,7 +33,7 @@ The launcher shows two kinds of choices:
 - **Current directory** — a synthetic workspace that mounts your `cwd` at the same path inside the container
 - **Saved workspaces** — named definitions from `~/.config/jackin/config.toml`
 
-If your current directory matches a saved workspace's `workdir`, that workspace is preselected.
+If your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace is preselected.
 
 ## Agent selection
 

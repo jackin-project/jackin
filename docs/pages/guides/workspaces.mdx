@@ -168,7 +168,7 @@ jackin workspace edit secure-api --clear-default-agent
 
 ## Workspace auto-detection
 
-When you run `jackin launch`, the TUI launcher checks if your current directory exactly matches a saved workspace's `workdir`. If it does, that workspace is preselected — saving you a selection step and reinforcing the value of naming project boundaries once. This auto-detection works best when the saved workspace keeps the host path and container `workdir` the same. If you remap `workdir` to a container-only path like `/workspace`, choose that saved workspace manually in the launcher. You can always override the preselection by choosing a different workspace or "Current directory."
+When you run `jackin launch`, the TUI launcher checks whether your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths. If it does, that workspace is preselected — saving you a selection step and reinforcing the value of naming project boundaries once. Container-only `workdir` values like `/workspace` can still be auto-detected as long as one of the workspace's mounted host paths contains your current directory. You can always override the preselection by choosing a different workspace or "Current directory."
 
 ## Storage
 

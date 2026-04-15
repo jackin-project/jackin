@@ -296,20 +296,28 @@ pub struct ResolvedWorkspace {
     pub mounts: Vec<MountConfig>,
 }
 
+fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
+    let expanded = expand_tilde(path);
+    let canonical_path = Path::new(&expanded).canonicalize().ok()?;
+
+    if canonical_cwd == canonical_path || canonical_cwd.starts_with(&canonical_path) {
+        Some(canonical_path.components().count())
+    } else {
+        None
+    }
+}
+
 pub fn saved_workspace_match_depth(workspace: &WorkspaceConfig, cwd: &Path) -> Option<usize> {
     let canonical_cwd = cwd.canonicalize().ok()?;
 
-    workspace
-        .mounts
-        .iter()
-        .filter_map(|mount| {
-            let canonical_src = Path::new(&mount.src).canonicalize().ok()?;
-            if canonical_cwd == canonical_src || canonical_cwd.starts_with(&canonical_src) {
-                Some(canonical_src.components().count())
-            } else {
-                None
-            }
-        })
+    std::iter::once(host_path_match_depth(&workspace.workdir, &canonical_cwd))
+        .chain(
+            workspace
+                .mounts
+                .iter()
+                .map(|mount| host_path_match_depth(&mount.src, &canonical_cwd)),
+        )
+        .flatten()
         .max()
 }
 
@@ -572,6 +580,66 @@ mod tests {
         );
         assert_eq!(workspace.mounts.len(), 1);
         assert_eq!(workspace.mounts[0].src, workspace.mounts[0].dst);
+    }
+
+    #[test]
+    fn saved_workspace_match_depth_matches_host_workdir_parent_of_mounts() {
+        let temp = tempdir().unwrap();
+        let workspace_root = temp.path().join("monorepo");
+        let repo_a = workspace_root.join("jackin");
+        let repo_b = workspace_root.join("jackin-dev");
+        std::fs::create_dir_all(&repo_a).unwrap();
+        std::fs::create_dir_all(&repo_b).unwrap();
+
+        let canonical_root = workspace_root.canonicalize().unwrap();
+        let workspace = WorkspaceConfig {
+            workdir: canonical_root.display().to_string(),
+            mounts: vec![
+                MountConfig {
+                    src: repo_a.canonicalize().unwrap().display().to_string(),
+                    dst: "/workspace/jackin".to_string(),
+                    readonly: false,
+                },
+                MountConfig {
+                    src: repo_b.canonicalize().unwrap().display().to_string(),
+                    dst: "/workspace/jackin-dev".to_string(),
+                    readonly: false,
+                },
+            ],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+        };
+
+        assert_eq!(
+            saved_workspace_match_depth(&workspace, &canonical_root),
+            Some(canonical_root.components().count())
+        );
+    }
+
+    #[test]
+    fn saved_workspace_match_depth_still_matches_nested_path_under_mount_root() {
+        let temp = tempdir().unwrap();
+        let project_dir = temp.path().join("project");
+        let nested_dir = project_dir.join("src/bin");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+
+        let workspace = WorkspaceConfig {
+            workdir: "/workspace".to_string(),
+            mounts: vec![MountConfig {
+                src: project_dir.canonicalize().unwrap().display().to_string(),
+                dst: "/workspace".to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+        };
+
+        assert_eq!(
+            saved_workspace_match_depth(&workspace, &nested_dir),
+            Some(project_dir.canonicalize().unwrap().components().count())
+        );
     }
 
     #[test]
