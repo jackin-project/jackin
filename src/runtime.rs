@@ -945,7 +945,7 @@ fn load_agent_with(
         crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
     };
 
-    let load_result = (|| -> anyhow::Result<()> {
+    let load_result = (|| -> anyhow::Result<String> {
         // Step 2: Build Docker image
         let rebuild = opts.rebuild || {
             let img = image_name(selector);
@@ -1055,11 +1055,17 @@ fn load_agent_with(
             cleanup.run(runner);
         }
 
-        Ok(())
+        Ok(container_name)
     })();
 
+    // Update display name to include clone index (e.g. "The Architect (Clone 2)")
+    let agent_display_name = match &load_result {
+        Ok(container_name) => format_agent_display(container_name, &agent_display_name),
+        Err(_) => agent_display_name,
+    };
+
     match load_result {
-        Ok(()) => {
+        Ok(_) => {
             render_exit(&agent_display_name, runner, opts);
             Ok(())
         }
