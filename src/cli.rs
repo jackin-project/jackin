@@ -132,7 +132,11 @@ Examples:
     },
     /// Open the interactive TUI launcher to pick a workspace and agent
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    Launch,
+    Launch {
+        /// Print raw container output for troubleshooting
+        #[arg(long, default_value_t = false)]
+        debug: bool,
+    },
     /// Manage saved workspaces
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Workspace {
