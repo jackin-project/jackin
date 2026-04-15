@@ -817,6 +817,42 @@ mod tests {
     }
 
     #[test]
+    fn preselects_saved_workspace_from_host_workdir_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace_root = temp.path().join("monorepo");
+        let repo_dir = workspace_root.join("jackin");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        let workspace_root = workspace_root.canonicalize().unwrap();
+
+        let mut config = crate::config::AppConfig::default();
+        config.agents.insert(
+            "agent-smith".to_string(),
+            crate::config::AgentSource {
+                git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+                trusted: true,
+                claude: None,
+            },
+        );
+        config.workspaces.insert(
+            "big-monorepo".to_string(),
+            crate::workspace::WorkspaceConfig {
+                workdir: workspace_root.display().to_string(),
+                mounts: vec![crate::workspace::MountConfig {
+                    src: repo_dir.canonicalize().unwrap().display().to_string(),
+                    dst: "/workspace/jackin".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec!["agent-smith".to_string()],
+                default_agent: Some("agent-smith".to_string()),
+                last_agent: None,
+            },
+        );
+
+        let state = LaunchState::new(&config, &workspace_root).unwrap();
+        assert_eq!(state.selected_workspace_name(), Some("big-monorepo"));
+    }
+
+    #[test]
     fn filters_agents_by_query() {
         let state = LaunchState {
             stage: LaunchStage::Agent,
