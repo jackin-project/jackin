@@ -132,7 +132,11 @@ Examples:
     },
     /// Open the interactive TUI launcher to pick a workspace and agent
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    Launch,
+    Launch {
+        /// Print raw container output for troubleshooting
+        #[arg(long, default_value_t = false)]
+        debug: bool,
+    },
     /// Manage saved workspaces
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Workspace {
@@ -757,7 +761,7 @@ mod tests {
     #[test]
     fn parses_launch_command() {
         let cli = Cli::try_parse_from(["jackin", "launch"]).unwrap();
-        assert!(matches!(cli.command, Command::Launch));
+        assert!(matches!(cli.command, Command::Launch { debug: false }));
     }
 
     /// Strip ANSI escape sequences for clean test assertions.
