@@ -134,7 +134,8 @@ fn resolve_target_name(name: &str, config: &AppConfig, cwd: &Path) -> Result<Loa
 
 /// Resolve the agent and workspace from the current directory context.
 ///
-/// Finds a saved workspace whose workdir matches `cwd`, then picks the agent:
+/// Finds the saved workspace whose host workdir or mounted host path best
+/// matches `cwd`, then picks the agent:
 /// 1. `last_agent` (most recently used)
 /// 2. `default_agent` (explicitly configured)
 /// 3. If multiple agents available — prompt
@@ -933,6 +934,44 @@ mod tests {
         );
 
         let resolved = resolve_agent_from_context(&config, &nested_dir).unwrap();
+
+        assert_eq!(resolved.0.key(), "agent-smith");
+        assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_string()));
+    }
+
+    #[test]
+    fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace_root = temp.path().join("monorepo");
+        let repo_dir = workspace_root.join("jackin");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        let workspace_root = workspace_root.canonicalize().unwrap();
+
+        let mut config = config::AppConfig::default();
+        config.agents.insert(
+            "agent-smith".to_string(),
+            config::AgentSource {
+                git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+                trusted: true,
+                claude: None,
+            },
+        );
+        config.workspaces.insert(
+            "my-app".to_string(),
+            workspace::WorkspaceConfig {
+                workdir: workspace_root.display().to_string(),
+                mounts: vec![workspace::MountConfig {
+                    src: repo_dir.canonicalize().unwrap().display().to_string(),
+                    dst: "/workspace/jackin".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents: vec!["agent-smith".to_string()],
+                default_agent: Some("agent-smith".to_string()),
+                last_agent: None,
+            },
+        );
+
+        let resolved = resolve_agent_from_context(&config, &workspace_root).unwrap();
 
         assert_eq!(resolved.0.key(), "agent-smith");
         assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_string()));
