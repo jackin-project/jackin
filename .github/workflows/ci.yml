@@ -18,3 +18,48 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
       - run: cargo test --locked
+
+  build-validator:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-gnu
+            cross: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: validator-${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --locked
+
+      - name: Build validator
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --locked --bin jackin-validate --target ${{ matrix.target }}
+          else
+            cargo build --release --locked --bin jackin-validate --target ${{ matrix.target }}
+          fi
+
+      - name: Package validator
+        run: |
+          archive="jackin-validate-${{ matrix.target }}.tar.gz"
+          tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin-validate
+          sha256sum "$archive" > "$archive.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jackin-validate-${{ matrix.target }}
+          path: |
+            jackin-validate-${{ matrix.target }}.tar.gz
+            jackin-validate-${{ matrix.target }}.tar.gz.sha256
+          retention-days: 7
