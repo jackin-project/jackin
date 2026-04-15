@@ -470,12 +470,7 @@ fn resolve_agent_repo_with(
 
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
-                runner.run(
-                    "git",
-                    &["clone", git_url, &repo_path],
-                    None,
-                    &git_run_opts,
-                )?;
+                runner.run("git", &["clone", git_url, &repo_path], None, &git_run_opts)?;
                 let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
                 return Ok((cached_repo, validated_repo, lock_file));
             }
@@ -519,12 +514,7 @@ fn resolve_agent_repo_with(
             &git_run_opts,
         )?;
     } else {
-        runner.run(
-            "git",
-            &["clone", git_url, &repo_path],
-            None,
-            &git_run_opts,
-        )?;
+        runner.run("git", &["clone", git_url, &repo_path], None, &git_run_opts)?;
     }
 
     let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
