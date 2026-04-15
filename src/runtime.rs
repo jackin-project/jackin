@@ -397,12 +397,14 @@ fn resolve_agent_repo(
     selector: &ClassSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
+    debug: bool,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo, std::fs::File)> {
     resolve_agent_repo_with(
         paths,
         selector,
         git_url,
         runner,
+        debug,
         confirm_repo_removal_interactive,
     )
 }
@@ -412,6 +414,7 @@ fn resolve_agent_repo_with(
     selector: &ClassSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
+    debug: bool,
     confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo, std::fs::File)> {
     let cached_repo = CachedRepo::new(paths, selector);
@@ -436,6 +439,11 @@ fn resolve_agent_repo_with(
     lock_file
         .lock_exclusive()
         .map_err(|e| anyhow::anyhow!("failed to acquire repo lock for {}: {e}", selector.key()))?;
+
+    let git_run_opts = RunOptions {
+        quiet: !debug,
+        ..RunOptions::default()
+    };
 
     let repo_path = cached_repo.repo_dir.display().to_string();
     if cached_repo.repo_dir.join(".git").is_dir() {
@@ -463,7 +471,7 @@ fn resolve_agent_repo_with(
                     "git",
                     &["clone", git_url, &repo_path],
                     None,
-                    &RunOptions::default(),
+                    &git_run_opts,
                 )?;
                 let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
                 return Ok((cached_repo, validated_repo, lock_file));
@@ -499,20 +507,20 @@ fn resolve_agent_repo_with(
             "git",
             &["-C", &repo_path, "fetch", "origin", &branch],
             None,
-            &RunOptions::default(),
+            &git_run_opts,
         )?;
         runner.run(
             "git",
             &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
             None,
-            &RunOptions::default(),
+            &git_run_opts,
         )?;
     } else {
         runner.run(
             "git",
             &["clone", git_url, &repo_path],
             None,
-            &RunOptions::default(),
+            &git_run_opts,
         )?;
     }
 
@@ -600,6 +608,7 @@ fn build_agent_image(
         None,
         &RunOptions {
             capture_stderr: true,
+            ..RunOptions::default()
         },
     )?;
 
@@ -899,7 +908,7 @@ fn load_agent_with(
     steps.next("Resolving agent identity");
 
     let (cached_repo, validated_repo, repo_lock) =
-        resolve_agent_repo(paths, selector, &source.git, runner)?;
+        resolve_agent_repo(paths, selector, &source.git, runner, opts.debug)?;
 
     // Trust gate: prompt the operator before running an untrusted third-party agent
     let newly_trusted = if source.trusted {
@@ -2692,6 +2701,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
         )
         .unwrap_err();
 
@@ -2761,6 +2771,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
             || Ok(true), // user confirms removal
         );
 
@@ -2800,6 +2811,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
             || Ok(false), // user declines
         )
         .unwrap_err();
@@ -2844,6 +2856,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
         )
         .unwrap_err();
 
@@ -2901,6 +2914,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
             || Ok(true),
         );
 
@@ -2943,6 +2957,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
         );
 
         assert!(
