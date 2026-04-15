@@ -16,7 +16,13 @@ concurrency:
 
 jobs:
   publish-preview:
-    if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
       - name: Resolve source SHA
@@ -28,11 +34,17 @@ jobs:
             echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           repository: jackin-project/jackin
           ref: ${{ steps.source.outputs.sha }}
           fetch-depth: 0
+
+      - name: Verify source SHA is on main
+        if: github.event_name == 'workflow_run'
+        run: |
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor "${{ steps.source.outputs.sha }}" origin/main
 
       - name: Compute preview metadata
         id: meta
@@ -53,7 +65,7 @@ jobs:
             echo "sha256=$sha256"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           repository: jackin-project/homebrew-tap
           ref: main
