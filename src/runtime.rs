@@ -181,11 +181,14 @@ fn export_host_terminfo(
     std::fs::create_dir_all(&terminfo_dir)?;
 
     // Compile into the cache directory.
+    // Suppress stderr — tic emits harmless warnings for some terminal
+    // entries (e.g. Ghostty's "alias multiply defined" notice).
     let tic = std::process::Command::new("tic")
         .args(["-x", "-o"])
         .arg(&terminfo_dir)
         .arg("-")
         .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
         .spawn();
     let mut tic = tic?;
     if let Some(ref mut stdin) = tic.stdin {
@@ -397,12 +400,14 @@ fn resolve_agent_repo(
     selector: &ClassSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
+    debug: bool,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo, std::fs::File)> {
     resolve_agent_repo_with(
         paths,
         selector,
         git_url,
         runner,
+        debug,
         confirm_repo_removal_interactive,
     )
 }
@@ -412,6 +417,7 @@ fn resolve_agent_repo_with(
     selector: &ClassSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
+    debug: bool,
     confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo, std::fs::File)> {
     let cached_repo = CachedRepo::new(paths, selector);
@@ -437,6 +443,11 @@ fn resolve_agent_repo_with(
         .lock_exclusive()
         .map_err(|e| anyhow::anyhow!("failed to acquire repo lock for {}: {e}", selector.key()))?;
 
+    let git_run_opts = RunOptions {
+        quiet: !debug,
+        ..RunOptions::default()
+    };
+
     let repo_path = cached_repo.repo_dir.display().to_string();
     if cached_repo.repo_dir.join(".git").is_dir() {
         let remote_url = runner.capture(
@@ -459,12 +470,7 @@ fn resolve_agent_repo_with(
 
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
-                runner.run(
-                    "git",
-                    &["clone", git_url, &repo_path],
-                    None,
-                    &RunOptions::default(),
-                )?;
+                runner.run("git", &["clone", git_url, &repo_path], None, &git_run_opts)?;
                 let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
                 return Ok((cached_repo, validated_repo, lock_file));
             }
@@ -499,21 +505,16 @@ fn resolve_agent_repo_with(
             "git",
             &["-C", &repo_path, "fetch", "origin", &branch],
             None,
-            &RunOptions::default(),
+            &git_run_opts,
         )?;
         runner.run(
             "git",
             &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
             None,
-            &RunOptions::default(),
+            &git_run_opts,
         )?;
     } else {
-        runner.run(
-            "git",
-            &["clone", git_url, &repo_path],
-            None,
-            &RunOptions::default(),
-        )?;
+        runner.run("git", &["clone", git_url, &repo_path], None, &git_run_opts)?;
     }
 
     let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
@@ -600,10 +601,11 @@ fn build_agent_image(
         None,
         &RunOptions {
             capture_stderr: true,
+            ..RunOptions::default()
         },
     )?;
 
-    // Extract and display the Claude version from the built image
+    // Extract and store the Claude version from the built image
     if let Ok(version) = runner.capture(
         "docker",
         &["run", "--rm", "--entrypoint", "claude", &image, "--version"],
@@ -611,10 +613,12 @@ fn build_agent_image(
     ) {
         let version = version.trim();
         if !version.is_empty() {
-            eprintln!("        Claude {version}");
+            if debug {
+                eprintln!("        Claude {version}");
+            }
             if let Some(semver) = version_check::parse_claude_version(version) {
                 version_check::store_image_version(paths, &image, semver);
-            } else {
+            } else if debug {
                 eprintln!("warning: unexpected claude --version output: {version:?}");
             }
         }
@@ -662,6 +666,11 @@ fn launch_agent_runtime(
 
     let certs_volume = dind_certs_volume(container_name);
 
+    let docker_run_opts = RunOptions {
+        quiet: !debug,
+        ..RunOptions::default()
+    };
+
     // Create Docker network
     let agent_label = format!("jackin.agent={container_name}");
     runner.run(
@@ -676,7 +685,7 @@ fn launch_agent_runtime(
             network,
         ],
         None,
-        &RunOptions::default(),
+        &docker_run_opts,
     )?;
 
     // Start Docker-in-Docker with TLS
@@ -701,7 +710,7 @@ fn launch_agent_runtime(
         &certs_dind_mount,
         "docker:dind",
     ];
-    runner.run("docker", &dind_args, None, &RunOptions::default())?;
+    runner.run("docker", &dind_args, None, &docker_run_opts)?;
 
     wait_for_dind(dind, &certs_volume, runner, *debug)?;
 
@@ -899,7 +908,7 @@ fn load_agent_with(
     steps.next("Resolving agent identity");
 
     let (cached_repo, validated_repo, repo_lock) =
-        resolve_agent_repo(paths, selector, &source.git, runner)?;
+        resolve_agent_repo(paths, selector, &source.git, runner, opts.debug)?;
 
     // Trust gate: prompt the operator before running an untrusted third-party agent
     let newly_trusted = if source.trusted {
@@ -2692,6 +2701,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
         )
         .unwrap_err();
 
@@ -2761,6 +2771,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
             || Ok(true), // user confirms removal
         );
 
@@ -2800,6 +2811,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
             || Ok(false), // user declines
         )
         .unwrap_err();
@@ -2844,6 +2856,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
         )
         .unwrap_err();
 
@@ -2901,6 +2914,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
             || Ok(true),
         );
 
@@ -2943,6 +2957,7 @@ plugins = []
             &selector,
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
+            false,
         );
 
         assert!(
