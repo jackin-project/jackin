@@ -612,7 +612,7 @@ fn build_agent_image(
         },
     )?;
 
-    // Extract and display the Claude version from the built image
+    // Extract and store the Claude version from the built image
     if let Ok(version) = runner.capture(
         "docker",
         &["run", "--rm", "--entrypoint", "claude", &image, "--version"],
@@ -620,10 +620,12 @@ fn build_agent_image(
     ) {
         let version = version.trim();
         if !version.is_empty() {
-            eprintln!("        Claude {version}");
+            if debug {
+                eprintln!("        Claude {version}");
+            }
             if let Some(semver) = version_check::parse_claude_version(version) {
                 version_check::store_image_version(paths, &image, semver);
-            } else {
+            } else if debug {
                 eprintln!("warning: unexpected claude --version output: {version:?}");
             }
         }
