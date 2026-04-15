@@ -761,7 +761,7 @@ mod tests {
     #[test]
     fn parses_launch_command() {
         let cli = Cli::try_parse_from(["jackin", "launch"]).unwrap();
-        assert!(matches!(cli.command, Command::Launch));
+        assert!(matches!(cli.command, Command::Launch { debug: false }));
     }
 
     /// Strip ANSI escape sequences for clean test assertions.
