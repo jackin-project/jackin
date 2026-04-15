@@ -125,9 +125,11 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
         cooldown: u32,
     }
 
-    let cols = 70;
-    let rows = 18;
-    let frame_ms = 60;
+    let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let cols = term_cols as usize;
+    // Reserve last row to avoid scroll when writing to it
+    let rows = (term_rows as usize).saturating_sub(1).max(1);
+    let frame_ms = 35;
     let total_frames = duration_ms / frame_ms;
 
     let mut seed: u64 = 0xDEAD_BEEF_CAFE_1337;
@@ -136,9 +138,9 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
         .map(|_| {
             let s = xorshift(&mut seed);
             Column {
-                head: -((s % (rows as u64 + 10)) as i32),
-                speed: 1 + (s % 3) as u32,
-                active: !s.is_multiple_of(3),
+                head: -((s % (rows as u64 / 2 + 4)) as i32),
+                speed: 1 + (s % 2) as u32,
+                active: !s.is_multiple_of(5),
                 cooldown: 0,
             }
         })
@@ -177,8 +179,8 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                     column.cooldown -= 1;
                 } else {
                     column.active = true;
-                    column.head = -((xorshift(&mut seed) % 5) as i32);
-                    column.speed = 1 + (xorshift(&mut seed) % 3) as u32;
+                    column.head = -((xorshift(&mut seed) % 3) as i32);
+                    column.speed = 1 + (xorshift(&mut seed) % 2) as u32;
                 }
                 continue;
             }
@@ -195,16 +197,15 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                 });
             }
 
-            if head > (rows as i32) + 10 {
+            if head > (rows as i32) + 5 {
                 column.active = false;
-                column.cooldown = 3 + (xorshift(&mut seed) % 13) as u32;
+                column.cooldown = 1 + (xorshift(&mut seed) % 5) as u32;
             }
         }
 
         // Render
-        eprint!("\x1b[H");
-        for row in &grid {
-            eprint!("  ");
+        for (ri, row) in grid.iter().enumerate() {
+            eprint!("\x1b[{};1H", ri + 1);
             for cell in row {
                 match cell {
                     None => eprint!(" "),
@@ -214,7 +215,6 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                     }
                 }
             }
-            eprintln!();
         }
 
         let _ = io::stderr().flush();
@@ -285,9 +285,8 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
             }
 
             // Render
-            eprint!("\x1b[H");
             for (r, row) in grid.iter().enumerate() {
-                eprint!("  ");
+                eprint!("\x1b[{};1H", r + 1);
                 for (c, cell) in row.iter().enumerate() {
                     if locked[r][c] {
                         if let Some(rc) = cell {
@@ -305,7 +304,6 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                         }
                     }
                 }
-                eprintln!();
             }
 
             let _ = io::stderr().flush();
@@ -319,9 +317,8 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
     }
 
     // Clear rain area
-    eprint!("\x1b[H");
-    for _ in 0..rows {
-        eprintln!("  {:width$}", "", width = cols);
+    for r in 0..rows {
+        eprint!("\x1b[{};1H\x1b[2K", r + 1);
     }
     eprint!("\x1b[H");
     eprint!("\x1b[?25h"); // show cursor
