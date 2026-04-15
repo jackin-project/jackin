@@ -310,7 +310,9 @@ pub fn run(cli: Cli) -> Result<()> {
             );
             result
         }
-        Command::Launch => {
+        Command::Launch { debug } => {
+            runner.debug = debug;
+            tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
             let (class, workspace) = crate::launch::run_launch(&config, &cwd)?;
 
@@ -321,7 +323,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
             let opts = runtime::LoadOptions {
                 no_intro: false,
-                debug: false,
+                debug,
                 rebuild: false,
             };
             let result =
