@@ -181,11 +181,14 @@ fn export_host_terminfo(
     std::fs::create_dir_all(&terminfo_dir)?;
 
     // Compile into the cache directory.
+    // Suppress stderr — tic emits harmless warnings for some terminal
+    // entries (e.g. Ghostty's "alias multiply defined" notice).
     let tic = std::process::Command::new("tic")
         .args(["-x", "-o"])
         .arg(&terminfo_dir)
         .arg("-")
         .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
         .spawn();
     let mut tic = tic?;
     if let Some(ref mut stdin) = tic.stdin {
@@ -673,6 +676,11 @@ fn launch_agent_runtime(
 
     let certs_volume = dind_certs_volume(container_name);
 
+    let docker_run_opts = RunOptions {
+        quiet: !debug,
+        ..RunOptions::default()
+    };
+
     // Create Docker network
     let agent_label = format!("jackin.agent={container_name}");
     runner.run(
@@ -687,7 +695,7 @@ fn launch_agent_runtime(
             network,
         ],
         None,
-        &RunOptions::default(),
+        &docker_run_opts,
     )?;
 
     // Start Docker-in-Docker with TLS
@@ -712,7 +720,7 @@ fn launch_agent_runtime(
         &certs_dind_mount,
         "docker:dind",
     ];
-    runner.run("docker", &dind_args, None, &RunOptions::default())?;
+    runner.run("docker", &dind_args, None, &docker_run_opts)?;
 
     wait_for_dind(dind, &certs_volume, runner, *debug)?;
 
