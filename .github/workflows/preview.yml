@@ -42,18 +42,58 @@ jobs:
 
       - name: Verify source SHA is on main
         if: github.event_name == 'workflow_run'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          git fetch origin main --depth=1
-          git merge-base --is-ancestor "${{ steps.source.outputs.sha }}" origin/main
+          # Use GitHub's compare API instead of mutating the local checkout.
+          # A prior run published preview.1 for f6327ae because the runner
+          # behaved like it only had a one-commit checkout even with
+          # fetch-depth: 0, so local git ancestry checks were no longer
+          # reliable enough for preview versioning.
+          full_sha="${{ steps.source.outputs.sha }}"
+          compare_status=$(
+            curl -fsSL \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${full_sha}...main" |
+              jq -er '.status'
+          )
+
+          case "$compare_status" in
+            identical|ahead) ;;
+            *)
+              echo "::error::source SHA ${full_sha} is not on main (compare status: ${compare_status})"
+              exit 1
+              ;;
+          esac
 
       - name: Compute preview metadata
         id: meta
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           base_version=${base_version%-dev}
           full_sha="${{ steps.source.outputs.sha }}"
           short_sha=$(printf '%s' "$full_sha" | cut -c1-7)
-          commit_count=$(git rev-list --count HEAD)
+          # Derive the preview counter from GitHub's server-side commit history
+          # instead of `git rev-list --count HEAD` so the version stays
+          # monotonic even if the runner checkout is unexpectedly shallow.
+          graphql_query='query($owner: String!, $name: String!, $oid: GitObjectID!) { repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { history(first: 1) { totalCount } } } } }'
+          commit_count=$(
+            jq -cn \
+              --arg query "$graphql_query" \
+              --arg owner "$GITHUB_REPOSITORY_OWNER" \
+              --arg name "${GITHUB_REPOSITORY#*/}" \
+              --arg oid "$full_sha" \
+              '{query: $query, variables: {owner: $owner, name: $name, oid: $oid}}' |
+              curl -fsSL \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                --data @- \
+                https://api.github.com/graphql |
+              jq -er '.data.repository.object.history.totalCount'
+          )
           tarball_url="https://github.com/jackin-project/jackin/archive/${full_sha}.tar.gz"
           curl -fL "$tarball_url" -o jackin-preview.tar.gz
           sha256=$(shasum -a 256 jackin-preview.tar.gz | awk '{print $1}')
