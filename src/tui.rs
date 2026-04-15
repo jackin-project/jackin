@@ -286,7 +286,11 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                         if *ch == ' ' {
                             grid[r][c] = None;
                         } else {
-                            grid[r][c] = Some(RainCell { ch: *ch, age: 0, fade: 1 });
+                            grid[r][c] = Some(RainCell {
+                                ch: *ch,
+                                age: 0,
+                                fade: 1,
+                            });
                         }
                     }
                 }
