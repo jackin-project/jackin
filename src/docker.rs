@@ -9,6 +9,9 @@ pub struct RunOptions {
     /// and captured so it can be included in error messages.  When `false`
     /// (the default), stderr is inherited directly from the parent process.
     pub capture_stderr: bool,
+    /// When `true`, both stdout and stderr are sent to `/dev/null`.
+    /// Useful for suppressing noisy output (e.g. git fetch) in non-debug mode.
+    pub quiet: bool,
 }
 
 pub trait CommandRunner {
@@ -67,7 +70,19 @@ impl CommandRunner for ShellRunner {
     ) -> anyhow::Result<()> {
         self.log_command(program, args, cwd);
 
-        if opts.capture_stderr {
+        if opts.quiet {
+            let mut child = Self::build_command(program, args, cwd)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()?;
+            let status = child.wait()?;
+            anyhow::ensure!(
+                status.success(),
+                "command failed: {} {}",
+                program,
+                args.join(" ")
+            );
+        } else if opts.capture_stderr {
             let mut child = Self::build_command(program, args, cwd)
                 .stderr(std::process::Stdio::piped())
                 .spawn()?;
@@ -190,6 +205,7 @@ mod tests {
         let mut runner = ShellRunner::default();
         let opts = RunOptions {
             capture_stderr: true,
+            ..RunOptions::default()
         };
 
         let error = runner
