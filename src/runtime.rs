@@ -708,8 +708,23 @@ fn launch_agent_runtime(
         &docker_run_opts,
     )?;
 
-    // Start Docker-in-Docker with TLS
+    // Start Docker-in-Docker with TLS.
+    //
+    // `DOCKER_TLS_SAN` is read by docker:dind's `dockerd-entrypoint.sh` and
+    // appended to the auto-generated server cert's Subject Alternative Names.
+    // Without it, the cert only covers the short container ID, `docker`, and
+    // `localhost` — so agents connecting via `tcp://{dind}:2376` get a TLS
+    // hostname-mismatch error. We can't set `--hostname` to the same value
+    // because namespaced class keys contain `__`, which is invalid in
+    // RFC-1123 hostnames.
+    //
+    // The entrypoint concatenates `DOCKER_TLS_SAN` into the openssl config
+    // verbatim (no type prefix added), so the value must already be in the
+    // `DNS:<name>` form that openssl's `subjectAltName` section expects.
+    // Without the prefix, openssl aborts with `v2i_GENERAL_NAME_ex: missing
+    // value` and DinD never comes up.
     let certs_dind_mount = format!("{certs_volume}:/certs/client");
+    let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
     let dind_args: Vec<&str> = vec![
         "run",
         "-d",
@@ -726,6 +741,8 @@ fn launch_agent_runtime(
         &agent_label,
         "-e",
         "DOCKER_TLS_CERTDIR=/certs",
+        "-e",
+        &dind_tls_san,
         "-v",
         &certs_dind_mount,
         "docker:dind",
@@ -1885,6 +1902,22 @@ plugins = ["code-review@claude-plugins-official"]
                 .iter()
                 .any(|call| call.contains("claude plugin install"))
         );
+
+        // Regression guard: namespaced class keys contain `__`, which is invalid
+        // in RFC-1123 hostnames. The DinD SAN must still carry the full
+        // container name so agents can connect via
+        // tcp://jackin-chainargos__the-architect-dind:2376 without TLS errors.
+        let dind_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| {
+                call.contains("docker run -d --name jackin-chainargos__the-architect-dind")
+            })
+            .expect("expected DinD startup command");
+        assert!(
+            dind_cmd.contains("DOCKER_TLS_SAN=DNS:jackin-chainargos__the-architect-dind"),
+            "DinD SAN must include the namespaced container name with a DNS: prefix"
+        );
     }
 
     #[test]
@@ -2630,6 +2663,20 @@ plugins = []
         assert!(
             dind_cmd.contains("jackin-agent-smith-dind-certs:/certs/client"),
             "DinD must mount cert volume"
+        );
+        // DinD's auto-generated server cert must include the container name as a
+        // Subject Alternative Name, because the agent connects via
+        // DOCKER_HOST=tcp://jackin-agent-smith-dind:2376. Without this, the TLS
+        // handshake fails because the default SANs only cover the short
+        // container ID, `docker`, and `localhost`.
+        //
+        // The `DNS:` prefix is mandatory: `dockerd-entrypoint.sh` passes
+        // `DOCKER_TLS_SAN` through to openssl verbatim (without adding a type
+        // prefix), and openssl rejects SAN entries that lack a type tag with
+        // `v2i_GENERAL_NAME_ex: missing value`.
+        assert!(
+            dind_cmd.contains("DOCKER_TLS_SAN=DNS:jackin-agent-smith-dind"),
+            "DinD SAN value must be prefixed with `DNS:` so openssl accepts it"
         );
 
         // Agent container: TLS client config
