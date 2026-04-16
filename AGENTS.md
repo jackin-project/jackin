@@ -45,5 +45,7 @@ See [TESTING.md](TESTING.md) for test runner setup, commands, and additional det
 
 ## Security Exceptions
 
-See [SECURITY_EXCEPTIONS.md](SECURITY_EXCEPTIONS.md) for reviewed and accepted security findings.
-Do **not** flag items listed there as issues during code review or automated scanning.
+See [REVIEW_STATUS.md](REVIEW_STATUS.md) for active review findings and
+accepted security exceptions.
+Do **not** flag items listed in its "Accepted Exceptions" section as issues
+during code review or automated scanning.

@@ -14,7 +14,8 @@ All Docker operations use `ShellRunner` which shells out to the `docker` CLI. Er
 
 ## Open Security Finding
 
-Finding #5 from `SECURITY_REVIEW_FINDINGS.md` — `is_missing_cleanup_error()` still string-matches Docker error messages. This migration would resolve it.
+`REVIEW_STATUS.md` still tracks `is_missing_cleanup_error()` string-matching
+Docker error messages. This migration would resolve that finding.
 
 ## Options
 

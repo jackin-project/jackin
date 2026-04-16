@@ -72,7 +72,8 @@ jackin-dev/
 4. **Direct commit warning** — Scan commits since last tag (`git log <last-tag>..HEAD`) for commits that are not merge commits from PRs. Warn if found, do not block.
 5. **Doc link validation** — Check links in `docs/` for broken internal references and dead external URLs.
 6. **TODO freshness** — Review `TODO.md` and `todo/*.md` for references to completed work, stale items, or items that should have been resolved.
-7. **Security exceptions** — Present `SECURITY_EXCEPTIONS.md` contents and ask: "Are these still current?"
+7. **Security exceptions** — Present the "Accepted Exceptions" section from
+   `REVIEW_STATUS.md` and ask: "Are these still current?"
 8. **Docker build check** — If `docker/construct/**` or `docker/runtime/**` changed since last tag, verify the corresponding CI workflow passed. If no changes, skip.
 
 **Output:** Structured readiness report with pass/fail/warn/review status per check.
