@@ -1,4 +1,4 @@
-FROM rust:1.94.1-trixie AS security-tools
+FROM rust:1.94.1-trixie@sha256:652612f07bfbbdfa3af34761c1e435094c00dde4a98036132fca28c7bb2b165c AS security-tools
 
 ARG TIRITH_VERSION
 ARG SHELLFIRM_VERSION
@@ -6,7 +6,7 @@ ARG SHELLFIRM_VERSION
 RUN cargo install tirith --version "${TIRITH_VERSION}" --locked && \
     cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked
 
-FROM debian:trixie
+FROM debian:trixie@sha256:3352c2e13876c8a5c5873ef20870e1939e73cb9a3c1aeba5e3e72172a85ce9ed
 
 COPY --from=security-tools /usr/local/cargo/bin/tirith /usr/local/bin/tirith
 COPY --from=security-tools /usr/local/cargo/bin/shellfirm /usr/local/bin/shellfirm
