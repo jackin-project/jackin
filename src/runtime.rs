@@ -43,7 +43,7 @@ pub struct LoadOptions {
 
 impl LoadOptions {
     /// Build options for `jackin load`. Debug mode implies `no_intro`.
-    pub fn for_load(no_intro: bool, debug: bool, rebuild: bool) -> Self {
+    pub const fn for_load(no_intro: bool, debug: bool, rebuild: bool) -> Self {
         Self {
             no_intro: no_intro || debug,
             debug,
@@ -52,7 +52,7 @@ impl LoadOptions {
     }
 
     /// Build options for `jackin launch`. Debug mode implies `no_intro`.
-    pub fn for_launch(debug: bool) -> Self {
+    pub const fn for_launch(debug: bool) -> Self {
         Self {
             no_intro: debug,
             debug,
