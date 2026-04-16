@@ -84,6 +84,11 @@ RUN groupadd -g "$GID" claude && \
     echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude && \
     install -d -o claude -g claude /home/claude/.claude /home/claude/.jackin
 
+# Default to a UTF-8 locale so shell prompts and CLI output render correctly,
+# including `docker exec` sessions that bypass jackin's runtime entrypoint.
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
 USER claude
 
 ENV PATH="/home/claude/.local/share/mise/shims:/home/claude/.local/bin:${PATH}"
