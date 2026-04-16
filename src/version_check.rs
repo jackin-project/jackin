@@ -4,6 +4,11 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 /// How long we trust the cached npm lookup before re-checking.
+// `Duration::from_hours` would read more naturally but was stabilised in Rust
+// 1.95; our MSRV is 1.94 (see Cargo.toml `rust-version`). The stacked
+// `unknown_lints` allow keeps this compilable on 1.94, where the newer clippy
+// lint is not yet recognised.
+#[allow(unknown_lints, clippy::duration_suboptimal_units)]
 const NPM_CACHE_TTL: Duration = Duration::from_secs(3600); // 1 hour
 
 /// File that caches the latest published Claude Code version from npm.
