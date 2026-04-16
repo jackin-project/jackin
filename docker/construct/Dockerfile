@@ -1,4 +1,4 @@
-FROM rust:trixie AS security-tools
+FROM rust:1.94.1-trixie AS security-tools
 
 ARG TIRITH_VERSION
 ARG SHELLFIRM_VERSION
