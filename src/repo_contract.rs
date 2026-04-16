@@ -64,7 +64,7 @@ mod tests {
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            r#"FROM rust:1.87 AS builder
+            r#"FROM rust:1.94.1 AS builder
 RUN cargo build
 
 FROM projectjackin/construct:trixie AS runtime
