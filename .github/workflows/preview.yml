@@ -34,7 +34,7 @@ jobs:
             echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: jackin-project/jackin
           ref: ${{ steps.source.outputs.sha }}
@@ -105,7 +105,7 @@ jobs:
             echo "sha256=$sha256"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: jackin-project/homebrew-tap
           ref: main
