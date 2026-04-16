@@ -288,11 +288,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("aborted — sensitive mount paths were not confirmed");
             }
 
-            let opts = runtime::LoadOptions {
-                no_intro: no_intro || debug,
-                debug,
-                rebuild,
-            };
+            let opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
             let result = runtime::load_agent(
                 &paths,
                 &mut config,
@@ -321,11 +317,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("aborted — sensitive mount paths were not confirmed");
             }
 
-            let opts = runtime::LoadOptions {
-                no_intro: false,
-                debug,
-                rebuild: false,
-            };
+            let opts = runtime::LoadOptions::for_launch(debug);
             let result =
                 runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts);
             remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
