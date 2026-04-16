@@ -1,4 +1,4 @@
 [tools]
-bun = "latest"
-just = "latest"
-rust = "latest"
+bun = "1.3.12"
+just = "1.49.0"
+rust = "1.94.1"
