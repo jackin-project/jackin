@@ -41,6 +41,26 @@ pub struct LoadOptions {
     pub rebuild: bool,
 }
 
+impl LoadOptions {
+    /// Build options for `jackin load`. Debug mode implies `no_intro`.
+    pub const fn for_load(no_intro: bool, debug: bool, rebuild: bool) -> Self {
+        Self {
+            no_intro: no_intro || debug,
+            debug,
+            rebuild,
+        }
+    }
+
+    /// Build options for `jackin launch`. Debug mode implies `no_intro`.
+    pub const fn for_launch(debug: bool) -> Self {
+        Self {
+            no_intro: debug,
+            debug,
+            rebuild: false,
+        }
+    }
+}
+
 impl Default for LoadOptions {
     fn default() -> Self {
         Self {
@@ -3467,5 +3487,39 @@ plugins = []
                 .iter()
                 .any(|c| c.contains("docker rm -f jackin-agent-smith"))
         );
+    }
+
+    #[test]
+    fn load_options_debug_disables_intro_for_load() {
+        let opts = LoadOptions::for_load(false, true, false);
+        assert!(opts.no_intro, "debug mode must disable intro for load");
+        assert!(opts.debug);
+    }
+
+    #[test]
+    fn load_options_no_intro_flag_for_load() {
+        let opts = LoadOptions::for_load(true, false, false);
+        assert!(opts.no_intro, "explicit no_intro must be respected");
+        assert!(!opts.debug);
+    }
+
+    #[test]
+    fn load_options_intro_plays_when_no_flags_for_load() {
+        let opts = LoadOptions::for_load(false, false, false);
+        assert!(!opts.no_intro, "intro should play when no flags set");
+    }
+
+    #[test]
+    fn load_options_debug_disables_intro_for_launch() {
+        let opts = LoadOptions::for_launch(true);
+        assert!(opts.no_intro, "debug mode must disable intro for launch");
+        assert!(opts.debug);
+    }
+
+    #[test]
+    fn load_options_intro_plays_when_no_debug_for_launch() {
+        let opts = LoadOptions::for_launch(false);
+        assert!(!opts.no_intro, "intro should play when debug is off");
+        assert!(!opts.debug);
     }
 }
