@@ -13,8 +13,7 @@ Quick navigation reference for AI agents working in this repository.
 | `RULES.md` | Project-wide conventions (docs go in `AGENTS.md`, not tool-specific files) |
 | `TODO.md` | Index of open design/engineering items (individual files in `todo/`) |
 | `TESTING.md` | Test runner setup, commands, and pre-commit requirements |
-| `SECURITY_REVIEW_FINDINGS.md` | Security audit results |
-| `SECURITY_EXCEPTIONS.md` | Accepted security findings — do not re-flag |
+| `REVIEW_STATUS.md` | Consolidated active review findings and accepted exceptions |
 | `release.toml` | Release configuration |
 | `mise.toml` | Tool version management (bun) |
 | `Justfile` | Construct image build commands — contributor-facing `just` wrapper |

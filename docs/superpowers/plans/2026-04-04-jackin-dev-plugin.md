@@ -366,7 +366,8 @@ Report **PASS** or **WARN** with findings.
 
 ### Check 8: Security Exceptions
 
-Read `SECURITY_EXCEPTIONS.md` and present its contents to the user.
+Read the "Accepted Exceptions" section in `REVIEW_STATUS.md` and present it to
+the user.
 
 Ask: **"Are these security exceptions still current? (yes/no)"**
 
