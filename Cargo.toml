@@ -2,7 +2,7 @@
 name = "jackin"
 version = "0.6.0-dev"
 edition = "2024"
-rust-version = "1.95"
+rust-version = "1.94"
 description = "CLI for orchestrating AI coding agents at scale"
 homepage = "https://jackin.tailrocks.com/"
 repository = "https://github.com/jackin-project/jackin"
