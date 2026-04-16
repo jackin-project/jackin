@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 /// How long we trust the cached npm lookup before re-checking.
-const NPM_CACHE_TTL: Duration = Duration::from_secs(3600); // 1 hour
+const NPM_CACHE_TTL: Duration = Duration::from_hours(1);
 
 /// File that caches the latest published Claude Code version from npm.
 fn npm_cache_path(paths: &JackinPaths) -> PathBuf {
