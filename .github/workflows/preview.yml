@@ -117,15 +117,28 @@ jobs:
           test -L homebrew-tap/Aliases/jackin@preview
           test "$(readlink homebrew-tap/Aliases/jackin@preview)" = "../Formula/jackin-preview.rb"
 
+      - name: Extract previous preview SHA
+        id: prev
+        run: |
+          old_sha=$(
+            sed -n 's|^[[:space:]]*url "https://github.com/jackin-project/jackin/archive/\([0-9a-f]\{40\}\)\.tar\.gz"$|\1|p' \
+              homebrew-tap/Formula/jackin-preview.rb | head -1
+          )
+          echo "old_sha=${old_sha}" >> "$GITHUB_OUTPUT"
+
       - name: Rewrite preview formula
+        env:
+          TARBALL_URL: ${{ steps.meta.outputs.tarball_url }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHA256: ${{ steps.meta.outputs.sha256 }}
         run: |
           cat > homebrew-tap/Formula/jackin-preview.rb <<EOF
           class JackinPreview < Formula
             desc "CLI for orchestrating AI coding agents at scale"
             homepage "https://github.com/jackin-project/jackin"
-            url "${{ steps.meta.outputs.tarball_url }}"
-            version "${{ steps.meta.outputs.version }}"
-            sha256 "${{ steps.meta.outputs.sha256 }}"
+            url "${TARBALL_URL}"
+            version "${VERSION}"
+            sha256 "${SHA256}"
             license "Apache-2.0"
 
             depends_on "rust" => :build
@@ -144,15 +157,65 @@ jobs:
           end
           EOF
 
-      - name: Commit and push tap update
+      - name: Build PR body
+        id: pr_body
+        env:
+          OLD_SHA: ${{ steps.prev.outputs.old_sha }}
+          NEW_SHA: ${{ steps.meta.outputs.full_sha }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          body_file="${RUNNER_TEMP}/pr-body.md"
+          {
+            printf 'Automated preview formula update for **jackin@preview %s**.\n\n' "$VERSION"
+            printf -- '- Source: [`%s`](https://github.com/jackin-project/jackin/commit/%s)\n' \
+              "${NEW_SHA:0:7}" "$NEW_SHA"
+            if [ -n "$OLD_SHA" ] && [ "$OLD_SHA" != "$NEW_SHA" ]; then
+              printf -- '- Previous: [`%s`](https://github.com/jackin-project/jackin/commit/%s)\n' \
+                "${OLD_SHA:0:7}" "$OLD_SHA"
+              printf -- '- [Full diff](https://github.com/jackin-project/jackin/compare/%s...%s)\n' \
+                "$OLD_SHA" "$NEW_SHA"
+            fi
+            printf -- '- [CHANGELOG](https://github.com/jackin-project/jackin/blob/%s/CHANGELOG.md)\n\n' "$NEW_SHA"
+            printf '## Commits\n\n'
+            if [ -n "$OLD_SHA" ] \
+               && git -C "${GITHUB_WORKSPACE}" rev-parse --verify --quiet "${OLD_SHA}^{commit}" >/dev/null; then
+              git -C "${GITHUB_WORKSPACE}" log --pretty=format:'- %s (%h)' "${OLD_SHA}..${NEW_SHA}"
+              printf '\n'
+            else
+              printf '_No prior preview SHA found; commit range unavailable._\n'
+            fi
+            printf '\n## Unreleased changelog\n\n'
+            awk '
+              /^## \[Unreleased\]/ {flag=1; next}
+              /^## / {flag=0}
+              flag {print}
+            ' "${GITHUB_WORKSPACE}/CHANGELOG.md" | awk 'NF{found=1} {print} END{ if(!found) print "_(empty)_" }'
+          } > "$body_file"
+          echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
+
+      - name: Open and merge PR for tap update
         working-directory: homebrew-tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
+          PR_BODY_FILE: ${{ steps.pr_body.outputs.body_file }}
         run: |
           git add Formula/jackin-preview.rb
           if git diff --cached --quiet --exit-code; then
             echo "Preview formula already up to date"
             exit 0
           fi
+          branch="preview/formula-${SHORT_SHA}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "jackin@preview ${{ steps.meta.outputs.version }}"
-          git push
+          git switch -c "$branch"
+          git commit -m "jackin@preview ${VERSION}"
+          git push -u origin "$branch"
+          pr_url=$(gh pr create \
+            --title "jackin@preview ${VERSION}" \
+            --body-file "$PR_BODY_FILE" \
+            --base main \
+            --head "$branch")
+          echo "Opened PR: $pr_url"
+          gh pr merge "$pr_url" --squash --delete-branch
