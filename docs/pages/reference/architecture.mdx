@@ -97,12 +97,18 @@ That means an agent class defines the tools and conventions, while jackin' injec
 5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
 6. **Create a per-agent Docker network**
 7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume
-8. **Start the agent container** — mounts, resolved env vars, TLS client certs, labels, and `DOCKER_HOST` all point at the sidecar
-9. **Run Claude Code with full permissions inside that boundary**
+8. **Start the agent container detached** with a persistent TTY (`docker run -d -it`) — mounts, resolved env vars, TLS client certs, labels, and `DOCKER_HOST` all point at the sidecar
+9. **Attach the foreground session** with `docker attach --detach-keys= --sig-proxy=false`, then **run Claude Code with full permissions inside that boundary**
+
+The detached-start + attach split decouples the container's lifetime from the foreground session: closing the terminal tab drops the attach, but the container keeps running with its own TTY. `--sig-proxy=false` stops SIGHUP (terminal close) from being forwarded to the container. Cleanup distinguishes three post-attach states:
+
+- **running** → terminal was closed; preserve the container for `jackin hardline` to reconnect
+- **stopped with exit 0** → the user exited cleanly; tear down container, DinD, network, and certs volume
+- **stopped with non-zero exit or OOM** → crash; preserve the container and DinD so `jackin hardline` can restart in place
 
 ### Reconnecting
 
-`jackin hardline` simply attaches to the running agent container.
+`jackin hardline` inspects the target container. If it's running, it attaches. If it's stopped with a non-zero exit (crash / OOM) and the DinD sidecar is still running, it restarts the container and attaches. Clean exits (exit code 0) and missing DinD sidecars are refused — those cases require `jackin load` to start a fresh session.
 
 ### Stopping
 
