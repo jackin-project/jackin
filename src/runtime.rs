@@ -119,6 +119,50 @@ fn try_capture(runner: &mut impl CommandRunner, program: &str, args: &[&str]) ->
         .filter(|s| !s.is_empty())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum ContainerState {
+    /// `docker inspect` failed — container does not exist (or daemon is down).
+    NotFound,
+    Running,
+    Stopped {
+        exit_code: i32,
+        oom_killed: bool,
+    },
+}
+
+/// Query a container's state with a single `docker inspect` call.
+///
+/// Uses Go-template formatting to extract three fields in one round trip:
+/// `Running`, `ExitCode`, and `OOMKilled`.  Returns `NotFound` when inspect
+/// fails for any reason (missing container, daemon unreachable, parse error).
+pub fn inspect_container_state(runner: &mut impl CommandRunner, name: &str) -> ContainerState {
+    let Some(output) = try_capture(
+        runner,
+        "docker",
+        &[
+            "inspect",
+            "--format",
+            "{{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}}",
+            name,
+        ],
+    ) else {
+        return ContainerState::NotFound;
+    };
+    let mut parts = output.split_whitespace();
+    let Some(running) = parts.next() else {
+        return ContainerState::NotFound;
+    };
+    if running == "true" {
+        return ContainerState::Running;
+    }
+    let exit_code: i32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let oom_killed = parts.next() == Some("true");
+    ContainerState::Stopped {
+        exit_code,
+        oom_killed,
+    }
+}
+
 // ── Terminal / terminfo resolution ────────────────────────────────────────
 //
 // Modern terminals (Ghostty, Kitty, WezTerm) define custom TERM values
@@ -783,8 +827,13 @@ fn launch_agent_runtime(
     let (resolved_term, terminfo_mount) = resolve_terminal_setup(cache_dir);
     let container_term = format!("TERM={resolved_term}");
 
+    // Start detached with a persistent TTY, then attach separately.  This
+    // decouples the container's lifetime from the foreground attach, so
+    // closing the terminal tab only drops the attach — the container keeps
+    // running and `jackin hardline` can reconnect to the same live session.
     let mut run_args: Vec<&str> = vec![
         "run",
+        "-d",
         "-it",
         "--name",
         container_name,
@@ -881,10 +930,26 @@ fn launch_agent_runtime(
         run_args.push(ms);
     }
     run_args.push(image);
-    let result = runner.run("docker", &run_args, None, &RunOptions::default());
+    runner.run("docker", &run_args, None, &docker_run_opts)?;
+
+    // Attach with signal forwarding disabled and the default detach shortcut
+    // cleared: only an explicit exit from inside (or terminal close) ends the
+    // foreground session, and closing the terminal leaves the container
+    // running so `jackin hardline` can reconnect.
+    let attach_result = runner.run(
+        "docker",
+        &[
+            "attach",
+            "--detach-keys=",
+            "--sig-proxy=false",
+            container_name,
+        ],
+        None,
+        &RunOptions::default(),
+    );
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
-    result?;
+    attach_result?;
 
     Ok(())
 }
@@ -1095,10 +1160,22 @@ fn load_agent_with(
         }
         launch_result?;
 
-        if list_running_agent_names(runner)?.contains(&container_name) {
-            cleanup.disarm();
-        } else {
-            cleanup.run(runner);
+        // Classify how the interactive session ended so we know whether to
+        // tear the container down or preserve it for `jackin hardline` to
+        // restart:
+        //  - Running     → terminal was closed (user detached).  Keep it.
+        //  - Stopped / 0 → user exited cleanly inside Claude Code.  Tear down.
+        //  - Stopped / ≠0 or OOM-killed → crash.  Preserve so `jackin hardline`
+        //    can restart the existing container + DinD sidecar.
+        #[allow(clippy::match_same_arms)]
+        match inspect_container_state(runner, &container_name) {
+            ContainerState::Running => cleanup.disarm(),
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            } => cleanup.run(runner),
+            ContainerState::Stopped { .. } => cleanup.disarm(),
+            ContainerState::NotFound => cleanup.run(runner),
         }
 
         Ok(container_name)
@@ -1132,13 +1209,77 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
     );
 }
 
-pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
+/// Re-attach to a running agent, or restart a crashed one in place.
+///
+/// Behavior by container state:
+///   - `Running`                  → attach directly.
+///   - `Stopped` / exit 0         → error.  The previous session ended cleanly;
+///     the user wants `jackin load` for a new one.
+///   - `Stopped` / exit ≠0 or OOM → restart the existing container, then
+///     attach, provided the `DinD` sidecar is still present and running.  If
+///     `DinD` is gone or stopped, error — the network plumbing must be rebuilt
+///     via `jackin load`.
+///   - `NotFound`                 → error.
+fn attach_running(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     runner.run(
         "docker",
-        &["attach", container_name],
+        &[
+            "attach",
+            "--detach-keys=",
+            "--sig-proxy=false",
+            container_name,
+        ],
         None,
         &RunOptions::default(),
     )
+}
+
+pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
+    match inspect_container_state(runner, container_name) {
+        ContainerState::Running => attach_running(container_name, runner),
+        ContainerState::NotFound => {
+            anyhow::bail!(
+                "container '{container_name}' not found; use `jackin load` to start a new session"
+            )
+        }
+        ContainerState::Stopped {
+            exit_code: 0,
+            oom_killed: false,
+        } => {
+            anyhow::bail!(
+                "container '{container_name}' exited cleanly; \
+                 use `jackin load` to start a new session"
+            )
+        }
+        ContainerState::Stopped {
+            exit_code,
+            oom_killed,
+        } => {
+            let dind = format!("{container_name}-dind");
+            match inspect_container_state(runner, &dind) {
+                ContainerState::Running => {}
+                ContainerState::NotFound => anyhow::bail!(
+                    "DinD sidecar '{dind}' not found; use `jackin load` to rebuild the network"
+                ),
+                ContainerState::Stopped { .. } => anyhow::bail!(
+                    "DinD sidecar '{dind}' is stopped; use `jackin load` to rebuild the network"
+                ),
+            }
+            let reason = if oom_killed {
+                "OOM killed".to_string()
+            } else {
+                format!("exit {exit_code}")
+            };
+            eprintln!("Restarting crashed container '{container_name}' ({reason})\u{2026}");
+            runner.run(
+                "docker",
+                &["start", container_name],
+                None,
+                &RunOptions::default(),
+            )?;
+            attach_running(container_name, runner)
+        }
+    }
 }
 
 fn wait_for_dind(
@@ -1884,12 +2025,9 @@ plugins = ["code-review@claude-plugins-official"]
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.role=agent --format {{.Names}}"
         }));
-        assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|call| call.contains("docker run -it --name jackin-chainargos__the-architect"))
-        );
+        assert!(runner.recorded.iter().any(|call| {
+            call.contains("docker run -d -it --name jackin-chainargos__the-architect")
+        }));
         assert!(
             runner
                 .recorded
@@ -2205,20 +2343,117 @@ trusted = true
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -it"))
+            .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(run_cmd.contains(&format!("{}:/test-data:ro", mount_src.display())));
     }
 
     #[test]
-    fn hardline_uses_docker_attach() {
-        let mut runner = FakeRunner::default();
+    fn hardline_attaches_when_container_is_running() {
+        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
 
         hardline_agent("jackin-agent-smith", &mut runner).unwrap();
 
         assert_eq!(
             runner.recorded.last().unwrap(),
-            "docker attach jackin-agent-smith"
+            "docker attach --detach-keys= --sig-proxy=false jackin-agent-smith"
+        );
+    }
+
+    #[test]
+    fn hardline_errors_when_container_not_found() {
+        let mut runner = FakeRunner::default();
+
+        let err = hardline_agent("jackin-agent-smith", &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("not found"));
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+        );
+    }
+
+    #[test]
+    fn hardline_errors_on_clean_exit() {
+        let mut runner = FakeRunner::with_capture_queue(["false 0 false".to_string()]);
+
+        let err = hardline_agent("jackin-agent-smith", &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("exited cleanly"));
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+        );
+    }
+
+    #[test]
+    fn hardline_restarts_crashed_container_when_dind_running() {
+        // Inspect calls: container stopped w/ exit 137, then dind running.
+        let mut runner = FakeRunner::with_capture_queue([
+            "false 137 false".to_string(),
+            "true 0 false".to_string(),
+        ]);
+
+        hardline_agent("jackin-agent-smith", &mut runner).unwrap();
+
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c == "docker start jackin-agent-smith"),
+            "expected docker start before attach"
+        );
+        let start_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c == "docker start jackin-agent-smith")
+            .unwrap();
+        let attach_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c.contains("docker attach"))
+            .unwrap();
+        assert!(start_idx < attach_idx, "start must precede attach");
+    }
+
+    #[test]
+    fn hardline_refuses_when_dind_missing() {
+        let mut runner = FakeRunner::with_capture_queue([
+            "false 137 false".to_string(),
+            // Second inspect (DinD) returns empty → NotFound
+            String::new(),
+        ]);
+
+        let err = hardline_agent("jackin-agent-smith", &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("DinD sidecar"));
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+        );
+    }
+
+    #[test]
+    fn hardline_refuses_when_dind_stopped() {
+        let mut runner = FakeRunner::with_capture_queue([
+            "false 137 false".to_string(),
+            "false 0 false".to_string(),
+        ]);
+
+        let err = hardline_agent("jackin-agent-smith", &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("stopped"));
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker start") || c.contains("docker attach"))
         );
     }
 
@@ -2277,7 +2512,7 @@ plugins = ["code-review@claude-plugins-official"]
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("docker run -it --name jackin-agent-smith"))
+                .any(|call| call.contains("docker run -d -it --name jackin-agent-smith"))
         );
         assert!(
             runner
@@ -2350,7 +2585,7 @@ plugins = []
         let run_call = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -it"))
+            .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(run_call.contains(&format!("--workdir {}", workspace.workdir)));
         assert!(run_call.contains(&format!(
@@ -2438,7 +2673,7 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
         let mut runner = FakeRunner {
-            fail_on: vec!["docker run -it --name jackin-agent-smith".to_string()],
+            fail_on: vec!["docker run -d -it --name jackin-agent-smith".to_string()],
             capture_queue: VecDeque::from(vec![
                 String::new(),
                 String::new(),
@@ -2480,7 +2715,7 @@ plugins = ["code-review@claude-plugins-official"]
         assert!(
             error
                 .to_string()
-                .contains("docker run -it --name jackin-agent-smith")
+                .contains("docker run -d -it --name jackin-agent-smith")
         );
         assert!(
             runner
@@ -2683,7 +2918,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -it"))
+            .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(
             run_cmd.contains("DOCKER_HOST=tcp://jackin-agent-smith-dind:2376"),
@@ -3246,7 +3481,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -it"))
+            .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
     }
@@ -3297,7 +3532,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -it"))
+            .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_CLAUDE_ENV=jackin"));
         assert!(run_cmd.contains("-e JACKIN_DIND_HOSTNAME=jackin-agent-smith-dind"));
@@ -3354,7 +3589,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -it"))
+            .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_DEBUG=1"));
     }
