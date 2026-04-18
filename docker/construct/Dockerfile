@@ -1,4 +1,4 @@
-FROM rust:1.95.0-trixie@sha256:0ccf3b8640fa428d4ff623644960010144fbadd3523d45e66374de1ca2e7abf6 AS security-tools
+FROM rust:1.95.0-trixie@sha256:4a7e3a0c309c9bab658e469f842711bd595fae484936bc5d605e08ca0c631bf4 AS security-tools
 
 ARG TIRITH_VERSION
 ARG SHELLFIRM_VERSION
