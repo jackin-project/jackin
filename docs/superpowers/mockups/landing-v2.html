@@ -361,9 +361,83 @@
   .agent-card .avatar { width: 44px; height: 44px; border-radius: 6px; background: linear-gradient(135deg, rgba(0,255,65,0.15), rgba(0,255,65,0.02)); border: 1px solid var(--ui-strong);
     display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace;
     color: var(--accent); font-weight: 600; font-size: 16px; margin-bottom: 14px; }
-  .agent-card h4 { margin: 0 0 4px; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--text); }
-  .agent-card .class { color: var(--text-ghost); font-family: 'JetBrains Mono', monospace; font-size: 11px; margin-bottom: 10px; }
-  .agent-card p { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.55; }
+  .agent-card .role-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .agent-card .character {
+    font-family: 'Fraunces', 'Times New Roman', serif;
+    font-weight: 500;
+    font-size: 28px;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    margin: 0 0 14px;
+  }
+  .agent-card p { margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.6; }
+
+  /* Cast invite strip (full-width, below the 3 character cards) */
+  .cast-invite {
+    margin-top: 26px;
+    display: grid;
+    grid-template-columns: 64px 1fr auto;
+    gap: 24px;
+    align-items: center;
+    padding: 26px 30px;
+    border: 1px dashed rgba(0, 255, 65, 0.35);
+    border-radius: 10px;
+    background: rgba(0, 255, 65, 0.03);
+    transition: border-color 0.3s ease, background 0.3s ease;
+  }
+  .cast-invite:hover {
+    border-color: rgba(0, 255, 65, 0.55);
+    background: rgba(0, 255, 65, 0.05);
+  }
+  .cast-invite .invite-avatar {
+    width: 52px; height: 52px;
+    border-radius: 8px;
+    border: 1px dashed rgba(0, 255, 65, 0.5);
+    background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 22px;
+  }
+  .cast-invite .invite-body h3 {
+    font-family: 'Inter', sans-serif;
+    font-size: 19px; font-weight: 700;
+    letter-spacing: -0.015em;
+    color: var(--text);
+    margin: 0 0 4px;
+  }
+  .cast-invite .invite-body p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.55;
+    max-width: 580px;
+  }
+  .cast-invite .invite-cta {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; font-weight: 500;
+    text-decoration: none; letter-spacing: 0.02em;
+    border: 1px solid rgba(0, 255, 65, 0.4);
+    padding: 10px 16px; border-radius: 5px;
+    transition: gap 0.2s ease-out, border-color 0.2s, background 0.2s;
+    white-space: nowrap;
+  }
+  .cast-invite .invite-cta:hover {
+    gap: 10px;
+    border-color: var(--accent);
+    background: rgba(0, 255, 65, 0.07);
+  }
   .install-block { margin-top: 48px; background: var(--panel); border: 1px solid var(--ui); border-radius: 10px; padding: 24px 28px;
     font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text); line-height: 1.85; position: relative; }
   .install-block .line .c { color: var(--text-ghost); }
@@ -388,12 +462,43 @@
     padding: 34px 30px 30px;
     border: 1px solid var(--ui); border-radius: 10px;
     background: var(--panel); position: relative;
-    transition: border-color 0.2s, transform 0.2s;
+    transition:
+      transform 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+      border-color 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+      box-shadow 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   }
-  .pill-card.pill-blue { border-color: rgba(90, 155, 255, 0.26); }
-  .pill-card.pill-red  { border-color: rgba(255, 90, 120, 0.26); }
-  .pill-card.pill-blue:hover { border-color: rgba(90, 155, 255, 0.5); transform: translateY(-2px); }
-  .pill-card.pill-red:hover  { border-color: rgba(255, 90, 120, 0.5); transform: translateY(-2px); }
+  .pill-card.pill-blue {
+    border-color: rgba(90, 155, 255, 0.55);
+    box-shadow:
+      0 0 0 1px rgba(90, 155, 255, 0.12),
+      0 0 60px rgba(90, 155, 255, 0.18),
+      0 20px 50px rgba(90, 155, 255, 0.1),
+      0 24px 40px rgba(0, 0, 0, 0.35);
+  }
+  .pill-card.pill-red {
+    border-color: rgba(255, 90, 120, 0.55);
+    box-shadow:
+      0 0 0 1px rgba(255, 90, 120, 0.12),
+      0 0 60px rgba(255, 90, 120, 0.18),
+      0 20px 50px rgba(255, 90, 120, 0.1),
+      0 24px 40px rgba(0, 0, 0, 0.35);
+  }
+  .pill-card.pill-blue:hover {
+    border-color: rgba(90, 155, 255, 0.85); transform: translateY(-2px);
+    box-shadow:
+      0 0 0 1px rgba(90, 155, 255, 0.22),
+      0 0 100px rgba(90, 155, 255, 0.3),
+      0 24px 60px rgba(90, 155, 255, 0.18),
+      0 28px 50px rgba(0, 0, 0, 0.45);
+  }
+  .pill-card.pill-red:hover {
+    border-color: rgba(255, 90, 120, 0.85); transform: translateY(-2px);
+    box-shadow:
+      0 0 0 1px rgba(255, 90, 120, 0.22),
+      0 0 100px rgba(255, 90, 120, 0.3),
+      0 24px 60px rgba(255, 90, 120, 0.18),
+      0 28px 50px rgba(0, 0, 0, 0.45);
+  }
 
   .pill-visual {
     width: 96px; height: 36px;
@@ -439,8 +544,124 @@
   .choice-lines li::before { content: "\2715"; position: absolute; left: 0; top: 0; color: var(--danger); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
   .choice-lines li code { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text); background: rgba(255,255,255,0.04); padding: 1px 6px; border-radius: 3px; }
   .choice-verdict { padding: 10px 14px; background: rgba(255, 94, 122, 0.08); border: 1px solid rgba(255, 94, 122, 0.28); border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--danger); text-align: center; font-weight: 600; }
+  .pill-blue .choice-lines li::before { color: #7ab0ff; }
+  .pill-blue .choice-verdict { background: rgba(90, 155, 255, 0.08); border-color: rgba(90, 155, 255, 0.3); color: #7ab0ff; }
   .choice-transition { margin-top: 48px; text-align: center; font-family: 'Fraunces', serif; font-style: italic; font-size: clamp(20px, 2.4vw, 28px); color: var(--text); letter-spacing: -0.01em; }
   .choice-transition .accent { color: var(--accent); font-style: normal; font-weight: 500; }
+
+  /* Section 4: The approach */
+  .approach-grid { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .approach-card {
+    padding: 32px 32px 30px;
+    border: 1px solid rgba(0, 255, 65, 0.3);
+    border-radius: 10px;
+    background: rgba(0, 255, 65, 0.025);
+    position: relative;
+    transition:
+      transform 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+      border-color 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+      box-shadow 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .approach-card:hover {
+    border-color: rgba(0, 255, 65, 0.55);
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 1px rgba(0,255,65,0.1), 0 0 60px rgba(0,255,65,0.12), 0 20px 40px rgba(0,0,0,0.4);
+  }
+  .approach-card .route { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--accent); letter-spacing: 0.25em; text-transform: uppercase; font-weight: 600; margin-bottom: 14px; }
+  .approach-card h3 { font-family: 'Inter', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); margin: 0 0 14px; }
+  .approach-card p { color: var(--text-dim); font-size: 15px; line-height: 1.6; margin: 0 0 22px; }
+  .approach-card p em { color: var(--text); font-style: normal; font-weight: 500; }
+  .approach-cmd { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent); background: rgba(0, 255, 65, 0.08); border: 1px solid rgba(0, 255, 65, 0.3); padding: 9px 14px; border-radius: 5px; }
+  .approach-cmd .lbl { color: var(--text-ghost); text-transform: uppercase; font-size: 10px; letter-spacing: 0.15em; }
+  .approach-repo { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-ghost); padding: 4px 0 0 4px; margin-top: 8px; }
+  .approach-repo .lbl { text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.18em; }
+  .approach-repo .repo-path { color: var(--text-dim); }
+
+  .approach-transition { margin-top: 44px; text-align: center; font-family: 'Fraunces', serif; font-style: italic; font-size: clamp(18px, 2.2vw, 24px); color: var(--text); letter-spacing: -0.01em; }
+  .approach-transition .accent { color: var(--accent); font-style: normal; font-weight: 500; }
+
+  /* Section 4: Toolset chips (Route 01) */
+  .toolset { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0 16px; }
+  .toolset-chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 5px 10px;
+    border-radius: 4px;
+  }
+  .toolset-chip.chip-plugin { color: var(--accent); background: rgba(0, 255, 65, 0.06); border-color: rgba(0, 255, 65, 0.3); }
+  .approach-note { color: var(--text-dim); font-size: 13.5px; font-style: italic; margin: 0 0 22px; }
+
+  /* Section 4: Dockerfile builder views */
+  .builder {
+    background: rgba(0, 5, 3, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 18px 0 22px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .builder-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px;
+    background: rgba(255,255,255,0.018);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 10.5px; color: var(--text-ghost); letter-spacing: 0.04em;
+  }
+  .builder-head .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .builder-head .dot.r { background: #ff5f57; } .builder-head .dot.y { background: #febc2e; } .builder-head .dot.g { background: #28c840; }
+  .builder-title { flex: 1; color: var(--text-dim); }
+  .builder-tag { padding: 3px 8px; border-radius: 3px; font-size: 9px; letter-spacing: 0.18em; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+  .tag-published { color: var(--accent); background: rgba(0, 255, 65, 0.08); border: 1px solid rgba(0, 255, 65, 0.3); }
+  .tag-building  { color: #fbc05b; background: rgba(251, 192, 91, 0.08); border: 1px solid rgba(251, 192, 91, 0.28); }
+  .tag-built     { color: var(--accent); background: rgba(0, 255, 65, 0.1); border: 1px solid rgba(0, 255, 65, 0.35); }
+  .builder-body {
+    margin: 0;
+    padding: 16px 18px 14px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+    font-family: inherit;
+  }
+  .builder-body .b-c { color: var(--text-ghost); }
+  .builder-body .b-k { color: var(--accent); font-weight: 500; }
+  .builder-body .b-s { color: #fbc05b; }
+
+  /* Tabbed builder (manifest + Dockerfile) */
+  .builder-tabs { display: flex; gap: 4px; margin-left: 4px; flex: 1; }
+  .builder-tab {
+    padding: 5px 10px; border-radius: 4px;
+    color: var(--text-ghost); font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.04em;
+    cursor: pointer; transition: all 0.15s;
+    background: transparent; border: none;
+  }
+  .builder-tab.active { color: var(--text); background: rgba(255,255,255,0.05); }
+  .builder-tab:hover:not(.active) { color: var(--text-dim); }
+  .builder-tabbed .builder-body { min-height: 240px; }
+  .builder-panel.hidden { display: none; }
+  .builder-cursor {
+    display: inline-block; width: 6px; height: 13px;
+    background: var(--accent); vertical-align: -2px;
+    animation: blink 1.06s steps(1) infinite;
+    margin-left: 1px;
+  }
+
+  /* Section 5: Agent tag (Built-in / Template) */
+  .agent-card { position: relative; }
+  .agent-tag {
+    position: absolute; top: 20px; right: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 3px; font-weight: 600;
+    color: var(--accent); background: rgba(0, 255, 65, 0.08);
+    border: 1px solid rgba(0, 255, 65, 0.3);
+  }
+  .agent-tag.tag-template { color: var(--text-ghost); background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.12); }
 
   /* Section 4: Kitchen-Sink vs Role-Specific callout */
   .focus-callout { margin-top: 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -467,9 +688,11 @@
   .scenario b { color: var(--text); font-weight: 600; display: block; margin-bottom: 4px; font-size: 14.5px; }
 
   @media (max-width: 880px) {
-    .choice-grid { grid-template-columns: 1fr; }
+    .pills-grid { grid-template-columns: 1fr; }
+    .approach-grid { grid-template-columns: 1fr; }
     .focus-callout { grid-template-columns: 1fr; }
     .clones { grid-template-columns: 1fr; }
+    .cast-invite { grid-template-columns: 1fr; text-align: center; justify-items: center; gap: 14px; padding: 22px 20px; }
     .hero-grid { grid-template-columns: 1fr; gap: 56px; }
     .hero-right { padding-top: 0; }
     .sub-stats { grid-template-columns: 1fr 1fr; }
@@ -586,9 +809,114 @@
   <div class="choice-transition">Refuse the pill. <span class="accent">You're the Operator</span> — define the construct instead.</div>
 </section>
 
-<!-- ========== SECTION 4: Two dimensions (composition machine) ========== -->
+<!-- ========== SECTION 4: The Approach ========== -->
+<section class="content">
+  <div class="sec-label">04 · The Approach</div>
+  <h2 class="sec-title">Draw the boundary <span class="accent">yourself</span>.</h2>
+  <p class="sec-intro">jackin' gives you exactly one move: a clear boundary around an AI agent. You decide what's inside — toolchains, plugins, conventions — and what it can reach — paths, tokens, exposed ports. Two ways to get there.</p>
+
+  <div class="approach-grid">
+    <div class="approach-card">
+      <div class="route">Route 01 · Reuse</div>
+      <h3>Pick up an opinionated one</h3>
+      <p>Some orgs publish agent classes for their stack. The jackin team ships <em>the-architect</em> — with everything the jackin ecosystem requires to build jackin itself. Zero config: load and start working.</p>
+      <div class="toolset">
+        <span class="toolset-chip">Rust stable</span>
+        <span class="toolset-chip">cargo-nextest</span>
+        <span class="toolset-chip">cargo-watch</span>
+        <span class="toolset-chip chip-plugin">code-review</span>
+        <span class="toolset-chip chip-plugin">feature-dev</span>
+        <span class="toolset-chip chip-plugin">superpowers</span>
+        <span class="toolset-chip chip-plugin">jackin-dev</span>
+      </div>
+      <p class="approach-note">Your framework's team can ship one just like it for yours.</p>
+      <div class="approach-cmd"><span class="lbl">cli</span>jackin load the-architect</div>
+      <div class="approach-repo"><span class="lbl">repo</span><span class="repo-path">github.com/jackin-project/jackin-the-architect</span></div>
+    </div>
+
+    <div class="approach-card">
+      <div class="route">Route 02 · Build</div>
+      <h3>Cast your own</h3>
+      <p>Two files, one git repo. A short <code>jackin.agent.toml</code> declares identity and Claude plugins. A Dockerfile installs your language toolchains and system packages. Versioned, reviewable, <em>self-contained</em>:</p>
+      <div class="builder builder-tabbed">
+        <div class="builder-head">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <div class="builder-tabs">
+            <button type="button" class="builder-tab active" data-tab="manifest">jackin.agent.toml</button>
+            <button type="button" class="builder-tab" data-tab="dockerfile">Dockerfile</button>
+          </div>
+          <span class="builder-tag tag-built">Self-contained ✓</span>
+        </div>
+        <pre class="builder-body builder-panel" data-panel="manifest"><span class="b-k">dockerfile</span> = <span class="b-s">"Dockerfile"</span>
+
+<span class="b-k">[identity]</span>
+<span class="b-k">name</span> = <span class="b-s">"Backend Engineer"</span>
+
+<span class="b-k">[claude]</span>
+<span class="b-k">plugins</span> = [
+  <span class="b-s">"superpowers@superpowers-marketplace"</span>,
+]
+
+<span class="b-k">[[claude.marketplaces]]</span>
+<span class="b-k">source</span> = <span class="b-s">"obra/superpowers-marketplace"</span></pre>
+        <pre class="builder-body builder-panel hidden" data-panel="dockerfile"><span class="b-k">FROM</span> projectjackin/construct:trixie
+
+<span class="b-c"># language toolchains via mise</span>
+<span class="b-k">RUN</span> mise install go@1.23 \
+    && mise use --global go@1.23
+
+<span class="b-c"># system packages</span>
+<span class="b-k">USER</span> root
+<span class="b-k">RUN</span> apt-get update && apt-get install -y \
+    postgresql-client redis-tools
+<span class="b-k">USER</span> claude</pre>
+      </div>
+      <div class="approach-cmd"><span class="lbl">cli</span>jackin load your-org/backend</div>
+      <div class="approach-repo"><span class="lbl">repo</span><span class="repo-path">github.com/your-org/jackin-backend</span></div>
+    </div>
+  </div>
+
+  <div class="approach-transition">Either way — <span class="accent">you</span> draw the boundary.</div>
+</section>
+
+<!-- ========== SECTION 5: Cast ========== -->
+<section class="content">
+  <div class="sec-label">05 · Cast</div>
+  <h2 class="sec-title">A role for every <span class="accent">job</span>.</h2>
+  <p class="sec-intro">Smith, Jones, Brown — archetypes to adopt. Every other role, yours to cast.</p>
+  <div class="roster">
+    <div class="agent-card">
+      <div class="avatar">AS</div>
+      <div class="role-label">General-purpose</div>
+      <div class="character">Agent Smith</div>
+      <p>The default starter. Clone, compile, commit.</p>
+    </div>
+    <div class="agent-card">
+      <div class="avatar">AJ</div>
+      <div class="role-label">Backend engineer</div>
+      <div class="character">Agent Jones</div>
+      <p>Server-side in your company's stack.</p>
+    </div>
+    <div class="agent-card">
+      <div class="avatar">AB</div>
+      <div class="role-label">Frontend engineer</div>
+      <div class="character">Agent Brown</div>
+      <p>UI with your team's conventions.</p>
+    </div>
+  </div>
+  <div class="cast-invite">
+    <div class="invite-avatar">+</div>
+    <div class="invite-body">
+      <h3>Cast your own role.</h3>
+      <p>Platform engineer, SRE, security reviewer, ML researcher — whatever your team needs. Write the Dockerfile, declare the manifest, push the repo.</p>
+    </div>
+    <a class="invite-cta" href="https://jackin.tailrocks.com/developing/creating-agents" target="_blank" rel="noopener">Read the guide →</a>
+  </div>
+</section>
+
+<!-- ========== SECTION 5: Two dimensions (composition machine) ========== -->
 <section id="concepts" class="content">
-  <div class="sec-label">04 · Mental Model</div>
+  <div class="sec-label">06 · Mental Model</div>
   <h2 class="sec-title">Think in <span class="accent">two dimensions</span>.</h2>
   <p class="sec-intro">jackin' organizes agents by <em>organization</em> — the same way GitHub does. Each org has its own agent classes (tool profiles) and workspaces (workdir + mounts with explicit permissions). Pick an org, pick an agent, pick a workspace — the preview shows the container that would result.</p>
 
@@ -648,7 +976,7 @@
 
 <!-- ========== SECTION 5: How it works ========== -->
 <section id="commands" class="content">
-  <div class="sec-label">05 · How it Works</div>
+  <div class="sec-label">07 · How it Works</div>
   <h2 class="sec-title">Four commands. <span class="accent">One loop.</span></h2>
   <p class="sec-intro">jackin' is designed around a small, memorable vocabulary. Most of daily use is just these four.</p>
   <div class="film">
@@ -694,7 +1022,7 @@
 
 <!-- ========== SECTION 6: Parallel work (clones) ========== -->
 <section class="content">
-  <div class="sec-label">06 · Parallel work</div>
+  <div class="sec-label">08 · Parallel work</div>
   <h2 class="sec-title">Clone the agent. <span class="accent">Split the work.</span></h2>
   <p class="sec-intro">One agent class. Multiple instances, running side by side. Same toolchain, same conventions — separate containers, separate state, separate networks. Like Smith in the courtyard.</p>
 
@@ -753,7 +1081,7 @@
 
 <!-- ========== SECTION 7: Security ========== -->
 <section id="security" class="content sec-security">
-  <div class="sec-label">07 · Security Model (honest version)</div>
+  <div class="sec-label">09 · Security Model (honest version)</div>
   <h2 class="sec-title">Strong <span class="accent">where it counts</span>. Honest about the rest.</h2>
   <p class="sec-intro">jackin' is container isolation, not hypervisor isolation. We document exactly what that means. No "enterprise-grade" hand-waving.</p>
   <div class="sec-grid-2">
@@ -783,43 +1111,11 @@
   </div>
 </section>
 
-<!-- ========== SECTION 8: Ecosystem + Install CTA ========== -->
+<!-- ========== SECTION 9: Install ========== -->
 <section class="content">
-  <div class="sec-label">08 · Ecosystem</div>
-  <h2 class="sec-title">Every org builds a <span class="accent">cast</span>.</h2>
-  <p class="sec-intro">jackin's built-ins get you started. Named archetypes — Jones for a company stack, Brown for a role — show how teams extend the pattern. Each agent class is a git repo you can version, review, and share.</p>
-  <div class="roster">
-    <div class="agent-card">
-      <div class="avatar">AS</div>
-      <h4>agent-smith</h4>
-      <div class="class">github.com/jackin-project/jackin-agent-smith</div>
-      <p>Default general-purpose agent. Starts here and most first-time operators never need another. A jackin' built-in — loadable by short name.</p>
-    </div>
-    <div class="agent-card">
-      <div class="avatar">TA</div>
-      <h4>the-architect</h4>
-      <div class="class">github.com/jackin-project/jackin-the-architect</div>
-      <p>Full Rust toolchain, ripgrep, just — the agent used to develop jackin' itself. Also a built-in, short-name loadable.</p>
-    </div>
-    <div class="agent-card">
-      <div class="avatar">AJ</div>
-      <h4>agent-jones</h4>
-      <div class="class">scentbird/jackin-agent-jones</div>
-      <p>The company specialist archetype. Preconfigured for your org's stack — e.g. Micronaut, Postgres, internal conventions, team CLAUDE.md. Ready to work on your codebase from the first second.</p>
-    </div>
-    <div class="agent-card">
-      <div class="avatar">AB</div>
-      <h4>agent-brown</h4>
-      <div class="class">your-org/jackin-agent-brown</div>
-      <p>The role-specific archetype. Frontend engineer — Node, Playwright, design-system utilities, UI-oriented plugins. Narrow by design, sharper by consequence.</p>
-    </div>
-    <div class="agent-card">
-      <div class="avatar">+</div>
-      <h4>your-own</h4>
-      <div class="class">your-org/jackin-your-role</div>
-      <p>Cast your own. Write a Dockerfile that extends the Construct, add a manifest, push the repo. Operators load it with <code>jackin load owner/agent</code>.</p>
-    </div>
-  </div>
+  <div class="sec-label">10 · Install</div>
+  <h2 class="sec-title">Your host stays <span class="accent">untouched</span>.</h2>
+  <p class="sec-intro">Load an agent. Give it full autonomy inside. Pull it out when you're done. Three commands to the Matrix.</p>
   <div class="install-block">
     <div class="line"><span class="c"># install jackin'</span></div>
     <div class="line"><span class="k">brew</span> tap jackin-project/tap</div>
@@ -830,8 +1126,6 @@
     <div class="line"><span class="k">jackin</span> load agent-smith</div>
   </div>
   <div class="final-cta">
-    <h2>Your host stays <span class="accent">untouched</span>.</h2>
-    <p>Load an agent. Give it full autonomy. Pull it out when you're done. Your SSH keys thank you.</p>
     <div class="buttons">
       <a class="btn-primary" href="#">Read the Docs →</a>
       <a class="btn-ghost" href="#">★ Star on GitHub</a>
@@ -939,7 +1233,7 @@
         { t: 'The ' },
         { t: 'shared base Docker image', b: true },
         { t: ' every agent extends. Debian plus the jackin\u2019 runtime \u2014 the empty white space where programs get loaded before a mission.' },
-      ], cmd: 'jackin-project/construct:trixie', cmdLabel: 'image' },
+      ], cmd: 'projectjackin/construct:trixie', cmdLabel: 'image' },
     { id: '03', term: 'Agent class', pos: 'noun',
       def: [
         { t: 'A reusable tool profile built on top of the Construct.', b: true },
@@ -1072,6 +1366,21 @@
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('resize', onScroll, { passive: true });
   updateFromScroll();
+})();
+
+// Section 4 — tabbed builder (manifest / Dockerfile)
+(function () {
+  document.querySelectorAll('.builder-tabbed').forEach(wrapper => {
+    const tabs = wrapper.querySelectorAll('.builder-tab');
+    const panels = wrapper.querySelectorAll('.builder-panel');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+        tabs.forEach(t => t.classList.toggle('active', t === tab));
+        panels.forEach(p => p.classList.toggle('hidden', p.dataset.panel !== target));
+      });
+    });
+  });
 })();
 
 // Hero rain — faithful port of jackin's own digital_rain from src/tui.rs
