@@ -918,7 +918,7 @@
 <section id="concepts" class="content">
   <div class="sec-label">06 · Mental Model</div>
   <h2 class="sec-title">Think in <span class="accent">two dimensions</span>.</h2>
-  <p class="sec-intro">jackin' organizes agents by <em>organization</em> — the same way GitHub does. Each org has its own agent classes (tool profiles) and workspaces (workdir + mounts with explicit permissions). Pick an org, pick an agent, pick a workspace — the preview shows the container that would result.</p>
+  <p class="sec-intro">Same agent in different workspaces. Same workspace with different agents. Pick both — see what runs.</p>
 
   <div class="machine-wrapper">
     <div class="org-tabs" id="org-tabs">
@@ -929,27 +929,22 @@
     <div class="machine">
       <div class="machine-panel">
         <div class="machine-label">Agent Class</div>
-        <div class="machine-sublabel">the tool profile · scoped to org</div>
+        <div class="machine-sublabel">the tool profile</div>
         <div class="machine-options" id="opts-class"></div>
       </div>
       <div class="machine-op">×</div>
       <div class="machine-panel">
         <div class="machine-label">Workspace</div>
-        <div class="machine-sublabel">workdir + mounts with permissions</div>
+        <div class="machine-sublabel">workdir + mounts</div>
         <div class="machine-options" id="opts-ws"></div>
       </div>
       <div class="machine-op">=</div>
       <div class="machine-panel preview">
         <div class="machine-label">Running Agent</div>
-        <div class="machine-sublabel">the container that results</div>
+        <div class="machine-sublabel">the resulting container</div>
         <div id="preview"></div>
       </div>
     </div>
-  </div>
-
-  <div class="axis-note">
-    <b>Agent classes are GitHub repos</b> (<code>owner/agent</code>). jackin's own built-ins (<code>agent-smith</code>, <code>the-architect</code>) can be loaded by short name; every third-party agent uses the full <code>owner/agent</code> form. Switch orgs to see how a single operator spans multiple projects without mixing tooling.<br>
-    <b>Workspaces bundle a workdir and its mounts</b> — each mount declares its source, destination, and whether it's read-write or read-only. The access boundary is explicit, not implied. (Switch to <code>@chainargos</code> and try <code>frontend-engineer × docs-only</code> to see access rejection in action.)
   </div>
 
   <div class="focus-callout">
@@ -960,7 +955,7 @@
         <span>Every plugin.</span>
         <span>Every convention.</span>
       </div>
-      <p class="focus-note">The model inspects too many tools, too many conventions, too much irrelevant context before deciding what to do. More surface, worse decisions.</p>
+      <p class="focus-note">Too much context — worse decisions.</p>
     </div>
     <div class="focus-card focus-role">
       <div class="focus-label">Role-Specific Agent</div>
@@ -969,7 +964,7 @@
         <span>Only matching plugins.</span>
         <span>Only applicable conventions.</span>
       </div>
-      <p class="focus-note">Fewer irrelevant cues means the agent discovers tools and context that actually match the task. Focused context — better results, faster.</p>
+      <p class="focus-note">Focused context — better results, faster.</p>
     </div>
   </div>
 </section>
