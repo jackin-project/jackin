@@ -141,6 +141,47 @@
 
   /* ========== SECTIONS (from landing.html, palette-matched) ========== */
   section.content { padding: 112px 0; position: relative; }
+
+  /* Footer — big wordmark */
+  .jackin-footer {
+    margin-top: 60px;
+    padding: 60px 40px 0;
+    text-align: center;
+    overflow: hidden;
+  }
+  .footer-meta {
+    display: flex; justify-content: center; align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 64px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-ghost);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .footer-meta a {
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .footer-meta a:hover { color: var(--text); }
+  .footer-meta .sep { color: var(--ui-strong); }
+  .footer-wordmark {
+    font-family: 'Inter', sans-serif;
+    font-weight: 900;
+    font-size: clamp(120px, 24vw, 300px);
+    line-height: 0.9;
+    letter-spacing: -0.06em;
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+    user-select: none;
+  }
+  .footer-wordmark .tick {
+    color: var(--accent);
+    text-shadow: 0 0 0.1em rgba(0, 255, 65, 0.35);
+  }
   .sec-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em;
     text-transform: uppercase; color: var(--text-ghost); margin-bottom: 14px;
     display: inline-flex; align-items: center; gap: 10px; }
@@ -314,28 +355,74 @@
   .axis-note b { color: var(--text); }
   .axis-note code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); background: rgba(255,255,255,0.04); padding: 1px 6px; border-radius: 3px; }
 
-  /* Section 5: How it works filmstrip */
-  .film { display: flex; flex-direction: column; gap: 0; position: relative; margin-top: 12px; }
-  .film::before {
-    content: ""; position: absolute; left: 30px; top: 30px; bottom: 30px; width: 1px;
-    background: linear-gradient(180deg, transparent, var(--ui-strong) 10%, var(--ui-strong) 90%, transparent);
+  /* Section 7: How it Works — vertical loop frames */
+  .loop { display: flex; flex-direction: column; margin-top: 12px; }
+  .loop-frame {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr;
+    gap: 56px;
+    padding: 44px 0;
+    border-top: 1px solid var(--ui);
+    align-items: center;
   }
-  .frame { display: flex; gap: 28px; padding: 14px 0 30px; position: relative; align-items: start; }
-  .frame-index {
-    flex: 0 0 60px; width: 60px; height: 60px; border-radius: 50%;
-    background: var(--panel); border: 1px solid var(--ui-strong);
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent);
-    z-index: 2; position: relative;
+  .loop-frame:first-child { border-top: none; padding-top: 0; }
+  .loop-frame:last-child { padding-bottom: 0; }
+  .loop-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--text-ghost);
+    letter-spacing: 0.24em;
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 10px;
   }
-  .frame-content { flex: 1; }
-  .frame-cmd { font-family: 'JetBrains Mono', monospace; font-size: 16px; color: var(--text); margin: 4px 0 8px; }
-  .frame-cmd .cmd { color: var(--accent); }
-  .frame-desc { color: var(--text-dim); font-size: 14px; line-height: 1.6; margin-bottom: 14px; max-width: 640px; }
-  .frame-term { background: rgba(5,7,6,0.8); border: 1px solid var(--ui); border-radius: 6px;
-    padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: 12px;
-    color: var(--text-dim); line-height: 1.65; white-space: pre-wrap; max-width: 640px; }
-  .frame-term .ok { color: var(--accent); } .frame-term .dim { color: var(--text-ghost); }
+  .loop-num::after { content: ""; flex: 1; height: 1px; background: var(--ui); max-width: 80px; }
+  .loop-name {
+    font-family: 'Fraunces', 'Times New Roman', serif;
+    font-weight: 500;
+    font-size: clamp(36px, 4vw, 52px);
+    line-height: 1.05; letter-spacing: -0.02em;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .loop-mythos {
+    font-family: 'Fraunces', serif; font-style: italic;
+    font-size: 16px; color: var(--text-ghost);
+    margin-bottom: 22px;
+  }
+  .loop-desc {
+    color: var(--text-dim); font-size: 15px; line-height: 1.65;
+    margin: 0; max-width: 440px;
+  }
+  .loop-term {
+    background: rgba(0, 5, 3, 0.85);
+    border: 1px solid var(--ui-strong);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .loop-term-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--ui);
+    background: rgba(255, 255, 255, 0.018);
+  }
+  .loop-term-bar .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .loop-term-bar .dot.r { background: #ff5f57; }
+  .loop-term-bar .dot.y { background: #febc2e; }
+  .loop-term-bar .dot.g { background: #28c840; }
+  .loop-term-title { margin-left: auto; font-size: 11px; color: var(--text-ghost); letter-spacing: 0.04em; }
+  .loop-term-body {
+    padding: 18px 20px; margin: 0;
+    font-size: 12.5px; line-height: 1.75;
+    color: var(--text-dim); white-space: pre-wrap;
+  }
+  .loop-term-body .c { color: var(--text-ghost); font-style: italic; }
+  .loop-term-body .p { color: var(--accent); }
+  .loop-term-body .cmd { color: var(--text); }
+  .loop-term-body .arrow { color: var(--text-ghost); }
+  .loop-term-body .ok { color: var(--accent); }
+  .loop-term-body .done { color: var(--text); font-weight: 500; }
+  .loop-term-body .check { color: var(--accent); }
 
   /* Section 6: Security */
   .sec-security { background: linear-gradient(180deg, var(--bg) 0%, var(--panel) 100%); }
@@ -673,25 +760,13 @@
   .focus-card.focus-role .focus-lines { color: var(--text); }
   .focus-note { font-size: 13.5px; line-height: 1.6; color: var(--text-dim); margin: 0; }
 
-  /* Section 6: Parallel work (clones) */
-  .clones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 32px; }
-  .clone-card { border: 1px solid var(--ui-strong); border-radius: 10px; padding: 22px 24px; background: var(--panel); }
-  .clone-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--text); font-weight: 500; }
-  .clone-head .live { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(0,255,65,0.6); animation: pulse 2.4s ease-in-out infinite; }
-  .clone-branch { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent); margin-bottom: 20px; letter-spacing: 0.01em; }
-  .clone-attrs { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-dim); line-height: 1.5; }
-  .clone-attrs li::before { content: "\2014  "; color: var(--text-ghost); }
-
-  .scenarios { margin-top: 48px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; padding-top: 28px; border-top: 1px dashed var(--ui); }
-  .scenario { font-size: 14px; color: var(--text-dim); line-height: 1.6; display: flex; gap: 14px; }
-  .scenario .tag { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.2em; color: var(--accent); flex: 0 0 22px; padding-top: 3px; font-weight: 600; }
-  .scenario b { color: var(--text); font-weight: 600; display: block; margin-bottom: 4px; font-size: 14.5px; }
-
   @media (max-width: 880px) {
     .pills-grid { grid-template-columns: 1fr; }
     .approach-grid { grid-template-columns: 1fr; }
     .focus-callout { grid-template-columns: 1fr; }
-    .clones { grid-template-columns: 1fr; }
+    .loop-frame { grid-template-columns: 1fr; gap: 28px; }
+    .loop-desc { max-width: none; }
+    .footer-wordmark { font-size: clamp(80px, 22vw, 180px); }
     .cast-invite { grid-template-columns: 1fr; text-align: center; justify-items: center; gap: 14px; padding: 22px 20px; }
     .hero-grid { grid-template-columns: 1fr; gap: 56px; }
     .hero-right { padding-top: 0; }
@@ -740,7 +815,6 @@
             <span class="tab" data-cmd="hardline">$ hardline</span>
             <span class="tab" data-cmd="eject">$ eject</span>
           </div>
-          <span>operator@construct</span>
         </div>
         <div class="code-body" id="code-body"></div>
       </div>
@@ -924,7 +998,7 @@
     <div class="org-tabs" id="org-tabs">
       <div class="org-tab active" data-org="jackin-project"><span class="at">@</span>jackin-project</div>
       <div class="org-tab" data-org="chainargos"><span class="at">@</span>chainargos</div>
-      <div class="org-tab" data-org="acme"><span class="at">@</span>acme</div>
+      <div class="org-tab" data-org="your-org"><span class="at">@</span>your-org</div>
     </div>
     <div class="machine">
       <div class="machine-panel">
@@ -969,166 +1043,158 @@
   </div>
 </section>
 
-<!-- ========== SECTION 5: How it works ========== -->
+<!-- ========== SECTION 7: How it Works — daily loop ========== -->
 <section id="commands" class="content">
   <div class="sec-label">07 · How it Works</div>
-  <h2 class="sec-title">Four commands. <span class="accent">One loop.</span></h2>
-  <p class="sec-intro">jackin' is designed around a small, memorable vocabulary. Most of daily use is just these four.</p>
-  <div class="film">
-    <div class="frame">
-      <div class="frame-index">01</div>
-      <div class="frame-content">
-        <div class="frame-cmd"><span class="cmd">jackin load</span> agent-smith</div>
-        <div class="frame-desc">Clone the agent repo, build the derived image, create a per-agent network, launch DinD, start Claude Code inside. You're instantly in.</div>
-        <div class="frame-term"><span class="dim">→ Pulling construct:trixie... </span><span class="ok">OK</span>
-<span class="dim">→ Building derived image... </span><span class="ok">OK</span>
-<span class="dim">→ Container started. Agent loaded.</span></div>
+  <h2 class="sec-title">The <span class="accent">daily loop</span>.</h2>
+  <p class="sec-intro">Five moves. Any number of agents. A full day's flow with jackin'.</p>
+
+  <div class="loop">
+
+    <div class="loop-frame">
+      <div class="loop-info">
+        <div class="loop-num">№ 01</div>
+        <div class="loop-name">load</div>
+        <div class="loop-mythos">Jacking in.</div>
+        <p class="loop-desc">Enter your project and jack in. Clones the agent repo, builds the derived image, launches the container, drops you into Claude Code.</p>
+      </div>
+      <div class="loop-term">
+        <div class="loop-term-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        </div>
+        <pre class="loop-term-body"><span class="c"># enter your project</span>
+<span class="p">$</span> <span class="cmd">cd ~/Projects/my-app</span>
+
+<span class="c"># jack in</span>
+<span class="p">$</span> <span class="cmd">jackin load agent-smith</span>
+<span class="arrow">  → Pulling construct:trixie     </span><span class="ok">OK</span>
+<span class="arrow">  → Cloning agent-smith           </span><span class="ok">OK</span>
+<span class="arrow">  → Building derived image        </span><span class="ok">OK</span>
+<span class="arrow">  → Launching DinD sidecar        </span><span class="ok">OK</span>
+
+<span class="check">✓</span> <span class="done">Agent loaded. You're inside.</span></pre>
       </div>
     </div>
-    <div class="frame">
-      <div class="frame-index">02</div>
-      <div class="frame-content">
-        <div class="frame-cmd"><span class="cmd">jackin hardline</span> agent-smith</div>
-        <div class="frame-desc">Closed your terminal but the agent is still running? Reattach to the existing container session with one command.</div>
-        <div class="frame-term"><span class="dim">→ Reattaching to jackin-agent-smith... </span><span class="ok">OK</span>
-<span class="dim">→ Session restored. History intact.</span></div>
+
+    <div class="loop-frame">
+      <div class="loop-info">
+        <div class="loop-num">№ 02</div>
+        <div class="loop-name">clone</div>
+        <div class="loop-mythos">More of me.</div>
+        <p class="loop-desc">Same class, another instance. Spin up a second agent-smith on a different branch or service — separate container, separate state, its own network.</p>
+      </div>
+      <div class="loop-term">
+        <div class="loop-term-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        </div>
+        <pre class="loop-term-body"><span class="c"># first clone · auth redesign</span>
+<span class="p">$</span> <span class="cmd">cd ~/Projects/auth-redesign</span>
+<span class="p">$</span> <span class="cmd">jackin load agent-smith</span>
+<span class="check">✓</span> <span class="done">agent-smith #1 loaded.</span>
+
+<span class="c"># second clone · payments v2</span>
+<span class="p">$</span> <span class="cmd">cd ~/Projects/payment-v2</span>
+<span class="p">$</span> <span class="cmd">jackin load agent-smith</span>
+<span class="check">✓</span> <span class="done">agent-smith #2 loaded.</span>
+
+<span class="arrow">→ 2 agents running. Separate containers, DinD, networks.</span></pre>
       </div>
     </div>
-    <div class="frame">
-      <div class="frame-index">03</div>
-      <div class="frame-content">
-        <div class="frame-cmd"><span class="cmd">jackin load</span> the-architect monorepo</div>
-        <div class="frame-desc">Load a second agent — different tool profile, same or different workspace. They run in parallel, isolated from each other.</div>
-        <div class="frame-term"><span class="dim">→ Two agents active: agent-smith, the-architect</span>
-<span class="dim">→ Separate networks, separate state.</span></div>
+
+    <div class="loop-frame">
+      <div class="loop-info">
+        <div class="loop-num">№ 03</div>
+        <div class="loop-name">hardline</div>
+        <div class="loop-mythos">The hardline.</div>
+        <p class="loop-desc">Reattach your terminal to a running agent. Closed the window, switched machines, back from a break — pick up where you left off.</p>
+      </div>
+      <div class="loop-term">
+        <div class="loop-term-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        </div>
+        <pre class="loop-term-body"><span class="p">$</span> <span class="cmd">jackin hardline agent-smith</span>
+<span class="arrow">  → Locating container            </span><span class="ok">OK</span>
+<span class="arrow">  → Attaching to session          </span><span class="ok">OK</span>
+
+<span class="check">✓</span> <span class="done">Session restored. History intact.</span></pre>
       </div>
     </div>
-    <div class="frame">
-      <div class="frame-index">04</div>
-      <div class="frame-content">
-        <div class="frame-cmd"><span class="cmd">jackin eject</span> agent-smith</div>
-        <div class="frame-desc">Stop one agent cleanly — state persists for next time. Or <code>jackin exile</code> to pull everyone out at once.</div>
-        <div class="frame-term"><span class="dim">→ Stopping agent-smith... </span><span class="ok">OK</span>
-<span class="dim">→ State saved. Network removed.</span></div>
+
+    <div class="loop-frame">
+      <div class="loop-info">
+        <div class="loop-num">№ 04</div>
+        <div class="loop-name">eject</div>
+        <div class="loop-mythos">Pulling out.</div>
+        <p class="loop-desc">Stop one agent cleanly. State persists on disk for next time — the operator decides when a construct is torn down.</p>
+      </div>
+      <div class="loop-term">
+        <div class="loop-term-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        </div>
+        <pre class="loop-term-body"><span class="p">$</span> <span class="cmd">jackin eject agent-smith</span>
+<span class="arrow">  → Saving agent state            </span><span class="ok">OK</span>
+<span class="arrow">  → Stopping container            </span><span class="ok">OK</span>
+<span class="arrow">  → Removing network              </span><span class="ok">OK</span>
+
+<span class="check">✓</span> <span class="done">Ejected. State preserved.</span></pre>
       </div>
     </div>
+
+    <div class="loop-frame">
+      <div class="loop-info">
+        <div class="loop-num">№ 05</div>
+        <div class="loop-name">exile</div>
+        <div class="loop-mythos">Casting out.</div>
+        <p class="loop-desc">Pull everyone out of the Matrix at once. Every agent stopped, every network removed. End of day, or a panic button.</p>
+      </div>
+      <div class="loop-term">
+        <div class="loop-term-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        </div>
+        <pre class="loop-term-body"><span class="p">$</span> <span class="cmd">jackin exile</span>
+<span class="arrow">  → Exiling 3 agents</span>
+<span class="c">     agent-smith                </span><span class="ok">OK</span>
+<span class="c">     the-architect              </span><span class="ok">OK</span>
+<span class="c">     docs-writer                </span><span class="ok">OK</span>
+<span class="arrow">  → All networks removed</span>
+
+<span class="check">✓</span> <span class="done">Matrix clear. Host untouched.</span></pre>
+      </div>
+    </div>
+
   </div>
 </section>
 
-<!-- ========== SECTION 6: Parallel work (clones) ========== -->
+<!-- ========== SECTION 8: Install ========== -->
 <section class="content">
-  <div class="sec-label">08 · Parallel work</div>
-  <h2 class="sec-title">Clone the agent. <span class="accent">Split the work.</span></h2>
-  <p class="sec-intro">One agent class. Multiple instances, running side by side. Same toolchain, same conventions — separate containers, separate state, separate networks. Like Smith in the courtyard.</p>
-
-  <div class="clones">
-    <div class="clone-card">
-      <div class="clone-head"><span class="live"></span>agent-smith #1</div>
-      <div class="clone-branch">feature/auth-redesign</div>
-      <ul class="clone-attrs">
-        <li>own container</li>
-        <li>own DinD sidecar</li>
-        <li>own Claude history</li>
-        <li>own network</li>
-      </ul>
-    </div>
-    <div class="clone-card">
-      <div class="clone-head"><span class="live"></span>agent-smith #2</div>
-      <div class="clone-branch">feature/payment-v2</div>
-      <ul class="clone-attrs">
-        <li>own container</li>
-        <li>own DinD sidecar</li>
-        <li>own Claude history</li>
-        <li>own network</li>
-      </ul>
-    </div>
-    <div class="clone-card">
-      <div class="clone-head"><span class="live"></span>agent-smith #3</div>
-      <div class="clone-branch">fix/api-timeout</div>
-      <ul class="clone-attrs">
-        <li>own container</li>
-        <li>own DinD sidecar</li>
-        <li>own Claude history</li>
-        <li>own network</li>
-      </ul>
-    </div>
-  </div>
-
-  <div class="scenarios">
-    <div class="scenario">
-      <span class="tag">01</span>
-      <div><b>Parallel features</b>Same role, different branches — three feature PRs moving simultaneously, none waiting on the others.</div>
-    </div>
-    <div class="scenario">
-      <span class="tag">02</span>
-      <div><b>Service fan-out</b>Same role, different services — API, payments, and docs each get their own clone.</div>
-    </div>
-    <div class="scenario">
-      <span class="tag">03</span>
-      <div><b>Divide and conquer</b>Split one large task — each clone owns a slice and finishes its piece in parallel.</div>
-    </div>
-    <div class="scenario">
-      <span class="tag">04</span>
-      <div><b>Experiment safely</b>Risky approach in one clone, safe path in another. Compare outcomes without losing either.</div>
-    </div>
-  </div>
-</section>
-
-<!-- ========== SECTION 7: Security ========== -->
-<section id="security" class="content sec-security">
-  <div class="sec-label">09 · Security Model (honest version)</div>
-  <h2 class="sec-title">Strong <span class="accent">where it counts</span>. Honest about the rest.</h2>
-  <p class="sec-intro">jackin' is container isolation, not hypervisor isolation. We document exactly what that means. No "enterprise-grade" hand-waving.</p>
-  <div class="sec-grid-2">
-    <div class="sec-col has">
-      <h4><span class="mark"></span>Isolated</h4>
-      <ul>
-        <li><b>Filesystem</b><span>Agent sees only mounted dirs. Host home, SSH keys, credentials are out of reach.</span></li>
-        <li><b>Network</b><span>Per-agent Docker network. No access to host services unless explicit.</span></li>
-        <li><b>Docker daemon</b><span>Each agent has its own DinD sidecar. Can't touch your host's daemon.</span></li>
-        <li><b>Shell environment</b><span>Agent doesn't inherit your env vars. Tokens stay on the host.</span></li>
-        <li><b>Installed packages</b><span>All installs happen inside the container. Host stays clean.</span></li>
-      </ul>
-    </div>
-    <div class="sec-col lacks">
-      <h4><span class="mark"></span>Shared (be aware)</h4>
-      <ul>
-        <li><b>Kernel</b><span>Container, not microVM. A kernel exploit crosses the boundary.</span></li>
-        <li><b>CPU / memory</b><span>Not hard-partitioned. Resource pressure affects host.</span></li>
-        <li><b>Mounted paths</b><span>Whatever you mount, the agent can read (and write, unless <code>:ro</code>).</span></li>
-        <li><b>Trust in agent source</b><span>Agent repo authors can define what runs in the image.</span></li>
-      </ul>
-    </div>
-  </div>
-  <div class="compare-callout">
-    <p>Want <b>microVM-level isolation?</b> Docker Sandboxes is stronger there. Want <b>open, local-first orchestration</b> with role-specific agents and workspaces as code? That's where jackin' is built to live.</p>
-    <a href="#">Full comparison →</a>
-  </div>
-</section>
-
-<!-- ========== SECTION 9: Install ========== -->
-<section class="content">
-  <div class="sec-label">10 · Install</div>
-  <h2 class="sec-title">Your host stays <span class="accent">untouched</span>.</h2>
-  <p class="sec-intro">Load an agent. Give it full autonomy inside. Pull it out when you're done. Three commands to the Matrix.</p>
+  <div class="sec-label">08 · Jack in</div>
+  <h2 class="sec-title">Install.</h2>
+  <p class="sec-intro">Homebrew on Mac and Linux. Three lines, then load.</p>
   <div class="install-block">
-    <div class="line"><span class="c"># install jackin'</span></div>
     <div class="line"><span class="k">brew</span> tap jackin-project/tap</div>
     <div class="line"><span class="k">brew</span> install jackin</div>
-    <div class="line"><span class="c"># enter your project</span></div>
-    <div class="line"><span class="k">cd</span> ~/Projects/my-app</div>
-    <div class="line"><span class="c"># jack in</span></div>
     <div class="line"><span class="k">jackin</span> load agent-smith</div>
   </div>
   <div class="final-cta">
     <div class="buttons">
-      <a class="btn-primary" href="#">Read the Docs →</a>
-      <a class="btn-ghost" href="#">★ Star on GitHub</a>
+      <a class="btn-primary" href="https://jackin.tailrocks.com/" target="_blank" rel="noopener">Read the Docs →</a>
+      <a class="btn-ghost" href="https://github.com/jackin-project/jackin" target="_blank" rel="noopener">★ Star on GitHub</a>
     </div>
   </div>
 </section>
 
 </div>
+
+<footer class="jackin-footer">
+  <div class="footer-meta">
+    <a href="https://github.com/jackin-project/jackin" target="_blank" rel="noopener">GitHub</a>
+    <span class="sep">·</span>
+    <a href="https://jackin.tailrocks.com/" target="_blank" rel="noopener">Docs</a>
+    <span class="sep">·</span>
+    <span>Apache 2.0</span>
+  </div>
+  <div class="footer-wordmark">jackin<span class="tick">'</span></div>
+</footer>
 
 
 <script>
@@ -1560,27 +1626,27 @@
         },
       }
     },
-    'acme': {
+    'your-org': {
       classes: {
-        'acme/frontend-engineer': { repo: 'acme/jackin-frontend-engineer', tools: 'Node 22, Playwright, pnpm',  plugins: 'UI · a11y' },
-        'acme/backend-engineer':  { repo: 'acme/jackin-backend-engineer',  tools: 'Go 1.23, Postgres, grpcurl', plugins: 'API · SQL' },
+        'your-org/frontend-engineer': { repo: 'your-org/jackin-frontend-engineer', tools: 'Node 22, Playwright, pnpm',  plugins: 'UI · a11y' },
+        'your-org/backend-engineer':  { repo: 'your-org/jackin-backend-engineer',  tools: 'Go 1.23, Postgres, grpcurl', plugins: 'API · SQL' },
       },
       workspaces: {
         'product': {
-          workdir: '~/Projects/acme/product',
+          workdir: '~/Projects/your-org/product',
           mounts: [
-            { src: '~/Projects/acme/product',    dst: '~/Projects/acme/product', ro: false },
-            { src: '~/Projects/acme/shared-lib', dst: '/shared',                 ro: true },
+            { src: '~/Projects/your-org/product',    dst: '~/Projects/your-org/product', ro: false },
+            { src: '~/Projects/your-org/shared-lib', dst: '/shared',                 ro: true },
           ],
           allowed: null
         },
         'platform-api': {
-          workdir: '~/Projects/acme/platform',
+          workdir: '~/Projects/your-org/platform',
           mounts: [
-            { src: '~/Projects/acme/platform', dst: '~/Projects/acme/platform', ro: false },
-            { src: '~/Projects/acme/proto',    dst: '/proto',                   ro: true },
+            { src: '~/Projects/your-org/platform', dst: '~/Projects/your-org/platform', ro: false },
+            { src: '~/Projects/your-org/proto',    dst: '/proto',                   ro: true },
           ],
-          allowed: ['acme/backend-engineer']
+          allowed: ['your-org/backend-engineer']
         },
       }
     }
