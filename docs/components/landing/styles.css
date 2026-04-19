@@ -1,0 +1,88 @@
+/* docs/components/landing/styles.css */
+
+:root {
+  /* Landing page design tokens — mirrors the mockup */
+  --landing-bg: #0a0b0a;
+  --landing-bg-deep: #050605;
+  --landing-panel: #0f1110;
+  --landing-text: #f4f7f5;
+  --landing-text-dim: #9ca8a1;
+  --landing-text-ghost: #5e6a64;
+  --landing-accent: #00ff41;
+  --landing-danger: #ff5e7a;
+  --landing-ui: rgba(244, 247, 245, 0.1);
+  --landing-ui-strong: rgba(244, 247, 245, 0.22);
+}
+
+/* When landing is the whole page (layout: landing), override body */
+.landing-root {
+  background: var(--landing-bg);
+  color: var(--landing-text);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  position: relative;
+}
+
+.landing-root * { box-sizing: border-box; }
+
+.landing-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+/* Dotted grid backdrop behind the page */
+.landing-root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(244,247,245,0.035) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(ellipse at center top, black 35%, transparent 85%);
+}
+
+.landing-section {
+  padding: 112px 0;
+  position: relative;
+}
+
+/* Section label: "02 · Vocabulary" style */
+.landing-sec-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--landing-text-ghost);
+  margin-bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.landing-sec-label::before {
+  content: "";
+  width: 22px;
+  height: 1px;
+  background: var(--landing-accent);
+}
+
+.landing-sec-title {
+  font-size: clamp(28px, 3.6vw, 44px);
+  font-weight: 700;
+  letter-spacing: -0.028em;
+  line-height: 1.1;
+  margin: 0 0 18px;
+  max-width: 780px;
+  color: var(--landing-text);
+}
+.landing-sec-title .accent { color: var(--landing-accent); }
+
+.landing-sec-intro {
+  color: var(--landing-text-dim);
+  font-size: 17px;
+  line-height: 1.65;
+  max-width: 680px;
+  margin: 0 0 48px;
+}

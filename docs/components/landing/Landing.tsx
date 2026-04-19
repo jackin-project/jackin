@@ -1,8 +1,14 @@
+// docs/components/landing/Landing.tsx
 export function Landing() {
   return (
     <div className="landing-root">
-      <h1>jackin' landing — stub</h1>
-      <p>This confirms the component is mounted. Tasks 2+ will build the real page.</p>
+      <div className="landing-shell">
+        <section className="landing-section">
+          <div className="landing-sec-label">00 · Placeholder</div>
+          <h2 className="landing-sec-title">Design tokens <span className="accent">are live</span>.</h2>
+          <p className="landing-sec-intro">If this paragraph looks right (Inter, dim gray, on a near-black background), Task 2 is complete.</p>
+        </section>
+      </div>
     </div>
   );
 }
