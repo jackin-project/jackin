@@ -6,7 +6,7 @@
 <title>jackin' — landing v2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800;900&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0a0b0a;
@@ -149,18 +149,105 @@
   .sec-title .accent { color: var(--accent); }
   .sec-intro { color: var(--text-dim); font-size: 17px; line-height: 1.65; max-width: 680px; margin: 0 0 48px; }
 
-  /* Section 2: Matrix mapping */
-  .mapping-grid { display: grid; grid-template-columns: 1fr 48px 1fr; gap: 0; margin-top: 12px;
-    border: 1px solid var(--ui); border-radius: 10px; background: var(--panel); overflow: hidden; }
-  .map-head { padding: 20px 24px; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-ghost); border-bottom: 1px solid var(--ui); }
-  .map-head.mid { border-right: 1px solid var(--ui); border-left: 1px solid var(--ui); text-align: center; }
-  .map-head.left { border-right: 1px solid var(--ui); }
-  .map-row { display: contents; }
-  .map-cell { padding: 18px 24px; border-top: 1px solid var(--ui); font-size: 15px; font-family: 'JetBrains Mono', monospace; color: var(--text); }
-  .map-cell.left { color: var(--text-dim); border-right: 1px solid var(--ui); }
-  .map-cell.arrow { border-right: 1px solid var(--ui); border-left: 1px solid var(--ui); text-align: center; color: var(--accent); font-weight: 600; }
-  .map-cell.right { color: var(--text); }
-  .map-cell.right code { font-family: inherit; color: var(--accent); }
+  /* Section 2: Vocabulary (scroll-driven dictionary) */
+  section.content.voc-scroll-section {
+    position: relative;
+    padding: 0;
+    min-height: 500vh;
+  }
+  .voc-sticky {
+    position: sticky; top: 0;
+    min-height: 100vh;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 64px 0;
+  }
+  .voc {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 0;
+    border: 1px solid var(--ui);
+    border-radius: 10px;
+    background: var(--panel);
+    overflow: hidden;
+    margin-top: 36px;
+  }
+  .voc-list { border-right: 1px solid var(--ui); padding: 14px 0; }
+  .voc-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 26px; position: relative; cursor: pointer;
+    transition: background 0.3s, color 0.3s;
+  }
+  .voc-item:hover { background: rgba(255,255,255,0.02); }
+  .voc-item.active { background: rgba(0,255,65,0.06); }
+  .voc-item.active::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--accent);
+  }
+  .voc-item .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--text-ghost);
+    letter-spacing: 0.15em; flex: 0 0 28px;
+  }
+  .voc-item .word {
+    font-family: 'Inter', sans-serif;
+    font-size: 15px; font-weight: 500;
+    color: var(--text-dim); transition: color 0.3s;
+  }
+  .voc-item:hover .word { color: var(--text); }
+  .voc-item.active .word { color: var(--text); font-weight: 600; }
+
+  .voc-detail { padding: 48px 52px 44px; min-height: 420px; }
+  .voc-detail.fade { animation: detailFade 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+  @keyframes detailFade {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .detail-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--text-ghost);
+    letter-spacing: 0.2em; margin-bottom: 12px; display: block;
+  }
+  .detail-word {
+    font-family: 'Fraunces', 'Times New Roman', serif;
+    font-size: clamp(40px, 5vw, 68px);
+    font-weight: 500; letter-spacing: -0.02em; line-height: 1;
+    color: var(--text); display: block; margin-bottom: 10px;
+  }
+  .detail-pos {
+    font-family: 'Fraunces', serif; font-style: italic;
+    font-weight: 400; font-size: 16px;
+    color: var(--text-ghost); margin-bottom: 24px; display: inline-block;
+  }
+  .detail-def {
+    font-size: 17px; line-height: 1.7;
+    color: var(--text); margin: 0 0 22px;
+    max-width: 560px;
+  }
+  .detail-def .lead {
+    font-family: 'Fraunces', serif; font-style: italic;
+    color: var(--accent); margin-right: 8px; font-size: 18px;
+  }
+  .detail-def strong { color: var(--text); font-weight: 600; }
+  .detail-cmd {
+    font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    color: var(--accent);
+    background: rgba(0, 255, 65, 0.07);
+    border: 1px solid rgba(0, 255, 65, 0.3);
+    padding: 10px 14px; border-radius: 5px;
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-top: 2px;
+  }
+  .detail-cmd .lbl {
+    color: var(--text-ghost); text-transform: uppercase;
+    font-size: 10px; letter-spacing: 0.15em;
+  }
+
+  @media (max-width: 820px) {
+    section.content.voc-scroll-section { min-height: auto; }
+    .voc-sticky { position: static; min-height: auto; padding: 96px 0; }
+    .voc { grid-template-columns: 1fr; }
+    .voc-list { border-right: none; border-bottom: 1px solid var(--ui); }
+    .voc-detail { padding: 32px 28px; min-height: 320px; }
+  }
 
   /* Section 3: The Problem */
   .problem-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: start; }
@@ -357,49 +444,15 @@
 
 <div class="shell">
 
-<!-- ========== SECTION 2: Matrix mapping ========== -->
-<section id="why" class="content">
-  <div class="sec-label">02 · Vocabulary</div>
-  <h2 class="sec-title">The vocabulary <span class="accent">is</span> the product.</h2>
-  <p class="sec-intro">Every command in jackin' maps to a concept from The Matrix — not for fun, but because the Matrix mental model is the shortest path to understanding what the tool does.</p>
-  <div class="mapping-grid">
-    <div class="map-head left">Matrix</div>
-    <div class="map-head mid">↔</div>
-    <div class="map-head">jackin'</div>
-    <div class="map-row">
-      <div class="map-cell left">Operator</div>
-      <div class="map-cell arrow">→</div>
-      <div class="map-cell right">You — running the CLI from your host</div>
-    </div>
-    <div class="map-row">
-      <div class="map-cell left">The Construct</div>
-      <div class="map-cell arrow">→</div>
-      <div class="map-cell right">Shared base Docker image every agent extends</div>
-    </div>
-    <div class="map-row">
-      <div class="map-cell left">Jacking in</div>
-      <div class="map-cell arrow">→</div>
-      <div class="map-cell right"><code>jackin load agent-smith</code></div>
-    </div>
-    <div class="map-row">
-      <div class="map-cell left">The agent inside</div>
-      <div class="map-cell arrow">→</div>
-      <div class="map-cell right">Claude Code running with full permissions</div>
-    </div>
-    <div class="map-row">
-      <div class="map-cell left">Reconnecting a pod</div>
-      <div class="map-cell arrow">→</div>
-      <div class="map-cell right"><code>jackin hardline</code> — reattach to a running agent</div>
-    </div>
-    <div class="map-row">
-      <div class="map-cell left">Pulling out</div>
-      <div class="map-cell arrow">→</div>
-      <div class="map-cell right"><code>jackin eject</code> — stop an agent cleanly</div>
-    </div>
-    <div class="map-row">
-      <div class="map-cell left">Exile</div>
-      <div class="map-cell arrow">→</div>
-      <div class="map-cell right"><code>jackin exile</code> — pull everyone out at once</div>
+<!-- ========== SECTION 2: Vocabulary (scroll-driven dictionary) ========== -->
+<section id="why" class="content voc-scroll-section">
+  <div class="voc-sticky">
+    <div class="sec-label">02 · Vocabulary</div>
+    <h2 class="sec-title">The vocabulary <span class="accent">is</span> the product.</h2>
+    <p class="sec-intro">Every command in jackin' maps to a concept from The Matrix. Scroll to turn the page — or click a term in the rail to jump.</p>
+    <div class="voc">
+      <div class="voc-list" id="voc-list"></div>
+      <div class="voc-detail" id="voc-detail"></div>
     </div>
   </div>
 </section>
@@ -685,6 +738,154 @@
 
   if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) type(active);
   else body.appendChild(document.createTextNode('$ jackin load agent-smith\n  \u2192 ... OK\n\u2713 Agent loaded. You\u2019re inside.'));
+})();
+
+// Section 2 — scroll-driven dictionary (rail + detail panel, advances on scroll)
+(function () {
+  const entries = [
+    { id: '01', term: 'Operator', pos: 'noun',
+      def: [
+        { t: 'You.', b: true },
+        { t: ' Running the CLI from your host machine. The one who decides what gets loaded into the Matrix, and when agents are pulled back out.' },
+      ], cmd: null },
+    { id: '02', term: 'The Construct', pos: 'noun',
+      def: [
+        { t: 'The ' },
+        { t: 'shared base Docker image', b: true },
+        { t: ' every agent extends. Debian plus the jackin\u2019 runtime \u2014 the empty white space where programs get loaded before a mission.' },
+      ], cmd: 'jackin-project/construct:trixie', cmdLabel: 'image' },
+    { id: '03', term: 'Agent class', pos: 'noun',
+      def: [
+        { t: 'A reusable tool profile built on top of the Construct.', b: true },
+        { t: ' A git repo with a Dockerfile that extends the base image, plus a small manifest \u2014 adds the toolchains, Claude plugins, shell setup, and conventions layered on top. Answers \u201cwhat kind of agent is this?\u201d' },
+      ], cmd: 'chainargos/backend-engineer', cmdLabel: 'identifier' },
+    { id: '04', term: 'Workspace', pos: 'noun',
+      def: [
+        { t: 'A named list of mounts and access rules.', b: true },
+        { t: ' Each workspace pairs a name with: the host directories that mount into the container, where they land inside, per-mount permission (read-only or read-write), the agent\u2019s starting directory (workdir), and which agent classes are allowed to load it. Answers \u201cwhat can this agent see, and where?\u201d' },
+      ], cmd: '{ name, workdir, mounts[], allowed-agents[] }', cmdLabel: 'declares' },
+    { id: '05', term: 'Jacking in', pos: 'verb',
+      def: [
+        { t: 'Loading an agent into a workspace.', b: true },
+        { t: ' Clones the agent-class repo, builds the derived image, applies the workspace\u2019s mounts, drops you into Claude Code running inside.' },
+      ], cmd: 'jackin load agent-smith [my-project-workspace]', cmdLabel: 'cli' },
+    { id: '06', term: 'The agent inside', pos: 'noun',
+      def: [
+        { t: 'Claude Code running with full permissions', b: true },
+        { t: ' inside the container boundary. It thinks the Matrix is the whole world \u2014 but the world ends at the container wall.' },
+      ], cmd: null },
+    { id: '07', term: 'Hardline', pos: 'verb',
+      def: [
+        { t: 'Reattach your terminal', b: true },
+        { t: ' to a running agent. Closed the window? Agent\u2019s still running \u2014 hardline back in and pick up where you left off.' },
+      ], cmd: 'jackin hardline agent-smith', cmdLabel: 'cli' },
+    { id: '08', term: 'Pulling out', pos: 'verb',
+      def: [
+        { t: 'Stop an agent cleanly.', b: true },
+        { t: ' State persists on disk for next time \u2014 the operator decides when a construct is torn down.' },
+      ], cmd: 'jackin eject agent-smith', cmdLabel: 'cli' },
+    { id: '09', term: 'Exile', pos: 'verb',
+      def: [
+        { t: 'Pull everyone out of the Matrix at once.', b: true },
+        { t: ' Every running agent, every network, stopped in a single command.' },
+      ], cmd: 'jackin exile', cmdLabel: 'cli' },
+  ];
+
+  const listEl = document.getElementById('voc-list');
+  const detailEl = document.getElementById('voc-detail');
+  const sectionEl = document.getElementById('why');
+  if (!listEl || !detailEl || !sectionEl) return;
+
+  let activeIdx = -1;
+
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+  function renderList() {
+    clear(listEl);
+    entries.forEach((e, i) => {
+      const it = document.createElement('div');
+      it.className = 'voc-item' + (i === activeIdx ? ' active' : '');
+      const num = document.createElement('span'); num.className = 'num'; num.textContent = e.id; it.appendChild(num);
+      const word = document.createElement('span'); word.className = 'word'; word.textContent = e.term; it.appendChild(word);
+      it.addEventListener('click', () => { jumpTo(i); });
+      listEl.appendChild(it);
+    });
+  }
+
+  function renderDetail() {
+    const e = entries[activeIdx];
+    if (!e) return;
+    clear(detailEl);
+    detailEl.classList.remove('fade');
+    void detailEl.offsetWidth;
+    detailEl.classList.add('fade');
+
+    const word = document.createElement('span'); word.className = 'detail-word'; word.textContent = e.term; detailEl.appendChild(word);
+    const pos = document.createElement('span'); pos.className = 'detail-pos'; pos.textContent = e.pos; detailEl.appendChild(pos);
+
+    const def = document.createElement('p'); def.className = 'detail-def';
+    const lead = document.createElement('span'); lead.className = 'lead'; lead.textContent = '\u2014'; def.appendChild(lead);
+    e.def.forEach(seg => {
+      if (seg.b) {
+        const s = document.createElement('strong');
+        s.appendChild(document.createTextNode(seg.t));
+        def.appendChild(s);
+      } else {
+        def.appendChild(document.createTextNode(seg.t));
+      }
+    });
+    detailEl.appendChild(def);
+
+    if (e.cmd) {
+      const c = document.createElement('div'); c.className = 'detail-cmd';
+      const lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.textContent = e.cmdLabel; c.appendChild(lbl);
+      c.appendChild(document.createTextNode(e.cmd));
+      detailEl.appendChild(c);
+    }
+  }
+
+  function setActive(idx) {
+    if (idx === activeIdx) return;
+    activeIdx = idx;
+    renderList();
+    renderDetail();
+  }
+
+  function jumpTo(i) {
+    const rect = sectionEl.getBoundingClientRect();
+    const vh = window.innerHeight;
+    const scrollDist = sectionEl.offsetHeight - vh;
+    if (scrollDist <= 0) return;
+    const targetProgress = (i + 0.5) / entries.length;
+    const scrollTarget = (rect.top + window.scrollY) + targetProgress * scrollDist;
+    window.scrollTo({ top: scrollTarget, behavior: 'smooth' });
+  }
+
+  function updateFromScroll() {
+    const rect = sectionEl.getBoundingClientRect();
+    const vh = window.innerHeight;
+    const sectionHeight = sectionEl.offsetHeight;
+    const scrollDist = sectionHeight - vh;
+    if (scrollDist <= 0) { setActive(0); return; }
+    const scrolled = Math.max(0, -rect.top);
+    const progress = Math.max(0, Math.min(0.999, scrolled / scrollDist));
+    const idx = Math.min(entries.length - 1, Math.floor(progress * entries.length));
+    setActive(idx);
+  }
+
+  let ticking = false;
+  function onScroll() {
+    if (!ticking) {
+      requestAnimationFrame(() => { updateFromScroll(); ticking = false; });
+      ticking = true;
+    }
+  }
+
+  renderList();
+  setActive(0);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll, { passive: true });
+  updateFromScroll();
 })();
 
 // Hero rain — faithful port of jackin's own digital_rain from src/tui.rs
