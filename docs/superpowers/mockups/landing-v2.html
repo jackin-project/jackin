@@ -382,7 +382,94 @@
   footer a { color: var(--text-dim); text-decoration: none; margin-right: 22px; }
   footer a:hover { color: var(--text); }
 
+  /* Section 3: Red pill / blue pill */
+  .pills-grid { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .pill-card {
+    padding: 34px 30px 30px;
+    border: 1px solid var(--ui); border-radius: 10px;
+    background: var(--panel); position: relative;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .pill-card.pill-blue { border-color: rgba(90, 155, 255, 0.26); }
+  .pill-card.pill-red  { border-color: rgba(255, 90, 120, 0.26); }
+  .pill-card.pill-blue:hover { border-color: rgba(90, 155, 255, 0.5); transform: translateY(-2px); }
+  .pill-card.pill-red:hover  { border-color: rgba(255, 90, 120, 0.5); transform: translateY(-2px); }
+
+  .pill-visual {
+    width: 96px; height: 36px;
+    display: flex;
+    border-radius: 1000px;
+    overflow: hidden;
+    margin-bottom: 20px;
+    position: relative;
+  }
+  .pill-visual .pill-color { flex: 1; height: 100%; position: relative; }
+  .pill-visual .pill-color::after {
+    content: ""; position: absolute; top: 4px; left: 12%; right: 12%; height: 6px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+    border-radius: 50%; pointer-events: none;
+  }
+  .pill-visual .pill-white { flex: 1; height: 100%; background: linear-gradient(135deg, #edf0ed 0%, #b8bcb8 100%); box-shadow: inset 0 -3px 6px rgba(0,0,0,0.22); position: relative; }
+  .pill-visual .pill-white::after {
+    content: ""; position: absolute; top: 4px; left: 12%; right: 12%; height: 6px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
+    border-radius: 50%; pointer-events: none;
+  }
+  .pill-blue .pill-visual .pill-color { background: linear-gradient(135deg, #5a9bff 0%, #1f5de0 100%); box-shadow: inset 0 -3px 6px rgba(0,0,0,0.28); }
+  .pill-red  .pill-visual .pill-color { background: linear-gradient(135deg, #ff5a78 0%, #cc1f3e 100%); box-shadow: inset 0 -3px 6px rgba(0,0,0,0.28); }
+  .pill-blue .pill-visual { box-shadow: 0 0 28px rgba(90, 155, 255, 0.26), 0 6px 18px rgba(0,0,0,0.5); }
+  .pill-red  .pill-visual { box-shadow: 0 0 28px rgba(255, 90, 120, 0.26), 0 6px 18px rgba(0,0,0,0.5); }
+
+  .pill-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase;
+    margin-bottom: 8px; font-weight: 600;
+  }
+  .pill-blue .pill-meta { color: #7ab0ff; }
+  .pill-red  .pill-meta { color: #ff8a9e; }
+
+  .pill-card h3 {
+    font-family: 'Inter', sans-serif;
+    font-size: 22px; font-weight: 700;
+    letter-spacing: -0.02em; color: var(--text);
+    margin: 0 0 18px;
+  }
+  .choice-lines { list-style: none; padding: 0; margin: 0 0 22px; display: flex; flex-direction: column; gap: 10px; }
+  .choice-lines li { color: var(--text-dim); font-size: 15px; line-height: 1.55; padding-left: 22px; position: relative; }
+  .choice-lines li::before { content: "\2715"; position: absolute; left: 0; top: 0; color: var(--danger); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+  .choice-lines li code { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text); background: rgba(255,255,255,0.04); padding: 1px 6px; border-radius: 3px; }
+  .choice-verdict { padding: 10px 14px; background: rgba(255, 94, 122, 0.08); border: 1px solid rgba(255, 94, 122, 0.28); border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--danger); text-align: center; font-weight: 600; }
+  .choice-transition { margin-top: 48px; text-align: center; font-family: 'Fraunces', serif; font-style: italic; font-size: clamp(20px, 2.4vw, 28px); color: var(--text); letter-spacing: -0.01em; }
+  .choice-transition .accent { color: var(--accent); font-style: normal; font-weight: 500; }
+
+  /* Section 4: Kitchen-Sink vs Role-Specific callout */
+  .focus-callout { margin-top: 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .focus-card { padding: 22px 24px; border: 1px solid var(--ui); border-radius: 10px; background: rgba(255,255,255,0.015); }
+  .focus-card.focus-role { border-color: rgba(0,255,65,0.3); background: rgba(0,255,65,0.03); }
+  .focus-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-ghost); letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 16px; }
+  .focus-card.focus-role .focus-label { color: var(--accent); }
+  .focus-lines { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 500; color: var(--text-dim); }
+  .focus-card.focus-role .focus-lines { color: var(--text); }
+  .focus-note { font-size: 13.5px; line-height: 1.6; color: var(--text-dim); margin: 0; }
+
+  /* Section 6: Parallel work (clones) */
+  .clones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 32px; }
+  .clone-card { border: 1px solid var(--ui-strong); border-radius: 10px; padding: 22px 24px; background: var(--panel); }
+  .clone-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--text); font-weight: 500; }
+  .clone-head .live { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(0,255,65,0.6); animation: pulse 2.4s ease-in-out infinite; }
+  .clone-branch { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent); margin-bottom: 20px; letter-spacing: 0.01em; }
+  .clone-attrs { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-dim); line-height: 1.5; }
+  .clone-attrs li::before { content: "\2014  "; color: var(--text-ghost); }
+
+  .scenarios { margin-top: 48px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; padding-top: 28px; border-top: 1px dashed var(--ui); }
+  .scenario { font-size: 14px; color: var(--text-dim); line-height: 1.6; display: flex; gap: 14px; }
+  .scenario .tag { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.2em; color: var(--accent); flex: 0 0 22px; padding-top: 3px; font-weight: 600; }
+  .scenario b { color: var(--text); font-weight: 600; display: block; margin-bottom: 4px; font-size: 14.5px; }
+
   @media (max-width: 880px) {
+    .choice-grid { grid-template-columns: 1fr; }
+    .focus-callout { grid-template-columns: 1fr; }
+    .clones { grid-template-columns: 1fr; }
     .hero-grid { grid-template-columns: 1fr; gap: 56px; }
     .hero-right { padding-top: 0; }
     .sub-stats { grid-template-columns: 1fr 1fr; }
@@ -457,39 +544,46 @@
   </div>
 </section>
 
-<!-- ========== SECTION 3: The Problem ========== -->
+<!-- ========== SECTION 3: Red pill / blue pill ========== -->
 <section class="content">
   <div class="sec-label">03 · The Problem</div>
-  <h2 class="sec-title">Unrestricted agents need unrestricted <span class="accent">containment</span>.</h2>
-  <p class="sec-intro">Agents like Claude Code are most productive when they run without permission prompts. But on your host, unrestricted means <em>everything</em> is visible — including things you never meant to share.</p>
-  <div class="problem-grid">
-    <ul class="problem-list">
-      <li><span class="x">✕</span><span><b>Every file.</b> SSH keys in <code>~/.ssh</code>, browser cookies, your password manager's unlocked session.</span></li>
-      <li><span class="x">✕</span><span><b>Every command.</b> <code>rm -rf</code>, <code>curl</code> to external endpoints, arbitrary system modifications.</span></li>
-      <li><span class="x">✕</span><span><b>Every package.</b> Any dependency the model decides to install — supply chain and all.</span></li>
-      <li><span class="x">✕</span><span><b>Every credential.</b> AWS, Docker Hub, GitHub tokens — anything in your shell environment.</span></li>
-      <li><span class="x">✕</span><span><b>Every mistake.</b> A single wrong command is a bad day, not a rollback.</span></li>
-    </ul>
-    <div>
-      <div class="mini-term">
-        <div class="mini-term-bar">
-          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-          <span class="term-label">~ — unrestricted agent</span>
-        </div>
-        <div class="mini-term-body"><span class="prompt">$</span> ls -la ~
-<span class="dim">drwx------  .ssh/             </span><span class="danger"># private keys</span>
-<span class="dim">-rw-------  .aws/credentials  </span><span class="danger"># long-lived tokens</span>
-<span class="dim">-rw-------  .env              </span><span class="danger"># production secrets</span>
-<span class="dim">drwxr-xr-x  .config/</span>
-<span class="dim">drwxr-xr-x  Projects/</span>
-<span class="dim">... all visible to the agent.</span></div>
+  <h2 class="sec-title">The <span class="accent">false</span> choice.</h2>
+  <p class="sec-intro">Every AI coding agent offers you a pill. The false choice is thinking you have to swallow either one.</p>
+
+  <div class="pills-grid">
+    <div class="pill-card pill-blue">
+      <div class="pill-visual">
+        <div class="pill-color"></div>
+        <div class="pill-white"></div>
       </div>
-      <div class="problem-quote">
-        "Running an unrestricted AI agent on your host is like inviting a brilliant contractor into your home and saying 'do whatever you want.'"
-        <cite>— docs / getting-started / why</cite>
+      <div class="pill-meta">Blue pill</div>
+      <h3>Babysit every prompt</h3>
+      <ul class="choice-lines">
+        <li>"Are you sure?" dialogs every ten seconds.</li>
+        <li>Permission gates on every action.</li>
+        <li>The agent waits on you, constantly.</li>
+        <li>Flow interrupted a hundred times a day.</li>
+      </ul>
+      <div class="choice-verdict">Productivity · destroyed</div>
+    </div>
+    <div class="pill-card pill-red">
+      <div class="pill-visual">
+        <div class="pill-color"></div>
+        <div class="pill-white"></div>
       </div>
+      <div class="pill-meta">Red pill</div>
+      <h3>Full YOLO on host</h3>
+      <ul class="choice-lines">
+        <li>Agent reads every file — SSH keys, <code>.env</code>, cookies.</li>
+        <li>Runs any command on your machine.</li>
+        <li>Installs any package it wants — supply chain and all.</li>
+        <li>One bad prompt is an unrecoverable bad day.</li>
+      </ul>
+      <div class="choice-verdict">Risk · maximum</div>
     </div>
   </div>
+
+  <div class="choice-transition">Refuse the pill. <span class="accent">You're the Operator</span> — define the construct instead.</div>
 </section>
 
 <!-- ========== SECTION 4: Two dimensions (composition machine) ========== -->
@@ -528,6 +622,27 @@
   <div class="axis-note">
     <b>Agent classes are GitHub repos</b> (<code>owner/agent</code>). jackin's own built-ins (<code>agent-smith</code>, <code>the-architect</code>) can be loaded by short name; every third-party agent uses the full <code>owner/agent</code> form. Switch orgs to see how a single operator spans multiple projects without mixing tooling.<br>
     <b>Workspaces bundle a workdir and its mounts</b> — each mount declares its source, destination, and whether it's read-write or read-only. The access boundary is explicit, not implied. (Switch to <code>@chainargos</code> and try <code>frontend-engineer × docs-only</code> to see access rejection in action.)
+  </div>
+
+  <div class="focus-callout">
+    <div class="focus-card">
+      <div class="focus-label">Kitchen-Sink Agent</div>
+      <div class="focus-lines">
+        <span>Every toolchain.</span>
+        <span>Every plugin.</span>
+        <span>Every convention.</span>
+      </div>
+      <p class="focus-note">The model inspects too many tools, too many conventions, too much irrelevant context before deciding what to do. More surface, worse decisions.</p>
+    </div>
+    <div class="focus-card focus-role">
+      <div class="focus-label">Role-Specific Agent</div>
+      <div class="focus-lines">
+        <span>Only relevant tools.</span>
+        <span>Only matching plugins.</span>
+        <span>Only applicable conventions.</span>
+      </div>
+      <p class="focus-note">Fewer irrelevant cues means the agent discovers tools and context that actually match the task. Focused context — better results, faster.</p>
+    </div>
   </div>
 </section>
 
@@ -577,9 +692,68 @@
   </div>
 </section>
 
-<!-- ========== SECTION 6: Security ========== -->
+<!-- ========== SECTION 6: Parallel work (clones) ========== -->
+<section class="content">
+  <div class="sec-label">06 · Parallel work</div>
+  <h2 class="sec-title">Clone the agent. <span class="accent">Split the work.</span></h2>
+  <p class="sec-intro">One agent class. Multiple instances, running side by side. Same toolchain, same conventions — separate containers, separate state, separate networks. Like Smith in the courtyard.</p>
+
+  <div class="clones">
+    <div class="clone-card">
+      <div class="clone-head"><span class="live"></span>agent-smith #1</div>
+      <div class="clone-branch">feature/auth-redesign</div>
+      <ul class="clone-attrs">
+        <li>own container</li>
+        <li>own DinD sidecar</li>
+        <li>own Claude history</li>
+        <li>own network</li>
+      </ul>
+    </div>
+    <div class="clone-card">
+      <div class="clone-head"><span class="live"></span>agent-smith #2</div>
+      <div class="clone-branch">feature/payment-v2</div>
+      <ul class="clone-attrs">
+        <li>own container</li>
+        <li>own DinD sidecar</li>
+        <li>own Claude history</li>
+        <li>own network</li>
+      </ul>
+    </div>
+    <div class="clone-card">
+      <div class="clone-head"><span class="live"></span>agent-smith #3</div>
+      <div class="clone-branch">fix/api-timeout</div>
+      <ul class="clone-attrs">
+        <li>own container</li>
+        <li>own DinD sidecar</li>
+        <li>own Claude history</li>
+        <li>own network</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="scenarios">
+    <div class="scenario">
+      <span class="tag">01</span>
+      <div><b>Parallel features</b>Same role, different branches — three feature PRs moving simultaneously, none waiting on the others.</div>
+    </div>
+    <div class="scenario">
+      <span class="tag">02</span>
+      <div><b>Service fan-out</b>Same role, different services — API, payments, and docs each get their own clone.</div>
+    </div>
+    <div class="scenario">
+      <span class="tag">03</span>
+      <div><b>Divide and conquer</b>Split one large task — each clone owns a slice and finishes its piece in parallel.</div>
+    </div>
+    <div class="scenario">
+      <span class="tag">04</span>
+      <div><b>Experiment safely</b>Risky approach in one clone, safe path in another. Compare outcomes without losing either.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== SECTION 7: Security ========== -->
 <section id="security" class="content sec-security">
-  <div class="sec-label">06 · Security Model (honest version)</div>
+  <div class="sec-label">07 · Security Model (honest version)</div>
   <h2 class="sec-title">Strong <span class="accent">where it counts</span>. Honest about the rest.</h2>
   <p class="sec-intro">jackin' is container isolation, not hypervisor isolation. We document exactly what that means. No "enterprise-grade" hand-waving.</p>
   <div class="sec-grid-2">
@@ -609,29 +783,41 @@
   </div>
 </section>
 
-<!-- ========== SECTION 7: Ecosystem + Install CTA ========== -->
+<!-- ========== SECTION 8: Ecosystem + Install CTA ========== -->
 <section class="content">
-  <div class="sec-label">07 · Ecosystem</div>
-  <h2 class="sec-title">Agents are git repos. <span class="accent">Build your own.</span></h2>
-  <p class="sec-intro">An agent class is a Dockerfile plus a small manifest. Clone, version, PR-review. Share across an org.</p>
+  <div class="sec-label">08 · Ecosystem</div>
+  <h2 class="sec-title">Every org builds a <span class="accent">cast</span>.</h2>
+  <p class="sec-intro">jackin's built-ins get you started. Named archetypes — Jones for a company stack, Brown for a role — show how teams extend the pattern. Each agent class is a git repo you can version, review, and share.</p>
   <div class="roster">
     <div class="agent-card">
       <div class="avatar">AS</div>
       <h4>agent-smith</h4>
       <div class="class">github.com/jackin-project/jackin-agent-smith</div>
-      <p>Default general-purpose agent. Starts here and most first-time operators never need another. Loadable by short name because it's a jackin' built-in.</p>
+      <p>Default general-purpose agent. Starts here and most first-time operators never need another. A jackin' built-in — loadable by short name.</p>
     </div>
     <div class="agent-card">
       <div class="avatar">TA</div>
       <h4>the-architect</h4>
       <div class="class">github.com/jackin-project/jackin-the-architect</div>
-      <p>Full Rust toolchain, ripgrep, just — the agent used to develop jackin' itself. Also loadable by short name.</p>
+      <p>Full Rust toolchain, ripgrep, just — the agent used to develop jackin' itself. Also a built-in, short-name loadable.</p>
+    </div>
+    <div class="agent-card">
+      <div class="avatar">AJ</div>
+      <h4>agent-jones</h4>
+      <div class="class">scentbird/jackin-agent-jones</div>
+      <p>The company specialist archetype. Preconfigured for your org's stack — e.g. Micronaut, Postgres, internal conventions, team CLAUDE.md. Ready to work on your codebase from the first second.</p>
+    </div>
+    <div class="agent-card">
+      <div class="avatar">AB</div>
+      <h4>agent-brown</h4>
+      <div class="class">your-org/jackin-agent-brown</div>
+      <p>The role-specific archetype. Frontend engineer — Node, Playwright, design-system utilities, UI-oriented plugins. Narrow by design, sharper by consequence.</p>
     </div>
     <div class="agent-card">
       <div class="avatar">+</div>
-      <h4>your-org/your-agent</h4>
-      <div class="class">github.com/your-org/jackin-your-agent</div>
-      <p>Any third-party agent is loaded by its full <code>owner/agent</code> name. The GitHub repo always uses the <code>jackin-</code> prefix. Write a Dockerfile that extends the construct, add a manifest, push it up.</p>
+      <h4>your-own</h4>
+      <div class="class">your-org/jackin-your-role</div>
+      <p>Cast your own. Write a Dockerfile that extends the Construct, add a manifest, push the repo. Operators load it with <code>jackin load owner/agent</code>.</p>
     </div>
   </div>
   <div class="install-block">
