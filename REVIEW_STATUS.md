@@ -1,6 +1,6 @@
 # Review Status
 
-Last verified: 2026-04-17
+Last verified: 2026-04-19
 
 This file is the single source of truth for review follow-up in this repository.
 It consolidates the former `PROJECT_REVIEW.md`, `RUST_REVIEW_FINDINGS.md`,
@@ -35,60 +35,114 @@ Git history remains the long-term record for what was reviewed and when.
    persistence behavior after the operator chooses to authenticate, not as a
    default startup interaction.
 
+4. Command failures and debug logs can still leak secrets.
+
+   `ShellRunner` still logs and reports raw argv strings, while the runtime
+   still assembles `docker run` env arguments as literal `KEY=value` pairs.
+   A failed launch can therefore echo manifest-provided secrets into operator
+   terminals, logs, or copied error output.
+
 ### Medium
 
-4. The orchestration core is still too centralized.
+5. The orchestration core is still too centralized.
 
    `runtime.rs`, `lib.rs`, `config.rs`, `workspace.rs`, and `launch.rs` remain
    large multi-concern modules. Routine changes still require tracing several
    responsibilities through the same functions.
 
-5. Docker command construction still hides policy intent.
+6. Docker command construction still hides policy intent.
 
    Image-build, DinD-launch, and agent-launch commands are still assembled as
    large positional argument vectors. That makes mount, env, label, and network
    policy harder to audit than it should be.
 
-6. Build-caching docs still overstate what is skipped.
+7. Build-caching docs still overstate what is skipped.
 
    Loads still create a derived build context and run `docker build` each time.
    Docker layer cache helps, but the build step is not actually skipped on
    subsequent loads.
 
-7. Mount config can still persist invalid or ambiguous state.
+8. Mount config can still persist invalid or ambiguous state.
 
    Global and scoped mounts still share one key space, and write-time config
-   updates do not validate the full persisted mount shape before saving.
+   updates still allow silently ignored scoped inserts and delayed validation
+   failures instead of rejecting bad persisted state at the write boundary.
 
-8. Claude-specific implementation still conflicts with runtime-agnostic
+9. Runtime-owned mount paths can still be shadowed by workspace or global mounts.
+
+   Mount validation still checks only for exact duplicate destinations. A
+   workspace or configured mount can still target a parent or overlapping path
+   such as `/home/claude` or `/certs`, breaking runtime-managed auth, plugin,
+   terminfo, or DinD TLS mounts.
+
+10. Config persistence is still race-prone.
+
+   Config writes still rewrite the full TOML file from an in-memory snapshot
+   with no locking or merge step. Concurrent `jackin` commands can still lose
+   trust, workspace, auth, or mount updates via last-writer-wins overwrites.
+
+11. Workspace agent constraints can still persist unchecked selectors.
+
+   `allowed_agents` and `default_agent` values are still accepted and saved as
+   raw strings without selector parsing or configured-agent validation. Typos or
+   stale values then fail later as confusing launcher or context-resolution
+   behavior instead of being rejected at config time.
+
+12. Trust grants can still bless unvalidated derived agent sources.
+
+   `jackin config trust grant <selector>` still derives and persists a GitHub
+   source URL for unknown selectors without first validating that the repo,
+   manifest, or Dockerfile actually exist and match expectations.
+
+13. Sensitive mount warnings still miss nested secret files.
+
+   Sensitive-path detection still matches only exact directory mounts such as
+   `~/.ssh` or `~/.aws`. Mounts of files inside those directories, such as
+   `~/.ssh/id_ed25519`, `~/.aws/credentials`, or `~/.kube/config`, still bypass
+   the warning prompt.
+
+14. Claude-specific implementation still conflicts with runtime-agnostic
    roadmap language.
 
    The current implementation is explicitly Claude-focused across manifest
    schema, image build, entrypoint behavior, and version probing, while some
    roadmap language still presents the architecture as runtime-agnostic today.
 
-9. CI still uses `cargo test --locked` while contributor guidance requires
+15. CI still uses `cargo test --locked` while contributor guidance requires
    `cargo nextest run`.
 
    Local guidance, AGENTS guidance, and CI are still not aligned on the test
    runner policy.
 
-10. Cleanup tolerance still string-matches Docker CLI stderr.
+16. Cleanup tolerance still string-matches Docker CLI stderr.
 
-    Missing-resource cleanup is still detected by checking stderr text such as
-    `No such container`, `No such volume`, and `No such network`.
+   Missing-resource cleanup is still detected by checking stderr text such as
+   `No such container`, `No such volume`, and `No such network`.
 
-11. Command execution timeouts are currently absent.
+17. Container-state probing still collapses Docker failures into “not found.”
 
-    Timeout handling that earlier security notes marked as resolved is no
-    longer present in the current `ShellRunner` implementation. Long-running or
-    stalled subprocesses currently rely on normal process completion.
+   `inspect_container_state()` still treats any `docker inspect` failure as a
+   missing container, which hides daemon or context failures behind misleading
+   not-found behavior in flows such as `hardline`.
 
-12. Reproducibility and provenance are still branch-moving by default.
+18. Command execution timeouts are currently absent.
 
-    Agent repos still default to moving git branches rather than pinned commits,
-    and the current operator experience does not expose strong provenance or
-    update controls.
+   Timeout handling that earlier security notes marked as resolved is no
+   longer present in the current `ShellRunner` implementation. Long-running or
+   stalled subprocesses currently rely on normal process completion.
+
+19. Host runtime-disable env can still be overridden by manifest env.
+
+   Host `JACKIN_DISABLE_*` passthrough vars are still added before
+   manifest-resolved env pairs, and those names are not reserved in manifest
+   validation. Agent manifests can therefore still negate operator runtime
+   disable choices.
+
+20. Reproducibility and provenance are still branch-moving by default.
+
+   Agent repos still default to moving git branches rather than pinned commits,
+   and the current operator experience does not expose strong provenance or
+   update controls.
 
 ## Accepted Exceptions
 
@@ -112,6 +166,6 @@ Reviewed: 2026-04-04
 The previously documented findings around `ShellRunner::capture()` pipe
 deadlocks, `jackin-validate` drift, agent-vs-DinD role labels, `last_agent`
 persistence on failure, prompt I/O error flattening, trust-on-first-use,
-symlink boundary checks, config file permissions, and sensitive mount
-confirmation were re-verified against the current codebase on 2026-04-17 and
-removed from this file.
+symlink boundary checks, config file permissions, and the presence of a
+sensitive-mount confirmation prompt were re-verified against the current
+codebase on 2026-04-17 and removed from this file.
