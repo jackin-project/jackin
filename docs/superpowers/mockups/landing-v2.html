@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jackin' — landing v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0b0a;
+    --bg-deep: #050605;
+    --panel: #0f1110;
+    --text: #f4f7f5;
+    --text-dim: #9ca8a1;
+    --text-ghost: #5e6a64;
+    --accent: #00ff41;
+    --danger: #ff5e7a;
+    --ui: rgba(244, 247, 245, 0.1);
+    --ui-strong: rgba(244, 247, 245, 0.22);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { min-height: 100vh; overflow-x: hidden; }
+  a { color: inherit; }
+
+  /* Dotted grid background — subtle, behind everything */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image: radial-gradient(rgba(244,247,245,0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(ellipse at center top, black 35%, transparent 85%);
+  }
+
+  .shell { max-width: 1280px; margin: 0 auto; padding: 0 40px; position: relative; z-index: 1; }
+
+  /* ========== NAV ========== */
+  nav.topnav { padding: 22px 40px; display: flex; justify-content: space-between; align-items: center;
+    position: relative; z-index: 3;
+    background: linear-gradient(180deg, rgba(5,6,5,0.35) 0%, transparent 100%); }
+  nav.topnav .logo,
+  nav.topnav .star { text-shadow: 0 0 8px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9); }
+  .logo { font-family: 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.03em; font-size: 18px; display: inline-flex; align-items: center; gap: 10px; }
+  .logo .mark { width: 10px; height: 10px; background: var(--accent); border-radius: 2px; box-shadow: 0 0 8px rgba(0,255,65,0.5); }
+  .nav-links { display: flex; gap: 32px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-dim); }
+  .nav-links a { color: inherit; text-decoration: none; }
+  .nav-links a:hover { color: var(--text); }
+  .nav-right { display: flex; gap: 14px; align-items: center; }
+  .star { padding: 7px 14px; border: 1px solid var(--ui-strong); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text); text-decoration: none; }
+  .star:hover { border-color: var(--text); }
+
+  /* ========== HERO STAGE (full-bleed backdrop + rain) ========== */
+  .hero-stage {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .hero-stage canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    z-index: 1; pointer-events: none;
+    opacity: 0.32;
+  }
+  .hero-stage::after {
+    content: '';
+    position: absolute; inset: 0;
+    z-index: 2; pointer-events: none;
+    background:
+      radial-gradient(ellipse 78% 60% at 50% 38%, transparent 0%, rgba(8,10,9,0.55) 72%, rgba(8,10,9,0.88) 100%),
+      linear-gradient(180deg, transparent 72%, var(--bg) 100%);
+  }
+  .hero-stage > .shell {
+    position: relative;
+    z-index: 3;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  /* ========== HERO (editorial split) ========== */
+  .hero { padding: 88px 0 112px; }
+  .hero-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 80px; align-items: start; }
+
+  .meta-row { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  .meta-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-ghost); letter-spacing: 0.2em; }
+  .meta-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
+  .meta-status { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); letter-spacing: 0.15em; text-transform: uppercase; }
+  .meta-sep { color: var(--text-ghost); font-family: 'JetBrains Mono', monospace; }
+
+  h1.headline {
+    font-family: 'Inter', sans-serif; font-weight: 800;
+    font-size: clamp(44px, 6.8vw, 92px); line-height: 0.98; letter-spacing: -0.04em;
+    margin: 0 0 26px; color: var(--text); max-width: 780px;
+  }
+  h1.headline .accent { color: var(--accent); }
+  h1.headline .soft { color: var(--text-dim); font-weight: 300; }
+
+  .deck { font-size: 19px; line-height: 1.55; color: var(--text-dim); max-width: 540px; margin: 0 0 36px; }
+
+  .cta-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .btn-primary { background: var(--text); color: var(--bg-deep); font-family: 'Inter', sans-serif; font-weight: 600;
+    font-size: 14px; padding: 13px 22px; border: 1px solid var(--text); border-radius: 5px; cursor: pointer; text-decoration: none; letter-spacing: -0.01em; transition: transform 0.15s; }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--ui-strong);
+    font-family: 'JetBrains Mono', monospace; font-size: 13px; padding: 13px 22px; border-radius: 5px; text-decoration: none; transition: all 0.15s; }
+  .btn-ghost:hover { border-color: var(--text); background: rgba(255,255,255,0.03); transform: translateY(-1px); }
+
+  .pill-band { margin-top: 36px; padding: 14px 0; border-top: 1px solid var(--ui); border-bottom: 1px solid var(--ui);
+    display: flex; gap: 34px; flex-wrap: wrap; align-items: center;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-ghost);
+    letter-spacing: 0.15em; text-transform: uppercase; }
+  .pill-band .x { color: var(--ui-strong); }
+
+  .hero-right { padding-top: 56px; }
+  .code-panel { border: 1px solid var(--ui); border-radius: 10px; background: var(--panel); overflow: hidden; box-shadow: 0 30px 60px rgba(0,0,0,0.45); }
+  .code-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
+    border-bottom: 1px solid var(--ui); background: rgba(255,255,255,0.015);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-ghost); letter-spacing: 0.08em; }
+  .code-head .tabs { display: flex; gap: 4px; }
+  .tab { padding: 5px 10px; border-radius: 4px; color: var(--text-ghost); font-size: 11px; cursor: pointer; transition: all 0.15s; }
+  .tab.active { color: var(--text); background: rgba(255,255,255,0.05); }
+  .tab:hover:not(.active) { color: var(--text-dim); }
+  .code-body { padding: 20px 22px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.75; color: var(--text); min-height: 280px; white-space: pre-wrap; }
+  .code-body .prompt { color: var(--accent); } .code-body .cmd { color: var(--text); }
+  .code-body .c { color: var(--text-ghost); } .code-body .k { color: var(--accent); }
+  .code-body .dim { color: var(--text-dim); } .code-body .ok { color: var(--accent); }
+  .cursor { display: inline-block; width: 7px; height: 14px; background: var(--text); vertical-align: -2px; animation: blink 1.06s steps(1) infinite; margin-left: 2px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .sub-stats { margin-top: 28px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--ui); border: 1px solid var(--ui); border-radius: 8px; overflow: hidden; }
+  .stat { padding: 18px 20px; background: var(--bg); }
+  .stat .label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-ghost); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 6px; }
+  .stat .val { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.02em; color: var(--text); }
+  .stat .val .u { color: var(--text-dim); font-weight: 400; font-size: 14px; margin-left: 4px; }
+
+  /* ========== SECTIONS (from landing.html, palette-matched) ========== */
+  section.content { padding: 112px 0; position: relative; }
+  .sec-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--text-ghost); margin-bottom: 14px;
+    display: inline-flex; align-items: center; gap: 10px; }
+  .sec-label::before { content: ""; width: 22px; height: 1px; background: var(--accent); }
+  .sec-title { font-size: clamp(28px, 3.6vw, 44px); font-weight: 700; letter-spacing: -0.028em; line-height: 1.1; margin: 0 0 18px; max-width: 780px; }
+  .sec-title .accent { color: var(--accent); }
+  .sec-intro { color: var(--text-dim); font-size: 17px; line-height: 1.65; max-width: 680px; margin: 0 0 48px; }
+
+  /* Section 2: Matrix mapping */
+  .mapping-grid { display: grid; grid-template-columns: 1fr 48px 1fr; gap: 0; margin-top: 12px;
+    border: 1px solid var(--ui); border-radius: 10px; background: var(--panel); overflow: hidden; }
+  .map-head { padding: 20px 24px; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-ghost); border-bottom: 1px solid var(--ui); }
+  .map-head.mid { border-right: 1px solid var(--ui); border-left: 1px solid var(--ui); text-align: center; }
+  .map-head.left { border-right: 1px solid var(--ui); }
+  .map-row { display: contents; }
+  .map-cell { padding: 18px 24px; border-top: 1px solid var(--ui); font-size: 15px; font-family: 'JetBrains Mono', monospace; color: var(--text); }
+  .map-cell.left { color: var(--text-dim); border-right: 1px solid var(--ui); }
+  .map-cell.arrow { border-right: 1px solid var(--ui); border-left: 1px solid var(--ui); text-align: center; color: var(--accent); font-weight: 600; }
+  .map-cell.right { color: var(--text); }
+  .map-cell.right code { font-family: inherit; color: var(--accent); }
+
+  /* Section 3: The Problem */
+  .problem-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: start; }
+  .problem-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
+  .problem-list li { display: flex; gap: 14px; color: var(--text); font-size: 15px; line-height: 1.55; }
+  .problem-list li .x { flex: 0 0 22px; color: var(--danger); font-family: 'JetBrains Mono', monospace; font-weight: 700; text-align: center; padding-top: 2px; }
+  .problem-list li b { font-family: 'JetBrains Mono', monospace; color: var(--text); font-weight: 600; }
+  .problem-list li span { color: var(--text-dim); }
+  .problem-quote { margin-top: 36px; padding: 22px 24px; border-left: 2px solid var(--accent); color: var(--text); font-size: 17px; line-height: 1.55; font-style: italic; }
+  .problem-quote cite { display: block; margin-top: 10px; font-style: normal; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-ghost); letter-spacing: 0.08em; text-transform: uppercase; }
+
+  .mini-term { border-radius: 8px; background: rgba(5,7,6,0.92); border: 1px solid var(--ui-strong);
+    box-shadow: 0 18px 40px rgba(0,0,0,0.4); overflow: hidden; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+  .mini-term-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid var(--ui); background: rgba(255,255,255,0.02);
+    color: var(--text-ghost); font-size: 11px; letter-spacing: 0.06em; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+  .mini-term-bar .term-label { margin-left: auto; }
+  .mini-term-body { padding: 16px 18px 18px; color: var(--text); line-height: 1.7; white-space: pre-wrap; }
+  .mini-term-body .prompt { color: var(--accent); }
+  .mini-term-body .dim { color: var(--text-ghost); }
+  .mini-term-body .danger { color: var(--danger); }
+
+  /* Section 4: Composition machine */
+  .machine { margin-top: 12px; display: grid; grid-template-columns: 1fr 36px 1fr 36px 1.35fr; gap: 0; align-items: stretch; }
+  .machine-panel { border: 1px solid var(--ui); border-radius: 10px; background: var(--panel); padding: 22px 24px; display: flex; flex-direction: column; }
+  .machine-panel.preview { border-color: rgba(0,255,65,0.3); background: linear-gradient(180deg, rgba(0,255,65,0.04), rgba(0,255,65,0.01)); }
+  .machine-op { display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 24px; color: var(--text-ghost); font-weight: 600; }
+  .machine-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--accent); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 4px; }
+  .machine-sublabel { font-family: 'Inter', sans-serif; font-size: 13px; color: var(--text-dim); margin-bottom: 18px; }
+  .machine-options { display: flex; flex-direction: column; gap: 8px; }
+  .machine-opt { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--ui); border-radius: 6px; cursor: pointer; transition: all 0.15s; background: rgba(255,255,255,0.015); font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text); }
+  .machine-opt:hover { border-color: var(--ui-strong); background: rgba(255,255,255,0.03); }
+  .machine-opt.active { border-color: var(--accent); background: rgba(0,255,65,0.06); box-shadow: 0 0 14px rgba(0,255,65,0.1); }
+  .machine-opt .radio { width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--ui-strong); flex-shrink: 0; transition: all 0.15s; }
+  .machine-opt.active .radio { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 8px rgba(0,255,65,0.7); }
+
+  #preview { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--text); line-height: 1.65; }
+  .preview-row { display: flex; gap: 14px; padding: 11px 0; border-top: 1px dashed var(--ui); }
+  .preview-row:first-of-type { border-top: none; padding-top: 2px; }
+  .preview-row .k { color: var(--text-ghost); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; flex: 0 0 74px; padding-top: 3px; }
+  .preview-row .v { color: var(--text); font-size: 13px; flex: 1; line-height: 1.55; }
+  .preview-row .v .hl { color: var(--accent); }
+  .preview-row .v .ro-tag { color: var(--text-ghost); font-size: 10px; letter-spacing: 0.12em; margin-left: 8px; text-transform: uppercase; border: 1px solid var(--ui-strong); padding: 1px 6px; border-radius: 3px; }
+  .preview-denied { padding: 16px 18px; border: 1px dashed var(--danger); border-radius: 6px; color: var(--danger); font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.65; background: rgba(255,94,122,0.04); }
+  .preview-denied .label { color: var(--danger); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 8px; display: block; font-weight: 600; }
+
+  .machine-wrapper { margin-top: 12px; }
+  .org-tabs { display: flex; gap: 2px; margin-bottom: 18px; border-bottom: 1px solid var(--ui); padding: 0 4px; flex-wrap: wrap; }
+  .org-tab { padding: 10px 18px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
+  .org-tab:hover { color: var(--text); }
+  .org-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .org-tab .at { color: var(--text-ghost); margin-right: 2px; }
+  .mount-list { display: flex; flex-direction: column; gap: 6px; }
+  .mount-item { font-size: 11.5px; line-height: 1.55; color: var(--text); font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .mount-item .src { color: var(--text); word-break: break-all; }
+  .mount-item .arrow { color: var(--text-ghost); font-size: 10px; }
+  .mount-item .dst { color: var(--text-dim); word-break: break-all; font-size: 11.5px; }
+  .mount-item .perm { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--ui-strong); border-radius: 3px; color: var(--text-ghost); flex-shrink: 0; }
+  .mount-item .perm.rw { color: var(--accent); border-color: rgba(0,255,65,0.35); }
+
+  .axis-note { margin-top: 28px; font-size: 14px; color: var(--text-dim); line-height: 1.7; padding: 0 4px; }
+  .axis-note b { color: var(--text); }
+  .axis-note code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); background: rgba(255,255,255,0.04); padding: 1px 6px; border-radius: 3px; }
+
+  /* Section 5: How it works filmstrip */
+  .film { display: flex; flex-direction: column; gap: 0; position: relative; margin-top: 12px; }
+  .film::before {
+    content: ""; position: absolute; left: 30px; top: 30px; bottom: 30px; width: 1px;
+    background: linear-gradient(180deg, transparent, var(--ui-strong) 10%, var(--ui-strong) 90%, transparent);
+  }
+  .frame { display: flex; gap: 28px; padding: 14px 0 30px; position: relative; align-items: start; }
+  .frame-index {
+    flex: 0 0 60px; width: 60px; height: 60px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--ui-strong);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent);
+    z-index: 2; position: relative;
+  }
+  .frame-content { flex: 1; }
+  .frame-cmd { font-family: 'JetBrains Mono', monospace; font-size: 16px; color: var(--text); margin: 4px 0 8px; }
+  .frame-cmd .cmd { color: var(--accent); }
+  .frame-desc { color: var(--text-dim); font-size: 14px; line-height: 1.6; margin-bottom: 14px; max-width: 640px; }
+  .frame-term { background: rgba(5,7,6,0.8); border: 1px solid var(--ui); border-radius: 6px;
+    padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    color: var(--text-dim); line-height: 1.65; white-space: pre-wrap; max-width: 640px; }
+  .frame-term .ok { color: var(--accent); } .frame-term .dim { color: var(--text-ghost); }
+
+  /* Section 6: Security */
+  .sec-security { background: linear-gradient(180deg, var(--bg) 0%, var(--panel) 100%); }
+  .sec-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 12px; }
+  .sec-col { border: 1px solid var(--ui); border-radius: 10px; padding: 24px 26px; background: rgba(255,255,255,0.015); }
+  .sec-col h4 { margin: 0 0 16px; font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); display: flex; align-items: center; gap: 10px; }
+  .sec-col.has h4 span.mark { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(0,255,65,0.6); }
+  .sec-col.lacks h4 span.mark { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
+  .sec-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .sec-col li { font-size: 14px; color: var(--text-dim); line-height: 1.55; display: flex; gap: 10px; }
+  .sec-col li b { color: var(--text); font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; white-space: nowrap; }
+  .compare-callout { margin-top: 32px; padding: 22px 26px; border: 1px solid var(--ui); border-radius: 10px; background: var(--bg); display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .compare-callout p { margin: 0; color: var(--text); font-size: 15px; line-height: 1.6; flex: 1; min-width: 280px; }
+  .compare-callout p b { color: var(--accent); font-weight: 600; }
+  .compare-callout a { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); text-decoration: none; border: 1px solid var(--ui-strong); padding: 10px 16px; border-radius: 5px; white-space: nowrap; }
+  .compare-callout a:hover { border-color: var(--text); }
+
+  /* Section 7: Ecosystem + Install CTA */
+  .roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 12px; }
+  .agent-card { border: 1px solid var(--ui); border-radius: 10px; padding: 22px; background: var(--panel);
+    transition: border-color 0.2s, transform 0.2s; cursor: pointer; }
+  .agent-card:hover { border-color: var(--ui-strong); transform: translateY(-2px); }
+  .agent-card .avatar { width: 44px; height: 44px; border-radius: 6px; background: linear-gradient(135deg, rgba(0,255,65,0.15), rgba(0,255,65,0.02)); border: 1px solid var(--ui-strong);
+    display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace;
+    color: var(--accent); font-weight: 600; font-size: 16px; margin-bottom: 14px; }
+  .agent-card h4 { margin: 0 0 4px; font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--text); }
+  .agent-card .class { color: var(--text-ghost); font-family: 'JetBrains Mono', monospace; font-size: 11px; margin-bottom: 10px; }
+  .agent-card p { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.55; }
+  .install-block { margin-top: 48px; background: var(--panel); border: 1px solid var(--ui); border-radius: 10px; padding: 24px 28px;
+    font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text); line-height: 1.85; position: relative; }
+  .install-block .line .c { color: var(--text-ghost); }
+  .install-block .line .k { color: var(--accent); }
+  .install-block .copy { position: absolute; top: 18px; right: 18px; font-size: 11px; color: var(--text-ghost); border: 1px solid var(--ui); padding: 5px 10px; border-radius: 4px; background: rgba(0,0,0,0.3); cursor: pointer; }
+  .install-block .copy:hover { color: var(--text); border-color: var(--ui-strong); }
+  .final-cta { margin-top: 64px; text-align: center; }
+  .final-cta h2 { font-size: clamp(28px, 4vw, 52px); font-weight: 700; letter-spacing: -0.028em; margin: 0 0 14px; }
+  .final-cta h2 .accent { color: var(--accent); }
+  .final-cta p { color: var(--text-dim); max-width: 520px; margin: 0 auto 32px; font-size: 16px; line-height: 1.6; }
+  .final-cta .buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+  footer { padding: 48px 40px; border-top: 1px solid var(--ui); color: var(--text-ghost);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+  footer a { color: var(--text-dim); text-decoration: none; margin-right: 22px; }
+  footer a:hover { color: var(--text); }
+
+  @media (max-width: 880px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 56px; }
+    .hero-right { padding-top: 0; }
+    .sub-stats { grid-template-columns: 1fr 1fr; }
+    .problem-grid { grid-template-columns: 1fr; }
+    .mapping-grid { grid-template-columns: 1fr 32px 1fr; }
+    .machine { grid-template-columns: 1fr; gap: 16px; }
+    .machine-op { font-size: 18px; padding: 4px 0; }
+    .sec-grid-2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<section class="hero-stage">
+  <canvas id="hero-rain"></canvas>
+  <nav class="topnav">
+    <div class="logo"><span class="mark"></span>jackin'</div>
+    <div class="nav-right">
+      <a class="star" href="https://github.com/jackin-project/jackin" target="_blank" rel="noopener">★ Star on GitHub</a>
+    </div>
+  </nav>
+  <div class="shell">
+
+<!-- ========== HERO (editorial split) ========== -->
+<section class="hero">
+  <div class="hero-grid">
+    <div class="hero-left">
+      <h1 class="headline">
+        You're the <span class="accent">Operator</span>.<br>
+        <span class="soft">They're already</span> inside.
+      </h1>
+      <p class="deck">
+        jackin' drops AI coding agents into isolated Docker containers — full autonomy inside, your host untouched outside. One CLI. Same-path mounts. Per-agent state.
+      </p>
+      <div class="cta-row">
+        <a class="btn-primary" href="#">Get Started →</a>
+      </div>
+    </div>
+
+    <div class="hero-right">
+      <div class="code-panel">
+        <div class="code-head">
+          <div class="tabs">
+            <span class="tab active" data-cmd="load">$ load</span>
+            <span class="tab" data-cmd="hardline">$ hardline</span>
+            <span class="tab" data-cmd="eject">$ eject</span>
+          </div>
+          <span>operator@construct</span>
+        </div>
+        <div class="code-body" id="code-body"></div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+  </div>
+</section>
+
+<div class="shell">
+
+<!-- ========== SECTION 2: Matrix mapping ========== -->
+<section id="why" class="content">
+  <div class="sec-label">02 · Vocabulary</div>
+  <h2 class="sec-title">The vocabulary <span class="accent">is</span> the product.</h2>
+  <p class="sec-intro">Every command in jackin' maps to a concept from The Matrix — not for fun, but because the Matrix mental model is the shortest path to understanding what the tool does.</p>
+  <div class="mapping-grid">
+    <div class="map-head left">Matrix</div>
+    <div class="map-head mid">↔</div>
+    <div class="map-head">jackin'</div>
+    <div class="map-row">
+      <div class="map-cell left">Operator</div>
+      <div class="map-cell arrow">→</div>
+      <div class="map-cell right">You — running the CLI from your host</div>
+    </div>
+    <div class="map-row">
+      <div class="map-cell left">The Construct</div>
+      <div class="map-cell arrow">→</div>
+      <div class="map-cell right">Shared base Docker image every agent extends</div>
+    </div>
+    <div class="map-row">
+      <div class="map-cell left">Jacking in</div>
+      <div class="map-cell arrow">→</div>
+      <div class="map-cell right"><code>jackin load agent-smith</code></div>
+    </div>
+    <div class="map-row">
+      <div class="map-cell left">The agent inside</div>
+      <div class="map-cell arrow">→</div>
+      <div class="map-cell right">Claude Code running with full permissions</div>
+    </div>
+    <div class="map-row">
+      <div class="map-cell left">Reconnecting a pod</div>
+      <div class="map-cell arrow">→</div>
+      <div class="map-cell right"><code>jackin hardline</code> — reattach to a running agent</div>
+    </div>
+    <div class="map-row">
+      <div class="map-cell left">Pulling out</div>
+      <div class="map-cell arrow">→</div>
+      <div class="map-cell right"><code>jackin eject</code> — stop an agent cleanly</div>
+    </div>
+    <div class="map-row">
+      <div class="map-cell left">Exile</div>
+      <div class="map-cell arrow">→</div>
+      <div class="map-cell right"><code>jackin exile</code> — pull everyone out at once</div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== SECTION 3: The Problem ========== -->
+<section class="content">
+  <div class="sec-label">03 · The Problem</div>
+  <h2 class="sec-title">Unrestricted agents need unrestricted <span class="accent">containment</span>.</h2>
+  <p class="sec-intro">Agents like Claude Code are most productive when they run without permission prompts. But on your host, unrestricted means <em>everything</em> is visible — including things you never meant to share.</p>
+  <div class="problem-grid">
+    <ul class="problem-list">
+      <li><span class="x">✕</span><span><b>Every file.</b> SSH keys in <code>~/.ssh</code>, browser cookies, your password manager's unlocked session.</span></li>
+      <li><span class="x">✕</span><span><b>Every command.</b> <code>rm -rf</code>, <code>curl</code> to external endpoints, arbitrary system modifications.</span></li>
+      <li><span class="x">✕</span><span><b>Every package.</b> Any dependency the model decides to install — supply chain and all.</span></li>
+      <li><span class="x">✕</span><span><b>Every credential.</b> AWS, Docker Hub, GitHub tokens — anything in your shell environment.</span></li>
+      <li><span class="x">✕</span><span><b>Every mistake.</b> A single wrong command is a bad day, not a rollback.</span></li>
+    </ul>
+    <div>
+      <div class="mini-term">
+        <div class="mini-term-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="term-label">~ — unrestricted agent</span>
+        </div>
+        <div class="mini-term-body"><span class="prompt">$</span> ls -la ~
+<span class="dim">drwx------  .ssh/             </span><span class="danger"># private keys</span>
+<span class="dim">-rw-------  .aws/credentials  </span><span class="danger"># long-lived tokens</span>
+<span class="dim">-rw-------  .env              </span><span class="danger"># production secrets</span>
+<span class="dim">drwxr-xr-x  .config/</span>
+<span class="dim">drwxr-xr-x  Projects/</span>
+<span class="dim">... all visible to the agent.</span></div>
+      </div>
+      <div class="problem-quote">
+        "Running an unrestricted AI agent on your host is like inviting a brilliant contractor into your home and saying 'do whatever you want.'"
+        <cite>— docs / getting-started / why</cite>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== SECTION 4: Two dimensions (composition machine) ========== -->
+<section id="concepts" class="content">
+  <div class="sec-label">04 · Mental Model</div>
+  <h2 class="sec-title">Think in <span class="accent">two dimensions</span>.</h2>
+  <p class="sec-intro">jackin' organizes agents by <em>organization</em> — the same way GitHub does. Each org has its own agent classes (tool profiles) and workspaces (workdir + mounts with explicit permissions). Pick an org, pick an agent, pick a workspace — the preview shows the container that would result.</p>
+
+  <div class="machine-wrapper">
+    <div class="org-tabs" id="org-tabs">
+      <div class="org-tab active" data-org="jackin-project"><span class="at">@</span>jackin-project</div>
+      <div class="org-tab" data-org="chainargos"><span class="at">@</span>chainargos</div>
+      <div class="org-tab" data-org="acme"><span class="at">@</span>acme</div>
+    </div>
+    <div class="machine">
+      <div class="machine-panel">
+        <div class="machine-label">Agent Class</div>
+        <div class="machine-sublabel">the tool profile · scoped to org</div>
+        <div class="machine-options" id="opts-class"></div>
+      </div>
+      <div class="machine-op">×</div>
+      <div class="machine-panel">
+        <div class="machine-label">Workspace</div>
+        <div class="machine-sublabel">workdir + mounts with permissions</div>
+        <div class="machine-options" id="opts-ws"></div>
+      </div>
+      <div class="machine-op">=</div>
+      <div class="machine-panel preview">
+        <div class="machine-label">Running Agent</div>
+        <div class="machine-sublabel">the container that results</div>
+        <div id="preview"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="axis-note">
+    <b>Agent classes are GitHub repos</b> (<code>owner/agent</code>). jackin's own built-ins (<code>agent-smith</code>, <code>the-architect</code>) can be loaded by short name; every third-party agent uses the full <code>owner/agent</code> form. Switch orgs to see how a single operator spans multiple projects without mixing tooling.<br>
+    <b>Workspaces bundle a workdir and its mounts</b> — each mount declares its source, destination, and whether it's read-write or read-only. The access boundary is explicit, not implied. (Switch to <code>@chainargos</code> and try <code>frontend-engineer × docs-only</code> to see access rejection in action.)
+  </div>
+</section>
+
+<!-- ========== SECTION 5: How it works ========== -->
+<section id="commands" class="content">
+  <div class="sec-label">05 · How it Works</div>
+  <h2 class="sec-title">Four commands. <span class="accent">One loop.</span></h2>
+  <p class="sec-intro">jackin' is designed around a small, memorable vocabulary. Most of daily use is just these four.</p>
+  <div class="film">
+    <div class="frame">
+      <div class="frame-index">01</div>
+      <div class="frame-content">
+        <div class="frame-cmd"><span class="cmd">jackin load</span> agent-smith</div>
+        <div class="frame-desc">Clone the agent repo, build the derived image, create a per-agent network, launch DinD, start Claude Code inside. You're instantly in.</div>
+        <div class="frame-term"><span class="dim">→ Pulling construct:trixie... </span><span class="ok">OK</span>
+<span class="dim">→ Building derived image... </span><span class="ok">OK</span>
+<span class="dim">→ Container started. Agent loaded.</span></div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="frame-index">02</div>
+      <div class="frame-content">
+        <div class="frame-cmd"><span class="cmd">jackin hardline</span> agent-smith</div>
+        <div class="frame-desc">Closed your terminal but the agent is still running? Reattach to the existing container session with one command.</div>
+        <div class="frame-term"><span class="dim">→ Reattaching to jackin-agent-smith... </span><span class="ok">OK</span>
+<span class="dim">→ Session restored. History intact.</span></div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="frame-index">03</div>
+      <div class="frame-content">
+        <div class="frame-cmd"><span class="cmd">jackin load</span> the-architect monorepo</div>
+        <div class="frame-desc">Load a second agent — different tool profile, same or different workspace. They run in parallel, isolated from each other.</div>
+        <div class="frame-term"><span class="dim">→ Two agents active: agent-smith, the-architect</span>
+<span class="dim">→ Separate networks, separate state.</span></div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="frame-index">04</div>
+      <div class="frame-content">
+        <div class="frame-cmd"><span class="cmd">jackin eject</span> agent-smith</div>
+        <div class="frame-desc">Stop one agent cleanly — state persists for next time. Or <code>jackin exile</code> to pull everyone out at once.</div>
+        <div class="frame-term"><span class="dim">→ Stopping agent-smith... </span><span class="ok">OK</span>
+<span class="dim">→ State saved. Network removed.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== SECTION 6: Security ========== -->
+<section id="security" class="content sec-security">
+  <div class="sec-label">06 · Security Model (honest version)</div>
+  <h2 class="sec-title">Strong <span class="accent">where it counts</span>. Honest about the rest.</h2>
+  <p class="sec-intro">jackin' is container isolation, not hypervisor isolation. We document exactly what that means. No "enterprise-grade" hand-waving.</p>
+  <div class="sec-grid-2">
+    <div class="sec-col has">
+      <h4><span class="mark"></span>Isolated</h4>
+      <ul>
+        <li><b>Filesystem</b><span>Agent sees only mounted dirs. Host home, SSH keys, credentials are out of reach.</span></li>
+        <li><b>Network</b><span>Per-agent Docker network. No access to host services unless explicit.</span></li>
+        <li><b>Docker daemon</b><span>Each agent has its own DinD sidecar. Can't touch your host's daemon.</span></li>
+        <li><b>Shell environment</b><span>Agent doesn't inherit your env vars. Tokens stay on the host.</span></li>
+        <li><b>Installed packages</b><span>All installs happen inside the container. Host stays clean.</span></li>
+      </ul>
+    </div>
+    <div class="sec-col lacks">
+      <h4><span class="mark"></span>Shared (be aware)</h4>
+      <ul>
+        <li><b>Kernel</b><span>Container, not microVM. A kernel exploit crosses the boundary.</span></li>
+        <li><b>CPU / memory</b><span>Not hard-partitioned. Resource pressure affects host.</span></li>
+        <li><b>Mounted paths</b><span>Whatever you mount, the agent can read (and write, unless <code>:ro</code>).</span></li>
+        <li><b>Trust in agent source</b><span>Agent repo authors can define what runs in the image.</span></li>
+      </ul>
+    </div>
+  </div>
+  <div class="compare-callout">
+    <p>Want <b>microVM-level isolation?</b> Docker Sandboxes is stronger there. Want <b>open, local-first orchestration</b> with role-specific agents and workspaces as code? That's where jackin' is built to live.</p>
+    <a href="#">Full comparison →</a>
+  </div>
+</section>
+
+<!-- ========== SECTION 7: Ecosystem + Install CTA ========== -->
+<section class="content">
+  <div class="sec-label">07 · Ecosystem</div>
+  <h2 class="sec-title">Agents are git repos. <span class="accent">Build your own.</span></h2>
+  <p class="sec-intro">An agent class is a Dockerfile plus a small manifest. Clone, version, PR-review. Share across an org.</p>
+  <div class="roster">
+    <div class="agent-card">
+      <div class="avatar">AS</div>
+      <h4>agent-smith</h4>
+      <div class="class">github.com/jackin-project/jackin-agent-smith</div>
+      <p>Default general-purpose agent. Starts here and most first-time operators never need another. Loadable by short name because it's a jackin' built-in.</p>
+    </div>
+    <div class="agent-card">
+      <div class="avatar">TA</div>
+      <h4>the-architect</h4>
+      <div class="class">github.com/jackin-project/jackin-the-architect</div>
+      <p>Full Rust toolchain, ripgrep, just — the agent used to develop jackin' itself. Also loadable by short name.</p>
+    </div>
+    <div class="agent-card">
+      <div class="avatar">+</div>
+      <h4>your-org/your-agent</h4>
+      <div class="class">github.com/your-org/jackin-your-agent</div>
+      <p>Any third-party agent is loaded by its full <code>owner/agent</code> name. The GitHub repo always uses the <code>jackin-</code> prefix. Write a Dockerfile that extends the construct, add a manifest, push it up.</p>
+    </div>
+  </div>
+  <div class="install-block">
+    <div class="line"><span class="c"># install jackin'</span></div>
+    <div class="line"><span class="k">brew</span> tap jackin-project/tap</div>
+    <div class="line"><span class="k">brew</span> install jackin</div>
+    <div class="line"><span class="c"># enter your project</span></div>
+    <div class="line"><span class="k">cd</span> ~/Projects/my-app</div>
+    <div class="line"><span class="c"># jack in</span></div>
+    <div class="line"><span class="k">jackin</span> load agent-smith</div>
+  </div>
+  <div class="final-cta">
+    <h2>Your host stays <span class="accent">untouched</span>.</h2>
+    <p>Load an agent. Give it full autonomy. Pull it out when you're done. Your SSH keys thank you.</p>
+    <div class="buttons">
+      <a class="btn-primary" href="#">Read the Docs →</a>
+      <a class="btn-ghost" href="#">★ Star on GitHub</a>
+    </div>
+  </div>
+</section>
+
+</div>
+
+
+<script>
+(function () {
+  const body = document.getElementById('code-body');
+  const scripts = {
+    load: [
+      { cls: 'c',      text: '# Load an isolated agent into your current project\n' },
+      { cls: 'prompt', text: '$ ' },
+      { cls: 'cmd',    text: 'jackin ' },
+      { cls: 'k',      text: 'load' },
+      { cls: 'cmd',    text: ' agent-smith\n' },
+      { cls: 'dim',    text: '  \u2192 Pulling construct:trixie     ' },
+      { cls: 'ok',     text: 'OK\n' },
+      { cls: 'dim',    text: '  \u2192 Building derived image       ' },
+      { cls: 'ok',     text: 'OK\n' },
+      { cls: 'dim',    text: '  \u2192 Per-agent Docker network     ' },
+      { cls: 'ok',     text: 'OK\n' },
+      { cls: 'dim',    text: '  \u2192 Claude Code ready             ' },
+      { cls: 'ok',     text: 'OK\n' },
+      { cls: 'cmd',    text: '\n\u2713 Agent loaded. You\u2019re inside.' },
+    ],
+    hardline: [
+      { cls: 'c',      text: '# Reattach to a running agent session\n' },
+      { cls: 'prompt', text: '$ ' },
+      { cls: 'cmd',    text: 'jackin ' },
+      { cls: 'k',      text: 'hardline' },
+      { cls: 'cmd',    text: ' agent-smith\n' },
+      { cls: 'dim',    text: '  \u2192 Locating container...         ' },
+      { cls: 'ok',     text: 'OK\n' },
+      { cls: 'dim',    text: '  \u2192 Attaching to session...        ' },
+      { cls: 'ok',     text: 'OK\n' },
+      { cls: 'cmd',    text: '\n\u2713 Session restored. History intact.' },
+    ],
+    eject: [
+      { cls: 'c',      text: '# Stop an agent cleanly (state persists)\n' },
+      { cls: 'prompt', text: '$ ' },
+      { cls: 'cmd',    text: 'jackin ' },
+      { cls: 'k',      text: 'eject' },
+      { cls: 'cmd',    text: ' agent-smith\n' },
+      { cls: 'dim',    text: '  \u2192 Saving agent state...          ' },
+      { cls: 'ok',     text: 'OK\n' },
+      { cls: 'dim',    text: '  \u2192 Stopping container...          ' },
+      { cls: 'ok',     text: 'OK\n' },
+      { cls: 'dim',    text: '  \u2192 Removing network...            ' },
+      { cls: 'ok',     text: 'OK\n' },
+      { cls: 'cmd',    text: '\n\u2713 Ejected. Host clean.' },
+    ],
+  };
+
+  let active = 'load';
+  let typingToken = 0;
+  function clearBody() { while (body.firstChild) body.removeChild(body.firstChild); }
+
+  async function type(name) {
+    const mine = ++typingToken;
+    const lines = scripts[name];
+    while (mine === typingToken) {
+      clearBody();
+      for (const l of lines) {
+        if (mine !== typingToken) return;
+        const s = document.createElement('span'); s.className = l.cls; body.appendChild(s);
+        for (const ch of l.text) {
+          if (mine !== typingToken) return;
+          s.appendChild(document.createTextNode(ch));
+          await new Promise(r => setTimeout(r, ch === '\n' ? 110 : 11));
+        }
+      }
+      const c = document.createElement('span'); c.className = 'cursor'; body.appendChild(c);
+      await new Promise(r => setTimeout(r, 3500));
+    }
+  }
+
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      active = t.dataset.cmd;
+      type(active);
+    });
+  });
+
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) type(active);
+  else body.appendChild(document.createTextNode('$ jackin load agent-smith\n  \u2192 ... OK\n\u2713 Agent loaded. You\u2019re inside.'));
+})();
+
+// Hero rain — faithful port of jackin's own digital_rain from src/tui.rs
+// Same algorithm: age-based color gradient per cell, per-column speed/fade,
+// character mutation, 35ms frame rate. Char pool is ASCII only (no katakana)
+// to match the CLI implementation exactly.
+(function () {
+  const canvas = document.getElementById('hero-rain');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // Exact char pool from src/tui.rs line 76-77
+  const RAIN_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*<>{}[]|/\\~';
+
+  // Exact palette from src/tui.rs lines 13-19 + age_to_color (lines 55-64)
+  function ageToColor(age) {
+    if (age === 0)  return 'rgb(255,255,255)';   // WHITE — leader
+    if (age <= 2)   return 'rgb(180,255,180)';   // pale green
+    if (age <= 5)   return 'rgb(0,255,65)';      // MATRIX_GREEN
+    if (age <= 10)  return 'rgb(0,200,50)';      // mid green
+    if (age <= 16)  return 'rgb(0,140,30)';      // MATRIX_DIM
+    if (age <= 24)  return 'rgb(0,80,18)';       // MATRIX_DARK
+    return null;                                  // dead
+  }
+
+  // Mutation probability from src/tui.rs lines 67-74
+  function shouldMutate(age) {
+    const roll = Math.random() * 100;
+    if (age <= 2)  return roll < 30;
+    if (age <= 10) return roll < 15;
+    return roll < 5;
+  }
+
+  function randomChar() {
+    return RAIN_CHARS[(Math.random() * RAIN_CHARS.length) | 0];
+  }
+
+  const FONT_SIZE = 14;
+  const CELL_W = 12;  // character cell width (approx mono advance for 14px)
+  const CELL_H = 18;  // character cell height (line height)
+  const FRAME_MS = 35; // 28.5fps — matches CLI
+
+  let W, H, cols, rows, columns, grid;
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    W = rect.width; H = rect.height;
+    cols = Math.max(1, Math.floor(W / CELL_W));
+    rows = Math.max(1, Math.floor(H / CELL_H));
+
+    // Column state — from src/tui.rs lines 141-153
+    columns = Array.from({ length: cols }, () => ({
+      head: -((Math.random() * (rows + 6)) | 0),
+      speed: 1 + ((Math.random() * 4) | 0),  // 1..4
+      fade: 1 + ((Math.random() * 3) | 0),   // 1..3
+      active: Math.random() >= 0.33,          // ~67% start active
+      cooldown: 0,
+    }));
+
+    grid = Array.from({ length: rows }, () => new Array(cols).fill(null));
+  }
+  resize();
+  new ResizeObserver(resize).observe(canvas);
+
+  let frame = 0;
+  function tick() {
+    // Age all cells — src/tui.rs lines 167-179
+    for (let r = 0; r < rows; r++) {
+      const row = grid[r];
+      for (let c = 0; c < cols; c++) {
+        const cell = row[c];
+        if (!cell) continue;
+        cell.age += cell.fade;
+        if (ageToColor(cell.age) === null) {
+          row[c] = null;
+        } else if (shouldMutate(cell.age)) {
+          cell.ch = randomChar();
+        }
+      }
+    }
+
+    // Advance columns — src/tui.rs lines 181-212
+    for (let c = 0; c < cols; c++) {
+      const col = columns[c];
+      if (!col.active) {
+        if (col.cooldown > 0) col.cooldown--;
+        else {
+          col.active = true;
+          col.head = -((Math.random() * 6) | 0);
+          col.speed = 1 + ((Math.random() * 4) | 0);
+          col.fade = 1 + ((Math.random() * 3) | 0);
+        }
+        continue;
+      }
+      if (frame % col.speed === 0) col.head++;
+      if (col.head >= 0 && col.head < rows) {
+        grid[col.head][c] = { ch: randomChar(), age: 0, fade: col.fade };
+      }
+      if (col.head > rows + 5) {
+        col.active = false;
+        col.cooldown = 2 + ((Math.random() * 18) | 0);
+      }
+    }
+
+    // Render — clear + draw every live cell with its age-based color
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = FONT_SIZE + 'px "JetBrains Mono", "SF Mono", monospace';
+    ctx.textBaseline = 'top';
+    for (let r = 0; r < rows; r++) {
+      const row = grid[r];
+      for (let c = 0; c < cols; c++) {
+        const cell = row[c];
+        if (!cell) continue;
+        const color = ageToColor(cell.age);
+        if (!color) continue;
+        ctx.fillStyle = color;
+        ctx.fillText(cell.ch, c * CELL_W, r * CELL_H);
+      }
+    }
+    frame++;
+  }
+
+  let last = 0;
+  function loop(ts) {
+    if (ts - last >= FRAME_MS) { tick(); last = ts; }
+    requestAnimationFrame(loop);
+  }
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    requestAnimationFrame(loop);
+  }
+})();
+
+// Section 4 — composition machine: org × agent-class × workspace (with mounts)
+(function () {
+  const orgs = {
+    'jackin-project': {
+      classes: {
+        'agent-smith':   { repo: 'jackin-project/jackin-agent-smith',   tools: 'git, gh, mise, zsh',                plugins: 'default starter' },
+        'the-architect': { repo: 'jackin-project/jackin-the-architect', tools: 'Rust 1.87, cargo, ripgrep, just',   plugins: 'superpowers · rust' },
+      },
+      workspaces: {
+        'current-dir': {
+          workdir: '$(pwd)',
+          mounts: [
+            { src: '$(pwd)', dst: '$(pwd)', ro: false },
+          ],
+          allowed: null
+        },
+        'jackin-dev': {
+          workdir: '~/Projects/jackin-project/jackin',
+          mounts: [
+            { src: '~/Projects/jackin-project/jackin', dst: '~/Projects/jackin-project/jackin', ro: false },
+          ],
+          allowed: null
+        },
+      }
+    },
+    'chainargos': {
+      classes: {
+        'chainargos/backend-engineer':  { repo: 'chainargos/jackin-backend-engineer',  tools: 'Go 1.23, Postgres, grpcurl', plugins: 'API · SQL' },
+        'chainargos/frontend-engineer': { repo: 'chainargos/jackin-frontend-engineer', tools: 'Node 22, Playwright, pnpm',  plugins: 'UI · a11y' },
+        'chainargos/docs-writer':       { repo: 'chainargos/jackin-docs-writer',       tools: 'MDX, Vale, prettier',        plugins: 'writing' },
+      },
+      workspaces: {
+        'monorepo': {
+          workdir: '~/Projects/chainargos/monorepo',
+          mounts: [
+            { src: '~/Projects/chainargos/monorepo', dst: '~/Projects/chainargos/monorepo', ro: false },
+          ],
+          allowed: null
+        },
+        'docs-only': {
+          workdir: '~/Projects/chainargos/monorepo/docs',
+          mounts: [
+            { src: '~/Projects/chainargos/monorepo/docs', dst: '~/Projects/chainargos/monorepo/docs', ro: true },
+          ],
+          allowed: ['chainargos/docs-writer']
+        },
+      }
+    },
+    'acme': {
+      classes: {
+        'acme/frontend-engineer': { repo: 'acme/jackin-frontend-engineer', tools: 'Node 22, Playwright, pnpm',  plugins: 'UI · a11y' },
+        'acme/backend-engineer':  { repo: 'acme/jackin-backend-engineer',  tools: 'Go 1.23, Postgres, grpcurl', plugins: 'API · SQL' },
+      },
+      workspaces: {
+        'product': {
+          workdir: '~/Projects/acme/product',
+          mounts: [
+            { src: '~/Projects/acme/product',    dst: '~/Projects/acme/product', ro: false },
+            { src: '~/Projects/acme/shared-lib', dst: '/shared',                 ro: true },
+          ],
+          allowed: null
+        },
+        'platform-api': {
+          workdir: '~/Projects/acme/platform',
+          mounts: [
+            { src: '~/Projects/acme/platform', dst: '~/Projects/acme/platform', ro: false },
+            { src: '~/Projects/acme/proto',    dst: '/proto',                   ro: true },
+          ],
+          allowed: ['acme/backend-engineer']
+        },
+      }
+    }
+  };
+
+  let activeOrg = 'jackin-project';
+  let activeClass = 'agent-smith';
+  let activeWs = 'current-dir';
+
+  const optsClass = document.getElementById('opts-class');
+  const optsWs = document.getElementById('opts-ws');
+  const preview = document.getElementById('preview');
+
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+  function makeOpt(text, dataKey, dataVal, isActive, onClick) {
+    const d = document.createElement('div');
+    d.className = 'machine-opt' + (isActive ? ' active' : '');
+    d.dataset[dataKey] = dataVal;
+    const radio = document.createElement('span'); radio.className = 'radio'; d.appendChild(radio);
+    d.appendChild(document.createTextNode(text));
+    d.addEventListener('click', onClick);
+    return d;
+  }
+
+  function renderOptions() {
+    const org = orgs[activeOrg];
+    clear(optsClass);
+    Object.keys(org.classes).forEach(name => {
+      optsClass.appendChild(makeOpt(name, 'class', name, name === activeClass, () => {
+        activeClass = name; renderOptions(); renderPreview();
+      }));
+    });
+    clear(optsWs);
+    Object.keys(org.workspaces).forEach(name => {
+      optsWs.appendChild(makeOpt(name, 'ws', name, name === activeWs, () => {
+        activeWs = name; renderOptions(); renderPreview();
+      }));
+    });
+  }
+
+  function addRow(key, buildValue) {
+    const r = document.createElement('div'); r.className = 'preview-row';
+    const k = document.createElement('span'); k.className = 'k'; k.textContent = key; r.appendChild(k);
+    const v = document.createElement('span'); v.className = 'v';
+    buildValue(v);
+    r.appendChild(v);
+    preview.appendChild(r);
+  }
+
+  function renderPreview() {
+    const org = orgs[activeOrg];
+    const cl = org.classes[activeClass];
+    const ws = org.workspaces[activeWs];
+    clear(preview);
+
+    if (!cl || !ws) return;
+
+    if (ws.allowed && !ws.allowed.includes(activeClass)) {
+      const d = document.createElement('div'); d.className = 'preview-denied';
+      const lab = document.createElement('span'); lab.className = 'label'; lab.textContent = '\u2715 not loaded'; d.appendChild(lab);
+      d.appendChild(document.createTextNode('Workspace "' + activeWs + '" declares '));
+      const code = document.createElement('code'); code.textContent = 'allowed-agents: [' + ws.allowed.join(', ') + ']';
+      d.appendChild(code);
+      d.appendChild(document.createTextNode('. This combination is rejected before the container starts.'));
+      preview.appendChild(d);
+      return;
+    }
+
+    const shortClass = activeClass.split('/').pop();
+    addRow('container', v => {
+      const s = document.createElement('span'); s.className = 'hl';
+      s.textContent = 'jackin-' + shortClass;
+      v.appendChild(s);
+    });
+    addRow('class',   v => { v.appendChild(document.createTextNode(activeClass)); });
+    addRow('repo',    v => { v.appendChild(document.createTextNode('github.com/' + cl.repo)); });
+    addRow('tools',   v => { v.appendChild(document.createTextNode(cl.tools)); });
+    addRow('plugins', v => { v.appendChild(document.createTextNode(cl.plugins)); });
+    addRow('workdir', v => { v.appendChild(document.createTextNode(ws.workdir)); });
+    addRow('mounts',  v => {
+      const list = document.createElement('div'); list.className = 'mount-list';
+      ws.mounts.forEach(m => {
+        const it = document.createElement('div'); it.className = 'mount-item';
+        if (m.src === m.dst) {
+          const p = document.createElement('span'); p.className = 'src'; p.textContent = m.src; it.appendChild(p);
+        } else {
+          const src = document.createElement('span'); src.className = 'src'; src.textContent = m.src; it.appendChild(src);
+          const arr = document.createElement('span'); arr.className = 'arrow'; arr.textContent = '\u2192'; it.appendChild(arr);
+          const dst = document.createElement('span'); dst.className = 'dst'; dst.textContent = m.dst; it.appendChild(dst);
+        }
+        const perm = document.createElement('span'); perm.className = 'perm ' + (m.ro ? 'ro' : 'rw'); perm.textContent = m.ro ? 'ro' : 'rw'; it.appendChild(perm);
+        list.appendChild(it);
+      });
+      v.appendChild(list);
+    });
+    addRow('network', v => { v.appendChild(document.createTextNode('jackin-' + shortClass + '-net')); });
+  }
+
+  function renderAll() { renderOptions(); renderPreview(); }
+
+  document.querySelectorAll('#org-tabs .org-tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('#org-tabs .org-tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      activeOrg = t.dataset.org;
+      const org = orgs[activeOrg];
+      activeClass = Object.keys(org.classes)[0];
+      activeWs = Object.keys(org.workspaces)[0];
+      renderAll();
+    });
+  });
+
+  renderAll();
+})();
+</script>
+
+</body>
+</html>
