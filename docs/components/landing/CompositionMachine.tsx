@@ -1,6 +1,7 @@
 // docs/components/landing/CompositionMachine.tsx
 import { useState } from 'react';
 import { orgs } from './machineData';
+import { FocusCallout } from './FocusCallout';
 
 export function CompositionMachine() {
   const orgKeys = Object.keys(orgs);
@@ -123,6 +124,7 @@ export function CompositionMachine() {
             </div>
           </div>
         </div>
+        <FocusCallout />
       </div>
     </section>
   );

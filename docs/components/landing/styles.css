@@ -543,7 +543,18 @@
 .landing-mount-item .perm { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--landing-ui-strong); border-radius: 3px; color: var(--landing-text-ghost); flex-shrink: 0; }
 .landing-mount-item .perm.rw { color: var(--landing-accent); border-color: rgba(0,255,65,0.35); }
 
+/* FocusCallout (Section 06) */
+.landing-focus-callout { margin-top: 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.landing-focus-card { padding: 22px 24px; border: 1px solid var(--landing-ui); border-radius: 10px; background: rgba(255, 255, 255, 0.015); }
+.landing-focus-card.focus-role { border-color: rgba(0, 255, 65, 0.3); background: rgba(0, 255, 65, 0.03); }
+.landing-focus-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--landing-text-ghost); letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 16px; }
+.landing-focus-card.focus-role .landing-focus-label { color: var(--landing-accent); }
+.landing-focus-lines { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 500; color: var(--landing-text-dim); }
+.landing-focus-card.focus-role .landing-focus-lines { color: var(--landing-text); }
+.landing-focus-note { font-size: 13.5px; line-height: 1.6; color: var(--landing-text-dim); margin: 0; }
+
 @media (max-width: 880px) {
   .landing-machine { grid-template-columns: 1fr; gap: 16px; }
   .landing-machine-op { font-size: 18px; padding: 4px 0; }
+  .landing-focus-callout { grid-template-columns: 1fr; }
 }
