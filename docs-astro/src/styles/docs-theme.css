@@ -481,6 +481,12 @@ header.header {
   color: var(--sl-color-text-accent);
 }
 
+/* Hide the vertical separator Starlight draws after the social icons
+   block (Header.astro injects .social-icons::after with a 1px border). */
+.social-icons::after {
+  display: none;
+}
+
 /* ==========================================================================
    Top-nav search — panel pill with green hover
    ========================================================================== */
