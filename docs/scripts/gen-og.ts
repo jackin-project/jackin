@@ -89,32 +89,76 @@ const tree = h(
       style: {
         display: 'flex',
         fontWeight: 800,
-        fontSize: 200,
-        letterSpacing: -10,
+        fontSize: 176,
+        letterSpacing: -8,
         color: '#f4f7f5',
         lineHeight: 1,
-        marginBottom: 28,
+        marginBottom: 22,
       },
     },
     h('span', { style: { display: 'flex' } }, 'jackin'),
     h('span', { style: { display: 'flex', color: '#00ff41' } }, "'")
   ),
-  // Tagline
+  // Tagline — brand narrative, not implementation detail. Deliberately
+  // says "isolated worlds" rather than "Docker containers" so the copy
+  // stays honest when the VM backend lands. "Operator" echoes the
+  // OPERATOR TERMINAL label above so the two accent beats rhyme.
   h(
     'div',
     {
       style: {
         display: 'flex',
         flexDirection: 'column',
-        fontWeight: 500,
-        fontSize: 36,
-        color: '#9ca8a1',
-        letterSpacing: -0.8,
-        lineHeight: 1.3,
+        letterSpacing: -0.6,
       },
     },
-    h('div', { style: { display: 'flex' } }, 'CLI for orchestrating AI coding agents'),
-    h('div', { style: { display: 'flex' } }, 'in isolated Docker containers.')
+    h(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          fontWeight: 600,
+          fontSize: 36,
+          color: '#f4f7f5',
+          lineHeight: 1.2,
+        },
+      },
+      // Satori trims whitespace between flex children; nbsp inside the
+      // span preserves the visible gap without a CSS margin hack.
+      'Jack your AI coding agents into the',
+      h('span', { style: { display: 'flex', color: '#00ff41' } }, '\u00A0Matrix'),
+      '.'
+    ),
+    h(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          marginTop: 14,
+          fontWeight: 500,
+          fontSize: 26,
+          color: '#9ca8a1',
+          lineHeight: 1.35,
+        },
+      },
+      'Their own isolated worlds. Scoped access. Full autonomy.'
+    ),
+    h(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          marginTop: 8,
+          fontWeight: 500,
+          fontSize: 26,
+          color: '#9ca8a1',
+          lineHeight: 1.35,
+        },
+      },
+      "You're the",
+      h('span', { style: { display: 'flex', color: '#00ff41' } }, '\u00A0Operator'),
+      ". They're already inside."
+    )
   )
 )
 
