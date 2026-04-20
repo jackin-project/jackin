@@ -1,5 +1,5 @@
 // docs/components/landing/loopData.tsx
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 export interface LoopFrame {
   id: string;
