@@ -1,0 +1,228 @@
+---
+import Default from '@astrojs/starlight/components/Head.astro'
+// Static Inter Black for the top-nav wordmark + right-rail wordmark.
+// Without a preload, the browser discovers the @font-face rule during
+// CSS parse and paints the wordmark with the fallback first, producing
+// a visible font swap on every navigation. ?url lets Astro bundle and
+// hash the file so the preload points at the exact asset. */
+import interBlack from '@fontsource/inter/files/inter-latin-900-normal.woff2?url'
+
+const { entry } = Astro.locals.starlightRoute
+const routeId = Astro.locals.starlightRoute.id
+
+// Everything below (per-page OG card, TechArticle schema, BreadcrumbList,
+// article:section) is only meaningful for real content pages. The 404
+// route has no collection entry; emitting article schema on it gives
+// Google misleading structured data about a page that doesn't exist.
+const isContentPage = entry !== undefined && routeId !== '404'
+
+const OG_IMAGE = isContentPage
+  ? `https://jackin.tailrocks.com/og/${routeId.replace(/\.(mdx?|astro)$/i, '')}.png`
+  : 'https://jackin.tailrocks.com/og-image.png'
+
+// Article section label — derived from the top-level path segment.
+const sectionLabel = isContentPage
+  ? (() => {
+      const segment = routeId.split('/')[0]
+      return segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' ')
+    })()
+  : undefined
+
+const pageUrl = new URL(Astro.url.pathname, 'https://jackin.tailrocks.com').toString()
+
+const jsonLd = isContentPage
+  ? {
+      '@context': 'https://schema.org',
+      '@type': 'TechArticle',
+      headline: entry.data.title,
+      description: entry.data.description,
+      url: pageUrl,
+      image: OG_IMAGE,
+      inLanguage: 'en',
+      articleSection: sectionLabel,
+      isPartOf: {
+        '@type': 'WebSite',
+        name: "jackin'",
+        url: 'https://jackin.tailrocks.com/',
+      },
+      publisher: {
+        '@type': 'Organization',
+        name: 'jackin project',
+        url: 'https://github.com/jackin-project',
+      },
+    }
+  : null
+
+// BreadcrumbList — only emits entries that point at pages that actually
+// exist. No section in this site has an index.mdx (e.g. there's no
+// /getting-started/ page), so synthesising intermediate crumbs from
+// path segments produces links that 404. Keep it to Home → current page
+// for now. When section index pages land, insert them here between the
+// two entries rather than adding pure-name crumbs that link into voids.
+const breadcrumbJsonLd = isContentPage
+  ? {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Home',
+          item: 'https://jackin.tailrocks.com/',
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: entry.data.title,
+          item: pageUrl,
+        },
+      ],
+    }
+  : null
+---
+
+{/* Runs FIRST — before any stylesheet that could block its execution.
+    Syncs data-theme so every page renders in the correct theme from
+    first paint (Starlight hardcodes data-theme to 'dark' server-side,
+    which flashed on navigations in light mode).
+
+    Resolution order, once:
+      1. localStorage has 'light' or 'dark' → use it
+      2. No stored value → honour the OS prefers-color-scheme
+      3. matchMedia unavailable → fall back to dark (brand default)
+    We do NOT write to localStorage here. The ThemeSelect custom
+    element also only writes on user click, so a first-time visitor's
+    OS preference survives until they choose explicitly.
+
+    Old 'auto' values are migrated away (cleared) — they used to map
+    to matchMedia, but with explicit buttons only, a stuck 'auto' in
+    an old tab would never resolve. Clearing it just drops back to
+    the resolution order above.
+
+    Adds .theme-init only when we actually flip the attribute. It
+    disables every CSS transition for two animation frames after
+    DOMContentLoaded so elements using var(--jk-brand) don't animate
+    the dark-to-light colour shift. Skipped when no flip happens. */}
+<script is:inline>
+  (function () {
+    var root = document.documentElement
+    var flipped = false
+    try {
+      var stored = null
+      try {
+        stored = localStorage.getItem('starlight-theme')
+        if (stored === 'auto') {
+          localStorage.removeItem('starlight-theme')
+          stored = null
+        }
+      } catch (e) {
+        // localStorage access threw (private mode, SecurityError, etc).
+      }
+      var theme
+      if (stored === 'light' || stored === 'dark') {
+        theme = stored
+      } else if (typeof window.matchMedia === 'function' &&
+                 window.matchMedia('(prefers-color-scheme: light)').matches) {
+        theme = 'light'
+      } else {
+        theme = 'dark'
+      }
+      if (root.getAttribute('data-theme') !== theme) {
+        root.setAttribute('data-theme', theme)
+        flipped = true
+      }
+    } catch (e) {
+      // Don't leave the page broken if anything above threw.
+    }
+    if (!flipped) return
+    root.classList.add('theme-init')
+    function releaseInit() {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          root.classList.remove('theme-init')
+        })
+      })
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', releaseInit, { once: true })
+    } else {
+      releaseInit()
+    }
+  })()
+</script>
+
+{/* Preload the static Inter Black woff2 FIRST, before Starlight's
+    default head emits the main stylesheet <link>. The preload scanner
+    will then pick it up before the CSS request, so the font is in
+    cache by the time the @font-face rule starts looking for it, and
+    the wordmark paints without a fallback flash between pages.
+    fetchpriority="high" keeps it above other preloaded resources. */}
+<link rel="preload" as="font" type="font/woff2" href={interBlack} crossorigin fetchpriority="high" />
+
+<Default><slot /></Default>
+
+{/* Social preview image — Starlight sets og:title / og:description /
+    twitter:card but not og:image. Adding both og:image and
+    twitter:image so tweets / FB / Slack / Discord / LinkedIn shares
+    render a full preview card. */}
+<meta property="og:image" content={OG_IMAGE} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="jackin' — jack your AI coding agents in: isolated worlds, scoped access, full autonomy" />
+<meta name="twitter:image" content={OG_IMAGE} />
+<meta name="twitter:image:alt" content="jackin' — jack your AI coding agents in: isolated worlds, scoped access, full autonomy" />
+
+{sectionLabel && <meta property="article:section" content={sectionLabel} />}
+
+{/* Structured data for rich Google search results — only emitted on
+    real content pages. Without the null check Astro would render
+    <script>null</script> on the 404, which is invalid JSON-LD. */}
+{jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+{breadcrumbJsonLd && <script type="application/ld+json" set:html={JSON.stringify(breadcrumbJsonLd)} />}
+
+{/* Favicons — Starlight auto-injects a single SVG favicon; iOS and
+    Android home-screen adds prefer PNG rasters + an apple-touch-icon
+    + a web app manifest. */}
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+<link rel="manifest" href="/site.webmanifest" />
+
+{/* Tab overflow detection: watches each .tablist-wrapper and toggles
+    a [data-overflow] attribute when the tablist's natural content
+    width exceeds its container. CSS picks up the attribute and swaps
+    in the chip layout (see docs-theme.css). Pure width-based — works
+    at any viewport, no hard-coded breakpoint. */}
+<script is:inline>
+  (function () {
+    function setup() {
+      var wrappers = document.querySelectorAll('.tablist-wrapper')
+      if (!wrappers.length) return
+      function measure(wrapper) {
+        var list = wrapper.querySelector('[role="tablist"]')
+        if (!list) return
+        // Temporarily unset overflow so we can measure natural width.
+        wrapper.removeAttribute('data-overflow')
+        var overflows = list.scrollWidth > list.clientWidth + 1
+        if (overflows) wrapper.setAttribute('data-overflow', '')
+      }
+      var ro = new ResizeObserver(function (entries) {
+        entries.forEach(function (e) { measure(e.target) })
+      })
+      wrappers.forEach(function (w) {
+        measure(w)
+        ro.observe(w)
+      })
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', setup, { once: true })
+    } else {
+      setup()
+    }
+  })()
+</script>
+
+{/* Fonts are self-hosted via fontsource. See src/styles/fonts.css —
+    Astro bundles the woff2 files same-origin and serves them directly,
+    which is significantly faster than Google Fonts (no third-party DNS
+    or TLS) and eliminates FOUT. */}
