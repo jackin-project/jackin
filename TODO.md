@@ -1,22 +1,19 @@
 # TODO
 
-Individual items are tracked in [`todo/`](todo/). Each file is a self-contained design document with problem statement, options, and related files.
+Roadmap items — open work and resolved design docs — live in the docs
+site, not in this repo. See:
 
-## Open Items
+- Overview: [`docs-astro/src/content/docs/reference/roadmap.mdx`](docs-astro/src/content/docs/reference/roadmap.mdx)
+- Per-item design docs: [`docs-astro/src/content/docs/reference/roadmap/`](docs-astro/src/content/docs/reference/roadmap/)
+- Browsable: <https://jackin.tailrocks.com/reference/roadmap/>
 
-- [Construct Image: User Creation Responsibility](todo/construct-user-creation.md) — UID/GID remapping hack in derived images
-- [1Password Integration for Agent Secrets](todo/onepassword-integration.md) — first-class secret injection at launch time
-- [Migrate Docker CLI to Bollard API Client](todo/bollard-migration.md) — replace string-matched error handling with typed API
-- [Rootless DinD Research](todo/rootless-dind.md) — reduce privileged container attack surface
-- [Selectable Sandbox Backends: DinD and MicroVM](todo/selectable-sandbox-backends.md) — operator-selectable runtime modes with backend-neutral lifecycle design
-- [Reproducibility and Provenance Pinning](todo/reproducibility-pinning.md) — version pinning for agent repos (needs design)
+To add a new item, create an MDX page under the directory above and
+add a sidebar entry in [`docs-astro/astro.config.mjs`](docs-astro/astro.config.mjs)
+under `Roadmap → Open items`.
 
-## Resolved
+Each design doc should include (see any existing page as a template):
 
-- [Interactive Env Var Interpolation](todo/env-var-interpolation.md) — `${env.VAR}` interpolation in prompt and default fields for dependent env vars
-- [Orphaned DinD Container Cleanup](todo/orphaned-dind-cleanup.md) — automatic pre-launch GC for orphaned DinD sidecars and networks
-- [Sensitive Mount Path Warnings](todo/sensitive-mount-warnings.md) — warn before mounting `~/.ssh`, `~/.aws`, etc.
-- [Custom Plugin Marketplace Support](todo/custom-plugin-marketplace.md) — auto-install custom Claude marketplaces and plugins from `jackin.agent.toml`
-- [Expose DinD Hostname as `JACKIN_DIND_HOSTNAME`](todo/dind-hostname-env-var.md) — agents can reach DinD-backed services without parsing `DOCKER_HOST`
-- [Agent Source Trust Model](todo/agent-source-trust.md) — trust-on-first-use for third-party agent repos
-- [DinD TLS Authentication](todo/dind-tls.md) — TLS with auto-generated certificates for DinD sidecar
+- `**Status**: Open | Deferred | Resolved`
+- `## Problem`
+- `## Why It Matters`
+- `## Related Files`
