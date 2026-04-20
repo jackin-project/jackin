@@ -28,15 +28,11 @@
   --sl-content-width: 48rem;
   --sl-nav-height: 3.5rem;
 
-  /* Brand accent — a juicy mid-green that works as a pill bg, underline,
-     or rail in BOTH page modes. Pure #00ff41 (the landing-logo green)
-     was too loud on a white page and failed white-text-on-green contrast
-     for the sidebar active pill. This value has ~5.8:1 contrast with our
-     dark text and ~3.3:1 with white, so both pill treatments are legible.
-     The logo tick keeps the original #00ff41 hex (hardcoded in
-     overrides/SiteTitle.astro and landing components) since it sits
-     against dark backgrounds only. */
-  --jk-brand:      #16a34a;
+  /* Brand accent — theme-aware so dark mode can keep the bright Matrix
+     green while light mode uses a juicy-but-usable mid-green. Per-theme
+     values live in the [data-theme='*'] blocks below; this fallback
+     matches the dark-mode default for pre-theme-set renders. */
+  --jk-brand:      #00ff41;
 
   /* Fallback --jk-* tokens (dark). Ensures tokens resolve before
      data-theme gets applied to <html>. */
@@ -68,6 +64,7 @@
   --jk-text-ghost: #5e6a64;
   --jk-accent:     #00ff41;
   --jk-accent-dim: #00b82f;
+  --jk-brand:      #00ff41;   /* bright Matrix green on dark surfaces */
   --jk-ui:         rgba(244, 247, 245, 0.1);
   --jk-ui-strong:  rgba(244, 247, 245, 0.22);
   --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
@@ -128,6 +125,7 @@
   --jk-text-ghost: #8a928e;
   --jk-accent:     #007a22;   /* deep forest green — AA contrast on white (5.1:1) */
   --jk-accent-dim: #005c1a;   /* deeper still for pressed/active highlights */
+  --jk-brand:      #16a34a;   /* juicy mid-green — usable as pill bg + underline on white */
   --jk-ui:         rgba(0, 0, 0, 0.08);
   --jk-ui-strong:  rgba(0, 0, 0, 0.18);
   --jk-ui-subtle:  rgba(0, 0, 0, 0.04);
