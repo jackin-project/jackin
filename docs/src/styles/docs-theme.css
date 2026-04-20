@@ -396,6 +396,24 @@ html.theme-init *::after {
 }
 
 /* ==========================================================================
+   Mobile menu footer (social icons + theme toggle + language select).
+   Starlight draws a 1px top border via .mobile-preferences { border-top:
+   ... var(--sl-color-gray-6) } which reads as a stray line hanging at
+   the bottom of the menu. Dropped in both themes — the sidebar's last
+   item already provides enough visual closure.
+   ========================================================================== */
+
+.mobile-preferences {
+  border-top: 0 !important;
+}
+
+/* Theme toggle in the mobile footer — add a tiny bit of internal
+   margin so it doesn't crowd the socials/language picker next to it. */
+.mobile-preferences starlight-theme-select.jk-theme-toggle {
+  margin-block: 0.5rem;
+}
+
+/* ==========================================================================
    Mobile "On this page" (MobileTableOfContents) — Starlight defaults
    resolve through --sl-color-black, --sl-color-gray-5, etc. which in
    our palette rendered muddy (near-white button + faint grey border
