@@ -4,8 +4,6 @@ Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. Yo
 
 Documentation: <https://jackin.tailrocks.com/>
 
-Source code: <https://github.com/jackin-project/jackin>
-
 > **Current status:** jackin' is built as a proof of concept around [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its first and only supported agent runtime. Support for additional runtimes is [on the roadmap](https://jackin.tailrocks.com/reference/roadmap/).
 
 ## Install
