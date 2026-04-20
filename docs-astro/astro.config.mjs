@@ -8,6 +8,11 @@ export default defineConfig({
     starlight({
       title: "jackin'",
       description: 'CLI for orchestrating AI coding agents in isolated containers',
+      // Single dark theme for code blocks regardless of page light/dark —
+      // code stays readable against a dark surface in either mode.
+      expressiveCode: {
+        themes: ['github-dark'],
+      },
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/jackin-project/jackin' }],
       editLink: {
         baseUrl: 'https://github.com/jackin-project/jackin/edit/main/docs-astro/src/content/docs/',

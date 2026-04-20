@@ -89,19 +89,15 @@
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
 
-  /* Expressive-code frame — single-border, panel-colored */
+  /* Expressive-code frame — outer border only; surfaces come from the
+     shiki theme (github-dark, same in both modes). */
   --ec-brdRad: 10px;
-  --ec-brdCol: var(--jk-ui);
-  --ec-frm-edBg: var(--jk-panel);
-  --ec-frm-edActTabBg: var(--jk-panel);
+  --ec-brdCol: rgba(255, 255, 255, 0.1);
   --ec-frm-edActTabIndBtmCol: transparent;
   --ec-frm-edActTabIndTopCol: transparent;
-  --ec-frm-edTabBarBg: var(--jk-panel);
   --ec-frm-edTabBarBrdBtmCol: transparent;
   --ec-frm-edTabsMrgInlStart: 0;
   --ec-frm-edTabsMrgBlkStart: 0;
-  --ec-frm-trmBg: var(--jk-panel);
-  --ec-frm-trmTtbBg: var(--jk-panel);
   --ec-frm-trmTtbBrdBtmCol: transparent;
   --ec-frm-inlBrdCol: transparent;
   --ec-frm-frameBoxShdCssVal: none;
@@ -145,19 +141,16 @@
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
 
-  /* Expressive-code frame — same structure as dark, light-mode surfaces */
+  /* Code blocks always use the dark github-dark shiki theme (configured
+     in astro.config.mjs), so in light mode the frame border picks a
+     subtle light-on-dark hairline that matches the dark code surface. */
   --ec-brdRad: 10px;
-  --ec-brdCol: var(--jk-ui);
-  --ec-frm-edBg: var(--jk-panel);
-  --ec-frm-edActTabBg: var(--jk-panel);
+  --ec-brdCol: rgba(255, 255, 255, 0.1);
   --ec-frm-edActTabIndBtmCol: transparent;
   --ec-frm-edActTabIndTopCol: transparent;
-  --ec-frm-edTabBarBg: var(--jk-panel);
   --ec-frm-edTabBarBrdBtmCol: transparent;
   --ec-frm-edTabsMrgInlStart: 0;
   --ec-frm-edTabsMrgBlkStart: 0;
-  --ec-frm-trmBg: var(--jk-panel);
-  --ec-frm-trmTtbBg: var(--jk-panel);
   --ec-frm-trmTtbBrdBtmCol: transparent;
   --ec-frm-inlBrdCol: transparent;
   --ec-frm-frameBoxShdCssVal: none;
@@ -533,7 +526,9 @@ header.header {
 
 .expressive-code .frame {
   box-shadow: none;
-  border: 1px solid var(--jk-ui);
+  /* Border tuned for the dark code surface, not the page — so it stays
+     legible as a hairline around the dark block in either page theme. */
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   overflow: hidden;
 }
