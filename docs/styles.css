@@ -1,6 +1,7 @@
 @import "tailwindcss";
 /* Fonts are loaded at runtime from docs/layout.tsx — the @import url()
    for Google Fonts gets stripped by the bundler. */
+@import "./tempo-tokens.css";
 @import "./components/landing/styles.css";
 @import "./docs-theme.css";
 
