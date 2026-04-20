@@ -121,6 +121,7 @@ export default defineConfig({
         Head: './src/components/overrides/Head.astro',
         PageSidebar: './src/components/overrides/PageSidebar.astro',
         SiteTitle: './src/components/overrides/SiteTitle.astro',
+        SocialIcons: './src/components/overrides/SocialIcons.astro',
         ThemeSelect: './src/components/overrides/ThemeSelect.astro',
       },
       customCss: [
