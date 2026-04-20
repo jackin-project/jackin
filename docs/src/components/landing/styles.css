@@ -257,7 +257,7 @@ html {
   .landing-footer-wordmark { font-size: clamp(80px, 22vw, 180px); }
 }
 
-/* Section 3: Red pill / blue pill */
+/* Section 3: Failure modes (over-correct / under-correct) */
 .landing-pills { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .landing-pill-card {
   padding: 34px 30px 30px;

@@ -5,7 +5,7 @@ export function PillCards() {
       <div className="landing-shell">
         <div className="landing-sec-label">03 · The Problem</div>
         <h2 className="landing-sec-title">The <span className="accent">false</span> choice.</h2>
-        <p className="landing-sec-intro">Every AI coding agent offers you a pill. The false choice is thinking you have to swallow either one.</p>
+        <p className="landing-sec-intro">Every AI coding agent hands you two failure modes. The false choice is thinking you have to accept either one.</p>
 
         <div className="landing-pills">
           <div className="landing-pill-card blue">
@@ -13,7 +13,7 @@ export function PillCards() {
               <div className="landing-pill-color" />
               <div className="landing-pill-white" />
             </div>
-            <div className="landing-pill-meta">Blue pill</div>
+            <div className="landing-pill-meta">Over-correct</div>
             <h3>Babysit every prompt</h3>
             <ul className="landing-choice-lines">
               <li>"Are you sure?" dialogs every ten seconds.</li>
@@ -28,7 +28,7 @@ export function PillCards() {
               <div className="landing-pill-color" />
               <div className="landing-pill-white" />
             </div>
-            <div className="landing-pill-meta">Red pill</div>
+            <div className="landing-pill-meta">Under-correct</div>
             <h3>Full YOLO on host</h3>
             <ul className="landing-choice-lines">
               <li>Agent reads every file — SSH keys, <code>.env</code>, cookies.</li>
@@ -41,7 +41,7 @@ export function PillCards() {
         </div>
 
         <div className="landing-choice-transition">
-          Refuse the pill. <span className="accent">You're the Operator</span> — define the construct instead.
+          Refuse both. <span className="accent">You're the Operator</span> — define the container instead.
         </div>
       </div>
     </section>

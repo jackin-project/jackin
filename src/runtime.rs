@@ -992,14 +992,14 @@ fn load_agent_with(
     let git = load_git_identity(runner);
     let host = load_host_identity(runner);
 
-    // Matrix intro
+    // Intro animation
     if !opts.no_intro {
         let intro_name = if git.user_name.is_empty() {
-            "Neo"
+            "operator"
         } else {
             &git.user_name
         };
-        tui::matrix_intro(intro_name);
+        tui::intro_animation(intro_name);
     }
 
     let (source, is_new) = config.resolve_agent_source(selector)?;
@@ -1203,7 +1203,7 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
     if opts.no_intro {
         return;
     }
-    tui::matrix_outro(
+    tui::outro_animation(
         agent_display_name,
         &list_running_agent_display_names(runner).unwrap_or_default(),
     );
@@ -3360,8 +3360,8 @@ plugins = []
             mounts: vec![],
         };
         let git = GitIdentity {
-            user_name: "Neo".to_string(),
-            user_email: "neo@matrix.org".to_string(),
+            user_name: "Alice".to_string(),
+            user_email: "alice@example.com".to_string(),
         };
 
         let rows = build_config_rows(

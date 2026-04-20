@@ -2,7 +2,7 @@
 
 This directory contains the source for `projectjackin/construct:trixie` — the shared base Docker image that every [jackin](https://github.com/jackin-project/jackin) agent starts from.
 
-In The Matrix, the construct is the base simulated environment loaded before a mission. In jackin, it's the foundation layer providing system tools, shell environment, and container infrastructure that all agents inherit.
+The construct is the foundation layer providing system tools, shell environment, and container infrastructure that all agents inherit — one shared base image so every agent class starts from the same baseline.
 
 For full details — including what's installed, how it is built, the image layer architecture, and how to extend it — see the [Construct Image](https://jackin.tailrocks.com/developing/construct-image/) documentation.
 

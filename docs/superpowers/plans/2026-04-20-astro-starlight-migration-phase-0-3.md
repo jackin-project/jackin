@@ -569,7 +569,7 @@ git commit -m "$(cat <<'EOF'
 feat(docs-astro): port Radix theme tokens to Starlight CSS vars
 
 Maps Starlight's --sl-color-* surface to the Radix tokens from
-tempo-tokens.css. Preserves the Matrix-green accent used throughout
+tempo-tokens.css. Preserves the phosphor-green accent used throughout
 the current Vocs site.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

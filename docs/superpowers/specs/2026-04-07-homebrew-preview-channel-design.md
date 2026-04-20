@@ -138,7 +138,7 @@ Expected structure:
 
 ```ruby
 class JackinPreview < Formula
-  desc "CLI for orchestrating AI coding agents at scale"
+  desc "genre-inspired CLI for orchestrating AI coding agents at scale"
   homepage "https://github.com/jackin-project/jackin"
   url "https://github.com/jackin-project/jackin/archive/<fullsha>.tar.gz"
   version "0.5.0-preview+abc1234"

@@ -26,7 +26,7 @@ const BANNER: &str = concat!(
     "\x1b[0m",
 );
 
-/// Send agents into the Matrix
+/// Operator's CLI for orchestrating AI coding agents in isolated containers
 #[derive(Debug, Parser)]
 #[command(name = "jackin", version = env!("JACKIN_VERSION"), styles = HELP_STYLES, before_help = BANNER)]
 pub struct Cli {
@@ -36,7 +36,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
-    /// Jack an agent into the Matrix
+    /// Jack an agent into an isolated container
     ///
     /// TARGET can be a path (~/Projects/my-app), a path with container
     /// destination (~/Projects/my-app:/app), or a saved workspace name.
@@ -89,7 +89,7 @@ Examples:
         /// Agent class selector or container name to reconnect to
         selector: String,
     },
-    /// Pull an agent out of the Matrix
+    /// Stop an agent and clean up its container
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -809,7 +809,7 @@ mod tests {
     #[test]
     fn root_help_shows_all_commands() {
         let help = help_text(&["jackin", "--help"]);
-        assert!(help.contains("Send agents into the Matrix"));
+        assert!(help.contains("Operator's CLI for orchestrating AI coding agents in isolated containers"));
         for cmd in [
             "load",
             "hardline",
@@ -829,7 +829,7 @@ mod tests {
     #[test]
     fn load_help_shows_description_and_examples() {
         let help = help_text(&["jackin", "load", "--help"]);
-        assert!(help.contains("Jack an agent into the Matrix"));
+        assert!(help.contains("Jack an agent into an isolated container"));
         assert!(help.contains("Examples:"));
         assert!(help.contains("jackin load agent-smith"));
         assert!(help.contains("jackin load agent-smith big-monorepo"));
@@ -858,7 +858,7 @@ mod tests {
     #[test]
     fn eject_help_shows_examples() {
         let help = help_text(&["jackin", "eject", "--help"]);
-        assert!(help.contains("Pull an agent out"));
+        assert!(help.contains("Stop an agent and clean up its container"));
         assert!(help.contains("jackin eject agent-smith --all"));
         assert!(help.contains("jackin eject agent-smith --purge"));
     }
