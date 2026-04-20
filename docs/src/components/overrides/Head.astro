@@ -1,7 +1,45 @@
 ---
 import Default from '@astrojs/starlight/components/Head.astro'
 
-const OG_IMAGE = 'https://jackin.tailrocks.com/og-image.png'
+// Each docs page gets its own generated OG card (see
+// src/pages/og/[...slug].png.ts + astro-og-canvas). Fall back to the
+// global landing image for any page without an ID (shouldn't happen
+// for routes going through this override, but safe default).
+const routeId = Astro.locals.starlightRoute.id
+const OG_IMAGE = routeId
+  ? `https://jackin.tailrocks.com/og/${routeId.replace(/\.[^./]+$/, '')}.png`
+  : 'https://jackin.tailrocks.com/og-image.png'
+
+// Article meta — LinkedIn / FB honour these for og:type=article pages.
+const section = routeId?.split('/')[0]
+const sectionLabel = section
+  ? section.charAt(0).toUpperCase() + section.slice(1).replace(/-/g, ' ')
+  : undefined
+
+// JSON-LD structured data for docs pages — search engines use this to
+// render rich results (article cards with section/author/date).
+const { entry } = Astro.locals.starlightRoute
+const pageUrl = new URL(Astro.url.pathname, 'https://jackin.tailrocks.com').toString()
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'TechArticle',
+  headline: entry?.data.title,
+  description: entry?.data.description,
+  url: pageUrl,
+  image: OG_IMAGE,
+  inLanguage: 'en',
+  articleSection: sectionLabel,
+  isPartOf: {
+    '@type': 'WebSite',
+    name: "jackin'",
+    url: 'https://jackin.tailrocks.com/',
+  },
+  publisher: {
+    '@type': 'Organization',
+    name: 'jackin project',
+    url: 'https://github.com/jackin-project',
+  },
+}
 ---
 
 {/* Runs FIRST — before any stylesheet that could block its execution.
@@ -57,6 +95,19 @@ const OG_IMAGE = 'https://jackin.tailrocks.com/og-image.png'
 <meta property="og:image:alt" content="jackin' — CLI for orchestrating AI coding agents in isolated Docker containers" />
 <meta name="twitter:image" content={OG_IMAGE} />
 <meta name="twitter:image:alt" content="jackin' — CLI for orchestrating AI coding agents in isolated Docker containers" />
+
+{sectionLabel && <meta property="article:section" content={sectionLabel} />}
+
+{/* Structured data for rich Google search results. */}
+<script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+
+{/* Favicons — Starlight auto-injects a single SVG favicon; iOS and
+    Android home-screen adds prefer PNG rasters + an apple-touch-icon
+    + a web app manifest. */}
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+<link rel="manifest" href="/site.webmanifest" />
 
 {/* Tab overflow detection: watches each .tablist-wrapper and toggles
     a [data-overflow] attribute when the tablist's natural content

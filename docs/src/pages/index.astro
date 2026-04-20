@@ -8,6 +8,30 @@ const DESCRIPTION =
 const URL = 'https://jackin.tailrocks.com/'
 const OG_IMAGE = 'https://jackin.tailrocks.com/og-image.png'
 const OG_ALT = "jackin' — CLI for orchestrating AI coding agents in isolated Docker containers"
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: "jackin'",
+  alternateName: 'jackin',
+  description: DESCRIPTION,
+  url: URL,
+  image: OG_IMAGE,
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'macOS, Linux',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+  },
+  license: 'https://www.apache.org/licenses/LICENSE-2.0',
+  sameAs: ['https://github.com/jackin-project/jackin'],
+  publisher: {
+    '@type': 'Organization',
+    name: 'jackin project',
+    url: 'https://github.com/jackin-project',
+  },
+}
 ---
 <!DOCTYPE html>
 <html lang="en" class="dark" data-theme="dark" style="color-scheme: dark;">
@@ -39,6 +63,17 @@ const OG_ALT = "jackin' — CLI for orchestrating AI coding agents in isolated D
     <meta name="twitter:description" content={DESCRIPTION} />
     <meta name="twitter:image" content={OG_IMAGE} />
     <meta name="twitter:image:alt" content={OG_ALT} />
+
+    {/* Favicon bundle — SVG preferred, PNG rasters for iOS and
+        Android home-screen icons, manifest for installability. */}
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    {/* Structured data for rich Google search results — describes the
+        site as a free/open-source developer tool. */}
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
 
     {/* Fonts are self-hosted via fontsource — @imported from the
         landing's styles.css. No <link rel="stylesheet"> needed. */}

@@ -8,6 +8,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "gen-og": "bun run scripts/gen-og.mjs",
+    "gen-icons": "bun run scripts/gen-icons.mjs",
     "test": "bun test"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@fontsource/fraunces": "^5.2.9",
     "astro": "^6.1.8",
+    "astro-og-canvas": "^0.11.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "sharp": "^0.34.5",
