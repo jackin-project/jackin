@@ -423,6 +423,26 @@ html {
 
 @media (max-width: 880px) {
   .landing-approach-grid { grid-template-columns: 1fr; }
+
+  /* Tighten card padding + internals so content isn't crushed by the
+     32px default when the column is narrow. */
+  .landing-approach-card { padding: 24px 22px 22px; }
+  .landing-approach-card h3 { font-size: 20px; }
+  .landing-approach-card p { font-size: 14.5px; }
+
+  /* Let the command + repo badges span the card width so they align
+     cleanly with the card's content edges instead of floating left. */
+  .landing-approach-cmd,
+  .landing-approach-repo {
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
+    flex-wrap: wrap;
+  }
+  .landing-approach-repo { padding-left: 0; }
+  .landing-approach-repo .repo-path { word-break: break-all; }
+
+  .landing-toolset-chip { font-size: 11px; padding: 4px 8px; }
 }
 
 /* Section 05 · Cast — roster + character cards + invite strip */

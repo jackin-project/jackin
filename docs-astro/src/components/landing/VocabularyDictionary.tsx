@@ -20,7 +20,9 @@ export function VocabularyDictionary() {
         const vh = window.innerHeight;
         const h = section!.offsetHeight;
         const scrollDist = h - vh;
-        if (scrollDist <= 0) { setActiveIdx(0); ticking = false; return; }
+        // Mobile fallback (section shorter than viewport) — no scroll-drive.
+        // Leave activeIdx alone so the user's click selection sticks.
+        if (scrollDist <= 0) { ticking = false; return; }
         const scrolled = Math.max(0, -rect.top);
         const p = Math.max(0, Math.min(0.999, scrolled / scrollDist));
         const idx = Math.min(vocabularyEntries.length - 1, Math.floor(p * vocabularyEntries.length));
@@ -44,7 +46,11 @@ export function VocabularyDictionary() {
     if (!section) return;
     const vh = window.innerHeight;
     const scrollDist = section.offsetHeight - vh;
-    if (scrollDist <= 0) return;
+    // Mobile fallback — no scroll dance, just swap the detail directly.
+    if (scrollDist <= 0) {
+      setActiveIdx(i);
+      return;
+    }
     const target = section.offsetTop + ((i + 0.5) / vocabularyEntries.length) * scrollDist;
     window.scrollTo({ top: target, behavior: 'smooth' });
   }
