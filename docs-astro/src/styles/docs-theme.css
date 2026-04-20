@@ -528,14 +528,24 @@ header.header {
   border: 1px solid var(--jk-ui);
   border-radius: 10px;
   overflow: hidden;
-  /* Force the code surface a step darker than the page in both themes —
-     recessed feel instead of floating-on-top. --jk-bg-deep is already
-     theme-aware (#050605 in dark, #e9edeb in light). */
-  background: var(--jk-bg-deep);
+  /* Code blocks keep a dark surface in BOTH page modes:
+     - Dark mode: slightly deeper than the page (recessed feel)
+     - Light mode: high-contrast dark block against the white page
+     Single github-dark shiki theme (set in astro.config.mjs) paints the
+     syntax on top, so colors stay readable on either shade. */
+  background: var(--jk-code-bg);
 }
 
 .expressive-code .frame pre {
-  background: var(--jk-bg-deep) !important;
+  background: var(--jk-code-bg) !important;
+}
+
+:root[data-theme='dark'] {
+  --jk-code-bg: #050605;
+}
+
+:root[data-theme='light'] {
+  --jk-code-bg: #1a1c1b;
 }
 
 .expressive-code .frame .header {
