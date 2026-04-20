@@ -1,3 +1,4 @@
+import { createElement } from 'react'
 import { defineConfig } from 'vocs'
 
 export default defineConfig({
@@ -6,6 +7,17 @@ export default defineConfig({
   description: 'CLI for orchestrating AI coding agents in isolated containers',
   rootDir: '.',
   baseUrl: 'https://jackin.tailrocks.com',
+  // No `theme` key — mirrors Tempo's setup. All colors + sizing come
+  // from docs/tempo-tokens.css (Radix @theme) and docs/docs-theme.css
+  // (mapping Vocs tokens to Radix via light-dark()). Light/dark/system
+  // is handled by Vocs's built-in init script (.dark class on <html>);
+  // CSS translates that class into `color-scheme` so light-dark() tokens
+  // resolve correctly.
+  //
+  // default-dark.js runs synchronously from <head> to default new visitors
+  // to dark mode (Vocs's built-in would otherwise fall back to
+  // prefers-color-scheme on first visit).
+  head: createElement('script', { src: '/default-dark.js' }),
   editLink: {
     pattern:
       'https://github.com/jackin-project/jackin/edit/main/docs/pages/:path',

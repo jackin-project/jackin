@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vocs dev",
     "build": "vocs build",
-    "preview": "vocs preview"
+    "preview": "vocs preview",
+    "test": "bun test"
   },
   "dependencies": {
     "react": "^19.2.5",

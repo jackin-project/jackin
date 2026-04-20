@@ -1,0 +1,164 @@
+/* Tempo-1:1 docs chrome: remap Vocs's color tokens to the Radix ramps
+   from tempo-tokens.css. Uses the CSS `light-dark()` function so a
+   single declaration handles both modes (controlled by the element's
+   computed `color-scheme`, set inline on <html> by our init IIFE). */
+
+/* Match Vocs's own `:root.dark` specificity so the overrides win in dark mode.
+   The light-dark() values resolve per computed color-scheme, so a single
+   declaration covers both themes. */
+:root,
+:root.dark {
+  /* Primary surfaces — Tempo's --background-color-primary/secondary pattern. */
+  --vocs-color_background: light-dark(var(--color-gray1), var(--color-gray2));
+  --vocs-color_background2: light-dark(var(--color-gray2), var(--color-gray3));
+  --vocs-color_background3: var(--color-gray3);
+  --vocs-color_background4: var(--color-gray4);
+  --vocs-color_background5: var(--color-gray5);
+  --vocs-color_backgroundDark: var(--color-gray1);
+
+  /* Borders — Radix grayA alpha ramps for translucent borders. */
+  --vocs-color_border: var(--color-grayA4);
+  --vocs-color_border2: var(--color-grayA5);
+
+  /* Text — Tempo's --text-color-primary/secondary. */
+  --vocs-color_text: var(--color-gray12);
+  --vocs-color_text2: var(--color-gray11);
+  --vocs-color_text3: var(--color-gray10);
+  --vocs-color_text4: var(--color-gray9);
+  --vocs-color_heading: var(--color-gray12);
+
+  /* Monochrome accent (Tempo's signature: black-on-light, white-on-dark). */
+  --vocs-color_backgroundAccent: light-dark(var(--color-black), var(--color-white));
+  --vocs-color_backgroundAccentHover: light-dark(var(--color-grayA11), var(--color-whiteA11));
+  --vocs-color_backgroundAccentText: light-dark(var(--color-white), var(--color-black));
+  --vocs-color_borderAccent: light-dark(var(--color-black), var(--color-white));
+  --vocs-color_textAccent: light-dark(var(--color-black), var(--color-white));
+  --vocs-color_textAccentHover: var(--color-gray11);
+
+  /* Inline code chip — match Tempo's surface treatment. */
+  --vocs-color_codeInlineText: var(--color-gray12);
+  --vocs-color_codeInlineBackground: var(--color-grayA3);
+  --vocs-color_codeInlineBorder: var(--color-grayA4);
+
+  /* Code block — slightly deeper than the page (gray1 in dark mode = #111,
+     page gray2 = #191919; in light mode both are very light, block barely
+     distinct — match Tempo). */
+  --vocs-color_codeBlockBackground: var(--color-gray1);
+  --vocs-color_codeTitleBackground: var(--color-gray2);
+}
+
+/* ==========================================================================
+   Scoped fixes
+   ========================================================================== */
+
+/* Landing full-bleed: break out of Vocs's docs content-width cap. */
+[data-layout="landing"] .vocs_DocsLayout_content,
+[data-layout="landing"] .vocs_Content {
+  max-width: none;
+  padding: 0;
+}
+
+/* Hide Vocs's auto-rendered footer on the landing — we render our own. */
+.vocs_Footer[data-layout="landing"] { display: none; }
+
+/* .vocs_Code carries inline chip styling; inside <pre> it doubles the bg.
+   Reset it so the code block renders as a single surface. */
+.vocs_Pre .vocs_Code {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+/* AI CTA — Tempo-style compact pill. The label text is swapped to
+   "Ask AI" client-side in layout.tsx; this rule just normalizes the
+   font/tracking which Vocs sets to uppercase + wide. */
+.vocs_AiCtaDropdown_button,
+.vocs_AiCtaDropdown_buttonLeft,
+.vocs_AiCtaDropdown_buttonRight {
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Code block treatment — pill radius + subtle shadow to match Tempo. */
+.vocs_CodeBlock {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Make the theme toggle visibly accent-colored and slightly larger so
+   users can find it. Vocs hides it at the very bottom-left of the
+   sidebar in a low-contrast grey by default. */
+.vocs_ThemeToggle {
+  border-color: var(--color-grayA6);
+}
+.vocs_ThemeToggle_themeToggleButton {
+  color: var(--color-gray11) !important;
+}
+.vocs_ThemeToggle_themeToggleButton:hover,
+.vocs_ThemeToggle_themeToggleButton[data-active='true'] {
+  color: var(--color-gray12) !important;
+}
+/* Bump the icon size inside the toggle from 16px to 18px. */
+.vocs_ThemeToggle .vocs_Icon {
+  --vocs_Icon_size: 18px !important;
+}
+
+/* ==========================================================================
+   Outline (right rail "On this page") — Tempo-style vertical indicator
+   ========================================================================== */
+
+/* Strip Vocs's default 1px border on the nav; our border lives on the ul
+   below so the animated indicator sits right on top of it. */
+.vocs_Outline .vocs_Outline_nav {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.vocs_Outline ul {
+  position: relative;
+  border-left: 2px solid var(--color-grayA4);
+  padding-left: 0;
+  margin-left: 0;
+  list-style: none;
+}
+
+.vocs_Outline ul li a {
+  display: block;
+  padding: 3px 0 3px 12px;
+  line-height: 1.4;
+  color: var(--color-gray10);
+  transition: color 0.1s;
+  text-decoration: none;
+}
+
+.vocs_Outline ul li a:hover {
+  color: var(--color-gray12);
+}
+
+/* Active item — monochrome accent (black on light, white on dark).
+   Vocs 1.4.1 applies data-active="true" on the <a>. */
+.vocs_Outline ul li a[data-active='true'],
+.vocs_Outline ul li a[aria-current='true'],
+.vocs_Outline ul li a.vocs_Outline_item_active {
+  color: light-dark(var(--color-black), var(--color-white));
+}
+
+/* Animated indicator injected by docs/layout.tsx — slides + grows to the
+   active link. Matches Tempo's data-v-outline-indicator pattern. */
+.vocs_Outline ul [data-outline-indicator] {
+  position: absolute;
+  left: -2px;
+  top: 0;
+  width: 2px;
+  border-radius: 9999px;
+  background: light-dark(var(--color-black), var(--color-white));
+  transition: transform 0.15s cubic-bezier(0, 0, 0.2, 1),
+              height 0.15s cubic-bezier(0, 0, 0.2, 1);
+  will-change: transform, height;
+  pointer-events: none;
+}
+.vocs_Outline ul [data-outline-indicator][data-empty='true'] {
+  opacity: 0;
+}

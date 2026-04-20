@@ -1,0 +1,45 @@
+@import "tailwindcss" important;
+
+@source "./";
+
+/* Tempo's _root.css targets [style*="color-scheme: dark"] because their Vocs
+   pre-release sets color-scheme inline on <html>. Vocs 1.4.1 instead uses a
+   `.dark` class via its built-in initializeTheme.iife.js. Match both so the
+   dark: Tailwind modifier works regardless of which mechanism flipped. */
+@custom-variant dark (&:where(.dark, .dark *, [style*="color-scheme: dark"], [style*="color-scheme: dark"] *));
+
+/* Translate Vocs's .dark class toggle into a CSS color-scheme. This makes the
+   light-dark(x, y) CSS function resolve correctly on Radix tokens. */
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
+
+@utility scrollbar-gutter-auto {
+  scrollbar-gutter: auto;
+}
+
+@utility scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+@utility scrollbar-width-thin {
+  scrollbar-width: thin;
+}
+
+@utility scrollbar-* {
+  scrollbar-color: --value(--color-\*) transparent;
+}
+
+/* Radix color ramps + semantic tokens + sizing (verbatim from
+   tempoxyz/docs src/pages/_root.css). */
+@import "./tempo-tokens.css";
+
+/* Landing page CSS (scoped to .landing-root + data-layout="landing"). */
+@import "./components/landing/styles.css";
+
+/* Docs chrome fixes + Vocs token remapping to Radix. */
+@import "./docs-theme.css";
+
+[data-v-logo] img {
+  height: 28px;
+  margin-top: 2px;
+}
