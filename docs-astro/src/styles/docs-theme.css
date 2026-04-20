@@ -328,10 +328,19 @@ header.header {
   border-bottom-color: var(--sl-color-text-accent);
 }
 
-/* Heading anchor-link icon — no underline, no border; it's a pure icon. */
+/* Heading anchor-link icon — no underline, no border; it's a pure icon.
+   SVG uses fill=currentcolor, so anchor color drives icon color. Hover
+   turns it green to match the rest of the accent system. */
 .sl-markdown-content a.sl-anchor-link {
   border-bottom: 0;
   text-decoration: none;
+  color: var(--jk-text-ghost);
+  transition: color 0.1s;
+}
+
+.sl-markdown-content a.sl-anchor-link:hover,
+.sl-markdown-content a.sl-anchor-link:focus {
+  color: var(--sl-color-text-accent);
 }
 
 /* ==========================================================================
