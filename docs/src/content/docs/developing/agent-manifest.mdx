@@ -1,0 +1,340 @@
+---
+title: Agent Manifest
+description: "The jackin.agent.toml file that defines an agent"
+---
+import { Aside } from '@astrojs/starlight/components'
+
+
+## Overview
+
+Every agent repo must contain a `jackin.agent.toml` file at the repository root. This manifest tells jackin' how to build, configure, and identify the agent.
+
+jackin' enforces **strict parsing** — unknown fields are rejected with an error. This catches typos and prevents silent misconfiguration.
+
+## Full schema
+
+```toml [jackin.agent.toml]
+dockerfile = "Dockerfile"
+
+[identity]
+name = "The Architect"
+
+[claude]
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+
+[env.PROJECT]
+interactive = true
+options = ["project1", "project2"]
+prompt = "Select a project:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
+```
+
+## Top-level fields
+
+| Field | Required | Description |
+|---|---|---|
+| `dockerfile` | Yes | Relative path to the Dockerfile within the repo |
+
+The Dockerfile path must:
+
+- Be relative (no absolute paths)
+- Stay inside the repository (no `../` escapes)
+- Point to a valid Dockerfile
+- Have a final stage that starts with `FROM projectjackin/construct:trixie`
+
+## `[claude]`
+
+| Field | Required | Description |
+|---|---|---|
+| `plugins` | No | List of Claude plugin identifiers to install at runtime |
+| `marketplaces` | No | List of marketplace registrations to add before plugin installation |
+
+Example values:
+
+```toml [jackin.agent.toml]
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+```
+
+Each `[[claude.marketplaces]]` block maps to `claude plugin marketplace add <source>`. If `sparse` is set, jackin passes those paths as `claude plugin marketplace add <source> --sparse path1 path2`.
+
+### `[[claude.marketplaces]]`
+
+Each marketplace block declares one Claude marketplace source to register before plugin installation.
+
+| Field | Required | Description |
+|---|---|---|
+| `source` | Yes | Raw marketplace source passed to `claude plugin marketplace add` |
+| `sparse` | No | Optional sparse-checkout paths for monorepo-backed marketplaces |
+
+Example:
+
+```toml [jackin.agent.toml]
+[claude]
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+```
+
+## `[identity]`
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | No | Human-readable display name for the agent |
+
+When omitted, jackin' uses the class selector name.
+
+## `[hooks]`
+
+| Field | Required | Description |
+|---|---|---|
+| `pre_launch` | No | Relative path to a bash script run before Claude starts |
+
+The pre-launch hook runs inside the container after plugin installation but before Claude Code launches. It has access to all resolved environment variables.
+
+The script path must:
+
+- Be relative (no absolute paths)
+- Stay inside the repository (no `../` escapes)
+- Point to an existing, non-empty file
+- Not be a symlink
+
+Example:
+
+```toml [jackin.agent.toml]
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+```
+
+```bash [hooks/pre-launch.sh]
+#!/bin/bash
+set -euo pipefail
+
+# Configure Context7 MCP if API key is available
+if [ -n "${CONTEXT7_API_KEY:-}" ]; then
+    ctx7 setup --claude --mcp --api-key "$CONTEXT7_API_KEY" -y
+fi
+```
+
+## `[env.<NAME>]`
+
+Declare environment variables that the agent needs at runtime. Each variable is a TOML table under `[env]`.
+
+### Fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `default` | String | — | Default value (used if no prompt or user accepts default) |
+| `interactive` | bool | `false` | Whether to prompt the user at launch time |
+| `skippable` | bool | `false` | Whether the user can skip this prompt |
+| `prompt` | String | Variable name | Text shown when prompting |
+| `options` | String[] | `[]` | Options for a select-style prompt |
+| `depends_on` | String[] | `[]` | Variables that must be resolved first (use `env.` prefix) |
+
+### Validation rules
+
+- Variable names must contain only ASCII letters, digits, and underscores, and cannot start with a digit
+- A non-interactive variable **must** have a `default` value
+- `options` requires `interactive = true`
+- `options` cannot contain `${env.*}` interpolation — options are always static
+- `depends_on` entries must use the `env.` prefix (e.g., `"env.PROJECT"`)
+- `depends_on` must reference variables declared in the same manifest
+- `${env.*}` references in `prompt` and `default` must point to declared variables that are listed in `depends_on`
+- `JACKIN_CLAUDE_ENV` is reserved for jackin and cannot be declared in `[env]`
+- `JACKIN_DIND_HOSTNAME` is reserved for jackin and cannot be declared in `[env]`
+- Circular dependencies are rejected
+
+### Runtime-managed variables
+
+jackin sets these variables automatically inside the container. Do not declare either of them in `[env]`.
+
+- `JACKIN_CLAUDE_ENV=jackin` marks that the process is running inside a jackin-managed runtime.
+- `JACKIN_DIND_HOSTNAME` is the hostname agents should use to reach published services started via the Docker-in-Docker daemon.
+
+### Interactive text input
+
+Prompt the user for a free-text value:
+
+```toml
+[env.GIT_BRANCH]
+interactive = true
+prompt = "Branch name:"
+
+[env.BRANCH_WITH_DEFAULT]
+interactive = true
+prompt = "Branch name:"
+default = "main"
+```
+
+### Interactive select
+
+Present a list of options:
+
+```toml
+[env.PROJECT]
+interactive = true
+options = ["frontend", "backend", "infra"]
+prompt = "Select a project:"
+```
+
+### Skippable prompts
+
+Allow the user to skip a prompt. The variable won't be set:
+
+```toml
+[env.API_KEY]
+interactive = true
+skippable = true
+prompt = "API key (optional):"
+```
+
+### Dependencies
+
+Control prompt ordering and skip cascading:
+
+```toml
+[env.PROJECT]
+interactive = true
+skippable = true
+options = ["frontend", "backend"]
+prompt = "Select a project:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch to work on:"
+default = "main"
+```
+
+If a skippable variable is skipped, all variables that depend on it are also skipped — regardless of their own `skippable` setting.
+
+### Interpolation
+
+Use `${env.VAR_NAME}` in `prompt` and `default` fields to reference the resolved value of a dependency:
+
+```toml
+[env.PROJECT]
+interactive = true
+options = ["frontend", "backend"]
+prompt = "Select a project:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
+```
+
+When the user selects `frontend`, the branch prompt becomes `"Branch for frontend:"` with default `"feature/frontend"`.
+
+Interpolation rules:
+
+- Only `${env.*}` references are resolved — other `${...}` forms are preserved as-is
+- Every `${env.*}` reference must point to a variable declared in the same manifest **and** listed in `depends_on`
+- `options` arrays cannot contain `${env.*}` references — options are always static
+- Resolved values are never re-interpreted, so a value containing `${env.*}` is treated as literal text
+
+<Aside type="tip">
+Interactive prompts happen before the Docker image build, so you won't wait through a build before being asked questions. If you cancel, no build resources are wasted.
+</Aside>
+## Minimal example
+
+The smallest valid manifest:
+
+```toml [jackin.agent.toml]
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+```
+
+## Complete example
+
+```toml [jackin.agent.toml]
+dockerfile = "docker/Dockerfile.agent"
+
+[identity]
+name = "The Architect"
+
+[claude]
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+
+[env.CONTEXT7_API_KEY]
+interactive = true
+skippable = true
+prompt = "Context7 API key:"
+
+[env.PROJECT]
+interactive = true
+options = ["frontend", "backend", "infra"]
+prompt = "Select a project to clone:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
+```
+
+<Aside type="tip">
+Keep manifests focused. The Dockerfile installs tools, the manifest declares what configuration the agent needs at launch time.
+</Aside>

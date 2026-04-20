@@ -1,0 +1,909 @@
+/* Docs chrome — one identity, two palettes.
+
+   All --jk-* design tokens are scoped to [data-theme='dark'] and
+   [data-theme='light']. Every downstream rule uses those tokens, so
+   surfaces/text/borders auto-adapt to the active theme. Dark is the
+   fallback (matches our default-dark stance) and also the identity
+   anchor (landing palette). Light inverts surface/text while keeping
+   the green accent so the product reads as one site in either mode. */
+
+:root {
+  /* Starlight's gray ramp — surface grays for chrome, not text. Mapped
+     to Radix tokens from tempo-tokens.css so light-dark() handles both
+     modes. Overridden inside [data-theme='dark'] for finer control. */
+  --sl-color-gray-1: var(--color-gray2);
+  --sl-color-gray-2: var(--color-gray3);
+  --sl-color-gray-3: var(--color-gray5);
+  --sl-color-gray-4: var(--color-gray7);
+  --sl-color-gray-5: var(--color-gray9);
+  --sl-color-gray-6: var(--color-gray10);
+  --sl-color-gray-7: var(--color-gray11);
+
+  /* Fonts — injected via src/components/overrides/Head.astro. */
+  --sl-font: 'Inter', system-ui, sans-serif;
+  --sl-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+
+  /* Layout dimensions — match Vocs proportions. */
+  --sl-sidebar-width: 19rem;
+  --sl-content-width: 48rem;
+  --sl-nav-height: 3.5rem;
+
+  /* Brand accent — theme-aware so dark mode can keep the bright
+     phosphor green while light mode uses a juicy-but-usable mid-green.
+     Per-theme values live in the [data-theme='*'] blocks below; this
+     fallback matches the dark-mode default for pre-theme-set renders. */
+  --jk-brand:      #00ff41;
+
+  /* Fallback --jk-* tokens (dark). Ensures tokens resolve before
+     data-theme gets applied to <html>. */
+  --jk-bg:         #0a0b0a;
+  --jk-bg-deep:    #050605;
+  --jk-panel:      #0f1110;
+  --jk-text:       #f4f7f5;
+  --jk-text-dim:   #9ca8a1;
+  --jk-text-ghost: #5e6a64;
+  --jk-accent:     #00ff41;
+  --jk-accent-dim: #00b82f;
+  --jk-ui:         rgba(244, 247, 245, 0.1);
+  --jk-ui-strong:  rgba(244, 247, 245, 0.22);
+  --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
+}
+
+/* ==========================================================================
+   Dark mode — landing identity
+   ========================================================================== */
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --jk-bg:         #0a0b0a;
+  --jk-bg-deep:    #050605;
+  --jk-panel:      #0f1110;
+  --jk-text:       #f4f7f5;
+  --jk-text-dim:   #9ca8a1;
+  --jk-text-ghost: #5e6a64;
+  --jk-accent:     #00ff41;
+  --jk-accent-dim: #00b82f;
+  --jk-brand:      #00ff41;   /* bright phosphor green on dark surfaces */
+  --jk-ui:         rgba(244, 247, 245, 0.1);
+  --jk-ui-strong:  rgba(244, 247, 245, 0.22);
+  --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
+
+  --sl-color-bg: var(--jk-bg);
+  --sl-color-bg-nav: var(--jk-bg);
+  --sl-color-bg-sidebar: var(--jk-bg);
+  --sl-color-black: var(--jk-bg-deep);
+  --sl-color-white: var(--jk-text);
+  --sl-color-text: var(--jk-text);
+  --sl-color-text-invert: var(--jk-bg);
+
+  --sl-color-gray-1: #121413;
+  --sl-color-gray-2: #1a1c1b;
+  --sl-color-gray-3: #2a2d2c;
+  --sl-color-gray-4: #3a3e3c;
+  --sl-color-gray-5: var(--jk-text-ghost);
+  --sl-color-gray-6: var(--jk-text-dim);
+  --sl-color-gray-7: var(--jk-text);
+
+  --sl-color-hairline: var(--jk-ui);
+  --sl-color-hairline-light: var(--jk-ui-subtle);
+  --sl-color-hairline-shade: var(--jk-ui-strong);
+
+  --sl-color-bg-inline-code: var(--jk-panel);
+
+  --sl-color-accent-low:  rgba(0, 255, 65, 0.15);
+  --sl-color-accent:      var(--jk-accent);
+  --sl-color-accent-high: var(--jk-accent);
+  --sl-color-text-accent: var(--jk-accent);
+
+  /* Expressive-code frame — outer border tracks theme; surfaces come
+     from the shiki theme (github-dark in dark mode). */
+  --ec-brdRad: 10px;
+  --ec-brdCol: var(--jk-ui);
+  --ec-frm-edActTabIndBtmCol: transparent;
+  --ec-frm-edActTabIndTopCol: transparent;
+  --ec-frm-edTabBarBrdBtmCol: transparent;
+  --ec-frm-edTabsMrgInlStart: 0;
+  --ec-frm-edTabsMrgBlkStart: 0;
+  --ec-frm-trmTtbBrdBtmCol: transparent;
+  --ec-frm-inlBrdCol: transparent;
+  --ec-frm-frameBoxShdCssVal: none;
+}
+
+/* ==========================================================================
+   Light mode — inverted surfaces, darker green accent for contrast
+   ========================================================================== */
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --jk-bg:         #ffffff;
+  --jk-bg-deep:    #e9edeb;   /* recessed state (active toggle, pressed badge) */
+  --jk-panel:      #f6f8f7;   /* lifted surface (cards, pills, modals) */
+  --jk-text:       #1a1c1b;
+  --jk-text-dim:   #5d6460;
+  --jk-text-ghost: #8a928e;
+  --jk-accent:     #007a22;   /* deep forest green — AA contrast on white (5.1:1) */
+  --jk-accent-dim: #005c1a;   /* deeper still for pressed/active highlights */
+  --jk-brand:      #16a34a;   /* juicy mid-green — usable as pill bg + underline on white */
+  --jk-ui:         rgba(0, 0, 0, 0.08);
+  --jk-ui-strong:  rgba(0, 0, 0, 0.18);
+  --jk-ui-subtle:  rgba(0, 0, 0, 0.04);
+
+  --sl-color-bg: var(--jk-bg);
+  --sl-color-bg-nav: var(--jk-bg);
+  --sl-color-bg-sidebar: var(--jk-bg);
+  --sl-color-black: var(--jk-bg);
+  --sl-color-white: var(--jk-text);
+  --sl-color-text: var(--jk-text);
+  --sl-color-text-invert: var(--jk-bg);
+
+  --sl-color-hairline: var(--jk-ui);
+  --sl-color-hairline-light: var(--jk-ui-subtle);
+  --sl-color-hairline-shade: var(--jk-ui-strong);
+
+  --sl-color-bg-inline-code: var(--jk-panel);
+
+  --sl-color-accent-low:  rgba(0, 122, 34, 0.12);
+  --sl-color-accent:      var(--jk-accent);
+  --sl-color-accent-high: var(--jk-accent);
+  --sl-color-text-accent: var(--jk-accent);
+
+  /* Light-mode expressive-code frame — the surface is still dark
+     (--jk-code-bg applied in docs-theme.css below) with shiki's
+     one-dark-pro palette for punchier syntax on the light page. */
+  --ec-brdRad: 10px;
+  --ec-brdCol: var(--jk-ui);
+  --ec-frm-edActTabIndBtmCol: transparent;
+  --ec-frm-edActTabIndTopCol: transparent;
+  --ec-frm-edTabBarBrdBtmCol: transparent;
+  --ec-frm-edTabsMrgInlStart: 0;
+  --ec-frm-edTabsMrgBlkStart: 0;
+  --ec-frm-trmTtbBrdBtmCol: transparent;
+  --ec-frm-inlBrdCol: transparent;
+  --ec-frm-frameBoxShdCssVal: none;
+}
+
+/* ==========================================================================
+   Dotted grid backdrop — dark mode only
+   ========================================================================== */
+
+:root[data-theme='dark'] body {
+  background-color: var(--jk-bg);
+  background-image: radial-gradient(rgba(244,247,245,0.025) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-attachment: fixed;
+}
+
+/* ==========================================================================
+   Initial-load transition suppression — stops CSS transitions on
+   sidebar / TOC / pagination elements from animating color changes
+   when the initial data-theme flip happens in head. Class added by
+   overrides/Head.astro, removed two animation frames after DOMReady.
+   ========================================================================== */
+
+html.theme-init,
+html.theme-init *,
+html.theme-init *::before,
+html.theme-init *::after {
+  transition: none !important;
+}
+
+/* ==========================================================================
+   Theme-change cross-fade — uses the View Transitions API.
+   overrides/ThemeSelect.astro calls document.startViewTransition() around
+   the data-theme flip. The browser snapshots the page pre/post and
+   animates between them, which avoids the per-property transition bugs
+   on inherited colors (child elements previously snapped abruptly when
+   their parent's color transition ended).
+   ========================================================================== */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 320ms;
+  animation-timing-function: ease;
+}
+
+/* Cross-fade instead of the default slide */
+::view-transition-old(root) {
+  animation-name: jk-theme-fade-out;
+}
+::view-transition-new(root) {
+  animation-name: jk-theme-fade-in;
+}
+
+@keyframes jk-theme-fade-out {
+  to { opacity: 0; }
+}
+
+@keyframes jk-theme-fade-in {
+  from { opacity: 0; }
+}
+
+/* ==========================================================================
+   Typography — landing-matched weight + tracking on headings
+   ========================================================================== */
+
+.sl-markdown-content :is(h1, h2, h3, h4) {
+  font-family: var(--sl-font);
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+.sl-markdown-content h1 {
+  font-size: 2.75rem;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+/* h2 — muted green blend. Auto-works in both modes because --jk-text
+   flips (white in dark → dark in light) and text-accent flips too. */
+.sl-markdown-content h2 {
+  font-size: 2rem;
+  line-height: 1.2;
+  color: color-mix(in oklab, var(--sl-color-text-accent) 40%, var(--jk-text));
+}
+
+.sl-markdown-content h3 {
+  font-size: 1.375rem;
+  line-height: 1.3;
+}
+
+.sl-markdown-content h4 {
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   Lists — Tailwind's preflight (from @import 'tailwindcss') strips
+   list-style/padding from ul/ol globally. Restore them inside prose so
+   bullet/number markers reappear and items don't run into surrounding
+   paragraphs as continuous text.
+   ========================================================================== */
+
+.sl-markdown-content :is(ul, ol):not(:where(.not-content *, .sl-steps, .sl-steps *)) {
+  list-style: revert;
+  padding-inline-start: 1.5rem;
+  margin-block: 1rem;
+}
+
+.sl-markdown-content :is(ul, ol):not(:where(.not-content *, .sl-steps, .sl-steps *)) :is(ul, ol) {
+  margin-block: 0.25rem;
+}
+
+.sl-markdown-content li:not(:where(.not-content *, .sl-steps > li)) {
+  margin-block: 0.35rem;
+  padding-inline-start: 0.25rem;
+}
+
+.sl-markdown-content li:not(:where(.sl-steps > li))::marker {
+  /* Ordered-list numbers + unordered bullets use the body text color so
+     they read as part of the flow — white in dark, black in light. */
+  color: var(--jk-text);
+}
+
+/* <Steps> number badge — solid filled circle for a bolder structural
+   marker. Inverted per theme: white fill + dark number in dark mode,
+   near-black fill + white number in light mode. High contrast, plain,
+   and distinct from the brand-green accent system. */
+.sl-markdown-content .sl-steps > li::before {
+  color: var(--jk-bg);
+  background-color: var(--jk-text);
+  box-shadow: none;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Tables — Starlight defaults to rows separated only by a full-weight
+   grey border from --sl-color-gray-5 with no cell padding on the first
+   column. In our palette the border renders heavy and the missing
+   left padding floats the first column out against the body text.
+   Replace with a bordered, hairline-ruled table with a subtle header bg.
+   ========================================================================== */
+
+.sl-markdown-content table:not(:where(.not-content *)) {
+  /* Starlight defaults the table to display: block + overflow: auto for
+     responsive scrolling, but that breaks the table layout — thead/tbody
+     shrink to content width instead of filling the available row space.
+     Force display: table so children behave as table-header-group /
+     table-row-group and width: 100% actually stretches them. */
+  display: table;
+  width: 100%;
+  table-layout: auto;
+  border: 1px solid var(--jk-ui);
+  border-radius: 10px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  margin-block: 1.25rem;
+}
+
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+  border-bottom: 1px solid var(--jk-ui);
+  padding: 0.6rem 1rem;
+  vertical-align: top;
+}
+
+/* Override Starlight's zero first/last inline-padding — we want even
+   gutters inside the bordered table. */
+.sl-markdown-content :is(th:first-child, td:first-child):not(:where(.not-content *)) {
+  padding-inline-start: 1rem;
+}
+.sl-markdown-content :is(th:last-child, td:last-child):not(:where(.not-content *)) {
+  padding-inline-end: 1rem;
+}
+
+/* Drop the bottom border on the last row so it doesn't double with
+   the outer table border. */
+.sl-markdown-content tr:last-child :is(th, td):not(:where(.not-content *)) {
+  border-bottom: 0;
+}
+
+.sl-markdown-content thead:not(:where(.not-content *)) {
+  background: var(--jk-panel);
+}
+
+.sl-markdown-content th:not(:where(.not-content *)) {
+  color: var(--jk-text);
+  font-weight: 600;
+  font-size: 0.875rem;
+  letter-spacing: 0.01em;
+  text-align: start;
+}
+
+.sl-markdown-content td:not(:where(.not-content *)) {
+  color: var(--jk-text);
+  font-size: 0.9375rem;
+}
+
+/* ==========================================================================
+   Inline code — panel chip, monospace
+   ========================================================================== */
+
+.sl-markdown-content :not(a, h1, h2, h3, h4, h5, h6) > code:not(:where(.not-content *)) {
+  color: var(--jk-text);
+  background: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+  border-radius: 4px;
+  padding: 0.125em 0.4em;
+  font-size: 0.875em;
+  font-family: var(--sl-font-mono);
+}
+
+.sl-markdown-content a > code {
+  color: var(--sl-color-text-accent) !important;
+}
+
+/* ==========================================================================
+   Sidebar — Starlight defaults for group labels + active-pill; we only
+   retint unstyled item text and hover state.
+   ========================================================================== */
+
+.sidebar-content ul li a {
+  color: var(--jk-text-dim);
+  transition: color 0.1s, background-color 0.1s;
+}
+
+.sidebar-content ul li a:hover {
+  color: var(--jk-text);
+}
+
+.sidebar-content ul li a[aria-current='page'],
+.sidebar-content ul li a[aria-current='page']:hover,
+.sidebar-content ul li a[aria-current='page']:focus {
+  color: var(--sl-color-text-invert);
+  background-color: var(--jk-brand);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Mobile menu footer (social icons + theme toggle + language select).
+   Starlight draws a 1px top border via .mobile-preferences { border-top:
+   ... var(--sl-color-gray-6) } which reads as a stray line hanging at
+   the bottom of the menu. Dropped in both themes — the sidebar's last
+   item already provides enough visual closure.
+   ========================================================================== */
+
+.mobile-preferences {
+  border-top: 0 !important;
+}
+
+/* Theme toggle in the mobile footer — add a tiny bit of internal
+   margin so it doesn't crowd the socials/language picker next to it. */
+.mobile-preferences starlight-theme-select.jk-theme-toggle {
+  margin-block: 0.5rem;
+}
+
+/* ==========================================================================
+   Mobile "On this page" (MobileTableOfContents) — Starlight defaults
+   resolve through --sl-color-black, --sl-color-gray-5, etc. which in
+   our palette rendered muddy (near-white button + faint grey border
+   in light mode; dark-on-dark with low contrast in dark mode).
+   ========================================================================== */
+
+mobile-starlight-toc > nav {
+  background-color: var(--jk-bg);
+  border-top-color: var(--jk-ui-strong);
+}
+
+mobile-starlight-toc summary {
+  border-bottom-color: var(--jk-ui-strong);
+}
+
+mobile-starlight-toc .toggle {
+  background-color: var(--jk-panel);
+  border-color: var(--jk-ui-strong);
+  color: var(--jk-text-dim);
+}
+
+mobile-starlight-toc details .toggle:hover {
+  color: var(--jk-text);
+  border-color: var(--jk-text-dim);
+}
+
+mobile-starlight-toc details[open] .toggle {
+  color: var(--jk-text);
+  border-color: var(--jk-brand);
+}
+
+mobile-starlight-toc .display-current {
+  color: var(--jk-text);
+}
+
+mobile-starlight-toc .caret {
+  color: var(--jk-text-dim);
+}
+
+mobile-starlight-toc .dropdown {
+  background-color: var(--jk-panel);
+  border-color: var(--jk-ui-strong);
+  border-top-color: var(--jk-ui-strong);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+mobile-starlight-toc .dropdown a {
+  color: var(--jk-text-dim);
+  border-top-color: var(--jk-ui);
+}
+
+mobile-starlight-toc .dropdown a:hover {
+  color: var(--jk-text);
+  background-color: var(--jk-bg);
+}
+
+mobile-starlight-toc .dropdown a[aria-current='true'] {
+  color: var(--jk-brand);
+  font-weight: 500;
+  background-color: transparent;
+}
+
+mobile-starlight-toc .dropdown a[aria-current='true']::after {
+  background-color: var(--jk-brand);
+}
+
+/* ==========================================================================
+   Right-rail outline — tree structure; rails on nested groups only,
+   turn green when they contain the active heading.
+   ========================================================================== */
+
+.right-sidebar-panel h2 {
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--jk-text-ghost);
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.right-sidebar-panel h2::before {
+  content: "";
+  width: 18px;
+  height: 1px;
+  background: var(--jk-brand);
+  flex-shrink: 0;
+}
+
+.right-sidebar-panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.right-sidebar-panel ul ul {
+  margin-left: 0.75rem;
+  border-left: 2px solid var(--jk-ui);
+  transition: border-color 0.15s;
+}
+
+.right-sidebar-panel ul ul:has(a[aria-current='true']) {
+  border-left-color: var(--jk-brand);
+}
+
+.right-sidebar-panel ul li a {
+  border-radius: 0;
+  background: transparent;
+  color: var(--jk-text-dim);
+  font-size: 0.75rem;       /* 12px — Starlight default; lost when we overrode PageSidebar.astro */
+  line-height: 1.4;
+  transition: color 0.1s;
+  padding-block: 0.2rem;
+  padding-left: 0.75rem;
+}
+
+.right-sidebar-panel ul:not(ul ul) > li > a {
+  color: var(--jk-text);
+  font-weight: 500;
+}
+
+.right-sidebar-panel ul li a:hover {
+  color: var(--jk-text);
+  background: transparent;
+}
+
+.right-sidebar-panel ul li a[aria-current='true'] {
+  color: var(--jk-brand);
+  background: transparent;
+  font-weight: 500;
+}
+
+.right-sidebar-panel ul li:has(> ul a[aria-current='true']) > a {
+  color: var(--jk-brand);
+}
+
+/* ==========================================================================
+   Header / top nav
+   ========================================================================== */
+
+header.header {
+  border-bottom: 1px solid var(--sl-color-hairline);
+  backdrop-filter: blur(10px);
+  background: color-mix(in oklab, var(--sl-color-bg-nav) 85%, transparent);
+}
+
+/* ==========================================================================
+   Site title — wordmark styles live in overrides/SiteTitle.astro
+   ========================================================================== */
+
+.site-title {
+  font-family: var(--sl-font);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--sl-color-white);
+}
+
+/* ==========================================================================
+   Body links — green with underline-on-hover
+   ========================================================================== */
+
+.sl-markdown-content a:not(.sl-anchor-link, :where(.not-content *)) {
+  color: var(--sl-color-text-accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.1s;
+}
+
+.sl-markdown-content a:not(.sl-anchor-link, :where(.not-content *)):hover {
+  border-bottom-color: var(--sl-color-text-accent);
+}
+
+/* Heading anchor-link icon */
+.sl-markdown-content .sl-heading-wrapper {
+  --sl-anchor-icon-gap: 12px;
+}
+
+.sl-markdown-content a.sl-anchor-link {
+  border-bottom: 0;
+  text-decoration: none;
+  color: var(--jk-text-ghost);
+  transition: color 0.1s;
+}
+
+.sl-markdown-content a.sl-anchor-link:hover,
+.sl-markdown-content a.sl-anchor-link:focus {
+  color: var(--sl-color-text-accent);
+}
+
+/* ==========================================================================
+   MDX <Tabs> — Starlight's default inactive tab text resolves through
+   --sl-color-gray-3 which we remap to a dark surface gray, so it read
+   too dim on both themes. Override with landing-tone dim/bright text
+   and a subtle hairline bottom border; active tab carries the 2px
+   green underline via --sl-tab-color-border.
+   ========================================================================== */
+
+/* Tab underline architecture:
+   - Grey baseline is a border-bottom on [role='tablist']. Because the
+     tablist itself scrolls, the border spans the full tab row and
+     appears under every tab at every horizontal scroll position.
+   - Green active indicator is a pseudo-element on the active <a>,
+     positioned at bottom: -2px so it overlaps the tablist's border-bottom
+     exactly. z-index ordering paints the green on top.
+
+   Earlier attempts using .tablist-wrapper::after rendered the grey line
+   at the wrapper's visible width only — when tabs overflowed and user
+   scrolled, the rightmost tabs ended up past the line. */
+.sl-markdown-content [role='tablist'] {
+  border-bottom: 2px solid rgba(255, 255, 255, 0.14);
+}
+
+:root[data-theme='light'] .sl-markdown-content [role='tablist'] {
+  border-bottom-color: rgba(0, 0, 0, 0.16);
+}
+
+.sl-markdown-content .tab > [role='tab'] {
+  --sl-tab-color-border: transparent;
+  color: var(--jk-text-dim);
+  transition: color 0.15s;
+  /* Single-line labels; long labels scroll horizontally via
+     .tablist-wrapper rather than wrapping and creating a staircase
+     underline. */
+  white-space: nowrap;
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  position: relative;
+  border-bottom: 0;
+  box-shadow: none;
+}
+
+.sl-markdown-content .tab > [role='tab']:hover {
+  color: var(--jk-text);
+}
+
+.sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
+  color: var(--jk-text);
+  font-weight: 600;
+}
+
+/* Green indicator overlaps the tablist's border-bottom exactly — tab
+   bottom sits at tablist content-box bottom; ::after at bottom: -2px
+   reaches into the border-bottom area. z-index paints green over grey. */
+.sl-markdown-content .tab > [role='tab'][aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: var(--jk-brand);
+  z-index: 1;
+}
+
+/* ==========================================================================
+   Tabs in chip form — activated only when the tablist would overflow
+   its container (see the inline ResizeObserver script in Head.astro
+   which toggles [data-overflow] on .tablist-wrapper). Horizontal
+   scrolling tabs hide labels off-screen and make the active indicator
+   hard to spot; chips keep every label visible at every width.
+   ========================================================================== */
+
+.sl-markdown-content .tablist-wrapper[data-overflow] {
+  overflow: visible;
+  border-bottom: 0;
+}
+
+.sl-markdown-content .tablist-wrapper[data-overflow] [role='tablist'] {
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 0;
+}
+
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'] {
+  border: 1px solid var(--jk-ui-strong);
+  border-radius: 999px;
+  background: var(--jk-panel);
+  padding: 0.35rem 0.875rem;
+  font-size: 0.8125rem;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  white-space: normal;
+}
+
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab']:hover {
+  border-color: var(--jk-text-dim);
+  color: var(--jk-text);
+}
+
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'][aria-selected='true'] {
+  background: var(--jk-brand);
+  border-color: var(--jk-brand);
+  color: var(--jk-bg);
+}
+
+/* No underline on chip form — the fill communicates active state. */
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'][aria-selected='true']::after {
+  display: none;
+}
+
+/* Hide the scrollbar on the tablist wrapper — it's a minor scroll axis
+   and the scrollbar chrome fights the clean underline look. Users can
+   still swipe/scroll horizontally on touch; desktop shift-wheels.
+   No mask-image fade — it always-clips the last tab even when content
+   fits, which made short tab rows look truncated on mobile. */
+.sl-markdown-content .tablist-wrapper {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+.sl-markdown-content .tablist-wrapper::-webkit-scrollbar {
+  display: none;
+}
+
+/* ==========================================================================
+   Code blocks — flat rounded panel, no terminal chrome or tab bar
+   ========================================================================== */
+
+.expressive-code .frame {
+  box-shadow: none;
+  /* Border is a subtle white-alpha hairline in BOTH modes because the
+     code surface is always dark (--jk-code-bg). Using var(--jk-ui),
+     which flips to black-alpha in light mode, made the border invisible
+     against the dark code panel. */
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  overflow: hidden;
+  /* Code blocks keep a dark surface in BOTH page modes:
+     - Dark mode: slightly deeper than the page (recessed feel)
+     - Light mode: high-contrast dark block against the white page
+     Single github-dark shiki theme (set in astro.config.mjs) paints the
+     syntax on top, so colors stay readable on either shade. */
+  background: var(--jk-code-bg);
+}
+
+.expressive-code .frame pre {
+  background: var(--jk-code-bg) !important;
+}
+
+:root[data-theme='dark'] {
+  --jk-code-bg: #050605;
+}
+
+:root[data-theme='light'] {
+  --jk-code-bg: #0a0b0a;   /* near-black for maximum contrast on a white page */
+}
+
+.expressive-code .frame .header {
+  display: none;
+}
+
+.expressive-code .frame pre {
+  border: 0;
+  border-radius: 0;
+}
+
+.expressive-code .frame pre code {
+  border-radius: 0;
+}
+
+/* Copy button — expressive-code calculates its top offset (--button-spacing)
+   to clear the editor/terminal header. We hide that header (display: none)
+   so the calculated offset leaves the button floating below its intended
+   spot. Pin it to the top-right corner of the code frame directly. */
+.expressive-code .copy {
+  inset-block-start: 0.5rem;
+  inset-inline-end: 0.5rem;
+}
+
+/* ==========================================================================
+   Asides
+   ========================================================================== */
+
+.starlight-aside {
+  border-radius: 10px;
+  border: 1px solid var(--sl-color-hairline);
+  background: var(--jk-panel);
+}
+
+/* ==========================================================================
+   Top-nav social icons (GitHub) — plain fg color, green on hover.
+   Starlight defaults to accent-green for the resting state, but the user
+   wanted the icon to read as a neutral glyph (white on dark, near-black
+   on light) that only pops on interaction.
+   ========================================================================== */
+
+.social-icons a {
+  color: var(--jk-text);
+}
+
+.social-icons a:hover,
+.social-icons a:focus {
+  color: var(--sl-color-text-accent);
+}
+
+/* Hide the vertical separator Starlight draws after the social icons
+   block (Header.astro injects .social-icons::after with a 1px border). */
+.social-icons::after {
+  display: none;
+}
+
+/* ==========================================================================
+   Top-nav search — panel pill with green hover
+   ========================================================================== */
+
+site-search button[data-open-modal] {
+  color: var(--jk-text-dim);
+}
+
+@media (min-width: 50rem) {
+  site-search button[data-open-modal] {
+    background-color: var(--jk-panel);
+    border: 1px solid var(--jk-ui);
+    border-radius: 10px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  site-search button[data-open-modal]:hover {
+    border-color: var(--sl-color-text-accent);
+    color: var(--jk-text);
+  }
+}
+
+site-search button > kbd {
+  background-color: var(--jk-bg-deep);
+  border: 1px solid var(--jk-ui);
+  color: var(--jk-text-dim);
+  font-family: var(--sl-font-mono);
+}
+
+site-search dialog {
+  background-color: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+}
+
+/* ==========================================================================
+   Theme toggle styling lives in overrides/ThemeSelect.astro (scoped)
+   ========================================================================== */
+
+/* ==========================================================================
+   Pagination cards
+   ========================================================================== */
+
+.pagination-links a {
+  /* 2px --jk-ui-strong — visible at equal weight in both themes. The
+     earlier 1px --jk-ui read fine in dark but near-invisible in light
+     (black-alpha 0.08 on near-white bg). Same width across modes for
+     consistency. */
+  border: 2px solid var(--jk-ui-strong);
+  border-radius: 10px;
+  background: var(--jk-panel);
+  color: var(--jk-text-dim);
+  box-shadow: none;
+  transition: border-color 0.15s, color 0.15s, transform 0.15s;
+}
+
+.pagination-links a:hover {
+  border-color: var(--jk-brand);
+  color: var(--jk-text);
+  transform: translateY(-1px);
+}
+
+.pagination-links a .link-title {
+  color: var(--jk-text);
+  font-size: 1.125rem;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+
+.pagination-links a:hover .link-title {
+  color: var(--jk-brand);
+}
+
+.pagination-links a > span:not(.link-title) {
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--jk-text-ghost);
+}
+
+.pagination-links a svg {
+  color: var(--jk-text-ghost);
+  transition: color 0.15s;
+}
+
+.pagination-links a:hover svg {
+  color: var(--jk-brand);
+}

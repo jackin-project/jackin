@@ -1,0 +1,156 @@
+---
+/**
+ * Image layers diagram for /reference/architecture.
+ *
+ * Visual metaphor: physically stacked image layers, top-down. The
+ * derived (jackin-managed) layer is the tip of the stack and gets
+ * the brand accent; the two layers below are increasingly neutral.
+ * Numbered tags ("L3/L2/L1") and owner pills removed — the visual
+ * stacking already encodes ownership and position, and the titles
+ * say who owns each layer.
+ */
+---
+
+<figure class="jk-layers not-content" aria-label="jackin' image layers: top derived layer owned by jackin', middle agent layer from the agent repo, bottom shared construct base">
+  <ol class="jk-layers-stack">
+    <li class="jk-layer jk-layer--derived">
+      <div class="jk-layer-title-row">
+        <h4 class="jk-layer-title">Derived layer</h4>
+        <span class="jk-layer-owner">jackin-managed</span>
+      </div>
+      <ul class="jk-layer-items">
+        <li>UID/GID remapping</li>
+        <li>Claude Code installation</li>
+        <li>Pre-launch hook</li>
+        <li>Runtime entrypoint</li>
+        <li>Plugin bootstrap</li>
+      </ul>
+    </li>
+
+    <li class="jk-layer jk-layer--agent">
+      <div class="jk-layer-title-row">
+        <h4 class="jk-layer-title">Agent layer</h4>
+        <span class="jk-layer-owner">agent repo</span>
+      </div>
+      <ul class="jk-layer-items">
+        <li>Language runtimes</li>
+        <li>Development tools</li>
+        <li>Custom configuration</li>
+      </ul>
+    </li>
+
+    <li class="jk-layer jk-layer--base">
+      <div class="jk-layer-title-row">
+        <h4 class="jk-layer-title">Construct base</h4>
+        <span class="jk-layer-owner">shared</span>
+      </div>
+      <ul class="jk-layer-items">
+        <li>Debian Trixie</li>
+        <li>Docker CLI + Compose</li>
+        <li>Git, GitHub CLI</li>
+        <li>mise, ripgrep, fd, fzf</li>
+        <li>zsh + Oh My Zsh</li>
+      </ul>
+    </li>
+  </ol>
+</figure>
+
+<style>
+  .jk-layers {
+    margin: 1.5rem 0 2rem;
+    color: var(--jk-text);
+  }
+
+  /* The stack itself. Layers physically overlap at their edges (via
+     negative margin) so the metaphor reads as literal stacking, not
+     three unrelated cards. */
+  .jk-layers-stack {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    /* Slight outer shadow on the whole stack makes it sit on the
+       page. Uses rgba so it shows in both themes. */
+    filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.25));
+  }
+
+  .jk-layer {
+    position: relative;
+    padding: 18px 22px 18px 26px;
+    background: var(--jk-panel);
+    border: 1px solid var(--jk-ui);
+  }
+  .jk-layer + .jk-layer {
+    /* Collapse shared edges so the stack reads as one object. */
+    margin-top: -1px;
+  }
+  .jk-layer:first-child { border-radius: 10px 10px 0 0; }
+  .jk-layer:last-child  { border-radius: 0 0 10px 10px; }
+
+  /* Left-edge accent strip. Brand green on top (ours), fading down
+     through a muted tone to a neutral ghost at the bottom. */
+  .jk-layer::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+  }
+  .jk-layer--derived::before { background: var(--jk-brand); }
+  .jk-layer--agent::before   { background: color-mix(in srgb, var(--jk-brand) 35%, var(--jk-text-ghost)); }
+  .jk-layer--base::before    { background: var(--jk-text-ghost); }
+
+
+  .jk-layer-title-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 10px;
+  }
+  .jk-layer-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--jk-text);
+    letter-spacing: -0.005em;
+  }
+  .jk-layer-owner {
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    color: var(--jk-text-ghost);
+  }
+  .jk-layer--derived .jk-layer-owner { color: var(--jk-brand); }
+
+  .jk-layer-items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    column-gap: 24px;
+    row-gap: 4px;
+    font-size: 0.88rem;
+    color: var(--jk-text-dim);
+  }
+  .jk-layer-items li {
+    position: relative;
+    padding-left: 14px;
+  }
+  .jk-layer-items li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.6em;
+    width: 6px;
+    height: 1px;
+    background: var(--jk-text-ghost);
+  }
+  .jk-layer--derived .jk-layer-items li::before { background: var(--jk-brand); }
+
+  @media (max-width: 640px) {
+    .jk-layer { padding: 14px 16px 14px 20px; }
+    .jk-layer-title-row { flex-direction: column; gap: 2px; margin-bottom: 8px; }
+  }
+</style>
