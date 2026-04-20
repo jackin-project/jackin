@@ -16,7 +16,6 @@ const ICONS: Record<string, string> = {
     <>
       {links.map(({ label, href, icon }) => (
         <a {href} target="_blank" rel="me noopener noreferrer" class="sl-flex" aria-label={label}>
-          <span class="sr-only">{label}</span>
           <svg
             aria-hidden="true"
             width="16"

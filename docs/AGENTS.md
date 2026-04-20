@@ -7,6 +7,28 @@
 - Framework: `astro` with `@astrojs/starlight`, `@astrojs/react`, and MDX auto-provided by Starlight.
 - Styling: `tailwindcss` v4 (CSS-first configuration in `src/styles/global.css`).
 
+## Language
+
+**Write TypeScript, not JavaScript.** This applies to every file that isn't
+MDX or CSS:
+
+- Astro config: `astro.config.ts` (not `.mjs`/`.js`)
+- Build scripts: `scripts/*.ts` (not `*.mjs`/`*.js`). Run via `bun run <file.ts>`.
+- Route endpoints (e.g. `src/pages/og/[...slug].png.ts`): `.ts`
+- React components: `.tsx`
+- Inline `<script>` in `.astro` files: keep TypeScript by default; use
+  `is:inline` for pre-hydration scripts only when the timing absolutely
+  requires running before Astro's module loader.
+
+Rationale: TypeScript catches integration errors between Starlight's
+route data, Astro config shapes, and our own helpers at edit time
+rather than at build time. Bun runs `.ts` natively — there is no
+transpile step or build-config cost to choose TS over JS/MJS.
+
+Do not introduce new `.mjs` or plain `.js` files. If you encounter one
+left over from an older version of this site, port it to `.ts` as part
+of whatever task brought you there.
+
 ## Package Management
 
 - Use `bun install`, `bun add`, and `bun remove` for dependency changes.
@@ -26,7 +48,7 @@
 - Docs content lives under `src/content/docs/` as MDX files.
 - Content collection defined in `src/content.config.ts` using the Starlight `docsLoader()` (Astro 6 Content Layer API).
 - File-based routing: `src/content/docs/foo/bar.mdx` → `/foo/bar`.
-- Sidebar and top-nav are configured in `astro.config.mjs`.
+- Sidebar and top-nav are configured in `astro.config.ts`.
 - Use Starlight components for callouts (`<Aside type="note|tip|caution">`),
   steps (`<Steps>` around an `<ol>`), and tabs (`<Tabs><TabItem>`). Import from
   `@astrojs/starlight/components`.

@@ -6,10 +6,9 @@
 
 /* Forward-compatible @theme block for landing-specific tokens.
    These become utility classes like bg-landing-panel, text-landing-accent, etc.
-   Source of truth: docs-astro/src/components/landing/styles.css — these
-   utilities will be gradually adopted during Phase 4 per-component ports.
-   During Phase 3 (islands-only), styles.css is still the sole source;
-   this block is just laying the groundwork. */
+   Source of truth: src/components/landing/styles.css — any future port
+   of a landing component from React → .astro can switch its markup to
+   these utility classes while preserving the exact colour values. */
 
 @theme {
   --color-landing-bg: #0a0b0a;

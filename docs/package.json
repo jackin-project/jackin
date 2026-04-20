@@ -7,8 +7,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "gen-og": "bun run scripts/gen-og.mjs",
-    "gen-icons": "bun run scripts/gen-icons.mjs",
+    "gen-og": "bun run scripts/gen-og.ts",
+    "gen-icons": "bun run scripts/gen-icons.ts",
     "test": "bun test"
   },
   "dependencies": {
@@ -23,6 +23,7 @@
     "astro-og-canvas": "^0.11.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "rehype-external-links": "^3.0.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.2.2"
   },
@@ -32,7 +33,6 @@
     "@resvg/resvg-js": "^2.6.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "rehype-external-links": "^3.0.0",
     "satori": "^0.26.0",
     "typescript": "^6.0.3"
   }

@@ -3,11 +3,13 @@ import Default from '@astrojs/starlight/components/Head.astro'
 
 // Each docs page gets its own generated OG card (see
 // src/pages/og/[...slug].png.ts + astro-og-canvas). Fall back to the
-// global landing image for any page without an ID (shouldn't happen
-// for routes going through this override, but safe default).
+// global landing image for the 404 page (no content entry → no OG
+// static path → a per-page URL would 404) and anything else without
+// a valid id.
 const routeId = Astro.locals.starlightRoute.id
-const OG_IMAGE = routeId
-  ? `https://jackin.tailrocks.com/og/${routeId.replace(/\.[^./]+$/, '')}.png`
+const hasPerPageOg = routeId && routeId !== '404'
+const OG_IMAGE = hasPerPageOg
+  ? `https://jackin.tailrocks.com/og/${routeId.replace(/\.(mdx?|astro)$/i, '')}.png`
   : 'https://jackin.tailrocks.com/og-image.png'
 
 // Article meta — LinkedIn / FB honour these for og:type=article pages.
@@ -43,30 +45,42 @@ const jsonLd = {
 ---
 
 {/* Runs FIRST — before any stylesheet that could block its execution.
-    Always syncs data-theme with localStorage so every page renders in
-    the correct theme from first paint (Starlight hardcodes data-theme
-    to 'dark' server-side, which flashed on navigations in light mode).
-    Also migrates old 'auto' values to 'dark' so the ThemeProvider that
-    runs later stays consistent with what we just set.
+    Syncs data-theme with localStorage so every page renders in the
+    correct theme from first paint (Starlight hardcodes data-theme to
+    'dark' server-side, which flashed on navigations in light mode).
 
-    Adds .theme-init class to disable every CSS transition until two
-    animation frames after DOMContentLoaded — stops elements using
-    var(--jk-brand) from animating from the HTML-default dark value to
-    the correct light value when data-theme flips. Class is removed
-    once layout has settled. */}
+    On first visit we DON'T write to localStorage — leaving it empty
+    lets Starlight's own ThemeProvider (which runs after us) still
+    honour prefers-color-scheme if a user wants OS-following behaviour.
+    Old 'auto' values are migrated away to 'dark' explicitly so the
+    retired option doesn't linger.
+
+    Adds .theme-init only when we actually flip the attribute. It
+    disables every CSS transition for two animation frames after
+    DOMContentLoaded so elements using var(--jk-brand) don't animate
+    the dark-to-light colour shift. Skipped on default-dark loads
+    where no flip happens. */}
 <script is:inline>
   (function () {
     var root = document.documentElement
+    var flipped = false
     try {
       var stored = localStorage.getItem('starlight-theme')
-      if (stored !== 'light' && stored !== 'dark') {
-        stored = 'dark'
-        localStorage.setItem('starlight-theme', 'dark')
+      // Migrate the retired 'auto' option — not first-visit empty values.
+      if (stored === 'auto') {
+        localStorage.removeItem('starlight-theme')
+        stored = null
       }
-      root.setAttribute('data-theme', stored)
+      var theme = stored === 'light' ? 'light' : 'dark'
+      if (root.getAttribute('data-theme') !== theme) {
+        root.setAttribute('data-theme', theme)
+        flipped = true
+      }
     } catch (e) {
-      root.setAttribute('data-theme', 'dark')
+      // localStorage access threw (private mode, SecurityError, etc).
+      // Leave whatever SSR wrote alone.
     }
+    if (!flipped) return
     root.classList.add('theme-init')
     function releaseInit() {
       requestAnimationFrame(function () {

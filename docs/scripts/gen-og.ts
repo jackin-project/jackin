@@ -6,6 +6,7 @@
 // Run: `bun run gen-og`
 
 import satori from 'satori'
+import type { SatoriOptions } from 'satori'
 import { Resvg } from '@resvg/resvg-js'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -14,16 +15,28 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
 
-const font = (pkg, file) =>
+const font = (pkg: string, file: string): Buffer =>
   readFileSync(join(root, 'node_modules', pkg, 'files', file))
 
 const interBold = font('@fontsource/inter', 'inter-latin-800-normal.woff')
 const interRegular = font('@fontsource/inter', 'inter-latin-500-normal.woff')
-const jbMono = font('@fontsource/jetbrains-mono', 'jetbrains-mono-latin-600-normal.woff')
+const jbMono = font(
+  '@fontsource/jetbrains-mono',
+  'jetbrains-mono-latin-600-normal.woff'
+)
 
-// Satori uses a JSX-like tree. Every <div> with >1 child needs an
-// explicit display — we use flex everywhere to avoid surprises.
-const h = (type, props = {}, ...children) => ({
+// Satori's input is a JSX-like tree. Using a tiny `h` helper instead of
+// JSX avoids needing a JSX transform just for this one script.
+type SatoriNode = {
+  type: string
+  props: Record<string, unknown> & { children?: unknown }
+}
+
+const h = (
+  type: string,
+  props: Record<string, unknown> = {},
+  ...children: unknown[]
+): SatoriNode => ({
   type,
   props: { ...props, children: children.flat().filter(Boolean) },
 })
@@ -105,7 +118,7 @@ const tree = h(
   )
 )
 
-const svg = await satori(tree, {
+const options: SatoriOptions = {
   width: 1200,
   height: 630,
   fonts: [
@@ -113,9 +126,15 @@ const svg = await satori(tree, {
     { name: 'Inter', data: interRegular, weight: 500, style: 'normal' },
     { name: 'JetBrainsMono', data: jbMono, weight: 600, style: 'normal' },
   ],
-})
+}
 
-const png = new Resvg(svg, { fitTo: { mode: 'width', value: 1200 } }).render().asPng()
+// Satori accepts React-style nodes; our plain object tree matches the
+// structural shape so a type-assertion is safe here.
+const svg = await satori(tree as unknown as Parameters<typeof satori>[0], options)
+
+const png = new Resvg(svg, { fitTo: { mode: 'width', value: 1200 } })
+  .render()
+  .asPng()
 
 const out = join(root, 'public', 'og-image.png')
 mkdirSync(dirname(out), { recursive: true })

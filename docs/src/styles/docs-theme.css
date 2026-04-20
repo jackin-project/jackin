@@ -149,8 +149,9 @@
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
 
-  /* Light-mode expressive-code frame — border tracks theme; shiki
-     paints the light surface via github-light. */
+  /* Light-mode expressive-code frame — the surface is still dark
+     (--jk-code-bg applied in docs-theme.css below) with shiki's
+     one-dark-pro palette for punchier syntax on the light page. */
   --ec-brdRad: 10px;
   --ec-brdCol: var(--jk-ui);
   --ec-frm-edActTabIndBtmCol: transparent;

@@ -19,7 +19,7 @@ const pub = join(__dirname, '..', 'public')
 
 const svg = readFileSync(join(pub, 'favicon.svg'))
 
-async function render(size, out) {
+async function render(size: number, out: string): Promise<void> {
   await sharp(svg, { density: 300 })
     .resize(size, size, {
       fit: 'contain',

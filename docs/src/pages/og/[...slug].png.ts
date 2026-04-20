@@ -13,9 +13,10 @@ const route = await OGImageRoute({
   param: 'slug',
   // astro-og-canvas's default appends the image extension to the slug —
   // combined with our [...slug].png.ts filename it produced dead
-  // /og/<path>.png.png URLs. Strip the extension so the final URL is a
-  // clean /og/<path>.png.
-  getSlug: (path) => path.replace(/\.[^\.]*$/, ''),
+  // /og/<path>.png.png URLs. Strip only image extensions (NOT any dot
+  // — a slug like `reference/next.js-integration` must keep its dot)
+  // so the final URL is a clean /og/<path>.png.
+  getSlug: (path) => path.replace(/\.(png|jpe?g|webp)$/i, ''),
   getImageOptions: (_path, { data }: { data: { title: string; description?: string } }) => ({
     title: data.title,
     description: data.description ?? '',
