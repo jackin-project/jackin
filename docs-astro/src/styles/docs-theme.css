@@ -495,6 +495,15 @@ header.header {
   border-radius: 0;
 }
 
+/* Copy button — expressive-code calculates its top offset (--button-spacing)
+   to clear the editor/terminal header. We hide that header (display: none)
+   so the calculated offset leaves the button floating below its intended
+   spot. Pin it to the top-right corner of the code frame directly. */
+.expressive-code .copy {
+  inset-block-start: 0.5rem;
+  inset-inline-end: 0.5rem;
+}
+
 /* ==========================================================================
    Asides
    ========================================================================== */
