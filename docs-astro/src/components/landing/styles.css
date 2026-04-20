@@ -873,6 +873,7 @@ nav.landing-topnav .landing-star {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  transition: box-shadow 0.2s, border-color 0.15s;
 }
 /* Shared star icon — used in topnav "Star on GitHub" + install-block CTA.
    SVG path uses currentColor so we colour it via `color`. filter: drop-shadow
@@ -883,7 +884,10 @@ nav.landing-topnav .landing-star {
   flex-shrink: 0;
 }
 
-.landing-star:hover { border-color: var(--landing-text); }
+.landing-star:hover {
+  border-color: var(--landing-text);
+  box-shadow: 0 0 0 1px rgba(0, 255, 65, 0.2), 0 6px 20px rgba(0, 255, 65, 0.15);
+}
 
 .landing-hero-stage {
   position: relative;
