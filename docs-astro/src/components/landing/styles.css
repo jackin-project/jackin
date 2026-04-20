@@ -870,11 +870,18 @@ nav.landing-topnav .landing-star {
   align-items: center;
   gap: 8px;
 }
+/* Shared star icon — used in topnav "Star on GitHub" + install-block CTA.
+   SVG path uses currentColor so we colour it via `color`. filter: drop-shadow
+   gives a softer, cleaner glow than text-shadow on text-based stars. */
 .landing-star-icon {
-  font-size: 16px;
-  line-height: 1;
   color: var(--landing-accent);
-  text-shadow: 0 0 0.3em rgba(0, 255, 65, 0.45);
+  filter: drop-shadow(0 0 6px rgba(0, 255, 65, 0.5));
+  flex-shrink: 0;
+}
+
+.landing-btn-ghost .landing-star-icon {
+  margin-right: 4px;
+  vertical-align: -3px;
 }
 .landing-star:hover { border-color: var(--landing-text); }
 
