@@ -9,7 +9,10 @@ export function HeroStage() {
       <nav className="landing-topnav">
         <div className="landing-logo">jackin<span className="tick">'</span></div>
         <div className="landing-nav-right">
-          <a className="landing-star" href="https://github.com/jackin-project/jackin" target="_blank" rel="noopener">★ Star on GitHub</a>
+          <a className="landing-star" href="https://github.com/jackin-project/jackin" target="_blank" rel="noopener">
+            <span className="landing-star-icon" aria-hidden="true">★</span>
+            Star on GitHub
+          </a>
         </div>
       </nav>
       <div className="landing-shell">

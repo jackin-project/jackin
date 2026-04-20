@@ -863,8 +863,18 @@ nav.landing-topnav .landing-star {
   border: 1px solid var(--landing-ui-strong);
   border-radius: 4px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11px; color: var(--landing-text);
+  font-size: 11px;
+  color: var(--landing-text);
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.landing-star-icon {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--landing-accent);
+  text-shadow: 0 0 0.3em rgba(0, 255, 65, 0.45);
 }
 .landing-star:hover { border-color: var(--landing-text); }
 
