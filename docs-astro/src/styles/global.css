@@ -1,0 +1,23 @@
+/* Tailwind v4 + Starlight theme tokens. Order matters: Tailwind must
+   come before Starlight Tailwind plugin reset so Starlight wins for
+   docs chrome, while utilities still apply inside MDX content. */
+
+@import 'tailwindcss';
+
+/* Forward-compatible @theme block for landing-specific tokens.
+   These become utility classes like bg-landing-panel, text-landing-accent, etc.
+   Source of truth: docs-astro/src/components/landing/styles.css — these
+   utilities will be gradually adopted during Phase 4 per-component ports.
+   During Phase 3 (islands-only), styles.css is still the sole source;
+   this block is just laying the groundwork. */
+
+@theme {
+  --color-landing-bg: #0a0b0a;
+  --color-landing-bg-deep: #050605;
+  --color-landing-panel: #0f1110;
+  --color-landing-text: #f4f7f5;
+  --color-landing-text-dim: #9ca8a1;
+  --color-landing-text-ghost: #5e6a64;
+  --color-landing-accent: #00ff41;
+  --color-landing-danger: #ff5e7a;
+}
