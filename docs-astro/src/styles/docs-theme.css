@@ -240,6 +240,32 @@
 }
 
 /* ==========================================================================
+   Lists — Tailwind's preflight (from @import 'tailwindcss') strips
+   list-style/padding from ul/ol globally. Restore them inside prose so
+   bullet/number markers reappear and items don't run into surrounding
+   paragraphs as continuous text.
+   ========================================================================== */
+
+.sl-markdown-content :is(ul, ol):not(:where(.not-content *)) {
+  list-style: revert;
+  padding-inline-start: 1.5rem;
+  margin-block: 1rem;
+}
+
+.sl-markdown-content :is(ul, ol):not(:where(.not-content *)) :is(ul, ol) {
+  margin-block: 0.25rem;
+}
+
+.sl-markdown-content li:not(:where(.not-content *)) {
+  margin-block: 0.35rem;
+  padding-inline-start: 0.25rem;
+}
+
+.sl-markdown-content li::marker {
+  color: var(--jk-text-ghost);
+}
+
+/* ==========================================================================
    Inline code — panel chip, monospace
    ========================================================================== */
 
