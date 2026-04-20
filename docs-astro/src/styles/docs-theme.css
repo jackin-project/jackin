@@ -1,74 +1,181 @@
-/* Maps Starlight's CSS custom properties to Radix tokens from
-   tempo-tokens.css. This file is the Starlight-equivalent of the
-   Vocs-targeted docs-theme.css in the old docs/ directory.
+/* Maps Starlight's CSS custom properties to Radix tokens from tempo-tokens.css.
+   The Radix tokens use `light-dark()` internally so one declaration covers
+   both modes — the mode is selected by `color-scheme` on :root, which we set
+   via the [data-theme] selectors at the bottom of this file.
 
-   Accent note: the Vocs site uses a monochrome accent (black on light,
-   white on dark) — not green. We preserve that here. The --color-green*
-   tokens exist in tempo-tokens.css but were never used for accent in the
-   Vocs theme; the template suggestion was generic. */
+   Accent: the Vocs site used a monochrome accent (black on light, white on
+   dark). We preserve that — green tokens in tempo-tokens.css exist but are
+   not used here. */
 
 :root {
-  /* Surfaces */
+  /* ============================================================
+     Surface grays — Starlight uses these for backgrounds, borders,
+     sidebar/nav chrome. NOT for body text. Ramp goes dark → light
+     in dark mode (1 = near-bg, 7 = near-fg); reverse in light mode.
+     ============================================================ */
+  --sl-color-gray-1: var(--color-gray2);
+  --sl-color-gray-2: var(--color-gray3);
+  --sl-color-gray-3: var(--color-gray5);
+  --sl-color-gray-4: var(--color-gray7);
+  --sl-color-gray-5: var(--color-gray9);
+  --sl-color-gray-6: var(--color-gray10);
+  --sl-color-gray-7: var(--color-gray11);
+
+  /* ============================================================
+     Semantic colors — page/text extremes + text tiers.
+     ============================================================ */
+  --sl-color-black: var(--color-gray1);     /* page bg in dark, near-white in light */
+  --sl-color-white: var(--color-gray12);    /* body text in dark, near-black in light */
   --sl-color-bg: var(--color-gray1);
   --sl-color-bg-nav: var(--color-gray1);
   --sl-color-bg-sidebar: var(--color-gray1);
-  --sl-color-bg-inline-code: var(--color-grayA3);
-
-  /* Text */
-  --sl-color-white: var(--color-gray12);
-  --sl-color-gray-1: var(--color-gray12);
-  --sl-color-gray-2: var(--color-gray11);
-  --sl-color-gray-3: var(--color-gray10);
-  --sl-color-gray-4: var(--color-gray9);
-  --sl-color-gray-5: var(--color-gray7);
-  --sl-color-gray-6: var(--color-gray4);
-  --sl-color-gray-7: var(--color-gray3);
-  --sl-color-black: var(--color-gray1);
   --sl-color-text: var(--color-gray12);
   --sl-color-text-invert: var(--color-gray1);
 
-  /* Lines / borders — matches --vocs-color_border / --vocs-color_border2 */
+  /* ============================================================
+     Borders / hairlines — translucent so they blend over any surface.
+     ============================================================ */
   --sl-color-hairline: var(--color-grayA4);
-  --sl-color-hairline-light: var(--color-grayA4);
+  --sl-color-hairline-light: var(--color-grayA3);
   --sl-color-hairline-shade: var(--color-grayA5);
 
-  /* Accent — monochrome, matching the Vocs site's accent treatment:
-     black on light mode, white on dark mode (light-dark() resolves per
-     color-scheme set below). Starlight's accent vars expect a single
-     resolved value, so we split by data-theme selector below. */
+  /* ============================================================
+     Accent — monochrome. Black-on-light / white-on-dark.
+     Overridden per data-theme below so --sl-color-accent resolves
+     to a single color (Starlight uses it raw in gradients etc.).
+     ============================================================ */
   --sl-color-accent-low: var(--color-grayA3);
   --sl-color-accent: var(--color-gray12);
   --sl-color-accent-high: var(--color-gray11);
   --sl-color-text-accent: var(--color-gray12);
 
-  /* Fonts */
+  /* ============================================================
+     Inline code + code blocks — mirror Vocs's treatment:
+     inline = subtle grayA chip; code block = page gray1 (slightly
+     deeper than body in dark mode).
+     ============================================================ */
+  --sl-color-bg-inline-code: var(--color-grayA3);
+
+  /* ============================================================
+     Fonts — injected via src/components/overrides/Head.astro.
+     ============================================================ */
   --sl-font: 'Inter', system-ui, sans-serif;
   --sl-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 
-  /* Layout dimensions (match Vocs proportions) */
+  /* ============================================================
+     Layout dimensions — match Vocs proportions.
+     ============================================================ */
   --sl-sidebar-width: 19rem;
   --sl-content-width: 48rem;
   --sl-nav-height: 3.5rem;
 }
 
-/* Starlight toggles a data-theme attribute on <html>; Radix tokens in
-   tempo-tokens.css already handle light/dark via light-dark() and the
-   color-scheme property. Ensure color-scheme is set on both modes. */
-
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  /* In dark mode the monochrome accent resolves to white */
-  --sl-color-accent: var(--color-white);
+  --sl-color-accent: #ffffff;
   --sl-color-accent-high: var(--color-grayA11);
-  --sl-color-text-accent: var(--color-white);
+  --sl-color-text-accent: #ffffff;
 }
 
 :root[data-theme='light'] {
   color-scheme: light;
 
-  /* In light mode the monochrome accent resolves to black */
-  --sl-color-accent: var(--color-black);
+  --sl-color-accent: #000000;
   --sl-color-accent-high: var(--color-grayA12);
-  --sl-color-text-accent: var(--color-black);
+  --sl-color-text-accent: #000000;
+}
+
+/* ==========================================================================
+   Inline code — match Vocs's text + border treatment, not just background.
+   ========================================================================== */
+
+:root .sl-markdown-content :not(a, h1, h2, h3, h4, h5, h6) > code:not(:where(.not-content *)) {
+  color: var(--color-gray12);
+  border: 1px solid var(--color-grayA4);
+  border-radius: 4px;
+  padding: 0.125em 0.375em;
+  font-size: 0.875em;
+}
+
+/* ==========================================================================
+   Right-rail "On this page" outline — Tempo-style vertical indicator.
+   Starlight renders the outline inside a <starlight-toc> custom element with
+   an inner <nav> > <ul> > <li> > <a> structure. Class hooks: .right-sidebar
+   wraps it; the ul gets no dedicated class, so we target by context.
+   ========================================================================== */
+
+.right-sidebar-panel h2 {
+  color: var(--color-gray11);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.right-sidebar-panel ul {
+  position: relative;
+  border-left: 2px solid var(--color-grayA4);
+  padding-left: 0;
+  margin-left: 0;
+  list-style: none;
+}
+
+.right-sidebar-panel ul li a {
+  display: block;
+  padding: 0.25rem 0 0.25rem 0.75rem;
+  line-height: 1.4;
+  color: var(--color-gray10);
+  text-decoration: none;
+  transition: color 0.1s;
+  margin-left: -2px;
+  border-left: 2px solid transparent;
+}
+
+.right-sidebar-panel ul li a:hover {
+  color: var(--color-gray12);
+}
+
+.right-sidebar-panel ul li a[aria-current='true'],
+.right-sidebar-panel ul li a.active {
+  color: var(--sl-color-text-accent);
+  border-left-color: var(--sl-color-text-accent);
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   Sidebar nav — softer group labels; match Vocs spacing.
+   ========================================================================== */
+
+.sidebar-content summary,
+.sidebar-content .group-label > span {
+  color: var(--color-gray11);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.sidebar-content ul li a {
+  color: var(--color-gray11);
+  transition: color 0.1s;
+}
+
+.sidebar-content ul li a:hover {
+  color: var(--color-gray12);
+}
+
+.sidebar-content ul li a[aria-current='page'] {
+  color: var(--sl-color-text-accent);
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   Code blocks (expressive-code) — subtle refinements only. Expressive-code
+   does most of the heavy lifting; we just match Vocs's border radius.
+   ========================================================================== */
+
+.expressive-code .frame {
+  border-radius: 8px;
 }
