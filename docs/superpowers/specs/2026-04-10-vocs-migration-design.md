@@ -6,7 +6,7 @@ Rebuild the jackin' documentation site using [Vocs](https://vocs.dev/) (React + 
 
 ## Decisions
 
-- **Fresh start on visuals** — no logos, no Matrix theme, Vocs defaults
+- **Fresh start on visuals** — no logos, no cyberpunk theme, Vocs defaults
 - **Keep deployment** — `jackin.tailrocks.com` via GitHub Pages (CNAME preserved)
 - **Package manager** — Bun first, pnpm as fallback
 - **Landing page** — Vocs built-in `HomePage` component

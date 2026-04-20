@@ -183,7 +183,7 @@ mod colors {
     pub const DIM_BLUE: Color = Color::Rgb(75, 105, 145); // borders, subtitle
     pub const DETAIL_BORDER: Color = Color::Rgb(60, 75, 90); // details panel border
     pub const DETAIL_BG: Color = Color::Rgb(15, 17, 25); // details panel background
-    pub const MATRIX_GREEN: Color = Color::Rgb(0, 255, 65); // highlight
+    pub const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65); // highlight
     pub const DIM_GREEN: Color = Color::Rgb(0, 140, 30); // footer hints
     pub const WHITE: Color = Color::Rgb(255, 255, 255);
     pub const DIM_WHITE: Color = Color::Rgb(180, 180, 180);
@@ -416,7 +416,7 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
             let is_selected = i == state.selected_workspace;
             let name_style = if is_selected {
                 Style::default()
-                    .fg(colors::MATRIX_GREEN)
+                    .fg(colors::PHOSPHOR_GREEN)
                     .add_modifier(Modifier::BOLD)
                     .bg(colors::DARK_BG)
             } else {
@@ -550,21 +550,21 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
         Span::styled(
             "  Enter ",
             Style::default()
-                .fg(colors::MATRIX_GREEN)
+                .fg(colors::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("select   ", Style::default().fg(colors::DIM_GREEN)),
         Span::styled(
             "↑↓ ",
             Style::default()
-                .fg(colors::MATRIX_GREEN)
+                .fg(colors::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("navigate   ", Style::default().fg(colors::DIM_GREEN)),
         Span::styled(
             "Esc ",
             Style::default()
-                .fg(colors::MATRIX_GREEN)
+                .fg(colors::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("quit", Style::default().fg(colors::DIM_GREEN)),
@@ -649,7 +649,7 @@ fn draw_agent_screen(
             let label = format!("  {}  ", agent.key());
             let style = if i == state.selected_agent {
                 Style::default()
-                    .fg(colors::MATRIX_GREEN)
+                    .fg(colors::PHOSPHOR_GREEN)
                     .add_modifier(Modifier::BOLD)
                     .bg(colors::DARK_BG)
             } else {
@@ -820,28 +820,28 @@ fn render_agent_footer(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) 
         Span::styled(
             "  Enter ",
             Style::default()
-                .fg(colors::MATRIX_GREEN)
+                .fg(colors::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("load   ", Style::default().fg(colors::DIM_GREEN)),
         Span::styled(
             "↑↓ ",
             Style::default()
-                .fg(colors::MATRIX_GREEN)
+                .fg(colors::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("navigate   ", Style::default().fg(colors::DIM_GREEN)),
         Span::styled(
             "Type ",
             Style::default()
-                .fg(colors::MATRIX_GREEN)
+                .fg(colors::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("to filter   ", Style::default().fg(colors::DIM_GREEN)),
         Span::styled(
             "Esc ",
             Style::default()
-                .fg(colors::MATRIX_GREEN)
+                .fg(colors::PHOSPHOR_GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("back", Style::default().fg(colors::DIM_GREEN)),

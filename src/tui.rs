@@ -14,9 +14,9 @@ const WHITE: (u8, u8, u8) = (255, 255, 255);
 const DIM: (u8, u8, u8) = (120, 120, 120);
 const ROSE: (u8, u8, u8) = (210, 100, 100);
 
-const MATRIX_GREEN: (u8, u8, u8) = (0, 255, 65);
-const MATRIX_DIM: (u8, u8, u8) = (0, 140, 30);
-const MATRIX_DARK: (u8, u8, u8) = (0, 80, 18);
+const PHOSPHOR_GREEN: (u8, u8, u8) = (0, 255, 65);
+const PHOSPHOR_DIM: (u8, u8, u8) = (0, 140, 30);
+const PHOSPHOR_DARK: (u8, u8, u8) = (0, 80, 18);
 
 const fn rgb(color: (u8, u8, u8)) -> owo_colors::Rgb {
     owo_colors::Rgb(color.0, color.1, color.2)
@@ -56,10 +56,10 @@ const fn age_to_color(age: u16) -> Option<(u8, u8, u8)> {
     match age {
         0 => Some(WHITE),
         1..=2 => Some((180, 255, 180)),
-        3..=5 => Some(MATRIX_GREEN),
+        3..=5 => Some(PHOSPHOR_GREEN),
         6..=10 => Some((0, 200, 50)),
-        11..=16 => Some(MATRIX_DIM),
-        17..=24 => Some(MATRIX_DARK),
+        11..=16 => Some(PHOSPHOR_DIM),
+        17..=24 => Some(PHOSPHOR_DARK),
         _ => None,
     }
 }
@@ -218,7 +218,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                 match cell {
                     None => eprint!(" "),
                     Some(c) => {
-                        let (r, g, b) = age_to_color(c.age).unwrap_or(MATRIX_DARK);
+                        let (r, g, b) = age_to_color(c.age).unwrap_or(PHOSPHOR_DARK);
                         eprint!("{}", c.ch.color(owo_colors::Rgb(r, g, b)));
                     }
                 }
@@ -302,7 +302,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                 for (c, cell) in row.iter().enumerate() {
                     if locked[r][c] {
                         if let Some(rc) = cell {
-                            eprint!("{}", rc.ch.color(rgb(MATRIX_GREEN)));
+                            eprint!("{}", rc.ch.color(rgb(PHOSPHOR_GREEN)));
                         } else {
                             eprint!(" ");
                         }
@@ -310,7 +310,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                         match cell {
                             None => eprint!(" "),
                             Some(rc) => {
-                                let (cr, cg, cb) = age_to_color(rc.age).unwrap_or(MATRIX_DARK);
+                                let (cr, cg, cb) = age_to_color(rc.age).unwrap_or(PHOSPHOR_DARK);
                                 eprint!("{}", rc.ch.color(owo_colors::Rgb(cr, cg, cb)));
                             }
                         }
@@ -370,7 +370,7 @@ fn glitch_text(text: &str, color: (u8, u8, u8)) -> bool {
                 ch
             };
             let (r, g, b) = if s.is_multiple_of(3) {
-                MATRIX_GREEN
+                PHOSPHOR_GREEN
             } else {
                 color
             };
@@ -388,9 +388,9 @@ fn glitch_text(text: &str, color: (u8, u8, u8)) -> bool {
     false
 }
 
-// ── Matrix intro / outro ─────────────────────────────────────────────────
+// ── Intro / outro animation ──────────────────────────────────────────────
 
-pub fn matrix_intro(operator_name: &str) {
+pub fn intro_animation(operator_name: &str) {
     clear_screen();
 
     digital_rain(2000, Some(REVEAL_BANNER));
@@ -401,7 +401,7 @@ pub fn matrix_intro(operator_name: &str) {
     }
 
     eprintln!();
-    if type_text(&format!("Wake up, {operator_name}..."), MATRIX_GREEN, 65) {
+    if type_text(&format!("Stand up, {operator_name}..."), PHOSPHOR_GREEN, 65) {
         clear_screen();
         return;
     }
@@ -411,7 +411,7 @@ pub fn matrix_intro(operator_name: &str) {
     }
 
     eprintln!();
-    if type_text("The Matrix has you...", MATRIX_GREEN, 55) {
+    if type_text("They're already inside...", PHOSPHOR_GREEN, 55) {
         clear_screen();
         return;
     }
@@ -421,7 +421,7 @@ pub fn matrix_intro(operator_name: &str) {
     }
 
     eprintln!();
-    if type_text("Follow the white rabbit.", MATRIX_GREEN, 50) {
+    if type_text("Follow the green.", PHOSPHOR_GREEN, 50) {
         clear_screen();
         return;
     }
@@ -431,7 +431,7 @@ pub fn matrix_intro(operator_name: &str) {
     }
 
     eprintln!();
-    glitch_text(&format!("Knock, knock, {operator_name}."), MATRIX_GREEN);
+    glitch_text(&format!("Knock, knock, {operator_name}."), PHOSPHOR_GREEN);
     if skippable_sleep(std::time::Duration::from_millis(600)) {
         clear_screen();
         return;
@@ -441,7 +441,7 @@ pub fn matrix_intro(operator_name: &str) {
     let _ = skippable_sleep(std::time::Duration::from_millis(200));
 }
 
-pub fn matrix_outro(agent_name: &str, remaining: &[String]) {
+pub fn outro_animation(agent_name: &str, remaining: &[String]) {
     clear_screen();
 
     digital_rain(1500, None);
@@ -453,8 +453,8 @@ pub fn matrix_outro(agent_name: &str, remaining: &[String]) {
 
     eprintln!();
     if type_text(
-        &format!("{agent_name} has left the Matrix."),
-        MATRIX_GREEN,
+        &format!("{agent_name} has left the container."),
+        PHOSPHOR_GREEN,
         40,
     ) {
         eprintln!();
@@ -467,15 +467,15 @@ pub fn matrix_outro(agent_name: &str, remaining: &[String]) {
 
     eprintln!();
     let skipped = if remaining.is_empty() {
-        type_text("No agents remain in the Matrix.", MATRIX_DIM, 35)
+        type_text("No agents remaining.", PHOSPHOR_DIM, 35)
     } else {
         type_text(
             &format!(
-                "{} agent(s) still in the Matrix: {}",
+                "{} agent(s) still running: {}",
                 remaining.len(),
                 remaining.join(", ")
             ),
-            MATRIX_DIM,
+            PHOSPHOR_DIM,
             30,
         )
     };
@@ -489,7 +489,7 @@ pub fn matrix_outro(agent_name: &str, remaining: &[String]) {
         return;
     }
     eprintln!();
-    type_text("Connection closed.", MATRIX_DARK, 45);
+    type_text("Connection closed.", PHOSPHOR_DARK, 45);
     let _ = skippable_sleep(std::time::Duration::from_millis(500));
     eprintln!();
 }
@@ -498,18 +498,18 @@ pub fn simple_outro(agent_name: &str, remaining: &[String]) {
     eprintln!();
     eprintln!(
         "  {}",
-        format!("{agent_name} has left the Matrix.").color(rgb(MATRIX_DIM))
+        format!("{agent_name} has left the container.").color(rgb(PHOSPHOR_DIM))
     );
     if remaining.is_empty() {
         eprintln!(
             "  {}",
-            "No agents remain in the Matrix.".color(rgb(MATRIX_DIM))
+            "No agents remaining.".color(rgb(PHOSPHOR_DIM))
         );
     } else {
         eprintln!(
             "  {}",
             format!(
-                "{} agent(s) still in the Matrix: {}",
+                "{} agent(s) still running: {}",
                 remaining.len(),
                 remaining.join(", ")
             )
@@ -526,9 +526,9 @@ pub fn print_config_table(rows: &[(String, String)]) {
     let value_w = rows.iter().map(|(_, v)| v.len()).max().unwrap_or(0);
     let inner_w = label_w + 3 + value_w;
 
-    let dim = rgb(MATRIX_DARK);
-    let gold = rgb(MATRIX_GREEN);
-    let powder = rgb(MATRIX_DIM);
+    let dim = rgb(PHOSPHOR_DARK);
+    let gold = rgb(PHOSPHOR_GREEN);
+    let powder = rgb(PHOSPHOR_DIM);
 
     eprintln!(
         "  {}{}{}",
@@ -567,7 +567,7 @@ pub fn step_shimmer(n: u32, text: &str) {
     let chars: Vec<char> = text.chars().collect();
     let frames = chars.len() + 6;
 
-    let mg = rgb(MATRIX_GREEN);
+    let mg = rgb(PHOSPHOR_GREEN);
 
     for frame in 0..frames {
         eprint!("\r");
@@ -579,9 +579,9 @@ pub fn step_shimmer(n: u32, text: &str) {
             } else if dist == 1 {
                 (150, 255, 170)
             } else if dist == 2 {
-                MATRIX_GREEN
+                PHOSPHOR_GREEN
             } else {
-                MATRIX_DIM
+                PHOSPHOR_DIM
             };
             eprint!("{}", ch.color(rgb(color)).bold());
         }
@@ -590,17 +590,17 @@ pub fn step_shimmer(n: u32, text: &str) {
     }
     eprint!("\r");
     eprint!("{}", prefix.color(mg).bold());
-    eprintln!("{}", text.color(rgb(MATRIX_DIM)).bold());
+    eprintln!("{}", text.color(rgb(PHOSPHOR_DIM)).bold());
 }
 
 /// Minimal step message without animation (used in `--no-intro` mode).
 pub fn step_quiet(n: u32, text: &str) {
     let prefix = format!("  {n:>2}.  ");
-    let mg = rgb(MATRIX_GREEN);
+    let mg = rgb(PHOSPHOR_GREEN);
     eprintln!(
         "{}{}",
         prefix.color(mg).bold(),
-        text.color(rgb(MATRIX_DIM)).bold()
+        text.color(rgb(PHOSPHOR_DIM)).bold()
     );
 }
 
@@ -619,7 +619,7 @@ where
 {
     const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     const SPIN_MS: u64 = 80;
-    let mg = rgb(MATRIX_GREEN);
+    let mg = rgb(PHOSPHOR_GREEN);
     let mut last_err = None;
     let mut frame_idx: usize = 0;
 
@@ -645,7 +645,7 @@ where
             eprint!(
                 "\r   {}   {}",
                 frame.color(mg).bold(),
-                message.color(rgb(MATRIX_DIM)).bold()
+                message.color(rgb(PHOSPHOR_DIM)).bold()
             );
             let _ = io::stderr().flush();
             std::thread::sleep(std::time::Duration::from_millis(SPIN_MS));
@@ -667,8 +667,8 @@ pub fn print_deploying(agent_name: &str) {
     eprintln!();
     eprintln!(
         "  {}",
-        format!("Deploying {agent_name} into the Matrix...")
-            .color(rgb(MATRIX_GREEN))
+        format!("Deploying {agent_name} into an isolated container...")
+            .color(rgb(PHOSPHOR_GREEN))
             .bold()
     );
     eprintln!();
@@ -687,7 +687,7 @@ pub fn print_logo(logo_path: &std::path::Path) {
 
     eprintln!();
     for line in contents.lines() {
-        eprintln!("  {}", line.color(rgb(MATRIX_GREEN)));
+        eprintln!("  {}", line.color(rgb(PHOSPHOR_GREEN)));
     }
     eprintln!();
 }
@@ -772,6 +772,6 @@ pub fn shorten_home(path: &str) -> String {
 pub fn hint(prefix: &str, command: &str, suffix: &str) {
     println!(
         "{prefix}{}{suffix}",
-        command.color(rgb(MATRIX_GREEN)).bold(),
+        command.color(rgb(PHOSPHOR_GREEN)).bold(),
     );
 }
