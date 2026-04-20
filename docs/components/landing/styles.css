@@ -145,8 +145,12 @@
 .landing-footer {
   margin-top: 60px;
   padding: 60px 40px 0;
-  text-align: center;
   overflow: hidden;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 .landing-footer-meta {
   display: flex;
@@ -154,7 +158,6 @@
   align-items: center;
   gap: 18px;
   flex-wrap: wrap;
-  margin-bottom: 64px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--landing-text-ghost);
@@ -915,3 +918,5 @@ h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 30
   max-width: none;
   padding: 0;
 }
+/* Our own WordmarkFooter replaces Vocs's docs footer on the landing. */
+.vocs_Footer[data-layout="landing"] { display: none; }
