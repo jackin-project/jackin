@@ -547,17 +547,22 @@ header.header {
 .sl-markdown-content .tab > [role='tab'] {
   --sl-tab-color-border: transparent;
   color: var(--jk-text-dim);
-  transition: color 0.15s, box-shadow 0.15s;
-  /* Keep each tab on a single line so the 2px green underline stays a
-     clean strip. Long labels scroll horizontally (see .tablist-wrapper
-     below) rather than wrapping and creating a staircase underline. */
+  transition: color 0.15s, border-color 0.15s;
+  /* Each tab keeps its label on a single line so the green indicator
+     is always a clean 2px strip. Long labels scroll horizontally (see
+     .tablist-wrapper) rather than wrapping and forming a staircase. */
   white-space: nowrap;
   padding: 0.65rem 1rem;
   font-size: 0.875rem;
-  /* Set box-shadow explicitly instead of relying on --sl-tab-color-border
-     cascade (Starlight's rule lives in a layer; variable overrides across
-     layers were rendering inconsistently in light mode). */
-  box-shadow: 0 2px 0 transparent;
+  /* Reserve a 2px bottom-border for the indicator, and overlap the
+     wrapper's 2px border-bottom via negative margin. The active tab
+     paints this border green; inactive tabs keep it transparent but
+     still cover the wrapper's grey line at their own x-range. No
+     box-shadow — border handles the indicator reliably across
+     scrolled states and viewport sizes. */
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  box-shadow: none;
 }
 
 .sl-markdown-content .tab > [role='tab']:hover {
@@ -568,7 +573,7 @@ header.header {
   color: var(--jk-text);
   font-weight: 600;
   /* Brand green — matches the logo tick, independent of page theme. */
-  box-shadow: 0 2px 0 var(--jk-brand);
+  border-bottom-color: var(--jk-brand);
 }
 
 /* Hide the scrollbar on the tablist wrapper — it's a minor scroll axis
