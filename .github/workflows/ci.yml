@@ -18,9 +18,12 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-nextest
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
-      - run: cargo test --locked
+      - run: cargo nextest run
 
   build-validator:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
