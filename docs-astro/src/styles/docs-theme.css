@@ -288,8 +288,28 @@
    retint unstyled item text and hover state.
    ========================================================================== */
 
+/* Starlight defaults put group labels at 16-18px and items at 14px with
+   generous padding — reads chunky in a narrow sidebar. Tightened below. */
+
+.sidebar-content .large {
+  font-size: 0.8125rem;       /* 13px */
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.sidebar-content ul.top-level > li + li {
+  margin-top: 1rem;
+}
+
+.sidebar-content summary {
+  padding-block: 0.3rem;
+}
+
 .sidebar-content ul li a {
   color: var(--jk-text-dim);
+  font-size: 0.8125rem;       /* 13px — match group labels */
+  line-height: 1.45;
+  padding-block: 0.3rem;
   transition: color 0.1s, background-color 0.1s;
 }
 
