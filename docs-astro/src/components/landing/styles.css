@@ -145,11 +145,13 @@ html {
   font-size: 14px;
   font-weight: 600;
   border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   cursor: pointer;
   letter-spacing: -0.01em;
   transition: transform 0.15s, background 0.15s;
   text-decoration: none;
-  display: inline-block;
 }
 .landing-btn-primary {
   background: var(--landing-text);
@@ -879,10 +881,6 @@ nav.landing-topnav .landing-star {
   flex-shrink: 0;
 }
 
-.landing-btn-ghost .landing-star-icon {
-  margin-right: 4px;
-  vertical-align: -3px;
-}
 .landing-star:hover { border-color: var(--landing-text); }
 
 .landing-hero-stage {
