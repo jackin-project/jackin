@@ -82,7 +82,38 @@ export default defineConfig({
           items: [
             { label: 'Configuration', slug: 'reference/configuration' },
             { label: 'Architecture', slug: 'reference/architecture' },
-            { label: 'Roadmap', slug: 'reference/roadmap' },
+            {
+              label: 'Roadmap',
+              collapsed: false,
+              items: [
+                { label: 'Overview', slug: 'reference/roadmap' },
+                {
+                  label: 'Open items',
+                  collapsed: true,
+                  items: [
+                    { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
+                    { label: '1Password integration', slug: 'reference/roadmap/onepassword-integration' },
+                    { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
+                    { label: 'Rootless DinD', slug: 'reference/roadmap/rootless-dind' },
+                    { label: 'Selectable sandbox backends', slug: 'reference/roadmap/selectable-sandbox-backends' },
+                    { label: 'Reproducibility & provenance pinning', slug: 'reference/roadmap/reproducibility-pinning' },
+                  ],
+                },
+                {
+                  label: 'Resolved',
+                  collapsed: true,
+                  items: [
+                    { label: 'Env var interpolation', slug: 'reference/roadmap/env-var-interpolation' },
+                    { label: 'Orphaned DinD cleanup', slug: 'reference/roadmap/orphaned-dind-cleanup' },
+                    { label: 'Sensitive mount warnings', slug: 'reference/roadmap/sensitive-mount-warnings' },
+                    { label: 'Custom plugin marketplace', slug: 'reference/roadmap/custom-plugin-marketplace' },
+                    { label: 'DinD hostname env var', slug: 'reference/roadmap/dind-hostname-env-var' },
+                    { label: 'Agent source trust', slug: 'reference/roadmap/agent-source-trust' },
+                    { label: 'DinD TLS', slug: 'reference/roadmap/dind-tls' },
+                  ],
+                },
+              ],
+            },
           ],
         },
       ],
