@@ -1,0 +1,73 @@
+---
+import MobileTableOfContents from '@astrojs/starlight/components/MobileTableOfContents.astro'
+import TableOfContents from '@astrojs/starlight/components/TableOfContents.astro'
+---
+
+{
+  Astro.locals.starlightRoute.toc && (
+    <>
+      <div class="lg:sl-hidden">
+        <MobileTableOfContents />
+      </div>
+      <div class="right-sidebar-panel sl-hidden lg:sl-block">
+        <div class="sl-container">
+          <TableOfContents />
+        </div>
+        <div class="jk-sidebar-wordmark" aria-hidden="true">
+          jackin<span class="tick">'</span>
+        </div>
+      </div>
+    </>
+  )
+}
+
+<style>
+  .right-sidebar-panel {
+    padding: 1rem var(--sl-sidebar-pad-x);
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - var(--sl-nav-height) - 2rem);
+  }
+
+  .sl-container {
+    width: calc(var(--sl-sidebar-width) - 2 * var(--sl-sidebar-pad-x));
+  }
+
+  /* Landing-footer-wordmark transplanted into the right sidebar. Sits at
+     the bottom of the available panel height; pushes the TOC up when the
+     TOC is short so the wordmark always anchors the bottom edge. */
+  .jk-sidebar-wordmark {
+    margin-top: auto;
+    padding-top: 3rem;
+    font-family: 'Inter', sans-serif;
+    font-weight: 900;
+    font-size: clamp(60px, 7vw, 96px);
+    line-height: 0.9;
+    letter-spacing: -0.06em;
+    color: var(--jk-text);
+    user-select: none;
+    opacity: 0.9;
+  }
+
+  .jk-sidebar-wordmark .tick {
+    color: #00ff41;
+    text-shadow: 0 0 0.1em rgba(0, 255, 65, 0.35);
+  }
+
+  :root[data-theme='light'] .jk-sidebar-wordmark .tick {
+    text-shadow: none;
+  }
+
+  @media (min-width: 72rem) {
+    .sl-container {
+      max-width: calc(
+        (
+          (
+              100vw - var(--sl-sidebar-width) - 2 * var(--sl-content-pad-x) - 2 *
+                var(--sl-sidebar-pad-x)
+            ) * 0.25
+        )
+      );
+    }
+  }
+</style>
