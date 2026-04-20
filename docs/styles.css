@@ -1,0 +1,7 @@
+@import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800;900&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&display=swap");
+@import "./components/landing/styles.css";
+
+@source "./";
+
+@custom-variant dark (&:where([style*="color-scheme: dark"], [style*="color-scheme: dark"] *));

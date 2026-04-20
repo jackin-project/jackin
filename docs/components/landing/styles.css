@@ -906,3 +906,9 @@ h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 30
   .landing-code-body .cursor { animation: none; }
   /* If any other animation classes exist (e.g. pulsing dots), they will simply not run when components respect the media query via JS. Canvas rain is handled inside DigitalRain via window.matchMedia. */
 }
+
+/* ===== VOCS LAYOUT OVERRIDES ===== */
+/* Break the landing out of Vocs's docs content-width cap so it renders full-bleed. */
+[data-layout="landing"] .vocs_DocsLayout_content {
+  max-width: none;
+}
