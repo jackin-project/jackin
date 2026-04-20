@@ -251,15 +251,25 @@
   flex-shrink: 0;
 }
 
-/* Vertical rail with an active-item marker. The ul carries the rail; each
-   anchor overlays its own left border so the active one paints green
-   on top of the rail. Hover/active use no background pills (flat). */
+/* One vertical rail for the whole TOC. The rail paints green while any
+   heading is active (current scroll position) — a common signal that
+   the user is "in" this page's outline. Nested uls (rendered by
+   Starlight's recursive TableOfContentsList) don't get their own rail
+   so there's only ever one line. */
 
 .right-sidebar-panel ul {
   list-style: none;
   padding: 0;
   margin: 0;
+}
+
+.right-sidebar-panel ul:not(ul ul) {
   border-left: 2px solid var(--jk-ui);
+  transition: border-color 0.15s;
+}
+
+.right-sidebar-panel ul:not(ul ul):has(a[aria-current='true']) {
+  border-left-color: var(--sl-color-text-accent);
 }
 
 .right-sidebar-panel ul li a {
@@ -267,8 +277,6 @@
   background: transparent;
   color: var(--jk-text-dim);
   transition: color 0.1s;
-  margin-left: -2px;
-  border-left: 2px solid transparent;
   padding-left: 0.75rem;
 }
 
@@ -281,7 +289,6 @@
   color: var(--sl-color-text-accent);
   background: transparent;
   font-weight: 500;
-  border-left-color: var(--sl-color-text-accent);
 }
 
 :root[data-theme='light'] .right-sidebar-panel ul li a {
