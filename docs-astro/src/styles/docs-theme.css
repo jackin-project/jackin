@@ -278,7 +278,14 @@
    ========================================================================== */
 
 .sl-markdown-content table:not(:where(.not-content *)) {
+  /* Starlight defaults the table to display: block + overflow: auto for
+     responsive scrolling, but that breaks the table layout — thead/tbody
+     shrink to content width instead of filling the available row space.
+     Force display: table so children behave as table-header-group /
+     table-row-group and width: 100% actually stretches them. */
+  display: table;
   width: 100%;
+  table-layout: auto;
   border: 1px solid var(--jk-ui);
   border-radius: 10px;
   border-collapse: separate;
