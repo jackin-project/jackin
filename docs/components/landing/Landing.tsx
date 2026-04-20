@@ -2,6 +2,7 @@
 import { PillCards } from './PillCards';
 import { ApproachCards } from './ApproachCards';
 import { CastRoster } from './CastRoster';
+import { CompositionMachine } from './CompositionMachine';
 import { InstallBlock } from './InstallBlock';
 import { WordmarkFooter } from './WordmarkFooter';
 
@@ -11,6 +12,7 @@ export function Landing() {
       <PillCards />
       <ApproachCards />
       <CastRoster />
+      <CompositionMachine />
       <InstallBlock />
       <WordmarkFooter />
     </div>
