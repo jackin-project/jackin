@@ -34,6 +34,11 @@ export default defineConfig({
         default: "'Inter', system-ui, -apple-system, sans-serif",
         mono: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
       },
+      fontWeight: {
+        regular: '400',
+        medium: '500',
+        semibold: '600',
+      },
     },
   },
   editLink: {
