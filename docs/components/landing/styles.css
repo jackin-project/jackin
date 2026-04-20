@@ -284,3 +284,53 @@
 @media (max-width: 880px) {
   .landing-pills { grid-template-columns: 1fr; }
 }
+
+/* TabbedBuilder (Section 04, used by ApproachCards) */
+.landing-builder {
+  background: rgba(0, 5, 3, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 18px 0 22px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.landing-builder-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  background: rgba(255,255,255,0.018);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 10.5px; color: var(--landing-text-ghost); letter-spacing: 0.04em;
+}
+.landing-builder-head .landing-dot { width: 10px; height: 10px; border-radius: 50%; }
+.landing-builder-head .landing-dot.r { background: #ff5f57; }
+.landing-builder-head .landing-dot.y { background: #febc2e; }
+.landing-builder-head .landing-dot.g { background: #28c840; }
+.landing-builder-tag { padding: 3px 8px; border-radius: 3px; font-size: 9px; letter-spacing: 0.18em; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+.landing-tag-published { color: var(--landing-accent); background: rgba(0, 255, 65, 0.08); border: 1px solid rgba(0, 255, 65, 0.3); }
+.landing-tag-built     { color: var(--landing-accent); background: rgba(0, 255, 65, 0.1); border: 1px solid rgba(0, 255, 65, 0.35); }
+.landing-builder-body {
+  margin: 0;
+  padding: 16px 18px 14px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--landing-text);
+  white-space: pre-wrap;
+  font-family: inherit;
+}
+.landing-builder-body .b-c { color: var(--landing-text-ghost); }
+.landing-builder-body .b-k { color: var(--landing-accent); font-weight: 500; }
+.landing-builder-body .b-s { color: #fbc05b; }
+
+/* Tabbed builder (manifest + Dockerfile) */
+.landing-builder-tabs { display: flex; gap: 4px; margin-left: 4px; flex: 1; }
+.landing-builder-tab {
+  padding: 5px 10px; border-radius: 4px;
+  color: var(--landing-text-ghost); font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.04em;
+  cursor: pointer; transition: all 0.15s;
+  background: transparent; border: none;
+}
+.landing-builder-tab.active { color: var(--landing-text); background: rgba(255,255,255,0.05); }
+.landing-builder-tab:hover:not(.active) { color: var(--landing-text-dim); }
+.landing-builder-tabbed .landing-builder-body { min-height: 240px; }
