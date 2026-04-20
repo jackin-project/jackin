@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace `docs/pages/index.mdx` with a Matrix-native landing page at the root of `jackin.tailrocks.com/`, built as React components under Vocs' `layout: landing` frontmatter. All existing docs URLs remain unchanged.
+**Goal:** Replace `docs/pages/index.mdx` with a cyberpunk-native landing page at the root of `jackin.tailrocks.com/`, built as React components under Vocs' `layout: landing` frontmatter. All existing docs URLs remain unchanged.
 
 **Architecture:** Build one React component per section of the approved mockup, plus a thin wrapper that composes them. Pure logic (digital rain algorithm, scroll progress math) lives in plain TypeScript modules with unit tests. Styling is Tailwind v4 utilities where possible, custom CSS for complex motifs (rain canvas, pill capsules, composition machine grid, scroll-driven section).
 
@@ -1282,7 +1282,7 @@ export const vocabularyEntries: VocabularyEntry[] = [
     id: '01', term: 'Operator', pos: 'noun',
     def: [
       { t: 'You.', b: true },
-      { t: ' Running the CLI from your host machine. The one who decides what gets loaded into the Matrix, and when agents are pulled back out.' },
+      { t: ' Running the CLI from your host machine. The one who decides what gets loaded into the container, and when agents are pulled back out.' },
     ],
   },
   {
@@ -1322,7 +1322,7 @@ export const vocabularyEntries: VocabularyEntry[] = [
     id: '06', term: 'The agent inside', pos: 'noun',
     def: [
       { t: 'Claude Code running with full permissions', b: true },
-      { t: ' inside the container boundary. It thinks the Matrix is the whole world \u2014 but the world ends at the container wall.' },
+      { t: ' inside the container boundary. It thinks the container is the whole world \u2014 but the world ends at the container wall.' },
     ],
   },
   {
@@ -1344,7 +1344,7 @@ export const vocabularyEntries: VocabularyEntry[] = [
   {
     id: '09', term: 'Exile', pos: 'verb',
     def: [
-      { t: 'Pull everyone out of the Matrix at once.', b: true },
+      { t: 'Pull everyone out at once.', b: true },
       { t: ' Every running agent, every network, stopped in a single command.' },
     ],
     cmd: 'jackin exile', cmdLabel: 'cli',
@@ -1411,7 +1411,7 @@ export function VocabularyDictionary() {
         <div className="landing-shell">
           <div className="landing-sec-label">02 · Vocabulary</div>
           <h2 className="landing-sec-title">The vocabulary <span className="accent">is</span> the product.</h2>
-          <p className="landing-sec-intro">Every command in jackin' maps to a concept from The Matrix — not for fun, but because the Matrix mental model is the shortest path to understanding what the tool does.</p>
+          <p className="landing-sec-intro">Every command in jackin' has a named concept behind it — not for fun, but because the Matrix mental model is the shortest path to understanding what the tool does.</p>
 
           <div className="landing-voc">
             <div className="landing-voc-list">
