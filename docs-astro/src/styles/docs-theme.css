@@ -267,10 +267,15 @@
   flex-shrink: 0;
 }
 
+/* Vertical rail with an active-item marker. The ul carries the rail; each
+   anchor overlays its own left border so the active one paints green
+   on top of the rail. Hover/active use no background pills (flat). */
+
 .right-sidebar-panel ul {
   list-style: none;
   padding: 0;
   margin: 0;
+  border-left: 2px solid var(--jk-ui);
 }
 
 .right-sidebar-panel ul li a {
@@ -278,6 +283,9 @@
   background: transparent;
   color: var(--jk-text-dim);
   transition: color 0.1s;
+  margin-left: -2px;
+  border-left: 2px solid transparent;
+  padding-left: 0.75rem;
 }
 
 .right-sidebar-panel ul li a:hover {
@@ -289,6 +297,7 @@
   color: var(--sl-color-text-accent);
   background: transparent;
   font-weight: 500;
+  border-left-color: var(--sl-color-text-accent);
 }
 
 :root[data-theme='light'] .right-sidebar-panel ul li a {
@@ -336,27 +345,30 @@ header.header {
 }
 
 /* ==========================================================================
-   Code blocks — one subtle outer border on the frame, flat internals.
-   Expressive-code renders nested frame/titlebar/editor-tab/gutter layers
-   that each default to their own border; we zero the internals via CSS
-   vars above and let only the outer .frame carry a hairline.
+   Code blocks — plain rounded panel, no terminal chrome, no tab bar.
+   We hide .header outright (which kills both the terminal three-dots
+   titlebar and the editor tab strip) so every block reads as one flat
+   code surface, consistent with the landing's install block.
    ========================================================================== */
 
 .expressive-code .frame {
   box-shadow: none;
-}
-
-.expressive-code .frame::before {
   border: 1px solid var(--jk-ui);
   border-radius: 10px;
+  overflow: hidden;
 }
 
 .expressive-code .frame .header {
-  border-bottom: 0;
+  display: none;
 }
 
 .expressive-code .frame pre {
   border: 0;
+  border-radius: 0;
+}
+
+.expressive-code .frame pre code {
+  border-radius: 0;
 }
 
 /* ==========================================================================
