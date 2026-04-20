@@ -15,9 +15,11 @@ const { siteTitleHref } = Astro.locals.starlightRoute;
   }
 
   /* Landing-matched wordmark treatment (landing-footer-wordmark scaled
-     for a top-nav slot). Heavy Inter, tight tracking, green tick. */
+     for a top-nav slot). Uses each OS's native black weight — see
+     docs/src/components/landing/styles.css for the stack rationale. */
   .wordmark {
-    font-family: 'Inter', sans-serif;
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                 'Helvetica Neue', 'Arial Black', sans-serif;
     font-weight: 900;
     font-size: 1.375rem;
     line-height: 1;
