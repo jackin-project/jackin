@@ -1,0 +1,98 @@
+---
+import '../components/landing/styles.css'
+// Preload the two woff2s used above the fold:
+//   - variable Inter for hero headline + body copy (weights 400–800)
+//   - static Inter Black (weight 900) for top-nav logo + giant footer wordmark
+// Both use ?url so Astro bundles and hashes the file, keeping the
+// preload <link> pointed at the exact asset the CSS references.
+import interLatin from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url'
+import interBlack from '@fontsource/inter/files/inter-latin-900-normal.woff2?url'
+import { Landing } from '../components/landing/Landing'
+
+const TITLE = "jackin' — Jack your AI coding agents in"
+const DESCRIPTION =
+  "Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside."
+const URL = 'https://jackin.tailrocks.com/'
+const OG_IMAGE = 'https://jackin.tailrocks.com/og-image.png'
+const OG_ALT =
+  "jackin' — jack your AI coding agents in: isolated worlds, scoped access, full autonomy"
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: "jackin'",
+  alternateName: 'jackin',
+  description: DESCRIPTION,
+  url: URL,
+  image: OG_IMAGE,
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'macOS, Linux',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+  },
+  license: 'https://www.apache.org/licenses/LICENSE-2.0',
+  sameAs: ['https://github.com/jackin-project/jackin'],
+  publisher: {
+    '@type': 'Organization',
+    name: 'jackin project',
+    url: 'https://github.com/jackin-project',
+  },
+}
+---
+<!DOCTYPE html>
+<html lang="en" class="dark" data-theme="dark" style="color-scheme: dark;">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{TITLE}</title>
+    <meta name="description" content={DESCRIPTION} />
+    <link rel="canonical" href={URL} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta name="theme-color" content="#0a0b0a" />
+
+    {/* Preload the above-the-fold woff2s — avoids FOUT on the hero and
+        the giant wordmark, which are the first two things users see.
+        crossorigin is required for woff2 preloads even when same-origin. */}
+    <link rel="preload" as="font" type="font/woff2" href={interLatin} crossorigin fetchpriority="high" />
+    <link rel="preload" as="font" type="font/woff2" href={interBlack} crossorigin fetchpriority="high" />
+
+    {/* Open Graph — Facebook, LinkedIn, Slack, Discord, iMessage. */}
+    <meta property="og:title" content={TITLE} />
+    <meta property="og:description" content={DESCRIPTION} />
+    <meta property="og:url" content={URL} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="jackin'" />
+    <meta property="og:image" content={OG_IMAGE} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={OG_ALT} />
+
+    {/* Twitter / X card. summary_large_image renders a full-width
+        preview image above the title/description. */}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={TITLE} />
+    <meta name="twitter:description" content={DESCRIPTION} />
+    <meta name="twitter:image" content={OG_IMAGE} />
+    <meta name="twitter:image:alt" content={OG_ALT} />
+
+    {/* Favicon bundle — SVG preferred, PNG rasters for iOS and
+        Android home-screen icons, manifest for installability. */}
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    {/* Structured data for rich Google search results — describes the
+        site as a free/open-source developer tool. */}
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+
+    {/* Fonts are self-hosted via fontsource — @imported from the
+        landing's styles.css. No <link rel="stylesheet"> needed. */}
+  </head>
+  <body>
+    <Landing client:load />
+  </body>
+</html>

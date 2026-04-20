@@ -1,0 +1,149 @@
+---
+title: Mounts
+description: Control which directories agents can access and how
+---
+import { Aside } from '@astrojs/starlight/components'
+
+
+## How mounts work
+
+Mounts are the primary mechanism for giving agents access to your files. When you mount a directory, it appears inside the agent's container at the path you specify. Without a mount, the agent simply can't see that directory.
+
+This is the core of jackin's security model: **agents can only access what you explicitly mount.**
+
+## Mount spec format
+
+The `--mount` flag accepts two formats:
+
+### Same-path mount
+
+```bash
+--mount ~/Projects/my-app
+```
+
+Mounts `~/Projects/my-app` to the **same absolute path** inside the container. This is the most common pattern — it keeps file paths consistent between your host and the agent.
+
+### Explicit source and destination
+
+```bash
+--mount ~/Projects/my-app:/workspace
+```
+
+Mounts `~/Projects/my-app` on your host to `/workspace` inside the container. Use this when you want a different layout inside the container.
+
+### Read-only mounts
+
+Append `:ro` to make a mount read-only:
+
+```bash
+--mount ~/reference-docs:/docs:ro
+--mount ~/Projects/shared-lib:ro
+```
+
+Read-only mounts let the agent read files but prevent any modifications. Use this for:
+- Reference codebases the agent should read but not change
+- Shared libraries or documentation
+- Configuration files you want to expose but protect
+
+## Types of mounts
+
+### Load-time mounts
+
+Pass `--mount` when loading an agent:
+
+```bash
+jackin load agent-smith --mount ~/data:/data:ro
+```
+
+These mounts are one-time — they apply only to this specific container launch.
+
+### Workspace mounts
+
+Save mounts as part of a workspace definition:
+
+```bash
+jackin workspace create my-app \
+  --workdir ~/Projects/my-app \
+  --mount ~/cache:/cache:ro
+```
+
+Workspace mounts apply every time you load an agent into that workspace. You can combine them with load-time mounts:
+
+```bash
+# Workspace mounts + additional load-time mount
+jackin load agent-smith my-app --mount ~/extra-data:/extra
+```
+
+### Global mounts
+
+Global mounts apply to every agent launch. Use them for directories you always want available:
+
+```bash
+# Mount your Gradle cache for all agents
+jackin config mount add gradle-cache \
+  --src ~/.gradle/caches \
+  --dst /home/claude/.gradle/caches \
+  --readonly
+```
+
+### Scoped global mounts
+
+Scope a global mount to specific agents:
+
+```bash
+# Only mount secrets for chainargos agents
+jackin config mount add secrets \
+  --src ~/.chainargos/secrets \
+  --dst /secrets \
+  --readonly \
+  --scope "chainargos/*"
+```
+
+The `--scope` flag supports glob patterns:
+- `"chainargos/*"` — matches all agents in the chainargos namespace
+- `"chainargos/backend-engineer"` — matches only a specific agent
+
+### Managing global mounts
+
+```bash
+# List all global mounts
+jackin config mount list
+
+# Remove a global mount
+jackin config mount remove gradle-cache
+```
+
+## Mount precedence
+
+When multiple mount sources are resolved, jackin' combines them in this order:
+
+1. **Global mounts** (from `jackin config mount`)
+2. **Workspace mounts** (from `jackin workspace create`)
+3. **Auto-mounted workdir** (unless `--no-workdir-mount`)
+4. **Load-time mounts** (from `jackin load --mount`)
+
+<Aside type="caution">
+If two mounts target the same container destination, jackin' stops with an error. It does not silently let the later mount win. This is deliberate because mounts are part of the security boundary.
+</Aside>
+## Sensitive path warnings
+
+jackin' detects when a mount source matches a known sensitive directory and warns before proceeding:
+
+- `~/.ssh` — SSH keys and configuration
+- `~/.aws` — AWS credentials and configuration
+- `~/.gnupg` — GPG keys and trust database
+- `~/.config/gcloud` — Google Cloud credentials
+- `~/.kube` — Kubernetes credentials and configuration
+- `~/.docker` — Docker credentials and configuration
+
+When a sensitive path is detected, you'll see a warning explaining the risk and must confirm before the mount is applied. This applies to all mount types — load-time, workspace, and global mounts.
+
+<Aside type="caution">
+The warning defaults to "no". If stdin is not a terminal (e.g. in a script), jackin' aborts rather than silently mounting sensitive paths.
+</Aside>
+## Best practices
+
+- **Mount only what the agent needs.** Don't mount your entire home directory. Be specific about which project directories the agent should access.
+- **Use read-only when possible.** If the agent only needs to read reference code or configuration, mount it as `:ro`.
+- **Use global mounts for caches.** Things like Gradle caches, npm caches, or Maven repositories are great candidates for global read-only mounts — they speed up builds inside the container.
+- **Keep paths consistent.** When possible, use same-path mounts so that file paths in the agent's output match your host paths.

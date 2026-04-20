@@ -1,0 +1,142 @@
+---
+const t = Astro.locals.t
+const darkLabel = t('themeSelect.dark')
+const lightLabel = t('themeSelect.light')
+---
+
+<starlight-theme-select class="jk-theme-toggle" role="group" aria-label={t('themeSelect.accessibleLabel')}>
+  <button type="button" data-theme-value="dark" aria-label={darkLabel}>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  </button>
+  <button type="button" data-theme-value="light" aria-label={lightLabel}>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </svg>
+  </button>
+</starlight-theme-select>
+
+<script>
+  type Theme = 'dark' | 'light'
+
+  const storageKey = 'starlight-theme'
+
+  const parseTheme = (value: unknown): Theme =>
+    value === 'light' ? 'light' : 'dark'
+
+  /** Read stored theme. Returns null when unset so callers can tell
+      "first-time visitor" apart from "picked dark explicitly". Guarded
+      because localStorage can throw in private mode / SecurityError. */
+  function readStoredTheme(): Theme | null {
+    try {
+      if (typeof localStorage === 'undefined') return null
+      const raw = localStorage.getItem(storageKey)
+      return raw === 'light' || raw === 'dark' ? raw : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Current data-theme as the Head.astro script resolved it — source
+      of truth for display state on page load. The head script already
+      resolved stored-or-prefers-color-scheme-or-dark. */
+  const readRenderedTheme = (): Theme =>
+    parseTheme(document.documentElement.dataset.theme)
+
+  function storeTheme(theme: Theme): void {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey, theme)
+    } catch {
+      // Private mode / storage-restricted; leave DOM state as-is.
+    }
+  }
+
+  function applyActive(root: HTMLElement, theme: Theme) {
+    root.querySelectorAll<HTMLButtonElement>('button[data-theme-value]').forEach((btn) => {
+      const active = btn.dataset.themeValue === theme
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false')
+    })
+  }
+
+  /** User picked a theme: flip the DOM, persist the choice, sync UI. */
+  function onUserPick(theme: Theme): void {
+    document.documentElement.dataset.theme = theme
+    storeTheme(theme)
+    document.querySelectorAll<HTMLElement>('starlight-theme-select').forEach((el) => applyActive(el, theme))
+  }
+
+  /** Apply the theme change with a cross-fade using the View Transitions
+      API when available. The browser snapshots the page before/after the
+      data-theme flip and animates between them — handles inherited colors
+      correctly where per-property CSS transitions don't. Skips the
+      animation for users who asked for reduced motion, and falls back
+      to an instant snap in browsers without startViewTransition. */
+  function onThemeToggle(theme: Theme): void {
+    const doc = document as Document & {
+      startViewTransition?: (cb: () => void) => { finished: Promise<void> }
+    }
+    const reduceMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!reduceMotion && typeof doc.startViewTransition === 'function') {
+      doc.startViewTransition(() => onUserPick(theme))
+    } else {
+      onUserPick(theme)
+    }
+  }
+
+  class JackinThemeSelect extends HTMLElement {
+    constructor() {
+      super()
+      // Reflect the already-resolved state from the inline head script —
+      // do NOT call storeTheme here. A first-time light-pref visitor
+      // keeps localStorage empty so prefers-color-scheme continues to
+      // apply across pages until they click a button.
+      applyActive(this, readStoredTheme() ?? readRenderedTheme())
+      this.querySelectorAll<HTMLButtonElement>('button[data-theme-value]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          onThemeToggle(parseTheme(btn.dataset.themeValue))
+        })
+      })
+    }
+  }
+  customElements.define('starlight-theme-select', JackinThemeSelect)
+</script>
+
+<style>
+  starlight-theme-select.jk-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 2px;
+    border: 1px solid var(--jk-ui);
+    border-radius: 8px;
+    background: var(--jk-panel);
+  }
+
+  starlight-theme-select.jk-theme-toggle button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--jk-text-ghost);
+    cursor: pointer;
+    transition: color 0.15s, background-color 0.15s;
+  }
+
+  starlight-theme-select.jk-theme-toggle button:hover {
+    color: var(--jk-text);
+  }
+
+  starlight-theme-select.jk-theme-toggle button[aria-pressed='true'] {
+    color: var(--sl-color-text-accent);
+    background: var(--jk-bg-deep);
+  }
+</style>

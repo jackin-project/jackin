@@ -1,0 +1,32 @@
+---
+title: "Orphaned DinD Container on Agent Launch Failure"
+---
+
+
+**Status**: Resolved — implemented option 5 (automatic pre-launch GC)
+
+## Problem
+
+When an agent container fails to start (e.g. entrypoint error, Claude install failure, or the user exits immediately), the DinD sidecar container remains running indefinitely. The current cleanup logic only runs when the `docker run -it` command completes and the agent is no longer in the running container list, or on explicit error.
+
+## Why It Matters
+
+- Orphaned DinD containers waste resources and can cause port/network conflicts on the next launch
+- The `LoadCleanup` guard is not a `Drop` impl — it requires explicit `.run()` calls
+- All failure modes (crashes, signal kills, terminal closures) need to be handled
+
+## Options
+
+1. **Make `LoadCleanup` implement `Drop`**: Automatically clean up on any exit path.
+
+2. **Add a background health-check thread**: Monitor the agent container; if it exits, clean up DinD and the network.
+
+3. **Use `docker run --rm` for the DinD container**: Auto-remove when stopped.
+
+4. **Add a `jackin gc` command**: Garbage collection for orphaned resources.
+
+5. **Automatic pre-launch garbage collection**: Before each `load`, scan for orphaned jackin'-managed resources and clean them up. Handles all failure modes including hard kills and terminal closures.
+
+## Related Files
+
+- `src/runtime.rs` — `LoadCleanup`, `launch_agent_runtime`

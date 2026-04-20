@@ -1,0 +1,63 @@
+---
+title: jackin hardline
+description: "Reattach to a running agent's session, or restart a crashed one"
+---
+
+## Synopsis
+
+```bash
+jackin hardline <SELECTOR>
+```
+
+Reconnect your terminal to an agent container. Use this when you've closed your terminal but the agent is still running in the background, or when an agent crashed and you want to resume the same session without rebuilding the whole stack.
+
+A `hardline` is the direct line back into an agent session that's already running — the operator's way to step back inside without loading a fresh instance.
+
+If you pass an agent class selector, `jackin hardline` targets that class's primary container. If you have multiple instances, use the full container name to pick a specific clone.
+
+## Arguments
+
+| Argument | Required | Description |
+|---|---|---|
+| `SELECTOR` | Yes | Agent class selector (e.g., `agent-smith`) or full container name (e.g., `jackin-agent-smith-clone-1`) |
+
+## Behavior
+
+`jackin hardline` inspects the target container and chooses one of three paths:
+
+| Container state | Action |
+|---|---|
+| Running | Attach directly to the live session. |
+| Stopped, exit code `0` (clean `/exit`) | Error. The previous session ended normally — use `jackin load` to start a new one. |
+| Stopped, non-zero exit or OOM-killed | Restart the existing container in place and attach. Requires the DinD sidecar (`<container>-dind`) to still be present **and running**. |
+| Not found | Error. Nothing to reconnect to — use `jackin load`. |
+
+Restart is intentionally scoped to crashes (non-zero exit, OOM kill, hard kill). Clean exits are treated as "session over" — the next run of the agent should be a fresh `jackin load` so you see the full launch output and any updated configuration.
+
+If the DinD sidecar has been removed or is itself stopped, `jackin hardline` refuses to restart: the Docker network plumbing needs to be rebuilt, which is what `jackin load` does.
+
+## Terminal close vs. exit
+
+Closing your terminal tab **does not** shut the container down. The foreground session is just a `docker attach`; when it dies, the container keeps running in the background with its own TTY. `jackin hardline <agent>` reconnects to the same live process.
+
+To stop an agent, exit it from inside (e.g., `/exit` in Claude Code). That ends the session cleanly and releases the container for teardown.
+
+## Examples
+
+```bash
+# Reconnect to agent-smith
+jackin hardline agent-smith
+
+# Reconnect to a specific container by name
+jackin hardline jackin-agent-smith-clone-1
+
+# Reconnect to a namespaced agent
+jackin hardline chainargos/backend-engineer
+```
+
+## When to use
+
+- You closed your terminal window but the agent container is still running.
+- An agent crashed (non-zero exit, OOM) and you want to resume in the same container with the same DinD sidecar.
+- You want to check on an agent that's been running autonomously.
+- You accidentally disconnected from a session.

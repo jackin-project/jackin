@@ -1,0 +1,34 @@
+---
+title: "Agent Source Trust Model"
+---
+
+
+**Status**: Resolved
+
+Implemented. The sections below preserve the original design rationale.
+
+## Problem
+
+`resolve_agent_source()` auto-constructs a GitHub URL from namespace/name and clones directly without any trust verification. This exposes a typosquatting and untrusted repo execution risk.
+
+## Why It Matters
+
+- Any namespace/name pair is accepted and cloned without confirmation
+- No mechanism to distinguish a trusted, previously-used agent from a novel one
+- Agents execute in a build context with access to the Dockerfile and build instructions
+
+## Implementation
+
+A trust-on-first-use model:
+- `AgentSource` now carries a `trusted: bool` field, persisted in config TOML
+- Built-in agents (`agent-smith`, `the-architect`) are always marked trusted by `sync_builtin_agents()`
+- New third-party (namespaced) agents default to `trusted = false`
+- On first load of an untrusted agent, the operator sees a warning with the agent name and git URL, and must confirm before the build proceeds
+- Non-interactive sessions (no terminal) bail with an error for untrusted agents
+- Once confirmed, the `trusted = true` flag is saved to config — subsequent runs proceed without prompts
+
+## Related Files
+
+- `src/config.rs` — `AgentSource.trusted`, `trust_agent()`, `resolve_agent_source()`
+- `src/runtime.rs` — `confirm_agent_trust()`, trust gate in `load_agent()`
+- `src/selector.rs` — namespace/name parsing

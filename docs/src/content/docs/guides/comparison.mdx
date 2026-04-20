@@ -1,0 +1,265 @@
+---
+title: Comparison with Alternatives
+description: Honest comparison of jackin', Docker Sandboxes, and adjacent approaches
+---
+import { Aside } from '@astrojs/starlight/components'
+
+
+## Short version
+
+If you want the strongest local isolation boundary with the least setup, **Docker Sandboxes** is the safer choice today.
+
+If you want an **open-source, local-first tool** built around reusable agent environments and named workspaces, **jackin'** is the better fit.
+
+That is the honest framing. jackin' is not trying to out-isolate a microVM. It is trying to make isolated local agent work more programmable, inspectable, reusable, and pleasant to operate.
+
+<Aside type="note">
+This page was checked against public Docker documentation in April 2026. Docker Sandboxes is evolving quickly, and older comparisons often describe earlier behavior instead of the current microVM-based design.
+</Aside>
+## The landscape
+
+Most agent-isolation approaches fall into four buckets:
+
+| Approach | Boundary | Typical strengths | Typical weaknesses |
+|---|---|---|---|
+| **Host execution** | Your user account on the host | Fastest, zero setup | Highest risk |
+| **Containers** | Kernel namespaces on the host | Lightweight, local-first, familiar tooling | Shared host kernel |
+| **MicroVMs** | Hypervisor boundary with private kernel | Strongest local isolation | Higher overhead, slower startup |
+| **Remote sandboxes** | Cloud VM or container | Strong separation from your laptop | Service dependency, latency, cost |
+
+jackin' sits in the **container** bucket.
+
+Docker Sandboxes now sits in the **microVM** bucket.
+
+## jackin' vs Docker Sandboxes
+
+Both tools solve the same operator problem: let an agent work with real autonomy, but keep the blast radius outside a boundary you define.
+
+The main difference is what that boundary is.
+
+| Question | jackin' | Docker Sandboxes |
+|---|---|---|
+| **Isolation boundary** | Docker container plus privileged DinD sidecar on your existing Docker engine | Lightweight microVM with its own kernel and private Docker daemon |
+| **Environment model** | Versioned agent repo with Dockerfile + `jackin.agent.toml` | Official agent templates, custom templates, snapshots |
+| **Workspace model** | Named workspaces with reusable mount layouts, allowed agents, defaults | Named sandboxes with workspace mounts and read-only options |
+| **Credentials** | Credentials acquired inside the runtime live inside that runtime's trust boundary | Supported flows can proxy credentials so the raw key stays outside the sandbox |
+| **Network controls** | Per-agent Docker network isolation only | Outbound HTTP/HTTPS filtering, policies, and network logs |
+| **Persistence** | Mounted workspace files plus Claude and `gh` state | Sandbox-local packages, private Docker state, and sandbox filesystem state persist until removal |
+| **Best fit** | Open, local-first agent orchestration | Stronger local sandboxing with minimal setup |
+
+### The boundary trade-off
+
+Docker Sandboxes has the stronger boundary. A microVM with its own kernel is a more robust isolation story than containers sharing the host kernel.
+
+jackin' intentionally accepts a weaker boundary so it can stay:
+
+- open source
+- easy to inspect and modify
+- centered on reusable agent classes as code
+- lightweight enough for many parallel local agents
+
+That is not a bug in the positioning. It is the product choice.
+
+## Where Docker Sandboxes is better today
+
+### 1. Stronger isolation
+
+This is the biggest advantage and the easiest one to state plainly.
+
+If you care most about the hardest local boundary for an autonomous agent, Docker Sandboxes is ahead. It uses microVMs, a private kernel, and a private Docker daemon.
+
+### 2. Better credential handling
+
+Docker documents a proxy-managed credential model for supported agents and providers. In those flows, the daemon reads credentials on the host side and injects them into requests without copying the raw key into the sandbox.
+
+jackin' does not have an equivalent mechanism yet. Today, when you authenticate a tool inside the runtime, that credential becomes part of the runtime's trust boundary.
+
+### 3. Better outbound network controls
+
+Docker Sandboxes includes policy modes, outbound filtering, and network logs.
+
+jackin' isolates agents from each other at the Docker-network level, but it does not yet provide domain allowlists, denylists, or policy-aware egress controls.
+
+### 4. Better persistence for mutable sandboxes
+
+Docker Sandboxes keeps installed packages, private Docker state, and sandbox-local changes until you remove the sandbox.
+
+That is convenient when you want to iteratively shape one long-lived environment.
+
+jackin' is more image-centric. Runtime filesystem changes and DinD state do not persist once the runtime is removed.
+
+### 5. Faster path to "just run the agent"
+
+Docker Sandboxes offers official templates for multiple agents plus custom templates and snapshots. That makes first-run setup easier when you do not want to design an environment model yet.
+
+## Where jackin' is better today
+
+### 1. Open source and inspectable
+
+jackin' is an Apache-2.0 Rust project. You can inspect how it works, patch it, fork it, and improve it.
+
+That matters more than usual when the tool is supposed to contain an autonomous system that can execute arbitrary code.
+
+### 2. Agent classes are first-class source artifacts
+
+An agent class is a normal git repo with a Dockerfile and manifest. That gives you:
+
+- versioning
+- code review
+- reproducibility from source
+- role-specific environments instead of one mutable universal box
+
+This is one of jackin's biggest advantages.
+
+### 3. Workspaces are first-class
+
+jackin' treats the access boundary as its own object. A workspace can define:
+
+- a stable multi-mount layout
+- the working directory
+- read-only and read-write mounts
+- which agent classes are allowed
+- which agent class should be the default
+
+That is closer to operator infrastructure than single-sandbox convenience.
+
+### 4. Better model for many parallel local agents
+
+jackin' is especially good when you want:
+
+- several agents against different projects
+- several agents against the same project with different toolchains
+- several agents against different branches
+- reattachable long-lived local sessions
+
+Docker Sandboxes can run multiple sandboxes, but jackin's agent-class and workspace model makes this style of work more explicit.
+
+### 5. Host-side cache reuse for agent builds
+
+jackin' builds agent images on your host Docker engine before launch. That means classes that share layers can benefit from host-side cache reuse.
+
+Docker Sandboxes intentionally keeps private Docker state inside each sandbox. That is better for isolation, but less cache-efficient across sandboxes.
+
+## The resource-usage question
+
+This is where your experience aligns with the architecture.
+
+Docker does not publish a fixed per-sandbox RAM floor in the docs, so it would be misleading to claim a universal number like "exactly 800 MB per sandbox."
+
+Still, the structural reason for higher overhead is clear:
+
+- each sandbox is a microVM
+- each sandbox has its own kernel
+- each sandbox has its own private Docker state
+- Docker documents that installed packages and Docker state persist per sandbox
+
+So the baseline cost per sandbox will usually be materially higher than jackin's model of:
+
+- one host Docker engine
+- one agent container
+- one DinD sidecar
+- shared host-side cache for building agent images
+
+If you often keep 3 to 5 environments open at once, this is one of the strongest practical arguments for jackin'.
+
+## Important corrections to older comparisons
+
+Some older summaries of Docker Sandboxes, including earlier jackin' docs, understated what it can do.
+
+Current public Docker material shows that Sandboxes now supports:
+
+- multiple named sandboxes
+- multiple workspace mounts
+- read-only mounts
+- official templates for several agents
+- custom templates
+- snapshots
+- a private Docker daemon inside each sandbox
+
+That means the real difference is not "Docker Sandboxes is simple and jackin' is powerful."
+
+The real difference is:
+
+- **Docker Sandboxes** is a stronger, more managed sandbox product
+- **jackin'** is a more open, more programmable local agent orchestration model
+
+## Where jackin' is weaker than it should be
+
+This section is intentionally blunt.
+
+### 1. DinD is privileged and currently unauthenticated
+
+jackin' launches a privileged `docker:dind` sidecar per agent and currently reaches it over plain TCP on the per-agent Docker network.
+
+That is acceptable for a proof of concept, but it is not the final security posture.
+
+### 2. No outbound policy engine
+
+jackin' does not yet have policy-aware egress controls comparable to Docker Sandboxes.
+
+### 3. Credentials acquired inside the runtime remain inside the runtime
+
+The current `gh auth` flow is convenient, but it is weaker than host-side credential brokering.
+
+### 4. Runtime mutability is thin
+
+This is both a strength and a weakness.
+
+It is a strength because it pushes you toward agent repos as the real source of truth.
+
+It is a weakness because ad-hoc runtime setup work disappears when the container is removed.
+
+### 5. Runtime installation is not fully pinned
+
+The current derived image installs Claude Code from the upstream installer. That keeps the runtime current, but it is less reproducible than pinning exact versions and checksums.
+
+## Other approaches
+
+### Plain host execution
+
+Run the agent directly on the host with permission prompts disabled.
+
+- Lowest friction
+- Highest risk
+- Usually only acceptable when you fully trust the current workspace and are willing to accept host-level exposure
+
+### Plain containers with host Docker socket mount
+
+Run the agent in a container, but mount `/var/run/docker.sock`.
+
+- Simple
+- Fast
+- Weaker than jackin', because the agent can control the host Docker daemon directly
+
+### Remote sandbox products
+
+Products like Daytona or E2B move the sandbox to managed remote infrastructure.
+
+- Strong separation from your laptop
+- Useful for previews, hosted agents, or SaaS workflows
+- Usually add network dependence, service cost, and less local immediacy
+
+### Full VMs or Kubernetes debug environments
+
+- Stronger separation and better production parity
+- More operational overhead
+- Better as a later-stage platform move than as the first local-development experience
+
+That last point matters for jackin's roadmap. Starting with local Docker is reasonable. The same operator and workspace model can later grow into Kubernetes-backed debug workflows.
+
+## Recommendation
+
+Choose **Docker Sandboxes** when:
+
+- strongest local isolation matters most
+- credential brokering and egress policy are non-negotiable
+- you want the fastest path to an official sandboxed agent environment
+
+Choose **jackin'** when:
+
+- you want an open-source tool you can shape yourself
+- you care about reusable agent classes as code
+- you want first-class workspaces and a better local orchestration model
+- you regularly run several agents in parallel and care about footprint
+
+Use both when appropriate. They sit at different points on the security-versus-flexibility curve, and there is no rule saying one team must standardize on only one of them.
