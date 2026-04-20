@@ -70,8 +70,9 @@
   border-radius: 0 !important;
 }
 
-/* AI CTA ("Ask in ChatGPT") pill — Vocs applies uppercase + wide
-   tracking to .vocs_Button_button which was overflowing with our font. */
+/* AI CTA — Tempo-style compact pill. The label text is swapped to
+   "Ask AI" client-side in layout.tsx; this rule just normalizes the
+   font/tracking which Vocs sets to uppercase + wide. */
 .vocs_AiCtaDropdown_button,
 .vocs_AiCtaDropdown_buttonLeft,
 .vocs_AiCtaDropdown_buttonRight {
@@ -102,4 +103,52 @@
 /* Bump the icon size inside the toggle from 16px to 18px. */
 .vocs_ThemeToggle .vocs_Icon {
   --vocs_Icon_size: 18px !important;
+}
+
+/* ==========================================================================
+   Outline (right rail "On this page") — Tempo-style vertical indicator
+   ========================================================================== */
+
+.vocs_Outline ul {
+  position: relative;
+  border-left: 2px solid var(--color-grayA4);
+  padding-left: 0;
+  margin-left: 0;
+  list-style: none;
+}
+
+.vocs_Outline ul li a {
+  display: block;
+  padding: 3px 0 3px 12px;
+  line-height: 1.4;
+  color: var(--color-gray10);
+  transition: color 0.1s;
+  text-decoration: none;
+}
+
+.vocs_Outline ul li a:hover {
+  color: var(--color-gray12);
+}
+
+/* Active item — monochrome accent (black on light, white on dark).
+   Vocs 1.4.1 applies data-active="true" on the <a>. */
+.vocs_Outline ul li a[data-active='true'],
+.vocs_Outline ul li a[aria-current='true'],
+.vocs_Outline ul li a.vocs_Outline_item_active {
+  color: light-dark(var(--color-black), var(--color-white));
+}
+
+/* Animated indicator injected by docs/layout.tsx — slides + grows to the
+   active link. Matches Tempo's data-v-outline-indicator pattern. */
+.vocs_Outline ul [data-outline-indicator] {
+  position: absolute;
+  left: -2px;
+  top: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: light-dark(var(--color-black), var(--color-white));
+  transition: transform 0.15s ease-out, height 0.15s ease-out, opacity 0.15s;
+  will-change: transform, height;
+  opacity: 0;
+  pointer-events: none;
 }
