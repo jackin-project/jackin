@@ -272,12 +272,17 @@
   border-left-color: var(--sl-color-text-accent);
 }
 
+/* Indent by heading depth so the TOC reads as a tree (h2 → h3 → h4).
+   Starlight's TableOfContentsList sets a --depth custom property per
+   recursion level via define:vars; we multiply it by 1rem for the
+   indent and add a base 0.75rem gap from the rail. */
 .right-sidebar-panel ul li a {
   border-radius: 0;
   background: transparent;
   color: var(--jk-text-dim);
   transition: color 0.1s;
-  padding-left: 0.75rem;
+  padding-block: 0.25rem;
+  padding-left: calc(0.75rem + 1rem * var(--depth, 0));
 }
 
 .right-sidebar-panel ul li a:hover {
