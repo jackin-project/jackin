@@ -40,7 +40,7 @@ Rust CLI binary. All modules are flat (no subdirectories).
 | `docker.rs` | Docker command builder — shell execution abstraction |
 | `workspace.rs` | Workspace resolution — mount specs, workdir, saved workspace lookup |
 | `config.rs` | TOML config persistence — agent registry, workspaces, mount scopes |
-| `manifest.rs` | Agent manifest parser (`jackin.toml` inside agent repos) |
+| `manifest.rs` | Agent manifest parser (`jackin.agent.toml` inside agent repos) |
 | `derived_image.rs` | Dockerfile generation for agent images from base construct |
 | `repo.rs` | Agent repo validation — required files, path traversal checks |
 | `repo_contract.rs` | Enforces agent Dockerfiles use the construct base image |
@@ -73,6 +73,7 @@ Maps 1:1 with the published site sidebar:
 | Guides | `guides/workspaces.mdx` | Workspace configuration |
 | | `guides/mounts.mdx` | Mount specs and scoping |
 | | `guides/agent-repos.mdx` | Agent repository structure |
+| | `guides/authentication.mdx` | Credential forwarding / in-container auth |
 | | `guides/security-model.mdx` | Isolation and permissions |
 | | `guides/comparison.mdx` | Comparison with alternatives |
 | Commands | `commands/load.mdx` | `jackin load` |
@@ -94,11 +95,17 @@ Maps 1:1 with the published site sidebar:
 
 | File | Purpose |
 |---|---|
-| `docs/astro.config.mjs` | Sidebar structure, site metadata, edit links |
+| `docs/astro.config.ts` | Sidebar structure, site metadata, edit links, component overrides (TypeScript — all config is TS, no `.mjs`) |
 | `docs/package.json` | Bun dependencies |
 | `docs/bun.lock` | Locked deps |
-| `docs/src/styles/custom.css` | Theme overrides |
-| `docs/src/content.config.ts` | Astro content collection config |
+| `docs/src/styles/fonts.css` | Self-hosted fontsource imports + `Inter Black` `@font-face` for the wordmark |
+| `docs/src/styles/docs-theme.css` | Starlight chrome → brand tokens mapping |
+| `docs/src/styles/global.css` | Tailwind v4 entry + landing utility tokens |
+| `docs/src/content.config.ts` | Astro content collection config (Content Layer API via `docsLoader()`) |
+| `docs/src/components/overrides/` | Starlight component overrides (Head, SiteTitle, ThemeSelect, PageSidebar, SocialIcons) |
+| `docs/src/components/landing/` | React islands + standalone CSS for the landing route |
+| `docs/src/pages/index.astro` | Landing route — plain Astro page, NOT a Starlight content entry |
+| `docs/src/pages/og/[...slug].png.ts` | Per-page OG card generator (astro-og-canvas + local fontsource files) |
 
 ## Docker — `docker/`
 
@@ -108,7 +115,7 @@ Maps 1:1 with the published site sidebar:
 | `docker/construct/README.md` | Construct image documentation |
 | `docker/construct/install-plugins.sh` | Plugin installation script for the base image |
 | `docker/construct/zshrc` | Shell config injected into containers |
-| `docker/runtime/entrypoint.sh` | Container entrypoint — UID/GID remapping, DinD setup |
+| `docker/runtime/entrypoint.sh` | Container entrypoint at runtime — git identity setup, `gh auth setup-git` when gh is already authenticated (never performs login itself), plugin install, MCP server registration, pre-launch hook, then `exec claude`. UID/GID remapping happens during the derived-image build (`src/derived_image.rs`), not here. |
 
 ## CI/CD — `.github/workflows/`
 
@@ -128,7 +135,7 @@ When changing behavior, update both sides:
 | `src/workspace.rs` (mount logic) | `docs/.../guides/workspaces.mdx`, `docs/.../guides/mounts.mdx` |
 | `src/config.rs` (config format) | `docs/.../reference/configuration.mdx` |
 | `src/runtime.rs` (container lifecycle) | `docs/.../reference/architecture.mdx` |
-| `src/manifest.rs` (jackin.toml) | `docs/.../developing/agent-manifest.mdx` |
+| `src/manifest.rs` (jackin.agent.toml) | `docs/.../developing/agent-manifest.mdx` |
 | `src/derived_image.rs` (Dockerfile gen) | `docs/.../developing/construct-image.mdx` |
 | `src/repo.rs` / `src/repo_contract.rs` | `docs/.../guides/agent-repos.mdx` |
 | `docker/construct/Dockerfile` | `docs/.../developing/construct-image.mdx` |

@@ -69,7 +69,7 @@ jackin' itself is a single binary. When you first load an agent, jackin' will:
 3. **Build a derived image** — layers the agent's tools and Claude Code on top of the construct
 4. **Create a Docker network** — per-agent isolation
 
-Subsequent loads reuse the cached image and agent repo (unless you pass `--rebuild`).
+Subsequent loads re-run `docker build` but reuse Docker's layer cache where nothing upstream changed, so repeated loads of the same agent are typically fast. The agent repo cache at `~/.jackin/agents/` is also reused. Passing `--rebuild` additionally invalidates the Claude installation layer so a newer Claude version is picked up.
 
 ## Next steps
 

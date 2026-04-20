@@ -130,11 +130,11 @@ When you load an agent, jackin' doesn't use the construct image directly. Instea
 
 1. Starts from the agent's Dockerfile (which itself starts from the construct)
 2. Remaps the container user to match your host UID/GID
-3. Installs Claude Code (or another agent runtime)
+3. Installs Claude Code — the current implementation targets Claude specifically; supporting other agent runtimes is on the roadmap but not in the build path today
 4. Injects the runtime entrypoint script
 5. Copies in Claude plugins if declared in the manifest
 
-The resulting derived image is cached locally. Subsequent loads skip the build step unless you pass `--rebuild`.
+Every load re-runs `docker build` on the derived Dockerfile, but Docker's layer cache makes unchanged layers instant — the first load pays the full build cost, subsequent loads typically only rebuild what changed. Passing `--rebuild` additionally invalidates the Claude installation layer so the next build picks up a newer Claude version.
 
 ## State persistence
 

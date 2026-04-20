@@ -1,5 +1,16 @@
 import { OGImageRoute } from 'astro-og-canvas'
 import { getCollection } from 'astro:content'
+import { createRequire } from 'node:module'
+
+// Resolve the fontsource woff2 files to absolute file paths so the
+// build runs hermetically — no network calls to api.fontsource.org
+// during static generation. createRequire + resolve finds the exact
+// node_modules path bun installed, so the paths stay correct under
+// pnpm's symlinked store or a hoisted layout. astro-og-canvas passes
+// these through to satori, which accepts absolute paths.
+const req = createRequire(import.meta.url)
+const fontFile = (weight: 500 | 800): string =>
+  req.resolve(`@fontsource/inter/files/inter-latin-${weight}-normal.woff2`)
 
 // Collect every docs page and key by its slug so the route file
 // resolves /og/<slug>.png → generated card for that page.
@@ -41,10 +52,7 @@ const route = await OGImageRoute({
         lineHeight: 1.4,
       },
     },
-    fonts: [
-      'https://api.fontsource.org/v1/fonts/inter/latin-800-normal.woff2',
-      'https://api.fontsource.org/v1/fonts/inter/latin-500-normal.woff2',
-    ],
+    fonts: [fontFile(800), fontFile(500)],
   }),
 })
 

@@ -7,112 +7,132 @@ import Default from '@astrojs/starlight/components/Head.astro'
 // hash the file so the preload points at the exact asset. */
 import interBlack from '@fontsource/inter/files/inter-latin-900-normal.woff2?url'
 
-// Each docs page gets its own generated OG card (see
-// src/pages/og/[...slug].png.ts + astro-og-canvas). Fall back to the
-// global landing image for the 404 page (no content entry → no OG
-// static path → a per-page URL would 404) and anything else without
-// a valid id.
+const { entry } = Astro.locals.starlightRoute
 const routeId = Astro.locals.starlightRoute.id
-const hasPerPageOg = routeId && routeId !== '404'
-const OG_IMAGE = hasPerPageOg
+
+// Everything below (per-page OG card, TechArticle schema, BreadcrumbList,
+// article:section) is only meaningful for real content pages. The 404
+// route has no collection entry; emitting article schema on it gives
+// Google misleading structured data about a page that doesn't exist.
+const isContentPage = entry !== undefined && routeId !== '404'
+
+const OG_IMAGE = isContentPage
   ? `https://jackin.tailrocks.com/og/${routeId.replace(/\.(mdx?|astro)$/i, '')}.png`
   : 'https://jackin.tailrocks.com/og-image.png'
 
-// Article meta — LinkedIn / FB honour these for og:type=article pages.
-const section = routeId?.split('/')[0]
-const sectionLabel = section
-  ? section.charAt(0).toUpperCase() + section.slice(1).replace(/-/g, ' ')
+// Article section label — derived from the top-level path segment.
+const sectionLabel = isContentPage
+  ? (() => {
+      const segment = routeId.split('/')[0]
+      return segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' ')
+    })()
   : undefined
 
-// JSON-LD structured data for docs pages — search engines use this to
-// render rich results (article cards with section/author/date).
-const { entry } = Astro.locals.starlightRoute
 const pageUrl = new URL(Astro.url.pathname, 'https://jackin.tailrocks.com').toString()
-const jsonLd = {
-  '@context': 'https://schema.org',
-  '@type': 'TechArticle',
-  headline: entry?.data.title,
-  description: entry?.data.description,
-  url: pageUrl,
-  image: OG_IMAGE,
-  inLanguage: 'en',
-  articleSection: sectionLabel,
-  isPartOf: {
-    '@type': 'WebSite',
-    name: "jackin'",
-    url: 'https://jackin.tailrocks.com/',
-  },
-  publisher: {
-    '@type': 'Organization',
-    name: 'jackin project',
-    url: 'https://github.com/jackin-project',
-  },
-}
 
-// BreadcrumbList structured data — gives Google a reliable crumb trail
-// to render above the page title in search results. Derived from the
-// content path (e.g. reference/architecture → Reference › Architecture)
-// so it stays in sync with the sidebar without a second source of truth.
-const crumbSegments = routeId ? routeId.replace(/\.(mdx?|astro)$/i, '').split('/') : []
-const breadcrumbItems = [
-  {
-    '@type': 'ListItem',
-    position: 1,
-    name: 'Home',
-    item: 'https://jackin.tailrocks.com/',
-  },
-  ...crumbSegments.map((segment, i) => ({
-    '@type': 'ListItem',
-    position: i + 2,
-    name: segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' '),
-    item: new URL(
-      '/' + crumbSegments.slice(0, i + 1).join('/') + '/',
-      'https://jackin.tailrocks.com/',
-    ).toString(),
-  })),
-]
-const breadcrumbJsonLd = {
-  '@context': 'https://schema.org',
-  '@type': 'BreadcrumbList',
-  itemListElement: breadcrumbItems,
-}
+const jsonLd = isContentPage
+  ? {
+      '@context': 'https://schema.org',
+      '@type': 'TechArticle',
+      headline: entry.data.title,
+      description: entry.data.description,
+      url: pageUrl,
+      image: OG_IMAGE,
+      inLanguage: 'en',
+      articleSection: sectionLabel,
+      isPartOf: {
+        '@type': 'WebSite',
+        name: "jackin'",
+        url: 'https://jackin.tailrocks.com/',
+      },
+      publisher: {
+        '@type': 'Organization',
+        name: 'jackin project',
+        url: 'https://github.com/jackin-project',
+      },
+    }
+  : null
+
+// BreadcrumbList — only emits entries that point at pages that actually
+// exist. No section in this site has an index.mdx (e.g. there's no
+// /getting-started/ page), so synthesising intermediate crumbs from
+// path segments produces links that 404. Keep it to Home → current page
+// for now. When section index pages land, insert them here between the
+// two entries rather than adding pure-name crumbs that link into voids.
+const breadcrumbJsonLd = isContentPage
+  ? {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Home',
+          item: 'https://jackin.tailrocks.com/',
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: entry.data.title,
+          item: pageUrl,
+        },
+      ],
+    }
+  : null
 ---
 
 {/* Runs FIRST — before any stylesheet that could block its execution.
-    Syncs data-theme with localStorage so every page renders in the
-    correct theme from first paint (Starlight hardcodes data-theme to
-    'dark' server-side, which flashed on navigations in light mode).
+    Syncs data-theme so every page renders in the correct theme from
+    first paint (Starlight hardcodes data-theme to 'dark' server-side,
+    which flashed on navigations in light mode).
 
-    On first visit we DON'T write to localStorage — leaving it empty
-    lets Starlight's own ThemeProvider (which runs after us) still
-    honour prefers-color-scheme if a user wants OS-following behaviour.
-    Old 'auto' values are migrated away to 'dark' explicitly so the
-    retired option doesn't linger.
+    Resolution order, once:
+      1. localStorage has 'light' or 'dark' → use it
+      2. No stored value → honour the OS prefers-color-scheme
+      3. matchMedia unavailable → fall back to dark (brand default)
+    We do NOT write to localStorage here. The ThemeSelect custom
+    element also only writes on user click, so a first-time visitor's
+    OS preference survives until they choose explicitly.
+
+    Old 'auto' values are migrated away (cleared) — they used to map
+    to matchMedia, but with explicit buttons only, a stuck 'auto' in
+    an old tab would never resolve. Clearing it just drops back to
+    the resolution order above.
 
     Adds .theme-init only when we actually flip the attribute. It
     disables every CSS transition for two animation frames after
     DOMContentLoaded so elements using var(--jk-brand) don't animate
-    the dark-to-light colour shift. Skipped on default-dark loads
-    where no flip happens. */}
+    the dark-to-light colour shift. Skipped when no flip happens. */}
 <script is:inline>
   (function () {
     var root = document.documentElement
     var flipped = false
     try {
-      var stored = localStorage.getItem('starlight-theme')
-      // Migrate the retired 'auto' option — not first-visit empty values.
-      if (stored === 'auto') {
-        localStorage.removeItem('starlight-theme')
-        stored = null
+      var stored = null
+      try {
+        stored = localStorage.getItem('starlight-theme')
+        if (stored === 'auto') {
+          localStorage.removeItem('starlight-theme')
+          stored = null
+        }
+      } catch (e) {
+        // localStorage access threw (private mode, SecurityError, etc).
       }
-      var theme = stored === 'light' ? 'light' : 'dark'
+      var theme
+      if (stored === 'light' || stored === 'dark') {
+        theme = stored
+      } else if (typeof window.matchMedia === 'function' &&
+                 window.matchMedia('(prefers-color-scheme: light)').matches) {
+        theme = 'light'
+      } else {
+        theme = 'dark'
+      }
       if (root.getAttribute('data-theme') !== theme) {
         root.setAttribute('data-theme', theme)
         flipped = true
       }
     } catch (e) {
-      // localStorage access threw (private mode, SecurityError, etc).
-      // Leave whatever SSR wrote alone.
+      // Don't leave the page broken if anything above threw.
     }
     if (!flipped) return
     root.classList.add('theme-init')

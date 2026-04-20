@@ -26,11 +26,31 @@ const lightLabel = t('themeSelect.light')
   const parseTheme = (value: unknown): Theme =>
     value === 'light' ? 'light' : 'dark'
 
-  const loadTheme = (): Theme =>
-    parseTheme(typeof localStorage !== 'undefined' && localStorage.getItem(storageKey))
+  /** Read stored theme. Returns null when unset so callers can tell
+      "first-time visitor" apart from "picked dark explicitly". Guarded
+      because localStorage can throw in private mode / SecurityError. */
+  function readStoredTheme(): Theme | null {
+    try {
+      if (typeof localStorage === 'undefined') return null
+      const raw = localStorage.getItem(storageKey)
+      return raw === 'light' || raw === 'dark' ? raw : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Current data-theme as the Head.astro script resolved it — source
+      of truth for display state on page load. The head script already
+      resolved stored-or-prefers-color-scheme-or-dark. */
+  const readRenderedTheme = (): Theme =>
+    parseTheme(document.documentElement.dataset.theme)
 
   function storeTheme(theme: Theme): void {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey, theme)
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey, theme)
+    } catch {
+      // Private mode / storage-restricted; leave DOM state as-is.
+    }
   }
 
   function applyActive(root: HTMLElement, theme: Theme) {
@@ -40,7 +60,8 @@ const lightLabel = t('themeSelect.light')
     })
   }
 
-  function onThemeChange(theme: Theme): void {
+  /** User picked a theme: flip the DOM, persist the choice, sync UI. */
+  function onUserPick(theme: Theme): void {
     document.documentElement.dataset.theme = theme
     storeTheme(theme)
     document.querySelectorAll<HTMLElement>('starlight-theme-select').forEach((el) => applyActive(el, theme))
@@ -60,19 +81,20 @@ const lightLabel = t('themeSelect.light')
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (!reduceMotion && typeof doc.startViewTransition === 'function') {
-      doc.startViewTransition(() => onThemeChange(theme))
+      doc.startViewTransition(() => onUserPick(theme))
     } else {
-      onThemeChange(theme)
+      onUserPick(theme)
     }
   }
 
   class JackinThemeSelect extends HTMLElement {
     constructor() {
       super()
-      const current = loadTheme()
-      applyActive(this, current)
-      // Initial application — no transition class; first paint should be instant.
-      onThemeChange(current)
+      // Reflect the already-resolved state from the inline head script —
+      // do NOT call storeTheme here. A first-time light-pref visitor
+      // keeps localStorage empty so prefers-color-scheme continues to
+      // apply across pages until they click a button.
+      applyActive(this, readStoredTheme() ?? readRenderedTheme())
       this.querySelectorAll<HTMLButtonElement>('button[data-theme-value]').forEach((btn) => {
         btn.addEventListener('click', () => {
           onThemeToggle(parseTheme(btn.dataset.themeValue))

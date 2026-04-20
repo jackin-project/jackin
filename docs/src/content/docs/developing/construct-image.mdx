@@ -130,11 +130,11 @@ When you load an agent, jackin' doesn't use the construct directly. It generates
 
 1. **User remapping** — adjusts the `claude` user's UID/GID to match your host user
 2. **Claude Code installation** — installs the Claude Code CLI
-3. **Runtime entrypoint** — the script that configures git, authenticates with GitHub, installs plugins, and launches Claude
+3. **Runtime entrypoint** — the script that configures git, wires up GitHub if `gh` is already authenticated (it does not perform `gh auth login` — an unauthenticated `gh` is left alone with a notice), installs plugins, and launches Claude
 4. **Plugin installation** — any Claude plugins declared in the agent manifest
 
 <Aside type="note">
-The derived image is cached locally. You only pay the build cost once (or when you pass `--rebuild`).
+Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Passing `--rebuild` additionally invalidates the Claude installation layer so the build picks up a newer Claude version.
 </Aside>
 ## Extending the construct
 
