@@ -26,6 +26,21 @@ body {
   background-color: var(--landing-bg);
 }
 
+/* Smooth anchor scrolling on the landing only — "Get Started →" in the
+   hero jumps to #why (the Vocabulary section); smooth makes that feel
+   like a section transition instead of an instant teleport. Respects
+   prefers-reduced-motion so users with motion sensitivity still get the
+   instant jump. */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 /* When landing is the whole page (layout: landing), override body */
 .landing-root {
   background: var(--landing-bg);
