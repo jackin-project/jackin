@@ -28,11 +28,15 @@
   --sl-content-width: 48rem;
   --sl-nav-height: 3.5rem;
 
-  /* Brand color — always the bright Matrix green, independent of
-     page theme. Used for elements that should carry brand identity
-     regardless of light/dark (logo tick, tab active underline,
-     pagination hover). */
-  --jk-brand:      #00ff41;
+  /* Brand accent — a juicy mid-green that works as a pill bg, underline,
+     or rail in BOTH page modes. Pure #00ff41 (the landing-logo green)
+     was too loud on a white page and failed white-text-on-green contrast
+     for the sidebar active pill. This value has ~5.8:1 contrast with our
+     dark text and ~3.3:1 with white, so both pill treatments are legible.
+     The logo tick keeps the original #00ff41 hex (hardcoded in
+     overrides/SiteTitle.astro and landing components) since it sits
+     against dark backgrounds only. */
+  --jk-brand:      #16a34a;
 
   /* Fallback --jk-* tokens (dark). Ensures tokens resolve before
      data-theme gets applied to <html>. */
@@ -374,7 +378,7 @@
 .sidebar-content ul li a[aria-current='page']:hover,
 .sidebar-content ul li a[aria-current='page']:focus {
   color: var(--sl-color-text-invert);
-  background-color: var(--sl-color-text-accent);
+  background-color: var(--jk-brand);
   font-weight: 600;
 }
 
@@ -400,7 +404,7 @@
   content: "";
   width: 18px;
   height: 1px;
-  background: var(--jk-accent);
+  background: var(--jk-brand);
   flex-shrink: 0;
 }
 
@@ -417,7 +421,7 @@
 }
 
 .right-sidebar-panel ul ul:has(a[aria-current='true']) {
-  border-left-color: var(--sl-color-text-accent);
+  border-left-color: var(--jk-brand);
 }
 
 .right-sidebar-panel ul li a {
@@ -442,13 +446,13 @@
 }
 
 .right-sidebar-panel ul li a[aria-current='true'] {
-  color: var(--sl-color-text-accent);
+  color: var(--jk-brand);
   background: transparent;
   font-weight: 500;
 }
 
 .right-sidebar-panel ul li:has(> ul a[aria-current='true']) > a {
-  color: var(--sl-color-text-accent);
+  color: var(--jk-brand);
 }
 
 /* ==========================================================================
