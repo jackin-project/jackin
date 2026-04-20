@@ -507,7 +507,10 @@ header.header {
    ========================================================================== */
 
 .sl-markdown-content [role='tablist']:not(:where(.not-content *)) {
-  border-bottom: 1px solid var(--jk-ui);
+  /* --jk-ui = rgba(0,0,0,0.08) in light mode reads almost invisible
+     against a white page and made the tab row feel unbordered. Use the
+     stronger 0.18 alpha so the strip anchors clearly in both themes. */
+  border-bottom: 1px solid var(--jk-ui-strong);
 }
 
 .sl-markdown-content .tab > [role='tab'] {
