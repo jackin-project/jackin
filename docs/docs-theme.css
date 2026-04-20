@@ -109,6 +109,13 @@
    Outline (right rail "On this page") — Tempo-style vertical indicator
    ========================================================================== */
 
+/* Strip Vocs's default 1px border on the nav; our border lives on the ul
+   below so the animated indicator sits right on top of it. */
+.vocs_Outline .vocs_Outline_nav {
+  border-left: 0;
+  padding-left: 0;
+}
+
 .vocs_Outline ul {
   position: relative;
   border-left: 2px solid var(--color-grayA4);
@@ -145,10 +152,13 @@
   left: -2px;
   top: 0;
   width: 2px;
-  border-radius: 2px;
+  border-radius: 9999px;
   background: light-dark(var(--color-black), var(--color-white));
-  transition: transform 0.15s ease-out, height 0.15s ease-out, opacity 0.15s;
+  transition: transform 0.15s cubic-bezier(0, 0, 0.2, 1),
+              height 0.15s cubic-bezier(0, 0, 0.2, 1);
   will-change: transform, height;
-  opacity: 0;
   pointer-events: none;
+}
+.vocs_Outline ul [data-outline-indicator][data-empty='true'] {
+  opacity: 0;
 }

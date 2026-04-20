@@ -33,8 +33,10 @@ function ensureFontsLink() {
 
 /**
  * Enhance Vocs's outline with Tempo's sliding active-item indicator
- * (data-v-outline-indicator pattern). Injects a single indicator div
- * that translates + resizes to the currently-active outline link.
+ * (data-v-outline-indicator pattern). Measures the active <li>'s
+ * offsetTop/offsetHeight (stable in the ul's coordinate space). When
+ * multiple items are active simultaneously, the indicator spans the
+ * contiguous range from the first to the last — matches Tempo 1:1.
  */
 function enhanceOutline() {
   if (typeof document === 'undefined') return;
@@ -45,26 +47,37 @@ function enhanceOutline() {
   list.style.position = 'relative';
   const indicator = document.createElement('div');
   indicator.setAttribute('data-outline-indicator', '');
-  list.appendChild(indicator);
+  indicator.setAttribute('data-empty', 'true');
+  // Tempo places the indicator as the FIRST child of the ul.
+  list.insertBefore(indicator, list.firstChild);
 
   let raf = 0;
   function update() {
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => {
-      // Vocs 1.4.1 sets data-active="true" on the <a> (.vocs_Outline_link).
-      const active =
-        list!.querySelector<HTMLElement>('a[data-active="true"]') ||
-        list!.querySelector<HTMLElement>('a[aria-current="true"]') ||
-        list!.querySelector<HTMLElement>('a.vocs_Outline_item_active');
-      if (!active) {
-        indicator.style.opacity = '0';
+      // Find every active <li> (Vocs 1.4.1 applies data-active on the <a>
+      // inside the <li>; we walk up to the containing <li> for stable
+      // offsetTop/offsetHeight measurements).
+      const activeAnchors = Array.from(
+        list!.querySelectorAll<HTMLElement>(
+          'a[data-active="true"], a[aria-current="true"], a.vocs_Outline_item_active',
+        ),
+      );
+      const activeLis = activeAnchors
+        .map((a) => a.closest('li') as HTMLLIElement | null)
+        .filter((li): li is HTMLLIElement => li !== null);
+
+      if (activeLis.length === 0) {
+        indicator.setAttribute('data-empty', 'true');
         return;
       }
-      const rect = active.getBoundingClientRect();
-      const parentRect = list!.getBoundingClientRect();
-      indicator.style.opacity = '1';
-      indicator.style.transform = `translateY(${rect.top - parentRect.top}px)`;
-      indicator.style.height = `${rect.height}px`;
+      const first = activeLis[0];
+      const last = activeLis[activeLis.length - 1];
+      const top = first.offsetTop;
+      const bottom = last.offsetTop + last.offsetHeight;
+      indicator.removeAttribute('data-empty');
+      indicator.style.transform = `translateY(${top}px)`;
+      indicator.style.height = `${bottom - top}px`;
     });
   }
 
