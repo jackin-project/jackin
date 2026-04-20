@@ -545,7 +545,7 @@ header.header {
 }
 
 :root[data-theme='light'] {
-  --jk-code-bg: #1a1c1b;
+  --jk-code-bg: #0a0b0a;   /* near-black for maximum contrast on a white page */
 }
 
 .expressive-code .frame .header {

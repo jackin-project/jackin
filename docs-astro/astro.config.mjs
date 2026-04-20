@@ -8,13 +8,13 @@ export default defineConfig({
     starlight({
       title: "jackin'",
       description: 'CLI for orchestrating AI coding agents in isolated containers',
-      // Always use the github-dark shiki theme so syntax highlighting
-      // remains readable on the dark code surface we use in both page
-      // modes. (Light-mode code bg is forced dark via docs-theme.css —
-      // dark bg is a strong signal that the content is code regardless
-      // of the rest of the page's palette.)
+      // Two dark shiki themes — code blocks stay dark in both page modes
+      // (see --jk-code-bg in docs-theme.css), but the syntax palette
+      // differs: github-dark is the subdued dark-page default, and
+      // one-dark-pro gives a more vibrant palette in light-page context
+      // where the dark code surface benefits from saturated accents.
       expressiveCode: {
-        themes: ['github-dark'],
+        themes: ['github-dark', 'one-dark-pro'],
       },
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/jackin-project/jackin' }],
       editLink: {
