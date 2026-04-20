@@ -191,6 +191,7 @@ mod colors {
     pub const PATH: Color = Color::Rgb(220, 190, 120); // paths (warm amber)
     pub const PATH_DST: Color = Color::Rgb(150, 180, 220); // mount destination
     pub const DARK_BG: Color = Color::Rgb(20, 20, 30); // subtle bg for selected
+    pub const ERROR: Color = Color::Rgb(230, 120, 120);
 }
 
 #[allow(clippy::too_many_lines)]
@@ -223,7 +224,7 @@ pub fn run_launch(
     let result = loop {
         terminal.draw(|frame| match state.stage {
             LaunchStage::Workspace => draw_workspace_screen(frame, &state),
-            LaunchStage::Agent => draw_agent_screen(frame, &state),
+            LaunchStage::Agent => draw_agent_screen(frame, &state, config, cwd),
         })?;
         if let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
@@ -574,11 +575,19 @@ fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
 
 // ── Screen 2: Agent selection ──────────────────────────────────────────
 
-fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
+#[allow(clippy::too_many_lines)]
+fn draw_agent_screen(
+    frame: &mut ratatui::Frame,
+    state: &LaunchState,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) {
     use ratatui::layout::{Alignment, Constraint, Direction, Layout};
     use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
-    use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
+    use ratatui::widgets::{
+        Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Wrap,
+    };
 
     let area = frame.area();
     let selected_ws = &state.workspaces[state.selected_workspace];
@@ -596,7 +605,8 @@ fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
             Constraint::Length(ws_block_height), // workspace context block
             Constraint::Length(1),               // gap
             Constraint::Length(list_height),     // agent list (fixed)
-            Constraint::Min(0),                  // remaining space
+            Constraint::Length(1),               // gap
+            Constraint::Min(6),                  // resolved access preview
             Constraint::Length(2),               // footer
         ])
         .split(area);
@@ -673,8 +683,131 @@ fn draw_agent_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
     agent_state.select(Some(state.selected_agent));
     frame.render_stateful_widget(agent_list, list_area, &mut agent_state);
 
+    let detail_area = centered_rect(root[5], 70);
+    let detail_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(colors::DETAIL_BORDER))
+        .style(Style::default().bg(colors::DETAIL_BG));
+    let details = Paragraph::new(build_agent_detail_lines(
+        config,
+        cwd,
+        selected_ws,
+        agents.get(state.selected_agent),
+    ))
+    .block(detail_block)
+    .wrap(Wrap { trim: false });
+    frame.render_widget(details, detail_area);
+
     // Footer
-    render_agent_footer(frame, root[5]);
+    render_agent_footer(frame, root[6]);
+}
+
+fn build_agent_detail_lines(
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    choice: &WorkspaceChoice,
+    agent: Option<&ClassSelector>,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::style::{Modifier, Style};
+    use ratatui::text::{Line, Span};
+
+    let mut detail_lines: Vec<Line<'static>> = Vec::new();
+
+    let Some(agent) = agent else {
+        detail_lines.push(Line::from(Span::styled(
+            "No agents match the current filter.",
+            Style::default().fg(colors::DIM_WHITE),
+        )));
+        return detail_lines;
+    };
+
+    detail_lines.push(Line::from(vec![
+        Span::styled("agent    ", Style::default().fg(colors::BRIGHT_BLUE)),
+        Span::styled(
+            agent.key(),
+            Style::default()
+                .fg(colors::WHITE)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    match resolve_selected_workspace(config, cwd, choice, agent) {
+        Ok(workspace) => {
+            let workspace_destinations = choice
+                .workspace
+                .mounts
+                .iter()
+                .map(|mount| mount.dst.as_str())
+                .collect::<std::collections::HashSet<_>>();
+
+            detail_lines.push(Line::from(vec![
+                Span::styled("workdir  ", Style::default().fg(colors::BRIGHT_BLUE)),
+                Span::styled(
+                    tui::shorten_home(&workspace.workdir),
+                    Style::default().fg(colors::WHITE),
+                ),
+            ]));
+
+            if !workspace.mounts.is_empty() {
+                detail_lines.push(Line::from(""));
+                detail_lines.push(Line::from(Span::styled(
+                    "resolved mounts",
+                    Style::default()
+                        .fg(colors::BRIGHT_BLUE)
+                        .add_modifier(Modifier::BOLD),
+                )));
+
+                for mount in &workspace.mounts {
+                    let src_short = tui::shorten_home(&mount.src);
+                    let dst_short = tui::shorten_home(&mount.dst);
+                    let ro = if mount.readonly { " (read-only)" } else { "" };
+                    let global_tag = if workspace_destinations.contains(mount.dst.as_str()) {
+                        ""
+                    } else {
+                        " [global]"
+                    };
+
+                    let mut spans = vec![Span::styled("  ", Style::default())];
+                    if src_short == dst_short {
+                        spans.push(Span::styled(src_short, Style::default().fg(colors::PATH)));
+                    } else {
+                        spans.push(Span::styled(src_short, Style::default().fg(colors::PATH)));
+                        spans.push(Span::styled(
+                            " mounted as ",
+                            Style::default().fg(colors::DIM_WHITE),
+                        ));
+                        spans.push(Span::styled(
+                            dst_short,
+                            Style::default().fg(colors::PATH_DST),
+                        ));
+                    }
+                    if !ro.is_empty() || !global_tag.is_empty() {
+                        spans.push(Span::styled(
+                            format!("{ro}{global_tag}"),
+                            Style::default().fg(colors::DIM_WHITE),
+                        ));
+                    }
+                    detail_lines.push(Line::from(spans));
+                }
+            }
+        }
+        Err(error) => {
+            detail_lines.push(Line::from(""));
+            detail_lines.push(Line::from(Span::styled(
+                "launch preview unavailable",
+                Style::default()
+                    .fg(colors::BRIGHT_BLUE)
+                    .add_modifier(Modifier::BOLD),
+            )));
+            detail_lines.push(Line::from(Span::styled(
+                error.to_string(),
+                Style::default().fg(colors::ERROR),
+            )));
+        }
+    }
+
+    detail_lines
 }
 
 fn render_agent_footer(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
@@ -889,5 +1022,65 @@ mod tests {
         assert!(footer_text(LaunchStage::Agent).contains("Enter"));
         assert!(footer_text(LaunchStage::Agent).contains("back"));
         assert!(footer_text(LaunchStage::Agent).contains("filter"));
+    }
+
+    #[test]
+    fn agent_preview_includes_selector_scoped_global_mounts() {
+        let temp = tempfile::tempdir().unwrap();
+        let project_dir = temp.path().join("project");
+        let shared_dir = temp.path().join("shared-cache");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::create_dir_all(&shared_dir).unwrap();
+
+        let selector = crate::selector::ClassSelector::new(Some("chainargos"), "agent-smith");
+
+        let mut config = crate::config::AppConfig::default();
+        config.agents.insert(
+            selector.key(),
+            crate::config::AgentSource {
+                git: "https://github.com/chainargos/jackin-agent-smith.git".to_string(),
+                trusted: true,
+                claude: None,
+            },
+        );
+        config.add_mount(
+            "shared-cache",
+            crate::workspace::MountConfig {
+                src: shared_dir.canonicalize().unwrap().display().to_string(),
+                dst: "/cache".to_string(),
+                readonly: true,
+            },
+            Some("chainargos/*"),
+        );
+
+        let project_dir = project_dir.canonicalize().unwrap();
+        let choice = WorkspaceChoice {
+            name: "Current directory".to_string(),
+            workspace: crate::workspace::ResolvedWorkspace {
+                label: project_dir.display().to_string(),
+                workdir: project_dir.display().to_string(),
+                mounts: vec![crate::workspace::MountConfig {
+                    src: project_dir.display().to_string(),
+                    dst: project_dir.display().to_string(),
+                    readonly: false,
+                }],
+            },
+            allowed_agents: vec![selector.clone()],
+            default_agent: None,
+            last_agent: None,
+            global_mounts: vec![],
+            input: LoadWorkspaceInput::CurrentDir,
+        };
+
+        let details = build_agent_detail_lines(&config, &project_dir, &choice, Some(&selector));
+        let rendered = details
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("resolved mounts"));
+        assert!(rendered.contains("/cache"));
+        assert!(rendered.contains("[global]"));
     }
 }
