@@ -14,7 +14,7 @@ export function InstallBlock() {
         </div>
 
         <div className="landing-install-ctas">
-          <a className="landing-btn-primary" href="https://jackin.tailrocks.com/" target="_blank" rel="noopener">Read the Docs →</a>
+          <a className="landing-btn-primary" href="/getting-started/why">Read the Docs →</a>
           <a className="landing-btn-ghost" href="https://github.com/jackin-project/jackin" target="_blank" rel="noopener">★ Star on GitHub</a>
         </div>
       </div>
