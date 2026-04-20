@@ -251,11 +251,14 @@
   flex-shrink: 0;
 }
 
-/* One vertical rail for the whole TOC. The rail paints green while any
-   heading is active (current scroll position) — a common signal that
-   the user is "in" this page's outline. Nested uls (rendered by
-   Starlight's recursive TableOfContentsList) don't get their own rail
-   so there's only ever one line. */
+/* TOC layout as a tree: top-level items are flat, each nested group has
+   its own vertical rail. A rail turns green only when one of its own
+   children is the active heading — not when a sibling's child is. The
+   parent anchor of an active child also gets green text so the section
+   reads as one highlighted group.
+
+   Rails on nested groups (not on the top-level) match how outline docs
+   typically signal "you're inside this subsection". */
 
 .right-sidebar-panel ul {
   list-style: none;
@@ -263,26 +266,25 @@
   margin: 0;
 }
 
-.right-sidebar-panel ul:not(ul ul) {
+/* Nested group rail — visible, grey by default */
+.right-sidebar-panel ul ul {
+  margin-left: 0.75rem;
   border-left: 2px solid var(--jk-ui);
   transition: border-color 0.15s;
 }
 
-.right-sidebar-panel ul:not(ul ul):has(a[aria-current='true']) {
+/* ...turns green when this group contains the active heading */
+.right-sidebar-panel ul ul:has(a[aria-current='true']) {
   border-left-color: var(--sl-color-text-accent);
 }
 
-/* Indent by heading depth so the TOC reads as a tree (h2 → h3 → h4).
-   Starlight's TableOfContentsList sets a --depth custom property per
-   recursion level via define:vars; we multiply it by 1rem for the
-   indent and add a base 0.75rem gap from the rail. */
 .right-sidebar-panel ul li a {
   border-radius: 0;
   background: transparent;
   color: var(--jk-text-dim);
   transition: color 0.1s;
   padding-block: 0.25rem;
-  padding-left: calc(0.75rem + 1rem * var(--depth, 0));
+  padding-left: 0.75rem;
 }
 
 .right-sidebar-panel ul li a:hover {
@@ -290,10 +292,16 @@
   background: transparent;
 }
 
+/* Active heading — green + weight */
 .right-sidebar-panel ul li a[aria-current='true'] {
   color: var(--sl-color-text-accent);
   background: transparent;
   font-weight: 500;
+}
+
+/* Parent of an active nested heading — also green, signals the section */
+.right-sidebar-panel ul li:has(> ul a[aria-current='true']) > a {
+  color: var(--sl-color-text-accent);
 }
 
 :root[data-theme='light'] .right-sidebar-panel ul li a {
