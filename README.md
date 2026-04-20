@@ -1,6 +1,6 @@
 # jackin'
 
-Jack your AI coding agents into the Matrix — their own isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.
+Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.
 
 Documentation: <https://jackin.tailrocks.com/>
 

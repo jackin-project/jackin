@@ -1,15 +1,15 @@
 # Landing Page Design
 
-This design replaces the current minimal `docs/pages/index.mdx` (a `HomePage.Root` tagline + two buttons) with a full-bleed Matrix-native landing page that lives at the root of `jackin.tailrocks.com/`. Existing docs pages keep their current URLs unchanged.
+This design replaces the current minimal `docs/pages/index.mdx` (a `HomePage.Root` tagline + two buttons) with a full-bleed cyberpunk-native landing page that lives at the root of `jackin.tailrocks.com/`. Existing docs pages keep their current URLs unchanged.
 
 A fully-working reference mockup is checked in at `docs/superpowers/mockups/landing-v2.html` — a single self-contained file (HTML + inlined CSS + vanilla JS, no build step). This spec describes the design intent and the Vocs integration plan; the mockup is the source of truth for pixel-level details.
 
 ## Goals
 
-- Replace the current `docs/pages/index.mdx` with a rich Matrix-themed landing page under Vocs' `layout: landing` frontmatter.
+- Replace the current `docs/pages/index.mdx` with a rich cyberpunk-themed landing page under Vocs' `layout: landing` frontmatter.
 - Preserve existing docs URLs so deep links and SEO continue to work unchanged.
 - Teach a cold visitor what jackin' does, why it exists, and how to install it in a single scroll.
-- Use typography, interaction patterns, and copy to carry the Matrix theme without literal cliches (digital rain is present but restrained; vocabulary is fully integrated into the product naming).
+- Use typography, interaction patterns, and copy to carry the cyberpunk theme without literal cliches (digital rain is present but restrained; vocabulary is fully integrated into the product naming).
 - Match real jackin' conventions (base image name, CLI selector vs GitHub repo, manifest structure) so the landing doubles as accurate product documentation.
 
 ## Non-Goals
@@ -43,7 +43,7 @@ import { HomePage } from 'vocs/components'
 ...
 ```
 
-It's a small logo + tagline + two buttons followed by prose sections. Functional but thin — doesn't establish the Matrix theme, doesn't demonstrate the product, and doesn't use the vocabulary strategically.
+It's a small logo + tagline + two buttons followed by prose sections. Functional but thin — doesn't establish the cyberpunk theme, doesn't demonstrate the product, and doesn't use the vocabulary strategically.
 
 ## Chosen Approach
 
@@ -148,7 +148,7 @@ A massive Inter 900 "jackin'" centered at the bottom (clamp 120px → 300px), wi
 | `--text` | `#f4f7f5` | Primary text |
 | `--text-dim` | `#9ca8a1` | Secondary text, descriptions |
 | `--text-ghost` | `#5e6a64` | Tertiary text, metadata |
-| `--accent` | `#00ff41` | Brand accent (Matrix green) |
+| `--accent` | `#00ff41` | Brand accent (phosphor green) |
 | `--danger` | `#ff5e7a` | Denial states, `✕` markers |
 | `--ui` | `rgba(244,247,245,0.1)` | Default borders |
 | `--ui-strong` | `rgba(244,247,245,0.22)` | Emphasized borders |
@@ -161,7 +161,7 @@ Three typefaces, each with one job:
 
 - **Inter** (weights 400, 500, 600, 700, 800, 900) — body text, headlines, buttons, UI.
 - **JetBrains Mono** (400, 500, 600) — CLI commands, code, metadata labels, section labels, terminal output.
-- **Fraunces** serif (400, 500, 700) — named entities: vocabulary dictionary terms, Matrix character names, daily-loop verbs. Fraunces appears only on "names of things."
+- **Fraunces** serif (400, 500, 700) — named entities: vocabulary dictionary terms, cyberpunk-genre names, daily-loop verbs. Fraunces appears only on "names of things."
 
 ### Interaction patterns
 

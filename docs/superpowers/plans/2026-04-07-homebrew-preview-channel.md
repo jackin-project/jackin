@@ -209,7 +209,7 @@ Replace `../homebrew-tap/Formula/jackin.rb` with this exact content:
 
 ```ruby
 class Jackin < Formula
-  desc "Matrix-inspired CLI for orchestrating AI coding agents at scale"
+  desc "genre-inspired CLI for orchestrating AI coding agents at scale"
   homepage "https://github.com/jackin-project/jackin"
   url "https://github.com/jackin-project/jackin/archive/refs/tags/v0.4.0.tar.gz"
   sha256 "f28a180a1039e15e1525e7e2c0b7b3aa556d3ff15152cb91048aff4cdcff6b95"
@@ -245,7 +245,7 @@ curl -L "$TARBALL_URL" -o "$TMP_TARBALL"
 SHA256=$(shasum -a 256 "$TMP_TARBALL" | awk '{print $1}')
 cat > ../homebrew-tap/Formula/jackin-preview.rb <<EOF
 class JackinPreview < Formula
-  desc "Matrix-inspired CLI for orchestrating AI coding agents at scale"
+  desc "genre-inspired CLI for orchestrating AI coding agents at scale"
   homepage "https://github.com/jackin-project/jackin"
   url "${TARBALL_URL}"
   version "${BASE_VERSION}-preview+${SHORT_SHA}"
@@ -428,7 +428,7 @@ jobs:
         run: |
           cat > homebrew-tap/Formula/jackin-preview.rb <<EOF
           class JackinPreview < Formula
-            desc "Matrix-inspired CLI for orchestrating AI coding agents at scale"
+            desc "genre-inspired CLI for orchestrating AI coding agents at scale"
             homepage "https://github.com/jackin-project/jackin"
             url "${{ steps.meta.outputs.tarball_url }}"
             version "${{ steps.meta.outputs.version }}"

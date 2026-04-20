@@ -134,7 +134,7 @@ jobs:
         run: |
           cat > homebrew-tap/Formula/jackin-preview.rb <<EOF
           class JackinPreview < Formula
-            desc "Matrix-inspired CLI for orchestrating AI coding agents at scale"
+            desc "CLI for orchestrating autonomous AI coding agents in isolated sandboxed environments — reproducible, scoped, and fully under your control"
             homepage "https://github.com/jackin-project/jackin"
             url "${TARBALL_URL}"
             version "${VERSION}"
