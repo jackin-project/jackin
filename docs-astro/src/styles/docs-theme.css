@@ -175,23 +175,34 @@
 }
 
 /* ==========================================================================
-   Theme-change transition — toggled on <html> by overrides/ThemeSelect.astro
-   for ~350ms around each theme flip. Scoped to a class so hovers/navigation
-   don't get accidental fades. Applies to every element so sidebars, cards,
-   rails, buttons, and text all cross-fade together.
+   Theme-change cross-fade — uses the View Transitions API.
+   overrides/ThemeSelect.astro calls document.startViewTransition() around
+   the data-theme flip. The browser snapshots the page pre/post and
+   animates between them, which avoids the per-property transition bugs
+   on inherited colors (child elements previously snapped abruptly when
+   their parent's color transition ended).
    ========================================================================== */
 
-html.theme-transitioning,
-html.theme-transitioning *,
-html.theme-transitioning *::before,
-html.theme-transitioning *::after {
-  transition:
-    background-color 300ms ease,
-    color 300ms ease,
-    border-color 300ms ease,
-    fill 300ms ease,
-    stroke 300ms ease,
-    box-shadow 300ms ease !important;
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 320ms;
+  animation-timing-function: ease;
+}
+
+/* Cross-fade instead of the default slide */
+::view-transition-old(root) {
+  animation-name: jk-theme-fade-out;
+}
+::view-transition-new(root) {
+  animation-name: jk-theme-fade-in;
+}
+
+@keyframes jk-theme-fade-out {
+  to { opacity: 0; }
+}
+
+@keyframes jk-theme-fade-in {
+  from { opacity: 0; }
 }
 
 /* ==========================================================================
