@@ -85,3 +85,21 @@
   border-radius: 8px;
   overflow: hidden;
 }
+
+/* Make the theme toggle visibly accent-colored and slightly larger so
+   users can find it. Vocs hides it at the very bottom-left of the
+   sidebar in a low-contrast grey by default. */
+.vocs_ThemeToggle {
+  border-color: var(--color-grayA6);
+}
+.vocs_ThemeToggle_themeToggleButton {
+  color: var(--color-gray11) !important;
+}
+.vocs_ThemeToggle_themeToggleButton:hover,
+.vocs_ThemeToggle_themeToggleButton[data-active='true'] {
+  color: var(--color-gray12) !important;
+}
+/* Bump the icon size inside the toggle from 16px to 18px. */
+.vocs_ThemeToggle .vocs_Icon {
+  --vocs_Icon_size: 18px !important;
+}
