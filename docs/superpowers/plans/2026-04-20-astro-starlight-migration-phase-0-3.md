@@ -490,7 +490,7 @@ Write `docs-astro/src/styles/docs-theme.css`:
   --sl-color-hairline-light: var(--color-grayA4);
   --sl-color-hairline-shade: var(--color-grayA6);
 
-  /* Accent (Matrix green to match current landing) */
+  /* Accent (phosphor green to match current landing) */
   --sl-color-accent-low: var(--color-green3);
   --sl-color-accent: var(--color-green9);
   --sl-color-accent-high: var(--color-green11);
@@ -553,7 +553,7 @@ Run: `bun run preview`, open `http://localhost:4321/placeholder`.
 Checks:
 - Background color matches current Vocs site (open `https://jackin.tailrocks.com/getting-started/why` in a second tab)
 - Text color matches
-- Accent color (link color, sidebar active indicator) is Matrix green
+- Accent color (link color, sidebar active indicator) is phosphor green
 - Hairline borders render
 
 If colors look wrong: read the Starlight generated HTML (view source), identify which `--sl-*` vars are unset or overridden. Adjust mapping in `docs-theme.css`.
@@ -569,7 +569,7 @@ git commit -m "$(cat <<'EOF'
 feat(docs-astro): port Radix theme tokens to Starlight CSS vars
 
 Maps Starlight's --sl-color-* surface to the Radix tokens from
-tempo-tokens.css. Preserves the Matrix-green accent used throughout
+tempo-tokens.css. Preserves the phosphor-green accent used throughout
 the current Vocs site.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
