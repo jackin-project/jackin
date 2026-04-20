@@ -1,5 +1,14 @@
 /* docs/components/landing/styles.css */
 
+/* Self-hosted fonts (see src/styles/fonts.css). Landing loads its own
+   styles entry, so it needs the same @imports — without them the
+   landing would fall back to system fonts while docs pages use Inter. */
+@import '@fontsource-variable/inter/index.css';
+@import '@fontsource-variable/jetbrains-mono/index.css';
+@import '@fontsource/fraunces/400.css';
+@import '@fontsource/fraunces/500.css';
+@import '@fontsource/fraunces/700.css';
+
 :root {
   /* Landing page design tokens — mirrors the mockup */
   --landing-bg: #0a0b0a;

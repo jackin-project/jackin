@@ -25,9 +25,7 @@ import Default from '@astrojs/starlight/components/Head.astro'
 
 <Default><slot /></Default>
 
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link
-  rel="stylesheet"
-  href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800;900&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&display=optional"
-/>
+{/* Fonts are self-hosted via fontsource. See src/styles/fonts.css —
+    Astro bundles the woff2 files same-origin and serves them directly,
+    which is significantly faster than Google Fonts (no third-party DNS
+    or TLS) and eliminates FOUT. */}

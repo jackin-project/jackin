@@ -1,0 +1,11 @@
+/* Self-hosted fonts via fontsource. Avoids third-party DNS + TLS hop
+   and the FOUT that Google Fonts caused (display=swap → visible text
+   reflow as Inter arrived). Astro bundles the woff2 files under
+   /_astro/ and serves them same-origin, so first-paint uses the real
+   fonts nearly always. */
+
+@import '@fontsource-variable/inter/index.css';
+@import '@fontsource-variable/jetbrains-mono/index.css';
+@import '@fontsource/fraunces/400.css';
+@import '@fontsource/fraunces/500.css';
+@import '@fontsource/fraunces/700.css';

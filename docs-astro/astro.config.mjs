@@ -70,6 +70,7 @@ export default defineConfig({
         ThemeSelect: './src/components/overrides/ThemeSelect.astro',
       },
       customCss: [
+        './src/styles/fonts.css',
         './src/styles/global.css',
         './src/styles/tempo-tokens.css',
         './src/styles/docs-theme.css',
