@@ -103,13 +103,14 @@ export function CodePanel() {
       <div className="landing-code-head">
         <div className="landing-code-tabs">
           {(['load', 'hardline', 'eject'] as const).map(k => (
-            <span
+            <button
+              type="button"
               key={k}
               className={'landing-code-tab' + (k === active ? ' active' : '')}
               onClick={() => setActive(k)}
             >
               $ {k}
-            </span>
+            </button>
           ))}
         </div>
       </div>

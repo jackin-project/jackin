@@ -10,11 +10,12 @@ export function VocabularyDictionary() {
     const section = sectionRef.current;
     if (!section) return;
 
+    let rafId = 0;
     let ticking = false;
     function onScroll() {
       if (ticking) return;
       ticking = true;
-      requestAnimationFrame(() => {
+      rafId = requestAnimationFrame(() => {
         const rect = section!.getBoundingClientRect();
         const vh = window.innerHeight;
         const h = section!.offsetHeight;
@@ -31,6 +32,7 @@ export function VocabularyDictionary() {
     window.addEventListener('resize', onScroll, { passive: true });
     onScroll();
     return () => {
+      if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
     };
@@ -59,14 +61,15 @@ export function VocabularyDictionary() {
           <div className="landing-voc">
             <div className="landing-voc-list">
               {vocabularyEntries.map((entry, i) => (
-                <div
+                <button
+                  type="button"
                   key={entry.id}
                   className={'landing-voc-item' + (i === activeIdx ? ' active' : '')}
                   onClick={() => jumpTo(i)}
                 >
                   <span className="num">{entry.id}</span>
                   <span className="word">{entry.term}</span>
-                </div>
+                </button>
               ))}
             </div>
             <div key={activeIdx} className="landing-voc-detail landing-fade">

@@ -34,13 +34,14 @@ export function CompositionMachine() {
         <div className="landing-machine-wrapper">
           <div className="landing-org-tabs">
             {orgKeys.map(o => (
-              <div
+              <button
+                type="button"
                 key={o}
                 className={'landing-org-tab' + (o === activeOrg ? ' active' : '')}
                 onClick={() => switchOrg(o)}
               >
                 <span className="at">@</span>{o}
-              </div>
+              </button>
             ))}
           </div>
 
@@ -50,13 +51,14 @@ export function CompositionMachine() {
               <div className="landing-machine-sublabel">the tool profile</div>
               <div className="landing-machine-options">
                 {classKeys.map(name => (
-                  <div
+                  <button
+                    type="button"
                     key={name}
                     className={'landing-machine-opt' + (name === activeClass ? ' active' : '')}
                     onClick={() => setActiveClass(name)}
                   >
                     <span className="landing-radio" />{name}
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -68,13 +70,14 @@ export function CompositionMachine() {
               <div className="landing-machine-sublabel">workdir + mounts</div>
               <div className="landing-machine-options">
                 {wsKeys.map(name => (
-                  <div
+                  <button
+                    type="button"
                     key={name}
                     className={'landing-machine-opt' + (name === activeWs ? ' active' : '')}
                     onClick={() => setActiveWs(name)}
                   >
                     <span className="landing-radio" />{name}
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>

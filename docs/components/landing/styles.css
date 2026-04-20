@@ -508,7 +508,7 @@
 /* Section 06: Composition machine */
 .landing-machine-wrapper { margin-top: 12px; }
 .landing-org-tabs { display: flex; gap: 2px; margin-bottom: 18px; border-bottom: 1px solid var(--landing-ui); padding: 0 4px; flex-wrap: wrap; }
-.landing-org-tab { padding: 10px 18px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--landing-text-dim); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
+.landing-org-tab { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--landing-text-dim); text-align: left; padding: 10px 18px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; cursor: pointer; margin-bottom: -1px; transition: all 0.15s; }
 .landing-org-tab:hover { color: var(--landing-text); }
 .landing-org-tab.active { color: var(--landing-accent); border-bottom-color: var(--landing-accent); }
 .landing-org-tab .at { color: var(--landing-text-ghost); margin-right: 2px; }
@@ -520,7 +520,7 @@
 .landing-machine-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--landing-accent); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 4px; }
 .landing-machine-sublabel { font-family: 'Inter', sans-serif; font-size: 13px; color: var(--landing-text-dim); margin-bottom: 18px; }
 .landing-machine-options { display: flex; flex-direction: column; gap: 8px; }
-.landing-machine-opt { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--landing-ui); border-radius: 6px; cursor: pointer; transition: all 0.15s; background: rgba(255,255,255,0.015); font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-text); }
+.landing-machine-opt { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--landing-ui); border-radius: 6px; cursor: pointer; transition: all 0.15s; background: rgba(255,255,255,0.015); font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-text); text-align: left; width: 100%; }
 .landing-machine-opt:hover { border-color: var(--landing-ui-strong); background: rgba(255,255,255,0.03); }
 .landing-machine-opt.active { border-color: var(--landing-accent); background: rgba(0,255,65,0.06); box-shadow: 0 0 14px rgba(0,255,65,0.1); }
 .landing-machine-opt .landing-radio { width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--landing-ui-strong); flex-shrink: 0; transition: all 0.15s; }
@@ -583,6 +583,9 @@ section.landing-section.landing-voc-scroll-section {
 }
 .landing-voc-list { border-right: 1px solid var(--landing-ui); padding: 14px 0; }
 .landing-voc-item {
+  background: transparent; border: 0;
+  font-family: inherit; color: inherit;
+  text-align: left; width: 100%;
   display: flex; align-items: center; gap: 12px;
   padding: 14px 26px; position: relative; cursor: pointer;
   transition: background 0.3s, color 0.3s;
@@ -757,6 +760,8 @@ section.landing-section.landing-voc-scroll-section {
 }
 .landing-code-tabs { display: flex; gap: 4px; }
 .landing-code-tab {
+  background: transparent; border: 0;
+  font-family: inherit;
   padding: 5px 10px; border-radius: 4px;
   color: var(--landing-text-ghost);
   font-size: 11px; cursor: pointer;
@@ -881,4 +886,20 @@ h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 30
 @media (max-width: 1000px) {
   .landing-hero-grid { grid-template-columns: 1fr; gap: 56px; }
   .landing-hero-right { padding-top: 0; }
+}
+
+/* ===== FOCUS STYLES ===== */
+.landing-org-tab:focus-visible,
+.landing-machine-opt:focus-visible,
+.landing-code-tab:focus-visible,
+.landing-voc-item:focus-visible {
+  outline: 2px solid var(--landing-accent);
+  outline-offset: 2px;
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  .landing-voc-detail.landing-fade { animation: none; }
+  .landing-code-body .cursor { animation: none; }
+  /* If any other animation classes exist (e.g. pulsing dots), they will simply not run when components respect the media query via JS. Canvas rain is handled inside DigitalRain via window.matchMedia. */
 }
