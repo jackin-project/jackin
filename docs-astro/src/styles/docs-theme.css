@@ -549,7 +549,7 @@ header.header {
      clean strip. Long labels scroll horizontally (see .tablist-wrapper
      below) rather than wrapping and creating a staircase underline. */
   white-space: nowrap;
-  padding: 0.35rem 1rem;
+  padding: 0.65rem 1rem;
   font-size: 0.875rem;
   /* Set box-shadow explicitly instead of relying on --sl-tab-color-border
      cascade (Starlight's rule lives in a layer; variable overrides across
