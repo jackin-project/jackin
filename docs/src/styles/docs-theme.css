@@ -713,7 +713,11 @@ site-search dialog {
    ========================================================================== */
 
 .pagination-links a {
-  border: 1px solid var(--jk-ui);
+  /* 2px --jk-ui-strong — visible at equal weight in both themes. The
+     earlier 1px --jk-ui read fine in dark but near-invisible in light
+     (black-alpha 0.08 on near-white bg). Same width across modes for
+     consistency. */
+  border: 2px solid var(--jk-ui-strong);
   border-radius: 10px;
   background: var(--jk-panel);
   color: var(--jk-text-dim);
