@@ -528,6 +528,14 @@ header.header {
   border: 1px solid var(--jk-ui);
   border-radius: 10px;
   overflow: hidden;
+  /* Force the code surface a step darker than the page in both themes —
+     recessed feel instead of floating-on-top. --jk-bg-deep is already
+     theme-aware (#050605 in dark, #e9edeb in light). */
+  background: var(--jk-bg-deep);
+}
+
+.expressive-code .frame pre {
+  background: var(--jk-bg-deep) !important;
 }
 
 .expressive-code .frame .header {
