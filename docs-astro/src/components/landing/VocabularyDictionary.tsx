@@ -2,6 +2,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { vocabularyEntries } from './vocabularyData';
 
+// Matches the CSS breakpoint that drops this section out of its sticky
+// scroll-driven layout (styles.css @media (max-width: 820px)). Below this
+// width the scroll-drive is actively harmful — the section becomes a tall
+// scrollable list in normal flow, and driving activeIdx from scroll
+// position makes the detail panel flip rapidly as the user scrolls past.
+const MOBILE_QUERY = '(max-width: 820px)';
+
 export function VocabularyDictionary() {
   const sectionRef = useRef<HTMLElement>(null);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -10,9 +17,13 @@ export function VocabularyDictionary() {
     const section = sectionRef.current;
     if (!section) return;
 
+    const mobileMq = window.matchMedia(MOBILE_QUERY);
+
     let rafId = 0;
     let ticking = false;
     function onScroll() {
+      // Mobile layout — no scroll-drive, clicks own activeIdx.
+      if (mobileMq.matches) return;
       if (ticking) return;
       ticking = true;
       rafId = requestAnimationFrame(() => {
@@ -20,8 +31,6 @@ export function VocabularyDictionary() {
         const vh = window.innerHeight;
         const h = section!.offsetHeight;
         const scrollDist = h - vh;
-        // Mobile fallback (section shorter than viewport) — no scroll-drive.
-        // Leave activeIdx alone so the user's click selection sticks.
         if (scrollDist <= 0) { ticking = false; return; }
         const scrolled = Math.max(0, -rect.top);
         const p = Math.max(0, Math.min(0.999, scrolled / scrollDist));
@@ -32,11 +41,13 @@ export function VocabularyDictionary() {
     }
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll, { passive: true });
+    mobileMq.addEventListener('change', onScroll);
     onScroll();
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
+      mobileMq.removeEventListener('change', onScroll);
     };
   }, []);
 
@@ -44,9 +55,13 @@ export function VocabularyDictionary() {
     if (typeof window === 'undefined') return;
     const section = sectionRef.current;
     if (!section) return;
+    // Mobile — no scroll dance, just swap the detail directly.
+    if (window.matchMedia(MOBILE_QUERY).matches) {
+      setActiveIdx(i);
+      return;
+    }
     const vh = window.innerHeight;
     const scrollDist = section.offsetHeight - vh;
-    // Mobile fallback — no scroll dance, just swap the detail directly.
     if (scrollDist <= 0) {
       setActiveIdx(i);
       return;
