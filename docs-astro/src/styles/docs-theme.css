@@ -89,10 +89,10 @@
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
 
-  /* Expressive-code frame — outer border only; surfaces come from the
-     shiki theme (github-dark, same in both modes). */
+  /* Expressive-code frame — outer border tracks theme; surfaces come
+     from the shiki theme (github-dark in dark mode). */
   --ec-brdRad: 10px;
-  --ec-brdCol: rgba(255, 255, 255, 0.1);
+  --ec-brdCol: var(--jk-ui);
   --ec-frm-edActTabIndBtmCol: transparent;
   --ec-frm-edActTabIndTopCol: transparent;
   --ec-frm-edTabBarBrdBtmCol: transparent;
@@ -141,11 +141,10 @@
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
 
-  /* Code blocks always use the dark github-dark shiki theme (configured
-     in astro.config.mjs), so in light mode the frame border picks a
-     subtle light-on-dark hairline that matches the dark code surface. */
+  /* Light-mode expressive-code frame — border tracks theme; shiki
+     paints the light surface via github-light. */
   --ec-brdRad: 10px;
-  --ec-brdCol: rgba(255, 255, 255, 0.1);
+  --ec-brdCol: var(--jk-ui);
   --ec-frm-edActTabIndBtmCol: transparent;
   --ec-frm-edActTabIndTopCol: transparent;
   --ec-frm-edTabBarBrdBtmCol: transparent;
@@ -526,9 +525,7 @@ header.header {
 
 .expressive-code .frame {
   box-shadow: none;
-  /* Border tuned for the dark code surface, not the page — so it stays
-     legible as a hairline around the dark block in either page theme. */
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--jk-ui);
   border-radius: 10px;
   overflow: hidden;
 }
