@@ -726,3 +726,13 @@ section.landing-section.landing-voc-scroll-section {
   .landing-loop-frame { grid-template-columns: 1fr; gap: 28px; }
   .landing-loop-desc { max-width: none; }
 }
+
+/* DigitalRain canvas (used inside hero) */
+.landing-rain-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
