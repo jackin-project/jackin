@@ -432,6 +432,34 @@ header.header {
 }
 
 /* ==========================================================================
+   MDX <Tabs> — Starlight's default inactive tab text resolves through
+   --sl-color-gray-3 which we remap to a dark surface gray, so it read
+   too dim on both themes. Override with landing-tone dim/bright text
+   and a subtle hairline bottom border; active tab carries the 2px
+   green underline via --sl-tab-color-border.
+   ========================================================================== */
+
+.sl-markdown-content [role='tablist']:not(:where(.not-content *)) {
+  border-bottom: 1px solid var(--jk-ui);
+}
+
+.sl-markdown-content .tab > [role='tab'] {
+  --sl-tab-color-border: transparent;
+  color: var(--jk-text-dim);
+  transition: color 0.15s, box-shadow 0.15s;
+}
+
+.sl-markdown-content .tab > [role='tab']:hover {
+  color: var(--jk-text);
+}
+
+.sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
+  --sl-tab-color-border: var(--sl-color-text-accent);
+  color: var(--jk-text);
+  font-weight: 600;
+}
+
+/* ==========================================================================
    Code blocks — flat rounded panel, no terminal chrome or tab bar
    ========================================================================== */
 
