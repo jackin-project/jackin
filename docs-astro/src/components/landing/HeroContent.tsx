@@ -13,7 +13,7 @@ export function HeroContent() {
           jackin' drops AI coding agents into isolated Docker containers — full autonomy inside, your host untouched outside. One CLI. Same-path mounts. Per-agent state.
         </p>
         <div className="landing-hero-ctas">
-          <a className="landing-btn-primary" href="#why">Get Started →</a>
+          <a className="landing-btn-primary" href="#getstarted">Get Started →</a>
         </div>
       </div>
       <div className="landing-hero-right">

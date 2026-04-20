@@ -52,7 +52,7 @@ export function VocabularyDictionary() {
   const e = vocabularyEntries[activeIdx];
 
   return (
-    <section id="why" ref={sectionRef} className="landing-section landing-voc-scroll-section">
+    <section id="getstarted" ref={sectionRef} className="landing-section landing-voc-scroll-section">
       <div className="landing-voc-sticky">
         <div className="landing-shell">
           <div className="landing-sec-label">02 · Vocabulary</div>
