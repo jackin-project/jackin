@@ -2,6 +2,27 @@
 import Default from '@astrojs/starlight/components/Head.astro'
 ---
 
+{/* Runs FIRST — before any stylesheet that could block its execution.
+    Always syncs data-theme with localStorage so every page renders in
+    the correct theme from first paint (Starlight hardcodes data-theme
+    to 'dark' server-side, which flashed on navigations in light mode).
+    Also migrates old 'auto' values to 'dark' so the ThemeProvider that
+    runs later stays consistent with what we just set. */}
+<script is:inline>
+  (function () {
+    try {
+      var stored = localStorage.getItem('starlight-theme')
+      if (stored !== 'light' && stored !== 'dark') {
+        stored = 'dark'
+        localStorage.setItem('starlight-theme', 'dark')
+      }
+      document.documentElement.setAttribute('data-theme', stored)
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'dark')
+    }
+  })()
+</script>
+
 <Default><slot /></Default>
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -10,20 +31,3 @@ import Default from '@astrojs/starlight/components/Head.astro'
   rel="stylesheet"
   href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800;900&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&display=swap"
 />
-
-<!-- Force dark as the initial theme on first visit (landing is dark-only;
-     keeping docs consistent). Runs before Starlight's own theme script so
-     there's no flash. User toggle still wins — we only set dark when no
-     preference is stored. -->
-<script is:inline>
-  (function () {
-    try {
-      var stored = localStorage.getItem('starlight-theme');
-      if (!stored) {
-        document.documentElement.setAttribute('data-theme', 'dark');
-      }
-    } catch (e) {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    }
-  })();
-</script>
