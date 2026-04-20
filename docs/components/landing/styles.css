@@ -875,20 +875,6 @@ h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 30
 .landing-hero-ctas {
   display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
 }
-.landing-btn-primary {
-  background: var(--landing-text);
-  color: var(--landing-bg-deep);
-  font-family: 'Inter', sans-serif; font-weight: 600;
-  font-size: 14px;
-  padding: 13px 22px;
-  border: 1px solid var(--landing-text);
-  border-radius: 5px;
-  cursor: pointer;
-  text-decoration: none;
-  letter-spacing: -0.01em;
-  transition: transform 0.15s;
-}
-.landing-btn-primary:hover { transform: translateY(-1px); }
 
 .landing-hero-right { padding-top: 56px; }
 
