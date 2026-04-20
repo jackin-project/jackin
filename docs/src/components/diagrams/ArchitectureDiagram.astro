@@ -1,0 +1,288 @@
+---
+/**
+ * High-level architecture diagram for /reference/architecture.
+ *
+ * Single terminal-styled panel. Containment reads top-to-bottom via
+ * section labels and indentation — no ASCII tree characters, no
+ * nested fieldset frames. The Agent / DinD pair renders as two
+ * matching cards linked by an arrow labelled with the TCP endpoint;
+ * neither card wears a one-sided accent border, so they read as
+ * equal peers (which they are — the daemon relationship is the
+ * arrow, not one card's ownership of the other).
+ *
+ * Brand green is reserved for the CLI chip and the daemon arrow
+ * label — both are "the story the diagram is telling".
+ */
+---
+
+<figure class="jk-arch not-content" aria-label="jackin' runtime architecture: host machine running Docker Engine, with a per-agent network containing an Agent container linked to a DinD sidecar, plus three host-side persisted paths">
+  <div class="jk-arch-panel">
+    <header class="jk-arch-header">
+      <span class="jk-arch-dot" aria-hidden="true" />
+      <span class="jk-arch-dot" aria-hidden="true" />
+      <span class="jk-arch-dot" aria-hidden="true" />
+      <span class="jk-arch-title">runtime topology</span>
+    </header>
+
+    <div class="jk-arch-body">
+      <section class="jk-arch-section">
+        <h3 class="jk-arch-section-label">Host</h3>
+
+        <div class="jk-arch-row">
+          <span class="jk-arch-chip jk-arch-chip--accent">jackin CLI</span>
+          <span class="jk-arch-note">operator interface</span>
+        </div>
+
+        <div class="jk-arch-sub">
+          <div class="jk-arch-sub-label">Docker Engine</div>
+
+          <div class="jk-arch-sub">
+            <div class="jk-arch-sub-label jk-arch-sub-label--mono">
+              jackin-agent-smith-net
+              <span class="jk-arch-note">per-agent network</span>
+            </div>
+
+            <div class="jk-arch-pair">
+              <article class="jk-arch-service">
+                <h4 class="jk-arch-service-name">Agent Container</h4>
+                <p class="jk-arch-service-role">Claude Code · mounted dirs</p>
+              </article>
+
+              <div class="jk-arch-link" aria-hidden="true">
+                <svg width="64" height="22" viewBox="0 0 64 22" fill="none">
+                  <path d="M0 11 H56" stroke="currentColor" stroke-width="1.5" />
+                  <path d="M50 6 L56 11 L50 16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span class="jk-arch-link-label">tcp://dind:2376</span>
+              </div>
+
+              <article class="jk-arch-service">
+                <h4 class="jk-arch-service-name">DinD Sidecar</h4>
+                <p class="jk-arch-service-role">docker:dind · TLS certs volume</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <hr class="jk-arch-rule" />
+
+      <section class="jk-arch-section">
+        <h3 class="jk-arch-section-label">Persisted on host</h3>
+        <div class="jk-arch-mounts-grid">
+          <div class="jk-arch-mount">
+            <code>~/.jackin/data/</code>
+            <span>runtime state per instance</span>
+          </div>
+          <div class="jk-arch-mount">
+            <code>~/.jackin/agents/</code>
+            <span>cached agent repos</span>
+          </div>
+          <div class="jk-arch-mount">
+            <code>~/.config/jackin/</code>
+            <span>operator config</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</figure>
+
+<style>
+  .jk-arch {
+    margin: 1.5rem 0 2rem;
+    color: var(--jk-text);
+  }
+
+  .jk-arch-panel {
+    background: var(--jk-bg-deep);
+    border: 1px solid var(--jk-ui);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .jk-arch-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    background: var(--jk-panel);
+    border-bottom: 1px solid var(--jk-ui);
+  }
+  .jk-arch-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--jk-ui-strong);
+  }
+  .jk-arch-dot:first-child {
+    background: color-mix(in srgb, var(--jk-brand) 60%, var(--jk-text-ghost));
+  }
+  .jk-arch-title {
+    margin-left: auto;
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--jk-text-ghost);
+  }
+
+  .jk-arch-body { padding: 22px 24px; }
+
+  .jk-arch-section + .jk-arch-section { margin-top: 0; }
+
+  .jk-arch-section-label {
+    margin: 0 0 12px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--jk-text-dim);
+  }
+
+  /* First-level content under a section label sits flush; nested
+     levels use the .jk-arch-sub wrapper for indent + left guide. */
+  .jk-arch-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .jk-arch-sub {
+    position: relative;
+    padding-left: 20px;
+    margin-top: 14px;
+  }
+  /* Subtle vertical guide on the left of each nested level. Pure
+     geometry — replaces the ├─ / └─ glyphs with a single hairline
+     that reads as a containment rail rather than a font character. */
+  .jk-arch-sub::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 4px;
+    bottom: 4px;
+    width: 1px;
+    background: var(--jk-ui);
+  }
+
+  .jk-arch-sub-label {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--jk-text);
+    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+  }
+  .jk-arch-sub-label--mono {
+    font-family: var(--sl-font-system-mono);
+    color: var(--jk-brand);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .jk-arch-note {
+    color: var(--jk-text-ghost);
+    font-size: 0.8rem;
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+
+  .jk-arch-chip {
+    padding: 4px 12px;
+    background: var(--jk-panel);
+    border: 1px solid var(--jk-ui);
+    border-radius: 999px;
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .jk-arch-chip--accent {
+    color: var(--jk-brand);
+    border-color: color-mix(in srgb, var(--jk-brand) 50%, var(--jk-ui));
+  }
+
+  /* Agent ↔ DinD: two symmetric cards, no one-sided accents. */
+  .jk-arch-pair {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .jk-arch-service {
+    padding: 14px 16px;
+    background: var(--jk-panel);
+    border: 1px solid var(--jk-ui);
+    border-radius: 8px;
+    margin: 0;
+  }
+  .jk-arch-service-name {
+    margin: 0 0 4px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--jk-text);
+    letter-spacing: -0.005em;
+  }
+  .jk-arch-service-role {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--jk-text-dim);
+  }
+
+  .jk-arch-link {
+    align-self: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: var(--jk-brand);
+  }
+  .jk-arch-link-label {
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.72rem;
+    color: var(--jk-text-ghost);
+    white-space: nowrap;
+  }
+
+  .jk-arch-rule {
+    border: 0;
+    height: 1px;
+    background: var(--jk-ui);
+    margin: 22px 0;
+  }
+
+  .jk-arch-mounts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px 28px;
+  }
+  .jk-arch-mount {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .jk-arch-mount code {
+    color: var(--jk-brand);
+    background: transparent;
+    padding: 0;
+    font-size: 0.84rem;
+  }
+  .jk-arch-mount span {
+    color: var(--jk-text-dim);
+    font-size: 0.8rem;
+    line-height: 1.35;
+  }
+
+  @media (max-width: 640px) {
+    .jk-arch-body { padding: 18px 16px; }
+    .jk-arch-pair {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .jk-arch-link { transform: rotate(90deg); margin: 2px 0; }
+    .jk-arch-link-label { transform: rotate(-90deg); }
+  }
+</style>

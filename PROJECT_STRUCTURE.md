@@ -11,7 +11,7 @@ Quick navigation reference for AI agents working in this repository.
 | `AGENTS.md` | Shared instructions for all AI agents (testing, pre-commit, security) |
 | `CLAUDE.md` | Claude-specific pointer to `AGENTS.md` |
 | `RULES.md` | Project-wide conventions (docs go in `AGENTS.md`, not tool-specific files) |
-| `TODO.md` | Index of open design/engineering items (individual files in `todo/`) |
+| `TODO.md` | Pointer to roadmap docs (full design docs live under `docs/src/content/docs/reference/roadmap/`) |
 | `TESTING.md` | Test runner setup, commands, and pre-commit requirements |
 | `REVIEW_STATUS.md` | Consolidated active review findings and accepted exceptions |
 | `release.toml` | Release configuration |
@@ -20,21 +20,12 @@ Quick navigation reference for AI agents working in this repository.
 | `docker-bake.hcl` | Declarative Docker Bake build graph for the construct image |
 | `.gitignore` | Git ignore rules |
 
-## Open Items — `todo/`
+## Roadmap — `docs/src/content/docs/reference/roadmap/`
 
-Each file is a self-contained design document with problem statement, options, and related source files.
-
-| File | Topic |
-|---|---|
-| `construct-user-creation.md` | UID/GID remapping hack in derived images |
-| `dind-tls.md` | Unauthenticated Docker daemon on agent network |
-| `orphaned-dind-cleanup.md` | Sidecar left running when agent fails to start |
-| `onepassword-integration.md` | First-class secret injection at launch time |
-| `agent-source-trust.md` | Trust-on-first-use for third-party agent repos |
-| `bollard-migration.md` | Replace string-matched Docker errors with typed API |
-| `rootless-dind.md` | Reduce privileged container attack surface |
-| `sensitive-mount-warnings.md` | Warn before mounting `~/.ssh`, `~/.aws`, etc. |
-| `reproducibility-pinning.md` | Commit SHA pinning for agent repos |
+Self-contained design docs live alongside the rest of the Starlight
+docs site. Each page includes problem statement, options, and related
+source files. Browse via the sidebar (`Reference → Roadmap`) or on
+the deployed site at <https://jackin.tailrocks.com/reference/roadmap/>.
 
 ## Source Code — `src/`
 
@@ -49,7 +40,7 @@ Rust CLI binary. All modules are flat (no subdirectories).
 | `docker.rs` | Docker command builder — shell execution abstraction |
 | `workspace.rs` | Workspace resolution — mount specs, workdir, saved workspace lookup |
 | `config.rs` | TOML config persistence — agent registry, workspaces, mount scopes |
-| `manifest.rs` | Agent manifest parser (`jackin.toml` inside agent repos) |
+| `manifest.rs` | Agent manifest parser (`jackin.agent.toml` inside agent repos) |
 | `derived_image.rs` | Dockerfile generation for agent images from base construct |
 | `repo.rs` | Agent repo validation — required files, path traversal checks |
 | `repo_contract.rs` | Enforces agent Dockerfiles use the construct base image |
@@ -82,6 +73,7 @@ Maps 1:1 with the published site sidebar:
 | Guides | `guides/workspaces.mdx` | Workspace configuration |
 | | `guides/mounts.mdx` | Mount specs and scoping |
 | | `guides/agent-repos.mdx` | Agent repository structure |
+| | `guides/authentication.mdx` | Credential forwarding / in-container auth |
 | | `guides/security-model.mdx` | Isolation and permissions |
 | | `guides/comparison.mdx` | Comparison with alternatives |
 | Commands | `commands/load.mdx` | `jackin load` |
@@ -94,7 +86,7 @@ Maps 1:1 with the published site sidebar:
 | | `commands/config.mdx` | `jackin config` |
 | Developing Agents | `developing/creating-agents.mdx` | How to build agent repos |
 | | `developing/construct-image.mdx` | Base Docker image contents |
-| | `developing/agent-manifest.mdx` | `jackin.toml` reference |
+| | `developing/agent-manifest.mdx` | `jackin.agent.toml` reference |
 | Reference | `reference/configuration.mdx` | Config file format |
 | | `reference/architecture.mdx` | Container orchestration internals |
 | | `reference/roadmap.mdx` | Planned features |
@@ -103,11 +95,17 @@ Maps 1:1 with the published site sidebar:
 
 | File | Purpose |
 |---|---|
-| `docs/astro.config.mjs` | Sidebar structure, site metadata, edit links |
+| `docs/astro.config.ts` | Sidebar structure, site metadata, edit links, component overrides (TypeScript — all config is TS, no `.mjs`) |
 | `docs/package.json` | Bun dependencies |
 | `docs/bun.lock` | Locked deps |
-| `docs/src/styles/custom.css` | Theme overrides |
-| `docs/src/content.config.ts` | Astro content collection config |
+| `docs/src/styles/fonts.css` | Self-hosted fontsource imports + `Inter Black` `@font-face` for the wordmark |
+| `docs/src/styles/docs-theme.css` | Starlight chrome → brand tokens mapping |
+| `docs/src/styles/global.css` | Tailwind v4 entry + landing utility tokens |
+| `docs/src/content.config.ts` | Astro content collection config (Content Layer API via `docsLoader()`) |
+| `docs/src/components/overrides/` | Starlight component overrides (Head, SiteTitle, ThemeSelect, PageSidebar, SocialIcons) |
+| `docs/src/components/landing/` | React islands + standalone CSS for the landing route |
+| `docs/src/pages/index.astro` | Landing route — plain Astro page, NOT a Starlight content entry |
+| `docs/src/pages/og/[...slug].png.ts` | Per-page OG card generator (astro-og-canvas + local fontsource files) |
 
 ## Docker — `docker/`
 
@@ -117,7 +115,7 @@ Maps 1:1 with the published site sidebar:
 | `docker/construct/README.md` | Construct image documentation |
 | `docker/construct/install-plugins.sh` | Plugin installation script for the base image |
 | `docker/construct/zshrc` | Shell config injected into containers |
-| `docker/runtime/entrypoint.sh` | Container entrypoint — UID/GID remapping, DinD setup |
+| `docker/runtime/entrypoint.sh` | Container entrypoint at runtime — git identity setup, `gh auth setup-git` when gh is already authenticated (never performs login itself), plugin install, MCP server registration, pre-launch hook, then `exec claude`. UID/GID remapping happens during the derived-image build (`src/derived_image.rs`), not here. |
 
 ## CI/CD — `.github/workflows/`
 
@@ -137,7 +135,7 @@ When changing behavior, update both sides:
 | `src/workspace.rs` (mount logic) | `docs/.../guides/workspaces.mdx`, `docs/.../guides/mounts.mdx` |
 | `src/config.rs` (config format) | `docs/.../reference/configuration.mdx` |
 | `src/runtime.rs` (container lifecycle) | `docs/.../reference/architecture.mdx` |
-| `src/manifest.rs` (jackin.toml) | `docs/.../developing/agent-manifest.mdx` |
+| `src/manifest.rs` (jackin.agent.toml) | `docs/.../developing/agent-manifest.mdx` |
 | `src/derived_image.rs` (Dockerfile gen) | `docs/.../developing/construct-image.mdx` |
 | `src/repo.rs` / `src/repo_contract.rs` | `docs/.../guides/agent-repos.mdx` |
 | `docker/construct/Dockerfile` | `docs/.../developing/construct-image.mdx` |

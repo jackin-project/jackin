@@ -1,0 +1,29 @@
+---
+title: "Sensitive Mount Path Warnings"
+---
+
+
+**Status**: Resolved
+
+## Problem
+
+Mount validation is structurally good, but there are no guardrails for sensitive host paths like `~/.ssh`, `~/.aws`, `~/.gnupg`, etc. An operator can accidentally expose credentials without any warning.
+
+## Why It Matters
+
+- Mounting `~/.ssh` or `~/.aws` gives the agent container access to credentials that could be exfiltrated
+- Mistakes in mount config are easy to make and hard to notice
+- The isolation model is weakened if sensitive paths are mounted without awareness
+
+## Desired Behavior
+
+Warning-and-confirm model:
+- When a mount path matches a known sensitive pattern, display a clear warning explaining the risk
+- Require explicit user confirmation before proceeding
+- Allow the mount if confirmed — operators who know what they're doing should not be blocked
+- Sensitive path patterns: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, `~/.kube`, `~/.docker`, etc.
+
+## Related Files
+
+- `src/workspace.rs` — mount validation
+- `src/tui.rs` — confirmation prompts
