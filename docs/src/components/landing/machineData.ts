@@ -66,20 +66,24 @@ export const orgs: Record<string, Org> = {
       'your-org/frontend-engineer': { repo: 'your-org/jackin-frontend-engineer', tools: 'Node 22, Playwright, pnpm',  plugins: 'UI · a11y' },
       'your-org/backend-engineer':  { repo: 'your-org/jackin-backend-engineer',  tools: 'Go 1.23, Postgres, grpcurl', plugins: 'API · SQL' },
     },
+    // Project-scoped allowlists: each workspace pins the role that
+    // belongs in that codebase. Loading a frontend agent against the
+    // backend repo (or vice versa) is refused, keeping roles and
+    // projects lined up without relying on operator discipline.
     workspaces: {
-      'product': {
-        workdir: '~/Projects/your-org/product',
+      'web-app': {
+        workdir: '~/Projects/your-org/web-app',
         mounts: [
-          { src: '~/Projects/your-org/product',    dst: '~/Projects/your-org/product', ro: false },
+          { src: '~/Projects/your-org/web-app',    dst: '~/Projects/your-org/web-app', ro: false },
           { src: '~/Projects/your-org/shared-lib', dst: '/shared',                     ro: true },
         ],
-        allowed: null,
+        allowed: ['your-org/frontend-engineer'],
       },
-      'platform-api': {
-        workdir: '~/Projects/your-org/platform',
+      'api-service': {
+        workdir: '~/Projects/your-org/api-service',
         mounts: [
-          { src: '~/Projects/your-org/platform', dst: '~/Projects/your-org/platform', ro: false },
-          { src: '~/Projects/your-org/proto',    dst: '/proto',                      ro: true },
+          { src: '~/Projects/your-org/api-service', dst: '~/Projects/your-org/api-service', ro: false },
+          { src: '~/Projects/your-org/proto',       dst: '/proto',                          ro: true },
         ],
         allowed: ['your-org/backend-engineer'],
       },

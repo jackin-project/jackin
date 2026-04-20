@@ -42,6 +42,34 @@ const jsonLd = {
     url: 'https://github.com/jackin-project',
   },
 }
+
+// BreadcrumbList structured data — gives Google a reliable crumb trail
+// to render above the page title in search results. Derived from the
+// content path (e.g. reference/architecture → Reference › Architecture)
+// so it stays in sync with the sidebar without a second source of truth.
+const crumbSegments = routeId ? routeId.replace(/\.(mdx?|astro)$/i, '').split('/') : []
+const breadcrumbItems = [
+  {
+    '@type': 'ListItem',
+    position: 1,
+    name: 'Home',
+    item: 'https://jackin.tailrocks.com/',
+  },
+  ...crumbSegments.map((segment, i) => ({
+    '@type': 'ListItem',
+    position: i + 2,
+    name: segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, ' '),
+    item: new URL(
+      '/' + crumbSegments.slice(0, i + 1).join('/') + '/',
+      'https://jackin.tailrocks.com/',
+    ).toString(),
+  })),
+]
+const breadcrumbJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: breadcrumbItems,
+}
 ---
 
 {/* Runs FIRST — before any stylesheet that could block its execution.
@@ -114,6 +142,7 @@ const jsonLd = {
 
 {/* Structured data for rich Google search results. */}
 <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+<script type="application/ld+json" set:html={JSON.stringify(breadcrumbJsonLd)} />
 
 {/* Favicons — Starlight auto-injects a single SVG favicon; iOS and
     Android home-screen adds prefer PNG rasters + an apple-touch-icon

@@ -58,7 +58,7 @@ const tree = h(
       fontFamily: 'Inter',
     },
   },
-  // Label row: green dash + JACKIN PROJECT
+  // Label row: green dash + OPERATOR TERMINAL
   h(
     'div',
     {
@@ -79,7 +79,7 @@ const tree = h(
           fontWeight: 600,
         },
       },
-      'JACKIN PROJECT'
+      'OPERATOR TERMINAL'
     )
   ),
   // Wordmark

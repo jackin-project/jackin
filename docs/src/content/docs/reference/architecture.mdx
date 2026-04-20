@@ -3,39 +3,12 @@ title: Architecture
 description: How jackin' orchestrates containers, networks, and persisted state
 ---
 
+import ArchitectureDiagram from '../../../components/diagrams/ArchitectureDiagram.astro'
+import ImageLayers from '../../../components/diagrams/ImageLayers.astro'
+
 ## High-level architecture
 
-```
-┌──────────────────────────────────────────────────────┐
-│  Host Machine                                         │
-│                                                       │
-│  ┌─────────────┐                                      │
-│  │  jackin CLI │  Operator interface                  │
-│  └──────┬──────┘                                      │
-│         │                                             │
-│         ▼                                             │
-│  ┌──────────────────────────────────────────────┐     │
-│  │  Docker Engine                                │     │
-│  │                                               │     │
-│  │  ┌─────────────────────────────────────────┐  │     │
-│  │  │  jackin-agent-smith-net                 │  │     │
-│  │  │                                         │  │     │
-│  │  │  ┌──────────────┐  ┌─────────────────┐  │  │     │
-│  │  │  │ Agent         │  │ DinD Sidecar    │  │  │     │
-│  │  │  │ Container     │  │ (docker:dind)   │  │  │     │
-│  │  │  │               │  │                 │  │  │     │
-│  │  │  │ Claude Code   │──│ Docker daemon   │  │  │     │
-│  │  │  │ Agent tools   │  │ tcp://...:2376  │  │  │     │
-│  │  │  │ Mounted dirs  │  │                 │  │  │     │
-│  │  │  └──────────────┘  └─────────────────┘  │  │     │
-│  │  └─────────────────────────────────────────┘  │     │
-│  └──────────────────────────────────────────────┘     │
-│                                                       │
-│  ~/.jackin/data/   persisted runtime state            │
-│  ~/.jackin/agents/ cached agent repos                 │
-│  ~/.config/jackin/ operator config                    │
-└──────────────────────────────────────────────────────┘
-```
+<ArchitectureDiagram />
 
 jackin' deliberately uses your existing Docker engine as the operator control plane.
 
@@ -58,28 +31,7 @@ jackin's architecture is shaped by a few explicit decisions:
 
 ## Image layers
 
-```
-┌─────────────────────────────────┐
-│  Derived Layer (jackin-managed) │
-│  - UID/GID remapping            │
-│  - Claude Code installation     │
-│  - Pre-launch hook (if declared)│
-│  - Runtime entrypoint           │
-│  - Plugin bootstrap             │
-├─────────────────────────────────┤
-│  Agent Layer (agent repo)       │
-│  - Language runtimes            │
-│  - Development tools            │
-│  - Custom configuration         │
-├─────────────────────────────────┤
-│  Construct Base                 │
-│  - Debian Trixie                │
-│  - Docker CLI + Compose         │
-│  - Git, GitHub CLI              │
-│  - mise, ripgrep, fd, fzf       │
-│  - zsh + Oh My Zsh              │
-└─────────────────────────────────┘
-```
+<ImageLayers />
 
 The agent repo owns the environment layer. jackin' owns the derived runtime layer.
 

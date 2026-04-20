@@ -1,0 +1,164 @@
+---
+/**
+ * Image layers diagram for /reference/architecture.
+ *
+ * Replaces the stacked ASCII box block. Three cards stacked
+ * top-to-bottom with progressively stronger accent tones:
+ *   Derived (top, brand green)  — jackin' owns
+ *   Agent   (middle, soft green tint) — agent repo owns
+ *   Base    (bottom, neutral grey) — shared base image
+ * The visual stacking reinforces that upper layers build on lower
+ * ones. Each card carries its bullet list inline — no hover reveal
+ * needed; it's docs, not an interactive story.
+ */
+---
+
+<figure class="jk-layers not-content" aria-label="jackin' image layers: derived jackin-managed layer on top, agent repo layer in the middle, construct base on the bottom">
+  <div class="jk-layers-stack">
+    <article class="jk-layer jk-layer--derived">
+      <header class="jk-layer-header">
+        <span class="jk-layer-tag">Layer 3</span>
+        <h4 class="jk-layer-title">Derived Layer</h4>
+        <span class="jk-layer-owner">jackin-managed</span>
+      </header>
+      <ul class="jk-layer-items">
+        <li>UID/GID remapping</li>
+        <li>Claude Code installation</li>
+        <li>Pre-launch hook (if declared)</li>
+        <li>Runtime entrypoint</li>
+        <li>Plugin bootstrap</li>
+      </ul>
+    </article>
+
+    <article class="jk-layer jk-layer--agent">
+      <header class="jk-layer-header">
+        <span class="jk-layer-tag">Layer 2</span>
+        <h4 class="jk-layer-title">Agent Layer</h4>
+        <span class="jk-layer-owner">agent repo</span>
+      </header>
+      <ul class="jk-layer-items">
+        <li>Language runtimes</li>
+        <li>Development tools</li>
+        <li>Custom configuration</li>
+      </ul>
+    </article>
+
+    <article class="jk-layer jk-layer--base">
+      <header class="jk-layer-header">
+        <span class="jk-layer-tag">Layer 1</span>
+        <h4 class="jk-layer-title">Construct Base</h4>
+        <span class="jk-layer-owner">shared</span>
+      </header>
+      <ul class="jk-layer-items">
+        <li>Debian Trixie</li>
+        <li>Docker CLI + Compose</li>
+        <li>Git, GitHub CLI</li>
+        <li>mise, ripgrep, fd, fzf</li>
+        <li>zsh + Oh My Zsh</li>
+      </ul>
+    </article>
+  </div>
+</figure>
+
+<style>
+  .jk-layers {
+    margin: 1.5rem 0 2rem;
+    color: var(--jk-text);
+  }
+
+  .jk-layers-stack {
+    display: flex;
+    flex-direction: column;
+    /* Negative gap is handled per-card with margin-top + overlap border,
+       but a tiny positive gap keeps hairlines crisp across themes. */
+    gap: 2px;
+  }
+
+  .jk-layer {
+    position: relative;
+    padding: 16px 20px;
+    background: var(--jk-panel);
+    border: 1px solid var(--jk-ui);
+    border-radius: 8px;
+  }
+
+  /* Progressive left-accent tones — reinforces the ownership story
+     (brand green = jackin', muted green = agent, neutral = base). */
+  .jk-layer--derived {
+    border-left: 3px solid var(--jk-brand);
+    background:
+      linear-gradient(to right, color-mix(in srgb, var(--jk-brand) 6%, transparent), transparent 40%),
+      var(--jk-panel);
+  }
+  .jk-layer--agent {
+    border-left: 3px solid color-mix(in srgb, var(--jk-brand) 40%, var(--jk-text-ghost));
+  }
+  .jk-layer--base {
+    border-left: 3px solid var(--jk-text-ghost);
+  }
+
+  .jk-layer-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .jk-layer-tag {
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--jk-text-ghost);
+  }
+  .jk-layer-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--jk-text);
+  }
+  .jk-layer-owner {
+    margin-left: auto;
+    padding: 2px 8px;
+    border: 1px solid var(--jk-ui);
+    border-radius: 999px;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--jk-text-dim);
+  }
+  .jk-layer--derived .jk-layer-owner {
+    color: var(--jk-brand);
+    border-color: color-mix(in srgb, var(--jk-brand) 45%, var(--jk-ui));
+  }
+
+  .jk-layer-items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 4px 16px;
+    font-size: 0.88rem;
+    color: var(--jk-text-dim);
+  }
+  .jk-layer-items li {
+    padding-left: 14px;
+    position: relative;
+  }
+  .jk-layer-items li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.65em;
+    width: 6px;
+    height: 1px;
+    background: var(--jk-text-ghost);
+  }
+  .jk-layer--derived .jk-layer-items li::before { background: var(--jk-brand); }
+
+  @media (max-width: 640px) {
+    .jk-layer { padding: 14px; }
+    .jk-layer-owner { margin-left: 0; }
+  }
+</style>

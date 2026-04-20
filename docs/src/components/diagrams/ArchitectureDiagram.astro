@@ -1,0 +1,249 @@
+---
+/**
+ * High-level architecture diagram for /reference/architecture.
+ *
+ * Replaces an ASCII code block. Nested fieldset-style frames model the
+ * Host → Docker Engine → jackin-agent-smith-net hierarchy, with a
+ * side-by-side Agent container ↔ DinD sidecar pair inside, and a
+ * separate panel listing the host-side mount paths. Narrow viewports
+ * collapse the side-by-side pills into a stack and rotate the arrow
+ * 90° (see the @media block at the bottom of the styles).
+ */
+---
+
+<figure class="jk-diagram not-content" aria-label="jackin' runtime architecture: host machine containing Docker Engine containing an isolated network with an Agent container connected to a DinD sidecar">
+  <div class="jk-diagram-frame jk-diagram-frame--host">
+    <span class="jk-diagram-legend">Host Machine</span>
+
+    <div class="jk-diagram-cli">
+      <span class="jk-diagram-cli-name">jackin CLI</span>
+      <span class="jk-diagram-cli-role">Operator interface</span>
+    </div>
+
+    <div class="jk-diagram-arrow-down" aria-hidden="true">
+      <svg width="16" height="40" viewBox="0 0 16 40" fill="none">
+        <path d="M8 0 L8 34" stroke="currentColor" stroke-width="1.5" />
+        <path d="M3 30 L8 36 L13 30" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </div>
+
+    <div class="jk-diagram-frame jk-diagram-frame--docker">
+      <span class="jk-diagram-legend">Docker Engine</span>
+
+      <div class="jk-diagram-frame jk-diagram-frame--net">
+        <span class="jk-diagram-legend jk-diagram-legend--mono">jackin-agent-smith-net</span>
+
+        <div class="jk-diagram-pair">
+          <div class="jk-diagram-pill jk-diagram-pill--agent">
+            <span class="jk-diagram-pill-label">Agent Container</span>
+            <ul class="jk-diagram-pill-list">
+              <li>Claude Code</li>
+              <li>Agent tools</li>
+              <li>Mounted dirs</li>
+            </ul>
+          </div>
+
+          <div class="jk-diagram-link" aria-hidden="true">
+            <svg class="jk-diagram-link-arrow" width="56" height="16" viewBox="0 0 56 16" fill="none">
+              <path d="M0 8 H48" stroke="currentColor" stroke-width="1.5" />
+              <path d="M44 3 L50 8 L44 13" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="jk-diagram-link-label">tcp://…:2376</span>
+          </div>
+
+          <div class="jk-diagram-pill jk-diagram-pill--dind">
+            <span class="jk-diagram-pill-label">DinD Sidecar</span>
+            <ul class="jk-diagram-pill-list">
+              <li>docker:dind</li>
+              <li>Docker daemon</li>
+              <li>TLS certs volume</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="jk-diagram-mounts" role="list" aria-label="Host-side persisted paths">
+      <div class="jk-diagram-mount" role="listitem">
+        <code>~/.jackin/data/</code>
+        <span>persisted runtime state</span>
+      </div>
+      <div class="jk-diagram-mount" role="listitem">
+        <code>~/.jackin/agents/</code>
+        <span>cached agent repos</span>
+      </div>
+      <div class="jk-diagram-mount" role="listitem">
+        <code>~/.config/jackin/</code>
+        <span>operator config</span>
+      </div>
+    </div>
+  </div>
+</figure>
+
+<style>
+  .jk-diagram {
+    margin: 1.5rem 0 2rem;
+    font-family: var(--sl-font-system);
+    color: var(--jk-text);
+  }
+
+  /* Fieldset-style nested frame: a rounded panel with its label
+     floating in the top-left corner over the border. */
+  .jk-diagram-frame {
+    position: relative;
+    background: var(--jk-panel);
+    border: 1px solid var(--jk-ui);
+    border-radius: 10px;
+    padding: 24px 20px 20px;
+  }
+  .jk-diagram-frame + .jk-diagram-frame,
+  .jk-diagram-frame .jk-diagram-frame {
+    margin-top: 16px;
+  }
+  .jk-diagram-frame--host {
+    background:
+      radial-gradient(circle at top left, var(--jk-ui-subtle), transparent 60%),
+      var(--jk-panel);
+  }
+  .jk-diagram-frame--docker { background: var(--jk-bg-deep); }
+  .jk-diagram-frame--net {
+    background: var(--jk-panel);
+    border-color: color-mix(in srgb, var(--jk-brand) 35%, var(--jk-ui));
+  }
+
+  .jk-diagram-legend {
+    position: absolute;
+    top: -0.55em;
+    left: 14px;
+    padding: 0 8px;
+    background: var(--sl-color-bg);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--jk-text-dim);
+  }
+  .jk-diagram-legend--mono {
+    font-family: var(--sl-font-system-mono);
+    letter-spacing: 0.04em;
+    text-transform: none;
+    color: var(--jk-brand);
+  }
+
+  /* jackin CLI pill — first element inside the host frame. */
+  .jk-diagram-cli {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--jk-bg-deep);
+    border: 1px solid var(--jk-ui);
+    border-left: 2px solid var(--jk-brand);
+    border-radius: 6px;
+  }
+  .jk-diagram-cli-name {
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--jk-text);
+  }
+  .jk-diagram-cli-role {
+    font-size: 0.8rem;
+    color: var(--jk-text-dim);
+  }
+
+  .jk-diagram-arrow-down {
+    display: flex;
+    justify-content: flex-start;
+    padding-left: 28px;
+    color: var(--jk-text-ghost);
+  }
+
+  /* Agent ↔ DinD row. */
+  .jk-diagram-pair {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .jk-diagram-pill {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 16px;
+    background: var(--jk-bg-deep);
+    border: 1px solid var(--jk-ui);
+    border-radius: 8px;
+  }
+  .jk-diagram-pill--agent { border-left: 2px solid var(--jk-brand); }
+  .jk-diagram-pill--dind  { border-left: 2px solid var(--jk-text-ghost); }
+  .jk-diagram-pill-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--jk-text);
+  }
+  .jk-diagram-pill-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 0.85rem;
+    color: var(--jk-text-dim);
+  }
+  .jk-diagram-pill-list li { padding: 1px 0; }
+
+  .jk-diagram-link {
+    align-self: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: var(--jk-brand);
+  }
+  .jk-diagram-link-label {
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.72rem;
+    color: var(--jk-text-ghost);
+    white-space: nowrap;
+  }
+
+  /* Mount-path panel — sits under the inner frames, visually separated
+     from them because these are host-side paths, not Docker state. */
+  .jk-diagram-mounts {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px;
+    padding: 14px;
+    background: var(--jk-bg-deep);
+    border: 1px solid var(--jk-ui);
+    border-radius: 8px;
+  }
+  .jk-diagram-mount {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .jk-diagram-mount code {
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.8rem;
+    color: var(--jk-brand);
+    background: transparent;
+    padding: 0;
+  }
+  .jk-diagram-mount span {
+    font-size: 0.8rem;
+    color: var(--jk-text-dim);
+  }
+
+  @media (max-width: 640px) {
+    .jk-diagram-pair {
+      flex-direction: column;
+    }
+    .jk-diagram-link-arrow {
+      transform: rotate(90deg);
+    }
+    .jk-diagram-frame { padding: 24px 14px 16px; }
+  }
+</style>

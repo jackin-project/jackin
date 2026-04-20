@@ -5,12 +5,12 @@ const lightLabel = t('themeSelect.light')
 ---
 
 <starlight-theme-select class="jk-theme-toggle" role="group" aria-label={t('themeSelect.accessibleLabel')}>
-  <button type="button" data-theme-value="dark" aria-label={darkLabel} title={darkLabel}>
+  <button type="button" data-theme-value="dark" aria-label={darkLabel}>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
     </svg>
   </button>
-  <button type="button" data-theme-value="light" aria-label={lightLabel} title={lightLabel}>
+  <button type="button" data-theme-value="light" aria-label={lightLabel}>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4" />
       <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
@@ -49,13 +49,17 @@ const lightLabel = t('themeSelect.light')
   /** Apply the theme change with a cross-fade using the View Transitions
       API when available. The browser snapshots the page before/after the
       data-theme flip and animates between them — handles inherited colors
-      correctly where per-property CSS transitions don't. Browsers without
-      startViewTransition fall back to an instant snap. */
+      correctly where per-property CSS transitions don't. Skips the
+      animation for users who asked for reduced motion, and falls back
+      to an instant snap in browsers without startViewTransition. */
   function onThemeToggle(theme: Theme): void {
     const doc = document as Document & {
       startViewTransition?: (cb: () => void) => { finished: Promise<void> }
     }
-    if (typeof doc.startViewTransition === 'function') {
+    const reduceMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!reduceMotion && typeof doc.startViewTransition === 'function') {
       doc.startViewTransition(() => onThemeChange(theme))
     } else {
       onThemeChange(theme)
