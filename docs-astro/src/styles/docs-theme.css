@@ -265,6 +265,18 @@
   color: var(--jk-text-ghost);
 }
 
+/* <Steps> number badge — Starlight defaults to a muddy grey pill with
+   white text that clashes with both palettes. Swap to a transparent
+   circle with a Matrix-green outline + green number; connects visually
+   to the rest of the accent language (links, active sidebar pill,
+   TOC rail). */
+.sl-markdown-content .sl-steps > li::before {
+  color: var(--sl-color-text-accent);
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--sl-color-text-accent);
+  font-weight: 700;
+}
+
 /* ==========================================================================
    Inline code — panel chip, monospace
    ========================================================================== */
