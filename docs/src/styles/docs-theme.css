@@ -615,34 +615,22 @@ header.header {
    ========================================================================== */
 
 /* Tab underline architecture:
-   - Grey baseline is a pseudo-element on .tablist-wrapper — non-scrolling,
-     spans the full width of the tab row. Stays visually anchored regardless
-     of horizontal scroll on mobile.
-   - Green active indicator is a pseudo-element on the active <a> —
-     scrolls with the tab and paints AT THE SAME PIXEL ROW as the grey
-     baseline, so it looks like the grey line "turns green" under the
-     active tab. z-index ordering guarantees the green sits on top. */
-.sl-markdown-content .tablist-wrapper {
-  position: relative;
-}
-.sl-markdown-content .tablist-wrapper::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.14);
-  pointer-events: none;
-  z-index: 0;
-}
+   - Grey baseline is a border-bottom on [role='tablist']. Because the
+     tablist itself scrolls, the border spans the full tab row and
+     appears under every tab at every horizontal scroll position.
+   - Green active indicator is a pseudo-element on the active <a>,
+     positioned at bottom: -2px so it overlaps the tablist's border-bottom
+     exactly. z-index ordering paints the green on top.
 
-:root[data-theme='light'] .sl-markdown-content .tablist-wrapper::after {
-  background: rgba(0, 0, 0, 0.16);
-}
-
+   Earlier attempts using .tablist-wrapper::after rendered the grey line
+   at the wrapper's visible width only — when tabs overflowed and user
+   scrolled, the rightmost tabs ended up past the line. */
 .sl-markdown-content [role='tablist'] {
-  border-bottom: 0;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.14);
+}
+
+:root[data-theme='light'] .sl-markdown-content [role='tablist'] {
+  border-bottom-color: rgba(0, 0, 0, 0.16);
 }
 
 .sl-markdown-content .tab > [role='tab'] {
@@ -669,18 +657,64 @@ header.header {
   font-weight: 600;
 }
 
-/* Green indicator rides at the same pixel row as the wrapper's grey
-   baseline — the tab's height equals the wrapper's height (no padding
-   on the wrapper), so bottom: 0 on both pseudo-elements coincides. */
+/* Green indicator overlaps the tablist's border-bottom exactly — tab
+   bottom sits at tablist content-box bottom; ::after at bottom: -2px
+   reaches into the border-bottom area. z-index paints green over grey. */
 .sl-markdown-content .tab > [role='tab'][aria-selected='true']::after {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: -2px;
   height: 2px;
   background: var(--jk-brand);
   z-index: 1;
+}
+
+/* ==========================================================================
+   Mobile Tabs — swap the underlined-tab pattern for wrapping chips.
+   Horizontal scroll is poor UX on phones (labels hidden off-screen,
+   inconsistent active-indicator placement). Chips keep every label
+   visible, wrap across multiple rows when needed, and use the
+   brand-green fill + inverted text to signal the active selection.
+   ========================================================================== */
+
+@media (max-width: 50rem) {
+  .sl-markdown-content .tablist-wrapper {
+    overflow: visible;
+    border-bottom: 0;
+  }
+
+  .sl-markdown-content [role='tablist'] {
+    flex-wrap: wrap;
+    gap: 6px;
+    border-bottom: 0;
+  }
+
+  .sl-markdown-content .tab > [role='tab'] {
+    border: 1px solid var(--jk-ui-strong);
+    border-radius: 999px;
+    background: var(--jk-panel);
+    padding: 0.35rem 0.875rem;
+    font-size: 0.8125rem;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  }
+
+  .sl-markdown-content .tab > [role='tab']:hover {
+    border-color: var(--jk-text-dim);
+    color: var(--jk-text);
+  }
+
+  .sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
+    background: var(--jk-brand);
+    border-color: var(--jk-brand);
+    color: var(--jk-bg);
+  }
+
+  /* No underline on chip form — the fill communicates active state. */
+  .sl-markdown-content .tab > [role='tab'][aria-selected='true']::after {
+    display: none;
+  }
 }
 
 /* Hide the scrollbar on the tablist wrapper — it's a minor scroll axis
