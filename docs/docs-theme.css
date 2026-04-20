@@ -1,127 +1,19 @@
-/* Deeper docs chrome theming — brings Vocs's topnav, sidebar, and outline
-   closer to the landing's typography + geometry.
-   Scoped to exclude the landing (which overrides max-width etc. separately). */
+/* Docs chrome — Tempo-inspired neutral look on Vocs.
+   Landing pages (layout: landing) keep their own styling via .landing-root. */
 
-/* ===== Top nav ===== */
-.vocs_DesktopTopNav_item,
-.vocs_MobileTopNav .vocs_Link_styleless {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: lowercase;
+/* ===== Landing full-bleed overrides ===== */
+/* Break the landing out of Vocs's docs content-width cap + zero its gutters. */
+[data-layout="landing"] .vocs_DocsLayout_content,
+[data-layout="landing"] .vocs_Content {
+  max-width: none;
+  padding: 0;
 }
+/* Our own WordmarkFooter replaces Vocs's docs footer on the landing. */
+.vocs_Footer[data-layout="landing"] { display: none; }
 
-.vocs_DesktopTopNav_logo,
-.vocs_Sidebar_logo .vocs_NavLogo_logo {
-  font-family: 'Inter', system-ui, sans-serif;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
-/* Hairline under the topnav — matches landing's hero topnav gradient bottom edge */
-[data-layout='docs'] .vocs_DesktopTopNav::after,
-[data-layout='minimal'] .vocs_DesktopTopNav::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 1px;
-  background: var(--landing-ui, rgba(244, 247, 245, 0.1));
-}
-
-/* ===== Sidebar ===== */
-.vocs_Sidebar_sectionTitle {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--landing-text-ghost, #5e6a64);
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.vocs_Sidebar_sectionTitle::before {
-  content: '';
-  width: 14px;
-  height: 1px;
-  background: var(--landing-accent, #00ff41);
-}
-
-.vocs_Sidebar_item {
-  font-family: 'Inter', system-ui, sans-serif;
-  font-size: 13.5px;
-  letter-spacing: -0.005em;
-}
-
-.vocs_Sidebar_item[data-active='true'] {
-  color: var(--landing-accent, #00ff41) !important;
-  font-weight: 600;
-}
-
-.vocs_Sidebar_divider {
-  background: var(--landing-ui, rgba(244, 247, 245, 0.1)) !important;
-}
-
-/* ===== Outline (right rail — "On this page") ===== */
-.vocs_Outline {
-  font-family: 'Inter', system-ui, sans-serif;
-  font-size: 12.5px;
-}
-
-.vocs_Outline > div:first-child,
-.vocs_Outline_heading {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--landing-text-ghost, #5e6a64);
-}
-
-/* ===== Content headings — land the green-eyebrow treatment on H2s ===== */
-[data-layout='docs'] .vocs_H1 {
-  font-family: 'Inter', system-ui, sans-serif;
-  font-weight: 800;
-  letter-spacing: -0.028em;
-}
-
-[data-layout='docs'] .vocs_H2,
-[data-layout='docs'] .vocs_H3 {
-  font-family: 'Inter', system-ui, sans-serif;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-/* ===== Code blocks — lean toward the landing's terminal palette ===== */
-.vocs_CodeBlock {
-  border-color: var(--landing-ui-strong, rgba(244, 247, 245, 0.22));
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.vocs_CodeBlock .vocs_Pre,
-.vocs_CodeBlock .shiki {
-  background: #050605 !important;
-}
-
-.vocs_CodeTitle {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: lowercase;
-  color: var(--landing-text-ghost, #5e6a64);
-}
-
-/* Inline code (backtick chip in prose) — only apply chip styling when
-   NOT inside a code block. The cascade from .vocs_Code onto code tags
-   inside <pre> was putting a translucent white overlay on top of the
-   terminal bg and produced a double-background look. */
-:not(.vocs_Pre) > .vocs_Code {
-  font-size: 0.88em;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: rgba(244, 247, 245, 0.04);
-}
+/* ===== Fix: inline-code chip scope =====
+   .vocs_Code was double-stacking a translucent bg onto <code> inside <pre>.
+   Scope the chip rule to :not(.vocs_Pre) > .vocs_Code and reset inside pre. */
 .vocs_Pre .vocs_Code {
   background: transparent !important;
   border: 0 !important;
@@ -129,30 +21,24 @@
   border-radius: 0 !important;
 }
 
-/* ===== AI CTA (\"Ask in ChatGPT\") — Vocs applies uppercase + wide tracking
-   to .vocs_Button_button which, combined with our mono font override,
-   overflows the fixed-width CTA pill. Reset it to Inter with normal case. */
+/* ===== Fix: AI CTA ("Ask in ChatGPT") overflow =====
+   Vocs's .vocs_Button_button applies uppercase + 2.2px tracking; reset it. */
 .vocs_AiCtaDropdown_button,
 .vocs_AiCtaDropdown_buttonLeft,
 .vocs_AiCtaDropdown_buttonRight {
-  font-family: 'Inter', system-ui, sans-serif;
   font-size: 12px;
   letter-spacing: 0;
   text-transform: none;
 }
 
-/* ===== Socials + footer ===== */
-.vocs_Footer_editLink {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: lowercase;
+/* ===== Code block treatment =====
+   Fully opaque terminal bg + subtle border, rounded. */
+.vocs_CodeBlock {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
 }
-
-/* ===== Search trigger ===== */
-.vocs_DesktopSearch button,
-.vocs_DesktopSearch input {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 12px;
-  letter-spacing: 0.02em;
+.vocs_CodeBlock .vocs_Pre,
+.vocs_CodeBlock .shiki {
+  background: #111111 !important;
 }
