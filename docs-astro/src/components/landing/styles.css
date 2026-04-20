@@ -150,7 +150,7 @@ html {
   gap: 6px;
   cursor: pointer;
   letter-spacing: -0.01em;
-  transition: transform 0.15s, background 0.15s;
+  transition: box-shadow 0.2s, background 0.15s, border-color 0.15s;
   text-decoration: none;
 }
 .landing-btn-primary {
@@ -158,7 +158,9 @@ html {
   color: var(--landing-bg-deep);
   border: 1px solid var(--landing-text);
 }
-.landing-btn-primary:hover { transform: translateY(-1px); }
+.landing-btn-primary:hover {
+  box-shadow: 0 0 0 1px rgba(0, 255, 65, 0.35), 0 6px 20px rgba(0, 255, 65, 0.25);
+}
 .landing-btn-ghost {
   background: transparent;
   color: var(--landing-text);
@@ -170,7 +172,7 @@ html {
 .landing-btn-ghost:hover {
   background: rgba(255, 255, 255, 0.04);
   border-color: var(--landing-text);
-  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgba(0, 255, 65, 0.2), 0 6px 20px rgba(0, 255, 65, 0.15);
 }
 
 /* Footer (wordmark + meta) */
