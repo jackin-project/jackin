@@ -25,13 +25,13 @@ jackin' is a functional proof of concept with Claude Code as its first supported
 - Homebrew installation
 - Namespaced agent classes (e.g., `chainargos/frontend-engineer`)
 - Last-agent memory per workspace
-- Custom Claude plugin marketplaces in `jackin.agent.toml`
-- Sensitive mount path warnings (warn-and-confirm for `~/.ssh`, `~/.aws`, etc.)
-- Automatic orphaned DinD cleanup (pre-launch garbage collection)
-- `${env.VAR}` interpolation in env var prompts and defaults for dependent variables
-- `JACKIN_DIND_HOSTNAME` environment variable for agents to discover the DinD sidecar hostname
-- Agent source trust model (trust-on-first-use verification for third-party agent repos)
-- DinD TLS authentication with auto-generated certificates
+- [Custom Claude plugin marketplaces](/reference/roadmap/custom-plugin-marketplace/) in `jackin.agent.toml`
+- [Sensitive mount path warnings](/reference/roadmap/sensitive-mount-warnings/) (warn-and-confirm for `~/.ssh`, `~/.aws`, etc.)
+- [Automatic orphaned DinD cleanup](/reference/roadmap/orphaned-dind-cleanup/) (pre-launch garbage collection)
+- [`${env.VAR}` interpolation](/reference/roadmap/env-var-interpolation/) in env var prompts and defaults for dependent variables
+- [`JACKIN_DIND_HOSTNAME` environment variable](/reference/roadmap/dind-hostname-env-var/) for agents to discover the DinD sidecar hostname
+- [Agent source trust model](/reference/roadmap/agent-source-trust/) (trust-on-first-use verification for third-party agent repos)
+- [DinD TLS authentication](/reference/roadmap/dind-tls/) with auto-generated certificates
 
 ## Planned
 
@@ -51,14 +51,14 @@ The current implementation is Claude-specific end-to-end (manifest schema, deriv
 
 - **Network policy controls** — outbound domain filtering per agent class, similar to Docker Sandboxes' network policies
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
-- **Agent version pinning** — pin agent repos to tagged versions for reproducible builds, with explicit `--update` to advance (design in progress)
-- **Alternative isolation tiers** — explore stronger backends beyond plain container isolation for users who need them
+- **[Agent version pinning](/reference/roadmap/reproducibility-pinning/)** — pin agent repos to tagged versions for reproducible builds, with explicit `--update` to advance (design in progress)
+- **[Alternative isolation tiers](/reference/roadmap/selectable-sandbox-backends/)** — explore stronger backends beyond plain container isolation for users who need them, including [rootless DinD](/reference/roadmap/rootless-dind/) as a lighter-weight option
 
 ### Infrastructure improvements
 
-- **Construct user creation optimization** — move user creation to the derived layer to eliminate UID/GID remapping
-- **Docker API migration** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling
-- **1Password integration** — inject secrets from 1Password vaults without exposing them as files in the container
+- **[Construct user creation optimization](/reference/roadmap/construct-user-creation/)** — move user creation to the derived layer to eliminate UID/GID remapping
+- **[Docker API migration](/reference/roadmap/bollard-migration/)** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling
+- **[1Password integration](/reference/roadmap/onepassword-integration/)** — inject secrets from 1Password vaults without exposing them as files in the container
 
 <Aside type="tip">
 Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap → Open items** and **Roadmap → Resolved**. Each page is a self-contained proposal with problem statement, options, and related files.
