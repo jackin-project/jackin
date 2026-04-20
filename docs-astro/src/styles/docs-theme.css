@@ -1,36 +1,16 @@
-/* Docs chrome — designed to feel like the landing page.
+/* Docs chrome — one identity, two palettes.
 
-   The landing uses a dark-terminal aesthetic (--landing-bg #0a0b0a, Matrix
-   green accent #00ff41, monospace section labels). These docs adopt the
-   same identity in dark mode; light mode inverts surface/text while
-   keeping the green accent so the site reads as one product in either
-   theme.
-
-   Landing tokens are mirrored here (not imported from landing/styles.css)
-   so the docs layer is self-contained and Phase 4's landing refactor
-   doesn't couple to this file. */
+   All --jk-* design tokens are scoped to [data-theme='dark'] and
+   [data-theme='light']. Every downstream rule uses those tokens, so
+   surfaces/text/borders auto-adapt to the active theme. Dark is the
+   fallback (matches our default-dark stance) and also the identity
+   anchor (landing palette). Light inverts surface/text while keeping
+   the green accent so the product reads as one site in either mode. */
 
 :root {
-  /* ============================================================
-     Landing-matched design tokens
-     ============================================================ */
-  --jk-bg:            #0a0b0a;
-  --jk-bg-deep:       #050605;
-  --jk-panel:         #0f1110;
-  --jk-text:          #f4f7f5;
-  --jk-text-dim:      #9ca8a1;
-  --jk-text-ghost:    #5e6a64;
-  --jk-accent:        #00ff41;
-  --jk-accent-dim:    #00b82f;
-  --jk-ui:            rgba(244, 247, 245, 0.1);
-  --jk-ui-strong:     rgba(244, 247, 245, 0.22);
-  --jk-ui-subtle:     rgba(244, 247, 245, 0.05);
-
-  /* ============================================================
-     Starlight's gray ramp — surface grays used for bg/nav/sidebar/
-     hover/border chrome. NOT for body text. Keep mapped to Radix
-     tokens so light mode still resolves sensibly.
-     ============================================================ */
+  /* Starlight's gray ramp — surface grays for chrome, not text. Mapped
+     to Radix tokens from tempo-tokens.css so light-dark() handles both
+     modes. Overridden inside [data-theme='dark'] for finer control. */
   --sl-color-gray-1: var(--color-gray2);
   --sl-color-gray-2: var(--color-gray3);
   --sl-color-gray-3: var(--color-gray5);
@@ -39,31 +19,28 @@
   --sl-color-gray-6: var(--color-gray10);
   --sl-color-gray-7: var(--color-gray11);
 
-  /* ============================================================
-     Semantic — will be overridden per data-theme below.
-     ============================================================ */
-  --sl-color-black: var(--color-gray1);
-  --sl-color-white: var(--color-gray12);
-  --sl-color-bg: var(--color-gray1);
-  --sl-color-bg-nav: var(--color-gray1);
-  --sl-color-bg-sidebar: var(--color-gray1);
-  --sl-color-text: var(--color-gray12);
-  --sl-color-text-invert: var(--color-gray1);
-
-  --sl-color-hairline: var(--color-grayA4);
-  --sl-color-hairline-light: var(--color-grayA3);
-  --sl-color-hairline-shade: var(--color-grayA5);
-
-  --sl-color-bg-inline-code: var(--color-grayA3);
-
   /* Fonts — injected via src/components/overrides/Head.astro. */
   --sl-font: 'Inter', system-ui, sans-serif;
   --sl-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 
-  /* Layout */
+  /* Layout dimensions — match Vocs proportions. */
   --sl-sidebar-width: 19rem;
   --sl-content-width: 48rem;
   --sl-nav-height: 3.5rem;
+
+  /* Fallback --jk-* tokens (dark). Ensures tokens resolve before
+     data-theme gets applied to <html>. */
+  --jk-bg:         #0a0b0a;
+  --jk-bg-deep:    #050605;
+  --jk-panel:      #0f1110;
+  --jk-text:       #f4f7f5;
+  --jk-text-dim:   #9ca8a1;
+  --jk-text-ghost: #5e6a64;
+  --jk-accent:     #00ff41;
+  --jk-accent-dim: #00b82f;
+  --jk-ui:         rgba(244, 247, 245, 0.1);
+  --jk-ui-strong:  rgba(244, 247, 245, 0.22);
+  --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
 }
 
 /* ==========================================================================
@@ -72,6 +49,18 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
+
+  --jk-bg:         #0a0b0a;
+  --jk-bg-deep:    #050605;
+  --jk-panel:      #0f1110;
+  --jk-text:       #f4f7f5;
+  --jk-text-dim:   #9ca8a1;
+  --jk-text-ghost: #5e6a64;
+  --jk-accent:     #00ff41;
+  --jk-accent-dim: #00b82f;
+  --jk-ui:         rgba(244, 247, 245, 0.1);
+  --jk-ui-strong:  rgba(244, 247, 245, 0.22);
+  --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
 
   --sl-color-bg: var(--jk-bg);
   --sl-color-bg-nav: var(--jk-bg);
@@ -95,15 +84,12 @@
 
   --sl-color-bg-inline-code: var(--jk-panel);
 
-  /* Accent → Matrix green */
   --sl-color-accent-low:  rgba(0, 255, 65, 0.15);
   --sl-color-accent:      var(--jk-accent);
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
 
-  /* Expressive-code frame — single-border, panel-colored, matches landing's
-     install block. Explicitly zero out the inner frame borders that
-     expressive-code stacks on editor/terminal title bars. */
+  /* Expressive-code frame — single-border, panel-colored */
   --ec-brdRad: 10px;
   --ec-brdCol: var(--jk-ui);
   --ec-frm-edBg: var(--jk-panel);
@@ -122,25 +108,63 @@
 }
 
 /* ==========================================================================
-   Light mode — inverse surfaces, same green accent
+   Light mode — inverted surfaces, darker green accent for contrast
    ========================================================================== */
 
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --sl-color-bg: #ffffff;
-  --sl-color-bg-nav: #ffffff;
-  --sl-color-bg-sidebar: #fafafa;
-  --sl-color-text: var(--color-gray12);
+  --jk-bg:         #ffffff;
+  --jk-bg-deep:    #e9edeb;   /* recessed state (active toggle, pressed badge) */
+  --jk-panel:      #f6f8f7;   /* lifted surface (cards, pills, modals) */
+  --jk-text:       #1a1c1b;
+  --jk-text-dim:   #5d6460;
+  --jk-text-ghost: #8a928e;
+  --jk-accent:     #00b82f;   /* darker green — bright Matrix green washes on white */
+  --jk-accent-dim: #008f24;
+  --jk-ui:         rgba(0, 0, 0, 0.08);
+  --jk-ui-strong:  rgba(0, 0, 0, 0.18);
+  --jk-ui-subtle:  rgba(0, 0, 0, 0.04);
+
+  --sl-color-bg: var(--jk-bg);
+  --sl-color-bg-nav: var(--jk-bg);
+  --sl-color-bg-sidebar: var(--jk-bg);
+  --sl-color-black: var(--jk-bg);
+  --sl-color-white: var(--jk-text);
+  --sl-color-text: var(--jk-text);
+  --sl-color-text-invert: var(--jk-bg);
+
+  --sl-color-hairline: var(--jk-ui);
+  --sl-color-hairline-light: var(--jk-ui-subtle);
+  --sl-color-hairline-shade: var(--jk-ui-strong);
+
+  --sl-color-bg-inline-code: var(--jk-panel);
 
   --sl-color-accent-low:  rgba(0, 184, 47, 0.12);
-  --sl-color-accent:      var(--jk-accent-dim);
-  --sl-color-accent-high: var(--jk-accent-dim);
-  --sl-color-text-accent: var(--jk-accent-dim);
+  --sl-color-accent:      var(--jk-accent);
+  --sl-color-accent-high: var(--jk-accent);
+  --sl-color-text-accent: var(--jk-accent);
+
+  /* Expressive-code frame — same structure as dark, light-mode surfaces */
+  --ec-brdRad: 10px;
+  --ec-brdCol: var(--jk-ui);
+  --ec-frm-edBg: var(--jk-panel);
+  --ec-frm-edActTabBg: var(--jk-panel);
+  --ec-frm-edActTabIndBtmCol: transparent;
+  --ec-frm-edActTabIndTopCol: transparent;
+  --ec-frm-edTabBarBg: var(--jk-panel);
+  --ec-frm-edTabBarBrdBtmCol: transparent;
+  --ec-frm-edTabsMrgInlStart: 0;
+  --ec-frm-edTabsMrgBlkStart: 0;
+  --ec-frm-trmBg: var(--jk-panel);
+  --ec-frm-trmTtbBg: var(--jk-panel);
+  --ec-frm-trmTtbBrdBtmCol: transparent;
+  --ec-frm-inlBrdCol: transparent;
+  --ec-frm-frameBoxShdCssVal: none;
 }
 
 /* ==========================================================================
-   Dotted grid backdrop — subtle, docs-scoped (not behind code/content)
+   Dotted grid backdrop — dark mode only
    ========================================================================== */
 
 :root[data-theme='dark'] body {
@@ -160,35 +184,32 @@
   font-weight: 700;
 }
 
-/* Wider type scale than Starlight's default so h1 > h2 > h3 > h4 each
-   read as distinct tiers at a glance. Starlight's defaults put h2 and
-   h3 only 6px apart, which flattens the outline. */
 .sl-markdown-content h1 {
-  font-size: 2.75rem;   /* 44px */
+  font-size: 2.75rem;
   letter-spacing: -0.03em;
   line-height: 1.1;
 }
 
+/* h2 — muted green blend. Auto-works in both modes because --jk-text
+   flips (white in dark → dark in light) and text-accent flips too. */
 .sl-markdown-content h2 {
-  font-size: 2rem;      /* 32px */
+  font-size: 2rem;
   line-height: 1.2;
-  /* Desaturated Matrix green — matches the landing accent family but
-     muted enough to live on every section heading without shouting. */
   color: color-mix(in oklab, var(--sl-color-text-accent) 40%, var(--jk-text));
 }
 
 .sl-markdown-content h3 {
-  font-size: 1.375rem;  /* 22px */
+  font-size: 1.375rem;
   line-height: 1.3;
 }
 
 .sl-markdown-content h4 {
-  font-size: 1.125rem;  /* 18px */
+  font-size: 1.125rem;
   line-height: 1.4;
 }
 
 /* ==========================================================================
-   Inline code — panel chip, monospace, subtle green text on dark
+   Inline code — panel chip, monospace
    ========================================================================== */
 
 .sl-markdown-content :not(a, h1, h2, h3, h4, h5, h6) > code:not(:where(.not-content *)) {
@@ -201,22 +222,13 @@
   font-family: var(--sl-font-mono);
 }
 
-:root[data-theme='light'] .sl-markdown-content :not(a, h1, h2, h3, h4, h5, h6) > code:not(:where(.not-content *)) {
-  color: var(--color-gray12);
-  background: var(--color-grayA3);
-  border-color: var(--color-grayA4);
-}
-
-/* Inline code inside link — green */
 .sl-markdown-content a > code {
   color: var(--sl-color-text-accent) !important;
 }
 
 /* ==========================================================================
-   Sidebar — keep Starlight defaults for group labels (plain bold sans-serif)
-   and active-page pill (accent bg + inverted text). The accent resolves to
-   Matrix green in dark mode (see top of file) so the active item reads as a
-   bright green chip with dark text.
+   Sidebar — Starlight defaults for group labels + active-pill; we only
+   retint unstyled item text and hover state.
    ========================================================================== */
 
 .sidebar-content ul li a {
@@ -228,9 +240,6 @@
   color: var(--jk-text);
 }
 
-/* Active page — our base anchor rule is outside Starlight's @layer so it
-   beats their [aria-current='page'] rule. Restore invert color + keep
-   the accent-pill background. */
 .sidebar-content ul li a[aria-current='page'],
 .sidebar-content ul li a[aria-current='page']:hover,
 .sidebar-content ul li a[aria-current='page']:focus {
@@ -239,18 +248,9 @@
   font-weight: 600;
 }
 
-:root[data-theme='light'] .sidebar-content ul li a {
-  color: var(--color-gray11);
-}
-
-:root[data-theme='light'] .sidebar-content ul li a:hover {
-  color: var(--color-gray12);
-}
-
 /* ==========================================================================
-   Right-rail outline — monospace label, flat green active state, no rounded
-   hover pills (Starlight's default is border-radius: 0.25rem on each link —
-   we zero it out for a typography-only treatment that matches the landing).
+   Right-rail outline — tree structure; rails on nested groups only,
+   turn green when they contain the active heading.
    ========================================================================== */
 
 .right-sidebar-panel h2 {
@@ -274,29 +274,18 @@
   flex-shrink: 0;
 }
 
-/* TOC layout as a tree: top-level items are flat, each nested group has
-   its own vertical rail. A rail turns green only when one of its own
-   children is the active heading — not when a sibling's child is. The
-   parent anchor of an active child also gets green text so the section
-   reads as one highlighted group.
-
-   Rails on nested groups (not on the top-level) match how outline docs
-   typically signal "you're inside this subsection". */
-
 .right-sidebar-panel ul {
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
-/* Nested group rail — visible, grey by default */
 .right-sidebar-panel ul ul {
   margin-left: 0.75rem;
   border-left: 2px solid var(--jk-ui);
   transition: border-color 0.15s;
 }
 
-/* ...turns green when this group contains the active heading */
 .right-sidebar-panel ul ul:has(a[aria-current='true']) {
   border-left-color: var(--sl-color-text-accent);
 }
@@ -310,8 +299,6 @@
   padding-left: 0.75rem;
 }
 
-/* Top-level TOC items (h2s) — brighter than nested h3/h4s so the
-   outline reads as a hierarchy at a glance. */
 .right-sidebar-panel ul:not(ul ul) > li > a {
   color: var(--jk-text);
   font-weight: 500;
@@ -322,28 +309,18 @@
   background: transparent;
 }
 
-/* Active heading — green + weight */
 .right-sidebar-panel ul li a[aria-current='true'] {
   color: var(--sl-color-text-accent);
   background: transparent;
   font-weight: 500;
 }
 
-/* Parent of an active nested heading — also green, signals the section */
 .right-sidebar-panel ul li:has(> ul a[aria-current='true']) > a {
   color: var(--sl-color-text-accent);
 }
 
-:root[data-theme='light'] .right-sidebar-panel ul li a {
-  color: var(--color-gray10);
-}
-
-:root[data-theme='light'] .right-sidebar-panel ul li a:hover {
-  color: var(--color-gray12);
-}
-
 /* ==========================================================================
-   Header / top nav — hairline bottom, no heavy border
+   Header / top nav
    ========================================================================== */
 
 header.header {
@@ -353,7 +330,7 @@ header.header {
 }
 
 /* ==========================================================================
-   Site title — brand typography
+   Site title — wordmark styles live in overrides/SiteTitle.astro
    ========================================================================== */
 
 .site-title {
@@ -364,7 +341,7 @@ header.header {
 }
 
 /* ==========================================================================
-   Links in body copy — green, underline-on-hover
+   Body links — green with underline-on-hover
    ========================================================================== */
 
 .sl-markdown-content a:not(.sl-anchor-link, :where(.not-content *)) {
@@ -378,12 +355,7 @@ header.header {
   border-bottom-color: var(--sl-color-text-accent);
 }
 
-/* Heading anchor-link icon — no underline, no border; it's a pure icon.
-   SVG uses fill=currentcolor, so anchor color drives icon color. Hover
-   turns it green to match the rest of the accent system. Use an absolute
-   gap instead of em so h2 (32px) and h3 (22px) have the same visual
-   space between text and icon — em-based gap scaled with size and made
-   h2 feel distant. */
+/* Heading anchor-link icon */
 .sl-markdown-content .sl-heading-wrapper {
   --sl-anchor-icon-gap: 12px;
 }
@@ -401,10 +373,7 @@ header.header {
 }
 
 /* ==========================================================================
-   Code blocks — plain rounded panel, no terminal chrome, no tab bar.
-   We hide .header outright (which kills both the terminal three-dots
-   titlebar and the editor tab strip) so every block reads as one flat
-   code surface, consistent with the landing's install block.
+   Code blocks — flat rounded panel, no terminal chrome or tab bar
    ========================================================================== */
 
 .expressive-code .frame {
@@ -428,8 +397,7 @@ header.header {
 }
 
 /* ==========================================================================
-   Asides (note/tip/caution) — keep Starlight's semantic colors but match
-   the rounded/bordered surface treatment
+   Asides
    ========================================================================== */
 
 .starlight-aside {
@@ -438,13 +406,8 @@ header.header {
   background: var(--jk-panel);
 }
 
-:root[data-theme='light'] .starlight-aside {
-  background: #f6f8f7;
-  border-color: var(--color-grayA4);
-}
-
 /* ==========================================================================
-   Top-nav search — landing-style panel pill with green hover
+   Top-nav search — panel pill with green hover
    ========================================================================== */
 
 site-search button[data-open-modal] {
@@ -465,7 +428,6 @@ site-search button[data-open-modal] {
   }
 }
 
-/* ⌘K / Ctrl+K badge inside the search button */
 site-search button > kbd {
   background-color: var(--jk-bg-deep);
   border: 1px solid var(--jk-ui);
@@ -473,40 +435,17 @@ site-search button > kbd {
   font-family: var(--sl-font-mono);
 }
 
-/* Search dialog itself — panel surface, subtle border */
 site-search dialog {
   background-color: var(--jk-panel);
   border: 1px solid var(--jk-ui);
 }
 
 /* ==========================================================================
-   Theme select (Dark / Light / Auto) — green hover accent
+   Theme toggle styling lives in overrides/ThemeSelect.astro (scoped)
    ========================================================================== */
 
-starlight-theme-select label {
-  color: var(--jk-text-dim);
-  transition: color 0.15s;
-}
-
-starlight-theme-select label:hover {
-  color: var(--sl-color-text-accent);
-}
-
-starlight-theme-select select {
-  font-family: var(--sl-font-mono);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
-
-starlight-theme-select option {
-  background-color: var(--jk-panel);
-  color: var(--jk-text);
-  font-family: var(--sl-font);
-}
-
 /* ==========================================================================
-   Pagination (Previous / Next cards at page bottom) — landing card
-   treatment with green-on-hover
+   Pagination cards
    ========================================================================== */
 
 .pagination-links a {
@@ -535,7 +474,6 @@ starlight-theme-select option {
   color: var(--sl-color-text-accent);
 }
 
-/* The small "Previous" / "Next" label above the title — mono + ghost */
 .pagination-links a > span:not(.link-title) {
   font-family: var(--sl-font-mono);
   font-size: 11px;
