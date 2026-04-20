@@ -908,7 +908,10 @@ h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 30
 }
 
 /* ===== VOCS LAYOUT OVERRIDES ===== */
-/* Break the landing out of Vocs's docs content-width cap so it renders full-bleed. */
-[data-layout="landing"] .vocs_DocsLayout_content {
+/* Break the landing out of Vocs's docs content-width cap + zero its gutters
+   so Section 01 hero and the rest render full-bleed. */
+[data-layout="landing"] .vocs_DocsLayout_content,
+[data-layout="landing"] .vocs_Content {
   max-width: none;
+  padding: 0;
 }
