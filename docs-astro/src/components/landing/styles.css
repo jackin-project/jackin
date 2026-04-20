@@ -14,6 +14,18 @@
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
 }
 
+/* Normalise html/body on the landing page. Tailwind's preflight (which
+   zeroes default browser margins and sets body bg) is only loaded on
+   Starlight docs pages; the landing imports this file directly so it
+   needs its own tiny reset. Also paints body black so browser chrome
+   areas (rubber-band scroll, mobile address bar) match the landing. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--landing-bg);
+}
+
 /* When landing is the whole page (layout: landing), override body */
 .landing-root {
   background: var(--landing-bg);
