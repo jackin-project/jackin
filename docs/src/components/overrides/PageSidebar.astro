@@ -22,11 +22,22 @@ import TableOfContents from '@astrojs/starlight/components/TableOfContents.astro
 }
 
 <style>
+  /* Mobile: Starlight's .sl-hidden sets display: none on this panel
+     (the right rail is desktop-only; phones show MobileTableOfContents
+     above the article instead). Our scoped .right-sidebar-panel selector
+     wins over .sl-hidden on specificity, so without the media-query
+     guard below, the flex layout + wordmark leaked back onto mobile
+     and looked broken. Only opt in to the desktop layout at lg+. */
   .right-sidebar-panel {
     padding: 1rem var(--sl-sidebar-pad-x);
-    display: flex;
-    flex-direction: column;
-    min-height: calc(100vh - var(--sl-nav-height) - 2rem);
+  }
+
+  @media (min-width: 72rem) {
+    .right-sidebar-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - var(--sl-nav-height) - 2rem);
+    }
   }
 
   /* Use the full right-sidebar column width. Starlight's default caps
