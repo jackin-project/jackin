@@ -712,11 +712,52 @@ section.landing-section.landing-voc-scroll-section {
 }
 
 @media (max-width: 820px) {
-  section.landing-section.landing-voc-scroll-section { min-height: auto; }
-  .landing-voc-sticky { position: static; min-height: auto; padding: 96px 0; }
-  .landing-voc { grid-template-columns: 1fr; }
-  .landing-voc-list { border-right: none; border-bottom: 1px solid var(--landing-ui); }
-  .landing-voc-detail { padding: 32px 28px; min-height: 320px; }
+  /* Keep the sticky scroll-driven experience on mobile — just rearrange
+     the panel layout so everything fits the narrow viewport:
+     - Shorten the scroll distance (400vh vs 500vh) so swiping through
+       all terms on a phone takes less flinging.
+     - Collapse the panel to a single column.
+     - Turn the term rail into a horizontal scrollable strip at the top
+       so a user can still tap a term for random access. */
+  section.landing-section.landing-voc-scroll-section {
+    min-height: 400vh;
+  }
+  .landing-voc-sticky {
+    padding: 48px 0;
+  }
+  .landing-voc {
+    grid-template-columns: 1fr;
+    margin-top: 24px;
+  }
+  .landing-voc-list {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 6px 6px;
+    gap: 2px;
+    border-right: none;
+    border-bottom: 1px solid var(--landing-ui);
+  }
+  .landing-voc-list::-webkit-scrollbar { display: none; }
+  .landing-voc-item {
+    flex: 0 0 auto;
+    padding: 10px 14px;
+    white-space: nowrap;
+    gap: 6px;
+  }
+  .landing-voc-item.active::before { display: none; }
+  .landing-voc-item.active {
+    background: rgba(0, 255, 65, 0.12);
+    border-bottom: 2px solid var(--landing-accent);
+  }
+  .landing-voc-detail {
+    padding: 28px 22px 32px;
+    min-height: 340px;
+  }
+  .landing-detail-word { font-size: clamp(36px, 9vw, 52px); }
+  .landing-detail-def { font-size: 15px; line-height: 1.6; }
 }
 
 /* Section 7: Daily Loop */
