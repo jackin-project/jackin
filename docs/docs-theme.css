@@ -112,12 +112,33 @@
   color: var(--landing-text-ghost, #5e6a64);
 }
 
-/* Inline code stays JetBrains Mono via theme, but tighten the chip look */
-.vocs_Code {
+/* Inline code (backtick chip in prose) — only apply chip styling when
+   NOT inside a code block. The cascade from .vocs_Code onto code tags
+   inside <pre> was putting a translucent white overlay on top of the
+   terminal bg and produced a double-background look. */
+:not(.vocs_Pre) > .vocs_Code {
   font-size: 0.88em;
   padding: 1px 6px;
   border-radius: 3px;
   background: rgba(244, 247, 245, 0.04);
+}
+.vocs_Pre .vocs_Code {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+/* ===== AI CTA (\"Ask in ChatGPT\") — Vocs applies uppercase + wide tracking
+   to .vocs_Button_button which, combined with our mono font override,
+   overflows the fixed-width CTA pill. Reset it to Inter with normal case. */
+.vocs_AiCtaDropdown_button,
+.vocs_AiCtaDropdown_buttonLeft,
+.vocs_AiCtaDropdown_buttonRight {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 /* ===== Socials + footer ===== */
