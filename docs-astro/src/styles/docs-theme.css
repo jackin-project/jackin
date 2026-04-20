@@ -278,6 +278,62 @@
 }
 
 /* ==========================================================================
+   Tables — Starlight defaults to rows separated only by a full-weight
+   grey border from --sl-color-gray-5 with no cell padding on the first
+   column. In our palette the border renders heavy and the missing
+   left padding floats the first column out against the body text.
+   Replace with a bordered, hairline-ruled table with a subtle header bg.
+   ========================================================================== */
+
+.sl-markdown-content table:not(:where(.not-content *)) {
+  width: 100%;
+  border: 1px solid var(--jk-ui);
+  border-radius: 10px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  margin-block: 1.25rem;
+}
+
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+  border-bottom: 1px solid var(--jk-ui);
+  padding: 0.6rem 1rem;
+  vertical-align: top;
+}
+
+/* Override Starlight's zero first/last inline-padding — we want even
+   gutters inside the bordered table. */
+.sl-markdown-content :is(th:first-child, td:first-child):not(:where(.not-content *)) {
+  padding-inline-start: 1rem;
+}
+.sl-markdown-content :is(th:last-child, td:last-child):not(:where(.not-content *)) {
+  padding-inline-end: 1rem;
+}
+
+/* Drop the bottom border on the last row so it doesn't double with
+   the outer table border. */
+.sl-markdown-content tr:last-child :is(th, td):not(:where(.not-content *)) {
+  border-bottom: 0;
+}
+
+.sl-markdown-content thead:not(:where(.not-content *)) {
+  background: var(--jk-panel);
+}
+
+.sl-markdown-content th:not(:where(.not-content *)) {
+  color: var(--jk-text);
+  font-weight: 600;
+  font-size: 0.875rem;
+  letter-spacing: 0.01em;
+  text-align: start;
+}
+
+.sl-markdown-content td:not(:where(.not-content *)) {
+  color: var(--jk-text);
+  font-size: 0.9375rem;
+}
+
+/* ==========================================================================
    Inline code — panel chip, monospace
    ========================================================================== */
 
