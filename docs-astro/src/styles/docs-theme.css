@@ -190,46 +190,19 @@
 }
 
 /* ==========================================================================
-   Sidebar — landing-style group labels (JetBrains Mono, uppercase, green dash)
+   Sidebar — keep Starlight defaults for group labels (plain bold sans-serif)
+   and active-page pill (accent bg + inverted text). The accent resolves to
+   Matrix green in dark mode (see top of file) so the active item reads as a
+   bright green chip with dark text.
    ========================================================================== */
-
-.sidebar-content ul[class*='top-level'] > li > details > summary > .large,
-.sidebar-content ul[class*='top-level'] > li > .group-label > span,
-.sidebar-content summary .large {
-  font-family: var(--sl-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--jk-text-ghost);
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.sidebar-content ul[class*='top-level'] > li > details > summary > .large::before,
-.sidebar-content ul[class*='top-level'] > li > .group-label > span::before,
-.sidebar-content summary .large::before {
-  content: "";
-  width: 18px;
-  height: 1px;
-  background: var(--jk-accent);
-  flex-shrink: 0;
-}
 
 .sidebar-content ul li a {
   color: var(--jk-text-dim);
-  transition: color 0.1s;
+  transition: color 0.1s, background-color 0.1s;
 }
 
 .sidebar-content ul li a:hover {
   color: var(--jk-text);
-}
-
-.sidebar-content ul li a[aria-current='page'] {
-  color: var(--sl-color-text-accent);
-  font-weight: 500;
-  background: transparent;
 }
 
 :root[data-theme='light'] .sidebar-content ul li a {
