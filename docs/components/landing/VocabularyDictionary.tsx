@@ -39,6 +39,7 @@ export function VocabularyDictionary() {
   }, []);
 
   function jumpTo(i: number) {
+    if (typeof window === 'undefined') return;
     const section = sectionRef.current;
     if (!section) return;
     const vh = window.innerHeight;

@@ -13,9 +13,9 @@ export function HeroStage() {
         </div>
       </nav>
       <div className="landing-shell">
-        <section className="landing-hero">
+        <div className="landing-hero">
           <HeroContent />
-        </section>
+        </div>
       </div>
     </section>
   );
