@@ -1,0 +1,134 @@
+---
+title: Agent Repos
+description: How agent repositories work and how they're discovered
+---
+import { Aside } from '@astrojs/starlight/components'
+
+
+# Agent Repos
+
+## What is an agent repo?
+
+An agent repo is a GitHub repository that defines a specific agent class. It contains:
+
+1. A **Dockerfile** — the agent's environment definition (tools, languages, SDKs)
+2. A **manifest file** (`jackin.agent.toml`) — metadata about the agent
+
+When you run `jackin load agent-smith`, jackin' looks for a GitHub repo named `jackin-agent-smith` and builds a container from it.
+
+An agent repo is where you decide what kind of worker you are creating. In most teams, that means creating role-specific environments rather than one universal image. A frontend-oriented agent repo can install browser tooling and UI-focused plugins, while a backend-oriented repo can install server toolchains and database clients.
+
+An agent class is best thought of as a reusable tool profile. It is where you decide things like:
+
+- which language toolchains are installed
+- which helper scripts and shell defaults are present
+- which Claude plugins are installed
+- whether this is a frontend, backend, infra, or review-focused environment
+
+## Naming convention
+
+Agent repos follow the `jackin-{class-name}` naming pattern:
+
+| Class name | GitHub repo | Load command |
+|---|---|---|
+| `agent-smith` | `jackin-agent-smith` | `jackin load agent-smith` |
+| `neo` | `jackin-neo` | `jackin load neo` |
+| `the-architect` | `jackin-the-architect` | `jackin load the-architect` |
+
+### Namespaced agents
+
+Organizations can create agents under their namespace:
+
+| Class name | GitHub repo | Load command |
+|---|---|---|
+| `chainargos/frontend-engineer` | `chainargos/jackin-frontend-engineer` | `jackin load chainargos/frontend-engineer` |
+| `chainargos/backend-engineer` | `chainargos/jackin-backend-engineer` | `jackin load chainargos/backend-engineer` |
+| `chainargos/security-reviewer` | `chainargos/jackin-security-reviewer` | `jackin load chainargos/security-reviewer` |
+
+The namespace prefix maps directly to the GitHub organization or user.
+
+## When should you create another agent class?
+
+Create another agent class when the work needs a meaningfully different environment.
+
+Common reasons include:
+
+- frontend work needs Node, browser tooling, and UI-focused plugins
+- backend work needs Rust or Go toolchains, API clients, and database tools
+- infra work needs Terraform, cloud CLIs, and deployment helpers
+- security review work should have a smaller, audit-focused tool and plugin set
+- docs work may need writing or publishing tools without bringing in unrelated build systems
+
+The goal is not to create lots of arbitrary images. The goal is to avoid one kitchen-sink image that exposes every tool and plugin to every task.
+
+## Agent identity
+
+Agents can declare a display name in their manifest:
+
+```toml title="jackin.agent.toml"
+[identity]
+name = "Agent Smith"
+```
+
+This name appears in jackin's TUI and output. When omitted, the class selector name is used instead (e.g., `agent-smith`).
+
+## Caching
+
+Agent repos are cloned to `~/.jackin/agents/` on first load. Subsequent loads use the cached checkout. jackin' updates the repo on each load to keep the cache current.
+
+jackin' is intentionally strict about that cache:
+
+- if the cached repo's `origin` no longer matches the configured source, load fails
+- if the cached repo contains local changes or extra files, load fails
+
+This avoids silently building from a tampered or stale cache. If you intentionally edited the cached repo, remove it and let jackin' clone again.
+
+<Aside type="tip">
+Pass `--rebuild` to force jackin' to rebuild the Docker image from scratch. This is useful when the construct base image or agent Dockerfile has changed.
+</Aside>
+## The repo contract
+
+Every agent repo must satisfy a contract:
+
+1. **Must contain `jackin.agent.toml`** at the repository root
+2. **Must contain a Dockerfile** at the path declared in the manifest
+3. **The Dockerfile path must be relative** and must stay inside the repo checkout (no `../` escapes)
+4. **The final Dockerfile stage must use the construct base**:
+   ```dockerfile
+   FROM projectjackin/construct:trixie
+   ```
+   An optional alias is allowed:
+   ```dockerfile
+   FROM projectjackin/construct:trixie AS runtime
+   ```
+5. **Earlier stages may use any base image** — multi-stage builds are fully supported
+6. **No symlinks** — the derived build-context generator currently rejects symlinks
+
+<Aside type="caution">
+Agent repos only own their agent-specific environment layer. jackin' owns everything else: validating the contract, generating the derived Dockerfile, installing Claude Code, injecting the entrypoint, mounting workspaces, and wiring Docker-in-Docker.
+</Aside>
+## Example agent repo
+
+A minimal agent repo for a Node.js development agent:
+
+```toml title="jackin.agent.toml"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[identity]
+name = "Frontend Engineer"
+```
+
+```dockerfile title="Dockerfile"
+FROM projectjackin/construct:trixie
+
+# Install Node.js via mise
+RUN mise install node@22 && mise use --global node@22
+
+# Install common global packages
+RUN npm install -g typescript tsx prettier eslint
+```
+
+That's it. jackin' handles the rest — Claude installation, entrypoint, user mapping, state persistence, and DinD setup.

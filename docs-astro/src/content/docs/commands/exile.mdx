@@ -1,0 +1,32 @@
+---
+title: jackin exile
+description: "Pull every running agent out at once"
+---
+
+# jackin exile
+
+## Synopsis
+
+```bash
+jackin exile
+```
+
+Stop all running jackin'-managed agent containers. The nuclear option — use when you want a clean slate.
+
+In The Matrix, exile is the state of being disconnected from the system entirely.
+
+## What it does
+
+- Finds all running containers managed by jackin'
+- Stops each agent container
+- Stops each DinD sidecar container
+- Removes per-agent Docker networks
+
+## When to use
+
+- End of day cleanup
+- Before a system restart
+- When you want to free up Docker resources
+- Something went wrong and you want to start fresh
+
+Persisted state is **not** deleted. Agents will resume from their last state when loaded again. Use `jackin purge` to delete state.

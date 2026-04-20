@@ -1,0 +1,91 @@
+---
+title: jackin load
+description: "Jack an agent into the Matrix"
+---
+import { Aside } from '@astrojs/starlight/components'
+
+
+# jackin load
+
+## Synopsis
+
+```bash
+jackin load [SELECTOR] [TARGET] [OPTIONS]
+```
+
+Load an agent into an isolated Docker container. This is the primary command for starting an agent session.
+
+`SELECTOR` chooses the **agent class** (tool profile). `TARGET` chooses the **workspace or path** (file access boundary).
+
+## Arguments
+
+| Argument | Required | Description |
+|---|---|---|
+| `SELECTOR` | No | Agent class selector (e.g., `agent-smith`, `chainargos/backend-engineer`). When omitted, uses the last-used or default agent for the workspace. |
+| `TARGET` | No | Path, `path:container-dest`, or saved workspace name. Defaults to the current directory. |
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--mount <SPEC>` | Additional bind-mount spec. Repeatable. Format: `path[:ro]` or `src:dst[:ro]` |
+| `--rebuild` | Force rebuild the Docker image (updates Claude to latest version) |
+| `--no-intro` | Skip the animated intro sequence |
+| `--debug` | Print raw container output for troubleshooting |
+
+## Examples
+
+```bash
+# Use workspace + last agent for current directory
+jackin load
+
+# Force fresh Claude install
+jackin load --rebuild
+
+# Load a specific agent into current directory
+jackin load agent-smith
+
+# Load into a specific path
+jackin load agent-smith ~/Projects/my-app
+
+# Path with custom container destination
+jackin load agent-smith ~/Projects/my-app:/app
+
+# Load into a saved workspace
+jackin load agent-smith big-monorepo
+
+# Workspace with additional mounts
+jackin load agent-smith big-monorepo --mount ~/extra-data
+
+# Path with read-only additional mount
+jackin load agent-smith ~/app --mount ~/cache:/cache:ro
+```
+
+## What happens
+
+1. Resolves the agent class and clones/updates its repository
+2. Validates the agent repo contract (`jackin.agent.toml` + Dockerfile) with strict manifest parsing
+3. **If the agent source has never been trusted**, prompts the operator to review and confirm before proceeding (see [Agent source trust](/guides/security-model#4-agent-source-trust))
+4. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
+5. Prompts for interactive environment variables declared in the manifest
+6. Generates and builds a derived Docker image (cached if unchanged)
+7. Creates a per-agent Docker network and DinD sidecar
+8. Launches the agent container with all resolved mounts and environment variables
+9. Runs the pre-launch hook if declared
+10. Starts Claude Code with `--dangerously-skip-permissions`
+
+<Aside type="note">
+If the agent manifest declares interactive environment variables, `jackin load` prompts for their values before building the Docker image. This ensures no build time is wasted if you cancel.
+</Aside>
+<Aside type="caution">
+Third-party agents (namespaced selectors like `org/agent-name`) require trust confirmation on first use. jackin' will show the agent name and git URL and ask you to confirm before building. You can pre-trust with `jackin config trust grant org/agent-name` or revoke with `jackin config trust revoke org/agent-name`. See [Agent source trust](/guides/security-model#4-agent-source-trust) for details.
+</Aside>
+<Aside type="note">
+If the cached agent repo has been locally modified, contains extra files, or its git `origin` no longer matches the configured source, `jackin load` stops with an error instead of trusting that cache.
+</Aside>
+<Aside type="caution">
+If two resolved mounts target the same container destination, `jackin load` fails with a conflict error. It does not silently override one mount with another.
+</Aside>
+<Aside type="tip">
+If no selector is given and the current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace's default or last-used agent is used automatically.
+</Aside>

@@ -1,0 +1,181 @@
+---
+title: Creating an Agent
+description: Build your own agent repo with a custom toolchain
+---
+import { Aside, Steps } from '@astrojs/starlight/components'
+
+
+# Creating an Agent
+
+## Overview
+
+Creating a custom agent lets you define a specialized environment for a specific type of work. A Rust agent includes the Rust toolchain. A Python data science agent includes Jupyter, pandas, and scipy. You define the tools — jackin' handles the rest.
+
+## Step by step
+
+<Steps>
+1. **Create a GitHub repository**
+
+   Name it `jackin-{your-agent-name}`. For example, `jackin-rustacean` for a Rust-focused agent.
+
+2. **Create the manifest file**
+
+   ```toml
+   dockerfile = "Dockerfile"
+
+   [claude]
+   plugins = []
+
+   [identity]
+   name = "Rustacean"
+   ```
+
+3. **Create the Dockerfile**
+
+   ```dockerfile
+   FROM projectjackin/construct:trixie
+
+   # Install Rust via mise
+   RUN mise install rust@stable && mise use --global rust@stable
+
+   # Install additional Rust tools
+   RUN cargo install cargo-nextest cargo-watch
+   ```
+
+4. **Push to GitHub**
+
+   ```bash
+   git add -A && git commit -m "Initial agent setup"
+   git push origin main
+   ```
+
+5. **Load your agent**
+
+   ```bash
+   jackin load rustacean
+   ```
+</Steps>
+## Dockerfile guidelines
+
+### The construct base is required
+
+Your final stage **must** start from the construct image:
+
+```dockerfile
+FROM projectjackin/construct:trixie
+```
+
+<Aside type="caution">
+This is the literal string jackin' checks for. `FROM projectjackin/construct:latest` or any other tag will fail validation.
+</Aside>
+### Multi-stage builds are supported
+
+Use earlier stages for compilation or asset preparation:
+
+```dockerfile
+# Build stage — use any base image
+FROM rust:1.95.0-slim AS builder
+WORKDIR /build
+COPY tools/ .
+RUN cargo build --release
+
+# Final stage — must use the construct
+FROM projectjackin/construct:trixie
+COPY --from=builder /build/target/release/my-tool /usr/local/bin/
+```
+
+### Use mise for language management
+
+The construct ships with [mise](https://mise.jdx.dev/) — a polyglot version manager. Use it to install languages:
+
+```dockerfile
+# Node.js
+RUN mise install node@22 && mise use --global node@22
+
+# Python
+RUN mise install python@3.12 && mise use --global python@3.12
+
+# Go
+RUN mise install go@1.23 && mise use --global go@1.23
+
+# Multiple languages
+RUN mise install node@22 python@3.12 go@1.23 && \
+    mise use --global node@22 python@3.12 go@1.23
+```
+
+### Install packages as the claude user
+
+The construct switches to the `claude` user. Your Dockerfile commands run as that user. If you need root access:
+
+```dockerfile
+USER root
+RUN apt-get update && apt-get install -y some-package
+USER claude
+```
+
+## Claude plugins
+
+Agent repos can declare Claude Code plugins to install. Add them to the `[claude]` section in your manifest:
+
+```toml [jackin.agent.toml]
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+
+[identity]
+name = "My Agent"
+```
+
+These plugin IDs are written into the agent's runtime state and installed automatically when the container starts.
+
+If you need plugins from a custom marketplace, declare the marketplace separately and keep plugin IDs fully qualified:
+
+```toml [jackin.agent.toml]
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+
+[identity]
+name = "My Agent"
+```
+
+jackin adds each declared marketplace at container startup, then installs each plugin ID exactly as written.
+
+## Testing your agent
+
+The fastest way to test is to load it:
+
+```bash
+jackin load your-agent-name --rebuild
+```
+
+The `--rebuild` flag forces a fresh image build, picking up any Dockerfile changes.
+
+Use `--debug` to see raw Docker output if something goes wrong:
+
+```bash
+jackin load your-agent-name --rebuild --debug
+```
+
+## Example agents
+
+| Agent | Purpose | Repository |
+|---|---|---|
+| **Agent Smith** | Default general-purpose agent | [jackin-project/jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) |
+| **The Architect** | Rust development (used for jackin' itself) | [jackin-project/jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) |
+
+These repos are good starting points when creating your own agent. Agent Smith is intentionally minimal, while The Architect shows a more involved setup with Rust tooling and build dependencies.
