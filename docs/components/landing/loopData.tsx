@@ -21,7 +21,7 @@ export const loopFrames: LoopFrame[] = [
         <span className="p">$</span> <span className="cmd">cd ~/Projects/my-app</span>{'\n\n'}
         <span className="c"># jack in</span>{'\n'}
         <span className="p">$</span> <span className="cmd">jackin load agent-smith</span>{'\n'}
-        <span className="arrow">{'  → Pulling construct:trixie     '}</span><span className="ok">OK</span>{'\n'}
+        <span className="arrow">{'  → Pulling construct:trixie      '}</span><span className="ok">OK</span>{'\n'}
         <span className="arrow">{'  → Cloning agent-smith           '}</span><span className="ok">OK</span>{'\n'}
         <span className="arrow">{'  → Building derived image        '}</span><span className="ok">OK</span>{'\n'}
         <span className="arrow">{'  → Launching DinD sidecar        '}</span><span className="ok">OK</span>{'\n\n'}
