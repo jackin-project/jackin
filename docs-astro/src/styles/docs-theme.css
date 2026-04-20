@@ -442,3 +442,113 @@ header.header {
   background: #f6f8f7;
   border-color: var(--color-grayA4);
 }
+
+/* ==========================================================================
+   Top-nav search — landing-style panel pill with green hover
+   ========================================================================== */
+
+site-search button[data-open-modal] {
+  color: var(--jk-text-dim);
+}
+
+@media (min-width: 50rem) {
+  site-search button[data-open-modal] {
+    background-color: var(--jk-panel);
+    border: 1px solid var(--jk-ui);
+    border-radius: 10px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  site-search button[data-open-modal]:hover {
+    border-color: var(--sl-color-text-accent);
+    color: var(--jk-text);
+  }
+}
+
+/* ⌘K / Ctrl+K badge inside the search button */
+site-search button > kbd {
+  background-color: var(--jk-bg-deep);
+  border: 1px solid var(--jk-ui);
+  color: var(--jk-text-dim);
+  font-family: var(--sl-font-mono);
+}
+
+/* Search dialog itself — panel surface, subtle border */
+site-search dialog {
+  background-color: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+}
+
+/* ==========================================================================
+   Theme select (Dark / Light / Auto) — green hover accent
+   ========================================================================== */
+
+starlight-theme-select label {
+  color: var(--jk-text-dim);
+  transition: color 0.15s;
+}
+
+starlight-theme-select label:hover {
+  color: var(--sl-color-text-accent);
+}
+
+starlight-theme-select select {
+  font-family: var(--sl-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+starlight-theme-select option {
+  background-color: var(--jk-panel);
+  color: var(--jk-text);
+  font-family: var(--sl-font);
+}
+
+/* ==========================================================================
+   Pagination (Previous / Next cards at page bottom) — landing card
+   treatment with green-on-hover
+   ========================================================================== */
+
+.pagination-links a {
+  border: 1px solid var(--jk-ui);
+  border-radius: 10px;
+  background: var(--jk-panel);
+  color: var(--jk-text-dim);
+  box-shadow: none;
+  transition: border-color 0.15s, color 0.15s, transform 0.15s;
+}
+
+.pagination-links a:hover {
+  border-color: var(--sl-color-text-accent);
+  color: var(--jk-text);
+  transform: translateY(-1px);
+}
+
+.pagination-links a .link-title {
+  color: var(--jk-text);
+  font-size: 1.125rem;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+
+.pagination-links a:hover .link-title {
+  color: var(--sl-color-text-accent);
+}
+
+/* The small "Previous" / "Next" label above the title — mono + ghost */
+.pagination-links a > span:not(.link-title) {
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--jk-text-ghost);
+}
+
+.pagination-links a svg {
+  color: var(--jk-text-ghost);
+  transition: color 0.15s;
+}
+
+.pagination-links a:hover svg {
+  color: var(--sl-color-text-accent);
+}
