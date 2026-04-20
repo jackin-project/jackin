@@ -334,3 +334,52 @@
 .landing-builder-tab.active { color: var(--landing-text); background: rgba(255,255,255,0.05); }
 .landing-builder-tab:hover:not(.active) { color: var(--landing-text-dim); }
 .landing-builder-tabbed .landing-builder-body { min-height: 240px; }
+
+/* Section 4: The approach */
+.landing-approach-grid { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.landing-approach-card {
+  padding: 32px 32px 30px;
+  border: 1px solid rgba(0, 255, 65, 0.3);
+  border-radius: 10px;
+  background: rgba(0, 255, 65, 0.025);
+  position: relative;
+  transition:
+    transform 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    border-color 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    box-shadow 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.landing-approach-card:hover {
+  border-color: rgba(0, 255, 65, 0.55);
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px rgba(0,255,65,0.1), 0 0 60px rgba(0,255,65,0.12), 0 20px 40px rgba(0,0,0,0.4);
+}
+.landing-approach-card .landing-route { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--landing-accent); letter-spacing: 0.25em; text-transform: uppercase; font-weight: 600; margin-bottom: 14px; }
+.landing-approach-card h3 { font-family: 'Inter', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--landing-text); margin: 0 0 14px; }
+.landing-approach-card p { color: var(--landing-text-dim); font-size: 15px; line-height: 1.6; margin: 0 0 22px; }
+.landing-approach-card p em { color: var(--landing-text); font-style: normal; font-weight: 500; }
+.landing-approach-cmd { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-accent); background: rgba(0, 255, 65, 0.08); border: 1px solid rgba(0, 255, 65, 0.3); padding: 9px 14px; border-radius: 5px; }
+.landing-approach-cmd .lbl { color: var(--landing-text-ghost); text-transform: uppercase; font-size: 10px; letter-spacing: 0.15em; }
+.landing-approach-repo { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--landing-text-ghost); padding: 4px 0 0 4px; margin-top: 8px; }
+.landing-approach-repo .lbl { text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.18em; }
+.landing-approach-repo .repo-path { color: var(--landing-text-dim); }
+
+.landing-approach-transition { margin-top: 44px; text-align: center; font-family: 'Fraunces', serif; font-style: italic; font-size: clamp(18px, 2.2vw, 24px); color: var(--landing-text); letter-spacing: -0.01em; }
+.landing-approach-transition .accent { color: var(--landing-accent); font-style: normal; font-weight: 500; }
+
+/* Section 4: Toolset chips (Route 01) */
+.landing-toolset { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0 16px; }
+.landing-toolset-chip {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  color: var(--landing-text);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+.landing-toolset-chip.chip-plugin { color: var(--landing-accent); background: rgba(0, 255, 65, 0.06); border-color: rgba(0, 255, 65, 0.3); }
+.landing-approach-note { color: var(--landing-text-dim); font-size: 13.5px; font-style: italic; margin: 0 0 22px; }
+
+@media (max-width: 880px) {
+  .landing-approach-grid { grid-template-columns: 1fr; }
+}
