@@ -29,8 +29,13 @@ import TableOfContents from '@astrojs/starlight/components/TableOfContents.astro
     min-height: calc(100vh - var(--sl-nav-height) - 2rem);
   }
 
+  /* Use the full right-sidebar column width. Starlight's default caps
+     .sl-container at 25% of remaining viewport (even their own code
+     comments it as "MAGIC NUMBER 🥲") which leaves the TOC artificially
+     narrow. Let it fill its parent and respect the panel's horizontal
+     padding. */
   .sl-container {
-    width: calc(var(--sl-sidebar-width) - 2 * var(--sl-sidebar-pad-x));
+    width: 100%;
   }
 
   /* Landing-footer-wordmark transplanted into the right sidebar. Sits at
@@ -56,18 +61,5 @@ import TableOfContents from '@astrojs/starlight/components/TableOfContents.astro
 
   :root[data-theme='light'] .jk-sidebar-wordmark .tick {
     text-shadow: none;
-  }
-
-  @media (min-width: 72rem) {
-    .sl-container {
-      max-width: calc(
-        (
-          (
-              100vw - var(--sl-sidebar-width) - 2 * var(--sl-content-pad-x) - 2 *
-                var(--sl-sidebar-pad-x)
-            ) * 0.25
-        )
-      );
-    }
   }
 </style>
