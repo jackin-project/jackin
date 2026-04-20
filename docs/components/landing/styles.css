@@ -891,10 +891,13 @@ h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 30
 /* ===== FOCUS STYLES ===== */
 .landing-org-tab:focus-visible,
 .landing-machine-opt:focus-visible,
-.landing-code-tab:focus-visible,
-.landing-voc-item:focus-visible {
+.landing-code-tab:focus-visible {
   outline: 2px solid var(--landing-accent);
   outline-offset: 2px;
+}
+.landing-voc-item:focus-visible {
+  outline: 2px solid var(--landing-accent);
+  outline-offset: -2px;
 }
 
 /* ===== REDUCED MOTION ===== */
