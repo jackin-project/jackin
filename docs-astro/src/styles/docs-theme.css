@@ -466,6 +466,22 @@ header.header {
 }
 
 /* ==========================================================================
+   Top-nav social icons (GitHub) — plain fg color, green on hover.
+   Starlight defaults to accent-green for the resting state, but the user
+   wanted the icon to read as a neutral glyph (white on dark, near-black
+   on light) that only pops on interaction.
+   ========================================================================== */
+
+.social-icons a {
+  color: var(--jk-text);
+}
+
+.social-icons a:hover,
+.social-icons a:focus {
+  color: var(--sl-color-text-accent);
+}
+
+/* ==========================================================================
    Top-nav search — panel pill with green hover
    ========================================================================== */
 
