@@ -175,6 +175,26 @@
 }
 
 /* ==========================================================================
+   Theme-change transition — toggled on <html> by overrides/ThemeSelect.astro
+   for ~350ms around each theme flip. Scoped to a class so hovers/navigation
+   don't get accidental fades. Applies to every element so sidebars, cards,
+   rails, buttons, and text all cross-fade together.
+   ========================================================================== */
+
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition:
+    background-color 300ms ease,
+    color 300ms ease,
+    border-color 300ms ease,
+    fill 300ms ease,
+    stroke 300ms ease,
+    box-shadow 300ms ease !important;
+}
+
+/* ==========================================================================
    Typography — landing-matched weight + tracking on headings
    ========================================================================== */
 

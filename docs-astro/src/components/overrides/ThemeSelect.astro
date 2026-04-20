@@ -46,15 +46,28 @@ const lightLabel = t('themeSelect.light')
     document.querySelectorAll<HTMLElement>('starlight-theme-select').forEach((el) => applyActive(el, theme))
   }
 
+  /** Apply the theme change with a smooth cross-fade on colors / backgrounds
+      / borders. The .theme-transitioning class is stripped after 350ms so it
+      only affects user-initiated toggles — hovers and navigation stay snappy. */
+  function onThemeToggle(theme: Theme): void {
+    const root = document.documentElement
+    root.classList.add('theme-transitioning')
+    onThemeChange(theme)
+    window.setTimeout(() => {
+      root.classList.remove('theme-transitioning')
+    }, 350)
+  }
+
   class JackinThemeSelect extends HTMLElement {
     constructor() {
       super()
       const current = loadTheme()
       applyActive(this, current)
+      // Initial application — no transition class; first paint should be instant.
       onThemeChange(current)
       this.querySelectorAll<HTMLButtonElement>('button[data-theme-value]').forEach((btn) => {
         btn.addEventListener('click', () => {
-          onThemeChange(parseTheme(btn.dataset.themeValue))
+          onThemeToggle(parseTheme(btn.dataset.themeValue))
         })
       })
     }
