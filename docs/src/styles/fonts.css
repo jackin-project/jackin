@@ -9,3 +9,18 @@
 @import '@fontsource/fraunces/400.css';
 @import '@fontsource/fraunces/500.css';
 @import '@fontsource/fraunces/700.css';
+
+/* Static Inter 900 for the brand wordmark — landing footer, top-nav
+   logo, and the Starlight chrome site title. The variable Inter
+   interpolates weight 900 from the wght axis and reads thinner than
+   the hand-drawn static Black. Declared under a unique family name so
+   selectors can unambiguously pick the static face without competing
+   with the variable font's axis endpoint. */
+@font-face {
+  font-family: 'Inter Black';
+  font-style: normal;
+  font-display: block;
+  font-weight: 900;
+  src: url('@fontsource/inter/files/inter-latin-900-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
