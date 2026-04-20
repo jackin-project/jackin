@@ -529,16 +529,19 @@ header.header {
    green underline via --sl-tab-color-border.
    ========================================================================== */
 
-.sl-markdown-content [role='tablist'] {
-  /* 2px line thick enough to anchor the tab row on a white page. Colors
-     set per theme below since --jk-ui-strong rendered near-invisible. */
-  border-bottom-width: 2px;
-  border-bottom-style: solid;
-  border-bottom-color: rgba(255, 255, 255, 0.14);
+/* Bottom border lives on the WRAPPER, not on [role='tablist']. The
+   wrapper doesn't scroll; the tablist inside does. Keeping the border
+   on the scrolling element made the line slide with the tabs on mobile. */
+.sl-markdown-content .tablist-wrapper {
+  border-bottom: 2px solid rgba(255, 255, 255, 0.14);
 }
 
-:root[data-theme='light'] .sl-markdown-content [role='tablist'] {
+:root[data-theme='light'] .sl-markdown-content .tablist-wrapper {
   border-bottom-color: rgba(0, 0, 0, 0.16);
+}
+
+.sl-markdown-content [role='tablist'] {
+  border-bottom: 0;
 }
 
 .sl-markdown-content .tab > [role='tab'] {
@@ -570,14 +573,14 @@ header.header {
 
 /* Hide the scrollbar on the tablist wrapper — it's a minor scroll axis
    and the scrollbar chrome fights the clean underline look. Users can
-   still swipe/scroll horizontally; on desktop they can also shift-wheel
-   or drag-select. A subtle gradient fade on the right edge hints there's
-   more content when the tablist overflows. */
+   still swipe/scroll horizontally on touch; desktop shift-wheels.
+   No mask-image fade — it always-clips the last tab even when content
+   fits, which made short tab rows look truncated on mobile. */
 .sl-markdown-content .tablist-wrapper {
   scrollbar-width: none;
   -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
   position: relative;
-  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
 }
 .sl-markdown-content .tablist-wrapper::-webkit-scrollbar {
   display: none;
