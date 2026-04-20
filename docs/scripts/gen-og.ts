@@ -179,7 +179,7 @@ const tree = h(
     },
   }),
   // Light global dim — knocks the rain from "bright" to "ambient"
-  // without killing it. Kept subtle (40%) so the Matrix character
+  // without killing it. Kept subtle (48%) so the Matrix character
   // still reads on the right-hand side where there's no text.
   h('div', {
     style: {
@@ -189,13 +189,15 @@ const tree = h(
       right: 0,
       bottom: 0,
       display: 'flex',
-      backgroundColor: 'rgba(10, 11, 10, 0.4)',
+      backgroundColor: 'rgba(10, 11, 10, 0.48)',
     },
   }),
-  // Strong focused darken behind the text block only. Ellipse sits
-  // over the left ~60% of the canvas where the wordmark and tagline
-  // live; the rain under those glyphs reads near-black, while the
-  // rain to the right stays fully atmospheric.
+  // Near-solid dark floor behind the text block. Two-stop radial:
+  // opaque at the text anchor, holds ~85% through the tagline
+  // extent, then fades to transparent so the rain on the right
+  // stays fully atmospheric. Sized wider than the prior pass so
+  // the right edge of the tagline ("inside.") also sits on a
+  // solid floor.
   h('div', {
     style: {
       position: 'absolute',
@@ -205,7 +207,7 @@ const tree = h(
       bottom: 0,
       display: 'flex',
       backgroundImage:
-        'radial-gradient(ellipse 62% 70% at 30% 52%, rgba(10,11,10,0.88), rgba(10,11,10,0.55) 55%, transparent 85%)',
+        'radial-gradient(ellipse 78% 80% at 32% 54%, rgba(10,11,10,0.98), rgba(10,11,10,0.86) 55%, rgba(10,11,10,0.3) 85%, transparent 100%)',
     },
   }),
   // Content
