@@ -7,6 +7,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
+    "gen-og": "bun run scripts/gen-og.mjs",
     "test": "bun test"
   },
   "dependencies": {
@@ -24,9 +25,13 @@
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@resvg/resvg-js": "^2.6.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "rehype-external-links": "^3.0.0",
+    "satori": "^0.26.0",
     "typescript": "^6.0.3"
   }
 }

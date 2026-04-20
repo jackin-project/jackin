@@ -1,57 +1,123 @@
-// Generates docs/public/og-image.png — a 1200×630 social-preview card.
-// Landing aesthetic: dark bg with a subtle dot grid, the jackin' wordmark
-// (white text + green tick), and a one-line tagline.
+// Generates docs/public/og-image.png — 1200×630 social-preview card.
+// Uses satori (JSX-like tree → SVG with embedded fonts) + resvg-js
+// (SVG → PNG) so the build works in any environment without relying on
+// system-installed fonts.
 //
-// Run manually when the design changes:  bun run gen-og
-// (see package.json -> "gen-og" script)
+// Run: `bun run gen-og`
 
-import sharp from 'sharp'
-import { writeFileSync, mkdirSync } from 'node:fs'
+import satori from 'satori'
+import { Resvg } from '@resvg/resvg-js'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const OUT = join(__dirname, '..', 'public', 'og-image.png')
+const root = join(__dirname, '..')
 
-const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
-  <defs>
-    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
-      <circle cx="1" cy="1" r="1" fill="rgba(244,247,245,0.05)"/>
-    </pattern>
-    <radialGradient id="vignette" cx="50%" cy="38%" r="70%">
-      <stop offset="0%" stop-color="transparent"/>
-      <stop offset="100%" stop-color="rgba(5,6,5,0.55)"/>
-    </radialGradient>
-    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="8" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
+const font = (pkg, file) =>
+  readFileSync(join(root, 'node_modules', pkg, 'files', file))
 
-  <!-- dark base + dot grid + soft vignette -->
-  <rect width="1200" height="630" fill="#0a0b0a"/>
-  <rect width="1200" height="630" fill="url(#dots)"/>
-  <rect width="1200" height="630" fill="url(#vignette)"/>
+const interBold = font('@fontsource/inter', 'inter-latin-800-normal.woff')
+const interRegular = font('@fontsource/inter', 'inter-latin-500-normal.woff')
+const jbMono = font('@fontsource/jetbrains-mono', 'jetbrains-mono-latin-600-normal.woff')
 
-  <!-- accent hairline in top-left corner -->
-  <rect x="80" y="128" width="56" height="2" fill="#00ff41"/>
-  <text x="148" y="135" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="18" fill="#5e6a64" letter-spacing="4" font-weight="600">JACKIN PROJECT</text>
+// Satori uses a JSX-like tree. Every <div> with >1 child needs an
+// explicit display — we use flex everywhere to avoid surprises.
+const h = (type, props = {}, ...children) => ({
+  type,
+  props: { ...props, children: children.flat().filter(Boolean) },
+})
 
-  <!-- wordmark -->
-  <text x="80" y="340" font-family="'Inter', system-ui, sans-serif" font-weight="900" font-size="200" fill="#f4f7f5" letter-spacing="-10">jackin<tspan fill="#00ff41" filter="url(#glow)">'</tspan></text>
+const tree = h(
+  'div',
+  {
+    style: {
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      padding: 80,
+      backgroundColor: '#0a0b0a',
+      backgroundImage:
+        'radial-gradient(rgba(244,247,245,0.05) 1px, transparent 1px)',
+      backgroundSize: '28px 28px',
+      fontFamily: 'Inter',
+    },
+  },
+  // Label row: green dash + JACKIN PROJECT
+  h(
+    'div',
+    {
+      style: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 },
+    },
+    h('div', {
+      style: { display: 'flex', width: 56, height: 2, backgroundColor: '#00ff41' },
+    }),
+    h(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          fontFamily: 'JetBrainsMono',
+          fontSize: 18,
+          color: '#5e6a64',
+          letterSpacing: 4,
+          fontWeight: 600,
+        },
+      },
+      'JACKIN PROJECT'
+    )
+  ),
+  // Wordmark
+  h(
+    'div',
+    {
+      style: {
+        display: 'flex',
+        fontWeight: 800,
+        fontSize: 200,
+        letterSpacing: -10,
+        color: '#f4f7f5',
+        lineHeight: 1,
+        marginBottom: 28,
+      },
+    },
+    h('span', { style: { display: 'flex' } }, 'jackin'),
+    h('span', { style: { display: 'flex', color: '#00ff41' } }, "'")
+  ),
+  // Tagline
+  h(
+    'div',
+    {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        fontWeight: 500,
+        fontSize: 36,
+        color: '#9ca8a1',
+        letterSpacing: -0.8,
+        lineHeight: 1.3,
+      },
+    },
+    h('div', { style: { display: 'flex' } }, 'CLI for orchestrating AI coding agents'),
+    h('div', { style: { display: 'flex' } }, 'in isolated Docker containers.')
+  )
+)
 
-  <!-- tagline -->
-  <text x="80" y="420" font-family="'Inter', system-ui, sans-serif" font-weight="500" font-size="36" fill="#9ca8a1" letter-spacing="-0.8">CLI for orchestrating AI coding agents</text>
-  <text x="80" y="470" font-family="'Inter', system-ui, sans-serif" font-weight="500" font-size="36" fill="#9ca8a1" letter-spacing="-0.8">in isolated Docker containers.</text>
+const svg = await satori(tree, {
+  width: 1200,
+  height: 630,
+  fonts: [
+    { name: 'Inter', data: interBold, weight: 800, style: 'normal' },
+    { name: 'Inter', data: interRegular, weight: 500, style: 'normal' },
+    { name: 'JetBrainsMono', data: jbMono, weight: 600, style: 'normal' },
+  ],
+})
 
-  <!-- URL pinned at bottom-right -->
-  <text x="1120" y="555" text-anchor="end" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="20" fill="#5e6a64" letter-spacing="2">jackin.tailrocks.com</text>
-</svg>`
+const png = new Resvg(svg, { fitTo: { mode: 'width', value: 1200 } }).render().asPng()
 
-mkdirSync(dirname(OUT), { recursive: true })
-await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toFile(OUT)
-console.log(`wrote ${OUT}`)
+const out = join(root, 'public', 'og-image.png')
+mkdirSync(dirname(out), { recursive: true })
+writeFileSync(out, png)
+console.log(`wrote ${out} (${png.byteLength.toLocaleString()} bytes)`)

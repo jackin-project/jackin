@@ -1,24 +1,47 @@
 ---
 import '../components/landing/styles.css'
 import { Landing } from '../components/landing/Landing'
+
+const TITLE = "jackin' — CLI for orchestrating AI coding agents in isolated containers"
+const DESCRIPTION =
+  "You're the Operator. They're already inside. jackin' drops AI coding agents into isolated Docker containers — full autonomy inside, your host untouched outside."
+const URL = 'https://jackin.tailrocks.com/'
+const OG_IMAGE = 'https://jackin.tailrocks.com/og-image.png'
+const OG_ALT = "jackin' — CLI for orchestrating AI coding agents in isolated Docker containers"
 ---
 <!DOCTYPE html>
 <html lang="en" class="dark" data-theme="dark" style="color-scheme: dark;">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>jackin' — CLI for orchestrating AI coding agents in isolated containers</title>
-    <meta name="description" content="You're the Operator. They're already inside. jackin' drops AI coding agents into isolated Docker containers — full autonomy inside, your host untouched outside." />
+    <title>{TITLE}</title>
+    <meta name="description" content={DESCRIPTION} />
+    <link rel="canonical" href={URL} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta name="theme-color" content="#0a0b0a" />
 
-    <!-- Open Graph -->
-    <meta property="og:title" content="jackin'" />
-    <meta property="og:description" content="CLI for orchestrating AI coding agents in isolated containers" />
-    <meta property="og:url" content="https://jackin.tailrocks.com" />
+    {/* Open Graph — Facebook, LinkedIn, Slack, Discord, iMessage. */}
+    <meta property="og:title" content={TITLE} />
+    <meta property="og:description" content={DESCRIPTION} />
+    <meta property="og:url" content={URL} />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="jackin'" />
+    <meta property="og:image" content={OG_IMAGE} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={OG_ALT} />
 
-    <!-- Fonts are self-hosted via fontsource — @imported from the
-         landing's styles.css. No <link rel="stylesheet"> needed. -->
+    {/* Twitter / X card. summary_large_image renders a full-width
+        preview image above the title/description. */}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={TITLE} />
+    <meta name="twitter:description" content={DESCRIPTION} />
+    <meta name="twitter:image" content={OG_IMAGE} />
+    <meta name="twitter:image:alt" content={OG_ALT} />
 
+    {/* Fonts are self-hosted via fontsource — @imported from the
+        landing's styles.css. No <link rel="stylesheet"> needed. */}
   </head>
   <body>
     <Landing client:load />

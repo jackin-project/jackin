@@ -1,5 +1,7 @@
 ---
 import Default from '@astrojs/starlight/components/Head.astro'
+
+const OG_IMAGE = 'https://jackin.tailrocks.com/og-image.png'
 ---
 
 {/* Runs FIRST — before any stylesheet that could block its execution.
@@ -44,6 +46,17 @@ import Default from '@astrojs/starlight/components/Head.astro'
 </script>
 
 <Default><slot /></Default>
+
+{/* Social preview image — Starlight sets og:title / og:description /
+    twitter:card but not og:image. Adding both og:image and
+    twitter:image so tweets / FB / Slack / Discord / LinkedIn shares
+    render a full preview card. */}
+<meta property="og:image" content={OG_IMAGE} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="jackin' — CLI for orchestrating AI coding agents in isolated Docker containers" />
+<meta name="twitter:image" content={OG_IMAGE} />
+<meta name="twitter:image:alt" content="jackin' — CLI for orchestrating AI coding agents in isolated Docker containers" />
 
 {/* Fonts are self-hosted via fontsource. See src/styles/fonts.css —
     Astro bundles the woff2 files same-origin and serves them directly,
