@@ -843,15 +843,19 @@ nav.landing-topnav .landing-star {
   text-shadow: 0 0 8px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.9);
 }
 .landing-logo {
-  font-family: 'Inter', sans-serif; font-weight: 700;
-  letter-spacing: -0.03em; font-size: 18px;
-  display: inline-flex; align-items: center; gap: 10px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  font-size: clamp(28px, 3vw, 36px);
+  line-height: 1;
+  color: var(--landing-text);
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
 }
-.landing-logo .mark {
-  width: 10px; height: 10px;
-  background: var(--landing-accent);
-  border-radius: 2px;
-  box-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+.landing-logo .tick {
+  color: var(--landing-accent);
+  text-shadow: 0 0 0.2em rgba(0, 255, 65, 0.45);
 }
 .landing-nav-right { display: flex; gap: 14px; align-items: center; }
 .landing-star {

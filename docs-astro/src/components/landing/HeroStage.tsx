@@ -7,7 +7,7 @@ export function HeroStage() {
     <section className="landing-hero-stage">
       <DigitalRain opacity={0.32} />
       <nav className="landing-topnav">
-        <div className="landing-logo"><span className="mark" />jackin'</div>
+        <div className="landing-logo">jackin<span className="tick">'</span></div>
         <div className="landing-nav-right">
           <a className="landing-star" href="https://github.com/jackin-project/jackin" target="_blank" rel="noopener">★ Star on GitHub</a>
         </div>
