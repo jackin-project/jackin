@@ -86,3 +86,57 @@
   max-width: 680px;
   margin: 0 0 48px;
 }
+
+/* Install block (Section 08) */
+.landing-install {
+  background: var(--landing-panel);
+  border: 1px solid var(--landing-ui);
+  border-radius: 10px;
+  padding: 24px 28px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--landing-text);
+  line-height: 1.85;
+  margin-top: 12px;
+}
+.landing-install-line .k { color: var(--landing-accent); }
+
+.landing-install-ctas {
+  margin-top: 48px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.landing-btn-primary, .landing-btn-ghost {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 22px;
+  border-radius: 5px;
+  cursor: pointer;
+  letter-spacing: -0.01em;
+  transition: transform 0.15s, background 0.15s;
+  text-decoration: none;
+  display: inline-block;
+}
+.landing-btn-primary {
+  background: var(--landing-text);
+  color: var(--landing-bg-deep);
+  border: 1px solid var(--landing-text);
+}
+.landing-btn-primary:hover { transform: translateY(-1px); }
+.landing-btn-ghost {
+  background: transparent;
+  color: var(--landing-text);
+  border: 1px solid var(--landing-ui-strong);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 500;
+}
+.landing-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--landing-text);
+  transform: translateY(-1px);
+}
