@@ -172,7 +172,8 @@
 .sl-markdown-content h2 {
   font-size: 2rem;      /* 32px */
   line-height: 1.2;
-  color: var(--sl-color-text-accent);
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid var(--jk-ui);
 }
 
 .sl-markdown-content h3 {
