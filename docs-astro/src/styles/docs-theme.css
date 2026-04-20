@@ -1,17 +1,35 @@
-/* Maps Starlight's CSS custom properties to Radix tokens from tempo-tokens.css.
-   The Radix tokens use `light-dark()` internally so one declaration covers
-   both modes — the mode is selected by `color-scheme` on :root, which we set
-   via the [data-theme] selectors at the bottom of this file.
+/* Docs chrome — designed to feel like the landing page.
 
-   Accent: the Vocs site used a monochrome accent (black on light, white on
-   dark). We preserve that — green tokens in tempo-tokens.css exist but are
-   not used here. */
+   The landing uses a dark-terminal aesthetic (--landing-bg #0a0b0a, Matrix
+   green accent #00ff41, monospace section labels). These docs adopt the
+   same identity in dark mode; light mode inverts surface/text while
+   keeping the green accent so the site reads as one product in either
+   theme.
+
+   Landing tokens are mirrored here (not imported from landing/styles.css)
+   so the docs layer is self-contained and Phase 4's landing refactor
+   doesn't couple to this file. */
 
 :root {
   /* ============================================================
-     Surface grays — Starlight uses these for backgrounds, borders,
-     sidebar/nav chrome. NOT for body text. Ramp goes dark → light
-     in dark mode (1 = near-bg, 7 = near-fg); reverse in light mode.
+     Landing-matched design tokens
+     ============================================================ */
+  --jk-bg:            #0a0b0a;
+  --jk-bg-deep:       #050605;
+  --jk-panel:         #0f1110;
+  --jk-text:          #f4f7f5;
+  --jk-text-dim:      #9ca8a1;
+  --jk-text-ghost:    #5e6a64;
+  --jk-accent:        #00ff41;
+  --jk-accent-dim:    #00b82f;
+  --jk-ui:            rgba(244, 247, 245, 0.1);
+  --jk-ui-strong:     rgba(244, 247, 245, 0.22);
+  --jk-ui-subtle:     rgba(244, 247, 245, 0.05);
+
+  /* ============================================================
+     Starlight's gray ramp — surface grays used for bg/nav/sidebar/
+     hover/border chrome. NOT for body text. Keep mapped to Radix
+     tokens so light mode still resolves sensibly.
      ============================================================ */
   --sl-color-gray-1: var(--color-gray2);
   --sl-color-gray-2: var(--color-gray3);
@@ -22,101 +40,225 @@
   --sl-color-gray-7: var(--color-gray11);
 
   /* ============================================================
-     Semantic colors — page/text extremes + text tiers.
+     Semantic — will be overridden per data-theme below.
      ============================================================ */
-  --sl-color-black: var(--color-gray1);     /* page bg in dark, near-white in light */
-  --sl-color-white: var(--color-gray12);    /* body text in dark, near-black in light */
+  --sl-color-black: var(--color-gray1);
+  --sl-color-white: var(--color-gray12);
   --sl-color-bg: var(--color-gray1);
   --sl-color-bg-nav: var(--color-gray1);
   --sl-color-bg-sidebar: var(--color-gray1);
   --sl-color-text: var(--color-gray12);
   --sl-color-text-invert: var(--color-gray1);
 
-  /* ============================================================
-     Borders / hairlines — translucent so they blend over any surface.
-     ============================================================ */
   --sl-color-hairline: var(--color-grayA4);
   --sl-color-hairline-light: var(--color-grayA3);
   --sl-color-hairline-shade: var(--color-grayA5);
 
-  /* ============================================================
-     Accent — monochrome. Black-on-light / white-on-dark.
-     Overridden per data-theme below so --sl-color-accent resolves
-     to a single color (Starlight uses it raw in gradients etc.).
-     ============================================================ */
-  --sl-color-accent-low: var(--color-grayA3);
-  --sl-color-accent: var(--color-gray12);
-  --sl-color-accent-high: var(--color-gray11);
-  --sl-color-text-accent: var(--color-gray12);
-
-  /* ============================================================
-     Inline code + code blocks — mirror Vocs's treatment:
-     inline = subtle grayA chip; code block = page gray1 (slightly
-     deeper than body in dark mode).
-     ============================================================ */
   --sl-color-bg-inline-code: var(--color-grayA3);
 
-  /* ============================================================
-     Fonts — injected via src/components/overrides/Head.astro.
-     ============================================================ */
+  /* Fonts — injected via src/components/overrides/Head.astro. */
   --sl-font: 'Inter', system-ui, sans-serif;
   --sl-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
 
-  /* ============================================================
-     Layout dimensions — match Vocs proportions.
-     ============================================================ */
+  /* Layout */
   --sl-sidebar-width: 19rem;
   --sl-content-width: 48rem;
   --sl-nav-height: 3.5rem;
 }
 
+/* ==========================================================================
+   Dark mode — landing identity
+   ========================================================================== */
+
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --sl-color-accent: #ffffff;
-  --sl-color-accent-high: var(--color-grayA11);
-  --sl-color-text-accent: #ffffff;
+  --sl-color-bg: var(--jk-bg);
+  --sl-color-bg-nav: var(--jk-bg);
+  --sl-color-bg-sidebar: var(--jk-bg);
+  --sl-color-black: var(--jk-bg-deep);
+  --sl-color-white: var(--jk-text);
+  --sl-color-text: var(--jk-text);
+  --sl-color-text-invert: var(--jk-bg);
+
+  --sl-color-gray-1: #121413;
+  --sl-color-gray-2: #1a1c1b;
+  --sl-color-gray-3: #2a2d2c;
+  --sl-color-gray-4: #3a3e3c;
+  --sl-color-gray-5: var(--jk-text-ghost);
+  --sl-color-gray-6: var(--jk-text-dim);
+  --sl-color-gray-7: var(--jk-text);
+
+  --sl-color-hairline: var(--jk-ui);
+  --sl-color-hairline-light: var(--jk-ui-subtle);
+  --sl-color-hairline-shade: var(--jk-ui-strong);
+
+  --sl-color-bg-inline-code: var(--jk-panel);
+
+  /* Accent → Matrix green */
+  --sl-color-accent-low:  rgba(0, 255, 65, 0.15);
+  --sl-color-accent:      var(--jk-accent);
+  --sl-color-accent-high: var(--jk-accent);
+  --sl-color-text-accent: var(--jk-accent);
+
+  /* Expressive-code frame — blend into page */
+  --ec-brdRad: 10px;
+  --ec-brdCol: var(--jk-ui);
+  --ec-frm-edBg: var(--jk-panel);
+  --ec-frm-edActTabBg: var(--jk-bg);
+  --ec-frm-edActTabIndBtmCol: var(--jk-accent);
+  --ec-frm-edTabBarBg: var(--jk-bg-deep);
+  --ec-frm-trmBg: var(--jk-panel);
+  --ec-frm-trmTtbBg: var(--jk-bg-deep);
 }
+
+/* ==========================================================================
+   Light mode — inverse surfaces, same green accent
+   ========================================================================== */
 
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --sl-color-accent: #000000;
-  --sl-color-accent-high: var(--color-grayA12);
-  --sl-color-text-accent: #000000;
+  --sl-color-bg: #ffffff;
+  --sl-color-bg-nav: #ffffff;
+  --sl-color-bg-sidebar: #fafafa;
+  --sl-color-text: var(--color-gray12);
+
+  --sl-color-accent-low:  rgba(0, 184, 47, 0.12);
+  --sl-color-accent:      var(--jk-accent-dim);
+  --sl-color-accent-high: var(--jk-accent-dim);
+  --sl-color-text-accent: var(--jk-accent-dim);
 }
 
 /* ==========================================================================
-   Inline code — match Vocs's text + border treatment, not just background.
+   Dotted grid backdrop — subtle, docs-scoped (not behind code/content)
    ========================================================================== */
 
-:root .sl-markdown-content :not(a, h1, h2, h3, h4, h5, h6) > code:not(:where(.not-content *)) {
-  color: var(--color-gray12);
-  border: 1px solid var(--color-grayA4);
-  border-radius: 4px;
-  padding: 0.125em 0.375em;
-  font-size: 0.875em;
+:root[data-theme='dark'] body {
+  background-color: var(--jk-bg);
+  background-image: radial-gradient(rgba(244,247,245,0.025) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-attachment: fixed;
 }
 
 /* ==========================================================================
-   Right-rail "On this page" outline — Tempo-style vertical indicator.
-   Starlight renders the outline inside a <starlight-toc> custom element with
-   an inner <nav> > <ul> > <li> > <a> structure. Class hooks: .right-sidebar
-   wraps it; the ul gets no dedicated class, so we target by context.
+   Typography — landing-matched weight + tracking on headings
+   ========================================================================== */
+
+.sl-markdown-content :is(h1, h2, h3, h4) {
+  font-family: var(--sl-font);
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+.sl-markdown-content h1 {
+  letter-spacing: -0.028em;
+}
+
+/* ==========================================================================
+   Inline code — panel chip, monospace, subtle green text on dark
+   ========================================================================== */
+
+.sl-markdown-content :not(a, h1, h2, h3, h4, h5, h6) > code:not(:where(.not-content *)) {
+  color: var(--jk-text);
+  background: var(--jk-panel);
+  border: 1px solid var(--jk-ui);
+  border-radius: 4px;
+  padding: 0.125em 0.4em;
+  font-size: 0.875em;
+  font-family: var(--sl-font-mono);
+}
+
+:root[data-theme='light'] .sl-markdown-content :not(a, h1, h2, h3, h4, h5, h6) > code:not(:where(.not-content *)) {
+  color: var(--color-gray12);
+  background: var(--color-grayA3);
+  border-color: var(--color-grayA4);
+}
+
+/* Inline code inside link — green */
+.sl-markdown-content a > code {
+  color: var(--sl-color-text-accent) !important;
+}
+
+/* ==========================================================================
+   Sidebar — landing-style group labels (JetBrains Mono, uppercase, green dash)
+   ========================================================================== */
+
+.sidebar-content ul[class*='top-level'] > li > details > summary > .large,
+.sidebar-content ul[class*='top-level'] > li > .group-label > span,
+.sidebar-content summary .large {
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--jk-text-ghost);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-content ul[class*='top-level'] > li > details > summary > .large::before,
+.sidebar-content ul[class*='top-level'] > li > .group-label > span::before,
+.sidebar-content summary .large::before {
+  content: "";
+  width: 18px;
+  height: 1px;
+  background: var(--jk-accent);
+  flex-shrink: 0;
+}
+
+.sidebar-content ul li a {
+  color: var(--jk-text-dim);
+  transition: color 0.1s;
+}
+
+.sidebar-content ul li a:hover {
+  color: var(--jk-text);
+}
+
+.sidebar-content ul li a[aria-current='page'] {
+  color: var(--sl-color-text-accent);
+  font-weight: 500;
+  background: transparent;
+}
+
+:root[data-theme='light'] .sidebar-content ul li a {
+  color: var(--color-gray11);
+}
+
+:root[data-theme='light'] .sidebar-content ul li a:hover {
+  color: var(--color-gray12);
+}
+
+/* ==========================================================================
+   Right-rail outline — same monospace label + Matrix green active marker
    ========================================================================== */
 
 .right-sidebar-panel h2 {
-  color: var(--color-gray11);
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
+  color: var(--jk-text-ghost);
   font-weight: 600;
   margin-bottom: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.right-sidebar-panel h2::before {
+  content: "";
+  width: 18px;
+  height: 1px;
+  background: var(--jk-accent);
+  flex-shrink: 0;
 }
 
 .right-sidebar-panel ul {
   position: relative;
-  border-left: 2px solid var(--color-grayA4);
+  border-left: 2px solid var(--jk-ui);
   padding-left: 0;
   margin-left: 0;
   list-style: none;
@@ -124,9 +266,9 @@
 
 .right-sidebar-panel ul li a {
   display: block;
-  padding: 0.25rem 0 0.25rem 0.75rem;
-  line-height: 1.4;
-  color: var(--color-gray10);
+  padding: 0.3rem 0 0.3rem 0.85rem;
+  line-height: 1.45;
+  color: var(--jk-text-dim);
   text-decoration: none;
   transition: color 0.1s;
   margin-left: -2px;
@@ -134,48 +276,84 @@
 }
 
 .right-sidebar-panel ul li a:hover {
-  color: var(--color-gray12);
+  color: var(--jk-text);
 }
 
-.right-sidebar-panel ul li a[aria-current='true'],
-.right-sidebar-panel ul li a.active {
+.right-sidebar-panel ul li a[aria-current='true'] {
   color: var(--sl-color-text-accent);
   border-left-color: var(--sl-color-text-accent);
   font-weight: 500;
 }
 
-/* ==========================================================================
-   Sidebar nav — softer group labels; match Vocs spacing.
-   ========================================================================== */
-
-.sidebar-content summary,
-.sidebar-content .group-label > span {
-  color: var(--color-gray11);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-weight: 600;
+:root[data-theme='light'] .right-sidebar-panel ul {
+  border-left-color: var(--color-grayA4);
 }
 
-.sidebar-content ul li a {
-  color: var(--color-gray11);
-  transition: color 0.1s;
+:root[data-theme='light'] .right-sidebar-panel ul li a {
+  color: var(--color-gray10);
 }
 
-.sidebar-content ul li a:hover {
+:root[data-theme='light'] .right-sidebar-panel ul li a:hover {
   color: var(--color-gray12);
 }
 
-.sidebar-content ul li a[aria-current='page'] {
-  color: var(--sl-color-text-accent);
-  font-weight: 500;
+/* ==========================================================================
+   Header / top nav — hairline bottom, no heavy border
+   ========================================================================== */
+
+header.header {
+  border-bottom: 1px solid var(--sl-color-hairline);
+  backdrop-filter: blur(10px);
+  background: color-mix(in oklab, var(--sl-color-bg-nav) 85%, transparent);
 }
 
 /* ==========================================================================
-   Code blocks (expressive-code) — subtle refinements only. Expressive-code
-   does most of the heavy lifting; we just match Vocs's border radius.
+   Site title — brand typography
+   ========================================================================== */
+
+.site-title {
+  font-family: var(--sl-font);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--sl-color-white);
+}
+
+/* ==========================================================================
+   Links in body copy — green, underline-on-hover
+   ========================================================================== */
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--sl-color-text-accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.1s;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  border-bottom-color: var(--sl-color-text-accent);
+}
+
+/* ==========================================================================
+   Code blocks — rounded, subtle border
    ========================================================================== */
 
 .expressive-code .frame {
-  border-radius: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--sl-color-hairline);
+}
+
+/* ==========================================================================
+   Asides (note/tip/caution) — keep Starlight's semantic colors but match
+   the rounded/bordered surface treatment
+   ========================================================================== */
+
+.starlight-aside {
+  border-radius: 10px;
+  border: 1px solid var(--sl-color-hairline);
+  background: var(--jk-panel);
+}
+
+:root[data-theme='light'] .starlight-aside {
+  background: #f6f8f7;
+  border-color: var(--color-grayA4);
 }
