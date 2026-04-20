@@ -1,0 +1,74 @@
+/* Maps Starlight's CSS custom properties to Radix tokens from
+   tempo-tokens.css. This file is the Starlight-equivalent of the
+   Vocs-targeted docs-theme.css in the old docs/ directory.
+
+   Accent note: the Vocs site uses a monochrome accent (black on light,
+   white on dark) — not green. We preserve that here. The --color-green*
+   tokens exist in tempo-tokens.css but were never used for accent in the
+   Vocs theme; the template suggestion was generic. */
+
+:root {
+  /* Surfaces */
+  --sl-color-bg: var(--color-gray1);
+  --sl-color-bg-nav: var(--color-gray1);
+  --sl-color-bg-sidebar: var(--color-gray1);
+  --sl-color-bg-inline-code: var(--color-grayA3);
+
+  /* Text */
+  --sl-color-white: var(--color-gray12);
+  --sl-color-gray-1: var(--color-gray12);
+  --sl-color-gray-2: var(--color-gray11);
+  --sl-color-gray-3: var(--color-gray10);
+  --sl-color-gray-4: var(--color-gray9);
+  --sl-color-gray-5: var(--color-gray7);
+  --sl-color-gray-6: var(--color-gray4);
+  --sl-color-gray-7: var(--color-gray3);
+  --sl-color-black: var(--color-gray1);
+  --sl-color-text: var(--color-gray12);
+  --sl-color-text-invert: var(--color-gray1);
+
+  /* Lines / borders — matches --vocs-color_border / --vocs-color_border2 */
+  --sl-color-hairline: var(--color-grayA4);
+  --sl-color-hairline-light: var(--color-grayA4);
+  --sl-color-hairline-shade: var(--color-grayA5);
+
+  /* Accent — monochrome, matching the Vocs site's accent treatment:
+     black on light mode, white on dark mode (light-dark() resolves per
+     color-scheme set below). Starlight's accent vars expect a single
+     resolved value, so we split by data-theme selector below. */
+  --sl-color-accent-low: var(--color-grayA3);
+  --sl-color-accent: var(--color-gray12);
+  --sl-color-accent-high: var(--color-gray11);
+  --sl-color-text-accent: var(--color-gray12);
+
+  /* Fonts */
+  --sl-font: 'Inter', system-ui, sans-serif;
+  --sl-font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+
+  /* Layout dimensions (match Vocs proportions) */
+  --sl-sidebar-width: 19rem;
+  --sl-content-width: 48rem;
+  --sl-nav-height: 3.5rem;
+}
+
+/* Starlight toggles a data-theme attribute on <html>; Radix tokens in
+   tempo-tokens.css already handle light/dark via light-dark() and the
+   color-scheme property. Ensure color-scheme is set on both modes. */
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* In dark mode the monochrome accent resolves to white */
+  --sl-color-accent: var(--color-white);
+  --sl-color-accent-high: var(--color-grayA11);
+  --sl-color-text-accent: var(--color-white);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* In light mode the monochrome accent resolves to black */
+  --sl-color-accent: var(--color-black);
+  --sl-color-accent-high: var(--color-grayA12);
+  --sl-color-text-accent: var(--color-black);
+}

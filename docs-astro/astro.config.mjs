@@ -12,6 +12,11 @@ export default defineConfig({
       sidebar: [
         { label: 'Placeholder', items: [{ label: 'Placeholder', slug: 'placeholder' }] },
       ],
+      customCss: [
+        './src/styles/global.css',
+        './src/styles/tempo-tokens.css',
+        './src/styles/docs-theme.css',
+      ],
     }),
     react(),
   ],
