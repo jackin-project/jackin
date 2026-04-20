@@ -21,7 +21,8 @@ test('ageToColor returns null for dead cells (age > 24)', () => {
   expect(ageToColor(100)).toBeNull();
 });
 
-import { createRainState, tickRain, RainState } from './rainEngine';
+import { createRainState, tickRain } from './rainEngine';
+import type { RainState } from './rainEngine';
 
 function makeRng(seed: number) {
   return () => {

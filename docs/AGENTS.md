@@ -29,6 +29,27 @@ Do not introduce new `.mjs` or plain `.js` files. If you encounter one
 left over from an older version of this site, port it to `.ts` as part
 of whatever task brought you there.
 
+### Strict mode
+
+The docs `tsconfig.json` extends `astro/tsconfigs/strict`, which turns
+on `strict: true` plus Astro's recommended strict defaults
+(`forceConsistentCasingInFileNames`, `isolatedModules`, etc.). Treat
+strict mode as non-negotiable:
+
+- Do not add `tsconfig` overrides that weaken it (e.g. `strict: false`,
+  `strictNullChecks: false`, `noImplicitAny: false`).
+- Do not use `// @ts-ignore` or `// @ts-nocheck` to silence errors.
+  If a third-party type is genuinely wrong, use `// @ts-expect-error`
+  with a one-line explanation and a link/issue reference so the escape
+  hatch is auditable.
+- New code should pass `bunx tsc --noEmit` cleanly.
+
+Running `astro/tsconfigs/strictest` (adds `noUncheckedIndexedAccess`,
+`exactOptionalPropertyTypes`, and similar) is a desirable follow-up
+goal but not a current requirement — some existing code (rainEngine
+indexed access, astro-og-canvas optional-property types) would need
+targeted cleanup first.
+
 ## Package Management
 
 - Use `bun install`, `bun add`, and `bun remove` for dependency changes.

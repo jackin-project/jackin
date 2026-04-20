@@ -86,7 +86,7 @@ Maps 1:1 with the published site sidebar:
 | | `commands/config.mdx` | `jackin config` |
 | Developing Agents | `developing/creating-agents.mdx` | How to build agent repos |
 | | `developing/construct-image.mdx` | Base Docker image contents |
-| | `developing/agent-manifest.mdx` | `jackin.toml` reference |
+| | `developing/agent-manifest.mdx` | `jackin.agent.toml` reference |
 | Reference | `reference/configuration.mdx` | Config file format |
 | | `reference/architecture.mdx` | Container orchestration internals |
 | | `reference/roadmap.mdx` | Planned features |

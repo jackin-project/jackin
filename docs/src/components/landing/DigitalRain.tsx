@@ -20,12 +20,35 @@ export function DigitalRain({ fontSize = 14, cellW = 12, cellH = 18, frameMs = 3
     if (!ctx) return;
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      // Render a single still frame and stop
+      // Render a single populated still frame and stop — previously
+      // this branch only sized the canvas and returned, leaving
+      // reduced-motion users with a blank black area instead of the
+      // intended static Matrix backdrop.
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const cols = Math.max(1, Math.floor(rect.width / cellW));
+      const rows = Math.max(1, Math.floor(rect.height / cellH));
+      const stillState = createRainState(cols, rows);
+      // ~90 ticks is well past the engine's warm-up — columns have
+      // advanced through a full cycle so the frame looks natural
+      // instead of sparse/top-biased.
+      for (let i = 0; i < 90; i++) tickRain(stillState);
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      ctx.font = fontSize + 'px "JetBrains Mono", "SF Mono", monospace';
+      ctx.textBaseline = 'top';
+      for (let r = 0; r < stillState.rows; r++) {
+        for (let c = 0; c < stillState.cols; c++) {
+          const cell = stillState.grid[r][c];
+          if (!cell) continue;
+          const color = ageToColor(cell.age);
+          if (!color) continue;
+          ctx.fillStyle = color;
+          ctx.fillText(cell.ch, c * cellW, r * cellH);
+        }
+      }
       return;
     }
 

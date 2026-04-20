@@ -174,9 +174,11 @@ const breadcrumbJsonLd = isContentPage
 
 {sectionLabel && <meta property="article:section" content={sectionLabel} />}
 
-{/* Structured data for rich Google search results. */}
-<script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
-<script type="application/ld+json" set:html={JSON.stringify(breadcrumbJsonLd)} />
+{/* Structured data for rich Google search results — only emitted on
+    real content pages. Without the null check Astro would render
+    <script>null</script> on the 404, which is invalid JSON-LD. */}
+{jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+{breadcrumbJsonLd && <script type="application/ld+json" set:html={JSON.stringify(breadcrumbJsonLd)} />}
 
 {/* Favicons — Starlight auto-injects a single SVG favicon; iOS and
     Android home-screen adds prefer PNG rasters + an apple-touch-icon
