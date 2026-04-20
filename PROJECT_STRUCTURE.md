@@ -11,7 +11,7 @@ Quick navigation reference for AI agents working in this repository.
 | `AGENTS.md` | Shared instructions for all AI agents (testing, pre-commit, security) |
 | `CLAUDE.md` | Claude-specific pointer to `AGENTS.md` |
 | `RULES.md` | Project-wide conventions (docs go in `AGENTS.md`, not tool-specific files) |
-| `TODO.md` | Pointer to roadmap docs (full design docs live under `docs-astro/src/content/docs/reference/roadmap/`) |
+| `TODO.md` | Pointer to roadmap docs (full design docs live under `docs/src/content/docs/reference/roadmap/`) |
 | `TESTING.md` | Test runner setup, commands, and pre-commit requirements |
 | `REVIEW_STATUS.md` | Consolidated active review findings and accepted exceptions |
 | `release.toml` | Release configuration |
@@ -20,7 +20,7 @@ Quick navigation reference for AI agents working in this repository.
 | `docker-bake.hcl` | Declarative Docker Bake build graph for the construct image |
 | `.gitignore` | Git ignore rules |
 
-## Roadmap — `docs-astro/src/content/docs/reference/roadmap/`
+## Roadmap — `docs/src/content/docs/reference/roadmap/`
 
 Self-contained design docs live alongside the rest of the Starlight
 docs site. Each page includes problem statement, options, and related

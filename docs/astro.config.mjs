@@ -33,7 +33,7 @@ export default defineConfig({
       },
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/jackin-project/jackin' }],
       editLink: {
-        baseUrl: 'https://github.com/jackin-project/jackin/edit/main/docs-astro/src/content/docs/',
+        baseUrl: 'https://github.com/jackin-project/jackin/edit/main/docs/src/content/docs/',
       },
       sidebar: [
         {
