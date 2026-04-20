@@ -4,6 +4,7 @@ import { vocabularyEntries } from './vocabularyData';
 
 export function VocabularyDictionary() {
   const sectionRef = useRef<HTMLElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [activeIdx, setActiveIdx] = useState(0);
 
   useEffect(() => {
@@ -38,6 +39,22 @@ export function VocabularyDictionary() {
     };
   }, []);
 
+  // Keep the active term visible in the horizontal strip on mobile. On
+  // desktop the list has no horizontal overflow so this is a no-op. Only
+  // scrolls the list container — does not touch the page scroll, so the
+  // parent sticky scroll-drive isn't disturbed.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const active = list.children[activeIdx] as HTMLElement | undefined;
+    if (!active) return;
+    const listRect = list.getBoundingClientRect();
+    const btnRect = active.getBoundingClientRect();
+    const offsetFromLeft = btnRect.left - listRect.left + list.scrollLeft;
+    const targetLeft = offsetFromLeft - (listRect.width - btnRect.width) / 2;
+    list.scrollTo({ left: targetLeft, behavior: 'smooth' });
+  }, [activeIdx]);
+
   function jumpTo(i: number) {
     if (typeof window === 'undefined') return;
     const section = sectionRef.current;
@@ -63,7 +80,7 @@ export function VocabularyDictionary() {
           <p className="landing-sec-intro">Every command in jackin' maps to a concept from The Matrix. Scroll to turn the page — or click a term in the rail to jump.</p>
 
           <div className="landing-voc">
-            <div className="landing-voc-list">
+            <div className="landing-voc-list" ref={listRef}>
               {vocabularyEntries.map((entry, i) => (
                 <button
                   type="button"
