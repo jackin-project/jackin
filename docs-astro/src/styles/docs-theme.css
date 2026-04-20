@@ -164,6 +164,13 @@
   letter-spacing: -0.028em;
 }
 
+/* h2 section headings in body — Matrix green to match the landing's
+   accent treatment for prominent labels. Makes section boundaries
+   scannable at a glance. */
+.sl-markdown-content h2 {
+  color: var(--sl-color-text-accent);
+}
+
 /* ==========================================================================
    Inline code — panel chip, monospace, subtle green text on dark
    ========================================================================== */
