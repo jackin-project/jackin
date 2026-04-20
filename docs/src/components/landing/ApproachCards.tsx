@@ -53,7 +53,15 @@ export function ApproachCards() {
             </div>
             <p className="landing-approach-note">Your framework's team can ship one just like it for yours.</p>
             <div className="landing-approach-cmd"><span className="lbl">cli</span>jackin load the-architect</div>
-            <div className="landing-approach-repo"><span className="lbl">repo</span><span className="repo-path">github.com/jackin-project/jackin-the-architect</span></div>
+            <div className="landing-approach-repo">
+              <span className="lbl">repo</span>
+              <a
+                className="repo-path"
+                href="https://github.com/jackin-project/jackin-the-architect"
+                target="_blank"
+                rel="noopener noreferrer"
+              >github.com/jackin-project/jackin-the-architect</a>
+            </div>
           </div>
 
           <div className="landing-approach-card">

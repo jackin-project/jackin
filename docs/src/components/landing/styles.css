@@ -411,7 +411,8 @@ html {
 .landing-approach-cmd .lbl { color: var(--landing-text-ghost); text-transform: uppercase; font-size: 10px; letter-spacing: 0.15em; }
 .landing-approach-repo { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--landing-text-ghost); padding: 4px 0 0 4px; margin-top: 8px; }
 .landing-approach-repo .lbl { text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.18em; }
-.landing-approach-repo .repo-path { color: var(--landing-text-dim); }
+.landing-approach-repo .repo-path { color: var(--landing-text-dim); text-decoration: none; transition: color 0.15s; }
+.landing-approach-repo a.repo-path:hover { color: var(--landing-accent); }
 
 .landing-approach-transition { margin-top: 44px; text-align: center; font-family: 'Fraunces', serif; font-style: italic; font-size: clamp(18px, 2.2vw, 24px); color: var(--landing-text); letter-spacing: -0.01em; }
 .landing-approach-transition .accent { color: var(--landing-accent); font-style: normal; font-weight: 500; }
