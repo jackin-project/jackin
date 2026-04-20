@@ -140,3 +140,50 @@
   border-color: var(--landing-text);
   transform: translateY(-1px);
 }
+
+/* Footer (wordmark + meta) */
+.landing-footer {
+  margin-top: 60px;
+  padding: 60px 40px 0;
+  text-align: center;
+  overflow: hidden;
+}
+.landing-footer-meta {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 64px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--landing-text-ghost);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+.landing-footer-meta a {
+  color: var(--landing-text-dim);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.landing-footer-meta a:hover { color: var(--landing-text); }
+.landing-footer-meta .sep { color: var(--landing-ui-strong); }
+.landing-footer-wordmark {
+  font-family: 'Inter', sans-serif;
+  font-weight: 900;
+  font-size: clamp(120px, 24vw, 300px);
+  line-height: 0.9;
+  letter-spacing: -0.06em;
+  color: var(--landing-text);
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+.landing-footer-wordmark .tick {
+  color: var(--landing-accent);
+  text-shadow: 0 0 0.1em rgba(0, 255, 65, 0.35);
+}
+
+@media (max-width: 880px) {
+  .landing-footer-wordmark { font-size: clamp(80px, 22vw, 180px); }
+}
