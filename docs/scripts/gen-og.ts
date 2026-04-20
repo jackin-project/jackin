@@ -178,7 +178,9 @@ const tree = h(
       backgroundRepeat: 'no-repeat',
     },
   }),
-  // Dim overlay — 62% black so the rain reads as mood, not content.
+  // Light global dim — knocks the rain from "bright" to "ambient"
+  // without killing it. Kept subtle (40%) so the Matrix character
+  // still reads on the right-hand side where there's no text.
   h('div', {
     style: {
       position: 'absolute',
@@ -187,10 +189,13 @@ const tree = h(
       right: 0,
       bottom: 0,
       display: 'flex',
-      backgroundColor: 'rgba(10, 11, 10, 0.62)',
+      backgroundColor: 'rgba(10, 11, 10, 0.4)',
     },
   }),
-  // Soft radial behind the text block so the tagline pops.
+  // Strong focused darken behind the text block only. Ellipse sits
+  // over the left ~60% of the canvas where the wordmark and tagline
+  // live; the rain under those glyphs reads near-black, while the
+  // rain to the right stays fully atmospheric.
   h('div', {
     style: {
       position: 'absolute',
@@ -200,7 +205,7 @@ const tree = h(
       bottom: 0,
       display: 'flex',
       backgroundImage:
-        'radial-gradient(ellipse at 30% 50%, rgba(10,11,10,0.4), transparent 70%)',
+        'radial-gradient(ellipse 62% 70% at 30% 52%, rgba(10,11,10,0.88), rgba(10,11,10,0.55) 55%, transparent 85%)',
     },
   }),
   // Content
