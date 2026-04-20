@@ -572,7 +572,11 @@ header.header {
 
 .expressive-code .frame {
   box-shadow: none;
-  border: 1px solid var(--jk-ui);
+  /* Border is a subtle white-alpha hairline in BOTH modes because the
+     code surface is always dark (--jk-code-bg). Using var(--jk-ui),
+     which flips to black-alpha in light mode, made the border invisible
+     against the dark code panel. */
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   overflow: hidden;
   /* Code blocks keep a dark surface in BOTH page modes:
