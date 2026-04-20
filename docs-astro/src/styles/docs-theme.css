@@ -172,8 +172,9 @@
 .sl-markdown-content h2 {
   font-size: 2rem;      /* 32px */
   line-height: 1.2;
-  padding-bottom: 0.4em;
-  border-bottom: 1px solid var(--jk-ui);
+  /* Desaturated Matrix green — matches the landing accent family but
+     muted enough to live on every section heading without shouting. */
+  color: color-mix(in oklab, var(--sl-color-text-accent) 40%, var(--jk-text));
 }
 
 .sl-markdown-content h3 {
