@@ -86,9 +86,9 @@ export const loopFrames: LoopFrame[] = [
       <>
         <span className="p">$</span> <span className="cmd">jackin exile</span>{'\n'}
         <span className="arrow">  → Exiling 3 agents</span>{'\n'}
-        <span className="c">{'     agent-smith                '}</span><span className="ok">OK</span>{'\n'}
-        <span className="c">{'     the-architect              '}</span><span className="ok">OK</span>{'\n'}
-        <span className="c">{'     docs-writer                '}</span><span className="ok">OK</span>{'\n'}
+        <span className="c">{'     agent-smith                 '}</span><span className="ok">OK</span>{'\n'}
+        <span className="c">{'     the-architect               '}</span><span className="ok">OK</span>{'\n'}
+        <span className="c">{'     docs-writer                 '}</span><span className="ok">OK</span>{'\n'}
         <span className="arrow">  → All networks removed</span>{'\n\n'}
         <span className="check">✓</span> <span className="done">Matrix clear. Host untouched.</span>
       </>
