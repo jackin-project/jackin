@@ -672,49 +672,48 @@ header.header {
 }
 
 /* ==========================================================================
-   Mobile Tabs — swap the underlined-tab pattern for wrapping chips.
-   Horizontal scroll is poor UX on phones (labels hidden off-screen,
-   inconsistent active-indicator placement). Chips keep every label
-   visible, wrap across multiple rows when needed, and use the
-   brand-green fill + inverted text to signal the active selection.
+   Tabs in chip form — activated only when the tablist would overflow
+   its container (see the inline ResizeObserver script in Head.astro
+   which toggles [data-overflow] on .tablist-wrapper). Horizontal
+   scrolling tabs hide labels off-screen and make the active indicator
+   hard to spot; chips keep every label visible at every width.
    ========================================================================== */
 
-@media (max-width: 50rem) {
-  .sl-markdown-content .tablist-wrapper {
-    overflow: visible;
-    border-bottom: 0;
-  }
+.sl-markdown-content .tablist-wrapper[data-overflow] {
+  overflow: visible;
+  border-bottom: 0;
+}
 
-  .sl-markdown-content [role='tablist'] {
-    flex-wrap: wrap;
-    gap: 6px;
-    border-bottom: 0;
-  }
+.sl-markdown-content .tablist-wrapper[data-overflow] [role='tablist'] {
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 0;
+}
 
-  .sl-markdown-content .tab > [role='tab'] {
-    border: 1px solid var(--jk-ui-strong);
-    border-radius: 999px;
-    background: var(--jk-panel);
-    padding: 0.35rem 0.875rem;
-    font-size: 0.8125rem;
-    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
-  }
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'] {
+  border: 1px solid var(--jk-ui-strong);
+  border-radius: 999px;
+  background: var(--jk-panel);
+  padding: 0.35rem 0.875rem;
+  font-size: 0.8125rem;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  white-space: normal;
+}
 
-  .sl-markdown-content .tab > [role='tab']:hover {
-    border-color: var(--jk-text-dim);
-    color: var(--jk-text);
-  }
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab']:hover {
+  border-color: var(--jk-text-dim);
+  color: var(--jk-text);
+}
 
-  .sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
-    background: var(--jk-brand);
-    border-color: var(--jk-brand);
-    color: var(--jk-bg);
-  }
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'][aria-selected='true'] {
+  background: var(--jk-brand);
+  border-color: var(--jk-brand);
+  color: var(--jk-bg);
+}
 
-  /* No underline on chip form — the fill communicates active state. */
-  .sl-markdown-content .tab > [role='tab'][aria-selected='true']::after {
-    display: none;
-  }
+/* No underline on chip form — the fill communicates active state. */
+.sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'][aria-selected='true']::after {
+  display: none;
 }
 
 /* Hide the scrollbar on the tablist wrapper — it's a minor scroll axis

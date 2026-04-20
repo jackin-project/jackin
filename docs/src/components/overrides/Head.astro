@@ -58,6 +58,40 @@ const OG_IMAGE = 'https://jackin.tailrocks.com/og-image.png'
 <meta name="twitter:image" content={OG_IMAGE} />
 <meta name="twitter:image:alt" content="jackin' — CLI for orchestrating AI coding agents in isolated Docker containers" />
 
+{/* Tab overflow detection: watches each .tablist-wrapper and toggles
+    a [data-overflow] attribute when the tablist's natural content
+    width exceeds its container. CSS picks up the attribute and swaps
+    in the chip layout (see docs-theme.css). Pure width-based — works
+    at any viewport, no hard-coded breakpoint. */}
+<script is:inline>
+  (function () {
+    function setup() {
+      var wrappers = document.querySelectorAll('.tablist-wrapper')
+      if (!wrappers.length) return
+      function measure(wrapper) {
+        var list = wrapper.querySelector('[role="tablist"]')
+        if (!list) return
+        // Temporarily unset overflow so we can measure natural width.
+        wrapper.removeAttribute('data-overflow')
+        var overflows = list.scrollWidth > list.clientWidth + 1
+        if (overflows) wrapper.setAttribute('data-overflow', '')
+      }
+      var ro = new ResizeObserver(function (entries) {
+        entries.forEach(function (e) { measure(e.target) })
+      })
+      wrappers.forEach(function (w) {
+        measure(w)
+        ro.observe(w)
+      })
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', setup, { once: true })
+    } else {
+      setup()
+    }
+  })()
+</script>
+
 {/* Fonts are self-hosted via fontsource. See src/styles/fonts.css —
     Astro bundles the woff2 files same-origin and serves them directly,
     which is significantly faster than Google Fonts (no third-party DNS
