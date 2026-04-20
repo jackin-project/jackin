@@ -7,18 +7,38 @@ import Default from '@astrojs/starlight/components/Head.astro'
     the correct theme from first paint (Starlight hardcodes data-theme
     to 'dark' server-side, which flashed on navigations in light mode).
     Also migrates old 'auto' values to 'dark' so the ThemeProvider that
-    runs later stays consistent with what we just set. */}
+    runs later stays consistent with what we just set.
+
+    Adds .theme-init class to disable every CSS transition until two
+    animation frames after DOMContentLoaded — stops elements using
+    var(--jk-brand) from animating from the HTML-default dark value to
+    the correct light value when data-theme flips. Class is removed
+    once layout has settled. */}
 <script is:inline>
   (function () {
+    var root = document.documentElement
     try {
       var stored = localStorage.getItem('starlight-theme')
       if (stored !== 'light' && stored !== 'dark') {
         stored = 'dark'
         localStorage.setItem('starlight-theme', 'dark')
       }
-      document.documentElement.setAttribute('data-theme', stored)
+      root.setAttribute('data-theme', stored)
     } catch (e) {
-      document.documentElement.setAttribute('data-theme', 'dark')
+      root.setAttribute('data-theme', 'dark')
+    }
+    root.classList.add('theme-init')
+    function releaseInit() {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          root.classList.remove('theme-init')
+        })
+      })
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', releaseInit, { once: true })
+    } else {
+      releaseInit()
     }
   })()
 </script>

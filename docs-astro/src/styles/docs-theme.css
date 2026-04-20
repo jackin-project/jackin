@@ -175,6 +175,20 @@
 }
 
 /* ==========================================================================
+   Initial-load transition suppression — stops CSS transitions on
+   sidebar / TOC / pagination elements from animating color changes
+   when the initial data-theme flip happens in head. Class added by
+   overrides/Head.astro, removed two animation frames after DOMReady.
+   ========================================================================== */
+
+html.theme-init,
+html.theme-init *,
+html.theme-init *::before,
+html.theme-init *::after {
+  transition: none !important;
+}
+
+/* ==========================================================================
    Theme-change cross-fade — uses the View Transitions API.
    overrides/ThemeSelect.astro calls document.startViewTransition() around
    the data-theme flip. The browser snapshots the page pre/post and
