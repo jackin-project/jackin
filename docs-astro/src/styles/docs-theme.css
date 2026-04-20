@@ -101,15 +101,24 @@
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
 
-  /* Expressive-code frame — blend into page */
+  /* Expressive-code frame — single-border, panel-colored, matches landing's
+     install block. Explicitly zero out the inner frame borders that
+     expressive-code stacks on editor/terminal title bars. */
   --ec-brdRad: 10px;
   --ec-brdCol: var(--jk-ui);
   --ec-frm-edBg: var(--jk-panel);
-  --ec-frm-edActTabBg: var(--jk-bg);
-  --ec-frm-edActTabIndBtmCol: var(--jk-accent);
-  --ec-frm-edTabBarBg: var(--jk-bg-deep);
+  --ec-frm-edActTabBg: var(--jk-panel);
+  --ec-frm-edActTabIndBtmCol: transparent;
+  --ec-frm-edActTabIndTopCol: transparent;
+  --ec-frm-edTabBarBg: var(--jk-panel);
+  --ec-frm-edTabBarBrdBtmCol: transparent;
+  --ec-frm-edTabsMrgInlStart: 0;
+  --ec-frm-edTabsMrgBlkStart: 0;
   --ec-frm-trmBg: var(--jk-panel);
-  --ec-frm-trmTtbBg: var(--jk-bg-deep);
+  --ec-frm-trmTtbBg: var(--jk-panel);
+  --ec-frm-trmTtbBrdBtmCol: transparent;
+  --ec-frm-inlBrdCol: transparent;
+  --ec-frm-frameBoxShdCssVal: none;
 }
 
 /* ==========================================================================
@@ -232,7 +241,9 @@
 }
 
 /* ==========================================================================
-   Right-rail outline — same monospace label + Matrix green active marker
+   Right-rail outline — monospace label, flat green active state, no rounded
+   hover pills (Starlight's default is border-radius: 0.25rem on each link —
+   we zero it out for a typography-only treatment that matches the landing).
    ========================================================================== */
 
 .right-sidebar-panel h2 {
@@ -257,36 +268,27 @@
 }
 
 .right-sidebar-panel ul {
-  position: relative;
-  border-left: 2px solid var(--jk-ui);
-  padding-left: 0;
-  margin-left: 0;
   list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
 .right-sidebar-panel ul li a {
-  display: block;
-  padding: 0.3rem 0 0.3rem 0.85rem;
-  line-height: 1.45;
+  border-radius: 0;
+  background: transparent;
   color: var(--jk-text-dim);
-  text-decoration: none;
   transition: color 0.1s;
-  margin-left: -2px;
-  border-left: 2px solid transparent;
 }
 
 .right-sidebar-panel ul li a:hover {
   color: var(--jk-text);
+  background: transparent;
 }
 
 .right-sidebar-panel ul li a[aria-current='true'] {
   color: var(--sl-color-text-accent);
-  border-left-color: var(--sl-color-text-accent);
+  background: transparent;
   font-weight: 500;
-}
-
-:root[data-theme='light'] .right-sidebar-panel ul {
-  border-left-color: var(--color-grayA4);
 }
 
 :root[data-theme='light'] .right-sidebar-panel ul li a {
@@ -334,12 +336,27 @@ header.header {
 }
 
 /* ==========================================================================
-   Code blocks — rounded, subtle border
+   Code blocks — one subtle outer border on the frame, flat internals.
+   Expressive-code renders nested frame/titlebar/editor-tab/gutter layers
+   that each default to their own border; we zero the internals via CSS
+   vars above and let only the outer .frame carry a hairline.
    ========================================================================== */
 
 .expressive-code .frame {
+  box-shadow: none;
+}
+
+.expressive-code .frame::before {
+  border: 1px solid var(--jk-ui);
   border-radius: 10px;
-  border: 1px solid var(--sl-color-hairline);
+}
+
+.expressive-code .frame .header {
+  border-bottom: 0;
+}
+
+.expressive-code .frame pre {
+  border: 0;
 }
 
 /* ==========================================================================
