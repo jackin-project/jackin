@@ -287,6 +287,13 @@
   padding-left: 0.75rem;
 }
 
+/* Top-level TOC items (h2s) — brighter than nested h3/h4s so the
+   outline reads as a hierarchy at a glance. */
+.right-sidebar-panel ul:not(ul ul) > li > a {
+  color: var(--jk-text);
+  font-weight: 500;
+}
+
 .right-sidebar-panel ul li a:hover {
   color: var(--jk-text);
   background: transparent;
