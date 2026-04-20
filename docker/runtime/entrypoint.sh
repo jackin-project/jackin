@@ -26,12 +26,11 @@ fi
 if [ -x /usr/bin/gh ]; then
     if gh auth status &>/dev/null; then
         echo "[entrypoint] GitHub CLI already authenticated"
+        gh auth setup-git
+        git config --global url."https://github.com/".insteadOf "git@github.com:"
     else
-        echo "[entrypoint] GitHub CLI not authenticated — starting gh auth login"
-        gh auth login
+        echo "[entrypoint] GitHub CLI not authenticated — skipping login (run 'gh auth login' inside the runtime if needed)"
     fi
-    gh auth setup-git
-    git config --global url."https://github.com/".insteadOf "git@github.com:"
 else
     echo "[entrypoint] GitHub CLI not installed — skipping auth"
 fi
