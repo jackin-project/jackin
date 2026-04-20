@@ -317,15 +317,21 @@ header.header {
    Links in body copy — green, underline-on-hover
    ========================================================================== */
 
-.sl-markdown-content a:not(:where(.not-content *)) {
+.sl-markdown-content a:not(.sl-anchor-link, :where(.not-content *)) {
   color: var(--sl-color-text-accent);
   text-decoration: none;
   border-bottom: 1px solid transparent;
   transition: border-color 0.1s;
 }
 
-.sl-markdown-content a:not(:where(.not-content *)):hover {
+.sl-markdown-content a:not(.sl-anchor-link, :where(.not-content *)):hover {
   border-bottom-color: var(--sl-color-text-accent);
+}
+
+/* Heading anchor-link icon — no underline, no border; it's a pure icon. */
+.sl-markdown-content a.sl-anchor-link {
+  border-bottom: 0;
+  text-decoration: none;
 }
 
 /* ==========================================================================
