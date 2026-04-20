@@ -1,31 +1,25 @@
 ---
-import Select from '@astrojs/starlight/components/Select.astro'
+import Icon from '@astrojs/starlight/user-components/Icon.astro'
+
+const t = Astro.locals.t
+const darkLabel = t('themeSelect.dark')
+const lightLabel = t('themeSelect.light')
 ---
 
-<starlight-theme-select>
-  <Select
-    icon="laptop"
-    label={Astro.locals.t('themeSelect.accessibleLabel')}
-    options={[
-      { label: Astro.locals.t('themeSelect.dark'), selected: true, value: 'dark' },
-      { label: Astro.locals.t('themeSelect.light'), selected: false, value: 'light' },
-    ]}
-    width="6.25em"
-  />
+<starlight-theme-select class="jk-theme-toggle" role="group" aria-label={t('themeSelect.accessibleLabel')}>
+  <button type="button" data-theme-value="dark" aria-label={darkLabel} title={darkLabel}>
+    <Icon name="moon" size="1rem" />
+  </button>
+  <button type="button" data-theme-value="light" aria-label={lightLabel} title={lightLabel}>
+    <Icon name="sun" size="1rem" />
+  </button>
 </starlight-theme-select>
-
-{/* Inlined to avoid FOUC. Uses global scope from `ThemeProvider.astro`. */}
-<script is:inline>
-  StarlightThemeProvider.updatePickers();
-</script>
 
 <script>
   type Theme = 'dark' | 'light'
 
   const storageKey = 'starlight-theme'
 
-  // Coerce any stored value (including the retired 'auto' or an empty
-  // string from prior installs) to a known Theme. Default is dark.
   const parseTheme = (value: unknown): Theme =>
     value === 'light' ? 'light' : 'dark'
 
@@ -33,31 +27,70 @@ import Select from '@astrojs/starlight/components/Select.astro'
     parseTheme(typeof localStorage !== 'undefined' && localStorage.getItem(storageKey))
 
   function storeTheme(theme: Theme): void {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(storageKey, theme)
-    }
+    if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey, theme)
+  }
+
+  function applyActive(root: HTMLElement, theme: Theme) {
+    root.querySelectorAll<HTMLButtonElement>('button[data-theme-value]').forEach((btn) => {
+      const active = btn.dataset.themeValue === theme
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false')
+    })
   }
 
   function onThemeChange(theme: Theme): void {
-    ;(window as any).StarlightThemeProvider?.updatePickers?.(theme)
     document.documentElement.dataset.theme = theme
     storeTheme(theme)
+    document.querySelectorAll<HTMLElement>('starlight-theme-select').forEach((el) => applyActive(el, theme))
   }
 
   class JackinThemeSelect extends HTMLElement {
     constructor() {
       super()
-      onThemeChange(loadTheme())
-      const select = this.querySelector('select')
-      if (select) {
-        select.value = loadTheme()
-        select.addEventListener('change', (e) => {
-          if (e.currentTarget instanceof HTMLSelectElement) {
-            onThemeChange(parseTheme(e.currentTarget.value))
-          }
+      const current = loadTheme()
+      applyActive(this, current)
+      onThemeChange(current)
+      this.querySelectorAll<HTMLButtonElement>('button[data-theme-value]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          onThemeChange(parseTheme(btn.dataset.themeValue))
         })
-      }
+      })
     }
   }
   customElements.define('starlight-theme-select', JackinThemeSelect)
 </script>
+
+<style>
+  starlight-theme-select.jk-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 2px;
+    border: 1px solid var(--jk-ui);
+    border-radius: 8px;
+    background: var(--jk-panel);
+  }
+
+  starlight-theme-select.jk-theme-toggle button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--jk-text-ghost);
+    cursor: pointer;
+    transition: color 0.15s, background-color 0.15s;
+  }
+
+  starlight-theme-select.jk-theme-toggle button:hover {
+    color: var(--jk-text);
+  }
+
+  starlight-theme-select.jk-theme-toggle button[aria-pressed='true'] {
+    color: var(--sl-color-text-accent);
+    background: var(--jk-bg-deep);
+  }
+</style>
