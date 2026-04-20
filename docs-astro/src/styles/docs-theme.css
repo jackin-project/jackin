@@ -120,8 +120,8 @@
   --jk-text:       #1a1c1b;
   --jk-text-dim:   #5d6460;
   --jk-text-ghost: #8a928e;
-  --jk-accent:     #00b82f;   /* darker green — bright Matrix green washes on white */
-  --jk-accent-dim: #008f24;
+  --jk-accent:     #007a22;   /* deep forest green — AA contrast on white (5.1:1) */
+  --jk-accent-dim: #005c1a;   /* deeper still for pressed/active highlights */
   --jk-ui:         rgba(0, 0, 0, 0.08);
   --jk-ui-strong:  rgba(0, 0, 0, 0.18);
   --jk-ui-subtle:  rgba(0, 0, 0, 0.04);
@@ -140,7 +140,7 @@
 
   --sl-color-bg-inline-code: var(--jk-panel);
 
-  --sl-color-accent-low:  rgba(0, 184, 47, 0.12);
+  --sl-color-accent-low:  rgba(0, 122, 34, 0.12);
   --sl-color-accent:      var(--jk-accent);
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
