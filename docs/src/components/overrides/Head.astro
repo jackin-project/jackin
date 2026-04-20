@@ -131,13 +131,15 @@ const breadcrumbJsonLd = {
   })()
 </script>
 
-<Default><slot /></Default>
+{/* Preload the static Inter Black woff2 FIRST, before Starlight's
+    default head emits the main stylesheet <link>. The preload scanner
+    will then pick it up before the CSS request, so the font is in
+    cache by the time the @font-face rule starts looking for it, and
+    the wordmark paints without a fallback flash between pages.
+    fetchpriority="high" keeps it above other preloaded resources. */}
+<link rel="preload" as="font" type="font/woff2" href={interBlack} crossorigin fetchpriority="high" />
 
-{/* Preload the static Inter Black woff2 — without this the wordmark
-    visibly swaps from the fallback to Inter Black on every first
-    navigation because the @font-face rule isn't discovered until the
-    docs bundle CSS parses. */}
-<link rel="preload" as="font" type="font/woff2" href={interBlack} crossorigin />
+<Default><slot /></Default>
 
 {/* Social preview image — Starlight sets og:title / og:description /
     twitter:card but not og:image. Adding both og:image and

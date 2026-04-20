@@ -56,8 +56,8 @@ const jsonLd = {
     {/* Preload the above-the-fold woff2s — avoids FOUT on the hero and
         the giant wordmark, which are the first two things users see.
         crossorigin is required for woff2 preloads even when same-origin. */}
-    <link rel="preload" as="font" type="font/woff2" href={interLatin} crossorigin />
-    <link rel="preload" as="font" type="font/woff2" href={interBlack} crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href={interLatin} crossorigin fetchpriority="high" />
+    <link rel="preload" as="font" type="font/woff2" href={interBlack} crossorigin fetchpriority="high" />
 
     {/* Open Graph — Facebook, LinkedIn, Slack, Discord, iMessage. */}
     <meta property="og:title" content={TITLE} />
