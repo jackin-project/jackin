@@ -1,0 +1,78 @@
+---
+import MobileTableOfContents from '@astrojs/starlight/components/MobileTableOfContents.astro'
+import TableOfContents from '@astrojs/starlight/components/TableOfContents.astro'
+---
+
+{
+  Astro.locals.starlightRoute.toc && (
+    <>
+      <div class="lg:sl-hidden">
+        <MobileTableOfContents />
+      </div>
+      <div class="right-sidebar-panel sl-hidden lg:sl-block">
+        <div class="sl-container">
+          <TableOfContents />
+        </div>
+        <div class="jk-sidebar-wordmark" aria-hidden="true">
+          jackin<span class="tick">'</span>
+        </div>
+      </div>
+    </>
+  )
+}
+
+<style>
+  /* Mobile: Starlight's .sl-hidden sets display: none on this panel
+     (the right rail is desktop-only; phones show MobileTableOfContents
+     above the article instead). Our scoped .right-sidebar-panel selector
+     wins over .sl-hidden on specificity, so without the media-query
+     guard below, the flex layout + wordmark leaked back onto mobile
+     and looked broken. Only opt in to the desktop layout at lg+. */
+  .right-sidebar-panel {
+    padding: 1rem var(--sl-sidebar-pad-x);
+  }
+
+  @media (min-width: 72rem) {
+    .right-sidebar-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - var(--sl-nav-height) - 2rem);
+    }
+  }
+
+  /* Use the full right-sidebar column width. Starlight's default caps
+     .sl-container at 25% of remaining viewport (even their own code
+     comments it as "MAGIC NUMBER 🥲") which leaves the TOC artificially
+     narrow. Let it fill its parent and respect the panel's horizontal
+     padding. */
+  .sl-container {
+    width: 100%;
+  }
+
+  /* Landing-footer-wordmark transplanted into the right sidebar. Sits at
+     the bottom of the available panel height; pushes the TOC up when the
+     TOC is short so the wordmark always anchors the bottom edge. */
+  .jk-sidebar-wordmark {
+    margin-top: auto;
+    padding-top: 3rem;
+    /* Static Inter Black — matches the landing wordmark;
+       see docs/src/components/landing/styles.css for the @font-face. */
+    font-family: 'Inter Black', 'Inter', sans-serif;
+    font-weight: 900;
+    font-size: clamp(60px, 7vw, 96px);
+    line-height: 0.9;
+    letter-spacing: -0.06em;
+    color: var(--jk-text);
+    user-select: none;
+    opacity: 0.9;
+  }
+
+  .jk-sidebar-wordmark .tick {
+    color: #00ff41;
+    text-shadow: 0 0 0.1em rgba(0, 255, 65, 0.35);
+  }
+
+  :root[data-theme='light'] .jk-sidebar-wordmark .tick {
+    text-shadow: none;
+  }
+</style>
