@@ -63,6 +63,9 @@ export default defineConfig({
           ],
         },
       ],
+      components: {
+        Head: './src/components/overrides/Head.astro',
+      },
       customCss: [
         './src/styles/global.css',
         './src/styles/tempo-tokens.css',
