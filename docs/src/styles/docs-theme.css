@@ -396,6 +396,73 @@ html.theme-init *::after {
 }
 
 /* ==========================================================================
+   Mobile "On this page" (MobileTableOfContents) — Starlight defaults
+   resolve through --sl-color-black, --sl-color-gray-5, etc. which in
+   our palette rendered muddy (near-white button + faint grey border
+   in light mode; dark-on-dark with low contrast in dark mode).
+   ========================================================================== */
+
+mobile-starlight-toc > nav {
+  background-color: var(--jk-bg);
+  border-top-color: var(--jk-ui-strong);
+}
+
+mobile-starlight-toc summary {
+  border-bottom-color: var(--jk-ui-strong);
+}
+
+mobile-starlight-toc .toggle {
+  background-color: var(--jk-panel);
+  border-color: var(--jk-ui-strong);
+  color: var(--jk-text-dim);
+}
+
+mobile-starlight-toc details .toggle:hover {
+  color: var(--jk-text);
+  border-color: var(--jk-text-dim);
+}
+
+mobile-starlight-toc details[open] .toggle {
+  color: var(--jk-text);
+  border-color: var(--jk-brand);
+}
+
+mobile-starlight-toc .display-current {
+  color: var(--jk-text);
+}
+
+mobile-starlight-toc .caret {
+  color: var(--jk-text-dim);
+}
+
+mobile-starlight-toc .dropdown {
+  background-color: var(--jk-panel);
+  border-color: var(--jk-ui-strong);
+  border-top-color: var(--jk-ui-strong);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+mobile-starlight-toc .dropdown a {
+  color: var(--jk-text-dim);
+  border-top-color: var(--jk-ui);
+}
+
+mobile-starlight-toc .dropdown a:hover {
+  color: var(--jk-text);
+  background-color: var(--jk-bg);
+}
+
+mobile-starlight-toc .dropdown a[aria-current='true'] {
+  color: var(--jk-brand);
+  font-weight: 500;
+  background-color: transparent;
+}
+
+mobile-starlight-toc .dropdown a[aria-current='true']::after {
+  background-color: var(--jk-brand);
+}
+
+/* ==========================================================================
    Right-rail outline — tree structure; rails on nested groups only,
    turn green when they contain the active heading.
    ========================================================================== */
