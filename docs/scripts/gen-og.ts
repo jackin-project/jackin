@@ -77,6 +77,35 @@ const rainState = createRainState(RAIN_COLS, RAIN_ROWS, rainRng)
 // and natural gaps are in place.
 for (let i = 0; i < 80; i++) tickRain(rainState, rainRng)
 
+// Per-cell opacity mask so the rain fades out under the text block
+// instead of needing a dark overlay on top. An elliptical soft mask
+// centred on the wordmark/tagline region: cells inside the ellipse
+// render near-invisible, cells outside stay at full brightness, with
+// a smooth transition between the two so the edge doesn't read as a
+// hard cutout.
+const TEXT_CENTER_X = 1200 * 0.32
+const TEXT_CENTER_Y = 630 * 0.56
+const TEXT_RADIUS_X = 1200 * 0.42
+const TEXT_RADIUS_Y = 630 * 0.4
+// Opacity inside the mask / at the soft edge / outside.
+const MASK_INNER_OPACITY = 0.12
+const MASK_OUTER_OPACITY = 1.0
+// Mask threshold: d <= 1 is fully inside, d >= EDGE is fully outside.
+const MASK_EDGE = 1.55
+
+function cellOpacity(cx: number, cy: number): number {
+  const dx = (cx - TEXT_CENTER_X) / TEXT_RADIUS_X
+  const dy = (cy - TEXT_CENTER_Y) / TEXT_RADIUS_Y
+  const d = Math.sqrt(dx * dx + dy * dy)
+  if (d <= 1) return MASK_INNER_OPACITY
+  if (d >= MASK_EDGE) return MASK_OUTER_OPACITY
+  // Smoothstep between inner and outer — cheap cubic ease so the
+  // transition band reads as atmospheric blur, not a sharp ring.
+  const t = (d - 1) / (MASK_EDGE - 1)
+  const smooth = t * t * (3 - 2 * t)
+  return MASK_INNER_OPACITY + (MASK_OUTER_OPACITY - MASK_INNER_OPACITY) * smooth
+}
+
 // Build the rain grid as a satori node tree — each cell is a
 // positioned span. Routing it through satori means the output SVG
 // has the glyphs baked into path data (no font dependency for the
@@ -89,6 +118,12 @@ for (let r = 0; r < RAIN_ROWS; r++) {
     if (!cell) continue
     const colour = ageToColor(cell.age)
     if (!colour) continue
+    const cx = c * CELL_W + CELL_W / 2
+    const cy = r * CELL_H + CELL_H / 2
+    const op = cellOpacity(cx, cy)
+    // Tiny glyphs with opacity ~0.03 aren't worth rendering — skip
+    // them so the satori tree stays as small as possible.
+    if (op < 0.05) continue
     rainChildren.push(
       h(
         'div',
@@ -106,6 +141,7 @@ for (let r = 0; r < RAIN_ROWS; r++) {
             fontSize: RAIN_FONT_PX,
             fontWeight: 600,
             color: colour,
+            opacity: op,
           },
         },
         cell.ch,
@@ -147,11 +183,11 @@ const rainDataUri = `data:image/png;base64,${rainPng.toString('base64')}`
 
 // Layer stack (back → front):
 //   1. Solid black base
-//   2. Rain PNG (deterministic Matrix drizzle)
-//   3. Semi-transparent black overlay to knock the rain back so it
-//      reads as atmosphere, not foreground noise
-//   4. Radial vignette for light focus on the text block
-//   5. The actual content (label / wordmark / tagline)
+//   2. Rain PNG — already pre-masked so cells under the text block
+//      are rendered near-invisible and cells outside stay bright.
+//      That replaces the old "bright rain + dark overlay" approach,
+//      which had to dim the rain everywhere to protect text legibility.
+//   3. The actual content (label / wordmark / tagline)
 const tree = h(
   'div',
   {
@@ -164,7 +200,7 @@ const tree = h(
       fontFamily: 'Inter',
     },
   },
-  // Rain layer
+  // Rain layer — opacity mask is baked into the PNG per-cell.
   h('div', {
     style: {
       position: 'absolute',
@@ -176,38 +212,6 @@ const tree = h(
       backgroundImage: `url("${rainDataUri}")`,
       backgroundSize: '1200px 630px',
       backgroundRepeat: 'no-repeat',
-    },
-  }),
-  // Light global dim — knocks the rain from "bright" to "ambient"
-  // without killing it. Kept subtle (48%) so the Matrix character
-  // still reads on the right-hand side where there's no text.
-  h('div', {
-    style: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      display: 'flex',
-      backgroundColor: 'rgba(10, 11, 10, 0.48)',
-    },
-  }),
-  // Near-solid dark floor behind the text block. Two-stop radial:
-  // opaque at the text anchor, holds ~85% through the tagline
-  // extent, then fades to transparent so the rain on the right
-  // stays fully atmospheric. Sized wider than the prior pass so
-  // the right edge of the tagline ("inside.") also sits on a
-  // solid floor.
-  h('div', {
-    style: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      display: 'flex',
-      backgroundImage:
-        'radial-gradient(ellipse 78% 80% at 32% 54%, rgba(10,11,10,0.98), rgba(10,11,10,0.86) 55%, rgba(10,11,10,0.3) 85%, transparent 100%)',
     },
   }),
   // Content
