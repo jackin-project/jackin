@@ -24,6 +24,11 @@ export default defineConfig({
         text3: '#9ca8a1',
         text4: '#5e6a64',
         heading: '#f4f7f5',
+        codeInlineText: '#f4f7f5',
+        codeInlineBackground: 'rgba(244, 247, 245, 0.04)',
+        codeInlineBorder: 'rgba(244, 247, 245, 0.1)',
+        codeBlockBackground: 'rgba(0, 5, 3, 0.85)',
+        codeTitleBackground: 'rgba(255, 255, 255, 0.018)',
       },
       fontFamily: {
         default: "'Inter', system-ui, -apple-system, sans-serif",
