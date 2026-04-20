@@ -246,22 +246,22 @@
    paragraphs as continuous text.
    ========================================================================== */
 
-.sl-markdown-content :is(ul, ol):not(:where(.not-content *)) {
+.sl-markdown-content :is(ul, ol):not(:where(.not-content *, .sl-steps, .sl-steps *)) {
   list-style: revert;
   padding-inline-start: 1.5rem;
   margin-block: 1rem;
 }
 
-.sl-markdown-content :is(ul, ol):not(:where(.not-content *)) :is(ul, ol) {
+.sl-markdown-content :is(ul, ol):not(:where(.not-content *, .sl-steps, .sl-steps *)) :is(ul, ol) {
   margin-block: 0.25rem;
 }
 
-.sl-markdown-content li:not(:where(.not-content *)) {
+.sl-markdown-content li:not(:where(.not-content *, .sl-steps > li)) {
   margin-block: 0.35rem;
   padding-inline-start: 0.25rem;
 }
 
-.sl-markdown-content li::marker {
+.sl-markdown-content li:not(:where(.sl-steps > li))::marker {
   color: var(--jk-text-ghost);
 }
 
