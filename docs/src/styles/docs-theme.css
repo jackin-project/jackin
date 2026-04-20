@@ -614,15 +614,31 @@ header.header {
    green underline via --sl-tab-color-border.
    ========================================================================== */
 
-/* Bottom border lives on the WRAPPER, not on [role='tablist']. The
-   wrapper doesn't scroll; the tablist inside does. Keeping the border
-   on the scrolling element made the line slide with the tabs on mobile. */
+/* Tab underline architecture:
+   - Grey baseline is a pseudo-element on .tablist-wrapper — non-scrolling,
+     spans the full width of the tab row. Stays visually anchored regardless
+     of horizontal scroll on mobile.
+   - Green active indicator is a pseudo-element on the active <a> —
+     scrolls with the tab and paints AT THE SAME PIXEL ROW as the grey
+     baseline, so it looks like the grey line "turns green" under the
+     active tab. z-index ordering guarantees the green sits on top. */
 .sl-markdown-content .tablist-wrapper {
-  border-bottom: 2px solid rgba(255, 255, 255, 0.14);
+  position: relative;
+}
+.sl-markdown-content .tablist-wrapper::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+  z-index: 0;
 }
 
-:root[data-theme='light'] .sl-markdown-content .tablist-wrapper {
-  border-bottom-color: rgba(0, 0, 0, 0.16);
+:root[data-theme='light'] .sl-markdown-content .tablist-wrapper::after {
+  background: rgba(0, 0, 0, 0.16);
 }
 
 .sl-markdown-content [role='tablist'] {
@@ -632,21 +648,15 @@ header.header {
 .sl-markdown-content .tab > [role='tab'] {
   --sl-tab-color-border: transparent;
   color: var(--jk-text-dim);
-  transition: color 0.15s, border-color 0.15s;
-  /* Each tab keeps its label on a single line so the green indicator
-     is always a clean 2px strip. Long labels scroll horizontally (see
-     .tablist-wrapper) rather than wrapping and forming a staircase. */
+  transition: color 0.15s;
+  /* Single-line labels; long labels scroll horizontally via
+     .tablist-wrapper rather than wrapping and creating a staircase
+     underline. */
   white-space: nowrap;
   padding: 0.65rem 1rem;
   font-size: 0.875rem;
-  /* Reserve a 2px bottom-border for the indicator, and overlap the
-     wrapper's 2px border-bottom via negative margin. The active tab
-     paints this border green; inactive tabs keep it transparent but
-     still cover the wrapper's grey line at their own x-range. No
-     box-shadow — border handles the indicator reliably across
-     scrolled states and viewport sizes. */
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
+  position: relative;
+  border-bottom: 0;
   box-shadow: none;
 }
 
@@ -657,8 +667,20 @@ header.header {
 .sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
   color: var(--jk-text);
   font-weight: 600;
-  /* Brand green — matches the logo tick, independent of page theme. */
-  border-bottom-color: var(--jk-brand);
+}
+
+/* Green indicator rides at the same pixel row as the wrapper's grey
+   baseline — the tab's height equals the wrapper's height (no padding
+   on the wrapper), so bottom: 0 on both pseudo-elements coincides. */
+.sl-markdown-content .tab > [role='tab'][aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--jk-brand);
+  z-index: 1;
 }
 
 /* Hide the scrollbar on the tablist wrapper — it's a minor scroll axis
