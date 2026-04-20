@@ -3,6 +3,7 @@ import { PillCards } from './PillCards';
 import { ApproachCards } from './ApproachCards';
 import { CastRoster } from './CastRoster';
 import { CompositionMachine } from './CompositionMachine';
+import { DailyLoop } from './DailyLoop';
 import { InstallBlock } from './InstallBlock';
 import { VocabularyDictionary } from './VocabularyDictionary';
 import { WordmarkFooter } from './WordmarkFooter';
@@ -14,6 +15,7 @@ export function Landing() {
       <PillCards />
       <ApproachCards />
       <CastRoster />
+      <DailyLoop />
       <CompositionMachine />
       <InstallBlock />
       <WordmarkFooter />
