@@ -264,18 +264,19 @@
 }
 
 .sl-markdown-content li:not(:where(.sl-steps > li))::marker {
-  color: var(--jk-text-ghost);
+  /* Ordered-list numbers + unordered bullets use the body text color so
+     they read as part of the flow — white in dark, black in light. */
+  color: var(--jk-text);
 }
 
-/* <Steps> number badge — Starlight defaults to a muddy grey pill with
-   white text that clashes with both palettes. Swap to a transparent
-   circle with a Matrix-green outline + green number; connects visually
-   to the rest of the accent language (links, active sidebar pill,
-   TOC rail). */
+/* <Steps> number badge — neutral colors. Brand green is used heavily
+   elsewhere (links, sidebar pill, tabs, pagination); keeping step
+   numbers in white/black lets them read as structural indicators
+   rather than competing for accent attention. */
 .sl-markdown-content .sl-steps > li::before {
-  color: var(--sl-color-text-accent);
+  color: var(--jk-text);
   background-color: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--sl-color-text-accent);
+  box-shadow: inset 0 0 0 1.5px var(--jk-ui-strong);
   font-weight: 700;
 }
 
