@@ -23,7 +23,7 @@ export function DigitalRain({ fontSize = 14, cellW = 12, cellH = 18, frameMs = 3
       // Render a single populated still frame and stop — previously
       // this branch only sized the canvas and returned, leaving
       // reduced-motion users with a blank black area instead of the
-      // intended static Matrix backdrop.
+      // intended static phosphor-rain backdrop.
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       canvas.width = rect.width * dpr;

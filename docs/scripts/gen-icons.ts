@@ -57,7 +57,7 @@ const h = (
 })
 
 // The icon tree: a black rounded square holding the "j'" wordmark in
-// Inter Black, white "j" next to a Matrix-green apostrophe. Sized in
+// Inter Black, white "j" next to a phosphor-green apostrophe. Sized in
 // px against a 512-unit canvas — larger rasters come from satori's
 // output; smaller rasters are produced by resvg scaling.
 //
@@ -129,7 +129,7 @@ const manifest = {
   name: "jackin'",
   short_name: "jackin'",
   description:
-    "Jack your AI coding agents into the Matrix. Their own isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",
+    "Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",
   start_url: '/',
   display: 'standalone',
   background_color: BG,

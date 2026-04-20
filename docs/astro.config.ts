@@ -23,7 +23,7 @@ export default defineConfig({
     starlight({
       title: "jackin'",
       description:
-        "Jack your AI coding agents into the Matrix. Their own isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",
+        "Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",
       // Two dark shiki themes — code blocks stay dark in both page modes
       // (see --jk-code-bg in docs-theme.css), but the syntax palette
       // differs: github-dark is the subdued dark-page default, and

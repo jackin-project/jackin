@@ -64,7 +64,7 @@ function makeSeededRng(seed: number): () => number {
 
 // Grid sized so cells render ~22px tall at the 1200×630 canvas.
 // 80 × 24 keeps the character count ~2k max (well under satori's
-// hard limit) and leaves enough density for the Matrix feel.
+// hard limit) and leaves enough density for the phosphor-rain feel.
 const RAIN_COLS = 80
 const RAIN_ROWS = 24
 const CELL_W = 1200 / RAIN_COLS
@@ -297,8 +297,11 @@ const tree = h(
         },
         // Satori trims whitespace between flex children; nbsp inside the
         // span preserves the visible gap without a CSS margin hack.
-        'Jack your AI coding agents into the',
-        h('span', { style: { display: 'flex', color: '#00ff41' } }, '\u00A0Matrix'),
+        // "in" is the accent word — its double duty (preposition + the
+        // inside/outside boundary that's the brand concept) carries the
+        // line without naming a franchise-adjacent destination.
+        'Jack your AI coding agents',
+        h('span', { style: { display: 'flex', color: '#00ff41' } }, '\u00A0in'),
         '.'
       ),
       h(
@@ -313,7 +316,7 @@ const tree = h(
             lineHeight: 1.35,
           },
         },
-        'Their own isolated worlds. Scoped access. Full autonomy.'
+        'Isolated worlds. Scoped access. Full autonomy.'
       ),
       h(
         'div',

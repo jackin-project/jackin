@@ -31,7 +31,7 @@ const route = await OGImageRoute({
   getImageOptions: (_path, { data }: { data: { title: string; description?: string } }) => ({
     title: data.title,
     description: data.description ?? '',
-    // Landing palette — black bg, Matrix-green accent bar, near-white text.
+    // Landing palette — black bg, phosphor-green accent bar, near-white text.
     bgGradient: [[10, 11, 10]],
     border: { color: [0, 255, 65], width: 12, side: 'inline-start' },
     padding: 80,

@@ -1,7 +1,7 @@
 {
   "name": "jackin'",
   "short_name": "jackin'",
-  "description": "Jack your AI coding agents into the Matrix. Their own isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",
+  "description": "Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0b0a",

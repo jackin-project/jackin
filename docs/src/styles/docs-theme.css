@@ -28,10 +28,10 @@
   --sl-content-width: 48rem;
   --sl-nav-height: 3.5rem;
 
-  /* Brand accent — theme-aware so dark mode can keep the bright Matrix
-     green while light mode uses a juicy-but-usable mid-green. Per-theme
-     values live in the [data-theme='*'] blocks below; this fallback
-     matches the dark-mode default for pre-theme-set renders. */
+  /* Brand accent — theme-aware so dark mode can keep the bright
+     phosphor green while light mode uses a juicy-but-usable mid-green.
+     Per-theme values live in the [data-theme='*'] blocks below; this
+     fallback matches the dark-mode default for pre-theme-set renders. */
   --jk-brand:      #00ff41;
 
   /* Fallback --jk-* tokens (dark). Ensures tokens resolve before
@@ -64,7 +64,7 @@
   --jk-text-ghost: #5e6a64;
   --jk-accent:     #00ff41;
   --jk-accent-dim: #00b82f;
-  --jk-brand:      #00ff41;   /* bright Matrix green on dark surfaces */
+  --jk-brand:      #00ff41;   /* bright phosphor green on dark surfaces */
   --jk-ui:         rgba(244, 247, 245, 0.1);
   --jk-ui-strong:  rgba(244, 247, 245, 0.22);
   --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
