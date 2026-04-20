@@ -351,8 +351,10 @@
   border-radius: 0;
   background: transparent;
   color: var(--jk-text-dim);
+  font-size: 0.75rem;       /* 12px — Starlight default; lost when we overrode PageSidebar.astro */
+  line-height: 1.4;
   transition: color 0.1s;
-  padding-block: 0.25rem;
+  padding-block: 0.2rem;
   padding-left: 0.75rem;
 }
 
