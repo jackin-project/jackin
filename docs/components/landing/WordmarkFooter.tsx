@@ -5,7 +5,7 @@ export function WordmarkFooter() {
       <div className="landing-footer-meta">
         <a href="https://github.com/jackin-project/jackin" target="_blank" rel="noopener">GitHub</a>
         <span className="sep">·</span>
-        <a href="https://jackin.tailrocks.com/" target="_blank" rel="noopener">Docs</a>
+        <a href="/getting-started/why">Docs</a>
         <span className="sep">·</span>
         <span>Apache 2.0</span>
       </div>

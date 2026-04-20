@@ -19,6 +19,8 @@
   background: var(--landing-bg);
   color: var(--landing-text);
   font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 400;
+  line-height: normal;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
   position: relative;
@@ -27,6 +29,7 @@
 .landing-root * { box-sizing: border-box; }
 
 .landing-shell {
+  width: 100%;
   max-width: 1280px;
   margin: 0 auto;
   padding: 0 40px;
@@ -110,10 +113,10 @@
 }
 
 .landing-btn-primary, .landing-btn-ghost {
+  padding: 13px 22px;
   font-family: 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 600;
-  padding: 12px 22px;
   border-radius: 5px;
   cursor: pointer;
   letter-spacing: -0.01em;
@@ -151,6 +154,10 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
+  border-top: 1px solid var(--landing-ui);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--landing-text-ghost);
 }
 .landing-footer-meta {
   display: flex;
