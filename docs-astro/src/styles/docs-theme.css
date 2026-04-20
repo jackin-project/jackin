@@ -28,6 +28,12 @@
   --sl-content-width: 48rem;
   --sl-nav-height: 3.5rem;
 
+  /* Brand color — always the bright Matrix green, independent of
+     page theme. Used for elements that should carry brand identity
+     regardless of light/dark (logo tick, tab active underline,
+     pagination hover). */
+  --jk-brand:      #00ff41;
+
   /* Fallback --jk-* tokens (dark). Ensures tokens resolve before
      data-theme gets applied to <html>. */
   --jk-bg:         #0a0b0a;
@@ -541,7 +547,8 @@ header.header {
 .sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
   color: var(--jk-text);
   font-weight: 600;
-  box-shadow: 0 2px 0 var(--sl-color-text-accent);
+  /* Brand green — matches the logo tick, independent of page theme. */
+  box-shadow: 0 2px 0 var(--jk-brand);
 }
 
 /* Hide the scrollbar on the tablist wrapper — it's a minor scroll axis
@@ -694,7 +701,7 @@ site-search dialog {
 }
 
 .pagination-links a:hover {
-  border-color: var(--sl-color-text-accent);
+  border-color: var(--jk-brand);
   color: var(--jk-text);
   transform: translateY(-1px);
 }
@@ -707,7 +714,7 @@ site-search dialog {
 }
 
 .pagination-links a:hover .link-title {
-  color: var(--sl-color-text-accent);
+  color: var(--jk-brand);
 }
 
 .pagination-links a > span:not(.link-title) {
@@ -724,5 +731,5 @@ site-search dialog {
 }
 
 .pagination-links a:hover svg {
-  color: var(--sl-color-text-accent);
+  color: var(--jk-brand);
 }
