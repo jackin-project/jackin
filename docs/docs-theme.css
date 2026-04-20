@@ -1,0 +1,130 @@
+/* Deeper docs chrome theming — brings Vocs's topnav, sidebar, and outline
+   closer to the landing's typography + geometry.
+   Scoped to exclude the landing (which overrides max-width etc. separately). */
+
+/* ===== Top nav ===== */
+.vocs_DesktopTopNav_item,
+.vocs_MobileTopNav .vocs_Link_styleless {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+
+.vocs_DesktopTopNav_logo,
+.vocs_Sidebar_logo .vocs_NavLogo_logo {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+/* Hairline under the topnav — matches landing's hero topnav gradient bottom edge */
+[data-layout='docs'] .vocs_DesktopTopNav::after,
+[data-layout='minimal'] .vocs_DesktopTopNav::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: var(--landing-ui, rgba(244, 247, 245, 0.1));
+}
+
+/* ===== Sidebar ===== */
+.vocs_Sidebar_sectionTitle {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--landing-text-ghost, #5e6a64);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vocs_Sidebar_sectionTitle::before {
+  content: '';
+  width: 14px;
+  height: 1px;
+  background: var(--landing-accent, #00ff41);
+}
+
+.vocs_Sidebar_item {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+}
+
+.vocs_Sidebar_item[data-active='true'] {
+  color: var(--landing-accent, #00ff41) !important;
+  font-weight: 600;
+}
+
+.vocs_Sidebar_divider {
+  background: var(--landing-ui, rgba(244, 247, 245, 0.1)) !important;
+}
+
+/* ===== Outline (right rail — "On this page") ===== */
+.vocs_Outline {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12.5px;
+}
+
+.vocs_Outline > div:first-child,
+.vocs_Outline_heading {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--landing-text-ghost, #5e6a64);
+}
+
+/* ===== Content headings — land the green-eyebrow treatment on H2s ===== */
+[data-layout='docs'] .vocs_H1 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.028em;
+}
+
+[data-layout='docs'] .vocs_H2,
+[data-layout='docs'] .vocs_H3 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* ===== Code blocks — lean toward the landing's terminal palette ===== */
+.vocs_CodeBlock {
+  border-color: var(--landing-ui-strong, rgba(244, 247, 245, 0.22));
+}
+
+.vocs_CodeTitle {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--landing-text-ghost, #5e6a64);
+}
+
+/* Inline code stays JetBrains Mono via theme, but tighten the chip look */
+.vocs_Code {
+  font-size: 0.88em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(244, 247, 245, 0.04);
+}
+
+/* ===== Socials + footer ===== */
+.vocs_Footer_editLink {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+
+/* ===== Search trigger ===== */
+.vocs_DesktopSearch button,
+.vocs_DesktopSearch input {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}

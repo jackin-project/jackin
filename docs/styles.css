@@ -1,7 +1,8 @@
 @import "tailwindcss";
-/* Fonts are loaded via <link> in vocs.config.ts head to avoid bundler
-   stripping the remote @import. */
+/* Fonts are loaded at runtime from docs/layout.tsx — the @import url()
+   for Google Fonts gets stripped by the bundler. */
 @import "./components/landing/styles.css";
+@import "./docs-theme.css";
 
 @source "./";
 
