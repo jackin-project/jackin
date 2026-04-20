@@ -506,7 +506,7 @@ header.header {
    green underline via --sl-tab-color-border.
    ========================================================================== */
 
-.sl-markdown-content [role='tablist']:not(:where(.not-content *)) {
+.sl-markdown-content [role='tablist'] {
   /* 2px line thick enough to anchor the tab row on a white page. Colors
      set per theme below since --jk-ui-strong rendered near-invisible. */
   border-bottom-width: 2px;
@@ -514,7 +514,7 @@ header.header {
   border-bottom-color: rgba(255, 255, 255, 0.14);
 }
 
-:root[data-theme='light'] .sl-markdown-content [role='tablist']:not(:where(.not-content *)) {
+:root[data-theme='light'] .sl-markdown-content [role='tablist'] {
   border-bottom-color: rgba(0, 0, 0, 0.16);
 }
 
@@ -549,7 +549,7 @@ header.header {
    still swipe/scroll horizontally; on desktop they can also shift-wheel
    or drag-select. A subtle gradient fade on the right edge hints there's
    more content when the tablist overflows. */
-.sl-markdown-content .tablist-wrapper:not(:where(.not-content *)) {
+.sl-markdown-content .tablist-wrapper {
   scrollbar-width: none;
   -ms-overflow-style: none;
   position: relative;
