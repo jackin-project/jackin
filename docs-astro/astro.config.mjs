@@ -1,13 +1,10 @@
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 import react from '@astrojs/react'
-import mdx from '@astrojs/mdx'
 
 export default defineConfig({
   site: 'https://jackin.tailrocks.com',
   integrations: [
-    react(),
-    mdx(),
     starlight({
       title: "jackin'",
       description: 'CLI for orchestrating AI coding agents in isolated containers',
@@ -16,5 +13,6 @@ export default defineConfig({
         { label: 'Placeholder', items: [{ label: 'Placeholder', slug: 'placeholder' }] },
       ],
     }),
+    react(),
   ],
 })
