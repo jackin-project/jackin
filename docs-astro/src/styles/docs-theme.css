@@ -514,6 +514,12 @@ header.header {
   --sl-tab-color-border: transparent;
   color: var(--jk-text-dim);
   transition: color 0.15s, box-shadow 0.15s;
+  /* Keep each tab on a single line so the 2px green underline stays a
+     clean strip. Long labels scroll horizontally (see .tablist-wrapper
+     below) rather than wrapping and creating a staircase underline. */
+  white-space: nowrap;
+  padding: 0.35rem 1rem;
+  font-size: 0.875rem;
 }
 
 .sl-markdown-content .tab > [role='tab']:hover {
@@ -524,6 +530,21 @@ header.header {
   --sl-tab-color-border: var(--sl-color-text-accent);
   color: var(--jk-text);
   font-weight: 600;
+}
+
+/* Hide the scrollbar on the tablist wrapper — it's a minor scroll axis
+   and the scrollbar chrome fights the clean underline look. Users can
+   still swipe/scroll horizontally; on desktop they can also shift-wheel
+   or drag-select. A subtle gradient fade on the right edge hints there's
+   more content when the tablist overflows. */
+.sl-markdown-content .tablist-wrapper:not(:where(.not-content *)) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  position: relative;
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+}
+.sl-markdown-content .tablist-wrapper::-webkit-scrollbar {
+  display: none;
 }
 
 /* ==========================================================================
