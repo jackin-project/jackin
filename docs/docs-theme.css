@@ -1,19 +1,68 @@
-/* Docs chrome — Tempo-inspired neutral look on Vocs.
-   Landing pages (layout: landing) keep their own styling via .landing-root. */
+/* Tempo-1:1 docs chrome: remap Vocs's color tokens to the Radix ramps
+   from tempo-tokens.css. Uses the CSS `light-dark()` function so a
+   single declaration handles both modes (controlled by the element's
+   computed `color-scheme`, set inline on <html> by our init IIFE). */
 
-/* ===== Landing full-bleed overrides ===== */
-/* Break the landing out of Vocs's docs content-width cap + zero its gutters. */
+/* Match Vocs's own `:root.dark` specificity so the overrides win in dark mode.
+   The light-dark() values resolve per computed color-scheme, so a single
+   declaration covers both themes. */
+:root,
+:root.dark {
+  /* Primary surfaces — Tempo's --background-color-primary/secondary pattern. */
+  --vocs-color_background: light-dark(var(--color-gray1), var(--color-gray2));
+  --vocs-color_background2: light-dark(var(--color-gray2), var(--color-gray3));
+  --vocs-color_background3: var(--color-gray3);
+  --vocs-color_background4: var(--color-gray4);
+  --vocs-color_background5: var(--color-gray5);
+  --vocs-color_backgroundDark: var(--color-gray1);
+
+  /* Borders — Radix grayA alpha ramps for translucent borders. */
+  --vocs-color_border: var(--color-grayA4);
+  --vocs-color_border2: var(--color-grayA5);
+
+  /* Text — Tempo's --text-color-primary/secondary. */
+  --vocs-color_text: var(--color-gray12);
+  --vocs-color_text2: var(--color-gray11);
+  --vocs-color_text3: var(--color-gray10);
+  --vocs-color_text4: var(--color-gray9);
+  --vocs-color_heading: var(--color-gray12);
+
+  /* Monochrome accent (Tempo's signature: black-on-light, white-on-dark). */
+  --vocs-color_backgroundAccent: light-dark(var(--color-black), var(--color-white));
+  --vocs-color_backgroundAccentHover: light-dark(var(--color-grayA11), var(--color-whiteA11));
+  --vocs-color_backgroundAccentText: light-dark(var(--color-white), var(--color-black));
+  --vocs-color_borderAccent: light-dark(var(--color-black), var(--color-white));
+  --vocs-color_textAccent: light-dark(var(--color-black), var(--color-white));
+  --vocs-color_textAccentHover: var(--color-gray11);
+
+  /* Inline code chip — match Tempo's surface treatment. */
+  --vocs-color_codeInlineText: var(--color-gray12);
+  --vocs-color_codeInlineBackground: var(--color-grayA3);
+  --vocs-color_codeInlineBorder: var(--color-grayA4);
+
+  /* Code block — slightly deeper than the page (gray1 in dark mode = #111,
+     page gray2 = #191919; in light mode both are very light, block barely
+     distinct — match Tempo). */
+  --vocs-color_codeBlockBackground: var(--color-gray1);
+  --vocs-color_codeTitleBackground: var(--color-gray2);
+}
+
+/* ==========================================================================
+   Scoped fixes
+   ========================================================================== */
+
+/* Landing full-bleed: break out of Vocs's docs content-width cap. */
 [data-layout="landing"] .vocs_DocsLayout_content,
 [data-layout="landing"] .vocs_Content {
   max-width: none;
   padding: 0;
 }
-/* Our own WordmarkFooter replaces Vocs's docs footer on the landing. */
+
+/* Hide Vocs's auto-rendered footer on the landing — we render our own. */
 .vocs_Footer[data-layout="landing"] { display: none; }
 
-/* ===== Fix: inline-code chip scope =====
-   .vocs_Code was double-stacking a translucent bg onto <code> inside <pre>.
-   Scope the chip rule to :not(.vocs_Pre) > .vocs_Code and reset inside pre. */
+/* .vocs_Code carries inline chip styling; inside <pre> it doubles the bg.
+   Reset it so the code block renders as a single surface. */
 .vocs_Pre .vocs_Code {
   background: transparent !important;
   border: 0 !important;
@@ -21,8 +70,8 @@
   border-radius: 0 !important;
 }
 
-/* ===== Fix: AI CTA ("Ask in ChatGPT") overflow =====
-   Vocs's .vocs_Button_button applies uppercase + 2.2px tracking; reset it. */
+/* AI CTA ("Ask in ChatGPT") pill — Vocs applies uppercase + wide
+   tracking to .vocs_Button_button which was overflowing with our font. */
 .vocs_AiCtaDropdown_button,
 .vocs_AiCtaDropdown_buttonLeft,
 .vocs_AiCtaDropdown_buttonRight {
@@ -31,14 +80,8 @@
   text-transform: none;
 }
 
-/* ===== Code block treatment =====
-   Fully opaque terminal bg + subtle border, rounded. */
+/* Code block treatment — pill radius + subtle shadow to match Tempo. */
 .vocs_CodeBlock {
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
-}
-.vocs_CodeBlock .vocs_Pre,
-.vocs_CodeBlock .shiki {
-  background: #111111 !important;
 }

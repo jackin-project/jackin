@@ -6,38 +6,12 @@ export default defineConfig({
   description: 'CLI for orchestrating AI coding agents in isolated containers',
   rootDir: '.',
   baseUrl: 'https://jackin.tailrocks.com',
-  theme: {
-    colorScheme: 'dark',
-    accentColor: '#00ff41',
-    variables: {
-      // Route Vocs chrome through the Tempo-style Radix ramps in tempo-tokens.css.
-      color: {
-        background: 'var(--color-gray2)',
-        background2: 'var(--color-gray3)',
-        background3: 'var(--color-gray3)',
-        background4: 'var(--color-gray4)',
-        background5: 'var(--color-gray5)',
-        backgroundDark: 'var(--color-gray1)',
-        border: 'var(--color-grayA4)',
-        border2: 'var(--color-grayA5)',
-        text: 'var(--color-gray12)',
-        text2: 'var(--color-gray11)',
-        text3: 'var(--color-gray10)',
-        text4: 'var(--color-gray9)',
-        heading: 'var(--color-gray12)',
-        codeInlineText: 'var(--color-gray12)',
-        codeInlineBackground: 'var(--color-grayA3)',
-        codeInlineBorder: 'var(--color-grayA4)',
-        codeBlockBackground: 'var(--color-gray1)',
-        codeTitleBackground: 'var(--color-gray2)',
-      },
-      fontWeight: {
-        regular: '400',
-        medium: '500',
-        semibold: '600',
-      },
-    },
-  },
+  // No `theme` key — mirrors Tempo's setup. All colors + sizing come
+  // from docs/tempo-tokens.css (Radix @theme) and docs/docs-theme.css
+  // (mapping Vocs tokens to Radix via light-dark()). Light/dark/system
+  // is handled by Vocs's built-in init script (.dark class on <html>);
+  // CSS translates that class into `color-scheme` so light-dark() tokens
+  // resolve correctly.
   editLink: {
     pattern:
       'https://github.com/jackin-project/jackin/edit/main/docs/pages/:path',
