@@ -1,5 +1,11 @@
 ---
 import Default from '@astrojs/starlight/components/Head.astro'
+// Static Inter Black for the top-nav wordmark + right-rail wordmark.
+// Without a preload, the browser discovers the @font-face rule during
+// CSS parse and paints the wordmark with the fallback first, producing
+// a visible font swap on every navigation. ?url lets Astro bundle and
+// hash the file so the preload points at the exact asset. */
+import interBlack from '@fontsource/inter/files/inter-latin-900-normal.woff2?url'
 
 // Each docs page gets its own generated OG card (see
 // src/pages/og/[...slug].png.ts + astro-og-canvas). Fall back to the
@@ -126,6 +132,12 @@ const breadcrumbJsonLd = {
 </script>
 
 <Default><slot /></Default>
+
+{/* Preload the static Inter Black woff2 — without this the wordmark
+    visibly swaps from the fallback to Inter Black on every first
+    navigation because the @font-face rule isn't discovered until the
+    docs bundle CSS parses. */}
+<link rel="preload" as="font" type="font/woff2" href={interBlack} crossorigin />
 
 {/* Social preview image — Starlight sets og:title / og:description /
     twitter:card but not og:image. Adding both og:image and

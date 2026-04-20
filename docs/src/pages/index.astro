@@ -1,10 +1,12 @@
 ---
 import '../components/landing/styles.css'
-// Preload the Inter variable woff2 used by the hero and the giant
-// footer wordmark — both paint above the fold and use weight 500–900
-// off the same file. Imported as a URL so Astro bundles it with a
-// content hash, keeping the preload <link> pointed at the exact asset.
+// Preload the two woff2s used above the fold:
+//   - variable Inter for hero headline + body copy (weights 400–800)
+//   - static Inter Black (weight 900) for top-nav logo + giant footer wordmark
+// Both use ?url so Astro bundles and hashes the file, keeping the
+// preload <link> pointed at the exact asset the CSS references.
 import interLatin from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url'
+import interBlack from '@fontsource/inter/files/inter-latin-900-normal.woff2?url'
 import { Landing } from '../components/landing/Landing'
 
 const TITLE = "jackin' — CLI for orchestrating AI coding agents in isolated containers"
@@ -51,10 +53,11 @@ const jsonLd = {
     <link rel="sitemap" href="/sitemap-index.xml" />
     <meta name="theme-color" content="#0a0b0a" />
 
-    {/* Preload the primary woff2 — avoids a FOUT flash on the hero
-        wordmark, which is the first big thing users see. crossorigin
-        is required for woff2 preloads even when same-origin. */}
+    {/* Preload the above-the-fold woff2s — avoids FOUT on the hero and
+        the giant wordmark, which are the first two things users see.
+        crossorigin is required for woff2 preloads even when same-origin. */}
     <link rel="preload" as="font" type="font/woff2" href={interLatin} crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href={interBlack} crossorigin />
 
     {/* Open Graph — Facebook, LinkedIn, Slack, Discord, iMessage. */}
     <meta property="og:title" content={TITLE} />
