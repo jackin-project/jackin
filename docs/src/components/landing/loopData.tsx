@@ -81,7 +81,7 @@ export const loopFrames: LoopFrame[] = [
     id: '05',
     name: 'exile',
     mythos: 'Casting out.',
-    desc: 'Pull everyone out of the Matrix at once. Every agent stopped, every network removed. End of day, or a panic button.',
+    desc: 'Pull everyone out at once. Every agent stopped, every network removed. End of day, or a panic button.',
     terminal: (
       <>
         <span className="p">$</span> <span className="cmd">jackin exile</span>{'\n'}
@@ -90,7 +90,7 @@ export const loopFrames: LoopFrame[] = [
         <span className="c">{'     the-architect                '}</span><span className="ok">OK</span>{'\n'}
         <span className="c">{'     docs-writer                  '}</span><span className="ok">OK</span>{'\n'}
         <span className="arrow">  → All networks removed</span>{'\n\n'}
-        <span className="check">✓</span> <span className="done">Matrix clear. Host untouched.</span>
+        <span className="check">✓</span> <span className="done">All clear. Host untouched.</span>
       </>
     ),
   },

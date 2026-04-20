@@ -77,7 +77,7 @@ export function VocabularyDictionary() {
         <div className="landing-shell">
           <div className="landing-sec-label">02 · Vocabulary</div>
           <h2 className="landing-sec-title">The vocabulary <span className="accent">is</span> the product.</h2>
-          <p className="landing-sec-intro">Every command in jackin' maps to a concept from The Matrix. Scroll to turn the page — or click a term in the rail to jump.</p>
+          <p className="landing-sec-intro">Every command in jackin' has a named concept behind it. Scroll to turn the page — or click a term in the rail to jump.</p>
 
           <div className="landing-voc">
             <div className="landing-voc-list" ref={listRef}>

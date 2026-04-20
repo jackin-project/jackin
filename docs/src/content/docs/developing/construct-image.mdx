@@ -7,7 +7,7 @@ import { Aside } from '@astrojs/starlight/components'
 
 ## What is the construct?
 
-`projectjackin/construct:trixie` is the shared base Docker image for every agent. In The Matrix, the construct is the white void — the base simulation loaded before a mission. In jackin', it's the foundation layer that provides system tools, shell environment, and container infrastructure.
+`projectjackin/construct:trixie` is the shared base Docker image for every agent — the foundation layer that every agent class extends. It provides system tools, shell environment, and container infrastructure, kept in one image so every agent inherits the same baseline.
 
 Every agent Dockerfile starts from the construct:
 

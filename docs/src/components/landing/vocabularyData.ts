@@ -18,7 +18,7 @@ export const vocabularyEntries: VocabularyEntry[] = [
     id: '01', term: 'Operator', pos: 'noun',
     def: [
       { t: 'You.', b: true },
-      { t: ' Running the CLI from your host machine. The one who decides what gets loaded into the Matrix, and when agents are pulled back out.' },
+      { t: ' Running the CLI from your host machine. The one who decides what gets loaded into a container, and when agents are pulled back out.' },
     ],
   },
   {
@@ -58,7 +58,7 @@ export const vocabularyEntries: VocabularyEntry[] = [
     id: '06', term: 'The agent inside', pos: 'noun',
     def: [
       { t: 'Claude Code running with full permissions', b: true },
-      { t: ' inside the container boundary. It thinks the Matrix is the whole world \u2014 but the world ends at the container wall.' },
+      { t: ' inside the container boundary. It thinks the container is the whole world \u2014 and the world ends at the container wall.' },
     ],
   },
   {
@@ -80,7 +80,7 @@ export const vocabularyEntries: VocabularyEntry[] = [
   {
     id: '09', term: 'Exile', pos: 'verb',
     def: [
-      { t: 'Pull everyone out of the Matrix at once.', b: true },
+      { t: 'Pull everyone out at once.', b: true },
       { t: ' Every running agent, every network, stopped in a single command.' },
     ],
     cmd: 'jackin exile', cmdLabel: 'cli',

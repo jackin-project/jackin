@@ -7,7 +7,7 @@ import { Aside } from '@astrojs/starlight/components'
 
 ## The operator
 
-**You are the operator.** In The Matrix, the operator sits outside the simulation and controls what gets loaded into it. In jackin', you decide:
+**You are the operator.** You sit outside every container and control what gets loaded into each one. In jackin', you decide:
 
 - Which agent to load
 - Which directories to mount (and whether they're read-only)
@@ -59,7 +59,7 @@ A single agent class can have multiple running **instances**. Each instance is a
 
 ## The construct
 
-In The Matrix, the construct is the empty white space where programs are loaded before a mission. In jackin', the **construct** is the shared base Docker image that every agent starts from:
+The **construct** in jackin' is the shared base Docker image that every agent starts from — the empty foundation that gets layered with agent-specific tools at load time:
 
 ```
 projectjackin/construct:trixie
