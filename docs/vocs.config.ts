@@ -27,7 +27,7 @@ export default defineConfig({
         codeInlineText: '#f4f7f5',
         codeInlineBackground: 'rgba(244, 247, 245, 0.04)',
         codeInlineBorder: 'rgba(244, 247, 245, 0.1)',
-        codeBlockBackground: 'rgba(0, 5, 3, 0.85)',
+        codeBlockBackground: '#050605',
         codeTitleBackground: 'rgba(255, 255, 255, 0.018)',
       },
       fontFamily: {

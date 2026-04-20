@@ -95,6 +95,13 @@
 /* ===== Code blocks — lean toward the landing's terminal palette ===== */
 .vocs_CodeBlock {
   border-color: var(--landing-ui-strong, rgba(244, 247, 245, 0.22));
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.vocs_CodeBlock .vocs_Pre,
+.vocs_CodeBlock .shiki {
+  background: #050605 !important;
 }
 
 .vocs_CodeTitle {
