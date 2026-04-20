@@ -379,7 +379,13 @@ header.header {
 
 /* Heading anchor-link icon — no underline, no border; it's a pure icon.
    SVG uses fill=currentcolor, so anchor color drives icon color. Hover
-   turns it green to match the rest of the accent system. */
+   turns it green to match the rest of the accent system. Widen the
+   default gap between heading text and icon (Starlight default is
+   0.25em, which reads crowded at smaller heading sizes). */
+.sl-markdown-content .sl-heading-wrapper {
+  --sl-anchor-icon-gap: 0.6em;
+}
+
 .sl-markdown-content a.sl-anchor-link {
   border-bottom: 0;
   text-decoration: none;
