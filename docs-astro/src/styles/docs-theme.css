@@ -205,6 +205,17 @@
   color: var(--jk-text);
 }
 
+/* Active page — our base anchor rule is outside Starlight's @layer so it
+   beats their [aria-current='page'] rule. Restore invert color + keep
+   the accent-pill background. */
+.sidebar-content ul li a[aria-current='page'],
+.sidebar-content ul li a[aria-current='page']:hover,
+.sidebar-content ul li a[aria-current='page']:focus {
+  color: var(--sl-color-text-invert);
+  background-color: var(--sl-color-text-accent);
+  font-weight: 600;
+}
+
 :root[data-theme='light'] .sidebar-content ul li a {
   color: var(--color-gray11);
 }
