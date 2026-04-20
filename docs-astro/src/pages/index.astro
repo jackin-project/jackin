@@ -1,0 +1,30 @@
+---
+import '../components/landing/styles.css'
+import { Landing } from '../components/landing/Landing'
+---
+<!DOCTYPE html>
+<html lang="en" class="dark" data-theme="dark" style="color-scheme: dark;">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>jackin' — CLI for orchestrating AI coding agents in isolated containers</title>
+    <meta name="description" content="You're the Operator. They're already inside. jackin' drops AI coding agents into isolated Docker containers — full autonomy inside, your host untouched outside." />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="jackin'" />
+    <meta property="og:description" content="CLI for orchestrating AI coding agents in isolated containers" />
+    <meta property="og:url" content="https://jackin.tailrocks.com" />
+    <meta property="og:type" content="website" />
+
+    <!-- Fonts (same set as docs Head override) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800;900&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&display=swap"
+    />
+  </head>
+  <body>
+    <Landing client:load />
+  </body>
+</html>
