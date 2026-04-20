@@ -507,10 +507,15 @@ header.header {
    ========================================================================== */
 
 .sl-markdown-content [role='tablist']:not(:where(.not-content *)) {
-  /* --jk-ui = rgba(0,0,0,0.08) in light mode reads almost invisible
-     against a white page and made the tab row feel unbordered. Use the
-     stronger 0.18 alpha so the strip anchors clearly in both themes. */
-  border-bottom: 1px solid var(--jk-ui-strong);
+  /* 2px line thick enough to anchor the tab row on a white page. Colors
+     set per theme below since --jk-ui-strong rendered near-invisible. */
+  border-bottom-width: 2px;
+  border-bottom-style: solid;
+  border-bottom-color: rgba(255, 255, 255, 0.14);
+}
+
+:root[data-theme='light'] .sl-markdown-content [role='tablist']:not(:where(.not-content *)) {
+  border-bottom-color: rgba(0, 0, 0, 0.16);
 }
 
 .sl-markdown-content .tab > [role='tab'] {
@@ -523,6 +528,10 @@ header.header {
   white-space: nowrap;
   padding: 0.35rem 1rem;
   font-size: 0.875rem;
+  /* Set box-shadow explicitly instead of relying on --sl-tab-color-border
+     cascade (Starlight's rule lives in a layer; variable overrides across
+     layers were rendering inconsistently in light mode). */
+  box-shadow: 0 2px 0 transparent;
 }
 
 .sl-markdown-content .tab > [role='tab']:hover {
@@ -530,9 +539,9 @@ header.header {
 }
 
 .sl-markdown-content .tab > [role='tab'][aria-selected='true'] {
-  --sl-tab-color-border: var(--sl-color-text-accent);
   color: var(--jk-text);
   font-weight: 600;
+  box-shadow: 0 2px 0 var(--sl-color-text-accent);
 }
 
 /* Hide the scrollbar on the tablist wrapper — it's a minor scroll axis
