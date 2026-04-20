@@ -1,9 +1,24 @@
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 import react from '@astrojs/react'
+import rehypeExternalLinks from 'rehype-external-links'
 
 export default defineConfig({
   site: 'https://jackin.tailrocks.com',
+  markdown: {
+    rehypePlugins: [
+      // Every external link in MDX content opens in a new tab with
+      // a no-opener/no-referrer relationship for safety.
+      [
+        rehypeExternalLinks,
+        {
+          target: '_blank',
+          rel: ['noopener', 'noreferrer'],
+          protocols: ['http', 'https'],
+        },
+      ],
+    ],
+  },
   integrations: [
     starlight({
       title: "jackin'",
