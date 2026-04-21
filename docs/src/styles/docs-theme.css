@@ -894,6 +894,26 @@ site-search dialog {
   border: 1px solid var(--jk-ui);
 }
 
+/* Pagefind UI inside the search dialog — restore contrast in dark mode.
+
+   Starlight maps --pagefind-ui-text to var(--sl-color-gray-2) which we
+   define as #1a1c1b in the dark palette — essentially black, drawn on
+   top of an already-dark search popup background (--sl-color-black =
+   #050605). Result-excerpt prose and the search input's typed text
+   become almost invisible.
+
+   Override the relevant Pagefind tokens so the popup draws on our
+   standard panel surface with full-strength text. Scoped to dark mode
+   only — light mode's Starlight defaults render fine against the light
+   palette. */
+:root[data-theme='dark'] #starlight__search {
+  --pagefind-ui-background: var(--jk-panel);
+  --pagefind-ui-text: var(--jk-text);
+  --pagefind-ui-primary: var(--jk-text);
+  --pagefind-ui-border: var(--jk-ui);
+  --pagefind-ui-tag: var(--jk-bg-deep);
+}
+
 /* ==========================================================================
    Theme toggle styling lives in overrides/ThemeSelect.astro (scoped)
    ========================================================================== */
