@@ -816,6 +816,29 @@ header.header {
 }
 
 /* ==========================================================================
+   Mobile menu toggle — keep the close-X icon high-contrast when expanded.
+
+   Starlight's MobileMenuToggle swaps the button bg to --sl-color-gray-2
+   (mid-grey) when the menu is open while keeping the icon at
+   --sl-color-black. On the dark theme that produces a dark X on a
+   mid-grey pill — visually it reads as disabled/invisible.
+
+   Override: keep the resting bg (--sl-color-white, which is the inverted
+   foreground token on dark theme and a dark surface on light theme) so
+   the high-contrast icon color stays readable in both states. The
+   "expanded" visual feedback is carried by Starlight's box-shadow: none
+   transition, which we keep untouched.
+   ========================================================================== */
+
+starlight-menu-button[aria-expanded='true'] button {
+  background-color: var(--sl-color-white);
+}
+
+[data-theme='light'] starlight-menu-button[aria-expanded='true'] button {
+  background-color: var(--sl-color-black);
+}
+
+/* ==========================================================================
    Top-nav social icons (GitHub) — plain fg color, green on hover.
    Starlight defaults to accent-green for the resting state, but the user
    wanted the icon to read as a neutral glyph (white on dark, near-black
