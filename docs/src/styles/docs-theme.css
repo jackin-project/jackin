@@ -787,6 +787,24 @@ header.header {
   inset-inline-end: 0.5rem;
 }
 
+/* Phone viewports: expressive-code's default 2rem (32px) copy button is
+   visually oversized relative to the 14px-ish code text on narrow
+   screens. Scale down proportionally on <=30rem (iPhone portrait) so the
+   icon reads as a secondary affordance, not a primary control. */
+@media (max-width: 30rem) {
+  .expressive-code .copy button {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0.15rem;
+  }
+  /* The icon itself is drawn via mask-image with a `margin` inset from
+     the button edges. Scale that inset down with the button so the icon
+     stays proportionally about half the button's width. */
+  .expressive-code .copy button::after {
+    margin: 0.3rem;
+  }
+}
+
 /* ==========================================================================
    Asides
    ========================================================================== */
