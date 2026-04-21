@@ -227,13 +227,17 @@
 }
 
 :root[data-theme='light'] .landing-hero-stage {
-  --landing-bg: #16a34a;          /* juicy brand green — docs --jk-brand */
-  --landing-bg-deep: #0f7d37;     /* deeper green for pressed/toggle-active */
-  --landing-panel: #ffffff;       /* white pills (theme toggle) pop on green */
-  --landing-text: #0a1f12;        /* near-black, 7+:1 contrast on #16a34a */
+  /* Content-zone tokens — headline + deck sit on the solid-green mid
+     of the gradient (see background rule below), so content reads as
+     dark-text-on-green. The topnav at the very top of the gradient
+     is scoped back to dark-mode tokens separately (further below). */
+  --landing-bg: #16a34a;
+  --landing-bg-deep: #0f7d37;
+  --landing-panel: #ffffff;
+  --landing-text: #0a1f12;       /* near-black — 7+:1 on the green mid */
   --landing-text-dim: #14361f;
   --landing-text-ghost: #2c5238;
-  --landing-accent: #ffffff;      /* WHITE tick mark + star icon — max pop on green */
+  --landing-accent: #ffffff;     /* WHITE accent (tick + .accent span) — max pop on green */
   --landing-accent-rgb: 255 255 255;
   --landing-ui: rgba(10, 31, 18, 0.22);
   --landing-ui-strong: rgba(10, 31, 18, 0.42);
@@ -242,19 +246,50 @@
   --landing-chip-bg: rgba(10, 31, 18, 0.08);
   --landing-surface-chrome-bar: rgba(10, 31, 18, 0.04);
   --landing-surface-hover-4: rgba(10, 31, 18, 0.08);
-
-  /* Vignette on green uses dark-green stops instead of near-black so
-     the edge-darkening feels native to the hero, not an overlay. */
-  --landing-hero-vignette-mid: rgba(8, 56, 26, 0.3);
-  --landing-hero-vignette-edge: rgba(8, 56, 26, 0.5);
-
-  /* Lighter topnav shade — dark strip on green would read muddy. */
-  --landing-topnav-shade: rgba(10, 31, 18, 0.12);
 }
 
-/* Primary CTA in light-mode hero — override the token-driven default
-   so the button reads as "dark pill with white label" against the
-   green bg instead of inheriting --landing-text (dark) as its bg. */
+/* Cinematic vertical gradient — black at top (topnav + rain density),
+   vivid brand green through the content zone, fading to white at the
+   bottom where the hero meets the page. The stops hold a solid green
+   plateau across 40–68% so the headline + deck + CodePanel sit firmly
+   on brand colour, not on a transition band.
+
+   In dark mode, keep the hero as a solid near-black surface — matches
+   the original design and is what the rain engine expects. */
+.landing-hero-stage {
+  background: #0a0b0a;
+}
+:root[data-theme='light'] .landing-hero-stage {
+  background: linear-gradient(
+    180deg,
+    #0a0b0a 0%,
+    #0a0b0a 12%,     /* solid dark through the topnav strip */
+    #16a34a 40%,     /* smooth transition into brand green */
+    #16a34a 68%,     /* hold green through the content zone */
+    #ffffff 100%     /* fade to white at the seam to page body */
+  );
+}
+
+/* Topnav in light-mode hero sits on the dark top of the gradient, so
+   re-scope it to dark-mode tokens — this makes the theme-toggle pill
+   read as a dark pill (not white-on-dark), the logo/star read as
+   light text, and the tick + star icon stay phosphor-green. */
+:root[data-theme='light'] nav.landing-topnav {
+  --landing-text: #f4f7f5;
+  --landing-text-dim: #9ca8a1;
+  --landing-text-ghost: #5e6a64;
+  --landing-panel: #0f1110;
+  --landing-bg-deep: #050605;
+  --landing-ui: rgba(244, 247, 245, 0.1);
+  --landing-ui-strong: rgba(244, 247, 245, 0.22);
+  --landing-accent: #00ff41;
+  --landing-accent-rgb: 0 255 65;
+}
+
+/* Primary CTA sits in the content zone (green bg) — override the
+   token-driven default so the button reads as dark pill + white label
+   instead of inheriting --landing-text (which we set to near-black
+   for the green bg) as its background. */
 :root[data-theme='light'] .landing-hero-stage .landing-btn-primary {
   background: #0a1f12;
   color: #ffffff;
@@ -262,6 +297,14 @@
 }
 :root[data-theme='light'] .landing-hero-stage .landing-btn-primary:hover {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 6px 20px rgba(255, 255, 255, 0.25);
+}
+
+/* Drop the ::after overlay in light mode — the gradient bg provides
+   all the structure (vignette + seam) we need, and layering the
+   dark-mode ::after on top of the gradient would double-fade the
+   bottom white and darken the green content zone at the edges. */
+:root[data-theme='light'] .landing-hero-stage::after {
+  display: none;
 }
 
 /* Dotted grid — hide in light mode to match docs (docs only paint the
@@ -1205,13 +1248,6 @@ nav.landing-topnav {
 nav.landing-topnav .landing-logo,
 nav.landing-topnav .landing-star {
   text-shadow: 0 0 8px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.9);
-}
-/* Light-mode hero: dark text on green doesn't need a black halo for
-   legibility — drop the text-shadow so the logo/star read as clean
-   sharp text, not smudged. */
-:root[data-theme='light'] nav.landing-topnav .landing-logo,
-:root[data-theme='light'] nav.landing-topnav .landing-star {
-  text-shadow: none;
 }
 .landing-logo {
   font-family: var(--landing-wordmark-stack);

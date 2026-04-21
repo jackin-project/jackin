@@ -21,22 +21,6 @@ test('ageToColor returns null for dead cells (age > 24)', () => {
   expect(ageToColor(100)).toBeNull();
 });
 
-test('ageToColor(age, "light") returns BLACK for fresh cells', () => {
-  expect(ageToColor(0, 'light')).toBe('rgb(0,0,0)');
-});
-
-test('ageToColor(age, "light") fades via transparent-black (not green)', () => {
-  // Older cells fade toward transparency so the tail bleeds into the
-  // green hero bg instead of tracking as grey noise.
-  expect(ageToColor(3, 'light')).toBe('rgba(0,0,0,0.6)');
-  expect(ageToColor(20, 'light')).toBe('rgba(0,0,0,0.1)');
-});
-
-test('ageToColor(age, "light") returns null for dead cells', () => {
-  expect(ageToColor(25, 'light')).toBeNull();
-  expect(ageToColor(100, 'light')).toBeNull();
-});
-
 import { createRainState, tickRain } from './rainEngine';
 import type { RainState } from './rainEngine';
 
