@@ -15,6 +15,34 @@ Never commit directly to `main`.
 - Keep branch names short, lowercase, and hyphen-separated
 - Merge back to `main` via pull request after review
 
+## Commit Messages
+
+All commits in this repository MUST follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/).
+
+Subject format: `<type>[optional scope][!]: <description>`
+
+Allowed types:
+
+| Type       | Use for                                                |
+| ---------- | ------------------------------------------------------ |
+| `feat`     | New user-visible feature                               |
+| `fix`      | Bug fix                                                |
+| `docs`     | Documentation-only change                              |
+| `style`    | Formatting, whitespace; no logic change                |
+| `refactor` | Internal restructuring; no behavior change             |
+| `perf`     | Performance improvement                                |
+| `test`     | Adding or updating tests                               |
+| `build`    | Build system, tooling, dependencies                    |
+| `ci`       | CI configuration                                       |
+| `chore`    | Routine maintenance (release, merge, deps)             |
+| `revert`   | Reverts a prior commit                                 |
+
+Scope is optional but encouraged when it clarifies the change area, e.g., `feat(launch): preview resolved mounts per agent in TUI`.
+
+Breaking changes use `!` after the type/scope (`feat!:` or `feat(api)!:`) and include a `BREAKING CHANGE:` footer in the body.
+
+PR squash-merge: the PR title becomes the commit subject, so PR titles must also follow this convention.
+
 ## Codex Commit Attribution
 
 Until Codex supports automatic commit trailers, every commit created by the
