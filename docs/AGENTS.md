@@ -94,8 +94,3 @@ targeted cleanup first.
 - Code blocks always use a dark surface (`--jk-code-bg`) regardless of
   page theme. Shiki theme: github-dark in dark mode, one-dark-pro in light.
 
-## Historical reference
-
-The spec + plan that guided this migration live under `superpowers/`:
-- `superpowers/specs/2026-04-20-astro-starlight-migration-design.md`
-- `superpowers/plans/2026-04-20-astro-starlight-migration-phase-0-3.md`
