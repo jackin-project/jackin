@@ -809,7 +809,11 @@ mod tests {
     #[test]
     fn root_help_shows_all_commands() {
         let help = help_text(&["jackin", "--help"]);
-        assert!(help.contains("Operator's CLI for orchestrating AI coding agents in isolated containers"));
+        assert!(
+            help.contains(
+                "Operator's CLI for orchestrating AI coding agents in isolated containers"
+            )
+        );
         for cmd in [
             "load",
             "hardline",
