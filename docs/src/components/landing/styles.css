@@ -148,11 +148,16 @@
 }
 
 /* ==========================================================================
-   Always-dark terminal surfaces — hero CodePanel, daily-loop terminal,
-   tabbed builder, install block. These are literal terminals and stay
-   dark in both page modes. Hero stage is NOT included here any more —
-   it gets its own mode-branched scope below (dark in dark mode, green
-   in light mode).
+   Always-dark content surfaces — all card/panel containers on the
+   landing stay dark in both page modes. In light mode this produces
+   dark cards popping against the white page body; in dark mode the
+   cards sit quietly on the dark page — same dark tokens in both cases.
+
+   Covers: terminal blocks (code panel, daily-loop, builder, install),
+   section cards (vocabulary panel, failure-mode pills, approach cards,
+   cast roster + invite, composition machine panels, focus callout).
+   Hero stage is NOT here — it has its own mode-branched scope below
+   (solid dark in dark mode, gradient in light mode).
 
    Reshadowing --landing-* tokens on these ancestors makes every
    descendant rule (which reads those tokens) automatically pick up
@@ -164,7 +169,14 @@
 .landing-code-panel,
 .landing-loop-term,
 .landing-builder,
-.landing-install {
+.landing-install,
+.landing-voc,
+.landing-pill-card,
+.landing-approach-card,
+.landing-agent-card,
+.landing-cast-invite,
+.landing-machine-panel,
+.landing-focus-card {
   --landing-bg: #0a0b0a;
   --landing-bg-deep: #050605;
   --landing-panel: #0f1110;
@@ -711,9 +723,16 @@ html.theme-init *::after {
 .landing-approach-grid { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .landing-approach-card {
   padding: 32px 32px 30px;
-  border: 1px solid rgb(var(--landing-accent-rgb) / 0.3);
+  border: 1px solid rgb(var(--landing-accent-rgb) / 0.35);
   border-radius: 10px;
-  background: rgb(var(--landing-accent-rgb) / 0.05);
+  /* Dark panel base with a subtle green wash layered on top — two
+     backgrounds stacked. The semi-transparent green reads as a tint
+     over the dark card in both modes; the dark base means the card
+     stays solid on the white page body in light mode instead of
+     showing the page through a faint green rgba. */
+  background:
+    linear-gradient(rgb(var(--landing-accent-rgb) / 0.06), rgb(var(--landing-accent-rgb) / 0.06)),
+    var(--landing-panel);
   position: relative;
   /* Allow grid item to shrink below its content's intrinsic width so the
      inner monospace TabbedBuilder code doesn't force the card wider than
@@ -847,14 +866,21 @@ html.theme-init *::after {
   gap: 24px;
   align-items: center;
   padding: 26px 30px;
-  border: 1px dashed rgb(var(--landing-accent-rgb) / 0.4);
+  border: 1px dashed rgb(var(--landing-accent-rgb) / 0.5);
   border-radius: 10px;
-  background: rgb(var(--landing-accent-rgb) / 0.05);
+  /* Dark card base + green wash layered on top — same pattern as the
+     approach cards; the hardcoded green-rgba bg would have left the
+     white page showing through in light mode. */
+  background:
+    linear-gradient(rgb(var(--landing-accent-rgb) / 0.06), rgb(var(--landing-accent-rgb) / 0.06)),
+    var(--landing-panel);
   transition: border-color 0.3s ease, background 0.3s ease;
 }
 .landing-cast-invite:hover {
-  border-color: rgb(var(--landing-accent-rgb) / 0.6);
-  background: rgb(var(--landing-accent-rgb) / 0.08);
+  border-color: rgb(var(--landing-accent-rgb) / 0.7);
+  background:
+    linear-gradient(rgb(var(--landing-accent-rgb) / 0.1), rgb(var(--landing-accent-rgb) / 0.1)),
+    var(--landing-panel);
 }
 .landing-invite-avatar {
   width: 52px; height: 52px;
@@ -912,7 +938,15 @@ html.theme-init *::after {
 
 .landing-machine { margin-top: 12px; display: grid; grid-template-columns: 1fr 36px 1fr 36px 1.35fr; gap: 0; align-items: stretch; }
 .landing-machine-panel { border: 1px solid var(--landing-ui); border-radius: 10px; background: var(--landing-panel); padding: 22px 24px; display: flex; flex-direction: column; }
-.landing-machine-panel.preview { border-color: rgb(var(--landing-accent-rgb) / 0.35); background: linear-gradient(180deg, rgb(var(--landing-accent-rgb) / 0.06), rgb(var(--landing-accent-rgb) / 0.015)); }
+.landing-machine-panel.preview {
+  border-color: rgb(var(--landing-accent-rgb) / 0.35);
+  /* Layer the green wash over the dark panel bg instead of replacing
+     it — otherwise the white page would show through the 0.06-alpha
+     gradient in light mode. */
+  background:
+    linear-gradient(180deg, rgb(var(--landing-accent-rgb) / 0.08), rgb(var(--landing-accent-rgb) / 0.02)),
+    var(--landing-panel);
+}
 .landing-machine-op { display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 24px; color: var(--landing-text-ghost); font-weight: 600; }
 .landing-machine-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--landing-accent); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 4px; }
 .landing-machine-sublabel { font-family: 'Inter', sans-serif; font-size: 13px; color: var(--landing-text-dim); margin-bottom: 18px; }
@@ -943,8 +977,16 @@ html.theme-init *::after {
 
 /* FocusCallout (Section 06) */
 .landing-focus-callout { margin-top: 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.landing-focus-card { padding: 22px 24px; border: 1px solid var(--landing-ui); border-radius: 10px; background: var(--landing-surface-hover-1); }
-.landing-focus-card.focus-role { border-color: rgb(var(--landing-accent-rgb) / 0.35); background: rgb(var(--landing-accent-rgb) / 0.05); }
+.landing-focus-card { padding: 22px 24px; border: 1px solid var(--landing-ui); border-radius: 10px; background: var(--landing-panel); }
+.landing-focus-card.focus-role {
+  border-color: rgb(var(--landing-accent-rgb) / 0.4);
+  /* Dark base + green wash — same pattern as approach cards + cast
+     invite; the hardcoded green-rgba bg left the white page bleeding
+     through in light mode. */
+  background:
+    linear-gradient(rgb(var(--landing-accent-rgb) / 0.06), rgb(var(--landing-accent-rgb) / 0.06)),
+    var(--landing-panel);
+}
 .landing-focus-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--landing-text-ghost); letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 16px; }
 .landing-focus-card.focus-role .landing-focus-label { color: var(--landing-accent); }
 .landing-focus-lines { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 500; color: var(--landing-text-dim); }
