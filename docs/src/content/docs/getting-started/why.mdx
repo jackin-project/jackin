@@ -83,13 +83,13 @@ In practice, this often produces better results than one kitchen-sink agent imag
 
 It also helps with Claude Code plugins. A tool like Superpowers can be extremely useful, but it brings hooks and behavior that you may not want in every task. The most reliable way to keep it out of scope is not to "mostly disable" it, but to use a different agent class where it simply is not installed.
 
-## The Matrix analogy
+## The cyberpunk analogy
 
-The name "jackin'" borrows the cyberpunk verb *jacking in* — a cultural idiom for connecting into a simulated environment. In the films, an operator loads a person into a simulated environment — the construct — where they can train, fight, and operate with superhuman abilities. But they're not actually modifying the real world. The operator controls what the simulation contains.
+The name "jackin'" borrows the cyberpunk verb *jacking in* — a cultural idiom for connecting into a simulated environment. The imagery is the classic cyberpunk one: an operator loads a person into a constructed environment where they can train, build, and operate with capabilities they wouldn't have outside it. The real world stays untouched — the operator controls what the construct contains.
 
 That's exactly what jackin' does:
 
-| Matrix | jackin' |
+| Cyberpunk concept | jackin' |
 |---|---|
 | **Operator** | You — the developer running jackin' |
 | **The Construct** | The base Docker image with system tools |
@@ -100,7 +100,7 @@ That's exactly what jackin' does:
 | **Pulling out** | `jackin eject` — stopping an agent |
 | **Exile** | `jackin exile` — pulling everyone out at once |
 
-Every command in jackin' maps to a concept from The Matrix. This isn't just for fun — it makes the mental model intuitive. When you "load" an agent, you're loading it into a construct. When you "eject" it, you're pulling it out. The vocabulary reinforces what's actually happening.
+Every command in jackin' maps to a cyberpunk-operator concept. This isn't just for fun — it makes the mental model intuitive. When you "load" an agent, you're loading it into a construct. When you "eject" it, you're pulling it out. The vocabulary reinforces what's actually happening.
 
 ## Why not just use Docker Sandboxes?
 
