@@ -299,7 +299,7 @@ const tree = h(
         // span preserves the visible gap without a CSS margin hack.
         // "in" is the accent word — its double duty (preposition + the
         // inside/outside boundary that's the brand concept) carries the
-        // line without naming a neutral destination.
+        // line with a neutral, ownable end-word.
         'Jack your AI coding agents',
         h('span', { style: { display: 'flex', color: '#00ff41' } }, '\u00A0in'),
         '.'
