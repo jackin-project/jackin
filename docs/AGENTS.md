@@ -58,11 +58,27 @@ targeted cleanup first.
 
 ## Common Commands
 
-- Install dependencies: `bun install --frozen-lockfile`
+**First-time setup (and after pulling dependency changes):**
+
+```sh
+bun install --frozen-lockfile
+```
+
+This populates `node_modules/` with the platform-specific optional native binaries (e.g. `@rollup/rollup-darwin-arm64` on Apple Silicon). Skipping it makes `bun run dev` fail with `Cannot find module '@rollup/rollup-...'`.
+
+**Day-to-day:**
+
 - Start dev server: `bun run dev`
 - Build docs: `bun run build`
 - Preview production build: `bun run preview`
 - Run tests: `bun test`
+
+**If `node_modules` was last installed on a different OS** (e.g. an agent built from a Linux container shared the working tree with a macOS host), Bun won't always re-resolve optional native binaries on its own. Reset with:
+
+```sh
+rm -rf node_modules
+bun install --frozen-lockfile
+```
 
 ## Content Notes
 
