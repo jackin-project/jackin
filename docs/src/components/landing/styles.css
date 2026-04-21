@@ -384,6 +384,10 @@ html {
   line-height: 1.7;
   color: var(--landing-text);
   white-space: pre-wrap;
+  /* Let long unbreakable tokens (e.g. "plugin@marketplace" strings) break
+     when the card is narrower than the token — otherwise they'd force the
+     card wider than the grid track on small viewports. */
+  overflow-wrap: anywhere;
   font-family: inherit;
 }
 .landing-builder-body .b-c { color: var(--landing-text-ghost); }
@@ -412,6 +416,10 @@ html {
   border-radius: 10px;
   background: rgba(0, 255, 65, 0.025);
   position: relative;
+  /* Allow grid item to shrink below its content's intrinsic width so the
+     inner monospace TabbedBuilder code doesn't force the card wider than
+     the grid track on narrow viewports (iPhone portrait). */
+  min-width: 0;
   transition:
     transform 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94),
     border-color 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94),
