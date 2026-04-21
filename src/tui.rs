@@ -501,10 +501,7 @@ pub fn simple_outro(agent_name: &str, remaining: &[String]) {
         format!("{agent_name} has left the container.").color(rgb(PHOSPHOR_DIM))
     );
     if remaining.is_empty() {
-        eprintln!(
-            "  {}",
-            "No agents remaining.".color(rgb(PHOSPHOR_DIM))
-        );
+        eprintln!("  {}", "No agents remaining.".color(rgb(PHOSPHOR_DIM)));
     } else {
         eprintln!(
             "  {}",
