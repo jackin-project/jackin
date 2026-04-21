@@ -7,10 +7,10 @@ export const RAIN_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq
 export function ageToColor(age: number): string | null {
   if (age === 0)  return 'rgb(255,255,255)';   // WHITE — leader
   if (age <= 2)   return 'rgb(180,255,180)';   // pale green
-  if (age <= 5)   return 'rgb(0,255,65)';      // MATRIX_GREEN
+  if (age <= 5)   return 'rgb(0,255,65)';      // PHOSPHOR_GREEN
   if (age <= 10)  return 'rgb(0,200,50)';      // mid green
-  if (age <= 16)  return 'rgb(0,140,30)';      // MATRIX_DIM
-  if (age <= 24)  return 'rgb(0,80,18)';       // MATRIX_DARK
+  if (age <= 16)  return 'rgb(0,140,30)';      // PHOSPHOR_DIM
+  if (age <= 24)  return 'rgb(0,80,18)';       // PHOSPHOR_DARK
   return null;
 }
 
