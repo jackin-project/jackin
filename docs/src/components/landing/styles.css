@@ -665,9 +665,12 @@ html.theme-init *::after {
   .landing-pills { grid-template-columns: 1fr; }
 }
 
-/* TabbedBuilder (Section 04, used by ApproachCards) — always-dark terminal */
+/* TabbedBuilder (Section 04, used by ApproachCards) — always-dark
+   terminal. Uses --landing-bg-deep (solid #050605) rather than a
+   translucent rgba so the white page in light mode doesn't bleed
+   through and turn the terminal muddy grey. */
 .landing-builder {
-  background: rgba(0, 5, 3, 0.55);
+  background: var(--landing-bg-deep);
   border: 1px solid var(--landing-ui);
   border-radius: 6px;
   overflow: hidden;
@@ -1177,7 +1180,11 @@ section.landing-section.landing-voc-scroll-section {
   margin: 0; max-width: 440px;
 }
 .landing-loop-term {
-  background: rgba(0, 5, 3, 0.85);
+  /* Solid --landing-bg-deep (#050605) rather than translucent rgba —
+     otherwise the white page in light mode bleeds through the alpha
+     channel and the terminal reads as muddy grey instead of the
+     near-black it's meant to be. */
+  background: var(--landing-bg-deep);
   border: 1px solid var(--landing-ui-strong);
   border-radius: 8px;
   overflow: hidden;
