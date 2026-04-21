@@ -60,6 +60,10 @@ The current implementation is Claude-specific end-to-end (manifest schema, deriv
 - **[Docker API migration](/reference/roadmap/bollard-migration/)** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling
 - **[1Password integration](/reference/roadmap/onepassword-integration/)** — inject secrets from 1Password vaults without exposing them as files in the container
 
+### Workflow improvements
+
+- **[Per-mount isolation for parallel agents](/reference/roadmap/per-mount-isolation/)** — declarative `shared | worktree | clone` mode per mount (with a workspace default) so parallel agents stop sharing one working tree
+
 <Aside type="tip">
 Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap → Open items** and **Roadmap → Resolved**. Each page is a self-contained proposal with problem statement, options, and related files.
 </Aside>

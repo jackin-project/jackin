@@ -98,6 +98,7 @@ export default defineConfig({
                     { label: 'Rootless DinD', slug: 'reference/roadmap/rootless-dind' },
                     { label: 'Selectable sandbox backends', slug: 'reference/roadmap/selectable-sandbox-backends' },
                     { label: 'Reproducibility & provenance pinning', slug: 'reference/roadmap/reproducibility-pinning' },
+                    { label: 'Per-mount isolation', slug: 'reference/roadmap/per-mount-isolation' },
                   ],
                 },
                 {
