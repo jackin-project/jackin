@@ -97,70 +97,70 @@
   --landing-wordmark-stack: 'Inter Black', 'Inter', sans-serif;
 }
 
-/* Light mode — juicy mint bg, white cards pop off it, green-tinted
-   borders + shadows. Page bg + accent washes both carry brand colour
-   so the whole surface feels like the jackin' world is running in
-   daylight, not "dark mode with switched colours." */
+/* Light mode — white page body that matches the docs so landing→docs
+   handoff is seamless. The punchy brand moment lives in the hero only
+   (green bg, black rain); everywhere below reads like docs with a
+   deep-forest accent. */
 :root[data-theme='light'] {
-  --landing-bg: #dfeee4;        /* mint-tinted page — signals brand at first glance */
-  --landing-bg-deep: #cae0d1;   /* recessed state (active toggle, pressed badge) */
-  --landing-panel: #ffffff;     /* lifted card surface — inverse of dark mode */
-  --landing-text: #0a1f12;      /* deep green-black, not pure black */
-  --landing-text-dim: #4c5d50;
-  --landing-text-ghost: #7c8b82;
-  --landing-accent: #006b1f;    /* deep forest — AAA on the mint bg (≈7:1) */
-  --landing-danger: #b0183a;    /* deeper red for AA on white cards */
-  --landing-ui: rgba(10, 40, 20, 0.12);
-  --landing-ui-strong: rgba(10, 40, 20, 0.24);
-  --landing-ui-subtle: rgba(10, 40, 20, 0.05);
+  --landing-bg: #ffffff;
+  --landing-bg-deep: #e9edeb;
+  --landing-panel: #f6f8f7;
+  --landing-text: #1a1c1b;
+  --landing-text-dim: #5d6460;
+  --landing-text-ghost: #8a928e;
+  --landing-accent: #007a22;    /* deep forest — matches docs --jk-accent (AA on white) */
+  --landing-danger: #b0183a;
+  --landing-ui: rgba(0, 0, 0, 0.08);
+  --landing-ui-strong: rgba(0, 0, 0, 0.18);
+  --landing-ui-subtle: rgba(0, 0, 0, 0.04);
 
-  /* Juicy mid-green for every accent wash/border/glow in the sheet.
-     Deeper than the dark-mode phosphor so it stays visible at low
-     alpha on white cards, but still saturated enough to read as
-     "jackin' green" and not "documentation green". */
+  /* Juicy mid-green (docs --jk-brand) for borders and accent washes in
+     the body — stays visible at low alpha on white panels. */
   --landing-accent-rgb: 22 163 74;
 
   --landing-page-bg: var(--landing-bg);
 
-  /* Slightly more visible than dark-mode grid — the dark-green dots
-     on the mint bg read as brand texture, not noise. */
-  --landing-grid-dot: rgba(10, 60, 25, 0.08);
+  /* Grid backdrop hidden in light mode — matches docs, which only
+     paints the dotted grid in dark mode. Declaring transparent here
+     means the --landing-grid-dot var resolves to nothing without a
+     separate display:none rule. */
+  --landing-grid-dot: transparent;
 
-  /* Green-tinted shadows — mirrors the phosphor-bloom of dark mode.
-     Cards carry a soft green halo instead of a plain black drop. */
-  --landing-card-shadow-soft: 0 14px 32px rgba(10, 80, 30, 0.14);
-  --landing-card-shadow-strong: 0 20px 48px rgba(10, 80, 30, 0.2);
+  /* Green-tinted card shadows mirror the phosphor-bleed of dark mode
+     so cards feel like they're lifting out of a jackin' halo, not
+     casting a plain black drop. */
+  --landing-card-shadow-soft: 0 14px 32px rgba(10, 80, 30, 0.12);
+  --landing-card-shadow-strong: 0 20px 48px rgba(10, 80, 30, 0.18);
   --landing-hero-codepanel-shadow: 0 22px 48px rgba(10, 80, 30, 0.18);
-  --landing-term-shadow: 0 14px 32px rgba(10, 80, 30, 0.14);
+  --landing-term-shadow: 0 14px 28px rgba(10, 80, 30, 0.14);
 
-  /* Chip + chrome surfaces — all green-tinted so even the "neutral"
-     microsurfaces participate in the brand. */
-  --landing-chip-bg: rgba(10, 40, 20, 0.06);
-  --landing-toolset-chip-bg: rgba(10, 40, 20, 0.04);
-  --landing-toolset-chip-border: rgba(10, 40, 20, 0.14);
-  --landing-surface-chrome-bar: rgba(10, 40, 20, 0.03);
-  --landing-surface-hover-1: rgba(10, 40, 20, 0.035);
-  --landing-surface-hover-2: rgba(10, 40, 20, 0.05);
-  --landing-surface-hover-4: rgba(10, 40, 20, 0.07);
-  --landing-machine-opt-bg: rgba(10, 40, 20, 0.025);
+  --landing-chip-bg: rgba(0, 0, 0, 0.05);
+  --landing-toolset-chip-bg: rgba(0, 0, 0, 0.04);
+  --landing-toolset-chip-border: rgba(0, 0, 0, 0.1);
+  --landing-surface-chrome-bar: rgba(0, 0, 0, 0.02);
+  --landing-surface-hover-1: rgba(0, 0, 0, 0.03);
+  --landing-surface-hover-2: rgba(0, 0, 0, 0.04);
+  --landing-surface-hover-4: rgba(0, 0, 0, 0.05);
+  --landing-machine-opt-bg: rgba(0, 0, 0, 0.018);
 
-  --landing-pill-blue-text: #1d4fba;
+  --landing-pill-blue-text: #2563c8;
   --landing-pill-red-text: #b01c38;
 }
 
 /* ==========================================================================
-   Always-dark surfaces — hero + every terminal-like block keep the
-   phosphor-on-black brand identity in BOTH page modes. Same pattern as
-   docs-theme.css where --jk-code-bg stays dark on light pages.
+   Always-dark terminal surfaces — hero CodePanel, daily-loop terminal,
+   tabbed builder, install block. These are literal terminals and stay
+   dark in both page modes. Hero stage is NOT included here any more —
+   it gets its own mode-branched scope below (dark in dark mode, green
+   in light mode).
 
    Reshadowing --landing-* tokens on these ancestors makes every
    descendant rule (which reads those tokens) automatically pick up
    dark values with no per-rule duplication. Children that want the
-   page-level colour can still read --landing-page-bg (inherited,
-   unaffected by this scope).
+   page-level colour can still read --landing-page-bg (inherited from
+   above, unaffected by this scope).
    ========================================================================== */
 
-.landing-hero-stage,
 .landing-code-panel,
 .landing-loop-term,
 .landing-builder,
@@ -185,6 +185,92 @@
   --landing-surface-hover-2: rgba(255, 255, 255, 0.03);
   --landing-surface-hover-4: rgba(255, 255, 255, 0.04);
   --landing-machine-opt-bg: rgba(255, 255, 255, 0.015);
+}
+
+/* ==========================================================================
+   Hero stage scope — dark in dark mode, green in light mode.
+
+   Dark mode (default): phosphor-green rain on near-black hero, white
+   text. Same as it ever was.
+
+   Light mode: the hero flips to a saturated green bg with black rain
+   — a deliberate brand-punch moment that signals "you're entering the
+   jackin' world." Text goes dark; the brand accent (tick mark, star
+   icon) flips to WHITE so it still pops against the green. The hero's
+   CodePanel is shadowed by the always-dark scope above so it stays
+   dark in both modes.
+   ========================================================================== */
+
+.landing-hero-stage {
+  --landing-bg: #0a0b0a;
+  --landing-bg-deep: #050605;
+  --landing-panel: #0f1110;
+  --landing-text: #f4f7f5;
+  --landing-text-dim: #9ca8a1;
+  --landing-text-ghost: #5e6a64;
+  --landing-accent: #00ff41;
+  --landing-accent-rgb: 0 255 65;
+  --landing-ui: rgba(244, 247, 245, 0.1);
+  --landing-ui-strong: rgba(244, 247, 245, 0.22);
+  --landing-ui-subtle: rgba(244, 247, 245, 0.05);
+
+  --landing-chip-bg: rgba(255, 255, 255, 0.04);
+  --landing-surface-chrome-bar: rgba(255, 255, 255, 0.018);
+  --landing-surface-hover-4: rgba(255, 255, 255, 0.04);
+
+  /* Vignette overlay — dark rgba stops for the dark-mode hero. */
+  --landing-hero-vignette-mid: rgba(8, 10, 9, 0.55);
+  --landing-hero-vignette-edge: rgba(8, 10, 9, 0.88);
+
+  /* Topnav overlay — dark gradient strip at top of hero. */
+  --landing-topnav-shade: rgba(5, 6, 5, 0.35);
+}
+
+:root[data-theme='light'] .landing-hero-stage {
+  --landing-bg: #16a34a;          /* juicy brand green — docs --jk-brand */
+  --landing-bg-deep: #0f7d37;     /* deeper green for pressed/toggle-active */
+  --landing-panel: #ffffff;       /* white pills (theme toggle) pop on green */
+  --landing-text: #0a1f12;        /* near-black, 7+:1 contrast on #16a34a */
+  --landing-text-dim: #14361f;
+  --landing-text-ghost: #2c5238;
+  --landing-accent: #ffffff;      /* WHITE tick mark + star icon — max pop on green */
+  --landing-accent-rgb: 255 255 255;
+  --landing-ui: rgba(10, 31, 18, 0.22);
+  --landing-ui-strong: rgba(10, 31, 18, 0.42);
+  --landing-ui-subtle: rgba(10, 31, 18, 0.1);
+
+  --landing-chip-bg: rgba(10, 31, 18, 0.08);
+  --landing-surface-chrome-bar: rgba(10, 31, 18, 0.04);
+  --landing-surface-hover-4: rgba(10, 31, 18, 0.08);
+
+  /* Vignette on green uses dark-green stops instead of near-black so
+     the edge-darkening feels native to the hero, not an overlay. */
+  --landing-hero-vignette-mid: rgba(8, 56, 26, 0.3);
+  --landing-hero-vignette-edge: rgba(8, 56, 26, 0.5);
+
+  /* Lighter topnav shade — dark strip on green would read muddy. */
+  --landing-topnav-shade: rgba(10, 31, 18, 0.12);
+}
+
+/* Primary CTA in light-mode hero — override the token-driven default
+   so the button reads as "dark pill with white label" against the
+   green bg instead of inheriting --landing-text (dark) as its bg. */
+:root[data-theme='light'] .landing-hero-stage .landing-btn-primary {
+  background: #0a1f12;
+  color: #ffffff;
+  border-color: #0a1f12;
+}
+:root[data-theme='light'] .landing-hero-stage .landing-btn-primary:hover {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 6px 20px rgba(255, 255, 255, 0.25);
+}
+
+/* Dotted grid — hide in light mode to match docs (docs only paint the
+   grid in dark). Token --landing-grid-dot is already transparent in
+   the light :root block; this extra rule guarantees the ::before
+   pseudo doesn't sit as an invisible fixed overlay catching pointer
+   events either. */
+:root[data-theme='light'] .landing-root::before {
+  display: none;
 }
 
 /* ==========================================================================
@@ -1114,11 +1200,18 @@ nav.landing-topnav {
   padding: 22px 40px;
   display: flex; justify-content: space-between; align-items: center;
   position: relative; z-index: 3;
-  background: linear-gradient(180deg, rgba(5, 6, 5, 0.35) 0%, transparent 100%);
+  background: linear-gradient(180deg, var(--landing-topnav-shade) 0%, transparent 100%);
 }
 nav.landing-topnav .landing-logo,
 nav.landing-topnav .landing-star {
   text-shadow: 0 0 8px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.9);
+}
+/* Light-mode hero: dark text on green doesn't need a black halo for
+   legibility — drop the text-shadow so the logo/star read as clean
+   sharp text, not smudged. */
+:root[data-theme='light'] nav.landing-topnav .landing-logo,
+:root[data-theme='light'] nav.landing-topnav .landing-star {
+  text-shadow: none;
 }
 .landing-logo {
   font-family: var(--landing-wordmark-stack);
@@ -1220,7 +1313,7 @@ nav.landing-topnav .landing-star {
   z-index: 2; pointer-events: none;
   background:
     linear-gradient(180deg, transparent 72%, var(--landing-page-bg) 100%),
-    radial-gradient(ellipse 78% 60% at 50% 38%, transparent 0%, rgba(8, 10, 9, 0.55) 72%, rgba(8, 10, 9, 0.88) 100%);
+    radial-gradient(ellipse 78% 60% at 50% 38%, transparent 0%, var(--landing-hero-vignette-mid) 72%, var(--landing-hero-vignette-edge) 100%);
 }
 .landing-hero-stage > .landing-shell {
   position: relative;

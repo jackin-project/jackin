@@ -1,6 +1,6 @@
 // docs/components/landing/DigitalRain.tsx
 import { useEffect, useRef } from 'react';
-import { createRainState, tickRain, ageToColor } from './rainEngine';
+import { createRainState, tickRain, ageToColor, type RainTheme } from './rainEngine';
 
 export interface DigitalRainProps {
   fontSize?: number;
@@ -10,8 +10,31 @@ export interface DigitalRainProps {
   opacity?: number;
 }
 
+function readTheme(): RainTheme {
+  if (typeof document === 'undefined') return 'dark';
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
+
 export function DigitalRain({ fontSize = 14, cellW = 12, cellH = 18, frameMs = 35, opacity = 0.32 }: DigitalRainProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Theme read via ref (not state) so the render loop picks up the new
+  // value without React re-rendering the component — the canvas + rAF
+  // loop are long-lived and we only want colour selection to shift.
+  const themeRef = useRef<RainTheme>('dark');
+
+  useEffect(() => {
+    themeRef.current = readTheme();
+
+    const obs = new MutationObserver(() => {
+      themeRef.current = readTheme();
+    });
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -22,8 +45,11 @@ export function DigitalRain({ fontSize = 14, cellW = 12, cellH = 18, frameMs = 3
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       // Render a single populated still frame and stop — previously
       // this branch only sized the canvas and returned, leaving
-      // reduced-motion users with a blank black area instead of the
-      // intended static phosphor-rain backdrop.
+      // reduced-motion users with a blank area instead of the intended
+      // static phosphor-rain backdrop. Colour palette follows the
+      // active theme at the moment the still is painted; it won't
+      // update if the user later toggles, but that's a narrow edge
+      // case for a reduced-motion still-frame.
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       canvas.width = rect.width * dpr;
@@ -39,11 +65,12 @@ export function DigitalRain({ fontSize = 14, cellW = 12, cellH = 18, frameMs = 3
       ctx.clearRect(0, 0, rect.width, rect.height);
       ctx.font = fontSize + 'px "JetBrains Mono", "SF Mono", monospace';
       ctx.textBaseline = 'top';
+      const theme = themeRef.current;
       for (let r = 0; r < stillState.rows; r++) {
         for (let c = 0; c < stillState.cols; c++) {
           const cell = stillState.grid[r][c];
           if (!cell) continue;
-          const color = ageToColor(cell.age);
+          const color = ageToColor(cell.age, theme);
           if (!color) continue;
           ctx.fillStyle = color;
           ctx.fillText(cell.ch, c * cellW, r * cellH);
@@ -77,11 +104,12 @@ export function DigitalRain({ fontSize = 14, cellW = 12, cellH = 18, frameMs = 3
       ctx!.clearRect(0, 0, canvas!.clientWidth, canvas!.clientHeight);
       ctx!.font = fontSize + 'px "JetBrains Mono", "SF Mono", monospace';
       ctx!.textBaseline = 'top';
+      const theme = themeRef.current;
       for (let r = 0; r < state.rows; r++) {
         for (let c = 0; c < state.cols; c++) {
           const cell = state.grid[r][c];
           if (!cell) continue;
-          const color = ageToColor(cell.age);
+          const color = ageToColor(cell.age, theme);
           if (!color) continue;
           ctx!.fillStyle = color;
           ctx!.fillText(cell.ch, c * cellW, r * cellH);
