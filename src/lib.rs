@@ -132,6 +132,25 @@ fn resolve_target_name(name: &str, config: &AppConfig, cwd: &Path) -> Result<Loa
     }
 }
 
+/// Find the saved workspace whose host workdir or mounted host path best
+/// matches `cwd`. Returns `None` when no saved workspace covers the path.
+///
+/// Shared by context resolvers for `jackin load` (class lookup) and
+/// `jackin hardline` (running-container lookup).
+fn find_saved_workspace_for_cwd<'a>(
+    config: &'a AppConfig,
+    cwd: &Path,
+) -> Option<(&'a str, &'a WorkspaceConfig)> {
+    config
+        .workspaces
+        .iter()
+        .filter_map(|(name, ws)| {
+            crate::workspace::saved_workspace_match_depth(ws, cwd).map(|depth| (name, ws, depth))
+        })
+        .max_by_key(|(_, _, depth)| *depth)
+        .map(|(name, ws, _)| (name.as_str(), ws))
+}
+
 /// Resolve the agent and workspace from the current directory context.
 ///
 /// Finds the saved workspace whose host workdir or mounted host path best
@@ -145,15 +164,7 @@ fn resolve_agent_from_context(
     config: &AppConfig,
     cwd: &Path,
 ) -> Result<(ClassSelector, LoadWorkspaceInput)> {
-    let matching_ws = config
-        .workspaces
-        .iter()
-        .filter_map(|(name, ws)| {
-            crate::workspace::saved_workspace_match_depth(ws, cwd).map(|depth| (name, ws, depth))
-        })
-        .max_by_key(|(_, _, depth)| *depth);
-
-    if let Some((name, ws, _)) = matching_ws {
+    if let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) {
         // Try last_agent, then default_agent
         let agent_key = ws.last_agent.as_deref().or(ws.default_agent.as_deref());
 
@@ -164,7 +175,7 @@ fn resolve_agent_from_context(
             let allowed = ws.allowed_agents.is_empty()
                 || ws.allowed_agents.iter().any(|allowed| allowed == key);
             if allowed {
-                return Ok((class, LoadWorkspaceInput::Saved(name.clone())));
+                return Ok((class, LoadWorkspaceInput::Saved(name.to_string())));
             }
         }
 
@@ -183,7 +194,7 @@ fn resolve_agent_from_context(
             1 => {
                 return Ok((
                     eligible.into_iter().next().unwrap(),
-                    LoadWorkspaceInput::Saved(name.clone()),
+                    LoadWorkspaceInput::Saved(name.to_string()),
                 ));
             }
             _ => {
@@ -195,7 +206,7 @@ fn resolve_agent_from_context(
                 )?;
                 return Ok((
                     eligible[choice].clone(),
-                    LoadWorkspaceInput::Saved(name.clone()),
+                    LoadWorkspaceInput::Saved(name.to_string()),
                 ));
             }
         }
@@ -206,6 +217,76 @@ fn resolve_agent_from_context(
          Run jackin load <agent> to use the current directory, or\n\
          run jackin launch for the interactive launcher."
     );
+}
+
+/// Resolve a running agent container from the current directory context.
+///
+/// Finds the saved workspace whose host workdir or mounted host path best
+/// matches `cwd`, then picks a currently-running container whose class is
+/// permitted by the workspace:
+/// 1. If the workspace's `last_agent` has a running container — prefer it
+/// 2. If exactly one running candidate — use it
+/// 3. If multiple — prompt
+/// 4. If zero — error with guidance to run `jackin load`
+/// 5. No workspace match — error with guidance to pass an explicit selector
+fn resolve_running_container_from_context(
+    config: &AppConfig,
+    cwd: &Path,
+    runner: &mut impl docker::CommandRunner,
+) -> Result<String> {
+    let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) else {
+        anyhow::bail!(
+            "no saved workspace matches the current directory.\n\
+             Run jackin hardline <agent> to target explicitly, or\n\
+             run jackin load <agent> to start a new session."
+        );
+    };
+
+    let allowed_classes: Vec<ClassSelector> = if ws.allowed_agents.is_empty() {
+        config
+            .agents
+            .keys()
+            .filter_map(|k| ClassSelector::parse(k).ok())
+            .collect()
+    } else {
+        ws.allowed_agents
+            .iter()
+            .filter_map(|k| ClassSelector::parse(k).ok())
+            .collect()
+    };
+
+    let running = runtime::list_running_agent_names(runner)?;
+    let mut candidates: Vec<String> = allowed_classes
+        .iter()
+        .flat_map(|class| runtime::matching_family(class, &running))
+        .collect();
+    candidates.sort();
+    candidates.dedup();
+
+    if let Some(last) = ws.last_agent.as_deref()
+        && let Ok(last_class) = ClassSelector::parse(last)
+    {
+        let primary = crate::instance::primary_container_name(&last_class);
+        if candidates.contains(&primary) {
+            return Ok(primary);
+        }
+    }
+
+    match candidates.len() {
+        0 => anyhow::bail!(
+            "no running agents found for workspace {name:?}.\n\
+             Start one with jackin load, or run jackin hardline <agent> to target explicitly."
+        ),
+        1 => Ok(candidates.into_iter().next().unwrap()),
+        _ => {
+            let option_refs: Vec<&str> = candidates.iter().map(String::as_str).collect();
+            let choice = tui::prompt_choice(
+                &format!("Workspace {name:?} has multiple running agents. Select one:"),
+                &option_refs,
+            )?;
+            Ok(candidates.into_iter().nth(choice).unwrap())
+        }
+    }
 }
 
 fn remember_last_agent(
@@ -324,9 +405,14 @@ pub fn run(cli: Cli) -> Result<()> {
             result
         }
         Command::Hardline { selector } => {
-            let container = match Selector::parse(&selector)? {
-                Selector::Container(name) => name,
-                Selector::Class(class) => crate::instance::primary_container_name(&class),
+            let container = if let Some(sel) = selector {
+                match Selector::parse(&sel)? {
+                    Selector::Container(name) => name,
+                    Selector::Class(class) => crate::instance::primary_container_name(&class),
+                }
+            } else {
+                let cwd = std::env::current_dir()?;
+                resolve_running_container_from_context(&config, &cwd, &mut runner)?
             };
             runtime::hardline_agent(&container, &mut runner)
         }
@@ -1006,6 +1092,145 @@ mod tests {
 
         assert_eq!(resolved.0.key(), "agent-smith");
         assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_string()));
+    }
+
+    /// Build an `AppConfig` pre-populated with an `agent-smith` agent and a
+    /// single workspace rooted at `project_dir`.
+    fn config_with_workspace(
+        project_dir: &Path,
+        allowed_agents: Vec<String>,
+        last_agent: Option<String>,
+    ) -> config::AppConfig {
+        let mut config = config::AppConfig::default();
+        config.agents.insert(
+            "agent-smith".to_string(),
+            config::AgentSource {
+                git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
+                trusted: true,
+                claude: None,
+            },
+        );
+        config.agents.insert(
+            "the-architect".to_string(),
+            config::AgentSource {
+                git: "https://github.com/jackin-project/jackin-the-architect.git".to_string(),
+                trusted: true,
+                claude: None,
+            },
+        );
+        config.workspaces.insert(
+            "my-app".to_string(),
+            workspace::WorkspaceConfig {
+                workdir: "/workspace".to_string(),
+                mounts: vec![workspace::MountConfig {
+                    src: project_dir.display().to_string(),
+                    dst: "/workspace".to_string(),
+                    readonly: false,
+                }],
+                allowed_agents,
+                default_agent: None,
+                last_agent,
+            },
+        );
+        config
+    }
+
+    /// `list_running_agent_names` issues two docker captures (role filter +
+    /// legacy filter); supply running-agent output on the first, nothing on
+    /// the second.
+    fn fake_runner_with_running_agents(names: &[&str]) -> runtime::FakeRunner {
+        let mut runner = runtime::FakeRunner::default();
+        runner.capture_queue.push_back(names.join("\n"));
+        runner.capture_queue.push_back(String::new());
+        runner
+    }
+
+    #[test]
+    fn resolve_running_container_from_context_picks_lone_running_agent() {
+        let temp = tempfile::tempdir().unwrap();
+        let project_dir = temp.path().join("project");
+        let nested_dir = project_dir.join("src");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+
+        let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
+        let mut runner = fake_runner_with_running_agents(&["jackin-agent-smith"]);
+
+        let container =
+            resolve_running_container_from_context(&config, &nested_dir, &mut runner).unwrap();
+
+        assert_eq!(container, "jackin-agent-smith");
+    }
+
+    #[test]
+    fn resolve_running_container_from_context_prefers_last_agent() {
+        let temp = tempfile::tempdir().unwrap();
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let config = config_with_workspace(
+            &project_dir,
+            vec!["agent-smith".to_string(), "the-architect".to_string()],
+            Some("the-architect".to_string()),
+        );
+        let mut runner =
+            fake_runner_with_running_agents(&["jackin-agent-smith", "jackin-the-architect"]);
+
+        let container =
+            resolve_running_container_from_context(&config, &project_dir, &mut runner).unwrap();
+
+        assert_eq!(container, "jackin-the-architect");
+    }
+
+    #[test]
+    fn resolve_running_container_from_context_errors_when_nothing_running() {
+        let temp = tempfile::tempdir().unwrap();
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
+        let mut runner = fake_runner_with_running_agents(&[]);
+
+        let err = resolve_running_container_from_context(&config, &project_dir, &mut runner)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("no running agents"), "got: {err}");
+        assert!(err.contains("my-app"), "got: {err}");
+    }
+
+    #[test]
+    fn resolve_running_container_from_context_ignores_disallowed_running_agents() {
+        let temp = tempfile::tempdir().unwrap();
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
+        // the-architect is running but not allowed in this workspace.
+        let mut runner = fake_runner_with_running_agents(&["jackin-the-architect"]);
+
+        let err = resolve_running_container_from_context(&config, &project_dir, &mut runner)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("no running agents"), "got: {err}");
+    }
+
+    #[test]
+    fn resolve_running_container_from_context_errors_when_no_workspace_matches() {
+        let temp = tempfile::tempdir().unwrap();
+        let unrelated = temp.path().join("unrelated");
+        std::fs::create_dir_all(&unrelated).unwrap();
+
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
+        let mut runner = fake_runner_with_running_agents(&["jackin-agent-smith"]);
+
+        let err = resolve_running_container_from_context(&config, &unrelated, &mut runner)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("no saved workspace matches"), "got: {err}");
     }
 
     #[test]
