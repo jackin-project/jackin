@@ -633,12 +633,34 @@ pub fn run(cli: Cli) -> Result<()> {
                         );
                     }
                 }
-                let mount_count = all_mounts.len();
+                // Pre-collapse under rule C so the create_workspace
+                // post-condition sees a clean mount list. Any rule-C error
+                // (readonly mismatch, etc.) surfaces here before we try to
+                // write.
+                let all_indexes: Vec<usize> = (0..all_mounts.len()).collect();
+                let plan = workspace::plan_collapse(&all_mounts, &all_indexes)?;
+                if !plan.removed.is_empty() {
+                    let removed_list: Vec<String> = plan
+                        .removed
+                        .iter()
+                        .map(|r| tui::shorten_home(&r.child.src))
+                        .collect();
+                    // Parent paths in a single create are all the same set; pick
+                    // the first for the summary headline.
+                    let parent = tui::shorten_home(&plan.removed[0].covered_by.src);
+                    eprintln!(
+                        "collapsed {} redundant mount(s) under {parent}: {}",
+                        plan.removed.len(),
+                        removed_list.join(", ")
+                    );
+                }
+                let final_mounts = plan.kept;
+                let mount_count = final_mounts.len();
                 config.create_workspace(
                     &name,
                     WorkspaceConfig {
                         workdir: expanded_workdir,
-                        mounts: all_mounts,
+                        mounts: final_mounts,
                         allowed_agents,
                         default_agent,
                         last_agent: None,
