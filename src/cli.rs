@@ -76,18 +76,23 @@ Examples:
         debug: bool,
     },
     /// Reattach to a running agent's session
+    ///
+    /// When omitted, finds the saved workspace for the current directory and
+    /// reconnects to a running agent container belonging to it.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
+  jackin hardline                              # auto-detect workspace + running agent for cwd
   jackin hardline agent-smith
   jackin hardline chainargos/the-architect
   jackin hardline jackin-agent-smith-clone-1"
     )]
     Hardline {
-        /// Agent class selector or container name to reconnect to
-        selector: String,
+        /// Agent class selector or container name to reconnect to.
+        /// When omitted, uses the running agent in the workspace for the current directory.
+        selector: Option<String>,
     },
     /// Stop an agent and clean up its container
     #[command(
@@ -855,6 +860,25 @@ mod tests {
         let help = help_text(&["jackin", "hardline", "--help"]);
         assert!(help.contains("Reattach to a running agent"));
         assert!(help.contains("jackin hardline agent-smith"));
+        assert!(
+            help.contains("jackin hardline ") && help.contains("auto-detect workspace"),
+            "missing no-arg usage in hardline help: {help}"
+        );
+    }
+
+    #[test]
+    fn parses_hardline_without_selector() {
+        let cli = Cli::try_parse_from(["jackin", "hardline"]).unwrap();
+        assert!(matches!(cli.command, Command::Hardline { selector: None }));
+    }
+
+    #[test]
+    fn parses_hardline_with_selector() {
+        let cli = Cli::try_parse_from(["jackin", "hardline", "agent-smith"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Hardline { selector: Some(ref s) } if s == "agent-smith"
+        ));
     }
 
     // ── Eject help ──────────────────────────────────────────────────────
