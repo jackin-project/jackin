@@ -6,7 +6,7 @@ ARG SHELLFIRM_VERSION
 RUN cargo install tirith --version "${TIRITH_VERSION}" --locked && \
     cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked
 
-FROM debian:trixie-20260406@sha256:3352c2e13876c8a5c5873ef20870e1939e73cb9a3c1aeba5e3e72172a85ce9ed
+FROM debian:trixie-20260421@sha256:35b8ff74ead4880f22090b617372daff0ccae742eb5674455d542bef71ef1999
 
 COPY --from=security-tools /usr/local/cargo/bin/tirith /usr/local/bin/tirith
 COPY --from=security-tools /usr/local/cargo/bin/shellfirm /usr/local/bin/shellfirm
