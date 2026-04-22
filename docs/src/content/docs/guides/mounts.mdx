@@ -125,6 +125,20 @@ When multiple mount sources are resolved, jackin' combines them in this order:
 <Aside type="caution">
 If two mounts target the same container destination, jackin' stops with an error. It does not silently let the later mount win. This is deliberate because mounts are part of the security boundary.
 </Aside>
+
+## Redundant-mount invariant
+
+A saved workspace never contains two mounts where one strictly covers the other at the same container location. The rule: mount **P** covers mount **C** iff:
+
+1. `P.src` is an ancestor of `C.src`, AND
+2. the suffix from `P.src` to `C.src` equals the suffix from `P.dst` to `C.dst`.
+
+In that case `C` projects the same host subtree to the same container path that `P` already exposes it at — making `C` strictly redundant.
+
+jackin enforces this on write: `workspace create` auto-removes redundants (with a stderr summary), and `workspace edit` prompts before collapsing (see [mount collapse](../commands/workspace.mdx#mount-collapse)). Identity mounts (same `src` AND same `dst`) are not covered by this rule — they're handled by upsert-by-destination semantics.
+
+Ad-hoc `-v` mounts passed on the command line at launch time are not collapsed; they stay literal.
+
 ## Sensitive path warnings
 
 jackin' detects when a mount source matches a known sensitive directory and warns before proceeding:
