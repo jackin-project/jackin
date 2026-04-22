@@ -2,7 +2,7 @@
 
 ## Documentation Convention
 
-All project documentation, conventions, commands, and architecture info must go in `AGENTS.md` files — never in tool-specific config files (e.g., `CLAUDE.md`, `GEMINI.md`, `COPILOT.md`).
+All project rules, conventions, commands, and architecture info must live in this repo's topic-specific rule files (linked from [AGENTS.md](AGENTS.md)) — never in tool-specific config files (e.g., `CLAUDE.md`, `GEMINI.md`, `COPILOT.md`).
 
 Tool-specific files should only contain a reference to `AGENTS.md` (e.g., `@AGENTS.md`).
 
