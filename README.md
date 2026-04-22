@@ -72,6 +72,12 @@ To develop jackin' itself, use [The Architect](https://github.com/jackin-project
 jackin load the-architect
 ```
 
+## About this project
+
+jackin' is an independent personal project by Alexey Zhokhov. It is
+not affiliated with or endorsed by any employer or client of the
+author.
+
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
