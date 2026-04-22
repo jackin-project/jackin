@@ -424,6 +424,30 @@ impl AppConfig {
             workspace.default_agent = default_agent;
         }
 
+        // Rule-C invariant: after applying this edit, the mount list must be
+        // pairwise non-covering under rule C. The CLI layer pre-collapses
+        // redundants; if any remain here, the caller is buggy (non-CLI) or
+        // the workspace has a pre-existing violation that wasn't cleaned up.
+        //
+        // Re-run plan_collapse with empty new_indexes: any removal indicates
+        // a violation is present, whether freshly introduced or pre-existing.
+        match crate::workspace::plan_collapse(&workspace.mounts, &[]) {
+            Ok(plan) if plan.removed.is_empty() => {}
+            Ok(plan) => {
+                let details: Vec<String> = plan
+                    .removed
+                    .iter()
+                    .map(|r| format!("{} covered by {}", r.child.src, r.covered_by.src))
+                    .collect();
+                anyhow::bail!(
+                    "workspace {name:?} would contain redundant mounts after this edit:\n  - {}\n\
+                     use `jackin workspace prune {name}` or pass `--prune` to clean up",
+                    details.join("\n  - ")
+                );
+            }
+            Err(e) => return Err(e.into()),
+        }
+
         validate_workspace_config(name, &workspace)?;
         self.workspaces.insert(name.to_string(), workspace);
         Ok(())
@@ -452,6 +476,11 @@ impl AppConfig {
             .iter()
             .map(|(name, workspace)| (name.as_str(), workspace))
             .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert_workspace_raw(&mut self, name: &str, ws: WorkspaceConfig) {
+        self.workspaces.insert(name.into(), ws);
     }
 
     fn validate_workspaces(&self) -> anyhow::Result<()> {
@@ -1467,6 +1496,192 @@ trusted = true
         assert_eq!(
             config.resolve_auth_forward_mode("agent-smith"),
             AuthForwardMode::Copy
+        );
+    }
+
+    #[test]
+    fn edit_workspace_rejects_upsert_that_introduces_child_under_existing_parent() {
+        use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceEdit};
+
+        let mut config = AppConfig::default();
+        config
+            .create_workspace(
+                "test",
+                WorkspaceConfig {
+                    workdir: "/a".into(),
+                    mounts: vec![MountConfig {
+                        src: "/a".into(),
+                        dst: "/a".into(),
+                        readonly: false,
+                    }],
+                    allowed_agents: vec![],
+                    default_agent: None,
+                    last_agent: None,
+                },
+            )
+            .unwrap();
+
+        let err = config
+            .edit_workspace(
+                "test",
+                WorkspaceEdit {
+                    upsert_mounts: vec![MountConfig {
+                        src: "/a/b".into(),
+                        dst: "/a/b".into(),
+                        readonly: false,
+                    }],
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("already covered") || msg.contains("redundant"),
+            "expected 'already covered' or 'redundant' in error message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn edit_workspace_rejects_upsert_with_readonly_mismatch_vs_existing_child() {
+        use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceEdit};
+
+        let mut config = AppConfig::default();
+        config
+            .create_workspace(
+                "test",
+                WorkspaceConfig {
+                    workdir: "/a/b".into(),
+                    mounts: vec![MountConfig {
+                        src: "/a/b".into(),
+                        dst: "/a/b".into(),
+                        readonly: true,
+                    }],
+                    allowed_agents: vec![],
+                    default_agent: None,
+                    last_agent: None,
+                },
+            )
+            .unwrap();
+
+        let err = config
+            .edit_workspace(
+                "test",
+                WorkspaceEdit {
+                    upsert_mounts: vec![MountConfig {
+                        src: "/a".into(),
+                        dst: "/a".into(),
+                        readonly: false,
+                    }],
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("readonly"));
+    }
+
+    #[test]
+    fn edit_workspace_accepts_pre_collapsed_upsert_that_replaces_children() {
+        // CLI's job is to pre-collapse. Here we simulate it: instead of
+        // upserting just the parent (which would leave children as redundants
+        // and fail the post-condition), the CLI removes the children via
+        // remove_destinations AND upserts the parent in the same edit.
+        use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceEdit};
+
+        let mut config = AppConfig::default();
+        config
+            .create_workspace(
+                "test",
+                WorkspaceConfig {
+                    workdir: "/a/b".into(),
+                    mounts: vec![
+                        MountConfig {
+                            src: "/a/b".into(),
+                            dst: "/a/b".into(),
+                            readonly: false,
+                        },
+                        MountConfig {
+                            src: "/a/c".into(),
+                            dst: "/a/c".into(),
+                            readonly: false,
+                        },
+                    ],
+                    allowed_agents: vec![],
+                    default_agent: None,
+                    last_agent: None,
+                },
+            )
+            .unwrap();
+
+        config
+            .edit_workspace(
+                "test",
+                WorkspaceEdit {
+                    upsert_mounts: vec![MountConfig {
+                        src: "/a".into(),
+                        dst: "/a".into(),
+                        readonly: false,
+                    }],
+                    remove_destinations: vec!["/a/b".into(), "/a/c".into()],
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap();
+
+        let ws = config
+            .list_workspaces()
+            .into_iter()
+            .find(|(n, _)| *n == "test")
+            .map(|(_, w)| w)
+            .expect("workspace should exist");
+        assert_eq!(ws.mounts.len(), 1);
+        assert_eq!(ws.mounts[0].src, "/a");
+    }
+
+    #[test]
+    fn edit_workspace_rejects_leaving_pre_existing_violation() {
+        // A workspace already containing a rule-C violation. An unrelated edit
+        // (e.g., adding an allowed agent) should be blocked by the post-check.
+        use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceEdit};
+
+        let mut config = AppConfig::default();
+        config.insert_workspace_raw(
+            "legacy",
+            WorkspaceConfig {
+                workdir: "/a".into(),
+                mounts: vec![
+                    MountConfig {
+                        src: "/a".into(),
+                        dst: "/a".into(),
+                        readonly: false,
+                    },
+                    MountConfig {
+                        src: "/a/b".into(),
+                        dst: "/a/b".into(),
+                        readonly: false,
+                    },
+                ],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+            },
+        );
+
+        let err = config
+            .edit_workspace(
+                "legacy",
+                WorkspaceEdit {
+                    allowed_agents_to_add: vec!["agent-x".into()],
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("redundant") || msg.contains("already covered"),
+            "expected 'redundant' or 'already covered' in error message, got: {msg}"
         );
     }
 }
