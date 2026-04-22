@@ -1,0 +1,284 @@
+---
+title: "Reliable Claude Authentication Strategy"
+---
+
+
+**Status**: Deferred — needs design work
+
+## Problem
+
+jackin' currently optimizes for the simplest happy path: if the operator is already authenticated with Claude Code on the host, a new agent container can start pre-authenticated without requiring `/login` inside the container.
+
+That convenience is real, but the current forwarding model is fragile for long-lived or concurrent sessions.
+
+Today jackin' forwards Claude Code subscription auth by copying OAuth session state into the agent's persisted state directory:
+
+- host `~/.claude.json` is copied to `~/.jackin/data/<container-name>/.claude.json`
+- host credentials are copied to `~/.jackin/data/<container-name>/.claude/.credentials.json`
+- those files are then bind-mounted back into the container on launch
+
+That means every long-lived agent instance can end up with its own private copy of Claude Code auth state.
+
+This is workable for short-lived single-session usage, but it interacts badly with OAuth refresh-token rotation when multiple Claude Code sessions are active across the host and several jackin containers.
+
+The user-visible failure mode is exactly the one operators report:
+
+```text
+Please run /login · API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}
+```
+
+## Why It Matters
+
+- jackin's value proposition is smooth operator UX when the host is already set up
+- auth that works today but fails tomorrow is worse than auth that is explicit from the start
+- operators often keep multiple agent sessions open across projects, workspaces, and clone containers
+- a copied OAuth session is not a stable runtime contract when refresh tokens rotate independently
+- repeated `/login` prompts are especially painful inside isolated runtimes because browser-driven recovery breaks flow
+
+## Current State
+
+The current operator-facing modes are:
+
+- `copy` — copy host auth on first container creation only
+- `sync` — overwrite container auth from host on each launch when host auth exists
+- `ignore` — never forward host auth; require in-container login
+
+Those modes are coherent, but they optimize for filesystem ownership of credentials, not for concurrent-session reliability.
+
+In practice:
+
+- `copy` is convenient for first launch but drifts over time
+- `sync` repairs startup drift but does not help once multiple live sessions continue running for hours
+- `ignore` is explicit but throws away the main convenience benefit jackin wants to provide
+
+Claude Code's own authentication model also matters here. The official docs support several credential sources with a defined precedence order, including:
+
+- subscription OAuth credentials from `/login`
+- `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`
+- API-key based terminal auth (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `apiKeyHelper`)
+
+That means jackin is not limited to copying the default `/login` credential store. There is room for a more runtime-friendly auth contract.
+
+## Goal
+
+Keep the current convenience goal:
+
+1. If the operator is already authenticated locally, jackin should be able to start an agent without requiring manual `/login` inside the container.
+2. The chosen auth mechanism should remain reliable across restarts and normal day-to-day usage.
+3. The operator should understand which mode they are using and what tradeoffs it carries.
+4. Multiple active jackin sessions should degrade gracefully rather than surprising the operator with intermittent 401s.
+
+## Non-Goals
+
+- Replacing Claude Code's upstream authentication implementation
+- Claiming jackin can fully prevent OAuth refresh races inside Claude Code itself
+- Building a general secrets platform in this design pass
+- Solving auth for non-Claude runtimes before the Claude-specific path is made robust
+
+## Design Options
+
+### Option 1: Keep `copy` as the primary workflow
+
+This is the current behavior.
+
+Pros:
+
+- smallest implementation
+- zero new operator concepts
+- preserves the current docs and config model
+
+Cons:
+
+- stale container-local auth is easy to accumulate
+- copied auth can diverge from host auth immediately after first launch
+- concurrent long-lived sessions remain fragile
+- the failure mode is confusing because the host may still be authenticated when the container is not
+
+### Option 2: Treat `sync` as the recommended default
+
+This keeps the current copied-session design but changes the guidance and possibly the default.
+
+Pros:
+
+- reduces startup drift significantly
+- simpler than inventing a new auth mode
+- preserves the operator mental model of "use my host auth"
+
+Cons:
+
+- does not solve mid-session drift for already-running containers
+- still depends on copied subscription OAuth state
+- a second runtime can still invalidate auth later through token rotation
+
+### Option 3: Add a long-lived token mode based on `CLAUDE_CODE_OAUTH_TOKEN`
+
+Claude Code documents a supported one-year OAuth token flow via:
+
+```bash
+claude setup-token
+```
+
+The output can be set as:
+
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN=...
+```
+
+jackin could add a first-class auth mode that injects this token into the runtime instead of copying `/login` session files.
+
+Pros:
+
+- better fit for non-interactive or semi-persistent runtimes
+- avoids bind-mounting a cloned subscription session into every container
+- cleaner operator contract for "I already authorized locally, now launch agents"
+- aligns with an officially documented Claude Code auth path for scripts and CI-like environments
+
+Cons:
+
+- requires new operator setup and storage decisions
+- still needs careful handling so the token is not leaked into images, logs, or persisted state accidentally
+- may not cover every Claude Code feature that assumes interactive subscription OAuth state
+
+### Option 4: Add runtime warnings and recovery UX, but keep current auth mechanics
+
+This focuses on detection and clearer messaging rather than changing the auth primitive.
+
+Possible improvements:
+
+- warn when launching multiple forwarded-auth containers for the same account
+- warn when `copy` is selected for a pre-existing container family
+- surface a targeted recovery hint when a container hits 401 (`switch to sync`, `purge`, or `use token mode`)
+- document concurrent-session risk explicitly in the auth guide
+
+Pros:
+
+- low-risk improvements
+- better operator diagnosis
+- valuable even if a stronger auth mode is added later
+
+Cons:
+
+- does not solve the underlying drift problem by itself
+
+## Recommendation
+
+Choose a hybrid plan:
+
+1. Keep `copy`, `sync`, and `ignore` for backward compatibility.
+2. Add a new token-based mode built around `CLAUDE_CODE_OAUTH_TOKEN`.
+3. Treat token-based auth as the recommended mode for long-lived or concurrent jackin sessions.
+4. Improve docs and warnings around `copy` and `sync` so operators understand their limits.
+
+In other words:
+
+- `copy` remains the lowest-friction first-run mode
+- `sync` remains the simplest "follow host state on launch" mode
+- token mode becomes the durable mode for serious day-to-day usage
+
+## Suggested Operator UX
+
+### CLI
+
+Examples:
+
+```bash
+jackin config auth set copy
+jackin config auth set sync
+jackin config auth set ignore
+jackin config auth set token
+```
+
+Potential setup helper:
+
+```bash
+jackin config auth setup-token
+```
+
+That command could either:
+
+- guide the operator through `claude setup-token`
+- or simply explain how to generate and register the token manually
+
+### Config
+
+Suggested shape:
+
+```toml
+[claude]
+auth_forward = "token"
+```
+
+If token mode needs an explicit token source, keep it operator-owned rather than agent-owned.
+
+Possible configuration directions:
+
+```toml
+[claude]
+auth_forward = "token"
+oauth_token_source = "keychain"
+```
+
+or:
+
+```toml
+[claude]
+auth_forward = "token"
+oauth_token_env = "JACKIN_CLAUDE_OAUTH_TOKEN"
+```
+
+The exact storage contract needs a separate security pass.
+
+### Runtime messaging
+
+Launch output should clearly state the active auth mode, for example:
+
+- `claude auth: forwarded host session (copy)`
+- `claude auth: forwarded host session (sync)`
+- `claude auth: long-lived OAuth token`
+- `claude auth: none (manual /login required)`
+
+If multiple containers are active with copied session auth, jackin should say so directly.
+
+## Security Notes
+
+Token mode is better for reliability, but it does not remove the need for careful secret handling.
+
+Requirements:
+
+- never bake the token into derived images
+- never print it in logs or launch summaries
+- avoid persisting it into world-readable files
+- make revocation and rotation straightforward
+
+This proposal is about a better auth primitive, not about relaxing jackin's security stance.
+
+## Implementation Outline
+
+At minimum, this design would touch:
+
+- `src/config.rs` — new auth mode and config persistence
+- `src/cli.rs` — help text and examples
+- `src/lib.rs` — `config auth` command handling
+- `src/instance.rs` — auth provisioning semantics for the new mode
+- `src/runtime.rs` — runtime env injection and launch-time warnings
+- `docs/src/content/docs/guides/authentication.mdx` — explain concurrent-session tradeoffs and token mode
+- `docs/src/content/docs/commands/config.mdx` — document setup and mode selection
+- `docs/src/content/docs/reference/configuration.mdx` — config format updates
+
+## Open Questions
+
+1. Where should jackin store a long-lived Claude token on macOS and Linux?
+2. Should token mode be an explicit opt-in only, or should it eventually replace `copy` as the default recommendation?
+3. Is a token-only mode sufficient, or should jackin also support an operator-provided `apiKeyHelper` path for terminal-only workflows?
+4. Should jackin proactively detect likely-auth-drift conditions and recommend `purge` or `sync` before the operator hits a 401?
+
+## Related Files
+
+- `src/config.rs` — auth mode definitions and config resolution
+- `src/cli.rs` — `jackin config auth` help text
+- `src/lib.rs` — auth config command handlers
+- `src/instance.rs` — credential forwarding and state preparation
+- `src/runtime.rs` — launch-time env injection and notices
+- `docs/src/content/docs/guides/authentication.mdx` — current forwarding model and troubleshooting
+- `docs/src/content/docs/commands/config.mdx` — current operator auth commands
+- `docs/src/content/docs/reference/configuration.mdx` — persisted config schema
