@@ -69,16 +69,7 @@ sign-off.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full DCO v1.1 text.
 
-## Codex Commit Attribution
-
-Until Codex supports automatic commit trailers, every commit created by the
-Codex agent in this repository must include this exact trailer:
-
-```text
-Co-authored-by: Codex <codex@openai.com>
-```
-
-Add it manually when creating or amending Codex-generated commits.
+Agent-specific attribution trailer requirements (e.g., for the Codex agent) are in [AGENTS.md](AGENTS.md).
 
 ## Pre-commit Verification
 

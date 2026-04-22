@@ -1,35 +1,37 @@
 # AGENTS.md
 
-This repository uses `main` as its primary branch. All AI agents working in this repo must follow the rules referenced below. Each topic lives in its own file; this document is the index.
+This repository uses `main` as its primary branch. This file is the canonical home for rules and restrictions that apply only to AI agents. Rules that apply equally to human contributors and agents live in topic-specific files linked under **Shared conventions** below.
 
-## Documentation Convention
+## Pull Request Merging (agent-only)
 
-See [RULES.md](RULES.md) — where project rules must live, and why tool-specific config files must only reference this index.
+**Agents must never merge a pull request without explicit per-PR confirmation from the human operator.**
 
-## Branching
+- Open the PR, share the URL, and stop. The default response after creating a PR is "PR URL — ready for your review" — not a merge command in the same turn.
+- Prior "just do it" / "don't wait for me" / "proceed autonomously" / "merge silently" authorizations apply only to the specific workstream the operator was discussing when they issued them. They do not carry forward to later PRs in the same session or to new sessions. Treat each PR as a fresh approval gate.
+- `--admin` / branch-protection bypass is a privilege, not a default. Use it only when the operator explicitly authorizes merging *this specific PR*.
+- Phrasing that does NOT authorize merge (ask anyway): "proceed", "don't wait for me", "do everything autonomously", "looks good". Phrasing that does: "merge it", "merge this one", "you can merge now", "ship it" (still prefer to confirm "ship = merge now?" for high-blast-radius PRs).
+- Bounded authorization: if the operator says "merge all the PRs we just discussed" or similar, merge only the named set — not unrelated PRs that exist or that you open later.
 
-See [BRANCHING.md](BRANCHING.md) — branch naming conventions, feature-branch policy, and what never to commit to `main`.
+If you are uncertain whether authorization applies to the PR in front of you, ask. The cost of pausing is ~30 seconds; the cost of merging something the operator wasn't ready for is much higher.
 
-## Pull Request Merging
+## Codex Commit Attribution (agent-only)
 
-See [PR-MERGING.md](PR-MERGING.md) — when an agent may merge a PR, scope of prior authorization, and required phrasing from the operator.
+Until Codex supports automatic commit trailers, every commit created by the Codex agent in this repository must include this exact trailer:
 
-## Commits
+```text
+Co-authored-by: Codex <codex@openai.com>
+```
 
-See [COMMITS.md](COMMITS.md) — Conventional Commits format, DCO sign-off requirements, Codex attribution, and pre-commit verification commands.
+Add it manually when creating or amending Codex-generated commits.
 
-## Project Structure
+## Shared conventions
 
-See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) — navigational map of the codebase, documentation site, Docker assets, and CI workflows.
+Rules in the files below apply to everyone working in the repo — human and agent:
 
-## Testing
-
-See [TESTING.md](TESTING.md) — test runner setup and commands.
-
-## Review Status & Security Exceptions
-
-See [REVIEW_STATUS.md](REVIEW_STATUS.md) — active review findings and accepted security exceptions. Do not flag items listed in its "Accepted Exceptions" section as issues during code review or automated scanning.
-
-## External Contributions
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) — contribution flow, DCO v1.1 text, and license terms for external contributors.
+- [RULES.md](RULES.md) — documentation-location convention (no project rules in tool-specific files).
+- [BRANCHING.md](BRANCHING.md) — branch naming, feature-branch policy, what never to commit to `main`.
+- [COMMITS.md](COMMITS.md) — Conventional Commits format, DCO sign-off, pre-commit verification commands.
+- [TESTING.md](TESTING.md) — test runner setup and commands.
+- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) — navigational map of the codebase, documentation site, Docker assets, and CI workflows.
+- [REVIEW_STATUS.md](REVIEW_STATUS.md) — active review findings and accepted security exceptions. Do not flag items listed in its "Accepted Exceptions" section as issues during code review or automated scanning.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — contribution flow, DCO v1.1 text, and license terms for external contributors.
