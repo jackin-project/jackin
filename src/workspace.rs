@@ -1491,4 +1491,59 @@ mod tests {
         assert!(msg.contains("/a/b"));
         assert!(msg.contains("readonly"));
     }
+
+    /// Exhaustive check: for any plan produced on a valid (no-error) input,
+    /// re-planning on `plan.kept` must be a no-op.
+    #[test]
+    fn plan_collapse_is_idempotent() {
+        let inputs: Vec<Vec<MountConfig>> = vec![
+            vec![],
+            vec![mk("/a", "/a", false)],
+            vec![mk("/a", "/a", false), mk("/b", "/b", false)],
+            vec![mk("/a", "/a", false), mk("/a/b", "/a/b", false)],
+            vec![
+                mk("/a", "/a", false),
+                mk("/a/b", "/a/b", false),
+                mk("/a/b/c", "/a/b/c", false),
+                mk("/x", "/x", true),
+            ],
+        ];
+        for input in inputs {
+            let indexes: Vec<usize> = (0..input.len()).collect();
+            let plan = plan_collapse(&input, &indexes).unwrap();
+            let second = plan_collapse(&plan.kept, &[]).unwrap();
+            assert!(
+                second.removed.is_empty(),
+                "plan.kept should be rule-C compliant, but re-plan removed {} entries",
+                second.removed.len(),
+            );
+            assert_eq!(second.kept, plan.kept);
+        }
+    }
+
+    #[test]
+    fn plan_collapse_result_satisfies_invariant() {
+        // After planning, no pair in `kept` covers another pair in `kept`.
+        let mounts = vec![
+            mk("/a", "/a", false),
+            mk("/a/b", "/a/b", false),
+            mk("/a/c/d", "/a/c/d", false),
+            mk("/x/y", "/x/y", true),
+            mk("/x", "/x", true),
+        ];
+        let indexes: Vec<usize> = (0..mounts.len()).collect();
+        let plan = plan_collapse(&mounts, &indexes).unwrap();
+        for (i, a) in plan.kept.iter().enumerate() {
+            for (j, b) in plan.kept.iter().enumerate() {
+                if i != j {
+                    assert!(
+                        !covers(a, b),
+                        "invariant violated: {:?} covers {:?} in kept set",
+                        a,
+                        b,
+                    );
+                }
+            }
+        }
+    }
 }
