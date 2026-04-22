@@ -149,6 +149,47 @@ pub fn validate_mounts(mounts: &[MountConfig]) -> anyhow::Result<()> {
     validate_mount_paths(mounts)
 }
 
+// ── Rule-C covering predicate ───────────────────────────────────────────
+
+#[allow(dead_code)]
+/// Returns true iff `parent` strictly covers `child` under rule C:
+/// `parent.src` is a proper ancestor of `child.src`, AND the path suffix
+/// `child.src - parent.src` equals the path suffix `child.dst - parent.dst`.
+///
+/// Equivalently: `child` projects the same host subtree to the same container
+/// location that `parent` would already expose it at.
+///
+/// Identity (equal src and equal dst) returns false — that case is handled by
+/// upsert-by-dst in `edit_workspace`.
+///
+/// The `readonly` flag is ignored here. Readonly mismatches are caught at
+/// `plan_collapse` level, not in the predicate.
+fn covers(parent: &MountConfig, child: &MountConfig) -> bool {
+    let parent_src = parent.src.trim_end_matches('/');
+    let parent_dst = parent.dst.trim_end_matches('/');
+    let child_src = child.src.trim_end_matches('/');
+    let child_dst = child.dst.trim_end_matches('/');
+
+    // Identity is not covering.
+    if parent_src == child_src && parent_dst == child_dst {
+        return false;
+    }
+
+    // child.src must be strictly under parent.src.
+    let Some(src_suffix) = child_src.strip_prefix(parent_src) else {
+        return false;
+    };
+    if !src_suffix.starts_with('/') {
+        return false;
+    }
+
+    // child.dst must be strictly under parent.dst with the same suffix.
+    let Some(dst_suffix) = child_dst.strip_prefix(parent_dst) else {
+        return false;
+    };
+    src_suffix == dst_suffix
+}
+
 // ── Sensitive mount detection ────────────────────────────────────────────
 
 /// Path suffixes that indicate sensitive host directories. A mount source is
@@ -1082,5 +1123,138 @@ mod tests {
         // ".sshd" should NOT match ".ssh"
         let hits = find_sensitive_mounts(&[mount("/home/user/.sshd")]);
         assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn covers_is_false_for_equal_mounts() {
+        let a = MountConfig {
+            src: "/a".into(),
+            dst: "/a".into(),
+            readonly: false,
+        };
+        let b = a.clone();
+        assert!(!covers(&a, &b));
+    }
+
+    #[test]
+    fn covers_is_true_for_exact_ancestor_with_matching_suffix() {
+        let parent = MountConfig {
+            src: "/a".into(),
+            dst: "/a".into(),
+            readonly: false,
+        };
+        let child = MountConfig {
+            src: "/a/b".into(),
+            dst: "/a/b".into(),
+            readonly: false,
+        };
+        assert!(covers(&parent, &child));
+    }
+
+    #[test]
+    fn covers_is_true_for_deep_ancestor_with_matching_suffix() {
+        let parent = MountConfig {
+            src: "/a".into(),
+            dst: "/a".into(),
+            readonly: false,
+        };
+        let child = MountConfig {
+            src: "/a/b/c/d".into(),
+            dst: "/a/b/c/d".into(),
+            readonly: false,
+        };
+        assert!(covers(&parent, &child));
+    }
+
+    #[test]
+    fn covers_is_true_when_src_and_dst_differ_but_offsets_match() {
+        let parent = MountConfig {
+            src: "/host/root".into(),
+            dst: "/container/root".into(),
+            readonly: false,
+        };
+        let child = MountConfig {
+            src: "/host/root/sub".into(),
+            dst: "/container/root/sub".into(),
+            readonly: false,
+        };
+        assert!(covers(&parent, &child));
+    }
+
+    #[test]
+    fn covers_is_false_when_src_nests_but_dst_offsets_differ() {
+        let parent = MountConfig {
+            src: "/host/root".into(),
+            dst: "/container/a".into(),
+            readonly: false,
+        };
+        let child = MountConfig {
+            src: "/host/root/sub".into(),
+            dst: "/container/b/sub".into(),
+            readonly: false,
+        };
+        assert!(!covers(&parent, &child));
+    }
+
+    #[test]
+    fn covers_is_false_when_src_does_not_nest() {
+        let a = MountConfig {
+            src: "/a".into(),
+            dst: "/a".into(),
+            readonly: false,
+        };
+        let b = MountConfig {
+            src: "/b".into(),
+            dst: "/b".into(),
+            readonly: false,
+        };
+        assert!(!covers(&a, &b));
+    }
+
+    #[test]
+    fn covers_is_false_for_sibling_prefix_match() {
+        // `/a-x` is not a child of `/a`, even though "/a-x".starts_with("/a").
+        let parent = MountConfig {
+            src: "/a".into(),
+            dst: "/a".into(),
+            readonly: false,
+        };
+        let child = MountConfig {
+            src: "/a-x".into(),
+            dst: "/a-x".into(),
+            readonly: false,
+        };
+        assert!(!covers(&parent, &child));
+    }
+
+    #[test]
+    fn covers_normalizes_trailing_slashes() {
+        let parent = MountConfig {
+            src: "/a/".into(),
+            dst: "/a/".into(),
+            readonly: false,
+        };
+        let child = MountConfig {
+            src: "/a/b".into(),
+            dst: "/a/b".into(),
+            readonly: false,
+        };
+        assert!(covers(&parent, &child));
+    }
+
+    #[test]
+    fn covers_handles_different_readonly_flags() {
+        // `covers` is purely path-based. Readonly mismatches are caught by plan_collapse.
+        let parent = MountConfig {
+            src: "/a".into(),
+            dst: "/a".into(),
+            readonly: false,
+        };
+        let child = MountConfig {
+            src: "/a/b".into(),
+            dst: "/a/b".into(),
+            readonly: true,
+        };
+        assert!(covers(&parent, &child));
     }
 }
