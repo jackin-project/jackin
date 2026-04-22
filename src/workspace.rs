@@ -151,7 +151,6 @@ pub fn validate_mounts(mounts: &[MountConfig]) -> anyhow::Result<()> {
 
 // ── Rule-C covering predicate ───────────────────────────────────────────
 
-#[allow(dead_code)]
 /// Returns true iff `parent` strictly covers `child` under rule C:
 /// `parent.src` is a proper ancestor of `child.src`, AND the path suffix
 /// `child.src - parent.src` equals the path suffix `child.dst - parent.dst`.
@@ -188,6 +187,101 @@ fn covers(parent: &MountConfig, child: &MountConfig) -> bool {
         return false;
     };
     src_suffix == dst_suffix
+}
+
+/// A proposed mount-set change produced by [`plan_collapse`]. `kept` is the
+/// mount list with all rule-C-redundant entries removed; `removed` describes
+/// each collapse for operator-facing messaging.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CollapsePlan {
+    pub kept: Vec<MountConfig>,
+    pub removed: Vec<Removal>,
+}
+
+/// Records that `child` was collapsed because it is covered by `covered_by`
+/// under rule C (see [`covers`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Removal {
+    pub child: MountConfig,
+    pub covered_by: MountConfig,
+}
+
+/// Conditions that prevent a silent collapse. The operator must resolve these
+/// by hand before the edit can proceed.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CollapseError {
+    #[error(
+        "mount {parent_src} ({parent_mode}) would subsume {child_src} ({child_mode}), \
+         but the readonly flag differs. Match the flag or remove the child first.",
+        parent_src = parent.src,
+        parent_mode = if parent.readonly { "ro" } else { "rw" },
+        child_src = child.src,
+        child_mode = if child.readonly { "ro" } else { "rw" },
+    )]
+    ReadonlyMismatch {
+        parent: MountConfig,
+        child: MountConfig,
+    },
+    #[error(
+        "mount {child_src} is already covered by existing mount {parent_src}. \
+         Nothing to add.",
+        child_src = child.src,
+        parent_src = parent.src,
+    )]
+    ChildUnderExistingParent {
+        parent: MountConfig,
+        child: MountConfig,
+    },
+}
+
+/// Computes a [`CollapsePlan`] for `mounts`.
+///
+/// `new_indexes` identifies which entries in `mounts` originate from the
+/// current operation (upserts for `edit`, all indexes for `create`). Indexes
+/// outside `mounts.len()` are ignored.
+///
+/// Returns `Err` on the first [`CollapseError`] encountered. On success, every
+/// entry in `kept` is pairwise non-covering (see [`covers`]) — i.e., the
+/// returned mount list is rule-C compliant.
+pub fn plan_collapse(
+    mounts: &[MountConfig],
+    new_indexes: &[usize],
+) -> Result<CollapsePlan, CollapseError> {
+    let mut kept = Vec::new();
+    let mut removed = Vec::new();
+
+    for (i, m) in mounts.iter().enumerate() {
+        let parent = mounts
+            .iter()
+            .enumerate()
+            .find(|(j, p)| *j != i && covers(p, m));
+
+        match parent {
+            Some((j, p)) => {
+                if p.readonly != m.readonly {
+                    return Err(CollapseError::ReadonlyMismatch {
+                        parent: p.clone(),
+                        child: m.clone(),
+                    });
+                }
+                let child_is_new = new_indexes.contains(&i);
+                let parent_is_new = new_indexes.contains(&j);
+                if child_is_new && !parent_is_new {
+                    return Err(CollapseError::ChildUnderExistingParent {
+                        parent: p.clone(),
+                        child: m.clone(),
+                    });
+                }
+                removed.push(Removal {
+                    child: m.clone(),
+                    covered_by: p.clone(),
+                });
+            }
+            None => kept.push(m.clone()),
+        }
+    }
+
+    Ok(CollapsePlan { kept, removed })
 }
 
 // ── Sensitive mount detection ────────────────────────────────────────────
@@ -1256,5 +1350,81 @@ mod tests {
             readonly: true,
         };
         assert!(covers(&parent, &child));
+    }
+
+    fn mk(src: &str, dst: &str, ro: bool) -> MountConfig {
+        MountConfig {
+            src: src.into(),
+            dst: dst.into(),
+            readonly: ro,
+        }
+    }
+
+    #[test]
+    fn plan_collapse_empty_input_returns_empty_plan() {
+        let plan = plan_collapse(&[], &[]).unwrap();
+        assert!(plan.kept.is_empty());
+        assert!(plan.removed.is_empty());
+    }
+
+    #[test]
+    fn plan_collapse_preserves_unrelated_mounts() {
+        let mounts = vec![mk("/a", "/a", false), mk("/b", "/b", false)];
+        let plan = plan_collapse(&mounts, &[0, 1]).unwrap();
+        assert_eq!(plan.kept, mounts);
+        assert!(plan.removed.is_empty());
+    }
+
+    #[test]
+    fn plan_collapse_collapses_single_child_under_new_parent() {
+        let mounts = vec![
+            mk("/a/b", "/a/b", false), // pre-existing child (index 0)
+            mk("/a", "/a", false),     // new parent (index 1)
+        ];
+        let plan = plan_collapse(&mounts, &[1]).unwrap();
+        assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
+        assert_eq!(plan.removed.len(), 1);
+        assert_eq!(plan.removed[0].child, mk("/a/b", "/a/b", false));
+        assert_eq!(plan.removed[0].covered_by, mk("/a", "/a", false));
+    }
+
+    #[test]
+    fn plan_collapse_collapses_multiple_children_under_new_parent() {
+        let mounts = vec![
+            mk("/a/b", "/a/b", false),
+            mk("/a/c", "/a/c", false),
+            mk("/a", "/a", false),
+        ];
+        let plan = plan_collapse(&mounts, &[2]).unwrap();
+        assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
+        assert_eq!(plan.removed.len(), 2);
+    }
+
+    #[test]
+    fn plan_collapse_handles_transitive_chain() {
+        // A ⊃ B ⊃ C, all present in input; B and C both find A as a parent.
+        let mounts = vec![
+            mk("/a", "/a", false),
+            mk("/a/b", "/a/b", false),
+            mk("/a/b/c", "/a/b/c", false),
+        ];
+        let plan = plan_collapse(&mounts, &[0, 1, 2]).unwrap();
+        assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
+        assert_eq!(plan.removed.len(), 2);
+        // Both B and C are covered by A.
+        for rem in &plan.removed {
+            assert_eq!(rem.covered_by, mk("/a", "/a", false));
+        }
+    }
+
+    #[test]
+    fn plan_collapse_flags_pre_existing_violation_as_removal_when_nothing_new() {
+        // Neither index is in new_indexes — both pre-existing. Library returns
+        // Ok with removal; CLI will inspect origin and decide to reject or
+        // proceed with --prune.
+        let mounts = vec![mk("/a", "/a", false), mk("/a/b", "/a/b", false)];
+        let plan = plan_collapse(&mounts, &[]).unwrap();
+        assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
+        assert_eq!(plan.removed.len(), 1);
     }
 }
