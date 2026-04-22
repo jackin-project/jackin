@@ -821,6 +821,10 @@ pub fn run(cli: Cli) -> Result<()> {
                     .filter(|m| !remove_destinations.iter().any(|d| d == &m.dst))
                     .cloned()
                     .collect();
+                if no_workdir_mount {
+                    let workdir = &current_ws.workdir;
+                    post_upsert.retain(|m| !(m.src == *workdir && m.dst == *workdir));
+                }
                 let mut new_indexes: Vec<usize> = Vec::new();
                 for upsert in &upsert_mounts {
                     if let Some(pos) = post_upsert.iter().position(|m| m.dst == upsert.dst) {
@@ -924,6 +928,9 @@ pub fn run(cli: Cli) -> Result<()> {
                     changes.push(format!("workdir → {}", tui::shorten_home(w)));
                 }
                 for m in &upsert_mounts {
+                    if plan.removed.iter().any(|r| r.child.dst == m.dst) {
+                        continue;
+                    }
                     if m.src == m.dst {
                         changes.push(format!("added mount {}", tui::shorten_home(&m.src)));
                     } else {
