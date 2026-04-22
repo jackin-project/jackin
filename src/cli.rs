@@ -283,7 +283,9 @@ Examples:
   jackin workspace edit my-app --no-workdir-mount
   jackin workspace edit my-app --allowed-agent chainargos/the-architect
   jackin workspace edit my-app --default-agent agent-smith
-  jackin workspace edit my-app --clear-default-agent"
+  jackin workspace edit my-app --clear-default-agent
+  jackin workspace edit my-app --mount ~/Projects/my-app --yes
+  jackin workspace edit my-app --prune"
     )]
     Edit {
         /// Name of the workspace to modify
@@ -316,6 +318,28 @@ Examples:
             default_value_t = false
         )]
         clear_default_agent: bool,
+        /// Skip confirmation prompts for mount collapses
+        #[arg(long = "yes", short = 'y', default_value_t = false)]
+        assume_yes: bool,
+        /// Also remove pre-existing redundant mounts (rule-C violations) as part of this edit
+        #[arg(long, default_value_t = false)]
+        prune: bool,
+    },
+    /// Remove redundant mounts (rule-C violations) from a saved workspace
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace prune my-app
+  jackin workspace prune my-app --yes"
+    )]
+    Prune {
+        /// Name of the workspace to prune
+        name: String,
+        /// Skip the confirmation prompt
+        #[arg(long = "yes", short = 'y', default_value_t = false)]
+        assume_yes: bool,
     },
     /// Delete a saved workspace
     #[command(
@@ -761,6 +785,72 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn parses_workspace_edit_with_yes_flag() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "edit",
+            "proj-alpha",
+            "--mount",
+            "/tmp/proj-alpha",
+            "--yes",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Workspace {
+                command: WorkspaceCommand::Edit { assume_yes, .. },
+            } => assert!(assume_yes),
+            other => panic!("unexpected command {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_workspace_edit_with_prune_flag() {
+        let cli =
+            Cli::try_parse_from(["jackin", "workspace", "edit", "proj-alpha", "--prune"]).unwrap();
+        match cli.command {
+            Command::Workspace {
+                command: WorkspaceCommand::Edit { prune, .. },
+            } => assert!(prune),
+            other => panic!("unexpected command {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_workspace_edit_with_yes_short_form() {
+        let cli = Cli::try_parse_from(["jackin", "workspace", "edit", "proj-alpha", "-y"]).unwrap();
+        match cli.command {
+            Command::Workspace {
+                command: WorkspaceCommand::Edit { assume_yes, .. },
+            } => assert!(assume_yes),
+            other => panic!("unexpected command {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_workspace_prune_command() {
+        let cli = Cli::try_parse_from(["jackin", "workspace", "prune", "proj-alpha"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Workspace {
+                command: WorkspaceCommand::Prune { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_workspace_prune_with_yes() {
+        let cli =
+            Cli::try_parse_from(["jackin", "workspace", "prune", "proj-alpha", "--yes"]).unwrap();
+        match cli.command {
+            Command::Workspace {
+                command: WorkspaceCommand::Prune { assume_yes, .. },
+            } => assert!(assume_yes),
+            other => panic!("unexpected command {other:?}"),
+        }
     }
 
     #[test]
