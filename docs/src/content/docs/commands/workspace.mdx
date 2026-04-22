@@ -81,6 +81,30 @@ jackin workspace edit my-app --default-agent agent-smith
 jackin workspace edit my-app --clear-default-agent
 ```
 
+### Mount collapse
+
+When you add a mount that is an ancestor of existing mounts (same host-to-container offset), the descendants become redundant. `jackin workspace edit` detects this and prompts before removing them:
+
+```
+Adding mount(s) will subsume 2 existing mount(s):
+  • ~/Projects/proj-alpha/sub-a
+  • ~/Projects/proj-alpha/sub-b
+These will be removed from the workspace.
+Proceed? [y/N]
+```
+
+Flags:
+
+- `--yes` / `-y` — skip the prompt (required for non-interactive use).
+- `--prune` — also clean up pre-existing redundant mounts in the workspace.
+
+Conflict cases that are rejected with an error (not prompted):
+
+- **Readonly mismatch.** Parent and descendant have different `:ro` flags.
+- **Child under existing parent.** Adding a mount that is already covered by a pre-existing mount in the workspace.
+
+In both cases the error text names both paths and the operator's next step.
+
 ### `workspace remove`
 
 ```bash
@@ -88,3 +112,22 @@ jackin workspace remove <NAME>
 ```
 
 Delete a saved workspace.
+
+## `workspace prune`
+
+```bash
+jackin workspace prune <NAME> [OPTIONS]
+```
+
+Remove pre-existing redundant mounts from a saved workspace. Useful when upgrading from an older jackin config or after a hand-edit that left redundants.
+
+| Option | Description |
+|---|---|
+| `--yes` / `-y` | Skip the interactive prompt |
+
+```bash
+jackin workspace prune my-app        # interactive
+jackin workspace prune my-app --yes  # non-interactive
+```
+
+Under rule C, a mount is redundant when another mount in the same workspace strictly covers it at the same container location — same host-to-container offset. See [Redundant-mount invariant](../guides/mounts.mdx#redundant-mount-invariant) in the mounts guide.
