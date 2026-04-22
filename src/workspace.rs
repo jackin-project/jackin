@@ -1427,4 +1427,68 @@ mod tests {
         assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
         assert_eq!(plan.removed.len(), 1);
     }
+
+    #[test]
+    fn plan_collapse_errors_on_readonly_mismatch_rw_parent_ro_child() {
+        let mounts = vec![
+            mk("/a/b", "/a/b", true), // ro child
+            mk("/a", "/a", false),    // rw parent (new)
+        ];
+        let err = plan_collapse(&mounts, &[1]).unwrap_err();
+        match err {
+            CollapseError::ReadonlyMismatch { parent, child } => {
+                assert_eq!(parent, mk("/a", "/a", false));
+                assert_eq!(child, mk("/a/b", "/a/b", true));
+            }
+            other => panic!("expected ReadonlyMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_collapse_errors_on_readonly_mismatch_ro_parent_rw_child() {
+        let mounts = vec![
+            mk("/a/b", "/a/b", false), // rw child
+            mk("/a", "/a", true),      // ro parent (new)
+        ];
+        let err = plan_collapse(&mounts, &[1]).unwrap_err();
+        assert!(matches!(err, CollapseError::ReadonlyMismatch { .. }));
+    }
+
+    #[test]
+    fn plan_collapse_errors_on_new_child_under_existing_parent() {
+        // Parent at index 0 is pre-existing. Child at index 1 is new.
+        let mounts = vec![
+            mk("/a", "/a", false),     // existing parent
+            mk("/a/b", "/a/b", false), // new child
+        ];
+        let err = plan_collapse(&mounts, &[1]).unwrap_err();
+        match err {
+            CollapseError::ChildUnderExistingParent { parent, child } => {
+                assert_eq!(parent, mk("/a", "/a", false));
+                assert_eq!(child, mk("/a/b", "/a/b", false));
+            }
+            other => panic!("expected ChildUnderExistingParent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plan_collapse_allows_new_child_when_new_parent_is_also_in_same_edit() {
+        // Both parent and child introduced in the same edit — not a "child
+        // under existing parent" case; child is just redundant and gets
+        // collapsed normally.
+        let mounts = vec![mk("/a/b", "/a/b", false), mk("/a", "/a", false)];
+        let plan = plan_collapse(&mounts, &[0, 1]).unwrap();
+        assert_eq!(plan.kept, vec![mk("/a", "/a", false)]);
+        assert_eq!(plan.removed.len(), 1);
+    }
+
+    #[test]
+    fn plan_collapse_error_message_mentions_both_paths() {
+        let mounts = vec![mk("/a/b", "/a/b", true), mk("/a", "/a", false)];
+        let err = plan_collapse(&mounts, &[1]).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("/a"));
+        assert!(msg.contains("/a/b"));
+        assert!(msg.contains("readonly"));
+    }
 }
