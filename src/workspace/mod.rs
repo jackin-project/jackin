@@ -1,3 +1,5 @@
+pub(crate) mod planner;
+
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 
