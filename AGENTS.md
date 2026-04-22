@@ -1,91 +1,35 @@
 # AGENTS.md
 
-## Rules
+This repository uses `main` as its primary branch. All AI agents working in this repo must follow the rules referenced below. Each topic lives in its own file; this document is the index.
 
-See [RULES.md](RULES.md) for project-wide conventions that apply to all AI agents.
-Follow them strictly.
+## Documentation Convention
+
+See [RULES.md](RULES.md) — where project rules must live, and why tool-specific config files must only reference this index.
 
 ## Branching
 
-All new features and bug fixes must be developed on a dedicated feature branch.
-Never commit directly to `main`.
-
-- Create a branch from `main` before starting work: `git checkout -b feature/<short-description>`
-- Use prefixes that match the type of change: `feature/`, `fix/`, `refactor/`, `chore/`
-- Keep branch names short, lowercase, and hyphen-separated
-- Merge back to `main` via pull request after review
+See [BRANCHING.md](BRANCHING.md) — branch naming conventions, feature-branch policy, and what never to commit to `main`.
 
 ## Pull Request Merging
 
-**Agents must never merge a pull request without explicit per-PR confirmation from the human operator.**
+See [PR-MERGING.md](PR-MERGING.md) — when an agent may merge a PR, scope of prior authorization, and required phrasing from the operator.
 
-- Open the PR, share the URL, and stop. The default response after creating a PR is "PR URL — ready for your review" — not a merge command in the same turn.
-- Prior "just do it" / "don't wait for me" / "proceed autonomously" / "merge silently" authorizations apply only to the specific workstream the operator was discussing when they issued them. They do not carry forward to later PRs in the same session or to new sessions. Treat each PR as a fresh approval gate.
-- `--admin` / branch-protection bypass is a privilege, not a default. Use it only when the operator explicitly authorizes merging *this specific PR*.
-- Phrasing that does NOT authorize merge (ask anyway): "proceed", "don't wait for me", "do everything autonomously", "looks good". Phrasing that does: "merge it", "merge this one", "you can merge now", "ship it" (still prefer to confirm "ship = merge now?" for high-blast-radius PRs).
-- Bounded authorization: if the operator says "merge all the PRs we just discussed" or similar, merge only the named set — not unrelated PRs that exist or that you open later.
+## Commits
 
-If you are uncertain whether authorization applies to the PR in front of you, ask. The cost of pausing is ~30 seconds; the cost of merging something the operator wasn't ready for is much higher.
-
-## Commit Messages
-
-All commits in this repository MUST follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/).
-
-Subject format: `<type>[optional scope][!]: <description>`
-
-Allowed types:
-
-| Type       | Use for                                                |
-| ---------- | ------------------------------------------------------ |
-| `feat`     | New user-visible feature                               |
-| `fix`      | Bug fix                                                |
-| `docs`     | Documentation-only change                              |
-| `style`    | Formatting, whitespace; no logic change                |
-| `refactor` | Internal restructuring; no behavior change             |
-| `perf`     | Performance improvement                                |
-| `test`     | Adding or updating tests                               |
-| `build`    | Build system, tooling, dependencies                    |
-| `ci`       | CI configuration                                       |
-| `chore`    | Routine maintenance (release, merge, deps)             |
-| `revert`   | Reverts a prior commit                                 |
-
-Scope is optional but encouraged when it clarifies the change area, e.g., `feat(launch): preview resolved mounts per agent in TUI`.
-
-Breaking changes use `!` after the type/scope (`feat!:` or `feat(api)!:`) and include a `BREAKING CHANGE:` footer in the body.
-
-PR squash-merge: the PR title becomes the commit subject, so PR titles must also follow this convention.
-
-## Codex Commit Attribution
-
-Until Codex supports automatic commit trailers, every commit created by the
-Codex agent in this repository must include this exact trailer:
-
-```text
-Co-authored-by: Codex <codex@openai.com>
-```
-
-Add it manually when creating or amending Codex-generated commits.
+See [COMMITS.md](COMMITS.md) — Conventional Commits format, DCO sign-off requirements, Codex attribution, and pre-commit verification commands.
 
 ## Project Structure
 
-See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for a navigational map of the codebase, documentation site, Docker assets, and CI workflows.
-Use it to quickly locate files and understand which docs to update alongside code changes.
+See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) — navigational map of the codebase, documentation site, Docker assets, and CI workflows.
 
-## Pre-commit Verification
+## Testing
 
-Before committing **any** change, run all three checks and ensure zero warnings and zero failures:
+See [TESTING.md](TESTING.md) — test runner setup and commands.
 
-```sh
-cargo fmt -- --check && cargo clippy && cargo nextest run
-```
+## Review Status & Security Exceptions
 
-If formatting fails, run `cargo fmt` to fix it, then re-run the checks.
+See [REVIEW_STATUS.md](REVIEW_STATUS.md) — active review findings and accepted security exceptions. Do not flag items listed in its "Accepted Exceptions" section as issues during code review or automated scanning.
 
-See [TESTING.md](TESTING.md) for test runner setup, commands, and additional details.
+## External Contributions
 
-## Security Exceptions
-
-See [REVIEW_STATUS.md](REVIEW_STATUS.md) for active review findings and
-accepted security exceptions.
-Do **not** flag items listed in its "Accepted Exceptions" section as issues
-during code review or automated scanning.
+See [CONTRIBUTING.md](CONTRIBUTING.md) — contribution flow, DCO v1.1 text, and license terms for external contributors.
