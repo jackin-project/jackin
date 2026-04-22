@@ -11,22 +11,13 @@ use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
-// ── Docker label keys ─────────────────────────────────────────────────────
-//
-// Used to tag and filter jackin-managed containers and networks.
+mod naming;
 
-/// Applied to agent containers, `DinD` sidecars, and networks.
-const LABEL_MANAGED: &str = "jackin.managed=true";
-/// Agent containers only — distinguishes them from `DinD` sidecars.
-const LABEL_ROLE_AGENT: &str = "jackin.role=agent";
-/// `DinD` sidecars only — distinguishes them from agent containers.
-const LABEL_ROLE_DIND: &str = "jackin.role=dind";
-/// Filter expression for `docker ps --filter` to find managed containers.
-const FILTER_MANAGED: &str = "label=jackin.managed=true";
-/// Filter expression for `docker ps --filter` to find agent containers.
-const FILTER_ROLE_AGENT: &str = "label=jackin.role=agent";
-/// Filter expression for `docker ps --filter` to find `DinD` sidecars.
-const FILTER_ROLE_DIND: &str = "label=jackin.role=dind";
+pub use self::naming::matching_family;
+use self::naming::{
+    FILTER_MANAGED, FILTER_ROLE_AGENT, FILTER_ROLE_DIND, LABEL_MANAGED, LABEL_ROLE_AGENT,
+    LABEL_ROLE_DIND, dind_certs_volume, format_agent_display, image_name,
+};
 
 /// Environment variables owned by the jackin runtime that must not be
 /// overridden by agent manifests.  These are injected as `-e` flags in
@@ -1463,31 +1454,6 @@ pub fn list_running_agent_display_names(
     Ok(names)
 }
 
-/// Format a human-friendly agent name from a container name and its display label.
-///
-/// Examples:
-///   - `("jackin-the-architect", "The Architect")` → `"The Architect"`
-///   - `("jackin-the-architect-clone-2", "The Architect")` → `"The Architect (Clone 2)"`
-///   - `("jackin-the-architect", "")` → `"jackin-the-architect"`
-fn format_agent_display(container_name: &str, display_name: &str) -> String {
-    if display_name.is_empty() {
-        return container_name.to_string();
-    }
-
-    container_name.rsplit_once("-clone-").map_or_else(
-        || display_name.to_string(),
-        |suffix| format!("{display_name} (Clone {})", suffix.1),
-    )
-}
-
-pub fn matching_family(selector: &ClassSelector, names: &[String]) -> Vec<String> {
-    names
-        .iter()
-        .filter(|name| crate::instance::class_family_matches(selector, name))
-        .cloned()
-        .collect()
-}
-
 pub fn purge_class_data(paths: &JackinPaths, selector: &ClassSelector) -> anyhow::Result<()> {
     if !paths.data_dir.exists() {
         return Ok(());
@@ -1695,10 +1661,6 @@ pub fn exile_all(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn image_name(selector: &ClassSelector) -> String {
-    format!("jackin-{}", crate::instance::runtime_slug(selector))
-}
-
 /// Claim a unique container name for this agent class by acquiring an
 /// exclusive lock file.
 ///
@@ -1742,12 +1704,6 @@ fn claim_container_name(
 
         clone_index += 1;
     }
-}
-
-/// Docker volume name for the TLS client certificates shared between the
-/// `DinD` sidecar (writer) and the agent container (reader).
-fn dind_certs_volume(container_name: &str) -> String {
-    format!("{container_name}-dind-certs")
 }
 
 struct LoadCleanup {
@@ -2814,18 +2770,6 @@ plugins = []
     }
 
     #[test]
-    fn dind_certs_volume_derives_from_container_name() {
-        assert_eq!(
-            dind_certs_volume("jackin-agent-smith"),
-            "jackin-agent-smith-dind-certs"
-        );
-        assert_eq!(
-            dind_certs_volume("jackin-chainargos__the-architect-clone-2"),
-            "jackin-chainargos__the-architect-clone-2-dind-certs"
-        );
-    }
-
-    #[test]
     fn is_missing_cleanup_error_tolerates_all_resource_types() {
         let container_err =
             anyhow::anyhow!("Error response from daemon: No such container: jackin-agent-smith");
@@ -2964,14 +2908,6 @@ plugins = []
             parse_repo_name("git@github.com:jackin-project/jackin"),
             Some("jackin-project/jackin".to_string())
         );
-    }
-
-    #[test]
-    fn image_name_distinguishes_namespaced_and_flat_classes() {
-        let namespaced = ClassSelector::new(Some("chainargos"), "the-architect");
-        let flat = ClassSelector::new(None, "chainargos-the-architect");
-
-        assert_ne!(image_name(&namespaced), image_name(&flat));
     }
 
     #[test]
@@ -3406,30 +3342,6 @@ plugins = []
 
         let labels: Vec<&str> = rows.iter().map(|(l, _)| l.as_str()).collect();
         assert!(!labels.contains(&"dind"));
-    }
-
-    #[test]
-    fn format_agent_display_uses_display_name_for_primary() {
-        assert_eq!(
-            format_agent_display("jackin-the-architect", "The Architect"),
-            "The Architect"
-        );
-    }
-
-    #[test]
-    fn format_agent_display_appends_clone_index() {
-        assert_eq!(
-            format_agent_display("jackin-the-architect-clone-2", "The Architect"),
-            "The Architect (Clone 2)"
-        );
-    }
-
-    #[test]
-    fn format_agent_display_falls_back_to_container_name() {
-        assert_eq!(
-            format_agent_display("jackin-the-architect", ""),
-            "jackin-the-architect"
-        );
     }
 
     #[test]
