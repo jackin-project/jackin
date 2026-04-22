@@ -325,6 +325,22 @@ Examples:
         #[arg(long, default_value_t = false)]
         prune: bool,
     },
+    /// Remove redundant mounts (rule-C violations) from a saved workspace
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace prune my-app
+  jackin workspace prune my-app --yes"
+    )]
+    Prune {
+        /// Name of the workspace to prune
+        name: String,
+        /// Skip the confirmation prompt
+        #[arg(long = "yes", short = 'y', default_value_t = false)]
+        assume_yes: bool,
+    },
     /// Delete a saved workspace
     #[command(
         before_help = BANNER,
@@ -809,6 +825,29 @@ mod tests {
         match cli.command {
             Command::Workspace {
                 command: WorkspaceCommand::Edit { assume_yes, .. },
+            } => assert!(assume_yes),
+            other => panic!("unexpected command {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_workspace_prune_command() {
+        let cli = Cli::try_parse_from(["jackin", "workspace", "prune", "proj-alpha"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Workspace {
+                command: WorkspaceCommand::Prune { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_workspace_prune_with_yes() {
+        let cli =
+            Cli::try_parse_from(["jackin", "workspace", "prune", "proj-alpha", "--yes"]).unwrap();
+        match cli.command {
+            Command::Workspace {
+                command: WorkspaceCommand::Prune { assume_yes, .. },
             } => assert!(assume_yes),
             other => panic!("unexpected command {other:?}"),
         }

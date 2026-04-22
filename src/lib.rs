@@ -989,6 +989,63 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
                 Ok(())
             }
+            WorkspaceCommand::Prune { name, assume_yes } => {
+                let current_ws = config
+                    .workspaces
+                    .get(&name)
+                    .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?
+                    .clone();
+
+                // All existing mounts; nothing new.
+                let plan = workspace::plan_collapse(&current_ws.mounts, &[])?;
+                if plan.removed.is_empty() {
+                    println!("Workspace {name:?} has no redundant mounts.");
+                    return Ok(());
+                }
+
+                if !assume_yes {
+                    use std::io::IsTerminal;
+                    if !std::io::stdin().is_terminal() {
+                        anyhow::bail!(
+                            "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively"
+                        );
+                    }
+                    eprintln!(
+                        "Will remove {} redundant mount(s) from workspace {name:?}:",
+                        plan.removed.len()
+                    );
+                    for r in &plan.removed {
+                        eprintln!(
+                            "  • {} (covered by {})",
+                            tui::shorten_home(&r.child.src),
+                            tui::shorten_home(&r.covered_by.src),
+                        );
+                    }
+                    let confirmed = dialoguer::Confirm::new()
+                        .with_prompt("Proceed?")
+                        .default(false)
+                        .interact()?;
+                    if !confirmed {
+                        anyhow::bail!("aborted by operator");
+                    }
+                }
+
+                let remove_dsts: Vec<String> =
+                    plan.removed.iter().map(|r| r.child.dst.clone()).collect();
+                config.edit_workspace(
+                    &name,
+                    WorkspaceEdit {
+                        remove_destinations: remove_dsts,
+                        ..WorkspaceEdit::default()
+                    },
+                )?;
+                config.save(&paths)?;
+                println!(
+                    "Pruned {} redundant mount(s) from workspace {name:?}.",
+                    plan.removed.len()
+                );
+                Ok(())
+            }
             WorkspaceCommand::Remove { name } => {
                 config.remove_workspace(&name)?;
                 config.save(&paths)?;
