@@ -798,6 +798,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 remove_allowed_agents,
                 default_agent,
                 clear_default_agent,
+                assume_yes: _assume_yes,
+                prune: _prune,
             } => {
                 let upsert_mounts = mounts
                     .iter()
