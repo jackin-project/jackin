@@ -13,7 +13,6 @@ Quick navigation reference for AI agents working in this repository.
 | `RULES.md` | Project-wide conventions (docs go in `AGENTS.md`, not tool-specific files) |
 | `TODO.md` | Pointer to roadmap docs (full design docs live under `docs/src/content/docs/reference/roadmap/`) |
 | `TESTING.md` | Test runner setup, commands, and pre-commit requirements |
-| `REVIEW_STATUS.md` | Consolidated active review findings and accepted exceptions |
 | `release.toml` | Release configuration |
 | `mise.toml` | Tool version management (bun) |
 | `Justfile` | Construct image build commands — contributor-facing `just` wrapper |

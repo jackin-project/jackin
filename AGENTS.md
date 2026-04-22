@@ -24,6 +24,12 @@ Co-authored-by: Codex <codex@openai.com>
 
 Add it manually when creating or amending Codex-generated commits.
 
+## Code review & automated scanning (agent-only)
+
+When performing code review or automated scanning on this repository, do not flag items listed under "Accepted exceptions" on the [Open review findings](docs/src/content/docs/reference/roadmap/open-review-findings.mdx) roadmap catalog. Those items are retained intentionally and have been reviewed.
+
+The catalog itself is a forward-looking backlog — consult it on demand when a review task calls for it. It is not operational context and should not be loaded at session start.
+
 ## Shared conventions
 
 Rules in the files below apply to everyone working in the repo — human and agent:
@@ -33,5 +39,4 @@ Rules in the files below apply to everyone working in the repo — human and age
 - [COMMITS.md](COMMITS.md) — Conventional Commits format, DCO sign-off, pre-commit verification commands.
 - [TESTING.md](TESTING.md) — test runner setup and commands.
 - [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) — navigational map of the codebase, documentation site, Docker assets, and CI workflows.
-- [REVIEW_STATUS.md](REVIEW_STATUS.md) — active review findings and accepted security exceptions. Do not flag items listed in its "Accepted Exceptions" section as issues during code review or automated scanning.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution flow, DCO v1.1 text, and license terms for external contributors.

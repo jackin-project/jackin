@@ -1,0 +1,161 @@
+---
+title: "Open review findings"
+---
+
+**Status**: Open — catalog maintained as a living backlog
+
+## Purpose
+
+This page is the consolidated list of active code- and security-review
+findings that the project has acknowledged but not yet addressed, along
+with a small set of explicitly accepted exceptions.
+
+It is a **catalog**, not a design doc. Individual findings that graduate
+into concrete work usually acquire their own dedicated roadmap page (see
+for example **Agent source trust**, **Sensitive mount warnings**,
+**Bollard migration**, and **Reproducibility & provenance pinning**).
+When an item is fully fixed, remove it from this catalog rather than
+keeping a stale "resolved" entry — git history remains the long-term
+record of what was reviewed and when.
+
+## Active findings
+
+### High
+
+1. **Launcher preview omits selector-scoped global mounts.** The
+   interactive launcher preview still shows workspace mounts plus only
+   unscoped global mounts. The real launch path resolves
+   selector-scoped global mounts too, so the operator can approve a
+   launch from an incomplete access picture.
+
+2. **Documentation drift remains significant.** Core docs still
+   disagree with the implementation in important ways, including
+   version requirements, docs stack references, build-caching
+   behavior, config schema coverage, runtime behavior, and some
+   security-model details.
+
+3. **Runtime startup still triggers `gh auth login` automatically.**
+   The runtime entrypoint starts a GitHub CLI login flow when `gh` is
+   present but unauthenticated. Public docs mostly frame GitHub
+   authentication as a persistence behavior after the operator chooses
+   to authenticate, not as a default startup interaction.
+
+4. **Command failures and debug logs can still leak secrets.**
+   `ShellRunner` still logs and reports raw argv strings, while the
+   runtime still assembles `docker run` env arguments as literal
+   `KEY=value` pairs. A failed launch can therefore echo
+   manifest-provided secrets into operator terminals, logs, or copied
+   error output.
+
+### Medium
+
+5. **The orchestration core is still too centralized.** `runtime.rs`,
+   `lib.rs`, `config.rs`, `workspace.rs`, and `launch.rs` remain large
+   multi-concern modules. Routine changes still require tracing several
+   responsibilities through the same functions.
+
+6. **Docker command construction still hides policy intent.**
+   Image-build, DinD-launch, and agent-launch commands are still
+   assembled as large positional argument vectors. That makes mount,
+   env, label, and network policy harder to audit than it should be.
+
+7. **Build-caching docs still overstate what is skipped.** Loads still
+   create a derived build context and run `docker build` each time.
+   Docker layer cache helps, but the build step is not actually skipped
+   on subsequent loads.
+
+8. **Mount config can still persist invalid or ambiguous state.**
+   Global and scoped mounts still share one key space, and write-time
+   config updates still allow silently ignored scoped inserts and
+   delayed validation failures instead of rejecting bad persisted state
+   at the write boundary.
+
+9. **Runtime-owned mount paths can still be shadowed by workspace or
+   global mounts.** Mount validation still checks only for exact
+   duplicate destinations. A workspace or configured mount can still
+   target a parent or overlapping path such as `/home/claude` or
+   `/certs`, breaking runtime-managed auth, plugin, terminfo, or DinD
+   TLS mounts.
+
+10. **Config persistence is still race-prone.** Config writes still
+    rewrite the full TOML file from an in-memory snapshot with no
+    locking or merge step. Concurrent `jackin` commands can still lose
+    trust, workspace, auth, or mount updates via last-writer-wins
+    overwrites.
+
+11. **Workspace agent constraints can still persist unchecked
+    selectors.** `allowed_agents` and `default_agent` values are still
+    accepted and saved as raw strings without selector parsing or
+    configured-agent validation. Typos or stale values then fail later
+    as confusing launcher or context-resolution behavior instead of
+    being rejected at config time.
+
+12. **Trust grants can still bless unvalidated derived agent sources.**
+    `jackin config trust grant <selector>` still derives and persists a
+    GitHub source URL for unknown selectors without first validating
+    that the repo, manifest, or Dockerfile actually exist and match
+    expectations.
+
+13. **Sensitive mount warnings still miss nested secret files.**
+    Sensitive-path detection still matches only exact directory mounts
+    such as `~/.ssh` or `~/.aws`. Mounts of files inside those
+    directories, such as `~/.ssh/id_ed25519`, `~/.aws/credentials`, or
+    `~/.kube/config`, still bypass the warning prompt.
+
+14. **Claude-specific implementation still conflicts with
+    runtime-agnostic roadmap language.** The current implementation is
+    explicitly Claude-focused across manifest schema, image build,
+    entrypoint behavior, and version probing, while some roadmap
+    language still presents the architecture as runtime-agnostic today.
+
+15. **CI still uses `cargo test --locked` while contributor guidance
+    requires `cargo nextest run`.** Local guidance, AGENTS guidance,
+    and CI are still not aligned on the test runner policy.
+
+16. **Cleanup tolerance still string-matches Docker CLI stderr.**
+    Missing-resource cleanup is still detected by checking stderr text
+    such as `No such container`, `No such volume`, and
+    `No such network`.
+
+17. **Container-state probing still collapses Docker failures into "not
+    found."** `inspect_container_state()` still treats any
+    `docker inspect` failure as a missing container, which hides
+    daemon or context failures behind misleading not-found behavior in
+    flows such as `hardline`.
+
+18. **Command execution timeouts are currently absent.** Timeout
+    handling that earlier security notes marked as resolved is no
+    longer present in the current `ShellRunner` implementation.
+    Long-running or stalled subprocesses currently rely on normal
+    process completion.
+
+19. **Host runtime-disable env can still be overridden by manifest
+    env.** Host `JACKIN_DISABLE_*` passthrough vars are still added
+    before manifest-resolved env pairs, and those names are not
+    reserved in manifest validation. Agent manifests can therefore
+    still negate operator runtime disable choices.
+
+20. **Reproducibility and provenance are still branch-moving by
+    default.** Agent repos still default to moving git branches rather
+    than pinned commits, and the current operator experience does not
+    expose strong provenance or update controls.
+
+## Accepted exceptions
+
+### Unpinned remote install script in derived Dockerfile
+
+Location: `src/derived_image.rs`
+
+```dockerfile
+RUN curl -fsSL https://claude.ai/install.sh | bash
+```
+
+Accepted because this is currently the official and only supported
+Claude Code installation path. There is no pinned package artifact or
+published checksum to verify instead, and the installer is fetched from
+Anthropic's first-party domain.
+
+Reviewed: 2026-04-04.
+
+Items listed here **must not be flagged** during automated code review
+or scanning. The agent-side rule is recorded in `AGENTS.md`.
