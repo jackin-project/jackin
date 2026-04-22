@@ -351,6 +351,26 @@ impl AppConfig {
             anyhow::bail!("workspace {name:?} already exists; use `workspace edit`");
         }
         validate_workspace_config(name, &workspace)?;
+
+        // Rule-C invariant: the initial mount list must be pairwise
+        // non-covering. All mounts are "new" in a create.
+        let all_indexes: Vec<usize> = (0..workspace.mounts.len()).collect();
+        match crate::workspace::plan_collapse(&workspace.mounts, &all_indexes) {
+            Ok(plan) if plan.removed.is_empty() => {}
+            Ok(plan) => {
+                let details: Vec<String> = plan
+                    .removed
+                    .iter()
+                    .map(|r| format!("{} covered by {}", r.child.src, r.covered_by.src))
+                    .collect();
+                anyhow::bail!(
+                    "workspace {name:?} initial mounts contain redundant entries:\n  - {}",
+                    details.join("\n  - ")
+                );
+            }
+            Err(e) => return Err(e.into()),
+        }
+
         self.workspaces.insert(name.to_string(), workspace);
         Ok(())
     }
@@ -1683,5 +1703,96 @@ trusted = true
             msg.contains("redundant") || msg.contains("already covered"),
             "expected 'redundant' or 'already covered' in error message, got: {msg}"
         );
+    }
+
+    #[test]
+    fn create_workspace_errors_on_child_under_parent_in_initial_mounts() {
+        use crate::workspace::{MountConfig, WorkspaceConfig};
+
+        let mut config = AppConfig::default();
+        let err = config
+            .create_workspace(
+                "test",
+                WorkspaceConfig {
+                    workdir: "/a".into(),
+                    mounts: vec![
+                        MountConfig {
+                            src: "/a".into(),
+                            dst: "/a".into(),
+                            readonly: false,
+                        },
+                        MountConfig {
+                            src: "/a/b".into(),
+                            dst: "/a/b".into(),
+                            readonly: false,
+                        },
+                    ],
+                    allowed_agents: vec![],
+                    default_agent: None,
+                    last_agent: None,
+                },
+            )
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("redundant") || msg.contains("already covered"),
+            "expected 'redundant' or 'already covered' in error message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn create_workspace_errors_on_readonly_mismatch_in_initial_mounts() {
+        use crate::workspace::{MountConfig, WorkspaceConfig};
+
+        let mut config = AppConfig::default();
+        let err = config
+            .create_workspace(
+                "test",
+                WorkspaceConfig {
+                    workdir: "/a".into(),
+                    mounts: vec![
+                        MountConfig {
+                            src: "/a".into(),
+                            dst: "/a".into(),
+                            readonly: false,
+                        },
+                        MountConfig {
+                            src: "/a/b".into(),
+                            dst: "/a/b".into(),
+                            readonly: true,
+                        },
+                    ],
+                    allowed_agents: vec![],
+                    default_agent: None,
+                    last_agent: None,
+                },
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("readonly"));
+    }
+
+    #[test]
+    fn create_workspace_accepts_already_collapsed_mount_set() {
+        use crate::workspace::{MountConfig, WorkspaceConfig};
+
+        let mut config = AppConfig::default();
+        config
+            .create_workspace(
+                "test",
+                WorkspaceConfig {
+                    workdir: "/a".into(),
+                    mounts: vec![MountConfig {
+                        src: "/a".into(),
+                        dst: "/a".into(),
+                        readonly: false,
+                    }],
+                    allowed_agents: vec![],
+                    default_agent: None,
+                    last_agent: None,
+                },
+            )
+            .unwrap();
     }
 }
