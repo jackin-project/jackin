@@ -798,15 +798,127 @@ pub fn run(cli: Cli) -> Result<()> {
                 remove_allowed_agents,
                 default_agent,
                 clear_default_agent,
-                assume_yes: _assume_yes,
-                prune: _prune,
+                assume_yes,
+                prune,
             } => {
                 let upsert_mounts = mounts
                     .iter()
                     .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
 
-                // Collect what changed for the summary
+                // Build the "post-upsert list" the same way edit_workspace will
+                // apply upserts: start from existing mounts (after applying
+                // remove_destinations), then merge each upsert by dst.
+                let current_ws = config
+                    .workspaces
+                    .get(&name)
+                    .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?
+                    .clone();
+
+                let mut post_upsert: Vec<workspace::MountConfig> = current_ws
+                    .mounts
+                    .iter()
+                    .filter(|m| !remove_destinations.iter().any(|d| d == &m.dst))
+                    .cloned()
+                    .collect();
+                let mut new_indexes: Vec<usize> = Vec::new();
+                for upsert in &upsert_mounts {
+                    if let Some(pos) = post_upsert.iter().position(|m| m.dst == upsert.dst) {
+                        post_upsert[pos] = upsert.clone();
+                        new_indexes.push(pos);
+                    } else {
+                        post_upsert.push(upsert.clone());
+                        new_indexes.push(post_upsert.len() - 1);
+                    }
+                }
+
+                // Plan the collapse.
+                let plan = workspace::plan_collapse(&post_upsert, &new_indexes)?;
+
+                // Partition removals by origin.
+                let (edit_driven, pre_existing): (Vec<_>, Vec<_>) =
+                    plan.removed.iter().partition(|r| {
+                        let child_idx = post_upsert
+                            .iter()
+                            .position(|m| m == &r.child)
+                            .expect("child must appear in post_upsert list");
+                        let parent_idx = post_upsert
+                            .iter()
+                            .position(|m| m == &r.covered_by)
+                            .expect("parent must appear in post_upsert list");
+                        new_indexes.contains(&child_idx) || new_indexes.contains(&parent_idx)
+                    });
+
+                // Reject pre-existing violations unless --prune.
+                if !pre_existing.is_empty() && !prune {
+                    let details: Vec<String> = pre_existing
+                        .iter()
+                        .map(|r| {
+                            format!(
+                                "{} covered by {}",
+                                tui::shorten_home(&r.child.src),
+                                tui::shorten_home(&r.covered_by.src),
+                            )
+                        })
+                        .collect();
+                    anyhow::bail!(
+                        "workspace {name:?} already contains redundant mounts:\n  - {}\n\
+                         run `jackin workspace prune {name}` to clean up, or pass --prune to this edit",
+                        details.join("\n  - ")
+                    );
+                }
+
+                // If there are any collapses to apply, prompt (or bail on
+                // non-TTY without --yes).
+                if !plan.removed.is_empty() && !assume_yes {
+                    use std::io::IsTerminal;
+                    if !std::io::stdin().is_terminal() {
+                        anyhow::bail!(
+                            "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively"
+                        );
+                    }
+
+                    if !edit_driven.is_empty() {
+                        eprintln!(
+                            "Adding mount(s) will subsume {} existing mount(s):",
+                            edit_driven.len()
+                        );
+                        for r in &edit_driven {
+                            eprintln!("  • {}", tui::shorten_home(&r.child.src));
+                        }
+                    }
+                    if !pre_existing.is_empty() {
+                        eprintln!(
+                            "Cleaning up {} pre-existing redundant mount(s):",
+                            pre_existing.len()
+                        );
+                        for r in &pre_existing {
+                            eprintln!("  • {}", tui::shorten_home(&r.child.src));
+                        }
+                    }
+                    eprintln!("These will be removed from the workspace.");
+
+                    let confirmed = dialoguer::Confirm::new()
+                        .with_prompt("Proceed?")
+                        .default(false)
+                        .interact()?;
+                    if !confirmed {
+                        anyhow::bail!("aborted by operator");
+                    }
+                }
+
+                // Translate collapses into extra remove_destinations so
+                // edit_workspace's existing remove + upsert logic produces the
+                // clean set.
+                let mut effective_removes = remove_destinations.clone();
+                for r in &plan.removed {
+                    if !effective_removes.contains(&r.child.dst) {
+                        effective_removes.push(r.child.dst.clone());
+                    }
+                }
+
+                // Collect what changed for the summary (preserves the existing
+                // summary output, plus collapse lines).
                 let mut changes: Vec<String> = Vec::new();
                 if let Some(ref w) = workdir {
                     changes.push(format!("workdir → {}", tui::shorten_home(w)));
@@ -824,6 +936,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
                 for dst in &remove_destinations {
                     changes.push(format!("removed mount {}", tui::shorten_home(dst)));
+                }
+                for r in &plan.removed {
+                    changes.push(format!(
+                        "collapsed {} under {}",
+                        tui::shorten_home(&r.child.src),
+                        tui::shorten_home(&r.covered_by.src)
+                    ));
                 }
                 if no_workdir_mount {
                     changes.push("removed workdir auto-mount".to_string());
@@ -845,7 +964,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     WorkspaceEdit {
                         workdir: workdir.map(|w| resolve_path(&w)),
                         upsert_mounts,
-                        remove_destinations,
+                        remove_destinations: effective_removes,
                         no_workdir_mount,
                         allowed_agents_to_add: allowed_agents,
                         allowed_agents_to_remove: remove_allowed_agents,
