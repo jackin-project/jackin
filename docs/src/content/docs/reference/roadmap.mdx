@@ -49,7 +49,7 @@ The current implementation is Claude-specific end-to-end (manifest schema, deriv
 
 ### Security improvements
 
-- **Network policy controls** — outbound domain filtering per agent class, similar to Docker Sandboxes' network policies
+- **Network policy controls** — outbound domain filtering per agent class, similar to Docker Sandboxes' network policies. See [devcontainer parity](/reference/roadmap/devcontainer-parity/) for a comparison with the upstream `anthropics/claude-code` devcontainer's `iptables`/`ipset` egress-allowlist approach.
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
 - **[Agent version pinning](/reference/roadmap/reproducibility-pinning/)** — pin agent repos to tagged versions for reproducible builds, with explicit `--update` to advance (design in progress)
 - **[Alternative isolation tiers](/reference/roadmap/selectable-sandbox-backends/)** — explore stronger backends beyond plain container isolation for users who need them, including [rootless DinD](/reference/roadmap/rootless-dind/) as a lighter-weight option
