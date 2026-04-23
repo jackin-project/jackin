@@ -34,6 +34,8 @@ fn workspace_create_resolves_relative_workdir_and_mounts() {
             allowed_agents: vec![],
             default_agent: None,
             last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
         },
     );
 
@@ -79,6 +81,8 @@ fn workspace_create_resolves_dot_workdir_and_dotdot_mount() {
             allowed_agents: vec![],
             default_agent: None,
             last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
         },
     );
 
@@ -129,6 +133,8 @@ fn workspace_create_auto_mounts_workdir_by_default() {
                 allowed_agents: vec![],
                 default_agent: None,
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         )
         .unwrap();
@@ -179,6 +185,8 @@ fn workspace_create_no_workdir_mount_skips_auto_mount() {
                 allowed_agents: vec![],
                 default_agent: None,
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         )
         .unwrap();
@@ -230,6 +238,8 @@ fn workspace_create_skips_auto_mount_when_workdir_already_mounted() {
                 allowed_agents: vec![],
                 default_agent: None,
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         )
         .unwrap();
@@ -265,6 +275,8 @@ fn workspace_edit_resolves_relative_mount() {
                 allowed_agents: vec![],
                 default_agent: None,
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         )
         .unwrap();
@@ -326,6 +338,8 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
                 allowed_agents: vec![],
                 default_agent: None,
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         )
         .unwrap();
@@ -372,6 +386,8 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
                 allowed_agents: vec![],
                 default_agent: None,
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         )
         .unwrap();

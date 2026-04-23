@@ -8,6 +8,7 @@ pub mod env_resolver;
 pub mod instance;
 pub mod launch;
 pub mod manifest;
+pub mod operator_env;
 pub mod paths;
 pub mod repo;
 pub mod repo_contract;

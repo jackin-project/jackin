@@ -252,6 +252,8 @@ mod tests {
             allowed_agents: vec![],
             default_agent: None,
             last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
         }
     }
 

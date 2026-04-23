@@ -51,6 +51,7 @@ export default defineConfig({
           items: [
             { label: 'Workspaces', slug: 'guides/workspaces' },
             { label: 'Mounts', slug: 'guides/mounts' },
+            { label: 'Environment Variables', slug: 'guides/environment-variables' },
             { label: 'Authentication', slug: 'guides/authentication' },
             { label: 'Agent Repos', slug: 'guides/agent-repos' },
             { label: 'Security Model', slug: 'guides/security-model' },
