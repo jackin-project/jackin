@@ -88,14 +88,14 @@ impl ConfigEditor {
         Ok(config)
     }
 
-    pub fn set_env_var(&mut self, scope: EnvScope, key: &str, value_str: &str) {
-        let path = env_scope_path(&scope);
+    pub fn set_env_var(&mut self, scope: &EnvScope, key: &str, value_str: &str) {
+        let path = env_scope_path(scope);
         let table = table_path_mut(&mut self.doc, &path);
         table.insert(key, toml_edit::value(value_str));
     }
 
-    pub fn set_env_comment(&mut self, scope: EnvScope, key: &str, comment: Option<&str>) {
-        let path = env_scope_path(&scope);
+    pub fn set_env_comment(&mut self, scope: &EnvScope, key: &str, comment: Option<&str>) {
+        let path = env_scope_path(scope);
         // Walk without creating — setting a comment on a nonexistent key
         // is a silent no-op (same contract as remove_env_var).
         let mut current: &mut Item = self.doc.as_item_mut();
@@ -112,10 +112,7 @@ impl ConfigEditor {
             return;
         };
         let decor = key_mut.leaf_decor_mut();
-        let prefix = match comment {
-            Some(text) => format!("# {text}\n"),
-            None => String::new(),
-        };
+        let prefix = comment.map_or_else(String::new, |text| format!("# {text}\n"));
         decor.set_prefix(prefix);
     }
 
@@ -257,7 +254,7 @@ impl ConfigEditor {
     ///
     /// Used by call sites that first invoke `resolve_agent_source` (which may
     /// insert a new agent into the in-memory `AppConfig`) and need the editor
-    /// to persist that insert alongside whatever trust / auth_forward change
+    /// to persist that insert alongside whatever trust / `auth_forward` change
     /// they're about to make.
     pub fn upsert_agent_source(&mut self, agent_key: &str, source: &crate::config::AgentSource) {
         let table = table_path_mut(
@@ -281,21 +278,20 @@ impl ConfigEditor {
                 .and_then(|t| t.get(agent_key))
                 .and_then(|i| i.as_table())
                 .and_then(|t| t.get("claude"));
-            if existing_claude.is_none() {
-                if let Ok(rendered) = toml::to_string(claude) {
-                    if let Ok(parsed) = rendered.parse::<DocumentMut>() {
-                        let claude_table = table_path_mut(
-                            &mut self.doc,
-                            &[
-                                "agents".to_string(),
-                                agent_key.to_string(),
-                                "claude".to_string(),
-                            ],
-                        );
-                        for (k, v) in parsed.as_table().iter() {
-                            claude_table.insert(k, v.clone());
-                        }
-                    }
+            if existing_claude.is_none()
+                && let Ok(rendered) = toml::to_string(claude)
+                && let Ok(parsed) = rendered.parse::<DocumentMut>()
+            {
+                let claude_table = table_path_mut(
+                    &mut self.doc,
+                    &[
+                        "agents".to_string(),
+                        agent_key.to_string(),
+                        "claude".to_string(),
+                    ],
+                );
+                for (k, v) in parsed.as_table() {
+                    claude_table.insert(k, v.clone());
                 }
             }
         }
@@ -303,17 +299,17 @@ impl ConfigEditor {
 
     /// Rewrite any `auth_forward = "copy"` to `"sync"` at the two paths
     /// `contains_deprecated_copy_auth_forward` checks:
-    ///   [claude].auth_forward
-    ///   [agents.*.claude].auth_forward
+    ///   [claude].`auth_forward`
+    ///   [agents.*.claude].`auth_forward`
     ///
-    /// Does not touch any other structure. Used by load_or_init when the
+    /// Does not touch any other structure. Used by `load_or_init` when the
     /// on-disk config still contains the deprecated literal.
     pub fn normalize_deprecated_copy(&mut self) {
         // Global [claude]
-        if let Some(claude) = self.doc.get_mut("claude").and_then(|i| i.as_table_mut()) {
-            if claude.get("auth_forward").and_then(|i| i.as_str()) == Some("copy") {
-                claude.insert("auth_forward", toml_edit::value("sync"));
-            }
+        if let Some(claude) = self.doc.get_mut("claude").and_then(|i| i.as_table_mut())
+            && claude.get("auth_forward").and_then(|i| i.as_str()) == Some("copy")
+        {
+            claude.insert("auth_forward", toml_edit::value("sync"));
         }
         // Per-agent [agents.X.claude]
         if let Some(agents) = self.doc.get_mut("agents").and_then(|i| i.as_table_mut()) {
@@ -332,8 +328,8 @@ impl ConfigEditor {
         }
     }
 
-    pub fn remove_env_var(&mut self, scope: EnvScope, key: &str) -> bool {
-        let path = env_scope_path(&scope);
+    pub fn remove_env_var(&mut self, scope: &EnvScope, key: &str) -> bool {
+        let path = env_scope_path(scope);
         // Walk without creating: return false if any segment is missing.
         let mut current: &mut Item = self.doc.as_item_mut();
         for segment in &path {
@@ -342,10 +338,9 @@ impl ConfigEditor {
                 None => return false,
             }
         }
-        match current.as_table_mut() {
-            Some(table) => table.remove(key).is_some(),
-            None => false,
-        }
+        current
+            .as_table_mut()
+            .is_some_and(|table| table.remove(key).is_some())
     }
 
     pub fn set_last_agent(&mut self, workspace: &str, agent_key: &str) {
@@ -395,7 +390,7 @@ impl ConfigEditor {
 
         let workspaces_table =
             table_path_mut(&mut self.doc, &["workspaces".to_string(), name.to_string()]);
-        for (key, item) in parsed.as_table().iter() {
+        for (key, item) in parsed.as_table() {
             workspaces_table.insert(key, item.clone());
         }
 
@@ -430,7 +425,7 @@ impl ConfigEditor {
         let parsed: DocumentMut = rendered.parse()?;
         let target = table_path_mut(&mut self.doc, &["workspaces".to_string(), name.to_string()]);
         target.clear();
-        for (key, item) in parsed.as_table().iter() {
+        for (key, item) in parsed.as_table() {
             target.insert(key, item.clone());
         }
 
@@ -438,7 +433,7 @@ impl ConfigEditor {
     }
 }
 
-fn auth_forward_str(mode: crate::config::AuthForwardMode) -> &'static str {
+const fn auth_forward_str(mode: crate::config::AuthForwardMode) -> &'static str {
     match mode {
         crate::config::AuthForwardMode::Ignore => "ignore",
         crate::config::AuthForwardMode::Sync => "sync",
@@ -486,7 +481,7 @@ mod tests {
         std::fs::write(&paths.config_file, "").unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(EnvScope::Global, "API_TOKEN", "op://Personal/api/token");
+        editor.set_env_var(&EnvScope::Global, "API_TOKEN", "op://Personal/api/token");
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -512,7 +507,7 @@ workdir = "/workspace/prod"
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
         editor.set_env_var(
-            EnvScope::WorkspaceAgent {
+            &EnvScope::WorkspaceAgent {
                 workspace: "prod".to_string(),
                 agent: "agent-smith".to_string(),
             },
@@ -546,7 +541,7 @@ API_TOKEN = "old-value"
         .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(EnvScope::Global, "API_TOKEN", "new-value");
+        editor.set_env_var(&EnvScope::Global, "API_TOKEN", "new-value");
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -569,7 +564,7 @@ OTHER = "y"
         .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        let removed = editor.remove_env_var(EnvScope::Global, "API_TOKEN");
+        let removed = editor.remove_env_var(&EnvScope::Global, "API_TOKEN");
         editor.save().unwrap();
 
         assert!(removed);
@@ -586,7 +581,7 @@ OTHER = "y"
         std::fs::write(&paths.config_file, "").unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        let removed = editor.remove_env_var(EnvScope::Global, "API_TOKEN");
+        let removed = editor.remove_env_var(&EnvScope::Global, "API_TOKEN");
         editor.save().unwrap();
 
         assert!(!removed);
@@ -607,7 +602,7 @@ API_TOKEN = "op://vault-id/item-id/field"
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
         editor.set_env_comment(
-            EnvScope::Global,
+            &EnvScope::Global,
             "API_TOKEN",
             Some("op://Personal/Google/password"),
         );
@@ -632,7 +627,7 @@ API_TOKEN = "op://vault-id/item-id/field"
         .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_comment(EnvScope::Global, "API_TOKEN", Some("new annotation"));
+        editor.set_env_comment(&EnvScope::Global, "API_TOKEN", Some("new annotation"));
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -652,7 +647,7 @@ API_TOKEN = "op://vault-id/item-id/field"
         .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_comment(EnvScope::Global, "API_TOKEN", None);
+        editor.set_env_comment(&EnvScope::Global, "API_TOKEN", None);
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -672,7 +667,7 @@ API_TOKEN = "op://vault-id/item-id/field"
         std::fs::write(&paths.config_file, original).unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(EnvScope::Global, "OTHER", "z");
+        editor.set_env_var(&EnvScope::Global, "OTHER", "z");
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -699,7 +694,7 @@ workdir = "/b"
         std::fs::write(&paths.config_file, original).unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(EnvScope::Workspace("a".to_string()), "K", "v");
+        editor.set_env_var(&EnvScope::Workspace("a".to_string()), "K", "v");
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();

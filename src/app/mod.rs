@@ -268,12 +268,10 @@ pub fn run(cli: Cli) -> Result<()> {
                 cli::TrustCommand::Grant { selector } => {
                     let class = ClassSelector::parse(&selector)?;
                     config.resolve_agent_source(&class)?;
-                    let was_trusted = config
-                        .agents
-                        .get(&class.key())
-                        .map(|a| a.trusted)
-                        .unwrap_or(false);
-                    if !was_trusted {
+                    let was_trusted = config.agents.get(&class.key()).is_some_and(|a| a.trusted);
+                    if was_trusted {
+                        println!("{} is already trusted.", class.key());
+                    } else {
                         let mut editor = crate::config::ConfigEditor::open(&paths)?;
                         if let Some(source) = config.agents.get(&class.key()) {
                             editor.upsert_agent_source(&class.key(), source);
@@ -281,8 +279,6 @@ pub fn run(cli: Cli) -> Result<()> {
                         editor.set_agent_trust(&class.key(), true);
                         editor.save()?;
                         println!("Trusted {}.", class.key());
-                    } else {
-                        println!("{} is already trusted.", class.key());
                     }
                     Ok(())
                 }
@@ -291,11 +287,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     if AppConfig::is_builtin_agent(&class.key()) {
                         anyhow::bail!("{} is a built-in agent and is always trusted.", class.key());
                     }
-                    let was_trusted = config
-                        .agents
-                        .get(&class.key())
-                        .map(|a| a.trusted)
-                        .unwrap_or(false);
+                    let was_trusted = config.agents.get(&class.key()).is_some_and(|a| a.trusted);
                     if was_trusted {
                         let mut editor = crate::config::ConfigEditor::open(&paths)?;
                         editor.set_agent_trust(&class.key(), false);
