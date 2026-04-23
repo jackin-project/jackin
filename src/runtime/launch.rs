@@ -591,13 +591,21 @@ fn load_agent_with(
         false
     } else {
         confirm_trust(selector, &source)?;
-        config.trust_agent(&selector.key());
+        // Mutate the in-memory copy so callers downstream see the trust
+        // without a reload; persist via editor below.
+        if let Some(entry) = config.agents.get_mut(&selector.key()) {
+            entry.trusted = true;
+        }
         true
     };
 
-    // Persist config when the agent was newly registered or newly trusted
     if is_new || newly_trusted {
-        config.save(paths)?;
+        let mut editor = crate::config::ConfigEditor::open(paths)?;
+        if let Some(agent_source) = config.agents.get(&selector.key()) {
+            editor.upsert_agent_source(&selector.key(), agent_source);
+        }
+        editor.set_agent_trust(&selector.key(), true);
+        *config = editor.save()?;
     }
 
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
