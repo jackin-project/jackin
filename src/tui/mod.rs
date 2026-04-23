@@ -27,4 +27,4 @@ pub use output::{
     clear_screen, fatal, hint, print_config_table, print_deploying, print_logo, set_terminal_title,
     shorten_home, step_fail, step_quiet, step_shimmer,
 };
-pub use prompt::{prompt_choice, spin_wait};
+pub use prompt::{prompt_choice, require_interactive_stdin, spin_wait};
