@@ -2,6 +2,17 @@ use super::AppConfig;
 use crate::workspace::{WorkspaceConfig, WorkspaceEdit, validate_workspace_config};
 
 impl AppConfig {
+    /// Return the workspace named `name`, or an `unknown workspace` error.
+    ///
+    /// Shared by every CLI and runtime site that needs to look up a saved
+    /// workspace by name and error on miss. The error message shape is
+    /// part of the CLI contract — do not change it casually.
+    pub fn require_workspace(&self, name: &str) -> anyhow::Result<&WorkspaceConfig> {
+        self.workspaces
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))
+    }
+
     pub fn create_workspace(
         &mut self,
         name: &str,
@@ -43,11 +54,7 @@ impl AppConfig {
             }
         }
 
-        let current = self
-            .workspaces
-            .get(name)
-            .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?;
-        let mut workspace = current.clone();
+        let mut workspace = self.require_workspace(name)?.clone();
 
         if let Some(workdir) = edit.workdir {
             workspace.workdir = workdir;
