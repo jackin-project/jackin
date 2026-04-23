@@ -25,8 +25,9 @@ impl AgentState {
 
         let outcome = match mode {
             AuthForwardMode::Ignore => {
-                // Always ensure a clean slate — if switching from sync to
-                // ignore, the previously forwarded credentials must be revoked.
+                // Always ensure a clean slate — if switching from sync/token
+                // to ignore, the previously forwarded credentials must be
+                // revoked.
                 if !claude_json.exists() || std::fs::read_to_string(claude_json)? != "{}" {
                     write_private_file(claude_json, "{}")?;
                 }
@@ -34,6 +35,20 @@ impl AgentState {
                     std::fs::remove_file(&credentials_json)?;
                 }
                 AuthProvisionOutcome::Skipped
+            }
+            AuthForwardMode::Token => {
+                // Token mode provisions the same empty shape as Ignore —
+                // Claude Code inside the container authenticates via
+                // CLAUDE_CODE_OAUTH_TOKEN from the resolved env, not via
+                // filesystem credentials. Switching from sync → token must
+                // still wipe any previously forwarded creds.
+                if !claude_json.exists() || std::fs::read_to_string(claude_json)? != "{}" {
+                    write_private_file(claude_json, "{}")?;
+                }
+                if credentials_json.exists() {
+                    std::fs::remove_file(&credentials_json)?;
+                }
+                AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::Sync => {
                 if let Some(creds) = read_host_credentials(host_home) {
@@ -380,6 +395,135 @@ plugins = []
         .unwrap();
         assert_eq!(std::fs::read_to_string(&state2.claude_json).unwrap(), "{}");
         assert!(!state2.claude_dir.join(".credentials.json").exists());
+    }
+
+    #[test]
+    fn token_mode_writes_empty_json_and_no_credentials() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        // Seed host auth — token mode must NOT copy it.
+        seed_host_auth(&temp);
+        let manifest = simple_manifest(&temp);
+
+        let (state, outcome) = AgentState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::Token,
+            temp.path(),
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
+        assert!(
+            !state.claude_dir.join(".credentials.json").exists(),
+            "token mode must not write .credentials.json"
+        );
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+    }
+
+    #[test]
+    fn switching_from_sync_to_token_revokes_forwarded_credentials() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        seed_host_auth(&temp);
+        let manifest = simple_manifest(&temp);
+
+        // First run: sync mode writes credentials
+        let (state, _) = AgentState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::Sync,
+            temp.path(),
+        )
+        .unwrap();
+        assert!(state.claude_dir.join(".credentials.json").exists());
+
+        // Operator switches to token — credentials must be wiped and
+        // .claude.json reset to {} so Claude Code inside the container
+        // authenticates exclusively via CLAUDE_CODE_OAUTH_TOKEN.
+        let (state2, outcome) = AgentState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::Token,
+            temp.path(),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&state2.claude_json).unwrap(), "{}");
+        assert!(!state2.claude_dir.join(".credentials.json").exists());
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+    }
+
+    #[test]
+    fn switching_from_token_to_sync_forwards_fresh_host_creds() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        seed_host_auth(&temp);
+        let manifest = simple_manifest(&temp);
+
+        // First run: token mode leaves an empty state
+        let (state, _) = AgentState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::Token,
+            temp.path(),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
+
+        // Operator switches to sync — host auth must now be forwarded
+        let (state2, outcome) = AgentState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::Sync,
+            temp.path(),
+        )
+        .unwrap();
+        assert!(
+            std::fs::read_to_string(&state2.claude_json)
+                .unwrap()
+                .contains("test@example.com")
+        );
+        assert_eq!(
+            std::fs::read_to_string(state2.claude_dir.join(".credentials.json")).unwrap(),
+            TEST_CREDENTIALS
+        );
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    }
+
+    #[test]
+    fn switching_from_token_to_ignore_remains_empty() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        seed_host_auth(&temp);
+        let manifest = simple_manifest(&temp);
+
+        // Token mode seeds an empty state
+        let (_, _) = AgentState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::Token,
+            temp.path(),
+        )
+        .unwrap();
+
+        // Switching to ignore must keep the empty shape (no .credentials.json)
+        let (state2, outcome) = AgentState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::Ignore,
+            temp.path(),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&state2.claude_json).unwrap(), "{}");
+        assert!(!state2.claude_dir.join(".credentials.json").exists());
+        assert_eq!(outcome, AuthProvisionOutcome::Skipped);
     }
 
     #[test]
