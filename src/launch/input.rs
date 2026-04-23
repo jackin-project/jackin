@@ -7,7 +7,7 @@ use crate::workspace::ResolvedWorkspace;
 
 pub(super) enum EventOutcome {
     Continue,
-    Exit(anyhow::Result<(ClassSelector, ResolvedWorkspace)>),
+    Exit(anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>>),
 }
 
 pub(super) fn handle_event(
@@ -45,7 +45,7 @@ pub(super) fn handle_event(
                         Ok(v) => v,
                         Err(e) => return EventOutcome::Exit(Err(e)),
                     };
-                    return EventOutcome::Exit(Ok((agent, workspace)));
+                    return EventOutcome::Exit(Ok(Some((agent, workspace))));
                 }
                 state.stage = LaunchStage::Agent;
                 state.agent_query.clear();
@@ -58,7 +58,7 @@ pub(super) fn handle_event(
                 .unwrap_or(0);
             }
             KeyCode::Char('q') | KeyCode::Esc => {
-                return EventOutcome::Exit(Err(anyhow::anyhow!("launch cancelled")));
+                return EventOutcome::Exit(Ok(None));
             }
             _ => {}
         },
@@ -101,10 +101,31 @@ pub(super) fn handle_event(
                     Ok(v) => v,
                     Err(e) => return EventOutcome::Exit(Err(e)),
                 };
-                return EventOutcome::Exit(Ok((agent.clone(), workspace)));
+                return EventOutcome::Exit(Ok(Some((agent.clone(), workspace))));
             }
             _ => {}
         },
     }
     EventOutcome::Continue
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_q_exits_without_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::default();
+        let mut state = LaunchState::new(&config, temp.path()).unwrap();
+
+        let outcome = handle_event(
+            &mut state,
+            crossterm::event::KeyCode::Char('q'),
+            &config,
+            temp.path(),
+        );
+
+        assert!(matches!(outcome, EventOutcome::Exit(Ok(None))));
+    }
 }

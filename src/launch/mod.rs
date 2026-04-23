@@ -14,7 +14,7 @@ use crate::workspace::ResolvedWorkspace;
 pub fn run_launch(
     config: &AppConfig,
     cwd: &std::path::Path,
-) -> anyhow::Result<(ClassSelector, ResolvedWorkspace)> {
+) -> anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>> {
     use crossterm::ExecutableCommand;
     use crossterm::event::{self, Event, KeyEventKind};
     use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
