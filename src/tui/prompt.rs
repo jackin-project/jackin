@@ -6,15 +6,32 @@ use super::{DEBUG_MODE, PHOSPHOR_DIM, PHOSPHOR_GREEN, rgb};
 
 // ── Interactive prompt ───────────────────────────────────────────────────
 
+/// Bail with `msg` when stdin is not an interactive terminal.
+///
+/// Call at the top of any flow that would otherwise prompt the operator via
+/// `dialoguer` or `prompt_choice`. Shared across CLI call sites (workspace
+/// edit/prune, sensitive-mount confirmation) so the non-TTY guard pattern
+/// exists in one place instead of being copy-pasted with drifting messages.
+///
+/// Returns `Ok(())` when stdin is a terminal so the caller can continue
+/// into its prompt. Does NOT prompt itself.
+pub fn require_interactive_stdin(msg: &str) -> anyhow::Result<()> {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!("{msg}");
+    }
+    Ok(())
+}
+
 /// Display a numbered prompt on stderr and read a choice from stdin.
 /// Returns the 0-based index of the chosen option.
 /// Errors if stdin is not a terminal.
 pub fn prompt_choice(message: &str, options: &[&str]) -> anyhow::Result<usize> {
-    use std::io::{BufRead, IsTerminal};
+    use std::io::BufRead;
 
-    if !std::io::stdin().is_terminal() {
-        anyhow::bail!("ambiguous target requires interactive input, but stdin is not a terminal");
-    }
+    require_interactive_stdin(
+        "ambiguous target requires interactive input, but stdin is not a terminal",
+    )?;
 
     eprintln!("{message}");
     for (i, option) in options.iter().enumerate() {

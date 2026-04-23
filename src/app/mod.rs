@@ -436,10 +436,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     mode: String,
                 }
 
-                let workspace = config
-                    .workspaces
-                    .get(&name)
-                    .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?;
+                let workspace = config.require_workspace(&name)?;
 
                 let allowed = if workspace.allowed_agents.is_empty() {
                     "any agent".to_string()
@@ -504,11 +501,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
 
-                let current_ws = config
-                    .workspaces
-                    .get(&name)
-                    .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?
-                    .clone();
+                let current_ws = config.require_workspace(&name)?.clone();
 
                 let plan = workspace::planner::plan_edit(
                     &current_ws,
@@ -546,12 +539,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 // If there are any collapses to apply, prompt (or bail on
                 // non-TTY without --yes).
                 if !all_collapses.is_empty() && !assume_yes {
-                    use std::io::IsTerminal;
-                    if !std::io::stdin().is_terminal() {
-                        anyhow::bail!(
-                            "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively"
-                        );
-                    }
+                    tui::require_interactive_stdin(
+                        "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively",
+                    )?;
 
                     if !plan.edit_driven_collapses.is_empty() {
                         eprintln!(
@@ -651,11 +641,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
             WorkspaceCommand::Prune { name, assume_yes } => {
-                let current_ws = config
-                    .workspaces
-                    .get(&name)
-                    .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?
-                    .clone();
+                let current_ws = config.require_workspace(&name)?.clone();
 
                 // All existing mounts; nothing new.
                 let plan = workspace::plan_collapse(&current_ws.mounts, &[])?;
@@ -665,12 +651,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
 
                 if !assume_yes {
-                    use std::io::IsTerminal;
-                    if !std::io::stdin().is_terminal() {
-                        anyhow::bail!(
-                            "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively"
-                        );
-                    }
+                    tui::require_interactive_stdin(
+                        "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively",
+                    )?;
                     eprintln!(
                         "Will remove {} redundant mount(s) from workspace {name:?}:",
                         plan.removed.len()

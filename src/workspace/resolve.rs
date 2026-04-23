@@ -108,11 +108,7 @@ pub fn resolve_load_workspace(
             (ws, label)
         }
         LoadWorkspaceInput::Saved(name) => {
-            let workspace = config
-                .workspaces
-                .get(&name)
-                .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))?
-                .clone();
+            let workspace = config.require_workspace(&name)?.clone();
             if !workspace.allowed_agents.is_empty()
                 && !workspace
                     .allowed_agents
