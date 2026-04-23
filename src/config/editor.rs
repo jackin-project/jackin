@@ -215,6 +215,48 @@ impl ConfigEditor {
         }
     }
 
+    pub fn set_agent_trust(&mut self, agent_key: &str, trusted: bool) {
+        let table = table_path_mut(
+            &mut self.doc,
+            &["agents".to_string(), agent_key.to_string()],
+        );
+        if trusted {
+            table.insert("trusted", toml_edit::value(true));
+        } else {
+            // Canonical representation of false is absent (matches serde
+            // skip_serializing_if on AgentSource::trusted).
+            table.remove("trusted");
+        }
+    }
+
+    pub fn set_agent_auth_forward(
+        &mut self,
+        agent_key: &str,
+        mode: crate::config::AuthForwardMode,
+    ) {
+        let claude_table = table_path_mut(
+            &mut self.doc,
+            &["agents".to_string(), agent_key.to_string(), "claude".to_string()],
+        );
+        claude_table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
+    }
+
+    pub fn set_global_auth_forward(&mut self, mode: crate::config::AuthForwardMode) {
+        let claude_table = table_path_mut(&mut self.doc, &["claude".to_string()]);
+        claude_table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
+    }
+
+    pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
+        // Touch only git + trusted. Leave [agents.X.claude] and
+        // [agents.X.env] alone — those are operator-owned.
+        let table = table_path_mut(
+            &mut self.doc,
+            &["agents".to_string(), agent_key.to_string()],
+        );
+        table.insert("git", toml_edit::value(git_url));
+        table.insert("trusted", toml_edit::value(true));
+    }
+
     pub fn remove_env_var(&mut self, scope: EnvScope, key: &str) -> bool {
         let path = env_scope_path(&scope);
         // Walk without creating: return false if any segment is missing.
@@ -229,6 +271,14 @@ impl ConfigEditor {
             Some(table) => table.remove(key).is_some(),
             None => false,
         }
+    }
+}
+
+fn auth_forward_str(mode: crate::config::AuthForwardMode) -> &'static str {
+    match mode {
+        crate::config::AuthForwardMode::Ignore => "ignore",
+        crate::config::AuthForwardMode::Sync => "sync",
+        crate::config::AuthForwardMode::Token => "token",
     }
 }
 
@@ -716,5 +766,137 @@ logs = { src = "/b", dst = "/b" }
         assert!(out.contains("[docker.mounts.agent-smith]"), "scope table should still exist: {out}");
         assert!(!out.contains("creds"), "{out}");
         assert!(out.contains("logs"), "{out}");
+    }
+
+    #[test]
+    fn set_agent_trust_toggles_trusted_field() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[agents.my-agent]
+git = "https://example.com/a.git"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_agent_trust("my-agent", true);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("trusted = true"), "{out}");
+    }
+
+    #[test]
+    fn set_agent_trust_false_removes_field() {
+        // Canonical TOML representation of trusted=false is absent (serde
+        // skip_serializing_if on AgentSource::trusted).
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[agents.my-agent]
+git = "x"
+trusted = true
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_agent_trust("my-agent", false);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("trusted"), "{out}");
+    }
+
+    #[test]
+    fn set_agent_auth_forward_writes_claude_subtable() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[agents.my-agent]
+git = "x"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_agent_auth_forward("my-agent", crate::config::AuthForwardMode::Token);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[agents.my-agent.claude]"), "{out}");
+        assert!(out.contains(r#"auth_forward = "token""#), "{out}");
+    }
+
+    #[test]
+    fn set_global_auth_forward_writes_root_claude_table() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_global_auth_forward(crate::config::AuthForwardMode::Sync);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[claude]"), "{out}");
+        assert!(out.contains(r#"auth_forward = "sync""#), "{out}");
+    }
+
+    #[test]
+    fn upsert_builtin_agent_creates_entry_when_missing() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.upsert_builtin_agent(
+            "agent-smith",
+            "https://github.com/jackin-project/jackin-agent-smith.git",
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[agents.agent-smith]"), "{out}");
+        assert!(out.contains("trusted = true"), "{out}");
+    }
+
+    #[test]
+    fn upsert_builtin_agent_preserves_existing_claude_override() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[agents.agent-smith]
+git = "OLD-URL"
+trusted = false
+
+[agents.agent-smith.claude]
+auth_forward = "token"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.upsert_builtin_agent(
+            "agent-smith",
+            "https://github.com/jackin-project/jackin-agent-smith.git",
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains(r#"git = "https://github.com/jackin-project/jackin-agent-smith.git""#), "{out}");
+        assert!(out.contains("trusted = true"), "{out}");
+        assert!(out.contains(r#"auth_forward = "token""#), "claude override wiped: {out}");
     }
 }
