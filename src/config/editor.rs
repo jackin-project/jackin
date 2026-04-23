@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
-use toml_edit::DocumentMut;
+use toml_edit::{DocumentMut, Item, Table};
 
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -87,12 +87,123 @@ impl ConfigEditor {
             .with_context(|| format!("deserializing {}", self.path.display()))?;
         Ok(config)
     }
+
+    pub fn set_env_var(&mut self, scope: EnvScope, key: &str, value_str: &str) {
+        let path = env_scope_path(&scope);
+        let table = table_path_mut(&mut self.doc, &path);
+        table.insert(key, toml_edit::value(value_str));
+    }
+}
+
+fn env_scope_path(scope: &EnvScope) -> Vec<String> {
+    match scope {
+        EnvScope::Global => vec!["env".to_string()],
+        EnvScope::Agent(a) => vec!["agents".to_string(), a.clone(), "env".to_string()],
+        EnvScope::Workspace(w) => vec!["workspaces".to_string(), w.clone(), "env".to_string()],
+        EnvScope::WorkspaceAgent { workspace, agent } => vec![
+            "workspaces".to_string(),
+            workspace.clone(),
+            "agents".to_string(),
+            agent.clone(),
+            "env".to_string(),
+        ],
+    }
+}
+
+fn table_path_mut<'a>(doc: &'a mut DocumentMut, path: &[String]) -> &'a mut Table {
+    fn walk<'a>(item: &'a mut Item, path: &[String]) -> &'a mut Table {
+        let table = item.as_table_mut().expect("path segment is not a table");
+        if path.is_empty() {
+            return table;
+        }
+        let entry = table
+            .entry(&path[0])
+            .or_insert(Item::Table(Table::new()));
+        walk(entry, &path[1..])
+    }
+    walk(doc.as_item_mut(), path)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn set_env_var_creates_global_env_table() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_var(EnvScope::Global, "API_TOKEN", "op://Personal/api/token");
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[env]"), "missing [env] table: {out}");
+        assert!(
+            out.contains(r#"API_TOKEN = "op://Personal/api/token""#),
+            "missing entry: {out}"
+        );
+    }
+
+    #[test]
+    fn set_env_var_upserts_workspace_agent_scope() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.prod]
+workdir = "/workspace/prod"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_var(
+            EnvScope::WorkspaceAgent {
+                workspace: "prod".to_string(),
+                agent: "agent-smith".to_string(),
+            },
+            "OPENAI_API_KEY",
+            "op://Work/OpenAI/default",
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            out.contains("[workspaces.prod.agents.agent-smith.env]"),
+            "missing nested table: {out}"
+        );
+        assert!(
+            out.contains(r#"OPENAI_API_KEY = "op://Work/OpenAI/default""#),
+            "missing entry: {out}"
+        );
+    }
+
+    #[test]
+    fn set_env_var_overwrites_existing_value() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+API_TOKEN = "old-value"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_var(EnvScope::Global, "API_TOKEN", "new-value");
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains(r#"API_TOKEN = "new-value""#), "{out}");
+        assert!(!out.contains("old-value"), "{out}");
+    }
 
     #[test]
     fn idempotent_save_is_byte_identical() {
