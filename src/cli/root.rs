@@ -14,80 +14,27 @@ pub struct Cli {
     pub command: Command,
 }
 
+/// Top-level `jackin` subcommand dispatch.
+///
+/// Each variant wraps an `Args` struct or a sub-command enum. Help text
+/// and `before_help` / `styles` / `after_long_help` attributes live on
+/// the wrapped type in its own file (e.g. `cli::agent::LoadArgs`,
+/// `cli::workspace::WorkspaceCommand`). Only `Exile` carries its
+/// attributes here because it has no payload.
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
-    /// Jack an agent into an isolated container
-    ///
-    /// TARGET can be a path (~/Projects/my-app), a path with container
-    /// destination (~/Projects/my-app:/app), or a saved workspace name.
-    /// When omitted, the current directory is used.
-    #[command(
-        before_help = BANNER,
-        styles = HELP_STYLES,
-        after_long_help = "\
-Examples:
-  jackin load                                          # use workspace + last agent for cwd
-  jackin load --rebuild                                # same, with fresh Claude install
-  jackin load agent-smith
-  jackin load agent-smith ~/Projects/my-app
-  jackin load agent-smith ~/Projects/my-app:/app
-  jackin load agent-smith big-monorepo
-  jackin load agent-smith big-monorepo --mount ~/extra-data
-  jackin load agent-smith ~/app --mount ~/cache:/cache:ro"
-    )]
     Load(LoadArgs),
-    /// Reattach to a running agent's session
-    ///
-    /// When omitted, finds the saved workspace for the current directory and
-    /// reconnects to a running agent container belonging to it.
-    #[command(
-        before_help = BANNER,
-        styles = HELP_STYLES,
-        after_long_help = "\
-Examples:
-  jackin hardline                              # auto-detect workspace + running agent for cwd
-  jackin hardline agent-smith
-  jackin hardline chainargos/the-architect
-  jackin hardline jackin-agent-smith-clone-1"
-    )]
     Hardline(HardlineArgs),
-    /// Stop an agent and clean up its container
-    #[command(
-        before_help = BANNER,
-        styles = HELP_STYLES,
-        after_long_help = "\
-Examples:
-  jackin eject agent-smith
-  jackin eject agent-smith --all
-  jackin eject agent-smith --purge
-  jackin eject jackin-agent-smith-clone-1"
-    )]
     Eject(EjectArgs),
     /// Pull every running agent out at once
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
-    /// Delete persisted state for an agent class
-    #[command(
-        before_help = BANNER,
-        styles = HELP_STYLES,
-        after_long_help = "\
-Examples:
-  jackin purge agent-smith
-  jackin purge agent-smith --all
-  jackin purge chainargos/the-architect"
-    )]
     Purge(PurgeArgs),
-    /// Open the interactive TUI launcher to pick a workspace and agent
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Launch(LaunchArgs),
-    /// Manage saved workspaces
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Workspace {
         #[command(subcommand)]
         command: WorkspaceCommand,
     },
-    /// View and modify operator configuration
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Config {
         #[command(subcommand)]
         command: ConfigCommand,

@@ -1,6 +1,19 @@
 use clap::Args;
 
+use super::{BANNER, HELP_STYLES};
+
+/// Stop an agent and clean up its container
 #[derive(Debug, Args, PartialEq, Eq)]
+#[command(
+    before_help = BANNER,
+    styles = HELP_STYLES,
+    after_long_help = "\
+Examples:
+  jackin eject agent-smith
+  jackin eject agent-smith --all
+  jackin eject agent-smith --purge
+  jackin eject jackin-agent-smith-clone-1"
+)]
 pub struct EjectArgs {
     /// Agent class selector or container name to stop
     pub selector: String,
@@ -12,7 +25,17 @@ pub struct EjectArgs {
     pub purge: bool,
 }
 
+/// Delete persisted state for an agent class
 #[derive(Debug, Args, PartialEq, Eq)]
+#[command(
+    before_help = BANNER,
+    styles = HELP_STYLES,
+    after_long_help = "\
+Examples:
+  jackin purge agent-smith
+  jackin purge agent-smith --all
+  jackin purge chainargos/the-architect"
+)]
 pub struct PurgeArgs {
     /// Agent class selector (e.g. `agent-smith`, `chainargos/agent-brown`)
     pub selector: String,
