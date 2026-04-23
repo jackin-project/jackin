@@ -1015,6 +1015,212 @@ mod tests {
         assert_eq!(filtered[0].key(), "chainargos/the-architect");
     }
 
+    // ── Phase 0 gap-fill: agent-filter composition ─────────────────────────
+    //
+    // These tests pin the composition the TUI relies on:
+    //
+    //   configured_agents  →  eligible_agents_for_saved_workspace
+    //                     (allowed_agents filter)  →
+    //                     workspace.allowed_agents  →
+    //                     filtered_agents          (agent_query filter)  →
+    //                     on-screen result
+    //
+    // Invariants the plan's Phase 0 calls out for the Phase 6 unification:
+    //
+    //   1. An empty `allowed_agents` list means "any configured agent."
+    //   2. A non-empty `allowed_agents` list strictly narrows to the named
+    //      set, and never resurrects an unconfigured ("ghost") name.
+    //   3. The query filter composes with — never widens — the post-eligibility
+    //      set. A key not in `workspace.allowed_agents` cannot be recovered
+    //      by any query string.
+    //   4. An empty query returns the full post-eligibility set.
+    //   5. A query that matches a subset of the eligible set returns exactly
+    //      that subset (does not drop matches, does not add non-matches).
+
+    fn agent_source_stub() -> crate::config::AgentSource {
+        crate::config::AgentSource {
+            git: "https://example.invalid/org/repo.git".to_string(),
+            trusted: true,
+            claude: None,
+        }
+    }
+
+    fn workspace_with_allowed(allowed: &[&str]) -> crate::workspace::WorkspaceConfig {
+        crate::workspace::WorkspaceConfig {
+            workdir: "/work".to_string(),
+            mounts: vec![],
+            allowed_agents: allowed.iter().map(|s| (*s).to_string()).collect(),
+            default_agent: None,
+            last_agent: None,
+        }
+    }
+
+    #[test]
+    fn eligible_agents_returns_all_configured_when_allowed_list_empty() {
+        let mut config = crate::config::AppConfig::default();
+        config
+            .agents
+            .insert("alice".to_string(), agent_source_stub());
+        config.agents.insert("bob".to_string(), agent_source_stub());
+
+        let ws = workspace_with_allowed(&[]);
+        let eligible = eligible_agents_for_saved_workspace(&config, &ws);
+        let keys: Vec<String> = eligible
+            .iter()
+            .map(crate::selector::ClassSelector::key)
+            .collect();
+
+        assert_eq!(eligible.len(), 2, "empty allowed_agents must mean 'any'");
+        assert!(keys.contains(&"alice".to_string()));
+        assert!(keys.contains(&"bob".to_string()));
+    }
+
+    #[test]
+    fn eligible_agents_narrows_to_allowed_list_when_non_empty() {
+        let mut config = crate::config::AppConfig::default();
+        config
+            .agents
+            .insert("alice".to_string(), agent_source_stub());
+        config.agents.insert("bob".to_string(), agent_source_stub());
+        config
+            .agents
+            .insert("carol".to_string(), agent_source_stub());
+
+        let ws = workspace_with_allowed(&["alice", "carol"]);
+        let eligible = eligible_agents_for_saved_workspace(&config, &ws);
+        let keys: Vec<String> = eligible
+            .iter()
+            .map(crate::selector::ClassSelector::key)
+            .collect();
+
+        assert_eq!(eligible.len(), 2);
+        assert!(keys.contains(&"alice".to_string()));
+        assert!(keys.contains(&"carol".to_string()));
+        assert!(!keys.contains(&"bob".to_string()));
+    }
+
+    #[test]
+    fn eligible_agents_drops_ghost_name_not_in_config() {
+        // `allowed_agents` references an agent that was removed from config.
+        // The eligibility set must not fabricate a selector for it.
+        let mut config = crate::config::AppConfig::default();
+        config
+            .agents
+            .insert("alice".to_string(), agent_source_stub());
+
+        let ws = workspace_with_allowed(&["ghost"]);
+        let eligible = eligible_agents_for_saved_workspace(&config, &ws);
+
+        assert!(
+            eligible.is_empty(),
+            "eligibility must not resurrect a name absent from config.agents"
+        );
+    }
+
+    #[test]
+    fn empty_query_returns_full_post_eligibility_set() {
+        let state = LaunchState {
+            stage: LaunchStage::Agent,
+            selected_workspace: 0,
+            selected_agent: 0,
+            agent_query: String::new(),
+            workspaces: vec![WorkspaceChoice {
+                name: "Current directory".to_string(),
+                workspace: crate::workspace::ResolvedWorkspace {
+                    label: "/tmp/project".to_string(),
+                    workdir: "/tmp/project".to_string(),
+                    mounts: vec![],
+                },
+                allowed_agents: vec![
+                    crate::selector::ClassSelector::new(None, "alice"),
+                    crate::selector::ClassSelector::new(None, "bob"),
+                ],
+                default_agent: None,
+                last_agent: None,
+                global_mounts: vec![],
+                input: LoadWorkspaceInput::CurrentDir,
+            }],
+        };
+
+        let filtered = state.filtered_agents();
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn query_cannot_reintroduce_agent_excluded_by_allowed_list() {
+        // `state.workspaces[_].allowed_agents` already reflects the
+        // eligibility filter. An agent absent here cannot be resurrected
+        // by *any* query string — the query only narrows, never widens.
+        let state = LaunchState {
+            stage: LaunchStage::Agent,
+            selected_workspace: 0,
+            selected_agent: 0,
+            agent_query: "bob".to_string(),
+            workspaces: vec![WorkspaceChoice {
+                name: "Current directory".to_string(),
+                workspace: crate::workspace::ResolvedWorkspace {
+                    label: "/tmp/project".to_string(),
+                    workdir: "/tmp/project".to_string(),
+                    mounts: vec![],
+                },
+                allowed_agents: vec![crate::selector::ClassSelector::new(None, "alice")],
+                default_agent: None,
+                last_agent: None,
+                global_mounts: vec![],
+                input: LoadWorkspaceInput::CurrentDir,
+            }],
+        };
+
+        assert!(
+            state.filtered_agents().is_empty(),
+            "query must not resurrect an excluded agent"
+        );
+    }
+
+    #[test]
+    fn query_narrows_within_allowed_set_without_dropping_matches() {
+        // Multiple eligible agents; query matches a subset. Every matching
+        // agent must still appear; no non-matching agent may sneak through.
+        let state = LaunchState {
+            stage: LaunchStage::Agent,
+            selected_workspace: 0,
+            selected_agent: 0,
+            agent_query: "smith".to_string(),
+            workspaces: vec![WorkspaceChoice {
+                name: "Current directory".to_string(),
+                workspace: crate::workspace::ResolvedWorkspace {
+                    label: "/tmp/project".to_string(),
+                    workdir: "/tmp/project".to_string(),
+                    mounts: vec![],
+                },
+                allowed_agents: vec![
+                    crate::selector::ClassSelector::new(None, "agent-smith"),
+                    crate::selector::ClassSelector::new(None, "agent-brown"),
+                    crate::selector::ClassSelector::new(None, "smithy"),
+                ],
+                default_agent: None,
+                last_agent: None,
+                global_mounts: vec![],
+                input: LoadWorkspaceInput::CurrentDir,
+            }],
+        };
+
+        let filtered = state.filtered_agents();
+        let keys: Vec<String> = filtered
+            .iter()
+            .map(crate::selector::ClassSelector::key)
+            .collect();
+
+        assert_eq!(
+            filtered.len(),
+            2,
+            "query 'smith' should match exactly 2 of 3 allowed agents"
+        );
+        assert!(keys.contains(&"agent-smith".to_string()));
+        assert!(keys.contains(&"smithy".to_string()));
+        assert!(!keys.contains(&"agent-brown".to_string()));
+    }
+
     #[test]
     fn footer_text_matches_stage_behavior() {
         assert!(footer_text(LaunchStage::Workspace).contains("Enter"));
