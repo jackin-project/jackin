@@ -25,7 +25,7 @@ impl AgentState {
 
         let outcome = match mode {
             AuthForwardMode::Ignore => {
-                // Always ensure a clean slate — if switching from copy/sync to
+                // Always ensure a clean slate — if switching from sync to
                 // ignore, the previously forwarded credentials must be revoked.
                 if !claude_json.exists() || std::fs::read_to_string(claude_json)? != "{}" {
                     write_private_file(claude_json, "{}")?;
@@ -34,21 +34,6 @@ impl AgentState {
                     std::fs::remove_file(&credentials_json)?;
                 }
                 AuthProvisionOutcome::Skipped
-            }
-            AuthForwardMode::Copy => {
-                if claude_json.exists() {
-                    AuthProvisionOutcome::Skipped
-                } else if let Some(creds) = read_host_credentials(host_home) {
-                    copy_host_claude_json(&host_claude_json, claude_json)?;
-                    write_private_file(&credentials_json, &creds)?;
-                    AuthProvisionOutcome::Copied
-                } else {
-                    // Host has no auth — create an empty bootstrap file
-                    // so Docker can bind-mount it. Claude Code will run
-                    // its own first-time auth flow inside the container.
-                    write_private_file(claude_json, "{}")?;
-                    AuthProvisionOutcome::HostMissing
-                }
             }
             AuthForwardMode::Sync => {
                 if let Some(creds) = read_host_credentials(host_home) {
@@ -274,7 +259,7 @@ plugins = []
     }
 
     #[test]
-    fn copy_mode_copies_host_auth_on_first_run() {
+    fn sync_mode_copies_host_auth_on_first_run() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         seed_host_auth(&temp);
@@ -284,7 +269,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Copy,
+            AuthForwardMode::Sync,
             temp.path(),
         )
         .unwrap();
@@ -298,11 +283,11 @@ plugins = []
             std::fs::read_to_string(state.claude_dir.join(".credentials.json")).unwrap(),
             TEST_CREDENTIALS
         );
-        assert_eq!(outcome, AuthProvisionOutcome::Copied);
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
     }
 
     #[test]
-    fn copy_mode_falls_back_to_empty_json_when_host_has_none() {
+    fn sync_mode_falls_back_to_empty_json_when_host_has_none() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         // No host auth seeded
@@ -312,7 +297,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Copy,
+            AuthForwardMode::Sync,
             temp.path(),
         )
         .unwrap();
@@ -320,45 +305,6 @@ plugins = []
         assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
         assert!(!state.claude_dir.join(".credentials.json").exists());
         assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
-    }
-
-    #[test]
-    fn copy_mode_does_not_overwrite_existing() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        seed_host_auth(&temp);
-        let manifest = simple_manifest(&temp);
-
-        // First run: creates the file
-        let (state, outcome1) = AgentState::prepare(
-            &paths,
-            "jackin-agent-smith",
-            &manifest,
-            AuthForwardMode::Copy,
-            temp.path(),
-        )
-        .unwrap();
-        assert_eq!(outcome1, AuthProvisionOutcome::Copied);
-
-        // Simulate the container modifying its own .claude.json
-        let container_content = r#"{"oauthAccount":{"emailAddress":"container@example.com"}}"#;
-        std::fs::write(&state.claude_json, container_content).unwrap();
-
-        // Second run: should NOT overwrite
-        let (state2, outcome2) = AgentState::prepare(
-            &paths,
-            "jackin-agent-smith",
-            &manifest,
-            AuthForwardMode::Copy,
-            temp.path(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            std::fs::read_to_string(&state2.claude_json).unwrap(),
-            container_content
-        );
-        assert_eq!(outcome2, AuthProvisionOutcome::Skipped);
     }
 
     #[test]
@@ -404,37 +350,6 @@ plugins = []
     }
 
     // ── Mode transition tests ───────────────────────────────────────────
-
-    #[test]
-    fn switching_from_copy_to_ignore_revokes_forwarded_credentials() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        seed_host_auth(&temp);
-        let manifest = simple_manifest(&temp);
-
-        // First run: copy mode seeds credentials
-        let (state, _) = AgentState::prepare(
-            &paths,
-            "jackin-agent-smith",
-            &manifest,
-            AuthForwardMode::Copy,
-            temp.path(),
-        )
-        .unwrap();
-        assert!(state.claude_dir.join(".credentials.json").exists());
-
-        // Operator switches to ignore — credentials must be wiped
-        let (state2, _) = AgentState::prepare(
-            &paths,
-            "jackin-agent-smith",
-            &manifest,
-            AuthForwardMode::Ignore,
-            temp.path(),
-        )
-        .unwrap();
-        assert_eq!(std::fs::read_to_string(&state2.claude_json).unwrap(), "{}");
-        assert!(!state2.claude_dir.join(".credentials.json").exists());
-    }
 
     #[test]
     fn switching_from_sync_to_ignore_revokes_forwarded_credentials() {
@@ -522,7 +437,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Copy,
+            AuthForwardMode::Sync,
             temp.path(),
         )
         .unwrap();
@@ -663,7 +578,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Copy,
+            AuthForwardMode::Sync,
             temp.path(),
         )
         .unwrap();
@@ -705,7 +620,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Copy,
+            AuthForwardMode::Sync,
             temp.path(),
         )
         .unwrap();
