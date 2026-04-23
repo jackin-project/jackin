@@ -257,6 +257,53 @@ impl ConfigEditor {
         table.insert("trusted", toml_edit::value(true));
     }
 
+    /// Writes `git` and `trusted` from the given `AgentSource` into
+    /// `[agents.<agent_key>]`, and if the doc has no `[agents.<agent_key>.claude]`
+    /// table yet but the source carries a `claude` override, writes that too.
+    /// Does NOT touch `[agents.<agent_key>.env]` — operator-owned.
+    ///
+    /// Used by call sites that first invoke `resolve_agent_source` (which may
+    /// insert a new agent into the in-memory `AppConfig`) and need the editor
+    /// to persist that insert alongside whatever trust / auth_forward change
+    /// they're about to make.
+    pub fn upsert_agent_source(&mut self, agent_key: &str, source: &crate::config::AgentSource) {
+        let table = table_path_mut(
+            &mut self.doc,
+            &["agents".to_string(), agent_key.to_string()],
+        );
+        table.insert("git", toml_edit::value(source.git.clone()));
+        if source.trusted {
+            table.insert("trusted", toml_edit::value(true));
+        } else {
+            table.remove("trusted");
+        }
+        // If the source carries a claude override and the doc doesn't have
+        // one, serialize it in. If the doc already has one, leave it alone —
+        // operator-owned.
+        if let Some(claude) = &source.claude {
+            let existing_claude = self
+                .doc
+                .get("agents")
+                .and_then(|i| i.as_table())
+                .and_then(|t| t.get(agent_key))
+                .and_then(|i| i.as_table())
+                .and_then(|t| t.get("claude"));
+            if existing_claude.is_none() {
+                if let Ok(rendered) = toml::to_string(claude) {
+                    if let Ok(parsed) = rendered.parse::<DocumentMut>() {
+                        let claude_table = table_path_mut(
+                            &mut self.doc,
+                            &["agents".to_string(), agent_key.to_string(), "claude".to_string()],
+                        );
+                        for (k, v) in parsed.as_table().iter() {
+                            claude_table.insert(k, v.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn remove_env_var(&mut self, scope: EnvScope, key: &str) -> bool {
         let path = env_scope_path(&scope);
         // Walk without creating: return false if any segment is missing.
@@ -1075,6 +1122,37 @@ default_agent = "agent-smith"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains(r#"last_agent = "agent-smith""#), "{out}");
         assert!(out.contains(r#"default_agent = "agent-smith""#), "{out}");
+    }
+
+    #[test]
+    fn upsert_agent_source_preserves_existing_env() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[agents.foo]
+git = "OLD"
+
+[agents.foo.env]
+MY_VAR = "preserved"
+"#,
+        )
+        .unwrap();
+
+        let source = crate::config::AgentSource {
+            git: "NEW".to_string(),
+            trusted: true,
+            claude: None,
+            env: std::collections::BTreeMap::new(),
+        };
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.upsert_agent_source("foo", &source);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains(r#"git = "NEW""#), "{out}");
+        assert!(out.contains(r#"MY_VAR = "preserved""#), "{out}");
     }
 
     #[test]
