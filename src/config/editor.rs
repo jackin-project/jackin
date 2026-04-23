@@ -272,6 +272,98 @@ impl ConfigEditor {
             None => false,
         }
     }
+
+    pub fn set_last_agent(&mut self, workspace: &str, agent_key: &str) {
+        let table = table_path_mut(
+            &mut self.doc,
+            &["workspaces".to_string(), workspace.to_string()],
+        );
+        table.insert("last_agent", toml_edit::value(agent_key));
+    }
+
+    pub fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
+        let Some(workspaces) = self.doc.get_mut("workspaces").and_then(|i| i.as_table_mut()) else {
+            anyhow::bail!("workspace {name:?} not found");
+        };
+        if workspaces.remove(name).is_none() {
+            anyhow::bail!("workspace {name:?} not found");
+        }
+        Ok(())
+    }
+
+    pub fn create_workspace(
+        &mut self,
+        name: &str,
+        ws: crate::workspace::WorkspaceConfig,
+    ) -> anyhow::Result<()> {
+        // Collision check first — match today's create_workspace behavior.
+        if self
+            .doc
+            .get("workspaces")
+            .and_then(|i| i.as_table())
+            .and_then(|t| t.get(name))
+            .is_some()
+        {
+            anyhow::bail!("workspace {name:?} already exists");
+        }
+
+        // Serialize the WorkspaceConfig to toml_edit items via string round-trip:
+        // toml::to_string on the struct, parse as DocumentMut, splat the body
+        // into the new [workspaces.<name>] table.
+        let rendered = toml::to_string(&ws)
+            .with_context(|| format!("serializing workspace {name:?}"))?;
+        let parsed: DocumentMut = rendered
+            .parse()
+            .with_context(|| format!("re-parsing serialized workspace {name:?}"))?;
+
+        let workspaces_table = table_path_mut(
+            &mut self.doc,
+            &["workspaces".to_string(), name.to_string()],
+        );
+        for (key, item) in parsed.as_table().iter() {
+            workspaces_table.insert(key, item.clone());
+        }
+
+        Ok(())
+    }
+
+    pub fn edit_workspace(
+        &mut self,
+        name: &str,
+        edit: crate::workspace::WorkspaceEdit,
+    ) -> anyhow::Result<()> {
+        // Snapshot current on-disk state into an AppConfig.
+        let mut in_memory: AppConfig = toml::from_str(&self.doc.to_string())
+            .context("re-parsing current doc into AppConfig for workspace edit")?;
+
+        // Apply the edit using the existing validated logic. Mutates
+        // in_memory or returns Err with the validation message on failure.
+        in_memory.edit_workspace(name, edit)?;
+
+        // Pull the resulting WorkspaceConfig back out and splat into the doc.
+        let updated = in_memory
+            .workspaces
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("workspace {name:?} disappeared after edit"))?;
+
+        // Replace the entire [workspaces.<name>] table. This preserves
+        // comments in OTHER workspaces and in unrelated top-level sections,
+        // which is what the migration cares about. Comments inside the
+        // edited workspace itself are consumed — that's acceptable because
+        // the edit IS the change the user is making to that workspace.
+        let rendered = toml::to_string(updated)?;
+        let parsed: DocumentMut = rendered.parse()?;
+        let target = table_path_mut(
+            &mut self.doc,
+            &["workspaces".to_string(), name.to_string()],
+        );
+        target.clear();
+        for (key, item) in parsed.as_table().iter() {
+            target.insert(key, item.clone());
+        }
+
+        Ok(())
+    }
 }
 
 fn auth_forward_str(mode: crate::config::AuthForwardMode) -> &'static str {
@@ -898,5 +990,82 @@ auth_forward = "token"
         assert!(out.contains(r#"git = "https://github.com/jackin-project/jackin-agent-smith.git""#), "{out}");
         assert!(out.contains("trusted = true"), "{out}");
         assert!(out.contains(r#"auth_forward = "token""#), "claude override wiped: {out}");
+    }
+
+    #[test]
+    fn create_workspace_adds_table() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mount_src = temp.path().join("src");
+        std::fs::create_dir_all(&mount_src).unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let ws = crate::workspace::WorkspaceConfig {
+            workdir: "/workspace/new".to_string(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: mount_src.display().to_string(),
+                dst: "/workspace/new".to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.create_workspace("new-ws", ws).unwrap();
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[workspaces.new-ws]"), "{out}");
+        assert!(out.contains(r#"workdir = "/workspace/new""#), "{out}");
+    }
+
+    #[test]
+    fn set_last_agent_preserves_other_fields() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let original = r#"[workspaces.prod]
+workdir = "/workspace/prod"
+default_agent = "agent-smith"
+"#;
+        std::fs::write(&paths.config_file, original).unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_last_agent("prod", "agent-smith");
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains(r#"last_agent = "agent-smith""#), "{out}");
+        assert!(out.contains(r#"default_agent = "agent-smith""#), "{out}");
+    }
+
+    #[test]
+    fn remove_workspace_deletes_table() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.a]
+workdir = "/a"
+
+[workspaces.b]
+workdir = "/b"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.remove_workspace("a").unwrap();
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("[workspaces.a]"), "{out}");
+        assert!(out.contains("[workspaces.b]"), "{out}");
     }
 }
