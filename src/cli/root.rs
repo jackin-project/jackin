@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 
+use super::agent::{HardlineArgs, LaunchArgs, LoadArgs};
+use super::cleanup::{EjectArgs, PurgeArgs};
 use super::config::ConfigCommand;
 use super::workspace::WorkspaceCommand;
 use super::{BANNER, HELP_STYLES};
@@ -33,26 +35,7 @@ Examples:
   jackin load agent-smith big-monorepo --mount ~/extra-data
   jackin load agent-smith ~/app --mount ~/cache:/cache:ro"
     )]
-    Load {
-        /// Agent class selector (e.g. `agent-smith`, `chainargos/agent-brown`).
-        /// When omitted, uses the last-used or default agent for the workspace.
-        selector: Option<String>,
-        /// Path, `path:container-dest`, or saved workspace name
-        #[arg(value_name = "TARGET")]
-        target: Option<String>,
-        /// Additional bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)
-        #[arg(long = "mount")]
-        mounts: Vec<String>,
-        /// Force rebuild the Docker image (updates Claude to latest version)
-        #[arg(long, default_value_t = false)]
-        rebuild: bool,
-        /// Skip the animated intro sequence
-        #[arg(long, default_value_t = false)]
-        no_intro: bool,
-        /// Print raw container output for troubleshooting
-        #[arg(long, default_value_t = false)]
-        debug: bool,
-    },
+    Load(LoadArgs),
     /// Reattach to a running agent's session
     ///
     /// When omitted, finds the saved workspace for the current directory and
@@ -67,11 +50,7 @@ Examples:
   jackin hardline chainargos/the-architect
   jackin hardline jackin-agent-smith-clone-1"
     )]
-    Hardline {
-        /// Agent class selector or container name to reconnect to.
-        /// When omitted, uses the running agent in the workspace for the current directory.
-        selector: Option<String>,
-    },
+    Hardline(HardlineArgs),
     /// Stop an agent and clean up its container
     #[command(
         before_help = BANNER,
@@ -83,16 +62,7 @@ Examples:
   jackin eject agent-smith --purge
   jackin eject jackin-agent-smith-clone-1"
     )]
-    Eject {
-        /// Agent class selector or container name to stop
-        selector: String,
-        /// Stop every running instance of this agent class
-        #[arg(long)]
-        all: bool,
-        /// Also delete persisted state after stopping
-        #[arg(long)]
-        purge: bool,
-    },
+    Eject(EjectArgs),
     /// Pull every running agent out at once
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
@@ -106,20 +76,10 @@ Examples:
   jackin purge agent-smith --all
   jackin purge chainargos/the-architect"
     )]
-    Purge {
-        /// Agent class selector (e.g. `agent-smith`, `chainargos/agent-brown`)
-        selector: String,
-        /// Delete state for every instance, not just the default
-        #[arg(long)]
-        all: bool,
-    },
+    Purge(PurgeArgs),
     /// Open the interactive TUI launcher to pick a workspace and agent
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    Launch {
-        /// Print raw container output for troubleshooting
-        #[arg(long, default_value_t = false)]
-        debug: bool,
-    },
+    Launch(LaunchArgs),
     /// Manage saved workspaces
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Workspace {
@@ -137,111 +97,6 @@ Examples:
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parses_load_command() {
-        let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Load {
-                selector: Some(ref s),
-                target: None,
-                no_intro: false,
-                debug: false,
-                ..
-            } if s == "agent-smith"
-        ));
-    }
-
-    #[test]
-    fn parses_load_without_selector() {
-        let cli = Cli::try_parse_from(["jackin", "load"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Load {
-                selector: None,
-                target: None,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn parses_load_rebuild_without_selector() {
-        let cli = Cli::try_parse_from(["jackin", "load", "--rebuild"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Load {
-                selector: None,
-                rebuild: true,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn parses_load_with_target_path() {
-        let cli =
-            Cli::try_parse_from(["jackin", "load", "agent-smith", "~/Projects/my-app"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Load {
-                target: Some(ref t),
-                ..
-            } if t == "~/Projects/my-app"
-        ));
-    }
-
-    #[test]
-    fn parses_load_with_target_and_mount() {
-        let cli = Cli::try_parse_from([
-            "jackin",
-            "load",
-            "agent-smith",
-            "big-monorepo",
-            "--mount",
-            "/tmp/cache:/workspace/cache:ro",
-        ])
-        .unwrap();
-
-        assert!(matches!(
-            cli.command,
-            Command::Load {
-                target: Some(ref t),
-                ref mounts,
-                ..
-            } if t == "big-monorepo" && mounts.len() == 1
-        ));
-    }
-
-    #[test]
-    fn parses_load_with_mount_only() {
-        let cli = Cli::try_parse_from([
-            "jackin",
-            "load",
-            "agent-smith",
-            "--mount",
-            "/tmp/project:/workspace/project",
-            "--mount",
-            "/tmp/cache:/workspace/cache:ro",
-        ])
-        .unwrap();
-
-        assert!(matches!(
-            cli.command,
-            Command::Load {
-                target: None,
-                ref mounts,
-                ..
-            } if mounts.len() == 2
-        ));
-    }
-
-    #[test]
-    fn parses_launch_command() {
-        let cli = Cli::try_parse_from(["jackin", "launch"]).unwrap();
-        assert!(matches!(cli.command, Command::Launch { debug: false }));
-    }
 
     /// Strip ANSI escape sequences for clean test assertions.
     fn strip_ansi(s: &str) -> String {
@@ -305,73 +160,6 @@ mod tests {
         ] {
             assert!(help.contains(cmd), "missing command: {cmd}");
         }
-    }
-
-    // ── Load help ───────────────────────────────────────────────────────
-
-    #[test]
-    fn load_help_shows_description_and_examples() {
-        let help = help_text(&["jackin", "load", "--help"]);
-        assert!(help.contains("Jack an agent into an isolated container"));
-        assert!(help.contains("Examples:"));
-        assert!(help.contains("jackin load agent-smith"));
-        assert!(help.contains("jackin load agent-smith big-monorepo"));
-    }
-
-    #[test]
-    fn load_help_shows_mount_format() {
-        let help = help_text(&["jackin", "load", "--help"]);
-        assert!(
-            help.contains("path[:ro]") && help.contains("src:dst[:ro]"),
-            "mount format missing"
-        );
-    }
-
-    // ── Hardline help ───────────────────────────────────────────────────
-
-    #[test]
-    fn hardline_help_shows_examples() {
-        let help = help_text(&["jackin", "hardline", "--help"]);
-        assert!(help.contains("Reattach to a running agent"));
-        assert!(help.contains("jackin hardline agent-smith"));
-        assert!(
-            help.contains("jackin hardline ") && help.contains("auto-detect workspace"),
-            "missing no-arg usage in hardline help: {help}"
-        );
-    }
-
-    #[test]
-    fn parses_hardline_without_selector() {
-        let cli = Cli::try_parse_from(["jackin", "hardline"]).unwrap();
-        assert!(matches!(cli.command, Command::Hardline { selector: None }));
-    }
-
-    #[test]
-    fn parses_hardline_with_selector() {
-        let cli = Cli::try_parse_from(["jackin", "hardline", "agent-smith"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Hardline { selector: Some(ref s) } if s == "agent-smith"
-        ));
-    }
-
-    // ── Eject help ──────────────────────────────────────────────────────
-
-    #[test]
-    fn eject_help_shows_examples() {
-        let help = help_text(&["jackin", "eject", "--help"]);
-        assert!(help.contains("Stop an agent and clean up its container"));
-        assert!(help.contains("jackin eject agent-smith --all"));
-        assert!(help.contains("jackin eject agent-smith --purge"));
-    }
-
-    // ── Purge help ──────────────────────────────────────────────────────
-
-    #[test]
-    fn purge_help_shows_examples() {
-        let help = help_text(&["jackin", "purge", "--help"]);
-        assert!(help.contains("Delete persisted state"));
-        assert!(help.contains("jackin purge agent-smith --all"));
     }
 
     // ── Subcommand banner consistency ───────────────────────────────────

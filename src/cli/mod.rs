@@ -25,6 +25,8 @@ pub(super) const BANNER: &str = concat!(
     "\x1b[0m",
 );
 
+pub mod agent;
+pub mod cleanup;
 pub mod config;
 pub mod root;
 pub mod workspace;
