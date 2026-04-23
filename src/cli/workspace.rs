@@ -139,7 +139,7 @@ Examples:
 
 #[cfg(test)]
 mod tests {
-    use super::super::root::{Cli, Command};
+    use super::super::{Cli, Command};
     use super::*;
     use clap::Parser;
 
