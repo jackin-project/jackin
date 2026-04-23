@@ -256,11 +256,12 @@ This proposal is about a better auth primitive, not about relaxing jackin's secu
 
 At minimum, this design would touch:
 
-- `src/config.rs` — new auth mode and config persistence
-- `src/cli.rs` — help text and examples
-- `src/lib.rs` — `config auth` command handling
-- `src/instance.rs` — auth provisioning semantics for the new mode
-- `src/runtime.rs` — runtime env injection and launch-time warnings
+- `src/config/agents.rs` — auth mode resolution (`resolve_auth_forward_mode`, `set_agent_auth_forward`)
+- `src/config/mod.rs` — `AuthForwardMode` enum, persistence types
+- `src/cli/config.rs` — `config auth` subcommand help text and examples
+- `src/app/mod.rs` — `config auth` command dispatch
+- `src/instance/auth.rs` — auth provisioning semantics for the new mode
+- `src/runtime/launch.rs` — runtime env injection and launch-time warnings
 - `docs/src/content/docs/guides/authentication.mdx` — explain concurrent-session tradeoffs and token mode
 - `docs/src/content/docs/commands/config.mdx` — document setup and mode selection
 - `docs/src/content/docs/reference/configuration.mdx` — config format updates
@@ -274,11 +275,12 @@ At minimum, this design would touch:
 
 ## Related Files
 
-- `src/config.rs` — auth mode definitions and config resolution
-- `src/cli.rs` — `jackin config auth` help text
-- `src/lib.rs` — auth config command handlers
-- `src/instance.rs` — credential forwarding and state preparation
-- `src/runtime.rs` — launch-time env injection and notices
+- `src/config/mod.rs` — `AuthForwardMode` enum, persistence types
+- `src/config/agents.rs` — auth mode resolution
+- `src/cli/config.rs` — `jackin config auth` help text
+- `src/app/mod.rs` — auth config command handlers
+- `src/instance/auth.rs` — credential forwarding and state preparation
+- `src/runtime/launch.rs` — launch-time env injection and notices
 - `docs/src/content/docs/guides/authentication.mdx` — current forwarding model and troubleshooting
 - `docs/src/content/docs/commands/config.mdx` — current operator auth commands
 - `docs/src/content/docs/reference/configuration.mdx` — persisted config schema

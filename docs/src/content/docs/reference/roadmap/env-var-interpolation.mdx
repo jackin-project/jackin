@@ -85,7 +85,9 @@ This needs its own design pass — see [1Password Integration](onepassword-integ
 
 ## Related Files
 
-- `src/manifest.rs` — env var declaration parsing and interpolation validation
+- `src/manifest/mod.rs` — `EnvVarDecl` schema
+- `src/manifest/validate.rs` — env var declaration parsing and interpolation validation
+- `src/env_model.rs` — `extract_interpolation_refs`, `topological_env_order`, reserved-env list
 - `src/env_resolver.rs` — launch-time env var resolution with `${env.VAR}` interpolation
-- `src/config.rs` — operator config and workspace config
-- `src/workspace.rs` — workspace-level overrides
+- `src/config/mod.rs` — operator config types (`AppConfig`, `AgentSource`)
+- `src/workspace/mod.rs` — workspace-level overrides (`WorkspaceConfig`)

@@ -90,6 +90,6 @@ Cons:
 
 ## Related Files
 
-- `src/config.rs` — `resolve_agent_source()`, `AgentSource` would need version/commit fields
-- `src/runtime.rs` — repo checkout logic, calls `resolve_agent_source()`
-- `src/manifest.rs` — version/provenance metadata
+- `src/config/agents.rs` — `resolve_agent_source()`; `AgentSource` (defined in `src/config/mod.rs`) would need version/commit fields
+- `src/runtime/repo_cache.rs` — `resolve_agent_repo`, repo checkout logic; calls into config layer to resolve source
+- `src/manifest/mod.rs` — version/provenance metadata

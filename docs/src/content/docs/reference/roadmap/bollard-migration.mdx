@@ -30,4 +30,7 @@ Docker error messages. This migration would resolve that finding.
 ## Related Files
 
 - `src/docker.rs` — `ShellRunner`, command execution
-- `src/runtime.rs` — `is_missing_cleanup_error()`, all Docker lifecycle calls
+- `src/runtime/cleanup.rs` — `is_missing_cleanup_error()`, orphan GC Docker calls
+- `src/runtime/launch.rs` — `launch_agent_runtime()` Docker run invocation
+- `src/runtime/attach.rs` — `attach_running()`, `inspect_container_state()`
+- `src/runtime/image.rs` — `build_agent_image()` Docker build invocation
