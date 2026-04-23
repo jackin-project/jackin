@@ -352,6 +352,64 @@ impl OpRunner for OpCli {
     }
 }
 
+/// Tracks which layer supplied the currently-winning value for a key.
+///
+/// Used to produce precise error messages during reserved-name
+/// enforcement ("global [env] declares `DOCKER_HOST` which is reserved")
+/// and launch diagnostics ("`OPERATOR_X`: provided by workspace
+/// \"big-monorepo\" [agent override]").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnvLayer {
+    Global,
+    Agent(String),
+    Workspace(String),
+    WorkspaceAgent { workspace: String, agent: String },
+}
+
+impl std::fmt::Display for EnvLayer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Global => write!(f, "global [env]"),
+            Self::Agent(name) => write!(f, "agent {name:?} [env]"),
+            Self::Workspace(name) => write!(f, "workspace {name:?} [env]"),
+            Self::WorkspaceAgent { workspace, agent } => {
+                write!(f, "workspace {workspace:?} → agent {agent:?} [env]")
+            }
+        }
+    }
+}
+
+/// Merge four env layers with later-wins semantics. Keys present in a
+/// later layer overwrite values from earlier layers. Keys unique to any
+/// layer are preserved.
+///
+/// Order, low → high priority:
+///   1. `global`          — `[env]`
+///   2. `agent`           — `[agents.<agent>.env]`
+///   3. `workspace`       — `[workspaces.<ws>.env]`
+///   4. `workspace_agent` — `[workspaces.<ws>.agents.<agent>.env]`
+pub fn merge_layers(
+    global: &std::collections::BTreeMap<String, String>,
+    agent: &std::collections::BTreeMap<String, String>,
+    workspace: &std::collections::BTreeMap<String, String>,
+    workspace_agent: &std::collections::BTreeMap<String, String>,
+) -> std::collections::BTreeMap<String, String> {
+    let mut merged = std::collections::BTreeMap::new();
+    for (k, v) in global {
+        merged.insert(k.clone(), v.clone());
+    }
+    for (k, v) in agent {
+        merged.insert(k.clone(), v.clone());
+    }
+    for (k, v) in workspace {
+        merged.insert(k.clone(), v.clone());
+    }
+    for (k, v) in workspace_agent {
+        merged.insert(k.clone(), v.clone());
+    }
+    merged
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -638,5 +696,75 @@ mod tests {
         // Tests that require fake binaries are cfg-gated to unix; on
         // other platforms they are no-ops because the launch path
         // itself is unix-only in this codebase.
+    }
+
+    use std::collections::BTreeMap;
+
+    fn m(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn merge_empty_layers_returns_empty() {
+        let merged = merge_layers(&m(&[]), &m(&[]), &m(&[]), &m(&[]));
+        assert!(merged.is_empty());
+    }
+
+    #[test]
+    fn merge_global_only() {
+        let merged = merge_layers(&m(&[("A", "1"), ("B", "2")]), &m(&[]), &m(&[]), &m(&[]));
+        assert_eq!(merged.get("A").map(|v| v.as_str()), Some("1"));
+        assert_eq!(merged.get("B").map(|v| v.as_str()), Some("2"));
+    }
+
+    #[test]
+    fn merge_agent_overrides_global() {
+        let merged = merge_layers(
+            &m(&[("A", "global"), ("B", "global")]),
+            &m(&[("B", "agent")]),
+            &m(&[]),
+            &m(&[]),
+        );
+        assert_eq!(merged.get("A").map(|v| v.as_str()), Some("global"));
+        assert_eq!(merged.get("B").map(|v| v.as_str()), Some("agent"));
+    }
+
+    #[test]
+    fn merge_workspace_overrides_agent() {
+        let merged = merge_layers(
+            &m(&[("A", "global")]),
+            &m(&[("A", "agent")]),
+            &m(&[("A", "workspace")]),
+            &m(&[]),
+        );
+        assert_eq!(merged.get("A").map(|v| v.as_str()), Some("workspace"));
+    }
+
+    #[test]
+    fn merge_workspace_agent_overrides_workspace() {
+        let merged = merge_layers(
+            &m(&[("A", "global")]),
+            &m(&[("A", "agent")]),
+            &m(&[("A", "workspace")]),
+            &m(&[("A", "ws-agent")]),
+        );
+        assert_eq!(merged.get("A").map(|v| v.as_str()), Some("ws-agent"));
+    }
+
+    #[test]
+    fn merge_preserves_non_overlapping_keys_across_layers() {
+        let merged = merge_layers(
+            &m(&[("G", "g")]),
+            &m(&[("A", "a")]),
+            &m(&[("W", "w")]),
+            &m(&[("X", "x")]),
+        );
+        assert_eq!(merged.get("G").map(|v| v.as_str()), Some("g"));
+        assert_eq!(merged.get("A").map(|v| v.as_str()), Some("a"));
+        assert_eq!(merged.get("W").map(|v| v.as_str()), Some("w"));
+        assert_eq!(merged.get("X").map(|v| v.as_str()), Some("x"));
     }
 }
