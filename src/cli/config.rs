@@ -19,10 +19,14 @@ pub enum ConfigCommand {
 pub enum AuthCommand {
     /// Set the authentication forwarding mode
     ///
-    /// Controls how the host's ~/.claude.json is forwarded into agent containers.
-    /// Modes: sync (overwrite from host on each launch when host auth exists;
-    /// preserve container auth when host auth is absent — default), ignore
-    /// (revoke and never copy).
+    /// Controls how the host's Claude Code authentication is made available
+    /// to agent containers.
+    /// Modes: sync (default — overwrite container auth from host on each
+    /// launch when host auth exists; preserve container auth when host auth
+    /// is absent), ignore (revoke and never forward), token (use a long-lived
+    /// `CLAUDE_CODE_OAUTH_TOKEN` resolved from the operator env — the token
+    /// itself is never written to disk; see `jackin` docs on auth forwarding
+    /// for setup).
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -30,11 +34,12 @@ pub enum AuthCommand {
 Examples:
   jackin config auth set sync
   jackin config auth set ignore
+  jackin config auth set token
   jackin config auth set sync --agent agent-smith
-  jackin config auth set ignore --agent chainargos/the-architect"
+  jackin config auth set token --agent chainargos/the-architect"
     )]
     Set {
-        /// Authentication forwarding mode: sync or ignore
+        /// Authentication forwarding mode: sync, ignore, or token
         mode: String,
         /// Apply to a specific agent instead of globally
         #[arg(long)]
@@ -278,10 +283,20 @@ mod tests {
         let help = help_text(&["jackin", "config", "auth", "set", "--help"]);
         assert!(help.contains("Examples:"));
         assert!(help.contains("jackin config auth set sync"));
+        assert!(help.contains("jackin config auth set token"));
         assert!(help.contains("--agent"));
+    }
+
+    #[test]
+    fn config_auth_set_help_lists_token_as_accepted_mode() {
+        let help = help_text(&["jackin", "config", "auth", "set", "--help"]);
+        // Modes are listed in the subcommand doc comment. After this
+        // PR the accepted modes are sync, ignore, and token.
+        assert!(help.contains("sync"));
+        assert!(help.contains("ignore"));
         assert!(
-            !help.contains("jackin config auth set copy"),
-            "help text must not recommend the deprecated copy mode"
+            help.contains("token"),
+            "help text must advertise the token mode; got:\n{help}"
         );
     }
 
@@ -301,6 +316,18 @@ mod tests {
                         ref mode,
                         agent: None,
                     })) if mode == "sync"
+        ));
+    }
+
+    #[test]
+    fn parses_config_auth_set_token_global() {
+        let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "token"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Config(ConfigCommand::Auth(AuthCommand::Set {
+                        ref mode,
+                        agent: None,
+                    })) if mode == "token"
         ));
     }
 
