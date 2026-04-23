@@ -326,14 +326,11 @@ pub(crate) fn remember_last_agent(
     if !config.workspaces.contains_key(workspace_name) {
         return;
     }
-    // Flush the current in-memory state to disk so the editor opens a
-    // document that contains all workspace fields. Without this, a workspace
-    // that exists only in memory (e.g. in tests, or on first load) would
-    // produce a partial TOML entry that fails deserialization after save.
-    if let Err(error) = paths.ensure_base_dirs().and_then(|()| config.save(paths)) {
-        eprintln!("warning: failed to save last-used agent: {error}");
-        return;
-    }
+    // Production callers always reach this point with the config already
+    // persisted on disk (it was loaded from disk at startup, and every
+    // mutation flows through ConfigEditor). Tests that construct an
+    // AppConfig purely in memory must persist it before calling this
+    // function — see `remember_last_agent_persists_successful_loads`.
     let mut editor = match crate::config::ConfigEditor::open(paths) {
         Ok(editor) => editor,
         Err(error) => {
@@ -724,17 +721,22 @@ mod tests {
         assert!(err.contains("no saved workspace matches"), "got: {err}");
     }
 
-    #[test]
-    fn remember_last_agent_persists_successful_loads() {
-        let temp = tempfile::tempdir().unwrap();
-        let paths = paths::JackinPaths::for_tests(temp.path());
+    /// Test helper: construct a minimal workspace-containing AppConfig,
+    /// persist it to disk at the expected config path, and return the
+    /// live in-memory copy. Matches the production invariant that
+    /// `remember_last_agent` observes: the config is already on disk.
+    fn persisted_config_with_workspace(
+        paths: &paths::JackinPaths,
+        temp_path: &std::path::Path,
+    ) -> config::AppConfig {
+        paths.ensure_base_dirs().unwrap();
         let mut config = config::AppConfig::default();
         config.workspaces.insert(
             "my-app".to_string(),
             workspace::WorkspaceConfig {
                 workdir: "/workspace".to_string(),
                 mounts: vec![workspace::MountConfig {
-                    src: temp.path().display().to_string(),
+                    src: temp_path.display().to_string(),
                     dst: "/workspace".to_string(),
                     readonly: false,
                 }],
@@ -745,6 +747,16 @@ mod tests {
                 agents: std::collections::BTreeMap::new(),
             },
         );
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        std::fs::write(&paths.config_file, serialized).unwrap();
+        config
+    }
+
+    #[test]
+    fn remember_last_agent_persists_successful_loads() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let mut config = persisted_config_with_workspace(&paths, temp.path());
 
         remember_last_agent(
             &paths,
@@ -767,23 +779,7 @@ mod tests {
     fn remember_last_agent_skips_failed_loads() {
         let temp = tempfile::tempdir().unwrap();
         let paths = paths::JackinPaths::for_tests(temp.path());
-        let mut config = config::AppConfig::default();
-        config.workspaces.insert(
-            "my-app".to_string(),
-            workspace::WorkspaceConfig {
-                workdir: "/workspace".to_string(),
-                mounts: vec![workspace::MountConfig {
-                    src: temp.path().display().to_string(),
-                    dst: "/workspace".to_string(),
-                    readonly: false,
-                }],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
-            },
-        );
+        let mut config = persisted_config_with_workspace(&paths, temp.path());
 
         remember_last_agent(
             &paths,
