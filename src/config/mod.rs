@@ -18,16 +18,14 @@ const fn is_false(v: &bool) -> bool {
 }
 
 /// Controls how the host's `~/.claude.json` is forwarded into agent containers.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthForwardMode {
     /// Revoke any forwarded auth and never copy — container starts with `{}`.
     Ignore,
-    /// Copy host auth on first container creation only; never overwrite afterwards.
-    #[default]
-    Copy,
     /// Overwrite container auth from host on each launch when host auth
     /// exists; preserve container auth when host auth is absent.
+    #[default]
     Sync,
 }
 
@@ -35,7 +33,6 @@ impl std::fmt::Display for AuthForwardMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Ignore => write!(f, "ignore"),
-            Self::Copy => write!(f, "copy"),
             Self::Sync => write!(f, "sync"),
         }
     }
@@ -45,14 +42,33 @@ impl std::str::FromStr for AuthForwardMode {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // `"copy"` is kept as a separate arm (rather than merged with `"sync"`)
+        // so callers can pattern-match the literal when emitting a deprecation
+        // warning before calling `parse()`.
+        #[allow(clippy::match_same_arms)]
         match s {
             "ignore" => Ok(Self::Ignore),
-            "copy" => Ok(Self::Copy),
             "sync" => Ok(Self::Sync),
+            // Deprecated alias — accepted to avoid breaking scripts and
+            // configs from before the default flipped to `sync`. Callers
+            // that want to surface the deprecation should check for the
+            // literal `"copy"` themselves before calling `parse()`.
+            "copy" => Ok(Self::Sync),
             other => Err(format!(
-                "invalid auth_forward mode {other:?}; expected one of: ignore, copy, sync"
+                "invalid auth_forward mode {other:?}; expected one of: sync, ignore"
             )),
         }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for AuthForwardMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+        let raw = String::deserialize(deserializer)?;
+        raw.parse().map_err(D::Error::custom)
     }
 }
 
@@ -315,10 +331,10 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.claude.auth_forward, AuthForwardMode::Copy);
+        assert_eq!(config.claude.auth_forward, AuthForwardMode::Sync);
         assert_eq!(
             config.resolve_auth_forward_mode("agent-smith"),
-            AuthForwardMode::Copy
+            AuthForwardMode::Sync
         );
     }
 
@@ -597,5 +613,54 @@ trusted = true
                 },
             )
             .unwrap();
+    }
+
+    #[test]
+    fn auth_forward_mode_default_is_sync() {
+        assert_eq!(AuthForwardMode::default(), AuthForwardMode::Sync);
+    }
+
+    #[test]
+    fn auth_forward_mode_from_str_accepts_copy_as_deprecated_alias() {
+        use std::str::FromStr;
+        assert_eq!(
+            AuthForwardMode::from_str("copy").unwrap(),
+            AuthForwardMode::Sync
+        );
+    }
+
+    #[test]
+    fn auth_forward_mode_from_str_accepts_sync_and_ignore() {
+        use std::str::FromStr;
+        assert_eq!(
+            AuthForwardMode::from_str("sync").unwrap(),
+            AuthForwardMode::Sync
+        );
+        assert_eq!(
+            AuthForwardMode::from_str("ignore").unwrap(),
+            AuthForwardMode::Ignore
+        );
+    }
+
+    #[test]
+    fn auth_forward_mode_from_str_rejects_unknown_values() {
+        use std::str::FromStr;
+        assert!(AuthForwardMode::from_str("bogus").is_err());
+    }
+
+    #[test]
+    fn auth_forward_mode_deserializes_copy_to_sync() {
+        let toml_str = r#"
+[claude]
+auth_forward = "copy"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.claude.auth_forward, AuthForwardMode::Sync);
+    }
+
+    #[test]
+    fn auth_forward_mode_display_does_not_emit_copy() {
+        assert_eq!(AuthForwardMode::Sync.to_string(), "sync");
+        assert_eq!(AuthForwardMode::Ignore.to_string(), "ignore");
     }
 }

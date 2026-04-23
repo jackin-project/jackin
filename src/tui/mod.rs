@@ -24,7 +24,7 @@ pub mod prompt;
 
 pub use animation::{intro_animation, outro_animation, simple_outro};
 pub use output::{
-    clear_screen, fatal, hint, print_config_table, print_deploying, print_logo, set_terminal_title,
-    shorten_home, step_fail, step_quiet, step_shimmer,
+    clear_screen, deprecation_warning, fatal, hint, print_config_table, print_deploying,
+    print_logo, set_terminal_title, shorten_home, step_fail, step_quiet, step_shimmer,
 };
 pub use prompt::{prompt_choice, require_interactive_stdin, spin_wait};

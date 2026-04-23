@@ -15,10 +15,8 @@ use plugins::PluginState;
 /// a one-time notice when host credentials are forwarded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthProvisionOutcome {
-    /// No host auth was forwarded (ignore mode, or copy mode with existing file).
+    /// No host auth was forwarded (ignore mode).
     Skipped,
-    /// Host auth was copied into the container state.
-    Copied,
     /// Host auth was synced (overwritten) into the container state.
     Synced,
     /// Mode would have forwarded, but host file was missing — wrote `{}`.

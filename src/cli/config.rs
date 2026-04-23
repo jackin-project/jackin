@@ -20,22 +20,21 @@ pub enum AuthCommand {
     /// Set the authentication forwarding mode
     ///
     /// Controls how the host's ~/.claude.json is forwarded into agent containers.
-    /// Modes: ignore (revoke and never copy), copy (copy on first creation, default),
-    /// sync (overwrite from host on each launch when host auth exists; preserve
-    /// container auth when host auth is absent).
+    /// Modes: sync (overwrite from host on each launch when host auth exists;
+    /// preserve container auth when host auth is absent — default), ignore
+    /// (revoke and never copy).
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
-  jackin config auth set copy
   jackin config auth set sync
   jackin config auth set ignore
-  jackin config auth set copy --agent agent-smith
-  jackin config auth set sync --agent chainargos/the-architect"
+  jackin config auth set sync --agent agent-smith
+  jackin config auth set ignore --agent chainargos/the-architect"
     )]
     Set {
-        /// Authentication forwarding mode: ignore, copy, or sync
+        /// Authentication forwarding mode: sync or ignore
         mode: String,
         /// Apply to a specific agent instead of globally
         #[arg(long)]
@@ -278,8 +277,12 @@ mod tests {
     fn config_auth_set_help_shows_examples() {
         let help = help_text(&["jackin", "config", "auth", "set", "--help"]);
         assert!(help.contains("Examples:"));
-        assert!(help.contains("jackin config auth set copy"));
+        assert!(help.contains("jackin config auth set sync"));
         assert!(help.contains("--agent"));
+        assert!(
+            !help.contains("jackin config auth set copy"),
+            "help text must not recommend the deprecated copy mode"
+        );
     }
 
     #[test]
@@ -291,13 +294,13 @@ mod tests {
 
     #[test]
     fn parses_config_auth_set_global() {
-        let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "copy"]).unwrap();
+        let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "sync"]).unwrap();
         assert!(matches!(
             cli.command,
             Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
                         agent: None,
-                    })) if mode == "copy"
+                    })) if mode == "sync"
         ));
     }
 

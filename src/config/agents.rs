@@ -45,7 +45,7 @@ impl AppConfig {
 
     /// Resolve the effective `AuthForwardMode` for a given agent.
     ///
-    /// Resolution order: per-agent override → global default → `Copy`.
+    /// Resolution order: per-agent override → global default → `Sync`.
     pub fn resolve_auth_forward_mode(&self, agent_key: &str) -> AuthForwardMode {
         self.agents
             .get(agent_key)
@@ -343,9 +343,9 @@ git = "https://github.com/jackin-project/jackin-the-architect.git"
     // ── Auth forwarding config tests ────────────────────────────────────
 
     #[test]
-    fn auth_forward_defaults_to_copy() {
+    fn auth_forward_defaults_to_sync() {
         let config = AppConfig::default();
-        assert_eq!(config.claude.auth_forward, AuthForwardMode::Copy);
+        assert_eq!(config.claude.auth_forward, AuthForwardMode::Sync);
     }
 
     #[test]
@@ -379,11 +379,11 @@ auth_forward = "ignore"
     }
 
     #[test]
-    fn resolve_auth_forward_defaults_to_copy() {
+    fn resolve_auth_forward_defaults_to_sync() {
         let config = AppConfig::default();
         assert_eq!(
             config.resolve_auth_forward_mode("nonexistent"),
-            AuthForwardMode::Copy
+            AuthForwardMode::Sync
         );
     }
 

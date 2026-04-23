@@ -654,12 +654,6 @@ fn load_agent_with(
         )?;
 
         match auth_outcome {
-            crate::instance::AuthProvisionOutcome::Copied => {
-                eprintln!(
-                    "[jackin] Copied host Claude Code authentication into agent state \
-                     (auth_forward=copy). Use `jackin config auth set ignore` to disable."
-                );
-            }
             crate::instance::AuthProvisionOutcome::Synced => {
                 eprintln!(
                     "[jackin] Synced host Claude Code authentication into agent state \
@@ -667,12 +661,6 @@ fn load_agent_with(
                 );
             }
             crate::instance::AuthProvisionOutcome::HostMissing => match auth_mode {
-                crate::config::AuthForwardMode::Copy => {
-                    eprintln!(
-                        "[jackin] auth_forward=copy but no host credentials found; \
-                             agent will need to authenticate manually via /login."
-                    );
-                }
                 crate::config::AuthForwardMode::Sync => {
                     eprintln!(
                         "[jackin] auth_forward=sync but no host credentials found; \

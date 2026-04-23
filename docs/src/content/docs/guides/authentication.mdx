@@ -22,23 +22,16 @@ Since the `.claude/` directory and `.claude.json` file are bind-mounted into the
 
 ## Auth forwarding modes
 
-jackin' supports three modes, configurable globally or per-agent:
+jackin' supports two modes, configurable globally or per-agent:
 
 | Mode | Behavior |
 |---|---|
-| `copy` (default) | Copy host auth on first container creation only. Never overwrite afterwards — the container keeps its own auth state. |
-| `sync` | When host auth exists, overwrite container auth on each launch. When host auth is absent, preserve existing container auth. |
+| `sync` (default) | When host auth exists, overwrite container auth on each launch. When host auth is absent, preserve existing container auth. |
 | `ignore` | Never forward host auth. Revoke any previously forwarded credentials. The agent authenticates itself via `/login`. |
-
-### copy (default)
-
-The `copy` mode seeds credentials once when the agent state is first created. After that, the container owns its auth — restarting the agent, refreshing host tokens, or even logging out on the host does not affect the container.
-
-This is the safest default: the agent gets a working session without manual login, and there's no risk of the host overwriting container-local auth changes.
 
 ### sync
 
-The `sync` mode re-copies host credentials on every launch. Use this when you want agents to always reflect the host's current account — for example, if you rotate credentials frequently or switch between organizations.
+The `sync` mode is the default. It re-copies host credentials on every launch. Use this when you want agents to always reflect the host's current account — for example, if you rotate credentials frequently or switch between organizations.
 
 When the host's `~/.claude.json` or credentials are missing (e.g. you logged out), `sync` preserves the container's existing auth rather than wiping it. This prevents accidental de-authentication from a missing file.
 
@@ -48,14 +41,25 @@ The `ignore` mode is the legacy behavior — the container starts with an empty 
 
 Switching an agent from `copy` or `sync` to `ignore` actively revokes any previously forwarded credentials by resetting `.claude.json` to `{}` and deleting `.credentials.json`.
 
+### `copy` (deprecated)
+
+The `copy` mode — "copy host auth on first container creation only; never overwrite afterwards" — was jackin's previous default. It caused subtle auth drift when OAuth refresh tokens rotated across concurrent Claude Code sessions on the host and in containers, surfacing as intermittent `API Error: 401` inside agents.
+
+It was removed in favor of `sync`. On the first launch after upgrading, jackin automatically rewrites any `auth_forward = "copy"` entries in your config to `"sync"` and prints a one-line deprecation notice:
+
+```
+warning: migrated auth_forward "copy" → "sync" in ~/.config/jackin/config.toml (copy is deprecated)
+```
+
+Scripts or invocations that still pass `copy` to `jackin config auth set` continue to work — the value is accepted as a deprecated alias and saved as `sync`.
+
 ## Configuration
 
 ### Set the global default
 
 ```bash
-jackin config auth set copy     # default — copy on first creation
-jackin config auth set sync     # overwrite from host on each launch
-jackin config auth set ignore   # never forward (legacy behavior)
+jackin config auth set sync     # default — overwrite from host on each launch
+jackin config auth set ignore   # never forward
 ```
 
 ### Override per agent
@@ -80,7 +84,7 @@ jackin config auth show --agent agent-smith
 ```toml
 # Global default
 [claude]
-auth_forward = "copy"
+auth_forward = "sync"
 
 # Per-agent override
 [agents.agent-smith]
@@ -91,7 +95,7 @@ trusted = true
 auth_forward = "ignore"
 ```
 
-Resolution order: **per-agent override > global default > `copy`**.
+Resolution order: **per-agent override > global default > `sync`**.
 
 <Aside type="note">
 Auth forwarding is an operator-level setting. Agent manifests (`jackin.agent.toml`) cannot set or override this — it is always the operator's decision.
@@ -123,9 +127,9 @@ Auth forwarding copies OAuth tokens to the container's filesystem. While the fil
 
 If the agent shows "Not logged in" or falls back to a different model tier (e.g. Sonnet instead of Opus), the credentials may not have been forwarded. Check:
 
-1. **Is auth forwarding enabled?** Run `jackin config auth show` — the default is `copy`.
+1. **Is auth forwarding enabled?** Run `jackin config auth show` — the default is `sync`.
 2. **Does the host have credentials?** On macOS, check `security find-generic-password -s "Claude Code-credentials" -w`. On Linux, check `~/.claude/.credentials.json`.
-3. **Is this a pre-existing container?** In `copy` mode, credentials are only forwarded on first creation. If the container already exists, either switch to `sync` mode or purge and recreate: `jackin purge <agent> && jackin load <agent>`.
+3. **Is this a pre-existing container?** In `sync` mode, host credentials are forwarded on every launch — but if the host has no credentials, the container's existing auth is preserved. If the container has stale auth and the host has fresh auth, restart the container (`jackin eject <agent> && jackin load <agent>`) or purge state (`jackin purge <agent>`) to force a fresh sync.
 
 ### Revoking forwarded credentials
 

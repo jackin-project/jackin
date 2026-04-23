@@ -139,6 +139,17 @@ pub fn fatal(msg: &str) {
     );
 }
 
+/// One-line yellow deprecation warning to stderr. Used for soft-migration
+/// notices like "config field X is deprecated — migrated to Y".
+pub fn deprecation_warning(msg: &str) {
+    const AMBER: (u8, u8, u8) = (230, 180, 80);
+    eprintln!(
+        "  {} {}",
+        "warning:".color(rgb(AMBER)).bold(),
+        msg.color(rgb(AMBER)),
+    );
+}
+
 pub fn set_terminal_title(title: &str) {
     eprint!("\x1b]0;jackin' \u{00b7} {title}\x07");
     let _ = io::stderr().flush();
