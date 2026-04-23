@@ -176,9 +176,7 @@ pub fn run(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
-        Command::Config {
-            command: config_cmd,
-        } => match config_cmd {
+        Command::Config(config_cmd) => match config_cmd {
             cli::ConfigCommand::Mount { command: mount_cmd } => match mount_cmd {
                 cli::MountCommand::Add {
                     name,
@@ -321,7 +319,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
             },
         },
-        Command::Workspace { command } => match command {
+        Command::Workspace(command) => match command {
             WorkspaceCommand::Create {
                 name,
                 workdir,

@@ -1,6 +1,27 @@
 use clap::Args;
 
+use super::{BANNER, HELP_STYLES};
+
+/// Jack an agent into an isolated container
+///
+/// TARGET can be a path (~/Projects/my-app), a path with container
+/// destination (~/Projects/my-app:/app), or a saved workspace name.
+/// When omitted, the current directory is used.
 #[derive(Debug, Args, PartialEq, Eq)]
+#[command(
+    before_help = BANNER,
+    styles = HELP_STYLES,
+    after_long_help = "\
+Examples:
+  jackin load                                          # use workspace + last agent for cwd
+  jackin load --rebuild                                # same, with fresh Claude install
+  jackin load agent-smith
+  jackin load agent-smith ~/Projects/my-app
+  jackin load agent-smith ~/Projects/my-app:/app
+  jackin load agent-smith big-monorepo
+  jackin load agent-smith big-monorepo --mount ~/extra-data
+  jackin load agent-smith ~/app --mount ~/cache:/cache:ro"
+)]
 pub struct LoadArgs {
     /// Agent class selector (e.g. `agent-smith`, `chainargos/agent-brown`).
     /// When omitted, uses the last-used or default agent for the workspace.
@@ -22,14 +43,30 @@ pub struct LoadArgs {
     pub debug: bool,
 }
 
+/// Reattach to a running agent's session
+///
+/// When omitted, finds the saved workspace for the current directory and
+/// reconnects to a running agent container belonging to it.
 #[derive(Debug, Args, PartialEq, Eq)]
+#[command(
+    before_help = BANNER,
+    styles = HELP_STYLES,
+    after_long_help = "\
+Examples:
+  jackin hardline                              # auto-detect workspace + running agent for cwd
+  jackin hardline agent-smith
+  jackin hardline chainargos/the-architect
+  jackin hardline jackin-agent-smith-clone-1"
+)]
 pub struct HardlineArgs {
     /// Agent class selector or container name to reconnect to.
     /// When omitted, uses the running agent in the workspace for the current directory.
     pub selector: Option<String>,
 }
 
+/// Open the interactive TUI launcher to pick a workspace and agent
 #[derive(Debug, Args, PartialEq, Eq)]
+#[command(before_help = BANNER, styles = HELP_STYLES)]
 pub struct LaunchArgs {
     /// Print raw container output for troubleshooting
     #[arg(long, default_value_t = false)]
