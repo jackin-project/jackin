@@ -34,6 +34,11 @@ impl AppConfig {
             config.save(paths)?;
         }
 
+        // Reject operator env maps that declare reserved runtime names.
+        // Runs at load, before validate_workspaces, so misconfigurations
+        // fail fast regardless of which subcommand is about to execute.
+        crate::operator_env::validate_reserved_names(&config)?;
+
         config.validate_workspaces()?;
         Ok(config)
     }
@@ -195,6 +200,29 @@ auth_forward = "copy"
 
         let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(!persisted.contains("auth_forward = \"copy\""));
+    }
+
+    #[test]
+    fn load_or_init_rejects_reserved_env_name_in_global_layer() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+DOCKER_HOST = "override-attempt"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+"#,
+        )
+        .unwrap();
+
+        let err = AppConfig::load_or_init(&paths).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("DOCKER_HOST"), "{msg}");
+        assert!(msg.contains("reserved"), "{msg}");
+        assert!(msg.contains("global"), "{msg}");
     }
 
     #[test]

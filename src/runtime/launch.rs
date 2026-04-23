@@ -24,24 +24,39 @@ pub struct LoadOptions {
     pub no_intro: bool,
     pub debug: bool,
     pub rebuild: bool,
+
+    /// Optional test seam: inject a custom `OpRunner` for `op://`
+    /// resolution. `None` (the production default) means
+    /// `resolve_operator_env` picks the default `OpCli::new()`.
+    pub op_runner: Option<Box<dyn crate::operator_env::OpRunner>>,
+
+    /// Optional test seam: inject a host-env lookup map. `None` (the
+    /// production default) means `resolve_operator_env` reads from
+    /// `std::env::var`. When `Some(map)`, `$NAME` / `${NAME}`
+    /// references are resolved by looking up `name` in `map`.
+    pub host_env: Option<std::collections::BTreeMap<String, String>>,
 }
 
 impl LoadOptions {
     /// Build options for `jackin load`. Debug mode implies `no_intro`.
-    pub const fn for_load(no_intro: bool, debug: bool, rebuild: bool) -> Self {
+    pub fn for_load(no_intro: bool, debug: bool, rebuild: bool) -> Self {
         Self {
             no_intro: no_intro || debug,
             debug,
             rebuild,
+            op_runner: None,
+            host_env: None,
         }
     }
 
     /// Build options for `jackin launch`. Debug mode implies `no_intro`.
-    pub const fn for_launch(debug: bool) -> Self {
+    pub fn for_launch(debug: bool) -> Self {
         Self {
             no_intro: debug,
             debug,
             rebuild: false,
+            op_runner: None,
+            host_env: None,
         }
     }
 }
@@ -52,6 +67,8 @@ impl Default for LoadOptions {
             no_intro: true,
             debug: false,
             rebuild: false,
+            op_runner: None,
+            host_env: None,
         }
     }
 }
@@ -606,12 +623,95 @@ fn load_agent_with(
     eprintln!();
 
     // Resolve env vars (interactive prompts happen here, before build)
-    let resolved_env = if validated_repo.manifest.env.is_empty() {
+    let manifest_resolved = if validated_repo.manifest.env.is_empty() {
         crate::env_resolver::ResolvedEnv { vars: vec![] }
     } else {
         let prompter = crate::terminal_prompter::TerminalPrompter;
         crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
     };
+
+    // Resolve operator env layers (global / agent / workspace /
+    // workspace × agent). op:// refs shell out to `op`; $NAME refs
+    // read the host env. Failures are aggregated into a single error.
+    //
+    // Workspace name: the launch pipeline does not currently pass a
+    // workspace *name* down into load_agent — only a ResolvedWorkspace
+    // (mounts + workdir). Look up the name by scanning config.workspaces
+    // for the entry whose workdir matches; this matches the same
+    // identification rule used by `jackin workspace show`.
+    let workspace_name = config
+        .workspaces
+        .iter()
+        .find(|(_, w)| w.workdir == workspace.workdir)
+        .map(|(name, _)| name.clone());
+
+    // The operator env resolver takes two injection seams:
+    //   * `op_runner`  — resolves `op://...` references (production:
+    //     `OpCli::new()`; tests: a mock `OpRunner` constructed directly).
+    //   * `host_env`   — resolves `$NAME` / `${NAME}` references
+    //     (production: `|name| std::env::var(name).ok()`; tests: a
+    //     closure over a `BTreeMap` seeded by the test).
+    //
+    // Both seams are carried on `LoadOptions` as optional fields. When
+    // unset (the production default), `resolve_operator_env` is called,
+    // which wires in the real `OpCli` and the real host env. When set
+    // (tests only), `resolve_operator_env_with` is called with the
+    // supplied seams, so tests never need to mutate `std::env` and the
+    // crate-level `unsafe_code = "forbid"` lint stays intact.
+    let operator_env = if opts.op_runner.is_none() && opts.host_env.is_none() {
+        crate::operator_env::resolve_operator_env(
+            config,
+            Some(&selector.key()),
+            workspace_name.as_deref(),
+        )?
+    } else {
+        let default_runner = crate::operator_env::OpCli::new();
+        let runner: &dyn crate::operator_env::OpRunner =
+            opts.op_runner.as_deref().unwrap_or(&default_runner);
+        let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
+            opts.host_env.as_ref().map_or_else(
+                || std::env::var(name),
+                |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
+            )
+        };
+        crate::operator_env::resolve_operator_env_with(
+            config,
+            Some(&selector.key()),
+            workspace_name.as_deref(),
+            runner,
+            host_env_fn,
+        )?
+    };
+
+    // Overlay the operator env map on top of the manifest env: operator
+    // wins on conflicts (so a workspace-scoped `OPERATOR_TOKEN` overrides
+    // a manifest default, which is the whole point of letting operators
+    // supply env at launch time). Reserved names are filtered out in
+    // the docker-run construction below.
+    let mut merged_vars: Vec<(String, String)> = manifest_resolved.vars;
+    for (k, v) in &operator_env {
+        if let Some(slot) = merged_vars.iter_mut().find(|(mk, _)| mk == k) {
+            slot.1.clone_from(v);
+        } else {
+            merged_vars.push((k.clone(), v.clone()));
+        }
+    }
+    let resolved_env = crate::env_resolver::ResolvedEnv { vars: merged_vars };
+
+    // Launch-time diagnostic: emit a single compact line summarising
+    // the operator env that will be injected. In normal mode we show
+    // counts only ("3 refs resolved"); in --debug mode we show each
+    // key → layer/reference kind ("OPERATOR_TOKEN: op://Personal/...
+    // from workspace \"big-monorepo\"") — never values.
+    if !operator_env.is_empty() {
+        crate::operator_env::print_launch_diagnostic(
+            config,
+            Some(&selector.key()),
+            workspace_name.as_deref(),
+            &operator_env,
+            opts.debug,
+        );
+    }
 
     let load_result = (|| -> anyhow::Result<String> {
         // Step 2: Build Docker image
@@ -876,6 +976,7 @@ mod tests {
             git: "https://github.com/evil-org/jackin-backdoor.git".to_string(),
             trusted: false,
             claude: None,
+            env: std::collections::BTreeMap::new(),
         };
 
         let error = confirm_agent_trust(&selector, &source).unwrap_err();
@@ -1765,5 +1866,344 @@ plugins = []
         let opts = LoadOptions::for_launch(false);
         assert!(!opts.no_intro, "intro should play when debug is off");
         assert!(!opts.debug);
+    }
+
+    #[test]
+    fn load_agent_injects_global_operator_env_literal() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        // Seed a config.toml with a global operator env map.
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+OPERATOR_SMOKE = "smoke-literal"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("-e OPERATOR_SMOKE=smoke-literal"),
+            "docker run must inject operator env; got: {run_cmd}"
+        );
+    }
+
+    #[test]
+    fn load_agent_operator_env_overrides_manifest_env() {
+        // Spec: on conflict between manifest-declared env and operator
+        // env, operator wins. The manifest below declares OPERATOR_SMOKE
+        // as a literal "manifest-default"; the global operator env
+        // declares the same key as "operator-wins". The docker run
+        // command must inject the operator value.
+        //
+        // The `[env.OPERATOR_SMOKE]` manifest shape below matches the
+        // existing EnvEntry schema in `src/env_model.rs` — if that
+        // schema has diverged (e.g. `kind`/`default` field names), the
+        // implementer should update the TOML fixture to match the
+        // current schema; the test's *assertions* (operator-wins /
+        // manifest-default not present) are unchanged.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+OPERATOR_SMOKE = "operator-wins"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[env.OPERATOR_SMOKE]
+default = "manifest-default"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("-e OPERATOR_SMOKE=operator-wins"),
+            "operator env must win over manifest env on conflict; got: {run_cmd}"
+        );
+        assert!(
+            !run_cmd.contains("-e OPERATOR_SMOKE=manifest-default"),
+            "manifest value must NOT leak when operator overrides it; got: {run_cmd}"
+        );
+    }
+
+    #[test]
+    fn load_agent_injects_host_ref_operator_env() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        // No process-env mutation anywhere — the host env for the
+        // resolver is supplied via `LoadOptions::host_env`, a plain
+        // `BTreeMap<String, String>`. This keeps the test free of
+        // any `std::env` write, which the crate-level
+        // `unsafe_code = "forbid"` lint forbids.
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+FROM_HOST = "$JACKIN_PR2_SMOKE_HOST_VAR"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let mut host_env = std::collections::BTreeMap::new();
+        host_env.insert(
+            "JACKIN_PR2_SMOKE_HOST_VAR".to_string(),
+            "from-host-env".to_string(),
+        );
+
+        let opts = LoadOptions {
+            host_env: Some(host_env),
+            ..LoadOptions::default()
+        };
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &opts,
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("-e FROM_HOST=from-host-env"),
+            "host-ref operator env must resolve and inject; got: {run_cmd}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_agent_injects_op_cli_resolved_value() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        let bin_dir = temp.path().join("fake-bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let bin_path = bin_dir.join("op");
+        // The resolver first runs `op --version` as a reachability probe
+        // when any value carries the `op://` scheme, then calls
+        // `op read op://...`. The fake must handle both.
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://Personal/api/token\" ]; then echo -n 'resolved-op-token'; exit 0; fi\nexit 99\n",
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&bin_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&bin_path, perms).unwrap();
+
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+OPERATOR_TOKEN = "op://Personal/api/token"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        // Inject the fake `op` binary path via `LoadOptions::op_runner`.
+        // No process env mutation — `OpCli::with_binary` takes the path
+        // as a direct argument, so the `unsafe_code = "forbid"`
+        // crate-level lint stays intact and sibling tests running in
+        // parallel via cargo-nextest cannot race on any shared env var.
+        let op_runner: Box<dyn crate::operator_env::OpRunner> = Box::new(
+            crate::operator_env::OpCli::with_binary(bin_path.to_string_lossy().to_string()),
+        );
+        let opts = LoadOptions {
+            op_runner: Some(op_runner),
+            ..LoadOptions::default()
+        };
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &opts,
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("-e OPERATOR_TOKEN=resolved-op-token"),
+            "op:// ref must resolve via the injected OpCli and inject; got: {run_cmd}"
+        );
     }
 }

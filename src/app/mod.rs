@@ -379,6 +379,8 @@ pub fn run(cli: Cli) -> Result<()> {
                         allowed_agents,
                         default_agent,
                         last_agent: None,
+                        env: std::collections::BTreeMap::new(),
+                        agents: std::collections::BTreeMap::new(),
                     },
                 )?;
                 config.save(&paths)?;

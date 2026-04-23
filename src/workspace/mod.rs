@@ -37,6 +37,27 @@ pub struct WorkspaceConfig {
     pub default_agent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_agent: Option<String>,
+    /// Workspace-level operator env map. Keys are env var names;
+    /// values use the `operator_env` dispatch syntax
+    /// (`op://...` | `$NAME` | `${NAME}` | literal).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub env: std::collections::BTreeMap<String, String>,
+    /// Per-(workspace × agent) env overrides, keyed by the agent
+    /// selector (e.g. `"agent-smith"` or `"chainargos/agent-brown"`).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub agents: std::collections::BTreeMap<String, WorkspaceAgentOverride>,
+}
+
+/// Per-(workspace × agent) operator overrides.
+///
+/// Currently only `env` is supported; the struct exists as a named type
+/// so future overrides (e.g. `auth_forward`) can be added without a
+/// TOML schema break.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceAgentOverride {
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub env: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -106,6 +127,8 @@ mod tests {
             allowed_agents: vec![],
             default_agent: None,
             last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
         }
     }
 
@@ -203,6 +226,8 @@ mod tests {
             allowed_agents: vec![],
             default_agent: None,
             last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
         };
         validate_workspace_config("test", &ws).unwrap();
     }

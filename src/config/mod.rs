@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub use crate::workspace::MountConfig;
+pub use crate::workspace::WorkspaceAgentOverride;
 
 mod agents;
 mod mounts;
@@ -86,13 +87,18 @@ pub struct ClaudeAgentConfig {
     pub auth_forward: Option<AuthForwardMode>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AgentSource {
     pub git: String,
     #[serde(default, skip_serializing_if = "is_false")]
     pub trusted: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<ClaudeAgentConfig>,
+    /// Agent-layer operator env map. Merged on top of the global
+    /// `[env]` map when the agent is launched. Values use the
+    /// `operator_env` dispatch syntax.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -105,6 +111,10 @@ pub struct DockerConfig {
 pub struct AppConfig {
     #[serde(default)]
     pub claude: ClaudeConfig,
+    /// Global operator env map — the bottom layer. Merged under
+    /// per-agent, per-workspace, and per-(workspace × agent) layers.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub agents: BTreeMap<String, AgentSource>,
     #[serde(default)]
@@ -199,6 +209,8 @@ readonly = true
             allowed_agents: vec![],
             default_agent: None,
             last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
         };
 
         let error =
@@ -229,6 +241,8 @@ readonly = true
                     allowed_agents: vec![],
                     default_agent: None,
                     last_agent: None,
+                    env: std::collections::BTreeMap::new(),
+                    agents: std::collections::BTreeMap::new(),
                 },
             )
             .unwrap();
@@ -356,6 +370,8 @@ trusted = true
                     allowed_agents: vec![],
                     default_agent: None,
                     last_agent: None,
+                    env: std::collections::BTreeMap::new(),
+                    agents: std::collections::BTreeMap::new(),
                 },
             )
             .unwrap();
@@ -399,6 +415,8 @@ trusted = true
                     allowed_agents: vec![],
                     default_agent: None,
                     last_agent: None,
+                    env: std::collections::BTreeMap::new(),
+                    agents: std::collections::BTreeMap::new(),
                 },
             )
             .unwrap();
@@ -449,6 +467,8 @@ trusted = true
                     allowed_agents: vec![],
                     default_agent: None,
                     last_agent: None,
+                    env: std::collections::BTreeMap::new(),
+                    agents: std::collections::BTreeMap::new(),
                 },
             )
             .unwrap();
@@ -504,6 +524,8 @@ trusted = true
                 allowed_agents: vec![],
                 default_agent: None,
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
 
@@ -549,6 +571,8 @@ trusted = true
                     allowed_agents: vec![],
                     default_agent: None,
                     last_agent: None,
+                    env: std::collections::BTreeMap::new(),
+                    agents: std::collections::BTreeMap::new(),
                 },
             )
             .unwrap_err();
@@ -585,6 +609,8 @@ trusted = true
                     allowed_agents: vec![],
                     default_agent: None,
                     last_agent: None,
+                    env: std::collections::BTreeMap::new(),
+                    agents: std::collections::BTreeMap::new(),
                 },
             )
             .unwrap_err();
@@ -610,6 +636,8 @@ trusted = true
                     allowed_agents: vec![],
                     default_agent: None,
                     last_agent: None,
+                    env: std::collections::BTreeMap::new(),
+                    agents: std::collections::BTreeMap::new(),
                 },
             )
             .unwrap();
@@ -662,5 +690,135 @@ auth_forward = "copy"
     fn auth_forward_mode_display_does_not_emit_copy() {
         assert_eq!(AuthForwardMode::Sync.to_string(), "sync");
         assert_eq!(AuthForwardMode::Ignore.to_string(), "ignore");
+    }
+
+    #[test]
+    fn deserializes_global_env_map() {
+        let toml_str = r#"
+[env]
+OPERATOR_GLOBAL = "literal"
+OPERATOR_SECRET = "op://Personal/api/token"
+OPERATOR_HOST = "$HOME_VAR"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.env.get("OPERATOR_GLOBAL").unwrap(), "literal");
+        assert_eq!(
+            config.env.get("OPERATOR_SECRET").unwrap(),
+            "op://Personal/api/token"
+        );
+        assert_eq!(config.env.get("OPERATOR_HOST").unwrap(), "$HOME_VAR");
+    }
+
+    #[test]
+    fn deserializes_per_agent_env_map() {
+        let toml_str = r#"
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+
+[agents.agent-smith.env]
+AGENT_TOKEN = "op://Shared/smith/token"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        let agent = config.agents.get("agent-smith").unwrap();
+        assert_eq!(
+            agent.env.get("AGENT_TOKEN").unwrap(),
+            "op://Shared/smith/token"
+        );
+    }
+
+    #[test]
+    fn deserializes_per_workspace_env_map() {
+        let toml_str = r#"
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+
+[workspaces.big-monorepo]
+workdir = "/workspace/project"
+
+[[workspaces.big-monorepo.mounts]]
+src = "/tmp/src"
+dst = "/workspace/project"
+
+[workspaces.big-monorepo.env]
+WORKSPACE_VAR = "literal"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        let ws = config.workspaces.get("big-monorepo").unwrap();
+        assert_eq!(ws.env.get("WORKSPACE_VAR").unwrap(), "literal");
+    }
+
+    #[test]
+    fn deserializes_workspace_agent_override_env() {
+        let toml_str = r#"
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+
+[workspaces.big-monorepo]
+workdir = "/workspace/project"
+
+[[workspaces.big-monorepo.mounts]]
+src = "/tmp/src"
+dst = "/workspace/project"
+
+[workspaces.big-monorepo.agents.agent-smith.env]
+PER_WORKSPACE_PER_AGENT = "specific"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        let ws = config.workspaces.get("big-monorepo").unwrap();
+        let override_ = ws.agents.get("agent-smith").unwrap();
+        assert_eq!(
+            override_.env.get("PER_WORKSPACE_PER_AGENT").unwrap(),
+            "specific"
+        );
+    }
+
+    #[test]
+    fn env_maps_default_to_empty_when_omitted() {
+        let toml_str = r#"
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.env.is_empty());
+        assert!(config.agents.get("agent-smith").unwrap().env.is_empty());
+    }
+
+    #[test]
+    fn deserializes_agent_with_slash_in_name_using_quoted_keys() {
+        // The spec calls out `[agents."chainargos/agent-jones".env]`
+        // and `[workspaces.<ws>.agents."chainargos/agent-jones".env]`
+        // as the TOML shape for third-party agent selectors that
+        // include a `/`. Standard TOML quoted keys suffice — this
+        // test locks in that shape so a future refactor does not
+        // accidentally require un-quoted identifiers.
+        let toml_str = r#"
+[agents."chainargos/agent-jones"]
+git = "https://github.com/chainargos/jackin-agent-jones.git"
+
+[agents."chainargos/agent-jones".env]
+DATABASE_URL = "op://Work/agent-jones/db"
+
+[workspaces.big-monorepo]
+workdir = "/workspace/project"
+
+[[workspaces.big-monorepo.mounts]]
+src = "/tmp/src"
+dst = "/workspace/project"
+
+[workspaces.big-monorepo.agents."chainargos/agent-jones".env]
+OPENAI_API_KEY = "op://Work/big-monorepo/OpenAI"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        let agent = config.agents.get("chainargos/agent-jones").unwrap();
+        assert_eq!(
+            agent.env.get("DATABASE_URL").unwrap(),
+            "op://Work/agent-jones/db"
+        );
+        let ws = config.workspaces.get("big-monorepo").unwrap();
+        let override_ = ws.agents.get("chainargos/agent-jones").unwrap();
+        assert_eq!(
+            override_.env.get("OPENAI_API_KEY").unwrap(),
+            "op://Work/big-monorepo/OpenAI"
+        );
     }
 }

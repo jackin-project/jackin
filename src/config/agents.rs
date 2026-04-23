@@ -38,6 +38,7 @@ impl AppConfig {
             ),
             trusted: false,
             claude: None,
+            env: std::collections::BTreeMap::new(),
         };
         self.agents.insert(selector.key(), source.clone());
         Ok((source, true))
@@ -102,6 +103,7 @@ impl AppConfig {
                 git: git.to_string(),
                 trusted: true,
                 claude: existing_claude,
+                env: std::collections::BTreeMap::new(),
             };
             match self.agents.get(name) {
                 Some(existing) if existing.git == expected.git && existing.trusted => {}
