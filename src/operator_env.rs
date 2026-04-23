@@ -611,6 +611,203 @@ where
     );
 }
 
+/// Emit a single-line (normal) / multi-line (debug) launch diagnostic.
+///
+/// Summarises the operator env that was just resolved. Values are NEVER
+/// printed — only counts (normal) or reference strings (debug) and the
+/// layer that supplied each key.
+///
+/// Normal mode format:
+///
+/// ```text
+/// [jackin] operator env: 3 resolved (2 op://, 1 host ref, 0 literal)
+/// ```
+///
+/// Debug mode format:
+///
+/// ```text
+/// [jackin] operator env:
+///   OPERATOR_TOKEN        op://Personal/api/token   (workspace "big-monorepo" → agent "agent-smith" [env])
+///   CI_CACHE_DIR          ${HOME_CACHE}             (global [env])
+///   AGENT_VERSION         literal                   (agent "agent-smith" [env])
+/// ```
+pub fn print_launch_diagnostic(
+    config: &crate::config::AppConfig,
+    agent_selector: Option<&str>,
+    workspace_name: Option<&str>,
+    resolved: &std::collections::BTreeMap<String, String>,
+    debug: bool,
+) {
+    use std::io::Write;
+    let mut out = Vec::new();
+    // write_launch_diagnostic writes into an in-memory buffer and
+    // cannot fail with an I/O error; unwrap is safe here.
+    write_launch_diagnostic(
+        &mut out,
+        config,
+        agent_selector,
+        workspace_name,
+        resolved,
+        debug,
+    )
+    .expect("writing to Vec<u8> is infallible");
+    let _ = std::io::stderr().write_all(&out);
+}
+
+/// Test-visible entry point that returns the diagnostic as a String.
+/// Production code uses [`print_launch_diagnostic`], which writes the
+/// same bytes to process stderr.
+#[cfg(test)]
+fn format_launch_diagnostic_for_test(
+    config: &crate::config::AppConfig,
+    agent_selector: Option<&str>,
+    workspace_name: Option<&str>,
+    resolved: &std::collections::BTreeMap<String, String>,
+    debug: bool,
+) -> String {
+    let mut out = Vec::new();
+    write_launch_diagnostic(
+        &mut out,
+        config,
+        agent_selector,
+        workspace_name,
+        resolved,
+        debug,
+    )
+    .unwrap();
+    String::from_utf8(out).unwrap()
+}
+
+fn write_launch_diagnostic<W: std::io::Write>(
+    w: &mut W,
+    config: &crate::config::AppConfig,
+    agent_selector: Option<&str>,
+    workspace_name: Option<&str>,
+    resolved: &std::collections::BTreeMap<String, String>,
+    debug: bool,
+) -> std::io::Result<()> {
+    // Rebuild the (key → (layer, raw_value)) attribution using the same
+    // precedence rule as resolve_operator_env_with.
+    let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
+
+    let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
+        std::collections::BTreeMap::new();
+
+    for (k, v) in &config.env {
+        attributed.insert(k.clone(), (EnvLayer::Global, v.clone()));
+    }
+    if let Some(agent_name) = agent_selector
+        && let Some(a) = config.agents.get(agent_name)
+    {
+        for (k, v) in &a.env {
+            attributed.insert(
+                k.clone(),
+                (EnvLayer::Agent(agent_name.to_string()), v.clone()),
+            );
+        }
+    }
+    if let (Some(ws_name), Some(ws)) = (workspace_name, ws_opt) {
+        for (k, v) in &ws.env {
+            attributed.insert(
+                k.clone(),
+                (EnvLayer::Workspace(ws_name.to_string()), v.clone()),
+            );
+        }
+        if let Some(agent_name) = agent_selector
+            && let Some(ov) = ws.agents.get(agent_name)
+        {
+            for (k, v) in &ov.env {
+                attributed.insert(
+                    k.clone(),
+                    (
+                        EnvLayer::WorkspaceAgent {
+                            workspace: ws_name.to_string(),
+                            agent: agent_name.to_string(),
+                        },
+                        v.clone(),
+                    ),
+                );
+            }
+        }
+    }
+
+    // Restrict to keys actually in `resolved` (they were successfully
+    // dispatched); a key missing from `resolved` indicates a prior
+    // error path and should not show up here.
+    attributed.retain(|k, _| resolved.contains_key(k));
+
+    if debug {
+        writeln!(w, "[jackin] operator env:")?;
+        // Compute a column width for nice alignment.
+        let key_width = attributed
+            .keys()
+            .map(String::len)
+            .max()
+            .unwrap_or(0)
+            .min(40);
+        let raw_width = attributed
+            .values()
+            .map(|(_, v)| classify_value(v).len())
+            .max()
+            .unwrap_or(0)
+            .min(40);
+        for (key, (layer, raw_value)) in &attributed {
+            let kind = classify_value(raw_value);
+            writeln!(w, "  {key:key_width$}  {kind:raw_width$}  ({layer})")?;
+        }
+        return Ok(());
+    }
+
+    let (mut op_count, mut host_count, mut literal_count) = (0u32, 0u32, 0u32);
+    for (_, raw) in attributed.values() {
+        match ValueKind::of(raw) {
+            ValueKind::Op => op_count += 1,
+            ValueKind::Host => host_count += 1,
+            ValueKind::Literal => literal_count += 1,
+        }
+    }
+    writeln!(
+        w,
+        "[jackin] operator env: {} resolved ({} op://, {} host ref, {} literal)",
+        attributed.len(),
+        op_count,
+        host_count,
+        literal_count
+    )?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ValueKind {
+    Op,
+    Host,
+    Literal,
+}
+
+impl ValueKind {
+    fn of(raw: &str) -> Self {
+        if raw.starts_with("op://") {
+            Self::Op
+        } else if parse_host_ref(raw).is_some() {
+            Self::Host
+        } else {
+            Self::Literal
+        }
+    }
+}
+
+/// Return a short, value-free label for a raw operator env entry:
+/// `op://...` references are returned verbatim (the reference string
+/// is not secret; only the resolved value is); `$NAME` / `${NAME}`
+/// references are returned verbatim; literals are labelled `"literal"`
+/// so the resolved value is never printed.
+fn classify_value(raw: &str) -> String {
+    match ValueKind::of(raw) {
+        ValueKind::Op | ValueKind::Host => raw.to_string(),
+        ValueKind::Literal => "literal".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1309,5 +1506,64 @@ mod tests {
             resolved.get("API_KEY").map(|v| v.as_str()),
             Some("host-secret")
         );
+    }
+
+    #[test]
+    fn launch_diagnostic_normal_mode_prints_counts_only_no_values() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env
+            .insert("LITERAL_KEY".to_string(), "super-secret".to_string());
+        cfg.env
+            .insert("HOST_KEY".to_string(), "$HOST_VAR".to_string());
+        cfg.env
+            .insert("OP_KEY".to_string(), "op://Personal/item/field".to_string());
+        let resolved: std::collections::BTreeMap<String, String> = [
+            ("LITERAL_KEY".to_string(), "super-secret".to_string()),
+            ("HOST_KEY".to_string(), "host-value-secret".to_string()),
+            ("OP_KEY".to_string(), "op-value-secret".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        let rendered = format_launch_diagnostic_for_test(&cfg, None, None, &resolved, false);
+
+        assert!(rendered.contains("3 resolved"), "{rendered}");
+        assert!(rendered.contains("1 op://"), "{rendered}");
+        assert!(rendered.contains("1 host ref"), "{rendered}");
+        assert!(rendered.contains("1 literal"), "{rendered}");
+
+        // Values must never appear under any mode.
+        assert!(!rendered.contains("super-secret"), "{rendered}");
+        assert!(!rendered.contains("host-value-secret"), "{rendered}");
+        assert!(!rendered.contains("op-value-secret"), "{rendered}");
+
+        // In normal mode, references are NOT emitted (only counts).
+        assert!(!rendered.contains("$HOST_VAR"), "{rendered}");
+        assert!(!rendered.contains("op://Personal/item/field"), "{rendered}");
+    }
+
+    #[test]
+    fn launch_diagnostic_debug_mode_prints_references_but_not_values() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env
+            .insert("LITERAL_KEY".to_string(), "super-secret".to_string());
+        cfg.env
+            .insert("OP_KEY".to_string(), "op://Personal/item/field".to_string());
+        let resolved: std::collections::BTreeMap<String, String> = [
+            ("LITERAL_KEY".to_string(), "super-secret".to_string()),
+            ("OP_KEY".to_string(), "op-value-secret".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        let rendered = format_launch_diagnostic_for_test(&cfg, None, None, &resolved, true);
+
+        // Debug mode emits references (reference string is config,
+        // not secret) and the "literal" label — never the resolved
+        // value.
+        assert!(rendered.contains("op://Personal/item/field"), "{rendered}");
+        assert!(rendered.contains("literal"), "{rendered}");
+        assert!(!rendered.contains("super-secret"), "{rendered}");
+        assert!(!rendered.contains("op-value-secret"), "{rendered}");
     }
 }
