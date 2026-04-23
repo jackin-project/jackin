@@ -41,8 +41,11 @@ const jsonLd = {
   },
 }
 ---
+{/* Root element has no hardcoded data-theme — the inline script below
+    resolves it before first paint. Leaving it unset at SSR avoids a
+    light-mode visitor seeing a dark flash on page load. */}
 <!DOCTYPE html>
-<html lang="en" class="dark" data-theme="dark" style="color-scheme: dark;">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -51,7 +54,81 @@ const jsonLd = {
     <link rel="canonical" href={URL} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="sitemap" href="/sitemap-index.xml" />
-    <meta name="theme-color" content="#0a0b0a" />
+
+    {/* Theme-color respects the user's OS preference at the browser-chrome
+        level (Safari/Android address bar tint). The inline script below
+        re-points it after the theme is resolved so a stored manual
+        preference overrides OS pref for the address-bar colour too. */}
+    <meta name="theme-color" content="#0a0b0a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+
+    {/* Runs FIRST — before any stylesheet that could block its execution.
+        Mirrors the resolver in src/components/overrides/Head.astro so
+        docs + landing share the same theme-resolution order and reuse
+        the 'starlight-theme' localStorage key. This is what makes
+        "toggle to light on the docs, come back to the landing" work
+        without flashing back to dark.
+
+        Resolution order:
+          1. localStorage has 'light' or 'dark' → use it
+          2. No stored value → honour OS prefers-color-scheme
+          3. matchMedia unavailable → fall back to dark (brand default)
+        We do NOT write to localStorage here — the toggle button is the
+        only thing that writes. A first-time OS-light visitor stays in
+        light across pages until they explicitly pick a theme. */}
+    <script is:inline>
+      (function () {
+        var root = document.documentElement
+        var flipped = false
+        try {
+          var stored = null
+          try {
+            stored = localStorage.getItem('starlight-theme')
+            if (stored === 'auto') {
+              localStorage.removeItem('starlight-theme')
+              stored = null
+            }
+          } catch (e) {
+            // localStorage access threw (private mode, SecurityError, etc).
+          }
+          var theme
+          if (stored === 'light' || stored === 'dark') {
+            theme = stored
+          } else if (
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-color-scheme: light)').matches
+          ) {
+            theme = 'light'
+          } else {
+            theme = 'dark'
+          }
+          if (root.getAttribute('data-theme') !== theme) {
+            root.setAttribute('data-theme', theme)
+            flipped = true
+          }
+          // color-scheme on the root enables the browser's native form
+          // controls and scrollbar theming to match — set it too so
+          // scrollbar chrome doesn't flash the wrong shade.
+          root.style.colorScheme = theme
+        } catch (e) {
+          // Don't leave the page broken if anything above threw.
+        }
+        if (!flipped) return
+        root.classList.add('theme-init')
+        function releaseInit() {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              root.classList.remove('theme-init')
+            })
+          })
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', releaseInit, { once: true })
+        } else {
+          releaseInit()
+        }
+      })()
+    </script>
 
     {/* Preload the above-the-fold woff2s — avoids FOUT on the hero and
         the giant wordmark, which are the first two things users see.
