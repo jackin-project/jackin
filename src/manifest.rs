@@ -1,20 +1,10 @@
-use crate::env_resolver::extract_interpolation_refs;
+use crate::env_model::extract_interpolation_refs;
+pub use crate::env_model::{
+    JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_RUNTIME_ENV_NAME, JACKIN_RUNTIME_ENV_VALUE,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
-
-pub const JACKIN_RUNTIME_ENV_NAME: &str = "JACKIN_CLAUDE_ENV";
-pub const JACKIN_RUNTIME_ENV_VALUE: &str = "jackin";
-pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
-
-const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
-    (JACKIN_RUNTIME_ENV_NAME, Some(JACKIN_RUNTIME_ENV_VALUE)),
-    (JACKIN_DIND_HOSTNAME_ENV_NAME, None),
-    // Docker TLS vars injected by jackin — must not be overridden by manifests.
-    ("DOCKER_HOST", None),
-    ("DOCKER_TLS_VERIFY", None),
-    ("DOCKER_CERT_PATH", None),
-];
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -111,7 +101,7 @@ impl AgentManifest {
                 );
             }
 
-            if let Some((_, value)) = RESERVED_RUNTIME_ENV_VARS
+            if let Some((_, value)) = crate::env_model::RESERVED_RUNTIME_ENV_VARS
                 .iter()
                 .find(|(reserved, _)| name == reserved)
             {

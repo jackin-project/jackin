@@ -9,7 +9,6 @@ use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
-use super::RUNTIME_OWNED_ENV_VARS;
 use super::attach::{ContainerState, inspect_container_state, wait_for_dind};
 use super::cleanup::{gc_orphaned_resources, run_cleanup_command};
 use super::discovery::{list_managed_agent_names, list_running_agent_display_names};
@@ -365,7 +364,7 @@ fn launch_agent_runtime(
     let class_label = format!("jackin.class={}", selector.key());
     let display_label = format!("jackin.display_name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
-    let dind_hostname = format!("{}={dind}", crate::manifest::JACKIN_DIND_HOSTNAME_ENV_NAME);
+    let dind_hostname = format!("{}={dind}", crate::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME);
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let claude_dir_mount = format!("{}:/home/claude/.claude", state.claude_dir.display());
@@ -448,14 +447,11 @@ fn launch_agent_runtime(
     let mut env_strings: Vec<String> = Vec::new();
     env_strings.push(format!(
         "{}={}",
-        crate::manifest::JACKIN_RUNTIME_ENV_NAME,
-        crate::manifest::JACKIN_RUNTIME_ENV_VALUE
+        crate::env_model::JACKIN_RUNTIME_ENV_NAME,
+        crate::env_model::JACKIN_RUNTIME_ENV_VALUE
     ));
     for (key, value) in &resolved_env.vars {
-        if key == crate::manifest::JACKIN_RUNTIME_ENV_NAME
-            || key == crate::manifest::JACKIN_DIND_HOSTNAME_ENV_NAME
-            || RUNTIME_OWNED_ENV_VARS.contains(&key.as_str())
-        {
+        if crate::env_model::is_reserved(key) {
             continue;
         }
         env_strings.push(format!("{key}={value}"));
