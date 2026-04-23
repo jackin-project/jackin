@@ -15,8 +15,9 @@ Agent repos need reproducible startup. Without manifest-declared marketplaces, t
 
 ## Related Files
 
-- `src/manifest.rs`
-- `src/instance.rs`
+- `src/manifest/mod.rs` — manifest schema (marketplace + plugin fields)
+- `src/manifest/validate.rs` — marketplace validation
+- `src/instance/plugins.rs` — plugin-state preparation and marketplace serialization
 - `docker/construct/install-plugins.sh`
 - `docs/src/content/docs/developing/agent-manifest.mdx`
 - `docs/src/content/docs/developing/creating-agents.mdx`
