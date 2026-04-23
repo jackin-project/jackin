@@ -94,6 +94,31 @@ impl ConfigEditor {
         table.insert(key, toml_edit::value(value_str));
     }
 
+    pub fn set_env_comment(&mut self, scope: EnvScope, key: &str, comment: Option<&str>) {
+        let path = env_scope_path(&scope);
+        // Walk without creating — setting a comment on a nonexistent key
+        // is a silent no-op (same contract as remove_env_var).
+        let mut current: &mut Item = self.doc.as_item_mut();
+        for segment in &path {
+            match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
+                Some(next) => current = next,
+                None => return,
+            }
+        }
+        let Some(table) = current.as_table_mut() else {
+            return;
+        };
+        let Some(mut key_mut) = table.key_mut(key) else {
+            return;
+        };
+        let decor = key_mut.leaf_decor_mut();
+        let prefix = match comment {
+            Some(text) => format!("# {text}\n"),
+            None => String::new(),
+        };
+        decor.set_prefix(prefix);
+    }
+
     pub fn remove_env_var(&mut self, scope: EnvScope, key: &str) -> bool {
         let path = env_scope_path(&scope);
         // Walk without creating: return false if any segment is missing.
@@ -257,6 +282,94 @@ OTHER = "y"
         editor.save().unwrap();
 
         assert!(!removed);
+    }
+
+    #[test]
+    fn set_env_comment_adds_line_above_key() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+API_TOKEN = "op://vault-id/item-id/field"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_comment(
+            EnvScope::Global,
+            "API_TOKEN",
+            Some("op://Personal/Google/password"),
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            out.contains("# op://Personal/Google/password\nAPI_TOKEN"),
+            "expected comment directly above key: {out}"
+        );
+    }
+
+    #[test]
+    fn set_env_comment_replaces_existing_comment() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            "[env]\n# old annotation\nAPI_TOKEN = \"x\"\n",
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_comment(EnvScope::Global, "API_TOKEN", Some("new annotation"));
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("# new annotation"), "{out}");
+        assert!(!out.contains("# old annotation"), "{out}");
+    }
+
+    #[test]
+    fn set_env_comment_none_removes_annotation() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            "[env]\n# some note\nAPI_TOKEN = \"x\"\n",
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_comment(EnvScope::Global, "API_TOKEN", None);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("# some note"), "{out}");
+        assert!(out.contains(r#"API_TOKEN = "x""#), "key still present: {out}");
+    }
+
+    #[test]
+    fn mutating_sibling_preserves_comment_above_other_key() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let original = "[env]\n# rotate quarterly\nAPI_TOKEN = \"x\"\nOTHER = \"y\"\n";
+        std::fs::write(&paths.config_file, original).unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_var(EnvScope::Global, "OTHER", "z");
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            out.contains("# rotate quarterly\nAPI_TOKEN = \"x\""),
+            "sibling mutation wiped adjacent comment: {out}"
+        );
+        assert!(out.contains(r#"OTHER = "z""#), "{out}");
     }
 
     #[test]
