@@ -1,83 +1,8 @@
+use super::{AgentState, AuthProvisionOutcome};
 use crate::config::AuthForwardMode;
-use crate::manifest::{AgentManifest, ClaudeMarketplaceConfig};
-use crate::paths::JackinPaths;
-use crate::selector::ClassSelector;
-use serde::Serialize;
-use std::path::{Path, PathBuf};
-
-/// Outcome of the `.claude.json` provisioning step, so callers can surface
-/// a one-time notice when host credentials are forwarded.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthProvisionOutcome {
-    /// No host auth was forwarded (ignore mode, or copy mode with existing file).
-    Skipped,
-    /// Host auth was copied into the container state.
-    Copied,
-    /// Host auth was synced (overwritten) into the container state.
-    Synced,
-    /// Mode would have forwarded, but host file was missing — wrote `{}`.
-    HostMissing,
-}
-
-#[derive(Debug, Clone)]
-pub struct AgentState {
-    pub root: PathBuf,
-    pub claude_dir: PathBuf,
-    pub claude_json: PathBuf,
-    pub jackin_dir: PathBuf,
-    pub plugins_json: PathBuf,
-    pub gh_config_dir: PathBuf,
-}
-
-#[derive(Debug, Serialize)]
-struct PluginState<'a> {
-    marketplaces: &'a [ClaudeMarketplaceConfig],
-    plugins: &'a [String],
-}
+use std::path::Path;
 
 impl AgentState {
-    pub fn prepare(
-        paths: &JackinPaths,
-        container_name: &str,
-        manifest: &AgentManifest,
-        auth_forward: AuthForwardMode,
-        host_home: &Path,
-    ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
-        let root = paths.data_dir.join(container_name);
-        let claude_dir = root.join(".claude");
-        let claude_json = root.join(".claude.json");
-        let jackin_dir = root.join(".jackin");
-        let plugins_json = jackin_dir.join("plugins.json");
-        let gh_config_dir = root.join(".config/gh");
-
-        std::fs::create_dir_all(&claude_dir)?;
-        std::fs::create_dir_all(&jackin_dir)?;
-        std::fs::create_dir_all(&gh_config_dir)?;
-
-        let outcome =
-            Self::provision_claude_auth(&claude_json, &claude_dir, auth_forward, host_home)?;
-
-        std::fs::write(
-            &plugins_json,
-            serde_json::to_string_pretty(&PluginState {
-                marketplaces: &manifest.claude.marketplaces,
-                plugins: &manifest.claude.plugins,
-            })?,
-        )?;
-
-        Ok((
-            Self {
-                root,
-                claude_dir,
-                claude_json,
-                jackin_dir,
-                plugins_json,
-                gh_config_dir,
-            },
-            outcome,
-        ))
-    }
-
     /// Provision both `.claude.json` (preferences/metadata) and
     /// `.claude/.credentials.json` (OAuth tokens) according to the chosen
     /// auth forwarding strategy.
@@ -89,7 +14,7 @@ impl AgentState {
     /// On macOS the host credentials live in the system Keychain
     /// ("Claude Code-credentials"), not in a file.  On Linux they are
     /// stored at `~/.claude/.credentials.json`.
-    fn provision_claude_auth(
+    pub(super) fn provision_claude_auth(
         claude_json: &Path,
         claude_dir: &Path,
         mode: AuthForwardMode,
@@ -283,69 +208,12 @@ fn repair_permissions(path: &Path) {
     }
 }
 
-pub fn runtime_slug(selector: &ClassSelector) -> String {
-    selector.namespace.as_ref().map_or_else(
-        || selector.name.clone(),
-        |namespace| format!("{namespace}__{}", selector.name),
-    )
-}
-
-pub fn primary_container_name(selector: &ClassSelector) -> String {
-    format!("jackin-{}", runtime_slug(selector))
-}
-
-pub fn next_container_name(selector: &ClassSelector, existing: &[String]) -> String {
-    let primary = primary_container_name(selector);
-    if !existing.iter().any(|name| name == &primary) {
-        return primary;
-    }
-
-    let mut clone_index = 1;
-    loop {
-        let candidate = format!("{primary}-clone-{clone_index}");
-        if !existing.iter().any(|name| name == &candidate) {
-            return candidate;
-        }
-        clone_index += 1;
-    }
-}
-
-pub fn class_family_matches(selector: &ClassSelector, container_name: &str) -> bool {
-    let primary = primary_container_name(selector);
-    container_name == primary || container_name.starts_with(&format!("{primary}-clone-"))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::config::AuthForwardMode;
+    use crate::instance::{AgentState, AuthProvisionOutcome};
     use crate::paths::JackinPaths;
-    use crate::selector::ClassSelector;
-    use serde_json::json;
     use tempfile::tempdir;
-
-    #[test]
-    fn picks_next_clone_name() {
-        let selector = ClassSelector::new(None, "agent-smith");
-        let existing = vec![
-            "jackin-agent-smith".to_string(),
-            "jackin-agent-smith-clone-1".to_string(),
-        ];
-
-        let name = next_container_name(&selector, &existing);
-
-        assert_eq!(name, "jackin-agent-smith-clone-2");
-    }
-
-    #[test]
-    fn distinguishes_namespaced_and_flat_class_container_names() {
-        let namespaced = ClassSelector::new(Some("chainargos"), "the-architect");
-        let flat = ClassSelector::new(None, "chainargos-the-architect");
-
-        assert_ne!(
-            primary_container_name(&namespaced),
-            primary_container_name(&flat)
-        );
-    }
 
     const TEST_CREDENTIALS: &str =
         r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
@@ -378,119 +246,6 @@ plugins = []
         )
         .unwrap();
         crate::manifest::AgentManifest::load(temp.path()).unwrap()
-    }
-
-    #[test]
-    fn prepares_persisted_claude_state() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let manifest = simple_manifest(&temp);
-
-        let (state, _) = AgentState::prepare(
-            &paths,
-            "jackin-agent-smith",
-            &manifest,
-            AuthForwardMode::Ignore,
-            temp.path(),
-        )
-        .unwrap();
-
-        assert!(state.claude_dir.is_dir());
-        assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
-    }
-
-    #[test]
-    fn prepares_plugins_json_for_runtime_bootstrap() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-
-        std::fs::write(
-            temp.path().join("jackin.agent.toml"),
-            r#"dockerfile = "Dockerfile"
-
-[claude]
-plugins = ["code-review@claude-plugins-official", "feature-dev@claude-plugins-official"]
-"#,
-        )
-        .unwrap();
-        std::fs::write(
-            temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
-        )
-        .unwrap();
-
-        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
-        let (state, _) = AgentState::prepare(
-            &paths,
-            "jackin-agent-smith",
-            &manifest,
-            AuthForwardMode::Ignore,
-            temp.path(),
-        )
-        .unwrap();
-
-        assert!(state.jackin_dir.is_dir());
-        let value: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&state.plugins_json).unwrap()).unwrap();
-        assert_eq!(value["marketplaces"], json!([]));
-        assert_eq!(
-            value["plugins"],
-            json!([
-                "code-review@claude-plugins-official",
-                "feature-dev@claude-plugins-official"
-            ])
-        );
-    }
-
-    #[test]
-    fn prepares_plugins_json_with_marketplaces_for_runtime_bootstrap() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-
-        std::fs::write(
-            temp.path().join("jackin.agent.toml"),
-            r#"dockerfile = "Dockerfile"
-
-[claude]
-plugins = ["superpowers@superpowers-marketplace"]
-
-[[claude.marketplaces]]
-source = "obra/superpowers-marketplace"
-sparse = ["plugins", ".claude-plugin"]
-"#,
-        )
-        .unwrap();
-        std::fs::write(
-            temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
-        )
-        .unwrap();
-
-        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
-        let (state, _) = AgentState::prepare(
-            &paths,
-            "jackin-agent-smith",
-            &manifest,
-            AuthForwardMode::Ignore,
-            temp.path(),
-        )
-        .unwrap();
-
-        let value: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&state.plugins_json).unwrap()).unwrap();
-        assert_eq!(
-            value["marketplaces"],
-            json!([
-                {
-                    "source": "obra/superpowers-marketplace",
-                    "sparse": ["plugins", ".claude-plugin"]
-                }
-            ])
-        );
-        assert_eq!(
-            value["plugins"],
-            json!(["superpowers@superpowers-marketplace"])
-        );
     }
 
     // ── Auth forwarding tests ───────────────────────────────────────────
