@@ -30,13 +30,16 @@ pub trait OpRunner {
 /// `layer_label` and `var_name` are used only for error messages so
 /// operators can locate the offending config line (e.g. `"workspace
 /// \"big-monorepo\" env var \"API_TOKEN\""`).
-pub fn dispatch_value(
+pub fn dispatch_value<R>(
     layer_label: &str,
     var_name: &str,
     value: &str,
-    op_runner: &impl OpRunner,
-    host_env: impl FnOnce(&str) -> Result<String, std::env::VarError>,
-) -> anyhow::Result<String> {
+    op_runner: &R,
+    mut host_env: impl FnMut(&str) -> Result<String, std::env::VarError>,
+) -> anyhow::Result<String>
+where
+    R: OpRunner + ?Sized,
+{
     if value.starts_with("op://") {
         return op_runner.read(value).map_err(|e| {
             anyhow::anyhow!(
@@ -479,6 +482,133 @@ pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Res
         offenses.len(),
         offenses.join("\n")
     )
+}
+
+/// Walk the four env layers for a given `(agent, workspace)` pair and
+/// resolve every value. Returns a map of resolved `(key → value)`.
+///
+/// Resolution failures from every layer are collected and reported in
+/// a single aggregated error so operators see all problems at once
+/// (matching the policy of `validate_reserved_names`).
+///
+/// The `agent` and `workspace` selectors are optional. When they are
+/// `None`, only the global layer contributes; when only `agent` is set,
+/// the agent layer joins; when only `workspace` is set, the workspace
+/// layer joins; when both are set, all four layers are consulted.
+pub fn resolve_operator_env(
+    config: &crate::config::AppConfig,
+    agent_selector: Option<&str>,
+    workspace_name: Option<&str>,
+) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
+    resolve_operator_env_with(
+        config,
+        agent_selector,
+        workspace_name,
+        &OpCli::new(),
+        |name| std::env::var(name),
+    )
+}
+
+/// Test-injectable version of [`resolve_operator_env`].
+///
+/// `R: OpRunner + ?Sized` so callers can pass either a concrete runner
+/// (`&OpCli`, `&TestOpRunner`) or a trait object (`&dyn OpRunner`) —
+/// the latter is how `LoadOptions::op_runner` flows through
+/// `src/runtime/launch.rs`.
+pub fn resolve_operator_env_with<R, H>(
+    config: &crate::config::AppConfig,
+    agent_selector: Option<&str>,
+    workspace_name: Option<&str>,
+    op_runner: &R,
+    mut host_env: H,
+) -> anyhow::Result<std::collections::BTreeMap<String, String>>
+where
+    R: OpRunner + ?Sized,
+    H: FnMut(&str) -> Result<String, std::env::VarError>,
+{
+    let empty = std::collections::BTreeMap::new();
+
+    let global = &config.env;
+    let agent = agent_selector
+        .and_then(|a| config.agents.get(a))
+        .map_or(&empty, |a| &a.env);
+    let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
+    let workspace = ws_opt.map_or(&empty, |w| &w.env);
+    let workspace_agent = ws_opt
+        .zip(agent_selector)
+        .and_then(|(w, a)| w.agents.get(a))
+        .map_or(&empty, |o| &o.env);
+
+    // Produce a (key → (layer, raw_value)) map so resolution errors can
+    // attribute which layer supplied each value.
+    let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
+        std::collections::BTreeMap::new();
+
+    for (k, v) in global {
+        attributed.insert(k.clone(), (EnvLayer::Global, v.clone()));
+    }
+    if let Some(agent_name) = agent_selector {
+        for (k, v) in agent {
+            attributed.insert(
+                k.clone(),
+                (EnvLayer::Agent(agent_name.to_string()), v.clone()),
+            );
+        }
+    }
+    if let Some(ws_name) = workspace_name {
+        for (k, v) in workspace {
+            attributed.insert(
+                k.clone(),
+                (EnvLayer::Workspace(ws_name.to_string()), v.clone()),
+            );
+        }
+    }
+    if let (Some(ws_name), Some(agent_name)) = (workspace_name, agent_selector) {
+        for (k, v) in workspace_agent {
+            attributed.insert(
+                k.clone(),
+                (
+                    EnvLayer::WorkspaceAgent {
+                        workspace: ws_name.to_string(),
+                        agent: agent_name.to_string(),
+                    },
+                    v.clone(),
+                ),
+            );
+        }
+    }
+
+    let mut resolved = std::collections::BTreeMap::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    // If ANY value uses the op:// scheme, probe the op CLI once up
+    // front. This turns "op is not installed" from an N-failures
+    // aggregate into a single clear install-link error, which is the
+    // failure mode documented in the spec.
+    let uses_op = attributed.values().any(|(_, v)| v.starts_with("op://"));
+    if uses_op && let Err(e) = op_runner.probe() {
+        anyhow::bail!("operator env resolution aborted: {e}");
+    }
+
+    for (key, (layer, raw_value)) in &attributed {
+        let layer_label = format!("{layer}");
+        match dispatch_value(&layer_label, key, raw_value, op_runner, &mut host_env) {
+            Ok(value) => {
+                resolved.insert(key.clone(), value);
+            }
+            Err(e) => errors.push(format!("  - {e}")),
+        }
+    }
+
+    if errors.is_empty() {
+        return Ok(resolved);
+    }
+
+    anyhow::bail!(
+        "operator env resolution failed for {} var(s):\n{}",
+        errors.len(),
+        errors.join("\n")
+    );
 }
 
 #[cfg(test)]
@@ -951,5 +1081,233 @@ mod tests {
             .insert("OPERATOR_TOKEN".to_string(), "op://...".to_string());
 
         validate_reserved_names(&cfg).unwrap();
+    }
+
+    #[test]
+    fn resolve_empty_config_returns_empty_map() {
+        let cfg = crate::config::AppConfig::default();
+        let resolved =
+            resolve_operator_env_with(&cfg, None, None, &TestOpRunner::forbidden(), |_| {
+                Err(std::env::VarError::NotPresent)
+            })
+            .unwrap();
+        assert!(resolved.is_empty());
+    }
+
+    #[test]
+    fn resolve_global_literal_value() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env.insert("FOO".to_string(), "bar".to_string());
+        let resolved =
+            resolve_operator_env_with(&cfg, None, None, &TestOpRunner::forbidden(), |_| {
+                Err(std::env::VarError::NotPresent)
+            })
+            .unwrap();
+        assert_eq!(resolved.get("FOO").map(|v| v.as_str()), Some("bar"));
+    }
+
+    #[test]
+    fn resolve_layers_apply_in_order_with_workspace_agent_winning() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env.insert("X".to_string(), "global".to_string());
+
+        let mut agent_source = crate::config::AgentSource {
+            git: "https://example.com/x.git".to_string(),
+            trusted: true,
+            claude: None,
+            env: std::collections::BTreeMap::new(),
+        };
+        agent_source
+            .env
+            .insert("X".to_string(), "agent".to_string());
+        cfg.agents.insert("agent-smith".to_string(), agent_source);
+
+        let mut ws = crate::workspace::WorkspaceConfig {
+            workdir: "/x".to_string(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: "/x".to_string(),
+                dst: "/x".to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        ws.env.insert("X".to_string(), "workspace".to_string());
+        let mut wsa = crate::workspace::WorkspaceAgentOverride::default();
+        wsa.env.insert("X".to_string(), "ws-agent".to_string());
+        ws.agents.insert("agent-smith".to_string(), wsa);
+        cfg.workspaces.insert("big-monorepo".to_string(), ws);
+
+        let resolved = resolve_operator_env_with(
+            &cfg,
+            Some("agent-smith"),
+            Some("big-monorepo"),
+            &TestOpRunner::forbidden(),
+            |_| Err(std::env::VarError::NotPresent),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.get("X").map(|v| v.as_str()), Some("ws-agent"));
+    }
+
+    #[test]
+    fn resolve_reports_all_failures_in_one_error() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env.insert("A".to_string(), "$MISSING_A".to_string());
+        cfg.env.insert("B".to_string(), "$MISSING_B".to_string());
+
+        let err = resolve_operator_env_with(&cfg, None, None, &TestOpRunner::forbidden(), |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("\"A\""), "{msg}");
+        assert!(msg.contains("\"B\""), "{msg}");
+        assert!(msg.contains("MISSING_A"), "{msg}");
+        assert!(msg.contains("MISSING_B"), "{msg}");
+    }
+
+    #[test]
+    fn resolve_probes_op_cli_once_when_any_op_ref_present() {
+        // Spec: check op presence once per launch by shelling
+        // `op --version`. Here we verify the probe fires for configs
+        // that use op://... and is skipped for configs that do not.
+        struct ProbeCountingRunner {
+            probe_calls: std::cell::Cell<u32>,
+            read_calls: std::cell::Cell<u32>,
+        }
+        impl OpRunner for ProbeCountingRunner {
+            fn read(&self, _reference: &str) -> anyhow::Result<String> {
+                self.read_calls.set(self.read_calls.get() + 1);
+                Ok("stub".into())
+            }
+            fn probe(&self) -> anyhow::Result<()> {
+                self.probe_calls.set(self.probe_calls.get() + 1);
+                Ok(())
+            }
+        }
+
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env
+            .insert("A".to_string(), "op://Personal/a".to_string());
+        cfg.env
+            .insert("B".to_string(), "op://Personal/b".to_string());
+        let runner = ProbeCountingRunner {
+            probe_calls: std::cell::Cell::new(0),
+            read_calls: std::cell::Cell::new(0),
+        };
+        resolve_operator_env_with(&cfg, None, None, &runner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+        assert_eq!(runner.probe_calls.get(), 1, "probe must fire exactly once");
+        assert_eq!(runner.read_calls.get(), 2, "each op:// key is resolved");
+    }
+
+    #[test]
+    fn resolve_skips_probe_when_no_op_refs_present() {
+        struct ProbeCountingRunner {
+            probe_calls: std::cell::Cell<u32>,
+        }
+        impl OpRunner for ProbeCountingRunner {
+            fn read(&self, _reference: &str) -> anyhow::Result<String> {
+                panic!("read must not be called when no op:// refs exist")
+            }
+            fn probe(&self) -> anyhow::Result<()> {
+                self.probe_calls.set(self.probe_calls.get() + 1);
+                Ok(())
+            }
+        }
+
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env.insert("A".to_string(), "literal".to_string());
+        let runner = ProbeCountingRunner {
+            probe_calls: std::cell::Cell::new(0),
+        };
+        resolve_operator_env_with(&cfg, None, None, &runner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+        assert_eq!(
+            runner.probe_calls.get(),
+            0,
+            "probe must not fire when no op:// refs exist"
+        );
+    }
+
+    #[test]
+    fn resolve_probe_failure_surfaces_install_link_once() {
+        struct FailingProbeRunner;
+        impl OpRunner for FailingProbeRunner {
+            fn read(&self, _reference: &str) -> anyhow::Result<String> {
+                panic!("read must not be called when probe fails")
+            }
+            fn probe(&self) -> anyhow::Result<()> {
+                anyhow::bail!(
+                    "1Password CLI (\"op\") was not found on PATH — install from \
+                     https://developer.1password.com/docs/cli/"
+                )
+            }
+        }
+
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env
+            .insert("A".to_string(), "op://Personal/a".to_string());
+        cfg.env
+            .insert("B".to_string(), "op://Personal/b".to_string());
+        let err = resolve_operator_env_with(&cfg, None, None, &FailingProbeRunner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("developer.1password.com"),
+            "expected install link once: {msg}"
+        );
+    }
+
+    #[test]
+    fn resolve_op_failure_includes_layer_and_key() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env.insert(
+            "TOKEN".to_string(),
+            "op://Personal/broken/token".to_string(),
+        );
+
+        let runner = TestOpRunner::new(Err(anyhow::anyhow!("item not found")));
+
+        let err = resolve_operator_env_with(&cfg, None, None, &runner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("TOKEN"), "{msg}");
+        assert!(msg.contains("op://Personal/broken/token"), "{msg}");
+        assert!(msg.contains("global [env]"), "{msg}");
+    }
+
+    #[test]
+    fn resolve_host_ref_success_returns_value() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env
+            .insert("API_KEY".to_string(), "${MY_HOST_API_KEY}".to_string());
+
+        let resolved =
+            resolve_operator_env_with(&cfg, None, None, &TestOpRunner::forbidden(), |name| {
+                if name == "MY_HOST_API_KEY" {
+                    Ok("host-secret".to_string())
+                } else {
+                    Err(std::env::VarError::NotPresent)
+                }
+            })
+            .unwrap();
+
+        assert_eq!(
+            resolved.get("API_KEY").map(|v| v.as_str()),
+            Some("host-secret")
+        );
     }
 }
