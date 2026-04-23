@@ -44,7 +44,7 @@ isolation = "shared"             # build cache, shared on purpose
 Modes:
 
 - **`shared`** — current behavior. Host path bind-mounted as-is.
-- **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path. Branch defaults to `jackin/<container-name>` (collision-free via the existing clone-index naming in `src/instance.rs`). Base branch defaults to the host repo's current `HEAD`.
+- **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path. Branch defaults to `jackin/<container-name>` (collision-free via the existing clone-index naming in `src/instance/naming.rs`). Base branch defaults to the host repo's current `HEAD`.
 - **`clone`** — jackin' runs `git clone --local --shared <src> <per-agent-copy>`. Objects hard-linked, so disk cost is minimal. Agent pushes back to `origin` (the host path) when done.
 
 ## Composition Rules
@@ -105,10 +105,14 @@ Defer:
 
 ## Related Files
 
-- `src/workspace.rs` — `MountConfig`, `WorkspaceConfig`, `resolve_load_workspace`, validation entry points
-- `src/instance.rs` — per-container naming already provides collision-free slugs for worktree paths and branch names
-- `src/runtime.rs` — `load` and `purge` paths where materialization and teardown hook in
-- `src/config.rs` — serialization of the new fields; `workspace show` output
-- `src/cli.rs` — surfacing the new fields in edit flows
-- New module (e.g. `src/isolation.rs`) — host-side git shell-outs for materialize / remove, kept out of `runtime.rs`
+- `src/workspace/mod.rs` — `MountConfig`, `WorkspaceConfig` types
+- `src/workspace/mounts.rs` — mount parsing and validation entry points
+- `src/workspace/resolve.rs` — `resolve_load_workspace`
+- `src/instance/naming.rs` — per-container naming already provides collision-free slugs for worktree paths and branch names
+- `src/runtime/launch.rs` — `load` path where materialization hooks in
+- `src/runtime/cleanup.rs` — `purge` path where teardown hooks in
+- `src/config/mod.rs` — serialization of the new fields
+- `src/config/workspaces.rs` — `workspace show` output and edit flows
+- `src/cli/workspace.rs` — surfacing the new fields in edit flows
+- New module (e.g. `src/isolation.rs`) — host-side git shell-outs for materialize / remove, kept out of `runtime/`
 - `docs/src/content/docs/guides/workspaces.mdx`, `docs/src/content/docs/guides/mounts.mdx`, `docs/src/content/docs/reference/configuration.mdx`, `docs/src/content/docs/reference/architecture.mdx` — doc pages to update alongside the code change
