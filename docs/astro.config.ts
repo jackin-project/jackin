@@ -101,6 +101,7 @@ export default defineConfig({
                     { label: 'Selectable sandbox backends', slug: 'reference/roadmap/selectable-sandbox-backends' },
                     { label: 'Reproducibility & provenance pinning', slug: 'reference/roadmap/reproducibility-pinning' },
                     { label: 'Per-mount isolation', slug: 'reference/roadmap/per-mount-isolation' },
+                    { label: 'Devcontainer parity', slug: 'reference/roadmap/devcontainer-parity' },
                     { label: 'Open review findings', slug: 'reference/roadmap/open-review-findings' },
                   ],
                 },
