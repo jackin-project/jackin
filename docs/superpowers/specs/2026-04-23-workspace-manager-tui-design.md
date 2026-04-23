@@ -144,39 +144,60 @@ Plus a refactor of `src/tui/animation.rs`:
 
 ### Widgets — new reusable UI primitives
 
-Each widget holds its own small state struct, renders into a passed `Rect`, and returns an event outcome. All are consumed by both the manager (PR 2) and the Secrets tab (PR 3).
+Each widget holds its own small state struct, renders into a passed `Rect`, and returns an event outcome. All are consumed by both the manager (PR 2) and the Secrets tab (PR 3). Three of the widgets are thin wrappers over ratatui ecosystem crates (see *Third-party dependencies* below); the rest are hand-rolled.
 
 #### `TextInput`
 
-A single-line text field with a block cursor. Renders as a centered modal with a bordered box, a label, the current value, and a footer hint (`Enter ok · Esc cancel`). Supports insert, backspace, arrow keys for cursor position. No clipboard, no multiline, no IME — PR 4 territory.
+A single-line text field with a block cursor, rendered as a centered modal with a bordered box, a label, the current value, and a footer hint (`Enter ok · Esc cancel`). **Built on [`ratatui-textarea`](https://crates.io/crates/ratatui-textarea)** in single-line mode (intercept Enter/Ctrl+M events before the textarea handler), giving us full cursor management, Home/End, word-movement, undo/redo, and internal yank for free.
 
 Used for: name entry, mount dst, any scalar string field on the editor.
 
 #### `FileBrowser`
 
-Modal folder picker rooted at `$HOME` (resolved from `dirs::home_dir()`). Shows folders only (files hidden — mounts are always directories). Columns: entries, with `..` as the first entry if not at root. Footer: `↑↓ · Enter open · u up · s select · Esc cancel`. Returns a selected absolute path.
-
-Hidden folders (starting with `.`) are shown but visually dimmed — operator can still navigate into them. Symlinks follow the target path.
+Modal folder picker rooted at `$HOME` (resolved from `dirs::home_dir()`). **Built on [`ratatui-explorer`](https://crates.io/crates/ratatui-explorer)**, wrapped with ~15 LOC to fold in a folders-only filter (via its filter predicate API) and to bind `s` as "select current folder". The crate's defaults (`h`/`←` up, Enter/`l` descend, `j`/`k` navigate, `Ctrl+h` hidden toggle, Home/End, PgUp/PgDn) match our spec. Symlinks follow the target path.
 
 Used for: create-flow mount src, add-mount mount src.
 
 #### `Confirm`
 
-Y/N modal. Centered, bordered, two-line body. `Y` returns `true`, `N` returns `false`, `Esc` returns cancel (distinct from `N`). The prompt text is configurable.
+Y/N modal. Centered, bordered, two-line body. `Y` returns `true`, `N` returns `false`, `Esc` returns cancel (distinct from `N`). The prompt text is configurable. **Hand-rolled** — ~40 LOC; existing third-party confirm-dialog crates add more dep weight than the code they save.
 
 Used for: delete-workspace confirm, discard-unsaved-changes confirm.
 
 #### `WorkdirPick`
 
-A choice-list modal. Given the current set of mount `dst` paths, enumerates `dst` itself + each ancestor up to `/` as pickable options. Labels annotate source: `(mount dst)`, `(parent)`, `(root)`. Returns the selected path.
+A choice-list modal. Given the current set of mount `dst` paths, enumerates `dst` itself + each ancestor up to `/` as pickable options. Labels annotate source: `(mount dst)`, `(parent)`, `(root)`. Returns the selected path. **Built on [`tui-widget-list`](https://crates.io/crates/tui-widget-list)** for the scrolling-list mechanics.
 
 Used for: create-flow workdir pick, edit General-tab workdir edit.
 
 #### `PanelRain`
 
-A bounded `digital_rain` renderer. Takes a `Rect` and renders jackin's phosphor rain inside it, at reduced density appropriate for a background effect (not fullscreen intensity). Uses the same `RainState` type as the existing `tui::digital_rain`, just applied to a sub-rect.
+A bounded `digital_rain` renderer. Takes a `Rect` and renders jackin's phosphor rain inside it, at reduced density appropriate for a background effect (not fullscreen intensity). Uses the same `RainState` type as the existing `tui::digital_rain`, just applied to a sub-rect. **Hand-rolled** — extracted from jackin's own `src/tui/animation.rs`; no ecosystem crate applies.
 
 Used for: empty-details-pane when the manager list cursor is on `[+ New workspace]` (no existing workspace to summarize), during async operations if `spin_wait` is not sufficient.
+
+### Third-party dependencies
+
+Three ratatui ecosystem crates are added to `Cargo.toml` for PR 2. Selection criteria: active maintenance, alignment with our needs, ratatui 0.30 + crossterm 0.29 compatibility. Hand-rolling is preferred only where no crate fits or where the ecosystem's options are materially less polished than ~100 lines of our own code.
+
+**Adopted:**
+
+| Slot | Crate | Why |
+|---|---|---|
+| `TextInput` | [`ratatui-textarea`](https://crates.io/crates/ratatui-textarea) (v0.9.x) | Under the `ratatui/` GitHub org — institutional ownership. Documented single-line mode. Full cursor / Home-End / word-movement / undo-redo / yank out of the box. Replaces ~100 LOC of hand-rolled widget. |
+| `FileBrowser` | [`ratatui-explorer`](https://crates.io/crates/ratatui-explorer) (v0.3.x) | Multi-backend (our crossterm), v0.3.0 March 2026, animated demos, themable, keybindings already match our spec. ~15 LOC wrapper for folders-only filter + `s`-to-select. Replaces ~150 LOC. |
+| `WorkdirPick` list mechanics | [`tui-widget-list`](https://crates.io/crates/tui-widget-list) (v0.15.x) | The most widely-used list widget on ratatui-core 0.1. Arbitrary `Widget` per row with explicit selection state. |
+
+All three require enabling ratatui's `unstable-widget-ref` feature; one flip covers all three.
+
+**Rejected / deferred (with rationale so reviewers don't re-litigate):**
+
+- `tui-input` — superseded by `ratatui-textarea` for our single-line use; both cover the same need and the latter has stronger maintenance.
+- `tui-confirm-dialog` / `tui-overlay` — our `Confirm` modal is ~40 LOC hand-rolled; the deps add more weight than they remove. `tui-overlay` is additionally very new (v0.1.x) and unproven.
+- `rat-widget` — cohesive but opinionated; would force adoption of its `rat-event` / `rat-focus` conventions across the launcher. Heavier buy-in than piecemeal widgets.
+- `throbber-widgets-tui` / `ratatui-cheese` — jackin already has `tui::spin_wait`; adding a new spinner crate solves a problem we don't have.
+- `ratatui-toaster` — toast / save banner is ~30 LOC hand-rolled atop the existing `step_shimmer` helper.
+- `tui-logger` — jackin does not use the `log` or `tracing` crates today. Adopting it would mean introducing a logging framework alongside the log-display widget for zero PR-2 user value. Error surfaces are already handled by inline banners.
 
 ### `ConfigEditor` integration
 
@@ -249,7 +270,7 @@ The manager follows jackin's existing visual language, using tokens from `docs/s
 
 ## Rollout
 
-- **No new dependencies.** Ratatui + crossterm + dialoguer (already in the tree). `tempfile` already a test dep. `dirs` for `$HOME` resolution is already pulled in transitively via workspace code — confirm during implementation, add explicitly if not.
+- **New dependencies** (see *Third-party dependencies* under Design): `ratatui-textarea`, `ratatui-explorer`, `tui-widget-list`. All three active, all three on recent releases, all three require enabling ratatui's `unstable-widget-ref` feature (one flag flip). Ratatui + crossterm + dialoguer + tempfile already in the tree. `dirs` for `$HOME` resolution is pulled in transitively by `ratatui-explorer`; confirm during implementation or add explicitly if needed.
 - Lands as one PR off `main`, on `feature/workspace-manager-tui`.
 - No schema change to `~/.config/jackin/config.toml`. No migration needed for existing users.
 - Launch path is unchanged — operators who never press `m` see zero difference from today's binary.
