@@ -181,9 +181,11 @@ impl ConfigEditor {
     /// `true` if an entry was present and removed.
     ///
     /// Unscoped (`scope = None`): removes `docker.mounts[name]`.
-    /// Scoped (`scope = Some(scope_key)`): removes `docker.mounts[scope_key][name]`.
-    /// If the scope's sub-table becomes empty after removal the empty table is
-    /// left in place (toml_edit keeps it; callers that care can compact later).
+    /// Scoped (`scope = Some(scope_key)`): removes the `name` entry from
+    /// `docker.mounts[scope_key]`. If that scope table becomes empty after
+    /// the removal, the scope table itself is removed too — matching
+    /// `AppConfig::remove_mount`'s cleanup so empty scope tables do not
+    /// accumulate in the on-disk config.
     pub fn remove_mount(&mut self, name: &str, scope: Option<&str>) -> bool {
         let Some(docker) = self
             .doc
@@ -204,7 +206,11 @@ impl ConfigEditor {
                 else {
                     return false;
                 };
-                entry.remove(name).is_some()
+                let removed = entry.remove(name).is_some();
+                if removed && entry.is_empty() {
+                    mounts.remove(scope_key);
+                }
+                removed
             }
         }
     }
@@ -661,5 +667,54 @@ dst = "/workspace/home"
         let removed = editor.remove_mount("nope", None);
         editor.save().unwrap();
         assert!(!removed);
+    }
+
+    #[test]
+    fn remove_mount_scoped_last_entry_deletes_scope_table() {
+        // Matches AppConfig::remove_mount cleanup: when the last named mount
+        // in a scope is removed, the scope table itself is removed.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[docker.mounts.agent-smith]
+creds = { src = "/run/secrets/x", dst = "/secrets/x" }
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let removed = editor.remove_mount("creds", Some("agent-smith"));
+        editor.save().unwrap();
+
+        assert!(removed);
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("agent-smith"), "empty scope table should be gone: {out}");
+    }
+
+    #[test]
+    fn remove_mount_scoped_preserves_scope_when_siblings_remain() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[docker.mounts.agent-smith]
+creds = { src = "/a", dst = "/a" }
+logs = { src = "/b", dst = "/b" }
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let removed = editor.remove_mount("creds", Some("agent-smith"));
+        editor.save().unwrap();
+
+        assert!(removed);
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[docker.mounts.agent-smith]"), "scope table should still exist: {out}");
+        assert!(!out.contains("creds"), "{out}");
+        assert!(out.contains("logs"), "{out}");
     }
 }
