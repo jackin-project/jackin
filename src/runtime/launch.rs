@@ -2107,4 +2107,103 @@ plugins = []
             "host-ref operator env must resolve and inject; got: {run_cmd}"
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_agent_injects_op_cli_resolved_value() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        let bin_dir = temp.path().join("fake-bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let bin_path = bin_dir.join("op");
+        // The resolver first runs `op --version` as a reachability probe
+        // when any value carries the `op://` scheme, then calls
+        // `op read op://...`. The fake must handle both.
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://Personal/api/token\" ]; then echo -n 'resolved-op-token'; exit 0; fi\nexit 99\n",
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&bin_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&bin_path, perms).unwrap();
+
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+OPERATOR_TOKEN = "op://Personal/api/token"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        // Inject the fake `op` binary path via `LoadOptions::op_runner`.
+        // No process env mutation — `OpCli::with_binary` takes the path
+        // as a direct argument, so the `unsafe_code = "forbid"`
+        // crate-level lint stays intact and sibling tests running in
+        // parallel via cargo-nextest cannot race on any shared env var.
+        let op_runner: Box<dyn crate::operator_env::OpRunner> = Box::new(
+            crate::operator_env::OpCli::with_binary(bin_path.to_string_lossy().to_string()),
+        );
+        let opts = LoadOptions {
+            op_runner: Some(op_runner),
+            ..LoadOptions::default()
+        };
+
+        let workspace = repo_workspace(&repo_dir);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &opts,
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("-e OPERATOR_TOKEN=resolved-op-token"),
+            "op:// ref must resolve via the injected OpCli and inject; got: {run_cmd}"
+        );
+    }
 }
