@@ -382,7 +382,10 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
         )
         .unwrap();
     let config_before = editor.save().unwrap();
-    assert_eq!(config_before.workspaces.get("my-app").unwrap().mounts.len(), 2);
+    assert_eq!(
+        config_before.workspaces.get("my-app").unwrap().mounts.len(),
+        2
+    );
 
     // Now remove the workdir auto-mount
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
@@ -451,4 +454,3 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
         "expected clear error, got: {err}"
     );
 }
-

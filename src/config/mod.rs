@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 pub use crate::workspace::MountConfig;
 pub use crate::workspace::WorkspaceAgentOverride;
 
-pub mod editor;
 mod agents;
+pub mod editor;
 mod mounts;
 mod persist;
 mod workspaces;

@@ -87,7 +87,6 @@ impl AppConfig {
         config.validate_workspaces()?;
         Ok(config)
     }
-
 }
 
 /// Detect the literal deprecated `auth_forward = "copy"` at either of the

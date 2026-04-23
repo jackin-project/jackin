@@ -140,11 +140,7 @@ impl ConfigEditor {
                 // Unscoped: [docker.mounts.<name>]
                 let mount_table = table_path_mut(
                     &mut self.doc,
-                    &[
-                        "docker".to_string(),
-                        "mounts".to_string(),
-                        name.to_string(),
-                    ],
+                    &["docker".to_string(), "mounts".to_string(), name.to_string()],
                 );
                 mount_table.clear();
                 mount_table.insert("src", toml_edit::value(mount.src));
@@ -187,11 +183,7 @@ impl ConfigEditor {
     /// `AppConfig::remove_mount`'s cleanup so empty scope tables do not
     /// accumulate in the on-disk config.
     pub fn remove_mount(&mut self, name: &str, scope: Option<&str>) -> bool {
-        let Some(docker) = self
-            .doc
-            .get_mut("docker")
-            .and_then(|i| i.as_table_mut())
-        else {
+        let Some(docker) = self.doc.get_mut("docker").and_then(|i| i.as_table_mut()) else {
             return false;
         };
         let Some(mounts) = docker.get_mut("mounts").and_then(|i| i.as_table_mut()) else {
@@ -200,10 +192,7 @@ impl ConfigEditor {
         match scope {
             None => mounts.remove(name).is_some(),
             Some(scope_key) => {
-                let Some(entry) = mounts
-                    .get_mut(scope_key)
-                    .and_then(|i| i.as_table_mut())
-                else {
+                let Some(entry) = mounts.get_mut(scope_key).and_then(|i| i.as_table_mut()) else {
                     return false;
                 };
                 let removed = entry.remove(name).is_some();
@@ -236,7 +225,11 @@ impl ConfigEditor {
     ) {
         let claude_table = table_path_mut(
             &mut self.doc,
-            &["agents".to_string(), agent_key.to_string(), "claude".to_string()],
+            &[
+                "agents".to_string(),
+                agent_key.to_string(),
+                "claude".to_string(),
+            ],
         );
         claude_table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
     }
@@ -293,7 +286,11 @@ impl ConfigEditor {
                     if let Ok(parsed) = rendered.parse::<DocumentMut>() {
                         let claude_table = table_path_mut(
                             &mut self.doc,
-                            &["agents".to_string(), agent_key.to_string(), "claude".to_string()],
+                            &[
+                                "agents".to_string(),
+                                agent_key.to_string(),
+                                "claude".to_string(),
+                            ],
                         );
                         for (k, v) in parsed.as_table().iter() {
                             claude_table.insert(k, v.clone());
@@ -321,7 +318,9 @@ impl ConfigEditor {
         // Per-agent [agents.X.claude]
         if let Some(agents) = self.doc.get_mut("agents").and_then(|i| i.as_table_mut()) {
             for (_, agent_item) in agents.iter_mut() {
-                let Some(agent_table) = agent_item.as_table_mut() else { continue };
+                let Some(agent_table) = agent_item.as_table_mut() else {
+                    continue;
+                };
                 let Some(claude) = agent_table.get_mut("claude").and_then(|i| i.as_table_mut())
                 else {
                     continue;
@@ -358,7 +357,11 @@ impl ConfigEditor {
     }
 
     pub fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
-        let Some(workspaces) = self.doc.get_mut("workspaces").and_then(|i| i.as_table_mut()) else {
+        let Some(workspaces) = self
+            .doc
+            .get_mut("workspaces")
+            .and_then(|i| i.as_table_mut())
+        else {
             anyhow::bail!("workspace {name:?} not found");
         };
         if workspaces.remove(name).is_none() {
@@ -384,16 +387,14 @@ impl ConfigEditor {
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("workspace {name:?} disappeared after create"))?;
 
-        let rendered = toml::to_string(inserted)
-            .with_context(|| format!("serializing workspace {name:?}"))?;
+        let rendered =
+            toml::to_string(inserted).with_context(|| format!("serializing workspace {name:?}"))?;
         let parsed: DocumentMut = rendered
             .parse()
             .with_context(|| format!("re-parsing serialized workspace {name:?}"))?;
 
-        let workspaces_table = table_path_mut(
-            &mut self.doc,
-            &["workspaces".to_string(), name.to_string()],
-        );
+        let workspaces_table =
+            table_path_mut(&mut self.doc, &["workspaces".to_string(), name.to_string()]);
         for (key, item) in parsed.as_table().iter() {
             workspaces_table.insert(key, item.clone());
         }
@@ -427,10 +428,7 @@ impl ConfigEditor {
         // the edit IS the change the user is making to that workspace.
         let rendered = toml::to_string(updated)?;
         let parsed: DocumentMut = rendered.parse()?;
-        let target = table_path_mut(
-            &mut self.doc,
-            &["workspaces".to_string(), name.to_string()],
-        );
+        let target = table_path_mut(&mut self.doc, &["workspaces".to_string(), name.to_string()]);
         target.clear();
         for (key, item) in parsed.as_table().iter() {
             target.insert(key, item.clone());
@@ -469,9 +467,7 @@ fn table_path_mut<'a>(doc: &'a mut DocumentMut, path: &[String]) -> &'a mut Tabl
         if path.is_empty() {
             return table;
         }
-        let entry = table
-            .entry(&path[0])
-            .or_insert(Item::Table(Table::new()));
+        let entry = table.entry(&path[0]).or_insert(Item::Table(Table::new()));
         walk(entry, &path[1..])
     }
     walk(doc.as_item_mut(), path)
@@ -661,7 +657,10 @@ API_TOKEN = "op://vault-id/item-id/field"
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(!out.contains("# some note"), "{out}");
-        assert!(out.contains(r#"API_TOKEN = "x""#), "key still present: {out}");
+        assert!(
+            out.contains(r#"API_TOKEN = "x""#),
+            "key still present: {out}"
+        );
     }
 
     #[test]
@@ -760,7 +759,10 @@ API_TOKEN = "op://Personal/api/token"
         editor.save().unwrap();
 
         let round_tripped = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert_eq!(round_tripped, original, "open → save must be byte-identical");
+        assert_eq!(
+            round_tripped, original,
+            "open → save must be byte-identical"
+        );
     }
 
     #[test]
@@ -906,7 +908,10 @@ creds = { src = "/run/secrets/x", dst = "/secrets/x" }
 
         assert!(removed);
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(!out.contains("agent-smith"), "empty scope table should be gone: {out}");
+        assert!(
+            !out.contains("agent-smith"),
+            "empty scope table should be gone: {out}"
+        );
     }
 
     #[test]
@@ -929,7 +934,10 @@ logs = { src = "/b", dst = "/b" }
 
         assert!(removed);
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[docker.mounts.agent-smith]"), "scope table should still exist: {out}");
+        assert!(
+            out.contains("[docker.mounts.agent-smith]"),
+            "scope table should still exist: {out}"
+        );
         assert!(!out.contains("creds"), "{out}");
         assert!(out.contains("logs"), "{out}");
     }
@@ -1061,9 +1069,15 @@ auth_forward = "token"
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains(r#"git = "https://github.com/jackin-project/jackin-agent-smith.git""#), "{out}");
+        assert!(
+            out.contains(r#"git = "https://github.com/jackin-project/jackin-agent-smith.git""#),
+            "{out}"
+        );
         assert!(out.contains("trusted = true"), "{out}");
-        assert!(out.contains(r#"auth_forward = "token""#), "claude override wiped: {out}");
+        assert!(
+            out.contains(r#"auth_forward = "token""#),
+            "claude override wiped: {out}"
+        );
     }
 
     #[test]

@@ -120,7 +120,6 @@ impl AppConfig {
         }
     }
 
-
     pub fn list_mounts(&self) -> Vec<(String, String, &MountConfig)> {
         let mut result = Vec::new();
         for (key, entry) in self.docker.mounts.iter() {
