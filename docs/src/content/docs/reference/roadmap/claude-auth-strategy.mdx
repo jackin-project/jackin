@@ -39,9 +39,10 @@ Please run /login · API Error: 401 {"type":"error","error":{"type":"authenticat
 
 The current operator-facing modes are:
 
-- `copy` — copy host auth on first container creation only
-- `sync` — overwrite container auth from host on each launch when host auth exists
+- `sync` — overwrite container auth from host on each launch when host auth exists (default as of the `sync`-default release)
 - `ignore` — never forward host auth; require in-container login
+
+Historically there was also a `copy` mode (copy on first creation; never overwrite afterwards), which is deprecated. Configs that still declare `auth_forward = "copy"` are migrated to `sync` on load with a deprecation notice.
 
 Those modes are coherent, but they optimize for filesystem ownership of credentials, not for concurrent-session reliability.
 
