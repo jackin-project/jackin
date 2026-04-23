@@ -119,6 +119,96 @@ impl ConfigEditor {
         decor.set_prefix(prefix);
     }
 
+    /// Adds or replaces a named mount, mirroring `AppConfig::add_mount`.
+    ///
+    /// Unscoped (`scope = None`): writes `[docker.mounts.<name>]` — a single
+    /// `MountConfig` entry keyed by `name`.
+    ///
+    /// Scoped (`scope = Some(scope_key)`): writes `[docker.mounts.<scope_key>]`
+    /// with `name` as an inner key — i.e. the shape is
+    /// `docker.mounts[scope_key][name]`, matching how `AppConfig` stores
+    /// `MountEntry::Scoped`. Note this means `scope_key` is the OUTER key, not
+    /// `name` — the same ordering used by `AppConfig::add_mount`.
+    pub fn add_mount(
+        &mut self,
+        name: &str,
+        mount: crate::workspace::MountConfig,
+        scope: Option<&str>,
+    ) {
+        match scope {
+            None => {
+                // Unscoped: [docker.mounts.<name>]
+                let mount_table = table_path_mut(
+                    &mut self.doc,
+                    &[
+                        "docker".to_string(),
+                        "mounts".to_string(),
+                        name.to_string(),
+                    ],
+                );
+                mount_table.clear();
+                mount_table.insert("src", toml_edit::value(mount.src));
+                mount_table.insert("dst", toml_edit::value(mount.dst));
+                if mount.readonly {
+                    mount_table.insert("readonly", toml_edit::value(true));
+                }
+            }
+            Some(scope_key) => {
+                // Scoped: [docker.mounts.<scope_key>] with name as inner key.
+                // Matches AppConfig::add_mount which stores MountEntry::Scoped
+                // keyed by scope_key at the outer level.
+                let scoped_table = table_path_mut(
+                    &mut self.doc,
+                    &[
+                        "docker".to_string(),
+                        "mounts".to_string(),
+                        scope_key.to_string(),
+                    ],
+                );
+                // Build a sub-table for this named mount.
+                let mut entry_table = Table::new();
+                entry_table.insert("src", toml_edit::value(mount.src));
+                entry_table.insert("dst", toml_edit::value(mount.dst));
+                if mount.readonly {
+                    entry_table.insert("readonly", toml_edit::value(true));
+                }
+                scoped_table.insert(name, Item::Table(entry_table));
+            }
+        }
+    }
+
+    /// Removes a named mount, mirroring `AppConfig::remove_mount`. Returns
+    /// `true` if an entry was present and removed.
+    ///
+    /// Unscoped (`scope = None`): removes `docker.mounts[name]`.
+    /// Scoped (`scope = Some(scope_key)`): removes `docker.mounts[scope_key][name]`.
+    /// If the scope's sub-table becomes empty after removal the empty table is
+    /// left in place (toml_edit keeps it; callers that care can compact later).
+    pub fn remove_mount(&mut self, name: &str, scope: Option<&str>) -> bool {
+        let Some(docker) = self
+            .doc
+            .get_mut("docker")
+            .and_then(|i| i.as_table_mut())
+        else {
+            return false;
+        };
+        let Some(mounts) = docker.get_mut("mounts").and_then(|i| i.as_table_mut()) else {
+            return false;
+        };
+        match scope {
+            None => mounts.remove(name).is_some(),
+            Some(scope_key) => {
+                let Some(entry) = mounts
+                    .get_mut(scope_key)
+                    .and_then(|i| i.as_table_mut())
+                else {
+                    return false;
+                };
+                entry.remove(name).is_some()
+            }
+        }
+    }
+
     pub fn remove_env_var(&mut self, scope: EnvScope, key: &str) -> bool {
         let path = env_scope_path(&scope);
         // Walk without creating: return false if any segment is missing.
@@ -480,5 +570,96 @@ API_TOKEN = "op://Personal/api/token"
 
         let tmp = paths.config_file.with_extension("tmp");
         assert!(!tmp.exists(), "expected .tmp to be renamed away");
+    }
+
+    // ---- mount tests ----
+
+    #[test]
+    fn add_mount_unscoped_creates_single_mount_entry() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.add_mount(
+            "shared-home",
+            crate::workspace::MountConfig {
+                src: "/home/user".to_string(),
+                dst: "/workspace/home".to_string(),
+                readonly: false,
+            },
+            None,
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[docker.mounts.shared-home]"), "{out}");
+        assert!(out.contains(r#"src = "/home/user""#), "{out}");
+    }
+
+    #[test]
+    fn add_mount_scoped_creates_nested_entry() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        // Behavioral equivalence with AppConfig::add_mount:
+        // scope is the OUTER key; name is the INNER key.
+        // So scope=agent-smith produces [docker.mounts.agent-smith] with creds = {...}
+        editor.add_mount(
+            "creds",
+            crate::workspace::MountConfig {
+                src: "/run/secrets/x".to_string(),
+                dst: "/secrets/x".to_string(),
+                readonly: true,
+            },
+            Some("agent-smith"),
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        // The scoped shape: [docker.mounts.agent-smith] with creds sub-table
+        assert!(out.contains("[docker.mounts.agent-smith]"), "{out}");
+        assert!(out.contains(r#"src = "/run/secrets/x""#), "{out}");
+        assert!(out.contains("readonly = true"), "{out}");
+    }
+
+    #[test]
+    fn remove_mount_unscoped_deletes_entry() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[docker.mounts.shared-home]
+src = "/home/user"
+dst = "/workspace/home"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let removed = editor.remove_mount("shared-home", None);
+        editor.save().unwrap();
+
+        assert!(removed);
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("shared-home"), "{out}");
+    }
+
+    #[test]
+    fn remove_mount_returns_false_for_missing() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let removed = editor.remove_mount("nope", None);
+        editor.save().unwrap();
+        assert!(!removed);
     }
 }
