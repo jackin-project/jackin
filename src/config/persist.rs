@@ -39,7 +39,29 @@ impl AppConfig {
             // would destroy every user comment before the editor could
             // preserve them, defeating the whole point of this migration.
             if !paths.config_file.exists() {
-                config.save(paths)?;
+                // Inline of the removed AppConfig::save. Atomic write:
+                // serialize → .tmp (0o600 on unix, fsync) → rename.
+                let contents = toml::to_string_pretty(&config)?;
+                let tmp = paths.config_file.with_extension("tmp");
+
+                #[cfg(unix)]
+                {
+                    use std::io::Write;
+                    use std::os::unix::fs::OpenOptionsExt;
+                    let mut file = std::fs::OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .mode(0o600)
+                        .open(&tmp)?;
+                    file.write_all(contents.as_bytes())?;
+                    file.sync_all()?;
+                }
+
+                #[cfg(not(unix))]
+                std::fs::write(&tmp, &contents)?;
+
+                std::fs::rename(&tmp, &paths.config_file)?;
             }
             let mut editor = crate::config::ConfigEditor::open(paths)?;
             if builtins_changed {
@@ -66,30 +88,6 @@ impl AppConfig {
         Ok(config)
     }
 
-    pub fn save(&self, paths: &JackinPaths) -> anyhow::Result<()> {
-        let contents = toml::to_string_pretty(self)?;
-        let tmp = paths.config_file.with_extension("tmp");
-
-        #[cfg(unix)]
-        {
-            use std::io::Write;
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&tmp)?;
-            file.write_all(contents.as_bytes())?;
-            file.sync_all()?;
-        }
-
-        #[cfg(not(unix))]
-        std::fs::write(&tmp, &contents)?;
-
-        std::fs::rename(&tmp, &paths.config_file)?;
-        Ok(())
-    }
 }
 
 /// Detect the literal deprecated `auth_forward = "copy"` at either of the

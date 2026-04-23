@@ -95,7 +95,10 @@ impl AppConfig {
         Ok(expanded)
     }
 
-    pub fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
+    // pub(crate): test-only affordance for in-memory AppConfig setup in tests
+    // (launch/preview.rs, workspace/resolve.rs). Production callers use ConfigEditor.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
         let scope_key = scope.unwrap_or("");
         if scope_key.is_empty() {
             self.docker
@@ -117,23 +120,6 @@ impl AppConfig {
         }
     }
 
-    pub fn remove_mount(&mut self, name: &str, scope: Option<&str>) -> bool {
-        let scope_key = scope.unwrap_or("");
-        if scope_key.is_empty() {
-            self.docker.mounts.remove(name).is_some()
-        } else {
-            match self.docker.mounts.get_mut(scope_key) {
-                Some(MountEntry::Scoped(map)) => {
-                    let removed = map.remove(name).is_some();
-                    if map.is_empty() {
-                        self.docker.mounts.remove(scope_key);
-                    }
-                    removed
-                }
-                _ => false,
-            }
-        }
-    }
 
     pub fn list_mounts(&self) -> Vec<(String, String, &MountConfig)> {
         let mut result = Vec::new();

@@ -56,7 +56,9 @@ impl AppConfig {
     }
 
     /// Set the per-agent auth forward mode override.
-    pub fn set_agent_auth_forward(&mut self, key: &str, mode: AuthForwardMode) {
+    // pub(crate): test-only affordance; production callers use ConfigEditor.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn set_agent_auth_forward(&mut self, key: &str, mode: AuthForwardMode) {
         if let Some(source) = self.agents.get_mut(key) {
             let claude = source.claude.get_or_insert_with(ClaudeAgentConfig::default);
             claude.auth_forward = Some(mode);
@@ -64,7 +66,9 @@ impl AppConfig {
     }
 
     /// Mark an agent source as trusted.  Returns `true` when the flag changed.
-    pub fn trust_agent(&mut self, key: &str) -> bool {
+    // pub(crate): test-only affordance; production callers use ConfigEditor.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn trust_agent(&mut self, key: &str) -> bool {
         if let Some(source) = self.agents.get_mut(key)
             && !source.trusted
         {
@@ -77,7 +81,9 @@ impl AppConfig {
     /// Revoke trust for an agent source.  Returns `true` when the flag changed.
     /// Note: does not prevent revoking builtins — the caller should check
     /// [`is_builtin_agent`] first.
-    pub fn untrust_agent(&mut self, key: &str) -> bool {
+    // pub(crate): test-only affordance; production callers use ConfigEditor.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn untrust_agent(&mut self, key: &str) -> bool {
         if let Some(source) = self.agents.get_mut(key)
             && source.trusted
         {
@@ -199,8 +205,10 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         );
         assert!(is_new);
 
-        // Not yet persisted — caller must save explicitly
-        config.save(&paths).unwrap();
+        // Not yet persisted — write via toml::to_string_pretty (AppConfig::save
+        // was removed in Task 14; tests bootstrap the file directly).
+        let contents = toml::to_string_pretty(&config).unwrap();
+        std::fs::write(&paths.config_file, &contents).unwrap();
         assert!(
             std::fs::read_to_string(&paths.config_file)
                 .unwrap()
@@ -305,7 +313,9 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
 
         config.resolve_agent_source(&selector).unwrap();
         config.trust_agent("chainargos/the-architect");
-        config.save(&paths).unwrap();
+        // AppConfig::save removed in Task 14 — write the bootstrap file directly.
+        let contents = toml::to_string_pretty(&config).unwrap();
+        std::fs::write(&paths.config_file, &contents).unwrap();
 
         let reloaded = AppConfig::load_or_init(&paths).unwrap();
         assert!(
