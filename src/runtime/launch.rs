@@ -753,6 +753,11 @@ fn load_agent_with(
             &paths.home_dir,
         )?;
 
+        // Placeholder match arms for Token / TokenMode land in Task 5 with real
+        // diagnostic + presence-check logic. Empty bodies here keep the crate
+        // compiling between Task 2 and Task 5; clippy otherwise flags them as
+        // identical to neighbouring empty arms.
+        #[allow(clippy::match_same_arms)]
         match auth_outcome {
             crate::instance::AuthProvisionOutcome::Synced => {
                 eprintln!(
@@ -768,7 +773,9 @@ fn load_agent_with(
                     );
                 }
                 crate::config::AuthForwardMode::Ignore => {}
+                crate::config::AuthForwardMode::Token => {}
             },
+            crate::instance::AuthProvisionOutcome::TokenMode => {}
             crate::instance::AuthProvisionOutcome::Skipped => {}
         }
 
