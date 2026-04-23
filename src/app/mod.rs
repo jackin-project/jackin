@@ -4,6 +4,8 @@ use anyhow::Result;
 use std::io::ErrorKind;
 use std::path::Path;
 
+use crate::cli::agent::{HardlineArgs, LaunchArgs, LoadArgs};
+use crate::cli::cleanup::{EjectArgs, PurgeArgs};
 use crate::cli::{self, Cli, Command, WorkspaceCommand};
 use crate::config::{self, AppConfig};
 use crate::docker::ShellRunner;
@@ -30,14 +32,14 @@ pub fn run(cli: Cli) -> Result<()> {
     let mut runner = ShellRunner::default();
 
     match cli.command {
-        Command::Load {
+        Command::Load(LoadArgs {
             selector,
             target,
             mounts,
             rebuild,
             no_intro,
             debug,
-        } => {
+        }) => {
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
@@ -100,7 +102,7 @@ pub fn run(cli: Cli) -> Result<()> {
             );
             result
         }
-        Command::Launch { debug } => {
+        Command::Launch(LaunchArgs { debug }) => {
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
@@ -117,7 +119,7 @@ pub fn run(cli: Cli) -> Result<()> {
             remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
             result
         }
-        Command::Hardline { selector } => {
+        Command::Hardline(HardlineArgs { selector }) => {
             let container = if let Some(sel) = selector {
                 match Selector::parse(&sel)? {
                     Selector::Container(name) => name,
@@ -129,11 +131,11 @@ pub fn run(cli: Cli) -> Result<()> {
             };
             runtime::hardline_agent(&container, &mut runner)
         }
-        Command::Eject {
+        Command::Eject(EjectArgs {
             selector,
             all,
             purge,
-        } => {
+        }) => {
             let containers = match Selector::parse(&selector)? {
                 Selector::Container(container) => vec![container],
                 Selector::Class(class) => {
@@ -697,7 +699,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
         },
-        Command::Purge { selector, all } => match Selector::parse(&selector)? {
+        Command::Purge(PurgeArgs { selector, all }) => match Selector::parse(&selector)? {
             Selector::Container(container) => {
                 remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                 println!("Purged state for {container}.");
