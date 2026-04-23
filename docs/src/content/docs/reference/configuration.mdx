@@ -35,6 +35,38 @@ auth_forward = "ignore"
 
 Resolution order: per-agent override > global `[claude]` > `sync`.
 
+### Operator env layers
+
+Four layers contribute env vars to the agent container, merged with later-wins semantics:
+
+```toml
+# Layer 1 — global
+[env]
+OPERATOR_ORG = "acme-corp"
+
+# Layer 2 — per agent
+[agents.agent-smith.env]
+API_TOKEN = "op://Personal/api/token"
+
+# Layer 3 — per workspace
+[workspaces.big-monorepo.env]
+REGISTRY = "${COMPANY_REGISTRY_URL}"
+
+# Layer 4 — per (workspace, agent)
+[workspaces.big-monorepo.agents.agent-smith.env]
+API_TOKEN = "op://Work/shared-smith/token"
+```
+
+Values can be:
+
+- `op://VAULT/ITEM/FIELD` — resolved via the 1Password CLI (`op read`)
+- `$NAME` or `${NAME}` — read from the host env
+- Anything else — literal
+
+Reserved runtime names (`JACKIN_CLAUDE_ENV`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are rejected at config load.
+
+See [Environment Variables](/guides/environment-variables) for the full guide.
+
 ### Workspaces
 
 ```toml
