@@ -72,7 +72,7 @@ pub fn resolve_env(
     declarations: &BTreeMap<String, EnvVarDecl>,
     prompter: &impl EnvPrompter,
 ) -> anyhow::Result<ResolvedEnv> {
-    let order = topological_sort(declarations)?;
+    let order = crate::env_model::topological_env_order(declarations)?;
     let mut vars = Vec::new();
     let mut skipped: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -131,55 +131,6 @@ pub fn resolve_env(
     }
 
     Ok(ResolvedEnv { vars })
-}
-
-fn topological_sort(declarations: &BTreeMap<String, EnvVarDecl>) -> anyhow::Result<Vec<String>> {
-    use std::collections::{HashMap, VecDeque};
-
-    let mut in_degree: HashMap<&str, usize> = HashMap::new();
-    let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
-
-    for name in declarations.keys() {
-        in_degree.entry(name.as_str()).or_insert(0);
-        adjacency.entry(name.as_str()).or_default();
-    }
-
-    for (name, decl) in declarations {
-        for dep in &decl.depends_on {
-            if let Some(dep_name) = dep.strip_prefix("env.") {
-                adjacency.entry(dep_name).or_default().push(name.as_str());
-                *in_degree.entry(name.as_str()).or_insert(0) += 1;
-            }
-        }
-    }
-
-    let mut queue: VecDeque<&str> = in_degree
-        .iter()
-        .filter(|&(_, &deg)| deg == 0)
-        .map(|(&name, _)| name)
-        .collect();
-
-    let mut result = Vec::new();
-
-    while let Some(node) = queue.pop_front() {
-        result.push(node.to_string());
-        if let Some(neighbors) = adjacency.get(node) {
-            for &neighbor in neighbors {
-                if let Some(deg) = in_degree.get_mut(neighbor) {
-                    *deg -= 1;
-                    if *deg == 0 {
-                        queue.push_back(neighbor);
-                    }
-                }
-            }
-        }
-    }
-
-    if result.len() != declarations.len() {
-        anyhow::bail!("env var dependency cycle detected");
-    }
-
-    Ok(result)
 }
 
 #[cfg(test)]
