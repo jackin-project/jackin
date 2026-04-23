@@ -14,15 +14,35 @@ This repository uses `main` as its primary branch. This file is the canonical ho
 
 If you are uncertain whether authorization applies to the PR in front of you, ask. The cost of pausing is ~30 seconds; the cost of merging something the operator wasn't ready for is much higher.
 
-## Codex Commit Attribution (agent-only)
+## Commit Attribution (agent-only)
 
-Until Codex supports automatic commit trailers, every commit created by the Codex agent in this repository must include this exact trailer:
+Every commit created by an AI agent in this repository must include **exactly one** `Co-authored-by` trailer identifying the agent that made the commit. The trailer identifies the **agent tool**, not the underlying model — **never stack multiple agent trailers on one commit** (for example, an Amp-generated commit must not also carry `Co-authored-by: Claude` or `Co-authored-by: Codex` just because Amp used one of those vendors' models under the hood).
 
-```text
-Co-authored-by: Codex <codex@openai.com>
-```
+Until the listed agents emit their trailers automatically, the trailer must be added by hand when creating or amending the commit.
 
-Add it manually when creating or amending Codex-generated commits.
+**Trailers by agent:**
+
+- **Claude** (Claude Code CLI, or any Claude-API coding agent used directly):
+
+  ```text
+  Co-authored-by: Claude <noreply@anthropic.com>
+  ```
+
+- **Codex** (OpenAI Codex CLI):
+
+  ```text
+  Co-authored-by: Codex <codex@openai.com>
+  ```
+
+- **Amp** (Sourcegraph Amp, regardless of underlying model):
+
+  ```text
+  Co-authored-by: Amp <amp@ampcode.com>
+  ```
+
+Amp may additionally emit an `Amp-Thread-ID:` metadata trailer; that is acceptable alongside the single `Co-authored-by: Amp` trailer because the thread ID identifies the conversation, not a second agent.
+
+If you are uncertain which agent is creating the commit, ask — the trailer is how the operator tracks which agent produced which change, and wrong attribution is worse than no attribution.
 
 ## Code review & automated scanning (agent-only)
 
