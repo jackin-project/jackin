@@ -6,7 +6,7 @@ Quick navigation reference for AI agents working in this repository.
 
 | File | Purpose |
 |---|---|
-| `Cargo.toml` | Crate manifest — dependencies, lints, edition 2024, MSRV 1.87 |
+| `Cargo.toml` | Crate manifest — dependencies and lints |
 | `Cargo.lock` | Locked dependency versions |
 | `AGENTS.md` | Shared instructions for all AI agents (testing, pre-commit, security) |
 | `CLAUDE.md` | Claude-specific pointer to `AGENTS.md` |
@@ -28,26 +28,46 @@ the deployed site at <https://jackin.tailrocks.com/reference/roadmap/>.
 
 ## Source Code — `src/`
 
-Rust CLI binary. All modules are flat (no subdirectories).
+Rust CLI binary. Every significant concern has its own directory;
+crate-root files are reserved for items that don't cluster into
+a domain group.
 
-| Module | Responsibility |
+### Crate root
+
+| File | Responsibility |
 |---|---|
-| `main.rs` | Entry point — parses CLI and calls `run()` |
-| `lib.rs` | Library root — module declarations, `run()` orchestration, target classification |
-| `cli.rs` | Clap command definitions (load, launch, eject, exile, purge, workspace, config) |
-| `runtime.rs` | Core engine — agent lifecycle (build, run, attach, eject, purge), Docker image management |
-| `docker.rs` | Docker command builder — shell execution abstraction |
-| `workspace.rs` | Workspace resolution — mount specs, workdir, saved workspace lookup |
-| `config.rs` | TOML config persistence — agent registry, workspaces, mount scopes |
-| `manifest.rs` | Agent manifest parser (`jackin.agent.toml` inside agent repos) |
-| `derived_image.rs` | Dockerfile generation for agent images from base construct |
+| `main.rs` | Entry point — constructs `Cli` and calls `jackin::run()` |
+| `lib.rs` | Thin crate root (~20 LOC) — module declarations + `pub use app::run` |
+| `bin/validate.rs` | Separate binary for validating agent manifests (`jackin-validate`) |
+
+### Module tree
+
+| Module | Owns |
+|---|---|
+| `app/` | `run()` command dispatch (`mod.rs`) and context helpers (`context.rs`): target classification, workspace-for-cwd, agent-from-context, last-agent persistence |
+| `cli/` | Clap schema split by topic: `root.rs` (`Cli` + `Command` enum), `agent.rs` (Load/Hardline/Launch args), `cleanup.rs` (Eject/Purge args), `workspace.rs` (`WorkspaceCommand`), `config.rs` (`ConfigCommand` + sub-enums) |
+| `workspace/` | Workspace model and planning. `mod.rs` (types, re-exports), `paths.rs` (expand_tilde, resolve_path), `mounts.rs` (parse/validate), `planner.rs` (`plan_create`, `plan_edit`, `plan_collapse`), `resolve.rs` (runtime resolution), `sensitive.rs` (sensitive-mount detection) |
+| `config/` | TOML config model and persistence. `mod.rs` (types, `require_workspace` helper), `persist.rs` (load/save), `agents.rs` (builtin sync, trust, auth-forward), `mounts.rs` (global mount registry), `workspaces.rs` (workspace CRUD) |
+| `manifest/` | Agent-manifest (`jackin.agent.toml`) schema + validator. `mod.rs` (schema structs, `load`, `display_name`), `validate.rs` (`validate`, `is_valid_env_var_name`) |
+| `runtime/` | Container lifecycle. `mod.rs` (thin re-exports), `naming.rs` (labels, container/image naming, family matching), `identity.rs` (git/host identity), `repo_cache.rs` (repo lock + fetch), `image.rs` (docker build), `launch.rs` (`launch_agent_runtime`, `load_agent`, `load_agent_with`), `attach.rs` (attach + hardline + DinD readiness), `discovery.rs` (list managed agents), `cleanup.rs` (eject, purge, orphan GC), `test_support.rs` (shared `FakeRunner`) |
+| `launch/` | Interactive TUI launcher. `mod.rs` (`run_launch` entrypoint), `state.rs` (`LaunchState`, `WorkspaceChoice`), `input.rs` (event handling), `preview.rs` (workspace preview + detail lines), `render.rs` (all drawing functions) |
+| `instance/` | Per-container state preparation. `mod.rs` (`AgentState`, orchestration), `naming.rs` (container slug + clone naming + class-family matching), `auth.rs` (auth-forward modes + credential handling + symlink safety), `plugins.rs` (plugin-marketplace serialization) |
+| `tui/` | General terminal UI helpers (separate from the launcher). `mod.rs` (shared palette, `DEBUG_MODE`), `animation.rs` (intro/outro, digital rain), `output.rs` (tables, hints, fatal, logo, title), `prompt.rs` (`prompt_choice`, `spin_wait`, `require_interactive_stdin`) |
+
+### Flat helper files at crate root
+
+| File | Responsibility |
+|---|---|
+| `env_model.rs` | Single source of truth for env policy — reserved-runtime-env list, `is_reserved`, `extract_interpolation_refs`, `topological_env_order` (cycle detection) |
+| `env_resolver.rs` | Runtime env resolution — `resolve_env`, interpolation, interactive prompts |
+| `selector.rs` | Agent selector parsing — `ClassSelector`, `Selector`, `TryFrom<&str>` impls |
 | `repo.rs` | Agent repo validation — required files, path traversal checks |
-| `repo_contract.rs` | Enforces agent Dockerfiles use the construct base image |
-| `instance.rs` | Container naming, clone indices, plugin state preparation |
-| `selector.rs` | Agent selector parsing — `owner/repo`, builtins, container names |
-| `launch.rs` | Interactive TUI launcher logic — agent/workspace selection |
-| `tui.rs` | Ratatui terminal UI components — prompts, hints, display helpers |
-| `paths.rs` | XDG-compliant data and config directory resolution |
+| `repo_contract.rs` | Enforces agent `Dockerfile`s extend the `construct` base image |
+| `derived_image.rs` | Dockerfile generation for agent images from the base construct |
+| `docker.rs` | Docker command builder — `CommandRunner` trait and `ShellRunner` |
+| `terminal_prompter.rs` | Interactive env-var prompting for manifest resolution |
+| `version_check.rs` | Claude CLI version detection for image cache-bust |
+| `paths.rs` | XDG-compliant data and config directory resolution (`JackinPaths`) |
 
 ## Documentation — `docs/`
 
@@ -130,11 +150,21 @@ When changing behavior, update both sides:
 
 | Code change in | Update docs in |
 |---|---|
-| `src/cli.rs` (command flags) | `docs/src/content/docs/commands/<cmd>.mdx` |
-| `src/workspace.rs` (mount logic) | `docs/.../guides/workspaces.mdx`, `docs/.../guides/mounts.mdx` |
-| `src/config.rs` (config format) | `docs/.../reference/configuration.mdx` |
-| `src/runtime.rs` (container lifecycle) | `docs/.../reference/architecture.mdx` |
-| `src/manifest.rs` (jackin.agent.toml) | `docs/.../developing/agent-manifest.mdx` |
+| `src/cli/**` (command flags or help text) | `docs/src/content/docs/commands/<cmd>.mdx` |
+| `src/workspace/**` (mount logic) | `docs/.../guides/workspaces.mdx`, `docs/.../guides/mounts.mdx` |
+| `src/config/**` (config format) | `docs/.../reference/configuration.mdx` |
+| `src/runtime/**` (container lifecycle) | `docs/.../reference/architecture.mdx` |
+| `src/manifest/**` (`jackin.agent.toml` schema or validation) | `docs/.../developing/agent-manifest.mdx` |
+| `src/instance/auth.rs` (auth-forward, credential handling) | `docs/.../guides/authentication.mdx`, `docs/.../guides/security-model.mdx` |
+| `src/env_model.rs`, `src/env_resolver.rs` (env policy) | `docs/.../developing/agent-manifest.mdx` (env section) |
 | `src/derived_image.rs` (Dockerfile gen) | `docs/.../developing/construct-image.mdx` |
 | `src/repo.rs` / `src/repo_contract.rs` | `docs/.../guides/agent-repos.mdx` |
 | `docker/construct/Dockerfile` | `docs/.../developing/construct-image.mdx` |
+
+## Keeping this file fresh
+
+If a PR changes module boundaries — adds a new module directory,
+splits a file into a subdirectory, introduces a new cross-cutting
+helper — **update the module tree above in the same PR**. See
+[`TODO.md`](TODO.md) for the stale-docs check every structural PR
+should run.
