@@ -450,4 +450,35 @@ API_TOKEN = "op://Personal/api/token"
         let round_tripped = std::fs::read_to_string(&paths.config_file).unwrap();
         assert_eq!(round_tripped, original, "open → save must be byte-identical");
     }
+
+    #[test]
+    #[cfg(unix)]
+    fn saved_file_is_0600_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "[env]\nK = \"v\"\n").unwrap();
+
+        let editor = ConfigEditor::open(&paths).unwrap();
+        editor.save().unwrap();
+
+        let perms = std::fs::metadata(&paths.config_file).unwrap().permissions();
+        assert_eq!(perms.mode() & 0o777, 0o600, "config file must be 0600");
+    }
+
+    #[test]
+    fn save_leaves_no_tmp_file_on_success() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "[env]\nK = \"v\"\n").unwrap();
+
+        let editor = ConfigEditor::open(&paths).unwrap();
+        editor.save().unwrap();
+
+        let tmp = paths.config_file.with_extension("tmp");
+        assert!(!tmp.exists(), "expected .tmp to be renamed away");
+    }
 }
