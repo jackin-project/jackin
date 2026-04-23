@@ -200,11 +200,9 @@ mod tests {
         .unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config {
-                command: ConfigCommand::Mount {
-                    command: MountCommand::Add { .. }
-                }
-            }
+            Command::Config(ConfigCommand::Mount {
+                command: MountCommand::Add { .. }
+            })
         ));
     }
 
@@ -214,11 +212,9 @@ mod tests {
             Cli::try_parse_from(["jackin", "config", "mount", "remove", "gradle-cache"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config {
-                command: ConfigCommand::Mount {
-                    command: MountCommand::Remove { .. }
-                }
-            }
+            Command::Config(ConfigCommand::Mount {
+                command: MountCommand::Remove { .. }
+            })
         ));
     }
 
@@ -227,11 +223,9 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "mount", "list"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config {
-                command: ConfigCommand::Mount {
-                    command: MountCommand::List
-                }
-            }
+            Command::Config(ConfigCommand::Mount {
+                command: MountCommand::List
+            })
         ));
     }
 
@@ -247,11 +241,9 @@ mod tests {
         .unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config {
-                command: ConfigCommand::Trust {
-                    command: TrustCommand::Grant { .. }
-                }
-            }
+            Command::Config(ConfigCommand::Trust {
+                command: TrustCommand::Grant { .. }
+            })
         ));
     }
 
@@ -267,11 +259,9 @@ mod tests {
         .unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config {
-                command: ConfigCommand::Trust {
-                    command: TrustCommand::Revoke { .. }
-                }
-            }
+            Command::Config(ConfigCommand::Trust {
+                command: TrustCommand::Revoke { .. }
+            })
         ));
     }
 
@@ -280,11 +270,9 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "trust", "list"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config {
-                command: ConfigCommand::Trust {
-                    command: TrustCommand::List
-                }
-            }
+            Command::Config(ConfigCommand::Trust {
+                command: TrustCommand::List
+            })
         ));
     }
 
@@ -327,14 +315,12 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "copy"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config {
-                command: ConfigCommand::Auth {
+            Command::Config(ConfigCommand::Auth {
                     command: AuthCommand::Set {
                         ref mode,
                         agent: None,
                     }
-                }
-            } if mode == "copy"
+                }) if mode == "copy"
         ));
     }
 
@@ -352,14 +338,12 @@ mod tests {
         .unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config {
-                command: ConfigCommand::Auth {
+            Command::Config(ConfigCommand::Auth {
                     command: AuthCommand::Set {
                         ref mode,
                         agent: Some(ref agent),
                     }
-                }
-            } if mode == "sync" && agent == "agent-smith"
+                }) if mode == "sync" && agent == "agent-smith"
         ));
     }
 
@@ -368,11 +352,9 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "auth", "show"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config {
-                command: ConfigCommand::Auth {
-                    command: AuthCommand::Show { agent: None }
-                }
-            }
+            Command::Config(ConfigCommand::Auth {
+                command: AuthCommand::Show { agent: None }
+            })
         ));
     }
 }

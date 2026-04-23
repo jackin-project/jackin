@@ -16,11 +16,16 @@ pub struct Cli {
 
 /// Top-level `jackin` subcommand dispatch.
 ///
-/// Each variant wraps an `Args` struct or a sub-command enum. Help text
-/// and `before_help` / `styles` / `after_long_help` attributes live on
-/// the wrapped type in its own file (e.g. `cli::agent::LoadArgs`,
-/// `cli::workspace::WorkspaceCommand`). Only `Exile` carries its
-/// attributes here because it has no payload.
+/// Variants that wrap an `#[derive(Args)]` struct carry their help text on
+/// the struct itself — see e.g. `cli::agent::LoadArgs`. Variants that wrap
+/// a `#[derive(Subcommand)]` enum (`Workspace`, `Config`) keep their
+/// parent-command help on the outer variant: Clap's subcommand-enum
+/// attribute propagation targets nested variants, not the parent help
+/// page. `Exile` is a unit variant with no payload, so its attributes
+/// also live here.
+///
+/// All variants use tuple form (`Load(LoadArgs)`, `Workspace(WorkspaceCommand)`),
+/// never struct form with inline `{ ... }`. This keeps dispatch symmetry.
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     Load(LoadArgs),
@@ -31,14 +36,12 @@ pub enum Command {
     Exile,
     Purge(PurgeArgs),
     Launch(LaunchArgs),
-    Workspace {
-        #[command(subcommand)]
-        command: WorkspaceCommand,
-    },
-    Config {
-        #[command(subcommand)]
-        command: ConfigCommand,
-    },
+    /// Manage saved workspaces
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    Workspace(WorkspaceCommand),
+    /// View and modify operator configuration
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    Config(ConfigCommand),
 }
 
 #[cfg(test)]

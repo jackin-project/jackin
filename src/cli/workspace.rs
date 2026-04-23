@@ -189,9 +189,7 @@ mod tests {
 
         assert!(matches!(
             cli.command,
-            Command::Workspace {
-                command: WorkspaceCommand::Create { .. }
-            }
+            Command::Workspace(WorkspaceCommand::Create { .. })
         ));
     }
 
@@ -209,12 +207,10 @@ mod tests {
 
         assert!(matches!(
             cli.command,
-            Command::Workspace {
-                command: WorkspaceCommand::Create {
-                    no_workdir_mount: false,
-                    ..
-                }
-            }
+            Command::Workspace(WorkspaceCommand::Create {
+                no_workdir_mount: false,
+                ..
+            })
         ));
     }
 
@@ -235,12 +231,10 @@ mod tests {
 
         assert!(matches!(
             cli.command,
-            Command::Workspace {
-                command: WorkspaceCommand::Create {
-                    no_workdir_mount: true,
-                    ..
-                }
-            }
+            Command::Workspace(WorkspaceCommand::Create {
+                no_workdir_mount: true,
+                ..
+            })
         ));
     }
 
@@ -260,9 +254,7 @@ mod tests {
 
         assert!(matches!(
             cli.command,
-            Command::Workspace {
-                command: WorkspaceCommand::Edit { .. }
-            }
+            Command::Workspace(WorkspaceCommand::Edit { .. })
         ));
     }
 
@@ -279,12 +271,10 @@ mod tests {
 
         assert!(matches!(
             cli.command,
-            Command::Workspace {
-                command: WorkspaceCommand::Edit {
-                    no_workdir_mount: true,
-                    ..
-                }
-            }
+            Command::Workspace(WorkspaceCommand::Edit {
+                no_workdir_mount: true,
+                ..
+            })
         ));
     }
 
@@ -317,9 +307,7 @@ mod tests {
         ])
         .unwrap();
         match cli.command {
-            Command::Workspace {
-                command: WorkspaceCommand::Edit { assume_yes, .. },
-            } => assert!(assume_yes),
+            Command::Workspace(WorkspaceCommand::Edit { assume_yes, .. }) => assert!(assume_yes),
             other => panic!("unexpected command {other:?}"),
         }
     }
@@ -329,9 +317,7 @@ mod tests {
         let cli =
             Cli::try_parse_from(["jackin", "workspace", "edit", "proj-alpha", "--prune"]).unwrap();
         match cli.command {
-            Command::Workspace {
-                command: WorkspaceCommand::Edit { prune, .. },
-            } => assert!(prune),
+            Command::Workspace(WorkspaceCommand::Edit { prune, .. }) => assert!(prune),
             other => panic!("unexpected command {other:?}"),
         }
     }
@@ -340,9 +326,7 @@ mod tests {
     fn parses_workspace_edit_with_yes_short_form() {
         let cli = Cli::try_parse_from(["jackin", "workspace", "edit", "proj-alpha", "-y"]).unwrap();
         match cli.command {
-            Command::Workspace {
-                command: WorkspaceCommand::Edit { assume_yes, .. },
-            } => assert!(assume_yes),
+            Command::Workspace(WorkspaceCommand::Edit { assume_yes, .. }) => assert!(assume_yes),
             other => panic!("unexpected command {other:?}"),
         }
     }
@@ -352,9 +336,7 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "workspace", "prune", "proj-alpha"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Workspace {
-                command: WorkspaceCommand::Prune { .. }
-            }
+            Command::Workspace(WorkspaceCommand::Prune { .. })
         ));
     }
 
@@ -363,9 +345,7 @@ mod tests {
         let cli =
             Cli::try_parse_from(["jackin", "workspace", "prune", "proj-alpha", "--yes"]).unwrap();
         match cli.command {
-            Command::Workspace {
-                command: WorkspaceCommand::Prune { assume_yes, .. },
-            } => assert!(assume_yes),
+            Command::Workspace(WorkspaceCommand::Prune { assume_yes, .. }) => assert!(assume_yes),
             other => panic!("unexpected command {other:?}"),
         }
     }
