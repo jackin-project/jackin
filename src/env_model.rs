@@ -87,6 +87,76 @@ pub(crate) fn extract_interpolation_refs(s: &str) -> Vec<&str> {
     refs
 }
 
+/// Topologically sort env var declarations by their `env.` dependencies.
+///
+/// Consumes `depends_on` entries that start with `env.` — any other
+/// dependency namespace is ignored. Returns `Ok` with names ordered so
+/// every dependency appears before its dependents; returns `Err` when a
+/// cycle is detected.
+///
+/// Used in two places:
+///
+/// * Manifest validation (`AgentManifest::validate`) to reject cyclic
+///   env graphs at load time. The returned order is discarded.
+/// * Runtime env resolution (`env_resolver::resolve_env`) to process
+///   declarations in dependency order before interpolation.
+///
+/// Before this lived in `env_model`, each of those two call sites had
+/// its own copy of Kahn's algorithm. The copies were functionally
+/// identical; centralising here guarantees the manifest load path
+/// and the runtime resolution path cannot diverge on what counts as
+/// a cycle.
+pub(crate) fn topological_env_order(
+    declarations: &std::collections::BTreeMap<String, crate::manifest::EnvVarDecl>,
+) -> anyhow::Result<Vec<String>> {
+    use std::collections::{HashMap, VecDeque};
+
+    let mut in_degree: HashMap<&str, usize> = HashMap::new();
+    let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+
+    for name in declarations.keys() {
+        in_degree.entry(name.as_str()).or_insert(0);
+        adjacency.entry(name.as_str()).or_default();
+    }
+
+    for (name, decl) in declarations {
+        for dep in &decl.depends_on {
+            if let Some(dep_name) = dep.strip_prefix("env.") {
+                adjacency.entry(dep_name).or_default().push(name.as_str());
+                *in_degree.entry(name.as_str()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let mut queue: VecDeque<&str> = in_degree
+        .iter()
+        .filter(|&(_, &deg)| deg == 0)
+        .map(|(&name, _)| name)
+        .collect();
+
+    let mut result = Vec::new();
+
+    while let Some(node) = queue.pop_front() {
+        result.push(node.to_string());
+        if let Some(neighbors) = adjacency.get(node) {
+            for &neighbor in neighbors {
+                if let Some(deg) = in_degree.get_mut(neighbor) {
+                    *deg -= 1;
+                    if *deg == 0 {
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+        }
+    }
+
+    if result.len() != declarations.len() {
+        anyhow::bail!("env var dependency cycle detected");
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

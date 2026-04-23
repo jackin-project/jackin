@@ -143,8 +143,9 @@ impl AgentManifest {
             self.validate_env_interpolation(name, decl)?;
         }
 
-        // Cycle detection via topological sort (Kahn's algorithm)
-        self.detect_env_cycles()?;
+        // Cycle detection via topological sort (shared with
+        // env_resolver::resolve_env — one Kahn's implementation).
+        crate::env_model::topological_env_order(&self.env)?;
 
         Ok(warnings)
     }
@@ -216,55 +217,6 @@ impl AgentManifest {
                     }
                 }
             }
-        }
-
-        Ok(())
-    }
-
-    fn detect_env_cycles(&self) -> anyhow::Result<()> {
-        use std::collections::{HashMap, VecDeque};
-
-        let mut in_degree: HashMap<&str, usize> = HashMap::new();
-        let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
-
-        for name in self.env.keys() {
-            in_degree.entry(name.as_str()).or_insert(0);
-            adjacency.entry(name.as_str()).or_default();
-        }
-
-        for (name, decl) in &self.env {
-            for dep in &decl.depends_on {
-                if let Some(dep_name) = dep.strip_prefix("env.") {
-                    adjacency.entry(dep_name).or_default().push(name.as_str());
-                    *in_degree.entry(name.as_str()).or_insert(0) += 1;
-                }
-            }
-        }
-
-        let mut queue: VecDeque<&str> = in_degree
-            .iter()
-            .filter(|&(_, &deg)| deg == 0)
-            .map(|(&name, _)| name)
-            .collect();
-
-        let mut visited = 0usize;
-
-        while let Some(node) = queue.pop_front() {
-            visited += 1;
-            if let Some(neighbors) = adjacency.get(node) {
-                for &neighbor in neighbors {
-                    if let Some(deg) = in_degree.get_mut(neighbor) {
-                        *deg -= 1;
-                        if *deg == 0 {
-                            queue.push_back(neighbor);
-                        }
-                    }
-                }
-            }
-        }
-
-        if visited != self.env.len() {
-            anyhow::bail!("env var dependency cycle detected");
         }
 
         Ok(())
