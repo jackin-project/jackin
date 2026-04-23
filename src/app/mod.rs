@@ -177,7 +177,7 @@ pub fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
         Command::Config(config_cmd) => match config_cmd {
-            cli::ConfigCommand::Mount { command: mount_cmd } => match mount_cmd {
+            cli::ConfigCommand::Mount(mount_cmd) => match mount_cmd {
                 cli::MountCommand::Add {
                     name,
                     src,
@@ -248,7 +248,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
             },
-            cli::ConfigCommand::Trust { command: trust_cmd } => match trust_cmd {
+            cli::ConfigCommand::Trust(trust_cmd) => match trust_cmd {
                 cli::TrustCommand::Grant { selector } => {
                     let class = ClassSelector::parse(&selector)?;
                     config.resolve_agent_source(&class)?;
@@ -290,7 +290,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
             },
-            cli::ConfigCommand::Auth { command: auth_cmd } => match auth_cmd {
+            cli::ConfigCommand::Auth(auth_cmd) => match auth_cmd {
                 cli::AuthCommand::Set { mode, agent } => {
                     let parsed_mode: config::AuthForwardMode =
                         mode.parse().map_err(|e: String| anyhow::anyhow!("{e}"))?;
