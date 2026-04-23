@@ -1,10 +1,12 @@
 use crate::manifest::EnvVarDecl;
 use std::collections::BTreeMap;
 
+#[derive(Debug, Clone)]
 pub struct ResolvedEnv {
     pub vars: Vec<(String, String)>,
 }
 
+#[derive(Debug, Clone)]
 pub enum PromptResult {
     Value(String),
     Skipped,
