@@ -28,6 +28,11 @@ pub enum AuthForwardMode {
     /// exists; preserve container auth when host auth is absent.
     #[default]
     Sync,
+    /// Use a long-lived OAuth token from the operator-resolved env
+    /// (`CLAUDE_CODE_OAUTH_TOKEN`). The agent state directory is
+    /// provisioned empty (same shape as `Ignore`); Claude Code inside
+    /// the container picks up the token from its process environment.
+    Token,
 }
 
 impl std::fmt::Display for AuthForwardMode {
@@ -35,6 +40,7 @@ impl std::fmt::Display for AuthForwardMode {
         match self {
             Self::Ignore => write!(f, "ignore"),
             Self::Sync => write!(f, "sync"),
+            Self::Token => write!(f, "token"),
         }
     }
 }
@@ -50,13 +56,14 @@ impl std::str::FromStr for AuthForwardMode {
         match s {
             "ignore" => Ok(Self::Ignore),
             "sync" => Ok(Self::Sync),
+            "token" => Ok(Self::Token),
             // Deprecated alias — accepted to avoid breaking scripts and
             // configs from before the default flipped to `sync`. Callers
             // that want to surface the deprecation should check for the
             // literal `"copy"` themselves before calling `parse()`.
             "copy" => Ok(Self::Sync),
             other => Err(format!(
-                "invalid auth_forward mode {other:?}; expected one of: sync, ignore"
+                "invalid auth_forward mode {other:?}; expected one of: sync, ignore, token"
             )),
         }
     }
@@ -349,6 +356,40 @@ trusted = true
         assert_eq!(
             config.resolve_auth_forward_mode("agent-smith"),
             AuthForwardMode::Sync
+        );
+    }
+
+    #[test]
+    fn auth_forward_mode_from_str_accepts_token() {
+        use std::str::FromStr;
+        assert_eq!(
+            AuthForwardMode::from_str("token").unwrap(),
+            AuthForwardMode::Token
+        );
+    }
+
+    #[test]
+    fn auth_forward_mode_display_emits_token() {
+        assert_eq!(AuthForwardMode::Token.to_string(), "token");
+    }
+
+    #[test]
+    fn auth_forward_mode_deserializes_token() {
+        let toml_str = r#"
+[claude]
+auth_forward = "token"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.claude.auth_forward, AuthForwardMode::Token);
+    }
+
+    #[test]
+    fn auth_forward_mode_from_str_error_lists_token() {
+        use std::str::FromStr;
+        let err = AuthForwardMode::from_str("nope").unwrap_err();
+        assert!(
+            err.contains("token"),
+            "error message should advertise the token mode; got: {err}"
         );
     }
 

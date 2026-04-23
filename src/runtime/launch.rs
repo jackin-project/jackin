@@ -745,6 +745,15 @@ fn load_agent_with(
         let (container_name, _name_lock) = claim_container_name(paths, selector, runner)?;
 
         let auth_mode = config.resolve_auth_forward_mode(&selector.key());
+
+        // Token mode requires CLAUDE_CODE_OAUTH_TOKEN in the resolved
+        // operator env; fail fast with an actionable error if it is
+        // missing so the operator sees the problem before we spend time
+        // starting the network and DinD sidecar.
+        if matches!(auth_mode, crate::config::AuthForwardMode::Token) {
+            verify_token_env_present(&operator_env)?;
+        }
+
         let (state, auth_outcome) = AgentState::prepare(
             paths,
             &container_name,
@@ -753,11 +762,42 @@ fn load_agent_with(
             &paths.home_dir,
         )?;
 
+        // Diagnostic line: surface the active auth mode and, for token
+        // mode, the source reference of CLAUDE_CODE_OAUTH_TOKEN drawn
+        // from the operator env config's raw declaration (the op://
+        // reference or $NAME ref as written). Resolved values are never
+        // printed.
+        match auth_mode {
+            crate::config::AuthForwardMode::Token => {
+                let raw = lookup_operator_env_raw(
+                    config,
+                    Some(&selector.key()),
+                    workspace_name.as_deref(),
+                    "CLAUDE_CODE_OAUTH_TOKEN",
+                );
+                let source_ref = auth_token_source_reference(raw.as_deref());
+                tui::auth_mode_notice("token", Some(&source_ref));
+            }
+            crate::config::AuthForwardMode::Sync => {
+                tui::auth_mode_notice("sync", None);
+            }
+            crate::config::AuthForwardMode::Ignore => {
+                tui::auth_mode_notice("ignore", None);
+            }
+        }
+
+        // Verbose outcome notices kept for operator context.
         match auth_outcome {
             crate::instance::AuthProvisionOutcome::Synced => {
                 eprintln!(
                     "[jackin] Synced host Claude Code authentication into agent state \
                      (auth_forward=sync)."
+                );
+            }
+            crate::instance::AuthProvisionOutcome::TokenMode => {
+                eprintln!(
+                    "[jackin] auth_forward=token — agent will use CLAUDE_CODE_OAUTH_TOKEN \
+                     from the resolved env."
                 );
             }
             crate::instance::AuthProvisionOutcome::HostMissing => match auth_mode {
@@ -767,7 +807,7 @@ fn load_agent_with(
                              preserving existing container auth if present."
                     );
                 }
-                crate::config::AuthForwardMode::Ignore => {}
+                crate::config::AuthForwardMode::Ignore | crate::config::AuthForwardMode::Token => {}
             },
             crate::instance::AuthProvisionOutcome::Skipped => {}
         }
@@ -897,6 +937,85 @@ fn claim_container_name(
 
         clone_index += 1;
     }
+}
+
+/// Verify that `CLAUDE_CODE_OAUTH_TOKEN` is present in the resolved
+/// operator env when `auth_forward == Token`. Returns an actionable
+/// error listing both remediation paths (1Password `op://` reference
+/// and `$CLAUDE_CODE_OAUTH_TOKEN` host shell forwarding) when the
+/// token is missing or empty.
+///
+/// Kept as a small pure helper over `BTreeMap<String, String>` so it
+/// can be unit-tested without faking the workspace env resolver.
+fn verify_token_env_present(
+    vars: &std::collections::BTreeMap<String, String>,
+) -> anyhow::Result<()> {
+    if vars
+        .get("CLAUDE_CODE_OAUTH_TOKEN")
+        .is_some_and(|v| !v.is_empty())
+    {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "auth_forward = \"token\" but CLAUDE_CODE_OAUTH_TOKEN is not set in the resolved \
+         operator env.\n\
+         \n\
+         Add it in your workspace config under [env]. Either:\n\
+         \n\
+         - Reference a 1Password secret:\n  \
+             [env]\n  \
+             CLAUDE_CODE_OAUTH_TOKEN = \"op://vault/claude/token\"\n\
+         \n\
+         - Forward from the host shell:\n  \
+             [env]\n  \
+             CLAUDE_CODE_OAUTH_TOKEN = \"$CLAUDE_CODE_OAUTH_TOKEN\"\n\
+         \n\
+         Generate a token with `claude setup-token`, then either store it in \
+         1Password (first form) or export it in your shell (second form)."
+    );
+}
+
+/// Return a printable source reference for `CLAUDE_CODE_OAUTH_TOKEN`
+/// given the raw (unresolved) declaration value from the operator env
+/// config (e.g. `"op://vault/claude/token"` or
+/// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Produces the `"KEY <- value"` form
+/// consumed by `tui::auth_mode_notice`. When `raw` is `None`, falls
+/// back to the bare env-var name.
+fn auth_token_source_reference(raw: Option<&str>) -> String {
+    raw.map_or_else(
+        || "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
+        |value| format!("CLAUDE_CODE_OAUTH_TOKEN \u{2190} {value}"),
+    )
+}
+
+/// Look up the raw (unresolved) declaration value for `key` in the
+/// operator env config layers, using the same precedence as
+/// `resolve_operator_env` (global < agent < workspace < workspace ×
+/// agent — later wins).
+fn lookup_operator_env_raw(
+    config: &crate::config::AppConfig,
+    agent_selector: Option<&str>,
+    workspace_name: Option<&str>,
+    key: &str,
+) -> Option<String> {
+    let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
+
+    // Walk layers low → high priority; later assignments win over
+    // earlier ones. Assign each layer's `.get(key).cloned()` in turn,
+    // `or_else`-chaining lets `None` from a later layer fall back to
+    // an earlier layer's value.
+    let workspace_agent = ws_opt.zip(agent_selector).and_then(|(ws, agent_name)| {
+        ws.agents
+            .get(agent_name)
+            .and_then(|overlay| overlay.env.get(key).cloned())
+    });
+    let workspace = ws_opt.and_then(|ws| ws.env.get(key).cloned());
+    let agent = agent_selector
+        .and_then(|agent_name| config.agents.get(agent_name))
+        .and_then(|a| a.env.get(key).cloned());
+    let global = config.env.get(key).cloned();
+
+    workspace_agent.or(workspace).or(agent).or(global)
 }
 
 struct LoadCleanup {
@@ -2204,6 +2323,37 @@ plugins = []
         assert!(
             run_cmd.contains("-e OPERATOR_TOKEN=resolved-op-token"),
             "op:// ref must resolve via the injected OpCli and inject; got: {run_cmd}"
+        );
+    }
+
+    #[test]
+    fn verify_token_env_present_accepts_resolved_token() {
+        let mut vars = std::collections::BTreeMap::new();
+        vars.insert(
+            "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
+            "sk-ant-oat01-redacted".to_string(),
+        );
+        assert!(verify_token_env_present(&vars).is_ok());
+    }
+
+    #[test]
+    fn verify_token_env_missing_returns_actionable_error() {
+        let vars = std::collections::BTreeMap::<String, String>::new();
+        let err = verify_token_env_present(&vars).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("CLAUDE_CODE_OAUTH_TOKEN"), "got: {msg}");
+        // Both remediation paths must be surfaced.
+        assert!(
+            msg.contains("op://"),
+            "error should mention the 1Password remediation path; got: {msg}"
+        );
+        assert!(
+            msg.contains("$CLAUDE_CODE_OAUTH_TOKEN"),
+            "error should mention the host env remediation path; got: {msg}"
+        );
+        assert!(
+            msg.contains("[env]"),
+            "error should point the operator at the [env] manifest table; got: {msg}"
         );
     }
 }

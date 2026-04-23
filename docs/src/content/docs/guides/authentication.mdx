@@ -22,12 +22,13 @@ Since the `.claude/` directory and `.claude.json` file are bind-mounted into the
 
 ## Auth forwarding modes
 
-jackin' supports two modes, configurable globally or per-agent:
+jackin' supports three modes, configurable globally or per-agent:
 
 | Mode | Behavior |
 |---|---|
 | `sync` (default) | When host auth exists, overwrite container auth on each launch. When host auth is absent, preserve existing container auth. |
 | `ignore` | Never forward host auth. Revoke any previously forwarded credentials. The agent authenticates itself via `/login`. |
+| `token` | Provision the agent with an empty state and inject `CLAUDE_CODE_OAUTH_TOKEN` (from the resolved operator env) into the container. Claude Code uses the token directly — no `/login` session state is bind-mounted. Recommended for long-lived or concurrent sessions. |
 
 ### sync
 
@@ -40,6 +41,48 @@ When the host's `~/.claude.json` or credentials are missing (e.g. you logged out
 The `ignore` mode is the legacy behavior — the container starts with an empty `{}` config and no credentials. The agent must authenticate itself inside the container (Claude Code's device-flow login via browser).
 
 Switching an agent from `copy` or `sync` to `ignore` actively revokes any previously forwarded credentials by resetting `.claude.json` to `{}` and deleting `.credentials.json`.
+
+### token
+
+The `token` mode is designed for long-lived and concurrent jackin' sessions. Instead of bind-mounting a copy of your host's `/login` session state, jackin' injects a long-lived OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`) into the container's process env. Claude Code inside the container reads the token directly, bypassing the file-based credential store entirely.
+
+Setup:
+
+1. On the host, generate a token:
+
+   ```bash
+   claude setup-token
+   ```
+
+2. Tell jackin' where to find it by adding a line to the `[env]` section of the workspace manifest. Either reference a 1Password secret:
+
+   ```toml
+   [env]
+   CLAUDE_CODE_OAUTH_TOKEN = "op://vault/claude/token"
+   ```
+
+   or forward from the host shell:
+
+   ```toml
+   [env]
+   CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN"
+   ```
+
+3. Enable token mode:
+
+   ```bash
+   jackin config auth set token
+   ```
+
+On launch, jackin' prints a one-line diagnostic confirming the active mode and where the token came from:
+
+```
+claude auth: OAuth token (CLAUDE_CODE_OAUTH_TOKEN ← op://vault/claude/token)
+```
+
+If `CLAUDE_CODE_OAUTH_TOKEN` is not present in the resolved env when `token` mode is active, jackin' aborts with an actionable error listing both remediation paths above.
+
+The agent's state directory is provisioned with the same empty shape as `ignore` mode — no `.credentials.json` is written — so switching between `token`, `sync`, and `ignore` is safe.
 
 ### `copy` (deprecated)
 
@@ -92,7 +135,7 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
 [agents.agent-smith.claude]
-auth_forward = "ignore"
+auth_forward = "token"
 ```
 
 Resolution order: **per-agent override > global default > `sync`**.

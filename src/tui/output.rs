@@ -185,3 +185,91 @@ pub fn hint(prefix: &str, command: &str, suffix: &str) {
         command.color(rgb(PHOSPHOR_GREEN)).bold(),
     );
 }
+
+/// Render the one-line launch diagnostic for the active auth mode.
+///
+/// Shapes:
+///   claude auth: host session (sync)
+///   claude auth: none (ignore — /login required inside the container)
+///   claude auth: OAuth token (`CLAUDE_CODE_OAUTH_TOKEN` ← <source-reference>)
+///
+/// `source_reference` is consulted only by the `token` arm; pass the
+/// resolver's source description for the `CLAUDE_CODE_OAUTH_TOKEN`
+/// entry (e.g. `"op://vault/claude/token"` or
+/// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Other modes pass `None`.
+pub fn auth_mode_notice(mode: &str, source_reference: Option<&str>) {
+    eprintln!(
+        "  {}",
+        format_auth_mode_notice_for_test(mode, source_reference)
+    );
+}
+
+/// Pure formatter extracted for unit-testing the exact output text.
+/// Returns the rendered line with ANSI color codes included.
+fn format_auth_mode_notice_for_test(mode: &str, source_reference: Option<&str>) -> String {
+    let label = "claude auth:".color(rgb(PHOSPHOR_GREEN)).bold().to_string();
+    let body = match mode {
+        "token" => {
+            let src = source_reference.unwrap_or("CLAUDE_CODE_OAUTH_TOKEN");
+            format!("OAuth token ({src})")
+        }
+        "sync" => "host session (sync)".to_string(),
+        "ignore" => "none (ignore — /login required inside the container)".to_string(),
+        other => other.to_string(),
+    };
+    format!("{label} {}", body.color(rgb(PHOSPHOR_DIM)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Strip ANSI escape sequences so assertions match plain text.
+    fn strip_ansi(s: &str) -> String {
+        let mut result = String::with_capacity(s.len());
+        let mut chars = s.chars();
+        while let Some(ch) = chars.next() {
+            if ch == '\x1b' {
+                for inner in chars.by_ref() {
+                    if inner.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+        result
+    }
+
+    #[test]
+    fn auth_mode_notice_token_mentions_source_reference() {
+        let line = format_auth_mode_notice_for_test(
+            "token",
+            Some("CLAUDE_CODE_OAUTH_TOKEN ← op://vault/claude/token"),
+        );
+        let clean = strip_ansi(&line);
+        assert!(clean.contains("claude auth:"), "got: {clean}");
+        assert!(clean.contains("OAuth token"), "got: {clean}");
+        assert!(
+            clean.contains("CLAUDE_CODE_OAUTH_TOKEN ← op://vault/claude/token"),
+            "got: {clean}"
+        );
+    }
+
+    #[test]
+    fn auth_mode_notice_sync_has_one_liner() {
+        let clean = strip_ansi(&format_auth_mode_notice_for_test("sync", None));
+        assert!(clean.contains("claude auth:"));
+        assert!(clean.contains("host session"));
+        assert!(clean.contains("sync"));
+    }
+
+    #[test]
+    fn auth_mode_notice_ignore_has_one_liner() {
+        let clean = strip_ansi(&format_auth_mode_notice_for_test("ignore", None));
+        assert!(clean.contains("claude auth:"));
+        assert!(clean.contains("none"));
+        assert!(clean.contains("ignore"));
+    }
+}

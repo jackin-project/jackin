@@ -21,6 +21,10 @@ pub enum AuthProvisionOutcome {
     Synced,
     /// Mode would have forwarded, but host file was missing — wrote `{}`.
     HostMissing,
+    /// Token mode: empty `.claude.json`, no `.credentials.json` —
+    /// Claude Code inside the container uses `CLAUDE_CODE_OAUTH_TOKEN`
+    /// from the resolved env.
+    TokenMode,
 }
 
 #[derive(Debug, Clone)]
