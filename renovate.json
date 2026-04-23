@@ -5,5 +5,6 @@
     "docker:pinDigests"
   ],
   "prHourlyLimit": 0,
-  "prConcurrentLimit": 20
+  "prConcurrentLimit": 20,
+  "commitBody": "Signed-off-by: Renovate Bot <renovate@whitesourcesoftware.com>"
 }
