@@ -19,12 +19,12 @@ The configuration file is TOML format at `~/.config/jackin/config.toml`. It's ma
 
 ```toml
 [claude]
-auth_forward = "sync"  # "sync" (default) or "ignore"
+auth_forward = "sync"  # "sync" (default), "ignore", or "token"
 ```
 
 | Field | Description | Default |
 |---|---|---|
-| `auth_forward` | How the host's Claude Code credentials are forwarded into agent containers. See [Authentication Forwarding](/guides/authentication). | `sync` |
+| `auth_forward` | How the host's Claude Code credentials are made available to agent containers. See [Authentication Forwarding](/guides/authentication). | `sync` |
 
 Per-agent overrides are set under the agent's `[claude]` section:
 

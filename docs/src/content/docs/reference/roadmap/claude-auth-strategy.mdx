@@ -37,20 +37,13 @@ Please run /login · API Error: 401 {"type":"error","error":{"type":"authenticat
 
 ## Current State
 
-The current operator-facing modes are:
+Status as of the Token-mode release:
 
-- `sync` — overwrite container auth from host on each launch when host auth exists (default as of the `sync`-default release)
-- `ignore` — never forward host auth; require in-container login
+- `sync` — overwrite container auth from host on each launch when host auth exists (default since the `sync`-default release)
+- `ignore` — never forward host auth; require in-container `/login`
+- `token` — inject `CLAUDE_CODE_OAUTH_TOKEN` from the resolved operator env and leave the agent state directory empty; recommended for long-lived or concurrent sessions (delivered in PR 3 of this series)
 
-Historically there was also a `copy` mode (copy on first creation; never overwrite afterwards), which is deprecated. Configs that still declare `auth_forward = "copy"` are migrated to `sync` on load with a deprecation notice.
-
-Those modes are coherent, but they optimize for filesystem ownership of credentials, not for concurrent-session reliability.
-
-In practice:
-
-- `copy` is convenient for first launch but drifts over time
-- `sync` repairs startup drift but does not help once multiple live sessions continue running for hours
-- `ignore` is explicit but throws away the main convenience benefit jackin wants to provide
+Configs that still declare `auth_forward = "copy"` are migrated to `sync` on load with a deprecation notice (delivered in PR 1 of this series).
 
 Claude Code's own authentication model also matters here. The official docs support several credential sources with a defined precedence order, including:
 
@@ -163,18 +156,11 @@ Cons:
 
 ## Recommendation
 
-Choose a hybrid plan:
+Delivered (three-PR series):
 
-1. Keep `copy`, `sync`, and `ignore` for backward compatibility.
-2. Add a new token-based mode built around `CLAUDE_CODE_OAUTH_TOKEN`.
-3. Treat token-based auth as the recommended mode for long-lived or concurrent jackin sessions.
-4. Improve docs and warnings around `copy` and `sync` so operators understand their limits.
-
-In other words:
-
-- `copy` remains the lowest-friction first-run mode
-- `sync` remains the simplest "follow host state on launch" mode
-- token mode becomes the durable mode for serious day-to-day usage
+1. `sync` is the default; `copy` is deprecated and auto-migrated.
+2. A workspace-scoped env resolver populates `CLAUDE_CODE_OAUTH_TOKEN` from `op://` references or host env vars.
+3. `token` mode uses that resolved env instead of bind-mounting `/login` session state. Token mode is now the recommended choice for long-lived or concurrent jackin sessions; `sync` remains a good default for ad-hoc single-session usage.
 
 ## Suggested Operator UX
 
