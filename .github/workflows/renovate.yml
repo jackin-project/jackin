@@ -22,4 +22,10 @@ jobs:
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_ONBOARDING: false
+          # Pin the git author identity so the DCO sign-off trailer in
+          # renovate.json::commitBody always matches the commit-author
+          # email. DCO-2 requires the Signed-off-by email to equal the
+          # commit-author email; without this pin, a change in Renovate's
+          # default author would silently break DCO on every Renovate PR.
+          RENOVATE_GIT_AUTHOR: "Renovate Bot <renovate@whitesourcesoftware.com>"
           LOG_LEVEL: debug
