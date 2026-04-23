@@ -29,6 +29,7 @@ A trust-on-first-use model:
 
 ## Related Files
 
-- `src/config.rs` — `AgentSource.trusted`, `trust_agent()`, `resolve_agent_source()`
-- `src/runtime.rs` — `confirm_agent_trust()`, trust gate in `load_agent()`
+- `src/config/mod.rs` — `AgentSource` (with `trusted` field)
+- `src/config/agents.rs` — `trust_agent()`, `resolve_agent_source()`
+- `src/runtime/launch.rs` — `confirm_agent_trust()`, trust gate in `load_agent_with()`
 - `src/selector.rs` — namespace/name parsing
