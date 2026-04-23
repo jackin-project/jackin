@@ -373,6 +373,49 @@ API_TOKEN = "op://vault-id/item-id/field"
     }
 
     #[test]
+    fn mutating_one_workspace_preserves_comments_in_another() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let original = r#"# workspace a — keep this comment
+[workspaces.a]
+workdir = "/a"
+
+# workspace b — also keep
+[workspaces.b]
+workdir = "/b"
+"#;
+        std::fs::write(&paths.config_file, original).unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_var(EnvScope::Workspace("a".to_string()), "K", "v");
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("# workspace b — also keep"), "{out}");
+        assert!(out.contains("# workspace a — keep this comment"), "{out}");
+    }
+
+    #[test]
+    fn fixture_round_trip_is_byte_identical() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        let original = include_str!("fixtures/config.round_trip.toml");
+        std::fs::write(&paths.config_file, original).unwrap();
+
+        let editor = ConfigEditor::open(&paths).unwrap();
+        editor.save().unwrap();
+
+        let round_tripped = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert_eq!(
+            round_tripped, original,
+            "fixture round-trip is lossy — toml_edit is dropping something"
+        );
+    }
+
+    #[test]
     fn idempotent_save_is_byte_identical() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
