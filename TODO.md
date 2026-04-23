@@ -27,7 +27,6 @@ checklist in the PR description — each item takes seconds to check.
 ### When your PR touches `src/**`
 
 - [ ] Did you add, rename, move, or delete a module / directory under `src/`? If yes, update [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)'s "Module tree" and any affected row in "Code ↔ Docs Cross-Reference" in the same PR.
-- [ ] Did you change the MSRV (`rust-version` in `Cargo.toml`)? If yes, update the `Cargo.toml` row in `PROJECT_STRUCTURE.md`.
 - [ ] Did you add a new `src/bin/` binary? If yes, add it to the "Crate root" table in `PROJECT_STRUCTURE.md`.
 
 ### When your PR touches CLI behavior

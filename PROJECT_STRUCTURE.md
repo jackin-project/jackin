@@ -6,7 +6,7 @@ Quick navigation reference for AI agents working in this repository.
 
 | File | Purpose |
 |---|---|
-| `Cargo.toml` | Crate manifest — dependencies, lints, edition 2024, MSRV 1.94 |
+| `Cargo.toml` | Crate manifest — dependencies and lints |
 | `Cargo.lock` | Locked dependency versions |
 | `AGENTS.md` | Shared instructions for all AI agents (testing, pre-commit, security) |
 | `CLAUDE.md` | Claude-specific pointer to `AGENTS.md` |
