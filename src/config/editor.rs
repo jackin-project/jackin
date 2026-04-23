@@ -296,21 +296,19 @@ impl ConfigEditor {
         name: &str,
         ws: crate::workspace::WorkspaceConfig,
     ) -> anyhow::Result<()> {
-        // Collision check first — match today's create_workspace behavior.
-        if self
-            .doc
-            .get("workspaces")
-            .and_then(|i| i.as_table())
-            .and_then(|t| t.get(name))
-            .is_some()
-        {
-            anyhow::bail!("workspace {name:?} already exists");
-        }
+        // Delegate to AppConfig::create_workspace's validated logic
+        // (collision check, workdir / mount-destination relationship,
+        // plan-collapse sanity) so the editor path behaves identically
+        // to the direct-mutation path. Mirrors edit_workspace's pattern.
+        let mut in_memory: AppConfig = toml::from_str(&self.doc.to_string())
+            .context("re-parsing current doc into AppConfig for workspace creation")?;
+        in_memory.create_workspace(name, ws)?;
+        let inserted = in_memory
+            .workspaces
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("workspace {name:?} disappeared after create"))?;
 
-        // Serialize the WorkspaceConfig to toml_edit items via string round-trip:
-        // toml::to_string on the struct, parse as DocumentMut, splat the body
-        // into the new [workspaces.<name>] table.
-        let rendered = toml::to_string(&ws)
+        let rendered = toml::to_string(inserted)
             .with_context(|| format!("serializing workspace {name:?}"))?;
         let parsed: DocumentMut = rendered
             .parse()
@@ -1022,6 +1020,41 @@ auth_forward = "token"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains("[workspaces.new-ws]"), "{out}");
         assert!(out.contains(r#"workdir = "/workspace/new""#), "{out}");
+    }
+
+    #[test]
+    fn create_workspace_rejects_invalid_workdir_mount_combo() {
+        // Editor delegates to AppConfig::create_workspace, which validates
+        // that the workdir is equal-to / inside / parent-of some mount dst.
+        // A workdir that doesn't line up with any mount dst must be rejected.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mount_src = temp.path().join("src");
+        std::fs::create_dir_all(&mount_src).unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let ws = crate::workspace::WorkspaceConfig {
+            workdir: "/elsewhere".to_string(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: mount_src.display().to_string(),
+                dst: "/workspace/unrelated".to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let err = editor.create_workspace("bad-ws", ws).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("workspace") || msg.contains("mount") || msg.contains("workdir"),
+            "expected validation error mentioning workspace/mount/workdir: {msg}"
+        );
     }
 
     #[test]
