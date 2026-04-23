@@ -320,13 +320,31 @@ pub(crate) fn remember_last_agent(
         return;
     }
 
-    if let Some(workspace_name) = workspace_name
-        && let Some(workspace) = config.workspaces.get_mut(workspace_name)
-    {
-        workspace.last_agent = Some(class.key());
-        if let Err(error) = config.save(paths) {
-            eprintln!("warning: failed to save last-used agent: {error}");
+    let Some(workspace_name) = workspace_name else {
+        return;
+    };
+    if !config.workspaces.contains_key(workspace_name) {
+        return;
+    }
+    // Flush the current in-memory state to disk so the editor opens a
+    // document that contains all workspace fields. Without this, a workspace
+    // that exists only in memory (e.g. in tests, or on first load) would
+    // produce a partial TOML entry that fails deserialization after save.
+    if let Err(error) = paths.ensure_base_dirs().and_then(|()| config.save(paths)) {
+        eprintln!("warning: failed to save last-used agent: {error}");
+        return;
+    }
+    let mut editor = match crate::config::ConfigEditor::open(paths) {
+        Ok(editor) => editor,
+        Err(error) => {
+            eprintln!("warning: failed to open config for last-used-agent save: {error}");
+            return;
         }
+    };
+    editor.set_last_agent(workspace_name, &class.key());
+    match editor.save() {
+        Ok(reloaded) => *config = reloaded,
+        Err(error) => eprintln!("warning: failed to save last-used agent: {error}"),
     }
 }
 
