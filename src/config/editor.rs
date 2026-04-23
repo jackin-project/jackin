@@ -93,6 +93,22 @@ impl ConfigEditor {
         let table = table_path_mut(&mut self.doc, &path);
         table.insert(key, toml_edit::value(value_str));
     }
+
+    pub fn remove_env_var(&mut self, scope: EnvScope, key: &str) -> bool {
+        let path = env_scope_path(&scope);
+        // Walk without creating: return false if any segment is missing.
+        let mut current: &mut Item = self.doc.as_item_mut();
+        for segment in &path {
+            match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
+                Some(next) => current = next,
+                None => return false,
+            }
+        }
+        match current.as_table_mut() {
+            Some(table) => table.remove(key).is_some(),
+            None => false,
+        }
+    }
 }
 
 fn env_scope_path(scope: &EnvScope) -> Vec<String> {
@@ -203,6 +219,44 @@ API_TOKEN = "old-value"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains(r#"API_TOKEN = "new-value""#), "{out}");
         assert!(!out.contains("old-value"), "{out}");
+    }
+
+    #[test]
+    fn remove_env_var_returns_true_when_present() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+API_TOKEN = "x"
+OTHER = "y"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let removed = editor.remove_env_var(EnvScope::Global, "API_TOKEN");
+        editor.save().unwrap();
+
+        assert!(removed);
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("API_TOKEN"), "{out}");
+        assert!(out.contains(r#"OTHER = "y""#), "sibling gone: {out}");
+    }
+
+    #[test]
+    fn remove_env_var_returns_false_when_absent() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let removed = editor.remove_env_var(EnvScope::Global, "API_TOKEN");
+        editor.save().unwrap();
+
+        assert!(!removed);
     }
 
     #[test]
