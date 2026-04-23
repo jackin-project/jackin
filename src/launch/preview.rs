@@ -143,6 +143,7 @@ mod tests {
                 git: "https://github.com/chainargos/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
+                env: std::collections::BTreeMap::new(),
             },
         );
         config.add_mount(

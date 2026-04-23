@@ -139,6 +139,7 @@ mod tests {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
+                env: std::collections::BTreeMap::new(),
             },
         );
         config.workspaces.insert(
@@ -153,6 +154,8 @@ mod tests {
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: Some("agent-smith".to_string()),
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
 
@@ -175,6 +178,7 @@ mod tests {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
+                env: std::collections::BTreeMap::new(),
             },
         );
         config.workspaces.insert(
@@ -189,6 +193,8 @@ mod tests {
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: Some("agent-smith".to_string()),
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
 
@@ -211,6 +217,7 @@ mod tests {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
+                env: std::collections::BTreeMap::new(),
             },
         );
         config.workspaces.insert(
@@ -225,6 +232,8 @@ mod tests {
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: Some("agent-smith".to_string()),
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
 
@@ -289,6 +298,7 @@ mod tests {
             git: "https://example.invalid/org/repo.git".to_string(),
             trusted: true,
             claude: None,
+            env: std::collections::BTreeMap::new(),
         }
     }
 
@@ -299,6 +309,8 @@ mod tests {
             allowed_agents: allowed.iter().map(|s| (*s).to_string()).collect(),
             default_agent: None,
             last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
         }
     }
 

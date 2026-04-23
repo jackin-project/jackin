@@ -412,6 +412,8 @@ mod tests {
                 allowed_agents: vec![],
                 default_agent: None,
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
         let cwd = std::env::temp_dir();
@@ -454,6 +456,7 @@ mod tests {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
+                env: std::collections::BTreeMap::new(),
             },
         );
         config.workspaces.insert(
@@ -468,6 +471,8 @@ mod tests {
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: Some("agent-smith".to_string()),
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
 
@@ -492,6 +497,7 @@ mod tests {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
+                env: std::collections::BTreeMap::new(),
             },
         );
         config.workspaces.insert(
@@ -506,6 +512,8 @@ mod tests {
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: Some("agent-smith".to_string()),
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
 
@@ -529,6 +537,7 @@ mod tests {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
+                env: std::collections::BTreeMap::new(),
             },
         );
         config.workspaces.insert(
@@ -543,6 +552,8 @@ mod tests {
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: None,
                 last_agent: Some("ghost-agent".to_string()),
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
 
@@ -566,6 +577,7 @@ mod tests {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
+                env: std::collections::BTreeMap::new(),
             },
         );
         config.agents.insert(
@@ -574,6 +586,7 @@ mod tests {
                 git: "https://github.com/jackin-project/jackin-the-architect.git".to_string(),
                 trusted: true,
                 claude: None,
+                env: std::collections::BTreeMap::new(),
             },
         );
         config.workspaces.insert(
@@ -588,6 +601,8 @@ mod tests {
                 allowed_agents,
                 default_agent: None,
                 last_agent,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
         config
@@ -708,6 +723,8 @@ mod tests {
                 allowed_agents: vec![],
                 default_agent: None,
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
 
@@ -745,6 +762,8 @@ mod tests {
                 allowed_agents: vec![],
                 default_agent: None,
                 last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
             },
         );
 

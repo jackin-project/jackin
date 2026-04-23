@@ -876,6 +876,7 @@ mod tests {
             git: "https://github.com/evil-org/jackin-backdoor.git".to_string(),
             trusted: false,
             claude: None,
+            env: std::collections::BTreeMap::new(),
         };
 
         let error = confirm_agent_trust(&selector, &source).unwrap_err();
