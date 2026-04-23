@@ -42,17 +42,14 @@ pub fn find_sensitive_mounts(mounts: &[MountConfig]) -> Vec<SensitiveMount> {
 /// decline, and `Err` on I/O errors.
 pub fn confirm_sensitive_mounts(sensitive: &[SensitiveMount]) -> anyhow::Result<bool> {
     use owo_colors::OwoColorize;
-    use std::io::IsTerminal;
 
     if sensitive.is_empty() {
         return Ok(true);
     }
 
-    if !std::io::stdin().is_terminal() {
-        anyhow::bail!(
-            "sensitive mount paths detected but stdin is not a terminal — cannot prompt for confirmation"
-        );
-    }
+    crate::tui::require_interactive_stdin(
+        "sensitive mount paths detected but stdin is not a terminal — cannot prompt for confirmation",
+    )?;
 
     eprintln!(
         "\n{}",
