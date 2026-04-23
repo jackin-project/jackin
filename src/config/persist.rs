@@ -31,7 +31,26 @@ impl AppConfig {
         }
 
         if builtins_changed || deprecated_copy_seen {
+            // Ensure the config file exists on disk before opening the editor.
+            // ConfigEditor::open calls AppConfig::load_or_init when the file is
+            // absent, which would recurse. Writing via AppConfig::save first
+            // breaks that cycle; the editor then reopens the written file and
+            // applies comment-preserving mutations on top.
             config.save(paths)?;
+            let mut editor = crate::config::ConfigEditor::open(paths)?;
+            if builtins_changed {
+                for &(name, git) in crate::config::agents::BUILTIN_AGENTS {
+                    editor.upsert_builtin_agent(name, git);
+                }
+            }
+            if deprecated_copy_seen {
+                editor.normalize_deprecated_copy();
+            }
+            // editor.save() returns an AppConfig parsed from the on-disk file,
+            // which has [agents.X.env] preserved (upsert_builtin_agent doesn't
+            // touch env). The in-memory `config` from sync_builtin_agents has
+            // env cleared. Replace the in-memory config with the preserved one.
+            config = editor.save()?;
         }
 
         // Reject operator env maps that declare reserved runtime names.

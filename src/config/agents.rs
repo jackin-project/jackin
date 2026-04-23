@@ -1,7 +1,7 @@
 use super::{AgentSource, AppConfig, AuthForwardMode, ClaudeAgentConfig};
 use crate::selector::ClassSelector;
 
-pub(super) const BUILTIN_AGENTS: &[(&str, &str)] = &[
+pub(crate) const BUILTIN_AGENTS: &[(&str, &str)] = &[
     (
         "agent-smith",
         "https://github.com/jackin-project/jackin-agent-smith.git",
