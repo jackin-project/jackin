@@ -410,6 +410,77 @@ pub fn merge_layers(
     merged
 }
 
+/// Reject operator env maps that declare any reserved runtime name.
+///
+/// The reserved names (`JACKIN_CLAUDE_ENV`, `JACKIN_DIND_HOSTNAME`,
+/// `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are fixed
+/// by jackin and cannot be overridden. Conflicts are collected across
+/// every layer and reported as a single aggregated error so operators
+/// see all problems at once.
+///
+/// This runs at config LOAD time (in `AppConfig::load_or_init`),
+/// before any launch path — so misconfigurations fail fast and the
+/// runtime never sees a resolved map with a reserved key.
+pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Result<()> {
+    let mut offenses: Vec<String> = Vec::new();
+
+    for key in config.env.keys() {
+        if crate::env_model::is_reserved(key) {
+            offenses.push(format!(
+                "  - {key:?} is reserved by the jackin runtime; declared in {}",
+                EnvLayer::Global
+            ));
+        }
+    }
+
+    for (agent_name, agent_source) in &config.agents {
+        for key in agent_source.env.keys() {
+            if crate::env_model::is_reserved(key) {
+                offenses.push(format!(
+                    "  - {key:?} is reserved by the jackin runtime; declared in {}",
+                    EnvLayer::Agent(agent_name.clone())
+                ));
+            }
+        }
+    }
+
+    for (ws_name, ws) in &config.workspaces {
+        for key in ws.env.keys() {
+            if crate::env_model::is_reserved(key) {
+                offenses.push(format!(
+                    "  - {key:?} is reserved by the jackin runtime; declared in {}",
+                    EnvLayer::Workspace(ws_name.clone())
+                ));
+            }
+        }
+        for (agent_name, override_) in &ws.agents {
+            for key in override_.env.keys() {
+                if crate::env_model::is_reserved(key) {
+                    offenses.push(format!(
+                        "  - {key:?} is reserved by the jackin runtime; declared in {}",
+                        EnvLayer::WorkspaceAgent {
+                            workspace: ws_name.clone(),
+                            agent: agent_name.clone()
+                        }
+                    ));
+                }
+            }
+        }
+    }
+
+    if offenses.is_empty() {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "operator env map contains {} reserved runtime name(s):\n{}\n\
+         These names are fixed by jackin and cannot be overridden. Remove them \
+         from your config.toml.",
+        offenses.len(),
+        offenses.join("\n")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -766,5 +837,119 @@ mod tests {
         assert_eq!(merged.get("A").map(|v| v.as_str()), Some("a"));
         assert_eq!(merged.get("W").map(|v| v.as_str()), Some("w"));
         assert_eq!(merged.get("X").map(|v| v.as_str()), Some("x"));
+    }
+
+    #[test]
+    fn validate_reserved_names_rejects_global_reserved() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env
+            .insert("DOCKER_HOST".to_string(), "whatever".to_string());
+
+        let err = validate_reserved_names(&cfg).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("DOCKER_HOST"), "{msg}");
+        assert!(msg.contains("global [env]"), "{msg}");
+        assert!(msg.contains("reserved"), "{msg}");
+    }
+
+    #[test]
+    fn validate_reserved_names_rejects_per_agent_reserved() {
+        let mut cfg = crate::config::AppConfig::default();
+        let mut agent = crate::config::AgentSource {
+            git: "https://example.com/x.git".to_string(),
+            trusted: true,
+            claude: None,
+            env: std::collections::BTreeMap::new(),
+        };
+        agent
+            .env
+            .insert("JACKIN_CLAUDE_ENV".to_string(), "whatever".to_string());
+        cfg.agents.insert("agent-smith".to_string(), agent);
+
+        let err = validate_reserved_names(&cfg).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("JACKIN_CLAUDE_ENV"), "{msg}");
+        assert!(msg.contains("agent \"agent-smith\""), "{msg}");
+    }
+
+    #[test]
+    fn validate_reserved_names_rejects_per_workspace_reserved() {
+        let mut cfg = crate::config::AppConfig::default();
+        let mut ws = crate::workspace::WorkspaceConfig {
+            workdir: "/x".to_string(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: "/x".to_string(),
+                dst: "/x".to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        ws.env
+            .insert("DOCKER_TLS_VERIFY".to_string(), "0".to_string());
+        cfg.workspaces.insert("big-monorepo".to_string(), ws);
+
+        let err = validate_reserved_names(&cfg).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("DOCKER_TLS_VERIFY"), "{msg}");
+        assert!(msg.contains("workspace \"big-monorepo\""), "{msg}");
+    }
+
+    #[test]
+    fn validate_reserved_names_rejects_workspace_agent_override_reserved() {
+        let mut cfg = crate::config::AppConfig::default();
+        let mut override_ = crate::workspace::WorkspaceAgentOverride::default();
+        override_
+            .env
+            .insert("DOCKER_CERT_PATH".to_string(), "/tmp".to_string());
+        let mut ws = crate::workspace::WorkspaceConfig {
+            workdir: "/x".to_string(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: "/x".to_string(),
+                dst: "/x".to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        ws.agents.insert("agent-smith".to_string(), override_);
+        cfg.workspaces.insert("big-monorepo".to_string(), ws);
+
+        let err = validate_reserved_names(&cfg).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("DOCKER_CERT_PATH"), "{msg}");
+        assert!(
+            msg.contains("workspace \"big-monorepo\"") && msg.contains("agent \"agent-smith\""),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn validate_reserved_names_reports_all_conflicts_in_one_error() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env.insert("DOCKER_HOST".to_string(), "x".to_string());
+        cfg.env
+            .insert("DOCKER_TLS_VERIFY".to_string(), "y".to_string());
+
+        let err = validate_reserved_names(&cfg).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("DOCKER_HOST"), "{msg}");
+        assert!(msg.contains("DOCKER_TLS_VERIFY"), "{msg}");
+    }
+
+    #[test]
+    fn validate_reserved_names_accepts_non_reserved() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env.insert("MY_VAR".to_string(), "value".to_string());
+        cfg.env
+            .insert("OPERATOR_TOKEN".to_string(), "op://...".to_string());
+
+        validate_reserved_names(&cfg).unwrap();
     }
 }
