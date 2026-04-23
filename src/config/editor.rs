@@ -304,6 +304,35 @@ impl ConfigEditor {
         }
     }
 
+    /// Rewrite any `auth_forward = "copy"` to `"sync"` at the two paths
+    /// `contains_deprecated_copy_auth_forward` checks:
+    ///   [claude].auth_forward
+    ///   [agents.*.claude].auth_forward
+    ///
+    /// Does not touch any other structure. Used by load_or_init when the
+    /// on-disk config still contains the deprecated literal.
+    pub fn normalize_deprecated_copy(&mut self) {
+        // Global [claude]
+        if let Some(claude) = self.doc.get_mut("claude").and_then(|i| i.as_table_mut()) {
+            if claude.get("auth_forward").and_then(|i| i.as_str()) == Some("copy") {
+                claude.insert("auth_forward", toml_edit::value("sync"));
+            }
+        }
+        // Per-agent [agents.X.claude]
+        if let Some(agents) = self.doc.get_mut("agents").and_then(|i| i.as_table_mut()) {
+            for (_, agent_item) in agents.iter_mut() {
+                let Some(agent_table) = agent_item.as_table_mut() else { continue };
+                let Some(claude) = agent_table.get_mut("claude").and_then(|i| i.as_table_mut())
+                else {
+                    continue;
+                };
+                if claude.get("auth_forward").and_then(|i| i.as_str()) == Some("copy") {
+                    claude.insert("auth_forward", toml_edit::value("sync"));
+                }
+            }
+        }
+    }
+
     pub fn remove_env_var(&mut self, scope: EnvScope, key: &str) -> bool {
         let path = env_scope_path(&scope);
         // Walk without creating: return false if any segment is missing.
@@ -1153,6 +1182,37 @@ MY_VAR = "preserved"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains(r#"git = "NEW""#), "{out}");
         assert!(out.contains(r#"MY_VAR = "preserved""#), "{out}");
+    }
+
+    #[test]
+    fn normalize_deprecated_copy_rewrites_global_and_agent_paths() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[claude]
+auth_forward = "copy"
+
+[agents.foo]
+git = "x"
+
+[agents.foo.claude]
+auth_forward = "copy"
+
+[agents.bar]
+git = "y"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.normalize_deprecated_copy();
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains(r#""copy""#), "{out}");
+        assert!(out.contains(r#"auth_forward = "sync""#), "{out}");
     }
 
     #[test]
