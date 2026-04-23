@@ -206,16 +206,19 @@ pub fn run(cli: Cli) -> Result<()> {
                         dst: dst.clone(),
                         readonly,
                     };
-                    config.add_mount(&name, mount, scope.as_deref());
-                    config.save(&paths)?;
+                    let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                    editor.add_mount(&name, mount, scope.as_deref());
+                    config = editor.save()?;
                     println!("Added mount {name:?} ({scope_label}): {src} -> {dst}{ro}");
                     Ok(())
                 }
                 cli::MountCommand::Remove { name, scope } => {
-                    if config.remove_mount(&name, scope.as_deref()) {
-                        config.save(&paths)?;
+                    let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                    if editor.remove_mount(&name, scope.as_deref()) {
+                        config = editor.save()?;
                         println!("Removed mount {name:?}.");
                     } else {
+                        drop(editor);
                         println!("Mount {name:?} not found.");
                     }
                     Ok(())
@@ -265,8 +268,18 @@ pub fn run(cli: Cli) -> Result<()> {
                 cli::TrustCommand::Grant { selector } => {
                     let class = ClassSelector::parse(&selector)?;
                     config.resolve_agent_source(&class)?;
-                    if config.trust_agent(&class.key()) {
-                        config.save(&paths)?;
+                    let was_trusted = config
+                        .agents
+                        .get(&class.key())
+                        .map(|a| a.trusted)
+                        .unwrap_or(false);
+                    if !was_trusted {
+                        let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                        if let Some(source) = config.agents.get(&class.key()) {
+                            editor.upsert_agent_source(&class.key(), source);
+                        }
+                        editor.set_agent_trust(&class.key(), true);
+                        config = editor.save()?;
                         println!("Trusted {}.", class.key());
                     } else {
                         println!("{} is already trusted.", class.key());
@@ -278,8 +291,15 @@ pub fn run(cli: Cli) -> Result<()> {
                     if AppConfig::is_builtin_agent(&class.key()) {
                         anyhow::bail!("{} is a built-in agent and is always trusted.", class.key());
                     }
-                    if config.untrust_agent(&class.key()) {
-                        config.save(&paths)?;
+                    let was_trusted = config
+                        .agents
+                        .get(&class.key())
+                        .map(|a| a.trusted)
+                        .unwrap_or(false);
+                    if was_trusted {
+                        let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                        editor.set_agent_trust(&class.key(), false);
+                        config = editor.save()?;
                         println!("Revoked trust for {}.", class.key());
                     } else {
                         println!("{} is not currently trusted.", class.key());
@@ -314,12 +334,17 @@ pub fn run(cli: Cli) -> Result<()> {
                     if let Some(agent_selector) = agent {
                         let class = ClassSelector::parse(&agent_selector)?;
                         config.resolve_agent_source(&class)?;
-                        config.set_agent_auth_forward(&class.key(), parsed_mode);
-                        config.save(&paths)?;
+                        let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                        if let Some(source) = config.agents.get(&class.key()) {
+                            editor.upsert_agent_source(&class.key(), source);
+                        }
+                        editor.set_agent_auth_forward(&class.key(), parsed_mode);
+                        config = editor.save()?;
                         println!("Set auth forwarding for {} to {parsed_mode}.", class.key());
                     } else {
-                        config.claude.auth_forward = parsed_mode;
-                        config.save(&paths)?;
+                        let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                        editor.set_global_auth_forward(parsed_mode);
+                        config = editor.save()?;
                         println!("Set global auth forwarding to {parsed_mode}.");
                     }
                     Ok(())
@@ -371,19 +396,18 @@ pub fn run(cli: Cli) -> Result<()> {
                     );
                 }
                 let mount_count = plan.final_mounts.len();
-                config.create_workspace(
-                    &name,
-                    WorkspaceConfig {
-                        workdir: expanded_workdir,
-                        mounts: plan.final_mounts,
-                        allowed_agents,
-                        default_agent,
-                        last_agent: None,
-                        env: std::collections::BTreeMap::new(),
-                        agents: std::collections::BTreeMap::new(),
-                    },
-                )?;
-                config.save(&paths)?;
+                let ws = WorkspaceConfig {
+                    workdir: expanded_workdir,
+                    mounts: plan.final_mounts,
+                    allowed_agents,
+                    default_agent,
+                    last_agent: None,
+                    env: std::collections::BTreeMap::new(),
+                    agents: std::collections::BTreeMap::new(),
+                };
+                let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                editor.create_workspace(&name, ws)?;
+                config = editor.save()?;
                 println!(
                     "Created workspace {name:?} (workdir: {}, {mount_count} mount(s)).",
                     tui::shorten_home(&workdir)
@@ -636,7 +660,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     changes.push(format!("default agent → {agent}"));
                 }
 
-                config.edit_workspace(
+                let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                editor.edit_workspace(
                     &name,
                     WorkspaceEdit {
                         workdir: workdir.map(|w| resolve_path(&w)),
@@ -652,7 +677,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         },
                     },
                 )?;
-                config.save(&paths)?;
+                config = editor.save()?;
                 println!("Updated workspace {name:?}:");
                 for change in &changes {
                     println!("  - {change}");
@@ -695,14 +720,15 @@ pub fn run(cli: Cli) -> Result<()> {
 
                 let remove_dsts: Vec<String> =
                     plan.removed.iter().map(|r| r.child.dst.clone()).collect();
-                config.edit_workspace(
+                let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                editor.edit_workspace(
                     &name,
                     WorkspaceEdit {
                         remove_destinations: remove_dsts,
                         ..WorkspaceEdit::default()
                     },
                 )?;
-                config.save(&paths)?;
+                config = editor.save()?;
                 println!(
                     "Pruned {} redundant mount(s) from workspace {name:?}.",
                     plan.removed.len()
@@ -710,8 +736,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
             WorkspaceCommand::Remove { name } => {
-                config.remove_workspace(&name)?;
-                config.save(&paths)?;
+                let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                editor.remove_workspace(&name)?;
+                config = editor.save()?;
                 println!("Removed workspace {name:?}.");
                 Ok(())
             }
