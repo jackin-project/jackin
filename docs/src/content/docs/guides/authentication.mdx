@@ -58,8 +58,7 @@ Scripts or invocations that still pass `copy` to `jackin config auth set` contin
 ### Set the global default
 
 ```bash
-jackin config auth set copy     # default — copy on first creation
-jackin config auth set sync     # overwrite from host on each launch
+jackin config auth set sync     # default — overwrite from host on each launch
 jackin config auth set ignore   # never forward (legacy behavior)
 ```
 
@@ -130,7 +129,7 @@ If the agent shows "Not logged in" or falls back to a different model tier (e.g.
 
 1. **Is auth forwarding enabled?** Run `jackin config auth show` — the default is `sync`.
 2. **Does the host have credentials?** On macOS, check `security find-generic-password -s "Claude Code-credentials" -w`. On Linux, check `~/.claude/.credentials.json`.
-3. **Is this a pre-existing container?** In `copy` mode, credentials are only forwarded on first creation. If the container already exists, either switch to `sync` mode or purge and recreate: `jackin purge <agent> && jackin load <agent>`.
+3. **Is this a pre-existing container?** In `sync` mode, host credentials are forwarded on every launch — but if the host has no credentials, the container's existing auth is preserved. If the container has stale auth and the host has fresh auth, restart the container (`jackin eject <agent> && jackin load <agent>`) or purge state (`jackin purge <agent>`) to force a fresh sync.
 
 ### Revoking forwarded credentials
 
