@@ -13,7 +13,9 @@ impl AppConfig {
             .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))
     }
 
-    pub fn create_workspace(
+    // pub(crate): ConfigEditor::create_workspace delegates here for validation;
+    // external callers must go through ConfigEditor to ensure TOML preservation.
+    pub(crate) fn create_workspace(
         &mut self,
         name: &str,
         workspace: WorkspaceConfig,
@@ -46,7 +48,9 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn edit_workspace(&mut self, name: &str, edit: WorkspaceEdit) -> anyhow::Result<()> {
+    // pub(crate): ConfigEditor::edit_workspace delegates here for validation;
+    // external callers must go through ConfigEditor to ensure TOML preservation.
+    pub(crate) fn edit_workspace(&mut self, name: &str, edit: WorkspaceEdit) -> anyhow::Result<()> {
         let mut seen_upsert_destinations = std::collections::HashSet::new();
         for mount in &edit.upsert_mounts {
             if !seen_upsert_destinations.insert(mount.dst.as_str()) {
@@ -140,7 +144,11 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
+    // pub(crate): production callers use ConfigEditor::remove_workspace (which
+    // deletes the TOML table directly); this stays for the test in workspaces.rs
+    // that validates the error message shape.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
         self.workspaces
             .remove(name)
             .map(|_| ())

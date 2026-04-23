@@ -6,10 +6,12 @@ pub use crate::workspace::MountConfig;
 pub use crate::workspace::WorkspaceAgentOverride;
 
 mod agents;
+pub mod editor;
 mod mounts;
 mod persist;
 mod workspaces;
 
+pub use editor::{ConfigEditor, EnvScope};
 pub use mounts::{DockerMounts, MountEntry};
 
 /// Serde helper: `skip_serializing_if` requires `fn(&T) -> bool`.

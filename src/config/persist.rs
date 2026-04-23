@@ -31,7 +31,52 @@ impl AppConfig {
         }
 
         if builtins_changed || deprecated_copy_seen {
-            config.save(paths)?;
+            // Bootstrap only when the file doesn't exist yet. Without this
+            // gate, ConfigEditor::open would call load_or_init for the
+            // missing file and recurse. When the file DOES exist (the
+            // builtins-drifted or deprecated-copy upgrade path), we must
+            // NOT rewrite it through the lossy serde path first — that
+            // would destroy every user comment before the editor could
+            // preserve them, defeating the whole point of this migration.
+            if !paths.config_file.exists() {
+                // Inline of the removed AppConfig::save. Atomic write:
+                // serialize → .tmp (0o600 on unix, fsync) → rename.
+                let contents = toml::to_string_pretty(&config)?;
+                let tmp = paths.config_file.with_extension("tmp");
+
+                #[cfg(unix)]
+                {
+                    use std::io::Write;
+                    use std::os::unix::fs::OpenOptionsExt;
+                    let mut file = std::fs::OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .mode(0o600)
+                        .open(&tmp)?;
+                    file.write_all(contents.as_bytes())?;
+                    file.sync_all()?;
+                }
+
+                #[cfg(not(unix))]
+                std::fs::write(&tmp, &contents)?;
+
+                std::fs::rename(&tmp, &paths.config_file)?;
+            }
+            let mut editor = crate::config::ConfigEditor::open(paths)?;
+            if builtins_changed {
+                for &(name, git) in crate::config::agents::BUILTIN_AGENTS {
+                    editor.upsert_builtin_agent(name, git);
+                }
+            }
+            if deprecated_copy_seen {
+                editor.normalize_deprecated_copy();
+            }
+            // editor.save() returns an AppConfig parsed from the on-disk file,
+            // which has [agents.X.env] preserved (upsert_builtin_agent doesn't
+            // touch env). The in-memory `config` from sync_builtin_agents has
+            // env cleared. Replace the in-memory config with the preserved one.
+            config = editor.save()?;
         }
 
         // Reject operator env maps that declare reserved runtime names.
@@ -41,31 +86,6 @@ impl AppConfig {
 
         config.validate_workspaces()?;
         Ok(config)
-    }
-
-    pub fn save(&self, paths: &JackinPaths) -> anyhow::Result<()> {
-        let contents = toml::to_string_pretty(self)?;
-        let tmp = paths.config_file.with_extension("tmp");
-
-        #[cfg(unix)]
-        {
-            use std::io::Write;
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&tmp)?;
-            file.write_all(contents.as_bytes())?;
-            file.sync_all()?;
-        }
-
-        #[cfg(not(unix))]
-        std::fs::write(&tmp, &contents)?;
-
-        std::fs::rename(&tmp, &paths.config_file)?;
-        Ok(())
     }
 }
 
@@ -200,6 +220,49 @@ auth_forward = "copy"
 
         let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(!persisted.contains("auth_forward = \"copy\""));
+    }
+
+    #[test]
+    fn load_migration_preserves_user_comments() {
+        // Regression test for the persist.rs migration path: the copy→sync
+        // and builtin-sync branches must NOT pre-flush through the lossy
+        // serde writer, or every user comment gets destroyed before the
+        // editor can preserve them.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        let original = r#"# Top-of-file note — keep this
+[claude]
+auth_forward = "copy"
+
+# Builtin agent, operator-configured
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+
+# Keep this comment too — it explains why we trust
+[agents.agent-smith.claude]
+auth_forward = "copy"
+"#;
+        std::fs::write(&paths.config_file, original).unwrap();
+
+        let _config = AppConfig::load_or_init(&paths).unwrap();
+
+        let after = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            after.contains("# Top-of-file note — keep this"),
+            "top-of-file comment lost: {after}"
+        );
+        assert!(
+            after.contains("# Builtin agent, operator-configured"),
+            "agent-section comment lost: {after}"
+        );
+        assert!(
+            after.contains("# Keep this comment too — it explains why we trust"),
+            "claude-section comment lost: {after}"
+        );
+        assert!(!after.contains("\"copy\""), "copy not migrated: {after}");
+        assert!(after.contains("auth_forward = \"sync\""), "{after}");
     }
 
     #[test]
