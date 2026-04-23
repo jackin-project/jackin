@@ -24,6 +24,7 @@ impl fmt::Display for ClassSelector {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum SelectorError {
     #[error("selector cannot be empty")]
     Empty,
@@ -66,6 +67,18 @@ impl ClassSelector {
     }
 }
 
+impl TryFrom<&str> for ClassSelector {
+    type Error = SelectorError;
+
+    /// Idiomatic wrapper around [`ClassSelector::parse`]. Exists so callers
+    /// that rely on `TryFrom` conversion traits (including generic code and
+    /// `try_into()` call sites) can convert a `&str` without having to
+    /// reach for the inherent `parse` method.
+    fn try_from(input: &str) -> Result<Self, Self::Error> {
+        Self::parse(input)
+    }
+}
+
 impl Selector {
     pub fn parse(input: &str) -> Result<Self, SelectorError> {
         if input.is_empty() {
@@ -85,6 +98,16 @@ impl Selector {
         }
 
         Ok(Self::Class(ClassSelector::parse(input)?))
+    }
+}
+
+impl TryFrom<&str> for Selector {
+    type Error = SelectorError;
+
+    /// Idiomatic wrapper around [`Selector::parse`]. See the analogous impl
+    /// on [`ClassSelector`] for rationale.
+    fn try_from(input: &str) -> Result<Self, Self::Error> {
+        Self::parse(input)
     }
 }
 

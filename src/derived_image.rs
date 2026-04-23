@@ -4,6 +4,7 @@ use tempfile::TempDir;
 
 const ENTRYPOINT_SH: &str = include_str!("../docker/runtime/entrypoint.sh");
 
+#[derive(Debug)]
 pub struct DerivedBuildContext {
     pub temp_dir: TempDir,
     pub context_dir: PathBuf,

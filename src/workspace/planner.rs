@@ -157,6 +157,7 @@ pub struct Removal {
 /// Conditions that prevent a silent collapse. The operator must resolve these
 /// by hand before the edit can proceed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum CollapseError {
     #[error(
         "mount {parent_src} ({parent_mode}) would subsume {child_src} ({child_mode}), \

@@ -30,7 +30,7 @@ pub trait CommandRunner {
     ) -> anyhow::Result<String>;
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ShellRunner {
     pub debug: bool,
 }
