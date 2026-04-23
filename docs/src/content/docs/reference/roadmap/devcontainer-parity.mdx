@@ -1,0 +1,281 @@
+---
+title: "Devcontainer Parity: Lessons from anthropics/claude-code"
+---
+
+
+**Status**: Proposed — research captured, no implementation committed
+
+## Problem
+
+The upstream [Claude Code repository](https://github.com/anthropics/claude-code/tree/main/.devcontainer)
+ships a working VS Code devcontainer that runs Claude Code inside an isolated
+Docker environment. Its design predates jackin's, solves several problems
+jackin also has, and makes a few different choices that are worth comparing
+directly:
+
+- upstream bakes a network-egress allowlist into the container image via
+  `iptables` + `ipset` and a `postCreateCommand` that runs it with
+  `NET_ADMIN`/`NET_RAW` capabilities
+- upstream grants `sudo` **only** to a single setup script, not to the whole
+  session
+- upstream is itself a devcontainer spec, so it works in VS Code, Cursor, and
+  GitHub Codespaces out of the box
+- upstream persists shell history and the `~/.claude` directory in named
+  Docker volumes parameterized by `devcontainerId`
+
+jackin' already does things the upstream devcontainer can't — Docker-in-Docker,
+per-agent networks, workspace mounting, namespaced agent repos, DinD TLS,
+plugin marketplaces, construct/derived-layer split — but several tactical
+pieces of the upstream setup are genuinely useful and map directly onto
+existing open items ([network policy controls](/reference/roadmap/) and
+[construct user creation](/reference/roadmap/construct-user-creation/)
+in particular).
+
+This page captures the comparison so those lessons aren't lost.
+
+## Why It Matters
+
+- **Network egress is currently unrestricted inside jackin agents.** The
+  "Network policy controls" bullet on the main roadmap is aspirational; the
+  upstream `init-firewall.sh` is a ready-made reference implementation with a
+  sensible default allowlist.
+- **jackin images are not usable as devcontainers.** Operators who prefer VS
+  Code / Cursor / Codespaces for code navigation cannot point those tools at a
+  jackin-generated image without authoring their own `devcontainer.json`.
+  Shipping (or generating) one would widen jackin's surface without changing
+  the runtime.
+- **The construct's `claude` user has blanket `NOPASSWD:ALL` sudo.** Upstream
+  restricts sudo to a single script (`init-firewall.sh`). jackin's model is
+  intentionally more permissive because the agent runs under
+  `--dangerously-skip-permissions`, but scoping sudo is still worth a design
+  pass — especially if a firewall-init hook lands.
+- **Shell history is not persisted across agent recreations.** Upstream mounts
+  a named volume at `/commandhistory` and redirects `HISTFILE` there.
+
+## Current State
+
+### jackin construct (`docker/construct/Dockerfile`)
+
+- `FROM debian:trixie-20260421@sha256:...` — pinned by digest
+- Installs: `bash`, `ca-certificates`, `curl`, `fd-find`, `fzf`, `git`,
+  `git-lfs`, `jq`, `openssh-client`, `ripgrep`, `sudo`, `tree`, `yq`, `zsh`
+- Pulls in `mise`, Docker CLI + Compose plugin, GitHub CLI
+- Builds and copies `tirith` and `shellfirm` binaries from a Rust builder stage
+- Creates `claude` user (UID/GID 1000) with `claude ALL=(ALL) NOPASSWD:ALL`
+- oh-my-zsh + zsh-autosuggestions + starship
+- Zshrc enables `tirith` and `shellfirm` shell hooks
+
+### jackin runtime (`docker/runtime/entrypoint.sh`)
+
+- Git identity from env, `gh auth setup-git`
+- Runs `install-plugins.sh` against `~/.jackin/plugins.json`
+- Registers `tirith` and `shellfirm` MCP servers in Claude
+- Optional `/home/claude/.jackin-runtime/pre-launch.sh` hook
+- `exec claude --dangerously-skip-permissions --verbose`
+
+### jackin agent layer (e.g. `jackin-agent-smith`, `jackin-the-architect`)
+
+- Final stage must be `FROM projectjackin/construct:trixie` (validated contract)
+- Agents layer in their own toolchains via `mise` (Rust for the-architect,
+  Node LTS for agent-smith, plus OpenTofu for the-architect)
+- Plugins declared in `jackin.agent.toml`, installed at runtime by
+  `install-plugins.sh`
+
+### Upstream Claude Code devcontainer
+
+- `FROM node:20`
+- Installs: `git`, `zsh`, `vim`, `nano`, `jq`, `iptables`, `ipset`,
+  `dnsutils`, `gh`, `fzf`, `man-db`
+- Non-root `node` user; owns `/workspace` and `/home/node/.claude`;
+  `sudo` scoped to a single command: `/usr/local/bin/init-firewall.sh`
+- zsh + powerline10k, git-delta 0.18.2
+- Claude Code installed globally via `npm i -g @anthropic-ai/claude-code`
+- `devcontainer.json`:
+  - `runArgs: ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"]`
+  - Named volumes per `devcontainerId`:
+    - `claude-code-bashhistory-${devcontainerId}` → `/commandhistory`
+    - `claude-code-config-${devcontainerId}` → `/home/node/.claude`
+  - `postCreateCommand: "sudo /usr/local/bin/init-firewall.sh"`
+  - Extensions: `anthropic.claude-code`, ESLint, Prettier, GitLens
+  - Env: `NODE_OPTIONS=--max-old-space-size=4096`
+- `init-firewall.sh`:
+  - Default DROP on INPUT, FORWARD, OUTPUT
+  - Allows loopback, established/related, DNS (53), SSH (22), host subnet
+  - `ipset allowed-domains` (hash:net) seeded from:
+    - GitHub IP meta ranges (aggregated from `api.github.com/meta`)
+    - `registry.npmjs.org`
+    - `api.anthropic.com`
+    - `sentry.io`, `statsig.anthropic.com`, `statsig.com`
+    - `marketplace.visualstudio.com`, `vscode.blob.core.windows.net`,
+      `update.code.visualstudio.com`
+  - Self-test: `example.com` must fail, `api.github.com` must succeed
+
+## Side-by-Side
+
+| Aspect | Upstream devcontainer | jackin construct + agent |
+|---|---|---|
+| Base image | `node:20` | `debian:trixie` (pinned by digest) |
+| Language runtime in base | Node 20 baked in | None; agents add toolchains via `mise` |
+| Non-root user | `node` (UID 1000); sudo scoped to firewall script | `claude` (UID/GID remapped to host); `NOPASSWD:ALL` |
+| Shell | zsh + powerline10k | zsh + oh-my-zsh + zsh-autosuggestions + starship |
+| Diff viewer | git-delta 0.18.2 | none in construct |
+| Search / fuzzy tools | `fzf` | `fzf`, `fd-find`, `ripgrep` |
+| Security tools | none | `tirith`, `shellfirm` (MCP + shell hooks) |
+| Docker-in-sandbox | not available | DinD sidecar, per-agent network, TLS |
+| Network egress policy | iptables/ipset allowlist via `postCreateCommand` | none at container layer |
+| Devcontainer spec | yes (is the product) | no — images not discoverable by VS Code/Cursor/Codespaces |
+| Shell history persistence | named volume per `devcontainerId` | not persisted (inside container layer) |
+| Claude config persistence | named volume `claude-code-config-*` | host bind mount `~/.jackin/data/{name}/.claude` |
+| GitHub auth persistence | not persisted explicitly | host bind mount `~/.jackin/data/{name}/.config/gh` |
+| Plugin marketplace | none | `jackin.agent.toml` + `install-plugins.sh` |
+| Multi-agent | single environment | namespaced agents, per-workspace selection |
+
+## Findings
+
+### Finding 1 — Egress allowlist for agent containers
+
+**Gap**: Agents have unrestricted outbound network access by default. A
+compromised plugin, malicious dependency, or prompt-injected instruction can
+talk to any endpoint on the internet.
+
+**Reference implementation**: upstream `init-firewall.sh` is self-contained,
+~80 lines, and covers the 90% case (GitHub, npm, Anthropic, statsig, VS Code
+update endpoints). Capabilities required: `--cap-add=NET_ADMIN`,
+`--cap-add=NET_RAW`. Packages required: `iptables`, `ipset`, `dnsutils`,
+`curl`, `jq`.
+
+**Options**:
+
+1. **Port upstream script as an opt-in runtime hook.** Land the script under
+   `docker/runtime/` (or `docker/construct/` so it's available to every
+   agent) and wire a new env var like `JACKIN_ENABLE_EGRESS_ALLOWLIST=1` that
+   flips the entrypoint to run it. Zero default behavior change; operators
+   opt in per launch.
+2. **Make it a per-agent declaration.** Add a `[network]` section to
+   `jackin.agent.toml` where agent authors can declare the required egress
+   list. jackin merges the declared list with an operator-level allowlist in
+   `config.toml`. Cost: schema + merge logic.
+3. **Make it a per-workspace declaration.** Same mechanism but keyed on
+   workspace instead of agent. Closer to how Docker Sandboxes scopes network
+   policy.
+4. **Host-side proxy** (further out). Intercept outbound HTTPS at the DinD
+   network boundary instead of inside the guest. This is the Docker Sandboxes
+   approach and closes the credential-injection gap too, but it is a
+   significantly larger project. Covered in the
+   [selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/)
+   design.
+
+**Recommendation**: Start with Option 1 as a single-ship feature, then
+promote to Option 2 once the shape settles. Option 4 belongs to the larger
+microvm track.
+
+### Finding 2 — Generate a `devcontainer.json` alongside the derived image
+
+**Gap**: jackin builds and runs the image itself; there is no way to point VS
+Code, Cursor, or Codespaces at the same image for IDE features like Go-to-
+Definition, debugging, or extension auto-install.
+
+**Options**:
+
+1. **Emit `devcontainer.json` when jackin builds the derived image.** Write
+   it into the workspace's `.devcontainer/` directory (or a jackin-managed
+   shadow dir) so IDEs can consume it. Fields: build target (use the jackin
+   image directly), `runArgs`, mounts matching what jackin would mount,
+   `postCreateCommand` pointing at jackin's entrypoint hooks, an extensions
+   list curated per agent.
+2. **Ship a static reference `devcontainer.json` in the docs.** Operators
+   copy it into their project. Zero product change, lowest cost. Loses
+   coupling to jackin's actual runtime config.
+3. **Skip IDE integration.** jackin stays a terminal-first product. Users
+   who want IDE integration use the standalone upstream devcontainer.
+
+**Recommendation**: Option 1 is the most aligned with jackin's positioning
+as a managed runtime, but it is not urgent. Option 2 is a cheap way to
+validate demand first.
+
+### Finding 3 — Scope the `claude` user's sudo
+
+**Gap**: The `claude` user has `NOPASSWD:ALL`. Upstream scopes sudo to one
+explicit command (`/usr/local/bin/init-firewall.sh`). jackin's choice is
+defensible because the agent runs under `--dangerously-skip-permissions` and
+is already free to do anything inside the container — but if Finding 1
+lands, a firewall-init script is a new reason to allow sudo for one
+specific command rather than globally.
+
+**Options**:
+
+1. **Leave as-is.** Tracks jackin's "agent is fully autonomous inside the
+   box" model.
+2. **Scope sudo to a curated allowlist** (`apt-get`, `init-firewall.sh`,
+   and a small handful of others). Breaks agents that expect to install
+   arbitrary system packages at runtime.
+3. **Scope sudo only to firewall init** (matches upstream). Most restrictive;
+   likely breaks current agents.
+
+**Recommendation**: Defer until Finding 1 is implemented. Revisit as part of
+a broader hardening pass and document the tradeoff in
+`docs/src/content/docs/guides/security-model.mdx`.
+
+### Finding 4 — Persist shell history
+
+**Gap**: `~/.zsh_history` lives in the container's writable layer and is lost
+when the agent is recreated. Upstream mounts a named volume at
+`/commandhistory` and points `HISTFILE` at it.
+
+**Options**:
+
+1. **Bind mount `~/.jackin/data/{name}/.zsh_history` to `/home/claude/.zsh_history`.**
+   Consistent with how other state is persisted. Single line in
+   `src/runtime/launch.rs`.
+2. **Set `HISTFILE` inside the container to a subdir of `/home/claude/.jackin`**
+   (already bind-mounted) and let the existing persistence carry it.
+
+**Recommendation**: Option 2 is the cheapest. It is a ~5-line change in
+`zshrc` plus a small entrypoint nudge to ensure the directory exists.
+
+### Finding 5 — Small construct additions worth considering
+
+None of these are gating; they're quality-of-life notes.
+
+- **`git-delta`**: upstream uses it; would improve the default `git diff`
+  experience inside agents. Low cost.
+- **`man-db`**: useful when the agent or operator looks up tool docs. Low
+  cost but meaningful disk impact (`man-db` + pages).
+- **`vim`, `nano`**: jackin construct currently has neither. Operators
+  dropping into a running container to inspect state have no editor.
+  Installing at least one is a small ergonomics win.
+- **Deliberate omissions**: upstream installs none of `tirith`, `shellfirm`,
+  `ripgrep`, `fd-find`, `yq`, `git-lfs`, `tree`, Docker CLI, `mise`,
+  GitHub CLI. jackin adds all of these on purpose. No change recommended —
+  they are part of what makes jackin's baseline more useful than a bare
+  devcontainer.
+
+### Finding 6 — VS Code extension kit
+
+**Gap**: upstream bundles `anthropic.claude-code`, ESLint, Prettier, and
+GitLens extensions in `devcontainer.json`. Any operator who wants the same
+kit under jackin has to configure it themselves.
+
+This is downstream of Finding 2 — if jackin emits a `devcontainer.json`, the
+extensions list becomes an obvious payload for it.
+
+## Non-Goals
+
+- Replacing jackin's construct/derived-layer model with a monolithic Node-
+  based image. The split is one of jackin's core advantages.
+- Bundling IDE-specific logic into the core CLI beyond a generated
+  `devcontainer.json`.
+- Claiming parity with Docker Sandboxes' credential-injection model. That
+  work is tracked under
+  [selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/).
+
+## Related Files
+
+- `docker/construct/Dockerfile` — base image, user creation, shell setup
+- `docker/construct/install-plugins.sh` — plugin bootstrap (touched by Finding 1 if egress list needs to reach plugin sources)
+- `docker/construct/zshrc` — shell hooks (touched by Finding 4)
+- `docker/runtime/entrypoint.sh` — runtime orchestration (touched by Finding 1)
+- `src/runtime/launch.rs` — mount and capability wiring (touched by Findings 1 and 4)
+- `src/derived_image.rs` — derived Dockerfile generation (touched by Finding 2)
+- `docs/src/content/docs/guides/security-model.mdx` — security posture (touched by Findings 1 and 3)
+- Upstream reference: [`anthropics/claude-code/.devcontainer`](https://github.com/anthropics/claude-code/tree/main/.devcontainer)
