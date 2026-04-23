@@ -52,7 +52,14 @@ impl ConfigEditor {
     ///
     /// Note: this deliberately bypasses `AppConfig::load_or_init`'s
     /// builtin-agent sync to avoid clobbering the just-written document with
-    /// a serde round-trip.
+    /// a serde round-trip. Because it uses `toml::from_str` directly, it
+    /// also skips `load_or_init`'s `validate_workspaces` and
+    /// `validate_reserved_names` checks. The invariant this relies on is
+    /// that validation runs once at load time (via `ConfigEditor::open` →
+    /// `AppConfig::load_or_init` for first-run / `AppConfig::edit_workspace`
+    /// for structural workspace edits) and that the editor's typed setters
+    /// preserve validity — they write keys/values into known scopes and
+    /// cannot construct a workspace or reserved-name violation on their own.
     pub fn save(self) -> anyhow::Result<AppConfig> {
         let contents = self.doc.to_string();
         let tmp = self.path.with_extension("tmp");
