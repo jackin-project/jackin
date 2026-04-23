@@ -1,3 +1,6 @@
+use crate::app::context::{
+    eligible_agents_for_workspace, find_saved_workspace_for_cwd, preferred_agent_index,
+};
 use crate::config::{AppConfig, MountEntry};
 use crate::selector::ClassSelector;
 use crate::tui;
@@ -49,7 +52,7 @@ impl LaunchState {
 
         let mut workspaces = vec![current_choice];
         for (name, saved) in &config.workspaces {
-            let allowed_agents = eligible_agents_for_saved_workspace(config, saved);
+            let allowed_agents = eligible_agents_for_workspace(config, saved);
             workspaces.push(WorkspaceChoice {
                 name: name.clone(),
                 workspace: ResolvedWorkspace {
@@ -65,27 +68,14 @@ impl LaunchState {
             });
         }
 
-        let selected_workspace = workspaces
-            .iter()
-            .enumerate()
-            .filter_map(|(index, choice)| {
-                if choice.name == "Current directory" {
-                    return None;
-                }
-
-                match &choice.input {
-                    LoadWorkspaceInput::Saved(name) => config
-                        .workspaces
-                        .get(name)
-                        .and_then(|workspace| {
-                            crate::workspace::saved_workspace_match_depth(workspace, cwd)
-                        })
-                        .map(|depth| (index, depth)),
-                    _ => None,
-                }
-            })
-            .max_by_key(|(_, depth)| *depth)
-            .map_or(0, |(index, _)| index);
+        // Preselect the saved workspace that best covers `cwd`. The
+        // decision uses the shared helper in `app::context` so the TUI
+        // and the non-interactive CLI agree on "which workspace am I in?".
+        // Falls back to index 0 (the synthetic "Current directory" choice)
+        // if no saved workspace matches.
+        let selected_workspace = find_saved_workspace_for_cwd(config, cwd)
+            .and_then(|(name, _)| workspaces.iter().position(|choice| choice.name == name))
+            .unwrap_or(0);
 
         Ok(Self {
             stage: LaunchStage::Workspace,
@@ -121,22 +111,6 @@ fn configured_agents(config: &AppConfig) -> Vec<ClassSelector> {
         .collect()
 }
 
-fn eligible_agents_for_saved_workspace(
-    config: &AppConfig,
-    workspace: &crate::workspace::WorkspaceConfig,
-) -> Vec<ClassSelector> {
-    configured_agents(config)
-        .into_iter()
-        .filter(|agent| {
-            workspace.allowed_agents.is_empty()
-                || workspace
-                    .allowed_agents
-                    .iter()
-                    .any(|allowed| allowed == &agent.key())
-        })
-        .collect()
-}
-
 fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
     let mounts = config
         .docker
@@ -149,20 +123,6 @@ fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
         .collect::<Vec<_>>();
 
     AppConfig::expand_and_validate_named_mounts(&mounts)
-}
-
-fn default_agent_index(choice: &WorkspaceChoice, agents: &[ClassSelector]) -> Option<usize> {
-    // Last-used agent takes priority, then falls back to default_agent
-    choice
-        .last_agent
-        .as_ref()
-        .and_then(|last| agents.iter().position(|agent| agent.key() == *last))
-        .or_else(|| {
-            choice
-                .default_agent
-                .as_ref()
-                .and_then(|default| agents.iter().position(|agent| agent.key() == *default))
-        })
 }
 
 fn resolve_selected_workspace(
@@ -258,9 +218,11 @@ pub fn run_launch(
                         }
                         state.stage = LaunchStage::Agent;
                         state.agent_query.clear();
-                        state.selected_agent = default_agent_index(
-                            &state.workspaces[state.selected_workspace],
+                        let choice = &state.workspaces[state.selected_workspace];
+                        state.selected_agent = preferred_agent_index(
                             &agents,
+                            choice.last_agent.as_deref(),
+                            choice.default_agent.as_deref(),
                         )
                         .unwrap_or(0);
                     }
@@ -1019,7 +981,7 @@ mod tests {
     //
     // These tests pin the composition the TUI relies on:
     //
-    //   configured_agents  →  eligible_agents_for_saved_workspace
+    //   configured_agents  →  eligible_agents_for_workspace
     //                     (allowed_agents filter)  →
     //                     workspace.allowed_agents  →
     //                     filtered_agents          (agent_query filter)  →
@@ -1064,7 +1026,7 @@ mod tests {
         config.agents.insert("bob".to_string(), agent_source_stub());
 
         let ws = workspace_with_allowed(&[]);
-        let eligible = eligible_agents_for_saved_workspace(&config, &ws);
+        let eligible = eligible_agents_for_workspace(&config, &ws);
         let keys: Vec<String> = eligible
             .iter()
             .map(crate::selector::ClassSelector::key)
@@ -1087,7 +1049,7 @@ mod tests {
             .insert("carol".to_string(), agent_source_stub());
 
         let ws = workspace_with_allowed(&["alice", "carol"]);
-        let eligible = eligible_agents_for_saved_workspace(&config, &ws);
+        let eligible = eligible_agents_for_workspace(&config, &ws);
         let keys: Vec<String> = eligible
             .iter()
             .map(crate::selector::ClassSelector::key)
@@ -1109,7 +1071,7 @@ mod tests {
             .insert("alice".to_string(), agent_source_stub());
 
         let ws = workspace_with_allowed(&["ghost"]);
-        let eligible = eligible_agents_for_saved_workspace(&config, &ws);
+        let eligible = eligible_agents_for_workspace(&config, &ws);
 
         assert!(
             eligible.is_empty(),

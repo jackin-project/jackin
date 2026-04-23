@@ -120,9 +120,11 @@ pub(crate) fn resolve_target_name(
 /// Find the saved workspace whose host workdir or mounted host path best
 /// matches `cwd`. Returns `None` when no saved workspace covers the path.
 ///
-/// Shared by context resolvers for `jackin load` (class lookup) and
-/// `jackin hardline` (running-container lookup).
-fn find_saved_workspace_for_cwd<'a>(
+/// Deepest mount-root match wins; ties go to iteration order (`BTreeMap`
+/// alphabetical by workspace name). Shared by both the non-interactive
+/// CLI resolvers (`jackin load`, `jackin hardline`) and the interactive
+/// TUI workspace preselection in `launch.rs`.
+pub(crate) fn find_saved_workspace_for_cwd<'a>(
     config: &'a AppConfig,
     cwd: &Path,
 ) -> Option<(&'a str, &'a WorkspaceConfig)> {
@@ -134,6 +136,49 @@ fn find_saved_workspace_for_cwd<'a>(
         })
         .max_by_key(|(_, _, depth)| *depth)
         .map(|(name, ws, _)| (name.as_str(), ws))
+}
+
+/// Return the configured agents permitted by a workspace's `allowed_agents`.
+///
+/// An empty `allowed_agents` list means "any configured agent" — that is
+/// the historical TUI and CLI contract, pinned by Phase 0 characterization
+/// tests in `launch.rs`. Agents named in `allowed_agents` but absent from
+/// `config.agents` are silently dropped (no fabricated selectors).
+pub(crate) fn eligible_agents_for_workspace(
+    config: &AppConfig,
+    workspace: &WorkspaceConfig,
+) -> Vec<ClassSelector> {
+    config
+        .agents
+        .keys()
+        .filter_map(|key| ClassSelector::parse(key).ok())
+        .filter(|agent| {
+            workspace.allowed_agents.is_empty()
+                || workspace
+                    .allowed_agents
+                    .iter()
+                    .any(|allowed| allowed == &agent.key())
+        })
+        .collect()
+}
+
+/// Return the index of the preferred agent within `eligible`.
+///
+/// Priority: `last_agent` first, then `default_agent`. Returns `None` when
+/// neither is set or when the named agent is not in `eligible`. The TUI's
+/// preselection and the CLI's context resolver both go through this
+/// helper so the ordering cannot silently diverge.
+pub(crate) fn preferred_agent_index(
+    eligible: &[ClassSelector],
+    last_agent: Option<&str>,
+    default_agent: Option<&str>,
+) -> Option<usize> {
+    last_agent
+        .and_then(|last| eligible.iter().position(|agent| agent.key() == last))
+        .or_else(|| {
+            default_agent
+                .and_then(|default| eligible.iter().position(|agent| agent.key() == default))
+        })
 }
 
 /// Resolve the agent and workspace from the current directory context.
@@ -150,29 +195,19 @@ pub(crate) fn resolve_agent_from_context(
     cwd: &Path,
 ) -> Result<(ClassSelector, LoadWorkspaceInput)> {
     if let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) {
-        // Try last_agent, then default_agent
-        let agent_key = ws.last_agent.as_deref().or(ws.default_agent.as_deref());
+        let eligible = eligible_agents_for_workspace(config, ws);
 
-        if let Some(key) = agent_key
-            && config.agents.contains_key(key)
-        {
-            let class = ClassSelector::parse(key)?;
-            let allowed = ws.allowed_agents.is_empty()
-                || ws.allowed_agents.iter().any(|allowed| allowed == key);
-            if allowed {
-                return Ok((class, LoadWorkspaceInput::Saved(name.to_string())));
-            }
+        // Preferred-agent shortcut: last_agent, then default_agent.
+        if let Some(preferred_idx) = preferred_agent_index(
+            &eligible,
+            ws.last_agent.as_deref(),
+            ws.default_agent.as_deref(),
+        ) {
+            return Ok((
+                eligible[preferred_idx].clone(),
+                LoadWorkspaceInput::Saved(name.to_string()),
+            ));
         }
-
-        // No remembered agent — find eligible agents
-        let eligible: Vec<ClassSelector> = config
-            .agents
-            .keys()
-            .filter_map(|k| ClassSelector::parse(k).ok())
-            .filter(|agent| {
-                ws.allowed_agents.is_empty() || ws.allowed_agents.iter().any(|a| a == &agent.key())
-            })
-            .collect();
 
         match eligible.len() {
             0 => anyhow::bail!("no agents configured; add one with jackin load <agent>"),
