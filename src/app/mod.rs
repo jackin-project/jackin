@@ -106,7 +106,9 @@ pub fn run(cli: Cli) -> Result<()> {
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
-            let (class, workspace) = launch::run_launch(&config, &cwd)?;
+            let Some((class, workspace)) = launch::run_launch(&config, &cwd)? else {
+                return Ok(());
+            };
 
             let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
             if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
