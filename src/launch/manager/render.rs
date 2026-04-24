@@ -685,19 +685,25 @@ fn render_agents_subpanel(
         let default = ws_config.and_then(|w| w.default_agent.as_deref());
         // Show only allowed agents that exist in the global config (consistent
         // with the editor view). Fall back to listing all allowed names if the
-        // agent is no longer registered globally.
-        for agent in allowed {
-            let star = if Some(agent.as_str()) == default {
-                "\u{2605} "
-            } else {
-                "  "
-            };
-            let style = if config.agents.contains_key(agent) {
+        // agent is no longer registered globally. Agent name always starts at
+        // `SUBPANEL_CONTENT_INDENT` (col 2 from border); default agents get a
+        // trailing star on their own span so the name keeps the phosphor-green
+        // base color and the star gets its own low-chrome style.
+        let name_style = |agent: &str| {
+            if config.agents.contains_key(agent) {
                 Style::default().fg(PHOSPHOR_GREEN)
             } else {
                 Style::default().fg(PHOSPHOR_DIM)
-            };
-            lines.push(Line::from(Span::styled(format!("  {star}{agent}"), style)));
+            }
+        };
+        let star_style = Style::default().fg(PHOSPHOR_DIM);
+        for agent in allowed {
+            let is_default = Some(agent.as_str()) == default;
+            let mut spans = vec![Span::styled(format!("  {agent}"), name_style(agent))];
+            if is_default {
+                spans.push(Span::styled(" \u{2605}", star_style));
+            }
+            lines.push(Line::from(spans));
         }
     }
 
@@ -1816,10 +1822,55 @@ mod subpanel_padding_tests {
         );
     }
 
-    /// Agent rows with a default agent render the star at
-    /// `SUBPANEL_CONTENT_INDENT`, matching the "any agent" label position.
+    /// Scan row `y` inside a sub-panel block for the first cell whose
+    /// symbol equals `needle`, returning the offset from the left border.
+    /// Used to locate the trailing star glyph on a default-agent row.
+    fn find_symbol_indent(terminal: &Terminal<TestBackend>, y: u16, needle: &str) -> Option<usize> {
+        let buf = terminal.backend().buffer();
+        let area = buf.area;
+        let border_x = (0..area.width).find(|x| {
+            let sym = buf[(*x, y)].symbol();
+            sym == "│" || sym == "║"
+        })?;
+        for x in (border_x + 1)..area.width {
+            if buf[(x, y)].symbol() == needle {
+                return Some((x - border_x - 1) as usize);
+            }
+        }
+        None
+    }
+
+    /// Scan row `y` for the last printable non-space/border cell and
+    /// return its relative offset from the left border. Used to confirm
+    /// a non-default row has no trailing suffix past the name.
+    fn last_printable_indent(terminal: &Terminal<TestBackend>, y: u16) -> Option<usize> {
+        let buf = terminal.backend().buffer();
+        let area = buf.area;
+        let border_x = (0..area.width).find(|x| {
+            let sym = buf[(*x, y)].symbol();
+            sym == "│" || sym == "║"
+        })?;
+        let right_border_x = ((border_x + 1)..area.width).find(|x| {
+            let sym = buf[(*x, y)].symbol();
+            sym == "│" || sym == "║"
+        })?;
+        let mut last: Option<usize> = None;
+        for x in (border_x + 1)..right_border_x {
+            let sym = buf[(x, y)].symbol();
+            if !sym.is_empty() && sym != " " {
+                last = Some((x - border_x - 1) as usize);
+            }
+        }
+        last
+    }
+
+    /// Non-default agent rows render the name starting at
+    /// `SUBPANEL_CONTENT_INDENT` (col 2 from the border). With the
+    /// trailing-star convention no glyph precedes the name.
     #[test]
-    fn agent_star_row_aligns_with_content_column() {
+    fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
+        // Two allowed agents, default = alpha. `beta` is the non-default
+        // row at y=2 (y=0 border, y=1 alpha, y=2 beta).
         let ws = ws_config_with_allowed(&["alpha", "beta"], Some("alpha"));
         let mut cfg = AppConfig::default();
         cfg.agents
@@ -1833,10 +1884,88 @@ mod subpanel_padding_tests {
             render_agents_subpanel(f, Rect::new(0, 0, 40, 5), Some(&ws), &cfg);
         })
         .unwrap();
-        let star_col = first_content_indent(&term).expect("starred agent row has content");
+
+        // Locate the first printable char on the beta row (y=2).
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let border_x = (0..area.width)
+            .find(|x| {
+                let sym = buf[(*x, 2)].symbol();
+                sym == "│" || sym == "║"
+            })
+            .expect("left border on beta row");
+        let name_col = ((border_x + 1)..area.width)
+            .find(|x| {
+                let sym = buf[(*x, 2)].symbol();
+                !sym.is_empty() && sym != " "
+            })
+            .map(|x| (x - border_x - 1) as usize)
+            .expect("beta row has content");
         assert_eq!(
-            star_col, SUBPANEL_CONTENT_INDENT,
-            "star glyph should render at col {SUBPANEL_CONTENT_INDENT}, got {star_col}"
+            name_col, SUBPANEL_CONTENT_INDENT,
+            "non-default agent name should start at col {SUBPANEL_CONTENT_INDENT}, got {name_col}"
+        );
+
+        // And there must be no trailing star on the non-default row.
+        let last_col = last_printable_indent(&term, 2).expect("beta row has content");
+        // `beta` is 4 chars starting at col 2 ⇒ last printable at col 5.
+        // A trailing star would push last_col to col 7 (space + star).
+        assert_eq!(
+            last_col,
+            SUBPANEL_CONTENT_INDENT + "beta".len() - 1,
+            "non-default agent row must have no trailing suffix past the name",
+        );
+    }
+
+    /// Default agent row carries a trailing star glyph positioned after
+    /// the agent name (separated by a space), not a leading star.
+    #[test]
+    fn agents_subpanel_default_agent_has_trailing_star() {
+        let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        let mut cfg = AppConfig::default();
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+
+        let backend = TestBackend::new(40, 5);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_agents_subpanel(f, Rect::new(0, 0, 40, 5), Some(&ws), &cfg);
+        })
+        .unwrap();
+
+        // alpha row is at y=1 (y=0 border). Expect star at col
+        // SUBPANEL_CONTENT_INDENT + "alpha".len() + 1 (+1 for separator
+        // space between the name and the trailing glyph).
+        let star_col = find_symbol_indent(&term, 1, "\u{2605}")
+            .expect("default agent row should contain a star glyph");
+        let expected = SUBPANEL_CONTENT_INDENT + "alpha".len() + 1;
+        assert_eq!(
+            star_col, expected,
+            "default agent star should trail the name at col {expected}, got {star_col}"
+        );
+    }
+
+    /// Default agent row's name column matches non-default rows (and the
+    /// `SUBPANEL_CONTENT_INDENT` convention). The trailing star must not
+    /// shift the name right.
+    #[test]
+    fn agents_subpanel_default_agent_name_starts_at_col_2_regardless_of_star() {
+        let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        let mut cfg = AppConfig::default();
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+
+        let backend = TestBackend::new(40, 5);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_agents_subpanel(f, Rect::new(0, 0, 40, 5), Some(&ws), &cfg);
+        })
+        .unwrap();
+
+        let name_col = first_content_indent(&term).expect("default agent row should have content");
+        assert_eq!(
+            name_col, SUBPANEL_CONTENT_INDENT,
+            "default agent name should start at col {SUBPANEL_CONTENT_INDENT} even with the trailing star, got {name_col}"
         );
     }
 }
