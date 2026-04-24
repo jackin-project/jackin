@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::super::widgets::{
-    confirm, file_browser, mount_dst_choice, save_discard, text_input, workdir_pick,
+    confirm, file_browser, github_picker, mount_dst_choice, save_discard, text_input, workdir_pick,
 };
 use super::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, Modal,
@@ -115,27 +115,51 @@ pub fn render(
         }
 
         let footer_items: Vec<FooterItem> = match &state.stage {
-            ManagerStage::List => vec![
-                // Navigation group
-                FooterItem::Key("\u{2191}\u{2193}"),
-                FooterItem::Sep,
-                FooterItem::Key("Enter"),
-                FooterItem::Text("launch"),
-                FooterItem::GroupSep,
-                // Per-row actions
-                FooterItem::Key("e"),
-                FooterItem::Text("edit"),
-                FooterItem::Sep,
-                FooterItem::Key("n"),
-                FooterItem::Text("new"),
-                FooterItem::Sep,
-                FooterItem::Key("d"),
-                FooterItem::Text("delete"),
-                FooterItem::GroupSep,
+            ManagerStage::List => {
+                // Surface "o open in GitHub" on rows whose workspace has at
+                // least one GitHub-hosted mount with a resolvable web URL.
+                // Current-dir row 0 and the "+ New workspace" sentinel skip
+                // the hint entirely.
+                let saved_count = state.workspaces.len();
+                let sentinel_idx = saved_count + 1;
+                let show_open_hint = state.selected >= 1
+                    && state.selected < sentinel_idx
+                    && state
+                        .workspaces
+                        .get(state.selected - 1)
+                        .and_then(|s| config.workspaces.get(&s.name))
+                        .is_some_and(|ws| {
+                            !super::input::resolve_github_mounts_for_workspace(ws).is_empty()
+                        });
+
+                let mut items = vec![
+                    // Navigation group
+                    FooterItem::Key("\u{2191}\u{2193}"),
+                    FooterItem::Sep,
+                    FooterItem::Key("Enter"),
+                    FooterItem::Text("launch"),
+                    FooterItem::GroupSep,
+                    // Per-row actions
+                    FooterItem::Key("e"),
+                    FooterItem::Text("edit"),
+                    FooterItem::Sep,
+                    FooterItem::Key("n"),
+                    FooterItem::Text("new"),
+                    FooterItem::Sep,
+                    FooterItem::Key("d"),
+                    FooterItem::Text("delete"),
+                ];
+                if show_open_hint {
+                    items.push(FooterItem::Sep);
+                    items.push(FooterItem::Key("o"));
+                    items.push(FooterItem::Text("open in GitHub"));
+                }
+                items.push(FooterItem::GroupSep);
                 // Exit
-                FooterItem::Key("q"),
-                FooterItem::Text("quit"),
-            ],
+                items.push(FooterItem::Key("q"));
+                items.push(FooterItem::Text("quit"));
+                items
+            }
             ManagerStage::CreatePrelude(_) => vec![
                 FooterItem::Dyn("Create workspace — follow the prompts".to_string()),
                 FooterItem::GroupSep,
@@ -179,7 +203,14 @@ pub fn render(
             let modal_area = centered_rect_fixed(area, 60, 7);
             super::super::widgets::confirm::render(frame, modal_area, confirm_state);
         }
-        ManagerStage::List => {}
+        ManagerStage::List => {
+            // List-level modals (e.g. Modal::GithubPicker opened via `o`
+            // on a workspace row) are anchored on ManagerState, not on a
+            // stage variant. Render them last so they overlay the list.
+            if let Some(modal) = &state.list_modal {
+                render_modal(frame, modal);
+            }
+        }
     }
 }
 
@@ -1124,6 +1155,12 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         // plus 2 borders handled by centered_rect_fixed; widen to 80% so the
         // explanation sentence fits comfortably on one line.
         Modal::MountDstChoice { .. } => (80, 9),
+        // GithubPicker: scale rows with repo count (title + choices + borders),
+        // capped at 15 so a sprawling monorepo can't consume the viewport.
+        Modal::GithubPicker { state } => {
+            let rows = (state.choices.len() as u16).saturating_add(4).min(15);
+            (60, rows)
+        }
     };
     let modal_area = centered_rect_fixed(area, pct_w, height_rows);
     match modal {
@@ -1135,6 +1172,7 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         Modal::MountDstChoice { state, .. } => {
             mount_dst_choice::render(frame, modal_area, state);
         }
+        Modal::GithubPicker { state } => github_picker::render(frame, modal_area, state),
     }
 }
 

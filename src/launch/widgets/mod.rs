@@ -7,6 +7,7 @@
 
 pub mod confirm;
 pub mod file_browser;
+pub mod github_picker;
 pub mod mount_dst_choice;
 pub mod panel_rain;
 pub mod save_discard;

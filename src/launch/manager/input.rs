@@ -38,6 +38,13 @@ pub fn handle_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
+    // List-level modal precedence (e.g. GithubPicker opened from `o` on a
+    // workspace row). Handled before stage-specific modals so the dispatch
+    // stays uniform whatever stage the state thinks it's in.
+    if state.list_modal.is_some() {
+        handle_list_modal(state, key);
+        return Ok(InputOutcome::Continue);
+    }
     // Modal precedence: if a modal is open, it gets the event.
     // Use a discriminant check so we can take &mut without keeping an
     // immutable borrow alive across the call.
@@ -259,8 +266,94 @@ fn handle_list_key(
             }
             Ok(InputOutcome::Continue)
         }
+        KeyCode::Char('o') => {
+            handle_list_open_in_github(state, config, sentinel_idx);
+            Ok(InputOutcome::Continue)
+        }
         _ => Ok(InputOutcome::Continue),
     }
+}
+
+/// Dispatch the `o` key on the workspace list view. Keeps `handle_list_key`
+/// below clippy's `too_many_lines` threshold and isolates the
+/// toast/open/picker decision tree.
+fn handle_list_open_in_github(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    sentinel_idx: usize,
+) {
+    if state.selected == 0 || state.selected == sentinel_idx {
+        state.toast = Some(Toast {
+            message: "no workspace selected".into(),
+            kind: ToastKind::Error,
+            shown_at: std::time::Instant::now(),
+        });
+        return;
+    }
+    let Some(summary) = state.workspaces.get(state.selected - 1) else {
+        return;
+    };
+    let Some(ws) = config.workspaces.get(&summary.name) else {
+        return;
+    };
+    let choices = resolve_github_mounts_for_workspace(ws);
+    match choices.len() {
+        0 => {
+            state.toast = Some(Toast {
+                message: "no GitHub URLs for this workspace".into(),
+                kind: ToastKind::Error,
+                shown_at: std::time::Instant::now(),
+            });
+        }
+        1 => {
+            if let Err(e) = open::that_detached(&choices[0].url) {
+                state.toast = Some(Toast {
+                    message: format!("failed to open URL: {e}"),
+                    kind: ToastKind::Error,
+                    shown_at: std::time::Instant::now(),
+                });
+            }
+        }
+        _ => {
+            state.list_modal = Some(Modal::GithubPicker {
+                state: crate::launch::widgets::github_picker::GithubPickerState::new(choices),
+            });
+        }
+    }
+}
+
+/// Inspect each mount of `ws`, keep only those whose src resolves to a
+/// GitHub-hosted git working copy with a web URL, and return a picker-
+/// friendly tuple `(src, branch, url)` per surviving mount. Used by the
+/// list-view `o` key to decide whether to toast / open / show a picker.
+pub(super) fn resolve_github_mounts_for_workspace(
+    ws: &crate::workspace::WorkspaceConfig,
+) -> Vec<crate::launch::widgets::github_picker::GithubChoice> {
+    use super::mount_info::{GitBranch, GitHost, MountKind, inspect};
+    use crate::launch::widgets::github_picker::GithubChoice;
+    ws.mounts
+        .iter()
+        .filter_map(|m| {
+            let MountKind::Git {
+                branch,
+                host: GitHost::Github,
+                web_url: Some(url),
+            } = inspect(&m.src)
+            else {
+                return None;
+            };
+            let branch_label = match branch {
+                GitBranch::Named(b) => b,
+                GitBranch::Detached { short_sha } => format!("detached {short_sha}"),
+                GitBranch::Unknown => "unknown".to_string(),
+            };
+            Some(GithubChoice {
+                src: m.src.clone(),
+                branch: branch_label,
+                url,
+            })
+        })
+        .collect()
 }
 
 fn handle_editor_key(
@@ -809,6 +902,38 @@ fn handle_confirm_delete_key(
     }
 }
 
+/// Dispatch a key into whatever modal currently sits on `state.list_modal`.
+/// Only `Modal::GithubPicker` is expected here today; any other variant that
+/// sneaks in is treated as cancel so the operator isn't stuck.
+fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) {
+    let Some(modal) = state.list_modal.as_mut() else {
+        return;
+    };
+    match modal {
+        Modal::GithubPicker { state: picker } => match picker.handle_key(key) {
+            ModalOutcome::Commit(url) => {
+                state.list_modal = None;
+                if let Err(e) = open::that_detached(&url) {
+                    state.toast = Some(Toast {
+                        message: format!("failed to open URL: {e}"),
+                        kind: ToastKind::Error,
+                        shown_at: std::time::Instant::now(),
+                    });
+                }
+            }
+            ModalOutcome::Cancel => {
+                state.list_modal = None;
+            }
+            ModalOutcome::Continue => {}
+        },
+        // Defensive catch-all — no other Modal variants are placed on the
+        // list_modal slot today.
+        _ => {
+            state.list_modal = None;
+        }
+    }
+}
+
 fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
     let Some(modal) = editor.modal.as_mut() else {
         return;
@@ -892,6 +1017,12 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
                 }
                 ModalOutcome::Continue => {}
             }
+        }
+        // GithubPicker is a list-view modal — the editor never opens it.
+        // If one somehow ends up here, treat any key as cancel so the
+        // operator isn't stuck.
+        Modal::GithubPicker { .. } => {
+            editor.modal = None;
         }
     }
 }
@@ -1904,5 +2035,286 @@ mod tests {
             panic!("editor stage expected");
         };
         assert_eq!(e.active_tab, EditorTab::General);
+    }
+
+    // ── List-view `o` key → GitHub resolver + picker ──────────────────
+
+    /// Build a git repo under `root` with a `github.com` origin remote on
+    /// `branch`. Returns the path so callers can use it as a mount src.
+    fn make_github_repo(root: &std::path::Path, name: &str, branch: &str) -> std::path::PathBuf {
+        let path = root.join(name);
+        let git_dir = path.join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(git_dir.join("HEAD"), format!("ref: refs/heads/{branch}\n")).unwrap();
+        std::fs::write(
+            git_dir.join("config"),
+            format!("[remote \"origin\"]\n    url = git@github.com:owner/{name}.git\n"),
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn resolve_github_mounts_returns_one_per_github_repo() {
+        // A workspace with two github mounts + one folder + one gitlab repo
+        // should yield exactly two picker choices.
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_a = make_github_repo(tmp.path(), "repo-a", "main");
+        let repo_b = make_github_repo(tmp.path(), "repo-b", "dev");
+        let plain = tmp.path().join("plain");
+        std::fs::create_dir(&plain).unwrap();
+        // Gitlab repo should be skipped.
+        let gitlab = tmp.path().join("gl");
+        let gl_git = gitlab.join(".git");
+        std::fs::create_dir_all(&gl_git).unwrap();
+        std::fs::write(gl_git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(
+            gl_git.join("config"),
+            "[remote \"origin\"]\n    url = git@gitlab.com:owner/repo.git\n",
+        )
+        .unwrap();
+
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![
+                mount(repo_a.to_str().unwrap(), "/a"),
+                mount(plain.to_str().unwrap(), "/p"),
+                mount(repo_b.to_str().unwrap(), "/b"),
+                mount(gitlab.to_str().unwrap(), "/g"),
+            ],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+
+        let choices = resolve_github_mounts_for_workspace(&ws);
+        assert_eq!(choices.len(), 2);
+        // URLs track the HEAD ref per-repo.
+        let urls: Vec<&str> = choices.iter().map(|c| c.url.as_str()).collect();
+        assert!(urls.contains(&"https://github.com/owner/repo-a/tree/main"));
+        assert!(urls.contains(&"https://github.com/owner/repo-b/tree/dev"));
+        // Branch label matches Named variant.
+        let branches: Vec<&str> = choices.iter().map(|c| c.branch.as_str()).collect();
+        assert!(branches.contains(&"main"));
+        assert!(branches.contains(&"dev"));
+    }
+
+    /// Helper: seed an AppConfig + ManagerState with `ws` as a saved workspace,
+    /// cwd far away so selection lands on row 1 (the saved workspace).
+    fn list_state_selecting_ws(
+        ws: WorkspaceConfig,
+    ) -> (ManagerState<'static>, AppConfig, JackinPaths, TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        config.workspaces.insert("demo".into(), ws);
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 1; // force selection onto the saved workspace row
+        (state, config, paths, tmp)
+    }
+
+    #[test]
+    fn list_o_with_single_github_mount_has_one_resolved_url() {
+        // Resolver-side check — we can't cleanly assert `open::that_detached`
+        // ran, but we can pin that there's exactly one URL to hand to it so
+        // the 1-mount branch's immediate-open path is taken.
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = make_github_repo(tmp.path(), "solo", "trunk");
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![mount(repo.to_str().unwrap(), "/solo")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let choices = resolve_github_mounts_for_workspace(&ws);
+        assert_eq!(choices.len(), 1);
+        assert_eq!(choices[0].url, "https://github.com/owner/solo/tree/trunk");
+    }
+
+    #[test]
+    fn list_o_with_multiple_github_mounts_opens_picker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_a = make_github_repo(tmp.path(), "repo-a", "main");
+        let repo_b = make_github_repo(tmp.path(), "repo-b", "main");
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![
+                mount(repo_a.to_str().unwrap(), "/a"),
+                mount(repo_b.to_str().unwrap(), "/b"),
+            ],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('o')),
+        )
+        .unwrap();
+
+        match &state.list_modal {
+            Some(Modal::GithubPicker { state: picker }) => {
+                assert_eq!(picker.choices.len(), 2);
+            }
+            other => panic!("expected GithubPicker modal; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn list_o_with_zero_github_mounts_shows_toast() {
+        let tmp_src = tempfile::tempdir().unwrap();
+        let plain = tmp_src.path().join("plain");
+        std::fs::create_dir(&plain).unwrap();
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![mount(plain.to_str().unwrap(), "/p")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('o')),
+        )
+        .unwrap();
+
+        assert!(
+            state.list_modal.is_none(),
+            "no modal should open when there are no github mounts"
+        );
+        let toast = state.toast.as_ref().expect("expected a toast");
+        assert!(
+            toast.message.contains("no GitHub URL"),
+            "toast should explain the no-mounts state: {}",
+            toast.message
+        );
+    }
+
+    #[test]
+    fn list_o_on_row_zero_toasts_no_workspace_selected() {
+        // Row 0 is the synthetic "Current directory" — no saved workspace
+        // to read mounts from; hint should nudge the operator, not crash.
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        config.workspaces.insert(
+            "demo".into(),
+            WorkspaceConfig {
+                workdir: String::new(),
+                mounts: vec![],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
+            },
+        );
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.selected = 0;
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('o')),
+        )
+        .unwrap();
+
+        let toast = state.toast.as_ref().expect("expected a toast");
+        assert!(toast.message.contains("no workspace selected"));
+        assert!(state.list_modal.is_none());
+    }
+
+    #[test]
+    fn picker_commit_closes_list_modal_and_clears_state() {
+        // Seed the state directly with an open GithubPicker, then commit.
+        // We can't assert `open::that_detached` ran, but we *can* pin that
+        // the modal closes (no lingering state) and no error toast appears
+        // when the underlying call path doesn't error out synchronously.
+        use crate::launch::widgets::github_picker::{GithubChoice, GithubPickerState};
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        // Use an unreachable file:// URL so `open::that_detached` is a
+        // cheap no-op on most platforms (still spawns the browser handler
+        // but doesn't block on network).
+        state.list_modal = Some(Modal::GithubPicker {
+            state: GithubPickerState::new(vec![GithubChoice {
+                src: "/tmp/a".into(),
+                branch: "main".into(),
+                url: "file:///dev/null".into(),
+            }]),
+        });
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Enter),
+        )
+        .unwrap();
+
+        assert!(
+            state.list_modal.is_none(),
+            "picker Enter must close the modal"
+        );
+    }
+
+    #[test]
+    fn picker_esc_closes_without_opening_url() {
+        use crate::launch::widgets::github_picker::{GithubChoice, GithubPickerState};
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.list_modal = Some(Modal::GithubPicker {
+            state: GithubPickerState::new(vec![GithubChoice {
+                src: "/tmp/a".into(),
+                branch: "main".into(),
+                url: "https://github.com/owner/repo/tree/main".into(),
+            }]),
+        });
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Esc),
+        )
+        .unwrap();
+
+        assert!(state.list_modal.is_none());
+        assert!(
+            state.toast.is_none(),
+            "Esc must not toast: {:?}",
+            state.toast
+        );
     }
 }

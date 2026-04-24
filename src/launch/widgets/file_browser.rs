@@ -112,7 +112,7 @@ fn annotate_file(mut file: ratatui_explorer::File, root: &Path) -> Option<ratatu
         return Some(file);
     }
     // Strip excluded top-level names.
-    if EXCLUDED.iter().any(|x| *x == bare) {
+    if EXCLUDED.contains(&bare) {
         return None;
     }
     // Append the git-repo marker when the directory contains a `.git` child.

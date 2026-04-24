@@ -6,8 +6,9 @@ use crate::config::AppConfig;
 use crate::workspace::WorkspaceConfig;
 
 use crate::launch::widgets::{
-    confirm::ConfirmState, file_browser::FileBrowserState, mount_dst_choice::MountDstChoiceState,
-    text_input::TextInputState, workdir_pick::WorkdirPickState,
+    confirm::ConfirmState, file_browser::FileBrowserState, github_picker::GithubPickerState,
+    mount_dst_choice::MountDstChoiceState, text_input::TextInputState,
+    workdir_pick::WorkdirPickState,
 };
 
 #[derive(Debug)]
@@ -16,6 +17,10 @@ pub struct ManagerState<'a> {
     pub workspaces: Vec<WorkspaceSummary>,
     pub selected: usize,
     pub toast: Option<Toast>,
+    /// Modal overlay anchored at the `ManagerState` level — populated only
+    /// from the list view (e.g. `Modal::GithubPicker`). The Editor and
+    /// `CreatePrelude` stages own their own modal slots on their inner state.
+    pub list_modal: Option<Modal<'a>>,
 }
 
 #[derive(Debug)]
@@ -102,6 +107,12 @@ pub enum Modal<'a> {
     },
     SaveDiscardCancel {
         state: crate::launch::widgets::save_discard::SaveDiscardState,
+    },
+    /// Opened from the workspace list view when the highlighted workspace
+    /// has ≥2 GitHub mounts and the operator presses `o`. Committing picks
+    /// one URL to hand to `open::that_detached`.
+    GithubPicker {
+        state: GithubPickerState,
     },
 }
 
@@ -214,6 +225,7 @@ impl ManagerState<'_> {
             workspaces,
             selected,
             toast: None,
+            list_modal: None,
         }
     }
 }
