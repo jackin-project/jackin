@@ -260,15 +260,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     let text = Style::default().fg(PHOSPHOR_GREEN);
     let sep = Style::default().fg(PHOSPHOR_DARK);
     let hint = Paragraph::new(ratatui::text::Line::from(vec![
-        Span::styled("Enter", key),
-        Span::styled(" confirm", text),
-        Span::raw("   "),
         Span::styled("Y", key),
         Span::styled(" yes", text),
         Span::styled(" \u{b7} ", sep),
         Span::styled("N", key),
         Span::styled(" no", text),
-        Span::raw("   "),
+        Span::styled(" \u{b7} ", sep),
         Span::styled("Esc", key),
         Span::styled(" cancel", text),
     ]))

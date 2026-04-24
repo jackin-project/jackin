@@ -170,9 +170,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     let sep_style = Style::default().fg(phosphor_dark);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("Enter", key_style),
-            Span::styled(" confirm", text_style),
-            Span::raw("   "),
             Span::styled("O", key_style),
             Span::styled(" ok", text_style),
             Span::styled(" \u{b7} ", sep_style),

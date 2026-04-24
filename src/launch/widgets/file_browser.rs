@@ -721,18 +721,15 @@ fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
 /// Build the canonical hint footer line for the git-repo prompt.
 ///
 /// When `has_url` is true:
-/// `Enter confirm   M mount · P pick · O open · C/Esc cancel`.
+/// `M mount · P pick · O open · C/Esc cancel`.
 /// When `has_url` is false, the `· O open` segment is dropped so the
 /// hint doesn't advertise a disabled action:
-/// `Enter confirm   M mount · P pick · C/Esc cancel`.
+/// `M mount · P pick · C/Esc cancel`.
 fn git_prompt_hint(has_url: bool) -> Line<'static> {
     let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let text_style = Style::default().fg(PHOSPHOR_GREEN);
     let sep_style = Style::default().fg(PHOSPHOR_DARK);
     let mut spans: Vec<Span<'static>> = vec![
-        Span::styled("Enter", key_style),
-        Span::styled(" confirm", text_style),
-        Span::raw("   "),
         Span::styled("M", key_style),
         Span::styled(" mount", text_style),
         Span::styled(" \u{b7} ", sep_style),

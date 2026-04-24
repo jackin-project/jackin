@@ -150,9 +150,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
     let sep_style = Style::default().fg(phosphor_dark);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("Enter", key_style),
-            Span::styled(" commit", text_style),
-            Span::raw("   "),
             Span::styled("S", key_style),
             Span::styled(" save", text_style),
             Span::styled(" \u{b7} ", sep_style),
