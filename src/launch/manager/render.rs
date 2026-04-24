@@ -294,21 +294,48 @@ fn format_mount_rows(
         .collect()
 }
 
-/// Render aligned mount rows as `Line`s (no selection prefix).
-fn render_mount_lines(rows: &[(String, &str, String)]) -> Vec<Line<'static>> {
-    let path_w = rows
-        .iter()
+/// Width of the `mode` column, including one trailing space that separates it
+/// from the `type` column. Also matches the `mode` label in the header.
+const MOUNT_MODE_COL_WIDTH: usize = 4;
+
+/// Compute the width used for the `path` column so that header and data rows
+/// align. Derived from both the "path" header label and the widest row path,
+/// with a minimum floor so short-path tables still look tabular.
+fn mount_path_width(rows: &[(String, &str, String)]) -> usize {
+    rows.iter()
         .map(|(p, _, _)| p.chars().count())
         .max()
         .unwrap_or(0)
-        .max(10);
+        .max(10) // floor so a single-row mount still has a clear column
+        .max("path".len())
+}
+
+/// Header row for the mount table. `path_w` must come from
+/// [`mount_path_width`] over the same `rows` used for the data lines so the
+/// columns line up.
+fn render_mount_header(path_w: usize) -> Line<'static> {
+    // Format: "  <path padded to path_w>  <mode padded to MODE_W>type"
+    // Leading two-space gutter matches the data-row format.
+    let mode_col = format!("{:<mw$}", "mode", mw = MOUNT_MODE_COL_WIDTH);
+    Line::from(Span::styled(
+        format!("  {path:<path_w$}  {mode_col}type", path = "path"),
+        Style::default().fg(WHITE),
+    ))
+}
+
+/// Render aligned mount rows as `Line`s (no selection prefix). `path_w` is
+/// passed in so the header and data rows share the same column boundary.
+fn render_mount_lines(rows: &[(String, &str, String)], path_w: usize) -> Vec<Line<'static>> {
     rows.iter()
         .map(|(path, mode, kind)| {
             Line::from(vec![
                 Span::raw(format!("  {path:<path_w$}  ")),
-                Span::styled(format!("{mode:<3}"), Style::default().fg(PHOSPHOR_DIM)),
                 Span::styled(
-                    format!("  {kind}"),
+                    format!("{mode:<mw$}", mw = MOUNT_MODE_COL_WIDTH),
+                    Style::default().fg(PHOSPHOR_DIM),
+                ),
+                Span::styled(
+                    kind.clone(),
                     Style::default()
                         .fg(PHOSPHOR_DIM)
                         .add_modifier(Modifier::ITALIC),
@@ -382,13 +409,10 @@ fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::worksp
 
     let mut lines: Vec<Line> = Vec::new();
 
-    // Header row
-    lines.push(Line::from(Span::styled(
-        "  path                       mode   type",
-        Style::default().fg(WHITE),
-    )));
-
     if mounts.is_empty() {
+        // No data rows — fall back to the minimum column width so the header
+        // still shows sensible column boundaries.
+        lines.push(render_mount_header(mount_path_width(&[])));
         lines.push(Line::from(Span::styled(
             "  (none)",
             Style::default().fg(PHOSPHOR_DIM),
@@ -400,7 +424,9 @@ fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::worksp
         // to label() (plain text). The hyperlink infrastructure is wired up in
         // MountKind::labeled_hyperlink() for future use.
         let rows = format_mount_rows(mounts);
-        lines.extend(render_mount_lines(&rows));
+        let path_w = mount_path_width(&rows);
+        lines.push(render_mount_header(path_w));
+        lines.extend(render_mount_lines(&rows, path_w));
     }
 
     let p = Paragraph::new(lines)
@@ -772,36 +798,34 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 
     // Build aligned table rows for all mounts.
     let rows = format_mount_rows(&state.pending.mounts);
-    let path_w = rows
-        .iter()
-        .map(|(p, _, _)| p.chars().count())
-        .max()
-        .unwrap_or(0)
-        .max(10);
+    let path_w = mount_path_width(&rows);
 
-    let mut lines: Vec<Line> = rows
-        .iter()
-        .enumerate()
-        .map(|(i, (path, mode, kind))| {
-            let selected = i == cursor;
-            let prefix = if selected { "▸ " } else { "  " };
-            let base_style = if selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(PHOSPHOR_GREEN)
-            };
-            let dim_style = Style::default()
-                .fg(PHOSPHOR_DIM)
-                .add_modifier(Modifier::ITALIC);
-            Line::from(vec![
-                Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
-                Span::styled(format!("{mode:<3}"), Style::default().fg(PHOSPHOR_DIM)),
-                Span::styled(format!("  {kind}"), dim_style),
-            ])
-        })
-        .collect();
+    // Header row — shares path_w so the "mode" and "type" columns line up
+    // with data rows regardless of path width.
+    let mut lines: Vec<Line> = vec![render_mount_header(path_w)];
+
+    lines.extend(rows.iter().enumerate().map(|(i, (path, mode, kind))| {
+        let selected = i == cursor;
+        let prefix = if selected { "▸ " } else { "  " };
+        let base_style = if selected {
+            Style::default()
+                .fg(PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(PHOSPHOR_GREEN)
+        };
+        let dim_style = Style::default()
+            .fg(PHOSPHOR_DIM)
+            .add_modifier(Modifier::ITALIC);
+        Line::from(vec![
+            Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
+            Span::styled(
+                format!("{mode:<mw$}", mw = MOUNT_MODE_COL_WIDTH),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            Span::styled(kind.clone(), dim_style),
+        ])
+    }));
 
     // Sentinel row: + Add mount — selectable, styled distinctly from mounts.
     let sentinel_idx = state.pending.mounts.len();
@@ -1077,3 +1101,118 @@ const FOOTER_KEY: ratatui::style::Style = ratatui::style::Style::new()
 const FOOTER_TEXT: ratatui::style::Style = ratatui::style::Style::new().fg(PHOSPHOR_GREEN);
 #[cfg(test)]
 const FOOTER_SEP: ratatui::style::Style = ratatui::style::Style::new().fg(PHOSPHOR_DARK);
+
+#[cfg(test)]
+mod mount_table_tests {
+    use super::{MOUNT_MODE_COL_WIDTH, mount_path_width, render_mount_header, render_mount_lines};
+
+    /// Collapse a `Line` into a single plain string (concat of all span contents).
+    fn line_text(line: &ratatui::text::Line<'_>) -> String {
+        line.spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<String>()
+    }
+
+    /// Return the character index of the start of the `mode` column (i.e. the
+    /// "m" in "mode" for the header, or the first char of "ro"/"rw" for a data
+    /// row). Both are found at: `"  " + path_w + "  "` — so the index equals
+    /// `2 + path_w + 2` for a header and for data rows that have no selection
+    /// prefix (and the selection prefix is always two chars too — "▸ " or
+    /// "  " — so the column boundary is stable).
+    fn mode_col_start(line: &ratatui::text::Line<'_>) -> usize {
+        let s = line_text(line);
+        // The mode column is the first two-letter "rw"/"ro" after the gap,
+        // or the literal "mode" for the header. Scan for the first non-space
+        // character after the gap-of-two-spaces that follows the path.
+        // Simpler: find the offset of the two-space gap before mode.
+        // Header: "  path<pad>  mode<pad>type"
+        // Data:   "  path<pad>  rw<pad>type"
+        // In both cases the left edge of "mode"/"rw" is exactly 2 + path_w + 2
+        // from the start — we recover it by scanning for the first non-space
+        // char at position >= 4 (past the left gutter + at least one path char).
+        // Instead, just look for the substring "  m" (mode header) or "  r"
+        // (data row, always "rw"/"ro" starting with r).
+        for (i, c) in s.chars().enumerate() {
+            if i < 4 {
+                continue;
+            }
+            if c == 'm' || c == 'r' {
+                // Make sure this is preceded by the two-space gap — the first
+                // such occurrence past the left gutter is the column boundary.
+                let prev_two: String = s.chars().skip(i.saturating_sub(2)).take(2).collect();
+                if prev_two == "  " {
+                    return i;
+                }
+            }
+        }
+        panic!("mode column not found in line: {s:?}");
+    }
+
+    #[test]
+    fn header_and_data_rows_share_path_column_width() {
+        // Short path + long path forces path_w to be the length of the long one.
+        let rows: Vec<(String, &str, String)> = vec![
+            ("~/short".into(), "rw", "git · main".into()),
+            (
+                "~/Projects/very/deeply/nested/directory".into(),
+                "ro",
+                "dir".into(),
+            ),
+        ];
+        let path_w = mount_path_width(&rows);
+        assert!(path_w >= "~/Projects/very/deeply/nested/directory".len());
+
+        let header = render_mount_header(path_w);
+        let data = render_mount_lines(&rows, path_w);
+
+        let header_mode_col = mode_col_start(&header);
+        let data0_mode_col = mode_col_start(&data[0]);
+        let data1_mode_col = mode_col_start(&data[1]);
+
+        assert_eq!(
+            header_mode_col, data0_mode_col,
+            "header 'mode' column must align with data row 0"
+        );
+        assert_eq!(
+            header_mode_col, data1_mode_col,
+            "header 'mode' column must align with data row 1"
+        );
+    }
+
+    #[test]
+    fn single_row_still_uses_minimum_column_width() {
+        // Single short mount — path_w should stay at the floor so the
+        // table is still visibly tabular.
+        let rows: Vec<(String, &str, String)> = vec![(
+            "~/Projects/ChainArgos/blockchain-nodes".into(),
+            "rw",
+            "git · main".into(),
+        )];
+        let path_w = mount_path_width(&rows);
+        assert_eq!(path_w, "~/Projects/ChainArgos/blockchain-nodes".len());
+
+        let header = render_mount_header(path_w);
+        let data = render_mount_lines(&rows, path_w);
+        assert_eq!(mode_col_start(&header), mode_col_start(&data[0]));
+    }
+
+    #[test]
+    fn empty_rows_uses_floor_for_header() {
+        // Empty case: header should still render with the floor width
+        // (so the 'type' column is at least `4 + 10 + 2 + 4 = 20`).
+        let path_w = mount_path_width(&[]);
+        assert_eq!(path_w, 10);
+        let header = render_mount_header(path_w);
+        // "  path      <2 pad>  mode<4-w pad>type"
+        let expected = format!(
+            "  {path:<path_w$}  {mode:<mw$}type",
+            path = "path",
+            mode = "mode",
+            path_w = path_w,
+            mw = MOUNT_MODE_COL_WIDTH,
+        );
+        let s = line_text(&header);
+        assert_eq!(s, expected);
+    }
+}
