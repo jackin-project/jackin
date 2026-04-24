@@ -19,34 +19,55 @@ const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 
 pub fn render(frame: &mut Frame, state: &ManagerState<'_>) {
-    // Some stages render their own full-screen layout.
+    // Phase 1: render the base stage (Editor full-screen OR List chrome).
     if let ManagerStage::Editor(editor) = &state.stage {
         render_editor(frame, editor);
-        return;
+    } else {
+        // List / CreatePrelude / ConfirmDelete share the list-like chrome.
+        let area = frame.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // header
+                Constraint::Min(10),   // body
+                Constraint::Length(2), // footer
+            ])
+            .split(area);
+
+        render_header(frame, chunks[0], "manage workspaces");
+
+        if matches!(&state.stage, ManagerStage::List) {
+            render_list_body(frame, chunks[1], state);
+        }
+
+        render_footer_hint(
+            frame,
+            chunks[2],
+            "↑↓ · Enter launch · e edit · n new · d delete · q quit",
+        );
     }
 
-    // List / CreatePrelude / ConfirmDelete share the list-like chrome.
-    let area = frame.area();
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // header
-            Constraint::Min(10),   // body
-            Constraint::Length(2), // footer
-        ])
-        .split(area);
-
-    render_header(frame, chunks[0], "manage workspaces");
-
-    if matches!(&state.stage, ManagerStage::List) {
-        render_list_body(frame, chunks[1], state);
+    // Phase 2: overlay any active modal.
+    match &state.stage {
+        ManagerStage::Editor(editor) => {
+            if let Some(modal) = &editor.modal {
+                render_modal(frame, modal);
+            }
+        }
+        ManagerStage::CreatePrelude(prelude) => {
+            if let Some(modal) = &prelude.modal {
+                render_modal(frame, modal);
+            }
+        }
+        ManagerStage::ConfirmDelete { state: confirm_state, .. } => {
+            // ConfirmState is a top-level field on the variant, not wrapped
+            // in Modal::Confirm, so render it directly.
+            let area = frame.area();
+            let modal_area = centered_rect(area, 60, 30);
+            super::super::widgets::confirm::render(frame, modal_area, confirm_state);
+        }
+        ManagerStage::List => {}
     }
-
-    render_footer_hint(
-        frame,
-        chunks[2],
-        "↑↓ · Enter launch · e edit · n new · d delete · q quit",
-    );
 }
 
 fn render_header(frame: &mut Frame, area: Rect, title: &str) {
