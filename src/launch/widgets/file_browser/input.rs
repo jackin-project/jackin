@@ -305,7 +305,10 @@ mod tests {
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
         state.handle_key(key(KeyCode::Char('h')));
-        assert_eq!(state.cwd, tmp.path());
+        // After `h` at the sandbox root, cwd must not have moved above
+        // root. Compare root-to-root (both canonicalized by new_at) so the
+        // assertion is platform-robust on macOS's /var → /private/var.
+        assert_eq!(state.cwd, state.root);
     }
 
     #[test]
