@@ -23,7 +23,7 @@ pub struct ManagerState<'a> {
     pub list_modal: Option<Modal<'a>>,
     /// Left-pane (workspace list) width as percentage of total terminal
     /// width. Clamped to [`MIN_SPLIT_PCT`, `MAX_SPLIT_PCT`]. Drives the
-    /// 45/55 split in `render_list_body`; mouse-drag on the seam column
+    /// 30/70 split in `render_list_body`; mouse-drag on the seam column
     /// updates it via `handle_mouse`.
     pub list_split_pct: u16,
     /// Active mouse-drag on the list/details seam. `Some` while a left
@@ -54,8 +54,9 @@ pub const MIN_SPLIT_PCT: u16 = 20;
 /// Maximum list-pane width as percentage of total terminal width. Keeps
 /// the details pane viable when the operator drags the seam right.
 pub const MAX_SPLIT_PCT: u16 = 80;
-/// Initial split value — matches the legacy hard-coded 45/55.
-pub const DEFAULT_SPLIT_PCT: u16 = 45;
+/// Initial split value — gives workspace names a tight column and lets
+/// the details pane breathe for git branches and full paths.
+pub const DEFAULT_SPLIT_PCT: u16 = 30;
 
 /// Clamp `pct` into the allowed [`MIN_SPLIT_PCT`, `MAX_SPLIT_PCT`] range.
 /// Used by `handle_mouse` to keep drag-computed percentages sane, and by

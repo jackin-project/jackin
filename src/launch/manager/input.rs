@@ -2532,10 +2532,11 @@ mod mouse_drag_tests {
 
     #[test]
     fn mouse_down_on_seam_starts_drag() {
-        // Default split = 45, 100-col terminal => seam at column 45.
+        // Default split on a 100-col terminal => seam at column
+        // `DEFAULT_SPLIT_PCT`.
         let mut state = list_state();
         assert_eq!(state.list_split_pct, DEFAULT_SPLIT_PCT);
-        let e = mouse(MouseEventKind::Down(MouseButton::Left), 45);
+        let e = mouse(MouseEventKind::Down(MouseButton::Left), DEFAULT_SPLIT_PCT);
         handle_mouse(&mut state, e, term(100));
         assert!(
             state.drag_state.is_some(),
@@ -2544,24 +2545,26 @@ mod mouse_drag_tests {
         );
         let drag = state.drag_state.unwrap();
         assert_eq!(drag.anchor_pct, DEFAULT_SPLIT_PCT);
-        assert_eq!(drag.anchor_x, 45);
+        assert_eq!(drag.anchor_x, DEFAULT_SPLIT_PCT);
     }
 
     #[test]
     fn mouse_drag_updates_split_pct() {
-        // Anchor at 45 @ x=45. Drag to x=55 on a 100-col terminal ⇒ +10%.
+        // Anchor at DEFAULT_SPLIT_PCT. Drag +10 columns on a 100-col
+        // terminal ⇒ +10%.
         let mut state = list_state();
         handle_mouse(
             &mut state,
-            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            mouse(MouseEventKind::Down(MouseButton::Left), DEFAULT_SPLIT_PCT),
             term(100),
         );
+        let target = DEFAULT_SPLIT_PCT + 10;
         handle_mouse(
             &mut state,
-            mouse(MouseEventKind::Drag(MouseButton::Left), 55),
+            mouse(MouseEventKind::Drag(MouseButton::Left), target),
             term(100),
         );
-        assert_eq!(state.list_split_pct, 55);
+        assert_eq!(state.list_split_pct, target);
     }
 
     #[test]
@@ -2570,7 +2573,7 @@ mod mouse_drag_tests {
         let mut state = list_state();
         handle_mouse(
             &mut state,
-            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            mouse(MouseEventKind::Down(MouseButton::Left), DEFAULT_SPLIT_PCT),
             term(100),
         );
         handle_mouse(
@@ -2584,7 +2587,7 @@ mod mouse_drag_tests {
         let mut state = list_state();
         handle_mouse(
             &mut state,
-            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            mouse(MouseEventKind::Down(MouseButton::Left), DEFAULT_SPLIT_PCT),
             term(100),
         );
         handle_mouse(
@@ -2600,7 +2603,7 @@ mod mouse_drag_tests {
         let mut state = list_state();
         handle_mouse(
             &mut state,
-            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            mouse(MouseEventKind::Down(MouseButton::Left), DEFAULT_SPLIT_PCT),
             term(100),
         );
         assert!(state.drag_state.is_some());
@@ -2617,11 +2620,11 @@ mod mouse_drag_tests {
         // Clicks in the middle of either pane must be ignored — the
         // operator's intent is "click a row/button", not "start a resize".
         let mut state = list_state();
-        // Seam at column 45; column 10 (left pane) and 80 (right pane)
-        // are both far enough from the seam to be rejected.
+        // Seam at column `DEFAULT_SPLIT_PCT`; columns near either border
+        // are far enough from the seam to be rejected.
         handle_mouse(
             &mut state,
-            mouse(MouseEventKind::Down(MouseButton::Left), 10),
+            mouse(MouseEventKind::Down(MouseButton::Left), 2),
             term(100),
         );
         assert!(state.drag_state.is_none(), "left-pane click must not drag");
@@ -2669,7 +2672,7 @@ mod mouse_drag_tests {
 
         handle_mouse(
             &mut state,
-            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            mouse(MouseEventKind::Down(MouseButton::Left), DEFAULT_SPLIT_PCT),
             term(100),
         );
         assert!(
@@ -2696,7 +2699,7 @@ mod mouse_drag_tests {
 
         handle_mouse(
             &mut state,
-            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            mouse(MouseEventKind::Down(MouseButton::Left), DEFAULT_SPLIT_PCT),
             term(100),
         );
         assert!(
@@ -2731,9 +2734,9 @@ mod mouse_drag_tests {
     //   y = 28      → body bottom border
     //   y = 29      → footer (chunks[2])
     //
-    // Left pane (default split 45%): x = 0..=44 with x=0 = left border and
-    // x=44 = seam (right border of left block, also the drag-handle).
-    // Interior content columns: x ∈ [1, 43].
+    // Left pane (default split = DEFAULT_SPLIT_PCT%): x = 0..=(seam-1)
+    // with x=0 = left border and x=seam-1 inclusive = last interior col.
+    // The seam column itself is the drag-handle.
 
     /// Mouse event at `(col, row)`, left-button Down.
     const fn mouse_at(col: u16, row: u16) -> MouseEvent {
@@ -2824,7 +2827,7 @@ mod mouse_drag_tests {
         handle_mouse(&mut state, mouse_at(10, 10), term(100));
         assert_eq!(state.selected, initial, "click below sentinel");
 
-        // In the right pane (x=60, well clear of seam at col 45).
+        // In the right pane (x=60, well clear of the default seam).
         handle_mouse(&mut state, mouse_at(60, 5), term(100));
         assert_eq!(state.selected, initial, "click in details pane");
 
@@ -2840,10 +2843,10 @@ mod mouse_drag_tests {
         // coordinate happens to overlap a valid list row.
         let mut state = list_state_with_saved(3);
         state.selected = 0;
-        // Default split = 45 on a 100-col terminal ⇒ seam at column 45.
-        // y=5 maps to list index 1 in our layout — if seam didn't win,
-        // selection would flip to 1.
-        handle_mouse(&mut state, mouse_at(45, 5), term(100));
+        // Default split on a 100-col terminal ⇒ seam at column
+        // `DEFAULT_SPLIT_PCT`. y=5 maps to list index 1 in our layout —
+        // if seam didn't win, selection would flip to 1.
+        handle_mouse(&mut state, mouse_at(DEFAULT_SPLIT_PCT, 5), term(100));
         assert!(state.drag_state.is_some(), "click on seam must start drag");
         assert_eq!(
             state.selected, 0,

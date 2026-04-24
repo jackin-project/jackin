@@ -243,7 +243,7 @@ fn render_list_body(
     let is_current_dir = state.selected == 0;
     let is_sentinel = state.selected == sentinel_idx;
 
-    // Split driven by `state.list_split_pct` (default 45), adjustable via
+    // Split driven by `state.list_split_pct` (default 30), adjustable via
     // mouse-drag on the seam column. Keeps the right pane visible on every
     // row. Row-specific right-pane renderers:
     //   row 0             → current-dir details
