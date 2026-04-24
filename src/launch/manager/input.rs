@@ -474,6 +474,18 @@ fn handle_editor_key(
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
         }
+        KeyCode::Char('r' | 'R') if editor.active_tab == EditorTab::Mounts => {
+            // Flip the `readonly` flag on the highlighted mount row. Silent
+            // no-op on the `+ Add mount` sentinel. The change propagates
+            // through `change_count`/`is_dirty` via the standard diff-based
+            // path (no extra plumbing — a flipped `readonly` makes the
+            // pending mount non-equal to the original, so the mount counts
+            // as removed + added and nets a +2 delta until flipped back).
+            let FieldFocus::Row(n) = editor.active_field;
+            if let Some(m) = editor.pending.mounts.get_mut(n) {
+                m.readonly = !m.readonly;
+            }
+        }
         KeyCode::Char('o' | 'O') if editor.active_tab == EditorTab::Mounts => {
             // Open the highlighted mount's GitHub URL in the system browser.
             // Silent no-op when the cursor is on the `+ Add mount` sentinel,
@@ -3841,6 +3853,188 @@ mod tests {
             pending_allowed(&state),
             Vec::<String>::new(),
             "filling the custom list must collapse it to empty (= all allowed)",
+        );
+    }
+
+    // ── Mounts tab: R toggles readonly (rw ↔ ro) ──────────────────────
+
+    /// Build an editor sitting on the Mounts tab over `ws` with the cursor
+    /// pointed at `row`. Mirrors `editor_on_agents_tab` for Agents-tab tests.
+    fn editor_on_mounts_tab<'a>(ws: WorkspaceConfig, row: usize) -> ManagerState<'a> {
+        let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Mounts;
+        editor.active_field = FieldFocus::Row(row);
+        state.stage = ManagerStage::Editor(editor);
+        state
+    }
+
+    fn ws_with_one_mount(readonly: bool) -> WorkspaceConfig {
+        WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![MountConfig {
+                src: "/host/a".into(),
+                dst: "/host/a".into(),
+                readonly,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn r_key_toggles_readonly_on_current_mount_row() {
+        // Start rw → one R press should flip to ro and register as a change.
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.pending.mounts[0].readonly,
+            "R on rw mount must flip to ro",
+        );
+        assert!(
+            e.change_count() > 0,
+            "flipping readonly must surface as a change; got change_count={}",
+            e.change_count()
+        );
+    }
+
+    #[test]
+    fn r_key_lowercase_also_toggles_readonly() {
+        // Operators often hit `r` without holding shift; both cases must work.
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('r')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(e.pending.mounts[0].readonly);
+    }
+
+    #[test]
+    fn r_key_on_sentinel_is_noop() {
+        // Cursor on the `+ Add mount` sentinel (row == mounts.len()) — R must
+        // not mutate mounts or trigger a change.
+        let mut config = AppConfig::default();
+        let ws = ws_with_one_mount(false);
+        let before = ws.mounts.clone();
+        let mut state = editor_on_mounts_tab(ws, 1); // sentinel row
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            e.pending.mounts, before,
+            "R on sentinel must leave mounts untouched"
+        );
+        assert_eq!(
+            e.change_count(),
+            0,
+            "R on sentinel must not mark editor dirty"
+        );
+    }
+
+    #[test]
+    fn r_key_twice_restores_original() {
+        // Flipping twice must bring `readonly` back to the starting value AND
+        // net out to zero changes — the diff-based change_count treats
+        // identical mounts as unchanged.
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            !e.pending.mounts[0].readonly,
+            "two R presses must restore original rw state"
+        );
+        assert_eq!(
+            e.change_count(),
+            0,
+            "two R presses must net zero changes; got {}",
+            e.change_count()
+        );
+    }
+
+    #[test]
+    fn r_key_on_non_mounts_tab_is_noop() {
+        // Cursor set to row 0 on General tab with a mount present; pressing R
+        // must not mutate the mount list (the handler is gated on
+        // `active_tab == EditorTab::Mounts`).
+        let mut config = AppConfig::default();
+        let ws = ws_with_one_mount(false);
+        let before = ws.mounts.clone();
+        let mut state = editor_on_mounts_tab(ws, 0);
+        if let ManagerStage::Editor(e) = &mut state.stage {
+            e.active_tab = EditorTab::General;
+        }
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            e.pending.mounts, before,
+            "R on non-Mounts tab must leave mounts untouched"
+        );
+    }
+
+    #[test]
+    fn toggle_rw_to_ro_reflects_in_render() {
+        // After pressing R, render the Mounts tab and check the visible
+        // `mode` column displays `ro`. Guards against a future regression
+        // where the flip only updates state but the render helper ignores
+        // the new value.
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        let backend = TestBackend::new(80, 10);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            crate::launch::manager::render::render_editor(f, editor, &config);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut found = false;
+        for y in 0..area.height {
+            let mut row = String::new();
+            for x in 0..area.width {
+                row.push_str(buf[(x, y)].symbol());
+            }
+            if row.contains(" ro ") || row.trim_end().ends_with(" ro") || row.contains(" ro  ") {
+                found = true;
+                break;
+            }
+        }
+        assert!(
+            found,
+            "post-toggle render must show `ro` in the mode column"
         );
     }
 }

@@ -846,6 +846,12 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
                     items.push(FooterItem::Key("O"));
                     items.push(FooterItem::Text("open in GitHub"));
                 }
+                // `R` toggles the readonly flag on the highlighted mount row
+                // (rw ↔ ro). Sentinel row omits this hint — there's nothing
+                // to toggle yet.
+                items.push(FooterItem::Sep);
+                items.push(FooterItem::Key("R"));
+                items.push(FooterItem::Text("toggle ro/rw"));
                 items
             } else {
                 // Sentinel "+ Add mount" row — both Enter and A invoke the
@@ -1625,6 +1631,41 @@ mod contextual_row_items_tests {
         // But the existing D/A hints must still be present.
         assert!(keys.contains(&"D"));
         assert!(keys.contains(&"A"));
+    }
+
+    #[test]
+    fn mount_row_includes_toggle_readonly_hint() {
+        // Every mount-data row must surface `R toggle ro/rw`, regardless of
+        // whether the row is a GitHub repo. Plain-folder case — confirms the
+        // hint composes alongside D/A even without the O extension.
+        let tmp = tempfile::tempdir().unwrap();
+        let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
+        let hint = contextual_row_items(&editor);
+        let keys = key_glyphs(&hint);
+        let labels = text_labels(&hint);
+        assert!(
+            keys.contains(&"R"),
+            "mount data row must include `R` key hint; got keys={keys:?}"
+        );
+        assert!(
+            labels.contains(&"toggle ro/rw"),
+            "mount data row must include `toggle ro/rw` label; got labels={labels:?}"
+        );
+    }
+
+    #[test]
+    fn mounts_sentinel_row_omits_toggle_readonly_hint() {
+        // The `+ Add mount` sentinel has nothing to toggle — R must not
+        // appear on that row's footer. Confirms the hint is cursor-aware.
+        let tmp = tempfile::tempdir().unwrap();
+        let mut editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
+        editor.active_field = FieldFocus::Row(editor.pending.mounts.len());
+        let hint = contextual_row_items(&editor);
+        let keys = key_glyphs(&hint);
+        assert!(
+            !keys.contains(&"R"),
+            "sentinel row must not advertise R; got keys={keys:?}"
+        );
     }
 
     /// Guard that every footer hint built by `contextual_row_items` exposes
