@@ -122,6 +122,34 @@ fn is_excluded(name: &str) -> bool {
     EXCLUDED.contains(&name)
 }
 
+/// True when `candidate`'s canonicalized path is contained within
+/// `root` (which is already canonicalized when possible). Used to
+/// defeat lexical-prefix spoofs: a symlink under `$HOME` pointing
+/// outside `$HOME` has a lexical path that `Path::starts_with`
+/// accepts, but `canonicalize` resolves the link and exposes the
+/// real target.
+///
+/// Fails closed — any canonicalization error returns `false` rather
+/// than admitting the path. Better to reject a legitimate candidate
+/// (the operator sees an unexplained rejection and can investigate)
+/// than to leak a sandbox-escaping path.
+fn is_within_root(candidate: &Path, root: &Path) -> bool {
+    let Ok(real_candidate) = candidate.canonicalize() else {
+        return false;
+    };
+    real_candidate.starts_with(root)
+}
+
+/// Canonicalize `path`, falling back to `path` itself on error.
+/// Used to normalise `root` once at construction time so later
+/// `is_within_root` comparisons share a common prefix. Production
+/// `$HOME` is almost always canonicalizable; tests under platforms
+/// with weird mount layouts (e.g. macOS `/tmp` → `/private/tmp`)
+/// rely on the fallback to keep behavior sane.
+fn canonicalize_or_self(path: PathBuf) -> PathBuf {
+    path.canonicalize().unwrap_or(path)
+}
+
 /// Read directories under `cwd` and build the entry list. Hidden files
 /// (leading `.`) are excluded; the `..` synthetic parent-link is prepended
 /// iff `cwd != root`; at the root level the `EXCLUDED` list filters out
@@ -169,6 +197,15 @@ fn load_entries(cwd: &Path, root: &Path) -> Vec<FolderEntry> {
         if !is_dir {
             continue;
         }
+        // Sandbox: a symlinked directory may point outside `root`. Lexical
+        // `starts_with` can't catch that — it sees only the link's path
+        // under root. Canonicalize the entry and drop anything whose real
+        // target escapes. Regular (non-symlink) directories are trusted
+        // because their canonical form necessarily starts with their
+        // parent, which we're already listing because we're inside root.
+        if ty.is_symlink() && !is_within_root(&path, root) {
+            continue;
+        }
         let is_git = has_git_dir(&path);
         dirs.push(FolderEntry {
             name,
@@ -197,7 +234,19 @@ impl FileBrowserState {
     /// Build a browser with `root` as the sandbox boundary and `cwd` as
     /// the initial directory. Primarily for tests — production callers
     /// should use `new_from_home`.
+    ///
+    /// `root` (and `cwd`, when it was passed as equal to `root`) is
+    /// canonicalized once here so later `is_within_root` checks compare
+    /// apples to apples. If canonicalization fails (exotic mounts,
+    /// missing paths in tests), the uncanonicalized path is used —
+    /// production `$HOME` is always canonicalizable.
     pub fn new_at(root: PathBuf, cwd: PathBuf) -> Self {
+        let root = canonicalize_or_self(root);
+        // Keep `root == cwd` invariant when the caller intended that —
+        // many tests pass the same path for both, relying on the
+        // "no ..`" affordance at root. Otherwise canonicalize `cwd`
+        // independently so downstream comparisons line up.
+        let cwd = canonicalize_or_self(cwd);
         let entries = load_entries(&cwd, &root);
         let mut list_state = ListState::default();
         if !entries.is_empty() {
@@ -225,8 +274,8 @@ impl FileBrowserState {
     /// Silently falls back to the root when `cwd` is outside the sandbox
     /// or not a readable directory.
     pub fn set_cwd(&mut self, cwd: &Path) {
-        let target = if cwd.starts_with(&self.root) && cwd.is_dir() {
-            cwd.to_path_buf()
+        let target = if is_within_root(cwd, &self.root) && cwd.is_dir() {
+            canonicalize_or_self(cwd.to_path_buf())
         } else {
             self.root.clone()
         };
@@ -357,9 +406,12 @@ impl FileBrowserState {
             self.pending_git_focus = GitPromptFocus::MountHere;
             return ModalOutcome::Continue;
         }
-        // Plain folder — navigate in.
-        if entry.path.starts_with(&self.root) && entry.path.is_dir() {
-            self.cwd = entry.path;
+        // Plain folder — navigate in. Canonicalize so a legitimate
+        // symlinked-dir-inside-root still resolves to its real path;
+        // out-of-root symlinks were already filtered by `load_entries`,
+        // but this belt-and-suspenders guards against races.
+        if is_within_root(&entry.path, &self.root) && entry.path.is_dir() {
+            self.cwd = canonicalize_or_self(entry.path);
             self.reload();
         }
         ModalOutcome::Continue
@@ -368,6 +420,14 @@ impl FileBrowserState {
     /// Shared commit-or-reject logic used by `s` and the git-repo prompt's
     /// "Mount this repository" option. Enforces the same sandbox rules.
     fn commit_or_reject(&mut self, target: PathBuf) -> ModalOutcome<PathBuf> {
+        // Sandbox: belt-and-suspenders check that `target`'s canonical
+        // form is inside `root`. Upstream steps (load_entries, set_cwd,
+        // handle_enter) already filter escaping symlinks, but a TOCTOU
+        // race between listing and commit could still slip one through.
+        if !is_within_root(&target, &self.root) {
+            self.rejected_reason = Some("Cannot commit a path outside $HOME.".into());
+            return ModalOutcome::Continue;
+        }
         // Reject root itself — user must navigate into a subfolder.
         if target == self.root {
             self.rejected_reason =
@@ -1649,6 +1709,86 @@ mod tests {
             Color::Rgb(0, 255, 65),
             "git suffix should render in PHOSPHOR_GREEN, got {:?}",
             paren_cell.fg
+        );
+    }
+
+    // ── Symlink sandbox hardening ─────────────────────────────────────
+    //
+    // Finding #2 of the PR #166 current-branch review: lexical
+    // `Path::starts_with(root)` treated a symlink under `$HOME` as
+    // in-sandbox because its *path* starts with `$HOME`, but its
+    // canonical target could escape. Canonicalizing at the
+    // decision points fixes the leak.
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_to_outside_root_is_excluded_from_listing() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("home");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::create_dir_all(root.join("normal_dir")).unwrap();
+        // Symlink under root pointing at the sibling directory. A lexical
+        // `starts_with(root)` check accepts this path; a canonical one
+        // correctly rejects it.
+        std::os::unix::fs::symlink(&outside, root.join("escape_link")).unwrap();
+
+        let fb = FileBrowserState::new_at(root.clone(), root);
+        let names: Vec<&str> = fb.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"normal_dir"),
+            "regular child dir should still appear; got {names:?}",
+        );
+        assert!(
+            !names.contains(&"escape_link"),
+            "symlink escaping $HOME must not appear in listing; got {names:?}",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_to_inside_root_still_appears() {
+        // Complementary test to `symlink_to_outside_root_is_excluded_from_listing`:
+        // we must not over-reject. A symlink that resolves back inside
+        // root is legitimate and should still be listed.
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("home");
+        let inner = root.join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+        std::os::unix::fs::symlink(&inner, root.join("inner_link")).unwrap();
+
+        let fb = FileBrowserState::new_at(root.clone(), root);
+        let names: Vec<&str> = fb.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"inner"));
+        assert!(
+            names.contains(&"inner_link"),
+            "symlink whose target stays inside root should still list; got {names:?}",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn commit_rejects_out_of_root_target() {
+        // TOCTOU defence: even if an escaping path somehow reached
+        // `commit_or_reject` (list filtering beaten by a race, or a
+        // future bug elsewhere), the belt-and-suspenders check rejects it.
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("home");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        let mut fb = FileBrowserState::new_at(root.clone(), root);
+        let outcome = fb.commit_or_reject(outside);
+        assert!(matches!(outcome, ModalOutcome::Continue));
+        let reason = fb
+            .rejected_reason
+            .as_deref()
+            .expect("out-of-root commit should set rejected_reason");
+        assert!(
+            reason.contains("outside"),
+            "rejection should cite the sandbox boundary; got {reason:?}",
         );
     }
 
