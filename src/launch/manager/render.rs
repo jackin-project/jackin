@@ -487,7 +487,10 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
             " General ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
+    // Two-space prefix keeps the label aligned with Mounts and Agents — see
+    // `render_general_subpanel` for the shared convention.
     let general_lines = vec![Line::from(vec![
+        Span::raw("  "),
         Span::styled("workdir   ", Style::default().fg(WHITE)),
         Span::raw(workdir_short),
     ])];
@@ -584,12 +587,18 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
 
+    // Each content row is prefixed with two spaces to match the Mounts and
+    // Agents sub-panels (see `SUBPANEL_CONTENT_INDENT`). Without the prefix the
+    // label sat flush against the block's left border, breaking column
+    // alignment with the other two blocks in the same pane.
     let lines = vec![
         Line::from(vec![
+            Span::raw("  "),
             Span::styled("workdir   ", Style::default().fg(WHITE)),
             Span::raw(crate::tui::shorten_home(&ws.workdir)),
         ]),
         Line::from(vec![
+            Span::raw("  "),
             Span::styled("last      ", Style::default().fg(WHITE)),
             Span::raw(
                 ws.last_agent
@@ -604,6 +613,14 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
         .style(Style::default().fg(PHOSPHOR_GREEN));
     frame.render_widget(p, area);
 }
+
+/// Number of leading spaces every content row in the General / Mounts /
+/// Agents sub-panels is prefixed with, so the first visible character lines
+/// up across all three blocks (at `border_col + SUBPANEL_CONTENT_INDENT`).
+/// Pinned by `subpanel_content_column_alignment` in the visual regression
+/// tests.
+#[cfg(test)]
+const SUBPANEL_CONTENT_INDENT: usize = 2;
 
 fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::workspace::MountConfig]) {
     let block = Block::default()
@@ -1635,5 +1652,144 @@ mod mount_block_height_tests {
     fn many_mounts_clamp_to_twelve() {
         let mounts: Vec<MountConfig> = (0..20).map(|i| mount(&format!("/m/{i}"))).collect();
         assert_eq!(mount_block_height(&mounts), 12);
+    }
+}
+
+#[cfg(test)]
+mod subpanel_padding_tests {
+    //! Visual regression tests pinning the leading-padding convention shared
+    //! by the General / Mounts / Agents sub-panels. All three render content
+    //! rows starting at the same column so the first visible character of
+    //! row 0 (i.e. the first row *inside* the block border) lines up across
+    //! the three blocks, giving the right pane a tidy left edge.
+    use super::{
+        SUBPANEL_CONTENT_INDENT, render_agents_subpanel, render_general_subpanel,
+        render_mounts_subpanel,
+    };
+    use crate::config::AppConfig;
+    use crate::launch::manager::state::WorkspaceSummary;
+    use crate::workspace::WorkspaceConfig;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+
+    /// Scan the first content row inside a sub-panel block (y = 1, skipping
+    /// the top border at y = 0) for the first cell holding a printable
+    /// non-space character, skipping the left vertical border. Returns the
+    /// offset of that character *from the left border* — i.e. the indent —
+    /// so values can be compared against `SUBPANEL_CONTENT_INDENT` directly.
+    fn first_content_indent(terminal: &Terminal<TestBackend>) -> Option<usize> {
+        let buf = terminal.backend().buffer();
+        let area = buf.area;
+        // Locate the left border column first so the returned value is the
+        // relative indent, not the absolute column.
+        let border_x = (0..area.width).find(|x| {
+            let sym = buf[(*x, 1)].symbol();
+            sym == "│" || sym == "║"
+        })?;
+        for x in (border_x + 1)..area.width {
+            let sym = buf[(x, 1)].symbol();
+            if sym.is_empty() || sym == " " {
+                continue;
+            }
+            return Some((x - border_x - 1) as usize);
+        }
+        None
+    }
+
+    fn summary() -> WorkspaceSummary {
+        WorkspaceSummary {
+            name: "demo".into(),
+            workdir: "/tmp/demo".into(),
+            mount_count: 1,
+            readonly_mount_count: 0,
+            allowed_agent_count: 0,
+            default_agent: None,
+            last_agent: None,
+        }
+    }
+
+    fn ws_config_with_allowed(names: &[&str], default: Option<&str>) -> WorkspaceConfig {
+        WorkspaceConfig {
+            workdir: "/tmp/demo".into(),
+            mounts: vec![],
+            allowed_agents: names.iter().map(|s| (*s).into()).collect(),
+            default_agent: default.map(String::from),
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// The first visible character of row 0 inside each sub-panel block
+    /// must sit at the shared `SUBPANEL_CONTENT_INDENT`. Without the General
+    /// block's two-space prefix the `w` of `workdir` rendered at column 1
+    /// (flush with the border) while Mounts/Agents rendered at column 2.
+    #[test]
+    fn subpanel_content_column_alignment() {
+        // General
+        let backend = TestBackend::new(40, 4);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_general_subpanel(f, Rect::new(0, 0, 40, 4), &summary());
+        })
+        .unwrap();
+        let general_col = first_content_indent(&term).expect("general has content");
+
+        // Mounts
+        let backend = TestBackend::new(40, 4);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[]);
+        })
+        .unwrap();
+        let mounts_col = first_content_indent(&term).expect("mounts has content");
+
+        // Agents, "any agent" branch (no allowed list)
+        let cfg = AppConfig::default();
+        let backend = TestBackend::new(40, 4);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_agents_subpanel(f, Rect::new(0, 0, 40, 4), None, &cfg);
+        })
+        .unwrap();
+        let agents_any_col = first_content_indent(&term).expect("agents 'any' has content");
+
+        assert_eq!(
+            general_col, SUBPANEL_CONTENT_INDENT,
+            "General first char at col {general_col}, expected {SUBPANEL_CONTENT_INDENT}"
+        );
+        assert_eq!(
+            mounts_col, SUBPANEL_CONTENT_INDENT,
+            "Mounts first char at col {mounts_col}, expected {SUBPANEL_CONTENT_INDENT}"
+        );
+        assert_eq!(
+            agents_any_col, SUBPANEL_CONTENT_INDENT,
+            "Agents (any) first char at col {agents_any_col}, expected {SUBPANEL_CONTENT_INDENT}"
+        );
+    }
+
+    /// Agent rows with a default agent render the star at
+    /// `SUBPANEL_CONTENT_INDENT`, matching the "any agent" label position.
+    #[test]
+    fn agent_star_row_aligns_with_content_column() {
+        let ws = ws_config_with_allowed(&["alpha", "beta"], Some("alpha"));
+        let mut cfg = AppConfig::default();
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.agents
+            .insert("beta".into(), crate::config::AgentSource::default());
+
+        let backend = TestBackend::new(40, 5);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_agents_subpanel(f, Rect::new(0, 0, 40, 5), Some(&ws), &cfg);
+        })
+        .unwrap();
+        let star_col = first_content_indent(&term).expect("starred agent row has content");
+        assert_eq!(
+            star_col, SUBPANEL_CONTENT_INDENT,
+            "star glyph should render at col {SUBPANEL_CONTENT_INDENT}, got {star_col}"
+        );
     }
 }
