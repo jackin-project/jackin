@@ -124,7 +124,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
             } else {
                 "  "
             };
-            Line::from(format!("{}{}  {}", prefix, c.path, c.label))
+            Line::from(format!(
+                "{}{}  {}",
+                prefix,
+                crate::tui::shorten_home(&c.path),
+                c.label
+            ))
         })
         .collect();
 

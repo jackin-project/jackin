@@ -181,7 +181,7 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     // workdir
     lines.push(Line::from(vec![
         Span::styled("workdir   ", Style::default().fg(WHITE)),
-        Span::raw(ws.workdir.clone()),
+        Span::raw(crate::tui::shorten_home(&ws.workdir)),
     ]));
 
     // blank
@@ -204,10 +204,12 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     } else {
         for m in mounts {
             let ro = if m.readonly { " (ro)" } else { " (rw)" };
+            let src_display = crate::tui::shorten_home(&m.src);
+            let dst_display = crate::tui::shorten_home(&m.dst);
             let path_display = if m.src == m.dst {
-                m.src.clone()
+                src_display
             } else {
-                format!("{} \u{2192} {}", m.src, m.dst)
+                format!("{src_display} \u{2192} {dst_display}")
             };
             let kind_label = super::mount_info::inspect(&m.src).label();
             lines.push(Line::from(vec![
@@ -443,11 +445,12 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     if is_edit {
         // Edit mode: name is an editable row at index 0.
         rows.push(render_editor_row(0, cursor, "name", name_value, name_dirty));
+        let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
         rows.push(render_editor_row(
             1,
             cursor,
             "workdir",
-            &state.pending.workdir,
+            &workdir_display,
             state.pending.workdir != state.original.workdir,
         ));
         // default agent — read-only here; set via Agents tab.
@@ -467,11 +470,12 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     } else {
         // Create mode: name is display-only (collected by prelude), workdir is the first editable row.
         rows.push(render_editor_readonly_row(0, cursor, "name", name_value));
+        let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
         rows.push(render_editor_row(
             1,
             cursor,
             "workdir",
-            &state.pending.workdir,
+            &workdir_display,
             false,
         ));
         // Hide "default agent" and "last used" in Create mode — they have no meaning yet.
@@ -565,10 +569,12 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             let prefix = if selected { "▸ " } else { "  " };
             let ro = if m.readonly { " (ro)" } else { " (rw)" };
             // Collapse src → dst when they are identical (host-mirror default).
+            let src_display = crate::tui::shorten_home(&m.src);
+            let dst_display = crate::tui::shorten_home(&m.dst);
             let path_display = if m.src == m.dst {
-                m.src.clone()
+                src_display
             } else {
-                format!("{} → {}", m.src, m.dst)
+                format!("{src_display} → {dst_display}")
             };
             let style = if selected {
                 Style::default().fg(phosphor).add_modifier(Modifier::BOLD)
