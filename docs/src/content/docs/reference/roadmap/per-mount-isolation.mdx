@@ -102,6 +102,7 @@ Validation fires per the mount's declared isolation type, so error messages refe
   - `readonly` is not set. A forked working copy that can't be written to makes no sense.
   - Not a sensitive mount (`~/.ssh`, `~/.aws`, etc., detected by the existing `find_sensitive_mounts`).
   - Host working tree is clean **or** operator explicitly acknowledged the dirty tree. For non-interactive `load`, this should be `jackin load --force`. For interactive `launch`, the TUI can present a confirmation before materialization. Dirty host tree warns because the worktree branches from `HEAD`, so uncommitted host edits don't travel into the agent; acknowledgement means the operator accepts that WIP stays on the host. In practice the host tree is almost always clean at agent launch, so this is a cold-path guard, not a primary UX.
+  - Dirty means staged changes, unstaged tracked changes, or untracked files reported by git status. Ignored files do not block materialization; ignored build artifacts are exactly the sort of thing operators should keep out of source isolation or remount explicitly as shared caches.
 
 Beyond the per-type validation:
 
@@ -138,9 +139,17 @@ This keeps three shapes distinct:
 - **`ResolvedWorkspace`** — expanded paths plus workspace/ad-hoc/global mount composition.
 - **`MaterializedWorkspace`** — final host paths Docker should bind-mount for this container.
 
-For each non-`shared` mount, materialization is idempotent: a second `load` to an existing container reuses the same worktree and branch. The container `dst` is unchanged, so the agent sees the same path regardless of mode.
+For each non-`shared` mount, materialization is idempotent. First materialization creates the scratch branch from the host repo's current `HEAD` and records that commit as `base_commit`. Later loads to the same container reuse the existing worktree and branch exactly as-is: no reset, no rebase, no fast-forward, and no attempt to rebase onto a newer host `HEAD`. The container `dst` is unchanged, so the agent sees the same path regardless of mode.
 
 `isolation.json` is required because purge cannot rely on the current TOML. Operators may change mount isolation, change mount sources, or remove the workspace entirely between `eject` and `purge`; cleanup must still know which host repo/worktree/branch were created for that container. Each record should include at least the workspace name, mount `dst`, original resolved `src`, isolation mode, materialized worktree path, scratch branch, base commit, selector key, container name, and cleanup status.
+
+Cleanup status values:
+
+- **`active`** — materialized worktree is part of an active or reusable container state.
+- **`preserved_dirty`** — clean-exit cleanup found uncommitted staged/tracked/untracked work and preserved the worktree.
+- **`preserved_unpushed`** — clean-exit cleanup found commits not reachable from the branch's upstream/remote tracking branch and preserved the worktree.
+
+Successful cleanup removes the corresponding isolation record instead of keeping a historical `cleaned` record.
 
 **Per-worktree config scoping.** On first worktree creation for a host repo, jackin' enables `extensions.worktreeConfig` on the host repo (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config values written via `git config --worktree` don't leak into the shared host `.git/config`. jackin' reports this in a one-line notice the first time it happens per host repo. Keys that don't support per-worktree scoping (remotes, credentials, anything written without `--worktree`) still land in shared config — this is a git limitation, not a jackin' one, and it's documented as a known limitation rather than papered over.
 
@@ -211,13 +220,15 @@ Ship:
   - `workspace show` displays each mount's effective isolation
 - A shared `MountIsolation` parser/model for TOML and CLI, with canonical values `shared | worktree | clone`; `clone` is reserved but rejected in V1 until implemented.
 - `jackin load --force` dirty-host acknowledgement for non-interactive worktree materialization; `jackin launch` gets an interactive confirmation path.
+- Dirty-host checks include staged changes, unstaged tracked changes, and untracked files; ignored files do not require acknowledgement.
 - Branch naming hardcoded as `jackin/scratch/<branch-instance>` (ephemeral scratch ref), where `<branch-instance>` is based on the agent selector key with namespace `/` preserved and clone suffixes appended to the final segment. Base is always host `HEAD`. No configurable template or base in V1.
+- Branch reuse is strict: first materialization branches from host `HEAD`; later loads reuse the existing worktree/branch without reset, rebase, or fast-forward.
 - Duplicate isolated mounts for the same repo root are allowed; each mount gets its own worktree, and branch names disambiguate by mount-destination slug when needed.
 - Runtime materialization happens after container-name claim, not inside `resolve_load_workspace`; introduce a materialized-workspace handoff into Docker launch.
 - Docker bind-mount emission preserves parent-before-child ordering so explicit shared cache child mounts overlay isolated source parents.
 - `.jackin/isolation.json` records materialized isolated mounts so `purge` and `cd` work even after config changes.
 - Runtime source-drift guard: `load` errors when a saved workspace mount reuses a materialized isolated `dst` with a different `src`; CLI/TUI workspace edits should detect the same drift before saving and ask whether to delete preserved state or cancel. Non-interactive edits require `--delete-isolated-state` to delete affected preserved state.
-- Clean-exit cleanup deletes clean worktrees automatically when no commits would be lost, including clean branches whose local commits are already reachable from their upstream/remote tracking branch.
+- Clean-exit cleanup deletes clean worktrees automatically when no commits would be lost, including clean branches whose local commits are already reachable from their upstream/remote tracking branch. Preserved states use `active | preserved_dirty | preserved_unpushed`; successful cleanup removes the state record.
 - `extensions.worktreeConfig` enabled on the host repo on first worktree creation.
 - `load` materializes, foreground session finalization safely removes throwaway isolated worktrees when no work would be lost, unsafe clean-exit cleanup asks interactive operators whether to return to the agent, preserve recovery state, or force-delete, `eject` leaves worktrees alone, and `purge` force-deletes everything (container, DinD sidecar, `isolated/`, worktree, local branch).
 - `purge` refuses on running agents (also closes the pre-existing gap for `shared` mode).
@@ -240,11 +251,9 @@ Defer:
 - `--no-hooks` flag to skip host hooks per worktree.
 - Any `jackin diff` / `jackin integrate` / merge-assist commands. Back-merge is handled upstream on GitHub.
 
-## Open Questions
+## Implementation Checks
 
-1. Interaction with `hardline` offline lockdown — `worktree` is local-only, so this should be fine, but worth verifying.
-2. Dirty-tree definition — should `--force` acknowledge untracked files too, or only tracked/staged changes?
-3. Branch reuse — confirm that first materialization branches from host `HEAD`, while later loads reuse the existing worktree/branch without resetting or rebasing it.
+1. Interaction with `hardline` offline lockdown — `worktree` is local-only, so this should be fine, but verify the shared foreground finalizer does not accidentally require network access.
 
 ## Related Files
 
