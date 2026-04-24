@@ -1191,8 +1191,12 @@ fn render_secrets_stub(frame: &mut Frame, area: Rect) {
 
 // ── Modal dispatcher ────────────────────────────────────────────────
 
-pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
-    let area = frame.area();
+/// Compute the outer rect for `modal` inside `outer`. Single source of
+/// truth for modal size + placement — `render_modal` dispatches drawing
+/// from this rect, and `input::file_browser_modal_rect` re-uses it for
+/// mouse hit-testing so both views stay in sync. A layout tweak in one
+/// site can't silently desynchronize from the other.
+pub(super) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
     // Size by variant: single-line inputs get a compact overlay;
     // lists get a taller one.
     let (pct_w, height_rows) = match modal {
@@ -1220,17 +1224,24 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         }
         // ConfirmSave: 80% width, height grows with line count. Clamped
         // to screen height by `centered_rect_fixed`.
-        Modal::ConfirmSave { state } => (80, confirm_save::required_height(state).min(area.height)),
+        Modal::ConfirmSave { state } => {
+            (80, confirm_save::required_height(state).min(outer.height))
+        }
         // ErrorPopup: 60% width, word-wrapped message. Height capped at
         // 15 so even a novella error message can't blot out the screen.
         Modal::ErrorPopup { state } => {
             // Estimate inner width from outer width: 60% of frame, minus
             // 2 border columns, minus 2-column left gutter for safety.
-            let inner_width = (area.width * 60 / 100).saturating_sub(4);
+            let inner_width = (outer.width * 60 / 100).saturating_sub(4);
             (60, error_popup::required_height(state, inner_width))
         }
     };
-    let modal_area = centered_rect_fixed(area, pct_w, height_rows);
+    centered_rect_fixed(outer, pct_w, height_rows)
+}
+
+pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
+    let area = frame.area();
+    let modal_area = modal_outer_rect(modal, area);
     match modal {
         Modal::TextInput { state, .. } => text_input::render(frame, modal_area, state),
         Modal::FileBrowser { state, .. } => file_browser::render(frame, modal_area, state),

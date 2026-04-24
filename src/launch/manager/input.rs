@@ -1369,47 +1369,33 @@ pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
     }
 }
 
-/// Compute the `FileBrowser` modal's outer rect, mirroring
-/// `render::render_modal`'s `centered_rect_fixed(area, 70, 22)` for
-/// `Modal::FileBrowser`. Inlined here to avoid adding a cross-module pub
-/// helper for one call-site; if another modal ever needs mouse hit-testing
-/// we can lift this into a shared module.
-fn file_browser_modal_rect(term_size: Rect) -> Rect {
-    let pct_w: u16 = 70;
-    let rows: u16 = 22;
-    let w = term_size.width * pct_w / 100;
-    let h = rows.min(term_size.height);
-    Rect {
-        x: term_size.x + term_size.width.saturating_sub(w) / 2,
-        y: term_size.y + term_size.height.saturating_sub(h) / 2,
-        width: w,
-        height: h,
-    }
-}
-
 /// If the `Editor` or `CreatePrelude` stage has an open `FileBrowser`
 /// whose git-prompt is active with a resolved URL, and the click lands
 /// on the URL row, fire `open::that_detached` best-effort. Returns
 /// `true` iff the click was consumed (URL opened). Non-matching stages,
 /// non-click events, and clicks outside the URL row all return `false`
 /// and the caller falls through to the list-view handler.
+///
+/// Modal geometry comes from `render::modal_outer_rect` — the same
+/// helper `render_modal` uses — so mouse hit-testing can never drift
+/// out of sync with what was drawn.
 fn try_open_file_browser_git_url(
     state: &ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
-    let fb_state: &FileBrowserState = match &state.stage {
+    let (modal, fb_state): (&Modal<'_>, &FileBrowserState) = match &state.stage {
         ManagerStage::Editor(editor) => match editor.modal.as_ref() {
-            Some(Modal::FileBrowser { state, .. }) => state,
+            Some(m @ Modal::FileBrowser { state, .. }) => (m, state),
             _ => return false,
         },
         ManagerStage::CreatePrelude(prelude) => match prelude.modal.as_ref() {
-            Some(Modal::FileBrowser { state, .. }) => state,
+            Some(m @ Modal::FileBrowser { state, .. }) => (m, state),
             _ => return false,
         },
         _ => return false,
     };
-    let modal_area = file_browser_modal_rect(term_size);
+    let modal_area = super::render::modal_outer_rect(modal, term_size);
     fb_state.maybe_open_url_on_click(modal_area, mouse.column, mouse.row)
 }
 
