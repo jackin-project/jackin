@@ -96,7 +96,8 @@ Maps 1:1 with the published site sidebar:
 | | `guides/security-model.mdx` | Isolation and permissions |
 | | `guides/comparison.mdx` | Comparison with alternatives |
 | Commands | `commands/load.mdx` | `jackin load` |
-| | `commands/launch.mdx` | `jackin launch` |
+| | `commands/console.mdx` | `jackin console` (bare `jackin` dispatches here) |
+| | `commands/launch.mdx` | `jackin launch` (deprecated alias for `jackin console`) |
 | | `commands/hardline.mdx` | `jackin hardline` |
 | | `commands/eject.mdx` | `jackin eject` |
 | | `commands/exile.mdx` | `jackin exile` |

@@ -560,7 +560,7 @@ fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
         "Keep extra mounts consistent across sessions",
         "Reuse one boundary with different agent classes",
         "Set a default agent or restrict which classes apply",
-        "Let `jackin launch` auto-detect and preselect it",
+        "Let `jackin console` auto-detect and preselect it",
     ];
     let mut why_lines: Vec<Line<'static>> = bullets
         .iter()
@@ -2200,7 +2200,7 @@ mod header_branding_tests {
     //! (`jackin'`) in every user-facing string. All-caps `JACKIN` and
     //! apostrophe-less `jackin` are both disallowed for display text —
     //! though `jackin` without an apostrophe still appears in CLI-command
-    //! references rendered in backticks (e.g. `` `jackin launch` ``), in
+    //! references rendered in backticks (e.g. `` `jackin console` ``), in
     //! filesystem paths like `~/.jackin/`, and in URLs, all of which are
     //! intentionally exempt and not audited here.
     use super::render_header;

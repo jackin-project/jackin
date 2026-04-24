@@ -234,8 +234,8 @@ pub(crate) fn resolve_agent_from_context(
 
     anyhow::bail!(
         "no saved workspace matches the current directory.\n\
-         Run jackin load <agent> to use the current directory, or\n\
-         run jackin launch for the interactive launcher."
+         Run `jackin load <agent>` to use the current directory, or\n\
+         run `jackin console` for the interactive operator console."
     );
 }
 
