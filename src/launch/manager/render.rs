@@ -865,8 +865,8 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
             FooterItem::Key("Space"),
             FooterItem::Text("toggle"),
             FooterItem::Sep,
-            FooterItem::Key("*"),
-            FooterItem::Text("set default"),
+            FooterItem::Key("D"),
+            FooterItem::Text("default"),
         ],
         EditorTab::Secrets => Vec::new(),
     }

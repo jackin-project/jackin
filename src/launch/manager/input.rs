@@ -462,7 +462,7 @@ fn handle_editor_key(
         KeyCode::Char(' ') if editor.active_tab == EditorTab::Agents => {
             toggle_agent_allowed_at_cursor(editor, config);
         }
-        KeyCode::Char('*') if editor.active_tab == EditorTab::Agents => {
+        KeyCode::Char('D' | 'd') if editor.active_tab == EditorTab::Agents => {
             set_default_agent_at_cursor(editor, config);
         }
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
@@ -3373,6 +3373,122 @@ mod tests {
             state.toast.is_none(),
             "Esc must not toast: {:?}",
             state.toast
+        );
+    }
+
+    // ── Agents tab: D-key default binding ──────────────────────────────
+    //
+    // Operators set the default agent for a workspace with `D` / `d` on
+    // the Agents tab. The previous `*` binding (shift+8) was dropped in
+    // favour of a single canonical keystroke.
+
+    /// Freshly-constructed `WorkspaceConfig` (no `Default` impl on the
+    /// struct; see `src/workspace/mod.rs`).
+    fn empty_ws() -> WorkspaceConfig {
+        WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// Build an `AppConfig` whose `agents` map has the given names, plus
+    /// a single empty workspace so tests can construct an editor.
+    fn config_with_agents(names: &[&str]) -> AppConfig {
+        let mut config = AppConfig::default();
+        for name in names {
+            config.agents.insert(
+                (*name).into(),
+                crate::config::AgentSource {
+                    git: format!("https://example.test/{name}.git"),
+                    ..Default::default()
+                },
+            );
+        }
+        config.workspaces.insert("ws".into(), empty_ws());
+        config
+    }
+
+    /// Build a `ManagerState` sitting in an editor over a workspace with
+    /// the Agents tab active and the cursor pointed at `row`.
+    fn editor_on_agents_tab<'a>(ws: WorkspaceConfig, row: usize) -> ManagerState<'a> {
+        let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Agents;
+        editor.active_field = FieldFocus::Row(row);
+        state.stage = ManagerStage::Editor(editor);
+        state
+    }
+
+    fn press(
+        state: &mut ManagerState<'_>,
+        config: &mut AppConfig,
+        code: KeyCode,
+    ) -> anyhow::Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs()?;
+        handle_key(state, config, &paths, tmp.path(), key(code))?;
+        Ok(())
+    }
+
+    #[test]
+    fn d_key_sets_default_agent_on_current_row() {
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        // Cursor on row 1 (agent "beta"), no default set yet.
+        let mut state = editor_on_agents_tab(empty_ws(), 1);
+
+        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            e.pending.default_agent.as_deref(),
+            Some("beta"),
+            "D on row 1 should pin agent `beta` as default",
+        );
+        // Setting a default also implies allowing the agent.
+        assert!(
+            e.pending.allowed_agents.iter().any(|a| a == "beta"),
+            "default agent must be represented in allowed_agents"
+        );
+    }
+
+    #[test]
+    fn lowercase_d_key_sets_default_agent_on_current_row() {
+        // Operators often hit `d` without holding shift; the binding
+        // must accept both cases.
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut state = editor_on_agents_tab(empty_ws(), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('d')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.pending.default_agent.as_deref(), Some("alpha"));
+    }
+
+    #[test]
+    fn star_key_no_longer_sets_default_agent() {
+        // Regression guard: the legacy `*` binding was removed in favour
+        // of `D`. Pressing `*` on an agent row must now be a no-op.
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut state = editor_on_agents_tab(empty_ws(), 1);
+
+        press(&mut state, &mut config, KeyCode::Char('*')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.pending.default_agent.is_none(),
+            "`*` must no longer set the default agent",
         );
     }
 }
