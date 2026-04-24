@@ -1,6 +1,7 @@
 //! Workspace manager TUI — list, create, edit, delete workspaces from
 //! the launcher. Reached via `m` from the Workspace picker stage.
 
+pub mod agent_allow;
 pub mod create;
 pub mod input;
 pub mod mount_info;

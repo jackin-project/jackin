@@ -662,6 +662,10 @@ fn render_agents_subpanel(
         ));
 
     let allowed = ws_config.map_or(&[][..], |w| w.allowed_agents.as_slice());
+    // `all-agents-allowed` covers both the "no ws_config" case and the
+    // empty-list shorthand on a real workspace. See `agent_allow` for the
+    // canonical rule.
+    let all_allowed = ws_config.is_none_or(super::agent_allow::allows_all_agents);
 
     let mut lines: Vec<Line> = Vec::new();
 
@@ -683,7 +687,7 @@ fn render_agents_subpanel(
     ]));
     lines.push(Line::from(""));
 
-    if allowed.is_empty() {
+    if all_allowed {
         lines.push(Line::from(Span::styled(
             "  any agent",
             Style::default()
@@ -1101,7 +1105,7 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     let FieldFocus::Row(cursor) = state.active_field;
 
     // Status line: "Allowed agents:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
-    let is_all = state.pending.allowed_agents.is_empty();
+    let is_all = super::agent_allow::allows_all_agents(&state.pending);
     let total = config.agents.len();
     let allowed_count = state.pending.allowed_agents.len();
 
@@ -1144,8 +1148,8 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     // list render `[x]`.
     for (i, (agent_name, _)) in config.agents.iter().enumerate() {
         let selected = i == cursor;
-        let effectively_allowed = state.pending.allowed_agents.is_empty()
-            || state.pending.allowed_agents.contains(agent_name);
+        let effectively_allowed =
+            super::agent_allow::agent_is_effectively_allowed(&state.pending, agent_name);
         let is_default = state.pending.default_agent.as_deref() == Some(agent_name.as_str());
         let check = if effectively_allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };

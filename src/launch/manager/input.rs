@@ -206,13 +206,12 @@ fn handle_list_key(
                 state.stage = ManagerStage::CreatePrelude(prelude);
                 Ok(InputOutcome::Continue)
             }
-            ManagerListRow::SavedWorkspace(i) => {
-                if let Some(summary) = state.workspaces.get(i) {
-                    Ok(InputOutcome::LaunchNamed(summary.name.clone()))
-                } else {
-                    Ok(InputOutcome::Continue)
-                }
-            }
+            ManagerListRow::SavedWorkspace(i) => Ok(state
+                .workspaces
+                .get(i)
+                .map_or(InputOutcome::Continue, |summary| {
+                    InputOutcome::LaunchNamed(summary.name.clone())
+                })),
         },
         KeyCode::Char('e' | 'E') => {
             match state.selected_row() {
@@ -602,10 +601,14 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
         return;
     };
 
+    // Read the "all" state via the shared helper before taking the mutable
+    // borrow on `allowed_agents` below — Rust borrow rules bar the call
+    // otherwise. See `super::agent_allow` for the shorthand rule.
+    let is_all_mode = super::agent_allow::allows_all_agents(&editor.pending);
     let list = &mut editor.pending.allowed_agents;
     let in_list = list.iter().position(|a| a == agent);
 
-    if list.is_empty() {
+    if is_all_mode {
         // "all" mode → effective-allowed. Demote to "custom" without this
         // agent by enumerating the full roster minus the current row.
         *list = agent_names
@@ -1115,7 +1118,7 @@ fn mount_summary(m: &crate::workspace::MountConfig) -> String {
 /// workspace lets every configured agent run, otherwise a comma-separated
 /// list.
 fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {
-    if editor.pending.allowed_agents.is_empty() {
+    if super::agent_allow::allows_all_agents(&editor.pending) {
         return format!("any ({} agents)", config.agents.len());
     }
     editor.pending.allowed_agents.join(", ")

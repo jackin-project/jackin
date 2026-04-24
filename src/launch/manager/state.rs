@@ -329,12 +329,13 @@ impl ManagerState<'_> {
             .collect();
 
         let saved_count = workspaces.len();
-        let selected = crate::app::context::find_saved_workspace_for_cwd(config, cwd)
-            .and_then(|(name, _)| workspaces.iter().position(|w| w.name == name))
-            .map_or(
-                ManagerListRow::CurrentDirectory.to_screen_index(saved_count),
-                |idx| ManagerListRow::SavedWorkspace(idx).to_screen_index(saved_count),
-            );
+        let matching_saved = crate::app::context::find_saved_workspace_for_cwd(config, cwd)
+            .and_then(|(name, _)| workspaces.iter().position(|w| w.name == name));
+        let selected_row = matching_saved.map_or(
+            ManagerListRow::CurrentDirectory,
+            ManagerListRow::SavedWorkspace,
+        );
+        let selected = selected_row.to_screen_index(saved_count);
 
         Self {
             stage: ManagerStage::List,
@@ -349,20 +350,20 @@ impl ManagerState<'_> {
 
     /// Total number of rows in the list (current-dir + saved + sentinel).
     #[must_use]
-    pub fn row_count(&self) -> usize {
+    pub const fn row_count(&self) -> usize {
         self.workspaces.len() + 2
     }
 
     /// Index of the "+ New workspace" sentinel row.
     #[must_use]
-    pub fn new_workspace_row_index(&self) -> usize {
+    pub const fn new_workspace_row_index(&self) -> usize {
         self.workspaces.len() + 1
     }
 
     /// Decode a raw screen-row `usize` into a [`ManagerListRow`]. Returns
     /// `None` when `idx` is out of range.
     #[must_use]
-    pub fn row_at(&self, idx: usize) -> Option<ManagerListRow> {
+    pub const fn row_at(&self, idx: usize) -> Option<ManagerListRow> {
         let saved_count = self.workspaces.len();
         if idx == 0 {
             Some(ManagerListRow::CurrentDirectory)
