@@ -91,12 +91,23 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
 
     frame.render_widget(&ta, chunks[0]);
 
-    let hint = Span::styled(
-        "Enter confirm · Esc cancel",
-        Style::default()
-            .fg(Color::Rgb(0, 140, 30))
-            .add_modifier(Modifier::ITALIC),
-    );
+    // Footer legend — same key/text/sep scheme as the main TUI footer:
+    //   Key      = WHITE + BOLD
+    //   Text     = PHOSPHOR_GREEN
+    //   Sep (·)  = PHOSPHOR_DARK
+    let hint = ratatui::text::Line::from(vec![
+        Span::styled(
+            "Enter",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" confirm", Style::default().fg(PHOSPHOR_GREEN)),
+        Span::styled(" \u{b7} ", Style::default().fg(Color::Rgb(0, 80, 18))),
+        Span::styled(
+            "Esc",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" cancel", Style::default().fg(PHOSPHOR_GREEN)),
+    ]);
     frame.render_widget(Paragraph::new(hint), chunks[1]);
 }
 

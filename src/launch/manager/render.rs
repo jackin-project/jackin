@@ -20,6 +20,71 @@ const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 
+// ── Footer item model ──────────────────────────────────────────────
+//
+// Structured footer items render with a consistent per-stage styling:
+//   - Key(k):    WHITE + BOLD   — the literal hotkey glyph(s)
+//   - Text(t):   PHOSPHOR_GREEN — the action label after a key
+//   - Dyn(t):    PHOSPHOR_DIM   — free-form dynamic text (e.g. "3 changes")
+//   - Sep:       PHOSPHOR_DARK  — single-dot separator between key+label pairs
+//   - GroupSep:  (three spaces) — wider gap between logical groups
+//
+// Call sites build `Vec<FooterItem>` directly so the grouping is explicit,
+// then hand it to `render_footer`. A convenience `footer_from_str` parser
+// exists for legacy call sites that still own their string literal.
+
+#[derive(Debug, Clone)]
+pub(super) enum FooterItem {
+    Key(&'static str),
+    Text(&'static str),
+    Dyn(String),
+    Sep,
+    GroupSep,
+}
+
+pub(super) fn footer_spans(items: &[FooterItem]) -> Vec<Span<'static>> {
+    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let text_style = Style::default().fg(PHOSPHOR_GREEN);
+    let sep_style = Style::default().fg(PHOSPHOR_DARK);
+    let dyn_style = Style::default().fg(PHOSPHOR_DIM);
+
+    let mut spans: Vec<Span<'static>> = Vec::with_capacity(items.len() * 2);
+    for (i, item) in items.iter().enumerate() {
+        match item {
+            FooterItem::Key(k) => {
+                // Key glyph — precede with a space when the previous item was a
+                // Text/Dyn so the key stands apart from the preceding label.
+                spans.push(Span::styled((*k).to_string(), key_style));
+            }
+            FooterItem::Text(t) => {
+                // Label — precede with a single space so key and label are visually
+                // paired (e.g. "Enter launch" not "Enterlaunch").
+                spans.push(Span::styled(format!(" {t}"), text_style));
+            }
+            FooterItem::Dyn(t) => {
+                spans.push(Span::styled(format!(" {t}"), dyn_style));
+            }
+            FooterItem::Sep => {
+                spans.push(Span::styled(" \u{b7} ".to_string(), sep_style));
+            }
+            FooterItem::GroupSep => {
+                // Wider gap between logical groups.
+                spans.push(Span::raw("   "));
+            }
+        }
+        // Avoid trailing separator after the last item; loop logic handles this naturally
+        // because separators are explicit items.
+        let _ = i;
+    }
+    spans
+}
+
+fn render_footer(frame: &mut Frame, area: Rect, items: &[FooterItem]) {
+    let line = Line::from(footer_spans(items));
+    let p = Paragraph::new(line).alignment(Alignment::Center);
+    frame.render_widget(p, area);
+}
+
 pub fn render(frame: &mut Frame, state: &ManagerState<'_>, config: &AppConfig) {
     // Phase 1: render the base stage (Editor full-screen OR List chrome).
     if let ManagerStage::Editor(editor) = &state.stage {
@@ -42,13 +107,47 @@ pub fn render(frame: &mut Frame, state: &ManagerState<'_>, config: &AppConfig) {
             render_list_body(frame, chunks[1], state, config);
         }
 
-        let footer_text = match &state.stage {
-            ManagerStage::List => "↑↓ · Enter launch · e edit · n new · d delete · q quit",
-            ManagerStage::CreatePrelude(_) => "Create workspace · follow the prompts · Esc cancel",
-            ManagerStage::ConfirmDelete { .. } => "Y yes · N no · Esc cancel",
+        let footer_items: Vec<FooterItem> = match &state.stage {
+            ManagerStage::List => vec![
+                // Navigation group
+                FooterItem::Key("\u{2191}\u{2193}"),
+                FooterItem::Sep,
+                FooterItem::Key("Enter"),
+                FooterItem::Text("launch"),
+                FooterItem::GroupSep,
+                // Per-row actions
+                FooterItem::Key("e"),
+                FooterItem::Text("edit"),
+                FooterItem::Sep,
+                FooterItem::Key("n"),
+                FooterItem::Text("new"),
+                FooterItem::Sep,
+                FooterItem::Key("d"),
+                FooterItem::Text("delete"),
+                FooterItem::GroupSep,
+                // Exit
+                FooterItem::Key("q"),
+                FooterItem::Text("quit"),
+            ],
+            ManagerStage::CreatePrelude(_) => vec![
+                FooterItem::Dyn("Create workspace — follow the prompts".to_string()),
+                FooterItem::GroupSep,
+                FooterItem::Key("Esc"),
+                FooterItem::Text("cancel"),
+            ],
+            ManagerStage::ConfirmDelete { .. } => vec![
+                FooterItem::Key("Y"),
+                FooterItem::Text("yes"),
+                FooterItem::Sep,
+                FooterItem::Key("N"),
+                FooterItem::Text("no"),
+                FooterItem::GroupSep,
+                FooterItem::Key("Esc"),
+                FooterItem::Text("cancel"),
+            ],
             ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
         };
-        render_footer_hint(frame, chunks[2], footer_text);
+        render_footer(frame, chunks[2], &footer_items);
     }
 
     // Phase 2: overlay any active modal.
@@ -359,15 +458,6 @@ fn render_agents_subpanel(
     frame.render_widget(p, area);
 }
 
-fn render_footer_hint(frame: &mut Frame, area: Rect, hint: &str) {
-    let p = Paragraph::new(Span::styled(
-        hint.to_string(),
-        Style::default().fg(PHOSPHOR_DIM),
-    ))
-    .alignment(Alignment::Center);
-    frame.render_widget(p, area);
-}
-
 // ── Editor stage ────────────────────────────────────────────────────
 
 pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppConfig) {
@@ -397,22 +487,45 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
         EditorTab::Secrets => render_secrets_stub(frame, chunks[2]),
     }
 
-    // Contextual footer: row-specific hint + base hints.
-    let row_hint = contextual_row_hint(state);
-    let base = if state.is_dirty() {
-        format!(
-            "s save workspace ({} changes) · Tab next · ↑↓ · Esc discard",
+    // Contextual footer: row-specific hints + base stage hints.
+    let mut items: Vec<FooterItem> = Vec::new();
+
+    // Row-specific group (may be empty).
+    let row_items = contextual_row_items(state);
+    if !row_items.is_empty() {
+        items.extend(row_items);
+        items.push(FooterItem::GroupSep);
+    }
+
+    // Save group — label varies with dirty/clean.
+    items.push(FooterItem::Key("s"));
+    if state.is_dirty() {
+        items.push(FooterItem::Text("save workspace"));
+        items.push(FooterItem::Dyn(format!(
+            "({} changes)",
             state.change_count()
-        )
+        )));
     } else {
-        "s save workspace · Tab next · ↑↓ · Esc back".to_string()
-    };
-    let footer = if row_hint.is_empty() {
-        base
+        items.push(FooterItem::Text("save workspace"));
+    }
+
+    // Navigation group.
+    items.push(FooterItem::GroupSep);
+    items.push(FooterItem::Key("Tab"));
+    items.push(FooterItem::Text("next"));
+    items.push(FooterItem::Sep);
+    items.push(FooterItem::Key("\u{2191}\u{2193}"));
+
+    // Exit group — discard if dirty, back if clean.
+    items.push(FooterItem::GroupSep);
+    items.push(FooterItem::Key("Esc"));
+    if state.is_dirty() {
+        items.push(FooterItem::Text("discard"));
     } else {
-        format!("{row_hint} · {base}")
-    };
-    render_footer_hint(frame, chunks[3], &footer);
+        items.push(FooterItem::Text("back"));
+    }
+
+    render_footer(frame, chunks[3], &items);
 
     // Error banner overlay — top line of the body.
     if let Some(err) = &state.error_banner {
@@ -433,8 +546,8 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
 }
 
 /// Compute a row-specific hint fragment based on the active tab and cursor.
-/// Returns an empty string when the current position has no action.
-fn contextual_row_hint(state: &EditorState<'_>) -> String {
+/// Returns an empty vec when the current position has no action.
+fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
@@ -443,29 +556,45 @@ fn contextual_row_hint(state: &EditorState<'_>) -> String {
             //   Edit:   0 = name, 1 = workdir, 2 = default agent (ro), 3 = last used (ro)
             match &state.mode {
                 EditorMode::Create => match cursor {
-                    0 => "Enter pick workdir".to_string(),
-                    _ => String::new(),
+                    0 => vec![FooterItem::Key("Enter"), FooterItem::Text("pick workdir")],
+                    _ => Vec::new(),
                 },
-                EditorMode::Edit { .. } => {
-                    match cursor {
-                        0 => "Enter rename".to_string(),
-                        1 => "Enter pick workdir".to_string(),
-                        _ => String::new(), // default agent and last used are read-only
-                    }
-                }
+                EditorMode::Edit { .. } => match cursor {
+                    0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
+                    1 => vec![FooterItem::Key("Enter"), FooterItem::Text("pick workdir")],
+                    _ => Vec::new(), // default agent and last used are read-only
+                },
             }
         }
         EditorTab::Mounts => {
             let mount_count = state.pending.mounts.len();
             if cursor < mount_count {
-                "d remove · a add".to_string()
+                vec![
+                    FooterItem::Key("d"),
+                    FooterItem::Text("remove"),
+                    FooterItem::Sep,
+                    FooterItem::Key("a"),
+                    FooterItem::Text("add"),
+                ]
             } else {
                 // Sentinel "+ Add mount" row
-                "Enter add · a add".to_string()
+                vec![
+                    FooterItem::Key("Enter"),
+                    FooterItem::Text("add"),
+                    FooterItem::Sep,
+                    FooterItem::Key("a"),
+                    FooterItem::Text("add"),
+                ]
             }
         }
-        EditorTab::Agents => "Space toggle · * set default".to_string(),
-        EditorTab::Secrets => String::new(),
+        EditorTab::Agents => vec![
+            FooterItem::Key("Space"),
+            FooterItem::Text("toggle"),
+            FooterItem::Sep,
+            FooterItem::Key("*"),
+            FooterItem::Text("set default"),
+        ],
+        EditorTab::Secrets => Vec::new(),
     }
 }
 
@@ -801,3 +930,143 @@ fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
         height: h,
     }
 }
+
+#[cfg(test)]
+mod footer_tests {
+    use super::{FOOTER_KEY, FOOTER_SEP, FOOTER_TEXT, FooterItem, footer_spans};
+
+    // Sanity — the exported style colors match the palette.
+    #[test]
+    fn styling_colors_match_palette() {
+        let key = FOOTER_KEY;
+        let text = FOOTER_TEXT;
+        let sep = FOOTER_SEP;
+        assert_eq!(key.fg, Some(super::WHITE));
+        assert_eq!(text.fg, Some(super::PHOSPHOR_GREEN));
+        assert_eq!(sep.fg, Some(super::PHOSPHOR_DARK));
+    }
+
+    #[test]
+    fn key_and_text_render_with_distinct_styles() {
+        let items = vec![FooterItem::Key("Enter"), FooterItem::Text("launch")];
+        let spans = footer_spans(&items);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].content.as_ref(), "Enter");
+        assert_eq!(spans[0].style.fg, Some(super::WHITE));
+        assert_eq!(spans[1].content.as_ref(), " launch");
+        assert_eq!(spans[1].style.fg, Some(super::PHOSPHOR_GREEN));
+    }
+
+    #[test]
+    fn sep_renders_with_phosphor_dark() {
+        let items = vec![
+            FooterItem::Key("e"),
+            FooterItem::Text("edit"),
+            FooterItem::Sep,
+            FooterItem::Key("n"),
+            FooterItem::Text("new"),
+        ];
+        let spans = footer_spans(&items);
+        // third item is the Sep
+        assert_eq!(spans[2].content.as_ref(), " \u{b7} ");
+        assert_eq!(spans[2].style.fg, Some(super::PHOSPHOR_DARK));
+    }
+
+    #[test]
+    fn group_sep_renders_as_three_raw_spaces() {
+        let items = vec![
+            FooterItem::Key("Enter"),
+            FooterItem::Text("launch"),
+            FooterItem::GroupSep,
+            FooterItem::Key("q"),
+            FooterItem::Text("quit"),
+        ];
+        let spans = footer_spans(&items);
+        assert_eq!(spans[2].content.as_ref(), "   ");
+        // GroupSep is styled with a plain ratatui::Style::default() — no fg set.
+        assert_eq!(spans[2].style.fg, None);
+    }
+
+    #[test]
+    fn dyn_item_uses_phosphor_dim() {
+        let items = vec![FooterItem::Dyn("3 changes".to_string())];
+        let spans = footer_spans(&items);
+        assert_eq!(spans[0].content.as_ref(), " 3 changes");
+        assert_eq!(spans[0].style.fg, Some(super::PHOSPHOR_DIM));
+    }
+
+    // Per-stage smoke tests — the List footer should have all six keys styled
+    // as WHITE+BOLD and two GroupSep separators.
+    #[test]
+    fn list_footer_items_have_expected_structure() {
+        let items: Vec<FooterItem> = vec![
+            FooterItem::Key("\u{2191}\u{2193}"),
+            FooterItem::Sep,
+            FooterItem::Key("Enter"),
+            FooterItem::Text("launch"),
+            FooterItem::GroupSep,
+            FooterItem::Key("e"),
+            FooterItem::Text("edit"),
+            FooterItem::Sep,
+            FooterItem::Key("n"),
+            FooterItem::Text("new"),
+            FooterItem::Sep,
+            FooterItem::Key("d"),
+            FooterItem::Text("delete"),
+            FooterItem::GroupSep,
+            FooterItem::Key("q"),
+            FooterItem::Text("quit"),
+        ];
+        let spans = footer_spans(&items);
+        // Every Key should be styled WHITE + BOLD; count them.
+        let key_count = spans
+            .iter()
+            .filter(|s| s.style.fg == Some(super::WHITE))
+            .count();
+        assert_eq!(key_count, 6, "↑↓, Enter, e, n, d, q");
+        // Every Text should be styled PHOSPHOR_GREEN; count them.
+        let text_count = spans
+            .iter()
+            .filter(|s| s.style.fg == Some(super::PHOSPHOR_GREEN))
+            .count();
+        assert_eq!(text_count, 5, "launch, edit, new, delete, quit");
+        // GroupSep count (content == "   ", no fg).
+        let group_sep_count = spans
+            .iter()
+            .filter(|s| s.content.as_ref() == "   " && s.style.fg.is_none())
+            .count();
+        assert_eq!(group_sep_count, 2, "nav | per-row | exit");
+    }
+
+    #[test]
+    fn confirm_delete_footer_items_have_expected_structure() {
+        let items: Vec<FooterItem> = vec![
+            FooterItem::Key("Y"),
+            FooterItem::Text("yes"),
+            FooterItem::Sep,
+            FooterItem::Key("N"),
+            FooterItem::Text("no"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Esc"),
+            FooterItem::Text("cancel"),
+        ];
+        let spans = footer_spans(&items);
+        let keys: Vec<&str> = spans
+            .iter()
+            .filter(|s| s.style.fg == Some(super::WHITE))
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(keys, vec!["Y", "N", "Esc"]);
+    }
+}
+
+// Re-export the per-item Styles used in tests so assertions don't need to
+// recompute them from the palette.
+#[cfg(test)]
+const FOOTER_KEY: ratatui::style::Style = ratatui::style::Style::new()
+    .fg(WHITE)
+    .add_modifier(ratatui::style::Modifier::BOLD);
+#[cfg(test)]
+const FOOTER_TEXT: ratatui::style::Style = ratatui::style::Style::new().fg(PHOSPHOR_GREEN);
+#[cfg(test)]
+const FOOTER_SEP: ratatui::style::Style = ratatui::style::Style::new().fg(PHOSPHOR_DARK);

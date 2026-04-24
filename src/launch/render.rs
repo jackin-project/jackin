@@ -16,7 +16,6 @@ pub(super) mod colors {
     pub const DETAIL_BORDER: Color = Color::Rgb(60, 75, 90); // details panel border
     pub const DETAIL_BG: Color = Color::Rgb(15, 17, 25); // details panel background
     pub const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65); // highlight
-    pub const DIM_GREEN: Color = Color::Rgb(0, 140, 30); // footer hints
     pub const WHITE: Color = Color::Rgb(255, 255, 255);
     pub const DIM_WHITE: Color = Color::Rgb(180, 180, 180);
     pub const PATH: Color = Color::Rgb(220, 190, 120); // paths (warm amber)
@@ -209,39 +208,34 @@ pub(super) fn draw_agent_screen(
 
 fn render_agent_footer(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
     use ratatui::layout::Alignment;
-    use ratatui::style::{Modifier, Style};
+    use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
 
+    // Match the workspace-manager footer scheme:
+    //   Key      — WHITE + BOLD
+    //   Text     — PHOSPHOR_GREEN
+    //   Sep (·)  — PHOSPHOR_DARK (very dim green)
+    //   GroupSep — three raw spaces between logical groups
+    const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
+    let key_style = Style::default()
+        .fg(colors::WHITE)
+        .add_modifier(Modifier::BOLD);
+    let text_style = Style::default().fg(colors::PHOSPHOR_GREEN);
+    let sep_style = Style::default().fg(PHOSPHOR_DARK);
+
     let footer = Paragraph::new(Line::from(vec![
-        Span::styled(
-            "  Enter ",
-            Style::default()
-                .fg(colors::PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("load   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled(
-            "↑↓ ",
-            Style::default()
-                .fg(colors::PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("navigate   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled(
-            "Type ",
-            Style::default()
-                .fg(colors::PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("to filter   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled(
-            "Esc ",
-            Style::default()
-                .fg(colors::PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("back", Style::default().fg(colors::DIM_GREEN)),
+        Span::styled("Enter", key_style),
+        Span::styled(" load", text_style),
+        Span::styled(" \u{b7} ", sep_style),
+        Span::styled("\u{2191}\u{2193}", key_style),
+        Span::styled(" navigate", text_style),
+        Span::raw("   "),
+        Span::styled("Type", key_style),
+        Span::styled(" to filter", text_style),
+        Span::raw("   "),
+        Span::styled("Esc", key_style),
+        Span::styled(" back", text_style),
     ]))
     .alignment(Alignment::Center);
     frame.render_widget(footer, area);

@@ -74,7 +74,6 @@ use ratatui::{
 pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
     let phosphor = Color::Rgb(0, 255, 65);
     let white = Color::Rgb(255, 255, 255);
-    let dim = Color::Rgb(0, 140, 30);
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -146,12 +145,27 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
         chunks[2],
     );
 
-    // Hint
+    // Hint — same key/text/sep scheme as the main TUI footer.
+    let key_style = Style::default().fg(white).add_modifier(Modifier::BOLD);
+    let text_style = Style::default().fg(phosphor);
+    let sep_style = Style::default().fg(Color::Rgb(0, 80, 18));
     frame.render_widget(
-        Paragraph::new(Span::styled(
-            "Tab cycle · Enter commit · S save · D discard · C/Esc cancel",
-            Style::default().fg(dim).add_modifier(Modifier::ITALIC),
-        ))
+        Paragraph::new(Line::from(vec![
+            Span::styled("Tab", key_style),
+            Span::styled(" cycle", text_style),
+            Span::styled(" \u{b7} ", sep_style),
+            Span::styled("Enter", key_style),
+            Span::styled(" commit", text_style),
+            Span::raw("   "),
+            Span::styled("S", key_style),
+            Span::styled(" save", text_style),
+            Span::styled(" \u{b7} ", sep_style),
+            Span::styled("D", key_style),
+            Span::styled(" discard", text_style),
+            Span::styled(" \u{b7} ", sep_style),
+            Span::styled("C/Esc", key_style),
+            Span::styled(" cancel", text_style),
+        ]))
         .alignment(Alignment::Center),
         chunks[4],
     );

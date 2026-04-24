@@ -167,7 +167,6 @@ use ratatui::{
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const WHITE: Color = Color::Rgb(255, 255, 255);
-const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 
 /// Height (rows) this Confirm modal wants, given its current prompt text.
 /// Layout is: N prompt lines + 1 spacer + 1 buttons + 1 spacer + 1 hint.
@@ -259,13 +258,28 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
         chunks[2],
     );
 
-    // Footer hint — dim italic keyboard legend.
-    let hint = Paragraph::new(Span::styled(
-        "Tab cycle · Enter confirm · Y yes · N no · Esc cancel",
-        Style::default()
-            .fg(PHOSPHOR_DIM)
-            .add_modifier(Modifier::ITALIC),
-    ))
+    // Footer hint — same key/text/sep scheme as the main TUI footer.
+    let key = Style::default()
+        .fg(Color::Rgb(255, 255, 255))
+        .add_modifier(Modifier::BOLD);
+    let text = Style::default().fg(Color::Rgb(0, 255, 65));
+    let sep = Style::default().fg(Color::Rgb(0, 80, 18));
+    let hint = Paragraph::new(ratatui::text::Line::from(vec![
+        Span::styled("Tab", key),
+        Span::styled(" cycle", text),
+        Span::styled(" \u{b7} ", sep),
+        Span::styled("Enter", key),
+        Span::styled(" confirm", text),
+        Span::raw("   "),
+        Span::styled("Y", key),
+        Span::styled(" yes", text),
+        Span::styled(" \u{b7} ", sep),
+        Span::styled("N", key),
+        Span::styled(" no", text),
+        Span::raw("   "),
+        Span::styled("Esc", key),
+        Span::styled(" cancel", text),
+    ]))
     .alignment(Alignment::Center);
     frame.render_widget(hint, chunks[4]);
 }

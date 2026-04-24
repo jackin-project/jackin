@@ -227,14 +227,22 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
         .constraints(constraints)
         .split(area);
 
-    // Affordance
+    // Affordance — match the footer key/label scheme:
+    //   Key ("[S]") = WHITE + BOLD; surrounding prose = PHOSPHOR_GREEN.
     frame.render_widget(
-        Paragraph::new(Span::styled(
-            "press [S] to use this folder",
-            Style::default()
-                .fg(Color::Rgb(255, 255, 255))
-                .add_modifier(Modifier::BOLD),
-        ))
+        Paragraph::new(ratatui::text::Line::from(vec![
+            Span::styled("press ", Style::default().fg(Color::Rgb(0, 255, 65))),
+            Span::styled(
+                "[S]",
+                Style::default()
+                    .fg(Color::Rgb(255, 255, 255))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " to use this folder",
+                Style::default().fg(Color::Rgb(0, 255, 65)),
+            ),
+        ]))
         .alignment(Alignment::Center),
         chunks[0],
     );
@@ -258,13 +266,29 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 
     frame.render_widget_ref(state.explorer.widget(), chunks[explorer_idx]);
 
+    // Footer legend — same scheme as the main TUI footer.
+    let key = Style::default()
+        .fg(Color::Rgb(255, 255, 255))
+        .add_modifier(Modifier::BOLD);
+    let text = Style::default().fg(Color::Rgb(0, 255, 65));
+    let sep = Style::default().fg(Color::Rgb(0, 80, 18));
     frame.render_widget(
-        Paragraph::new(Span::styled(
-            "\u{2191}\u{2193} navigate \u{b7} Enter open \u{b7} h/\u{2190} up \u{b7} s select \u{b7} Esc cancel",
-            Style::default()
-                .fg(Color::Rgb(0, 140, 30))
-                .add_modifier(Modifier::ITALIC),
-        ))
+        Paragraph::new(ratatui::text::Line::from(vec![
+            Span::styled("\u{2191}\u{2193}", key),
+            Span::styled(" navigate", text),
+            Span::styled(" \u{b7} ", sep),
+            Span::styled("Enter", key),
+            Span::styled(" open", text),
+            Span::styled(" \u{b7} ", sep),
+            Span::styled("h/\u{2190}", key),
+            Span::styled(" up", text),
+            Span::raw("   "),
+            Span::styled("s", key),
+            Span::styled(" select", text),
+            Span::raw("   "),
+            Span::styled("Esc", key),
+            Span::styled(" cancel", text),
+        ]))
         .alignment(Alignment::Center),
         chunks[chunks.len() - 1],
     );
