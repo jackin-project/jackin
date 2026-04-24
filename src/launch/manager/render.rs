@@ -263,10 +263,11 @@ fn render_list_body(
     }
 
     // Left: [Current directory] + saved workspaces + [+ New workspace].
-    let cwd_short = crate::tui::shorten_home(&cwd.display().to_string());
+    // The cwd path itself is shown on the right-pane `workdir` line; keep the
+    // list row label short to avoid duplicate visual load.
     let mut items: Vec<ListItem> = Vec::with_capacity(saved_count + 2);
     items.push(ListItem::new(Line::from(Span::styled(
-        format!("Current directory ({cwd_short})"),
+        "Current directory",
         Style::default().fg(WHITE),
     ))));
     items.extend(
