@@ -456,14 +456,11 @@ impl FileBrowserState {
     }
 }
 
-pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
-    use ratatui::layout::{Alignment, Constraint, Direction, Layout};
-
-    frame.render_widget(ratatui::widgets::Clear, area);
-
-    // Layout: [optional rejection banner][listing][nav hint].
-    let has_rejection = state.rejected_reason.is_some();
-    let constraints: Vec<Constraint> = if has_rejection {
+/// Vertical-layout constraints used by `render` and by the geometry-only
+/// helpers consumed by the mouse-click hit-tester. Keep these in sync.
+fn render_constraints(has_rejection: bool) -> Vec<ratatui::layout::Constraint> {
+    use ratatui::layout::Constraint;
+    if has_rejection {
         vec![
             Constraint::Length(1),
             Constraint::Min(3),
@@ -471,7 +468,108 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
         ]
     } else {
         vec![Constraint::Min(3), Constraint::Length(1)]
-    };
+    }
+}
+
+/// Rect of the listing area inside the modal.
+///
+/// This is the same chunk that `render` passes to `render_listing` and
+/// anchors `render_git_prompt` on. Exposed so a mouse-handler can
+/// recompute the git-prompt overlay geometry without needing `&mut`
+/// access at render time.
+pub fn listing_rect(modal_area: Rect, has_rejection: bool) -> Rect {
+    use ratatui::layout::{Direction, Layout};
+    let constraints = render_constraints(has_rejection);
+    let listing_idx = usize::from(has_rejection);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(modal_area);
+    chunks[listing_idx]
+}
+
+/// Rect of the git-repo prompt overlay, mirroring the geometry in
+/// `render_git_prompt`. Returns `None` when the overlay would exceed the
+/// listing area.
+pub fn git_prompt_rect(listing: Rect, has_url: bool) -> Option<Rect> {
+    let w = listing.width.saturating_sub(4).min(80);
+    let base_h: u16 = if has_url { 8 } else { 7 };
+    let h = base_h.min(listing.height);
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let x = listing.x + listing.width.saturating_sub(w) / 2;
+    let y = listing.y + listing.height.saturating_sub(h) / 2;
+    Some(Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    })
+}
+
+/// Rect of the URL row inside the git-prompt overlay, in absolute
+/// screen coordinates. Returns `None` when `has_url` is false — the
+/// URL row isn't rendered then and a click there shouldn't open anything.
+///
+/// Row order inside the overlay's inner (borders stripped) body is
+/// `[prompt][url?][spacer][buttons][spacer][hint]`, all Length(1). So the
+/// URL row sits at `inner.y + 1 = overlay.y + 1 (top border) + 1 = overlay.y + 2`.
+pub fn git_prompt_url_row_rect(modal_area: Rect, has_rejection: bool) -> Option<Rect> {
+    let listing = listing_rect(modal_area, has_rejection);
+    let overlay = git_prompt_rect(listing, true)?;
+    // Need at least borders + prompt + url rows — otherwise the URL row
+    // got clipped by the parent's height.
+    if overlay.height < 3 {
+        return None;
+    }
+    // Inside the block: strip the borders, then take row index 1.
+    let inner_x = overlay.x + 1;
+    let inner_width = overlay.width.saturating_sub(2);
+    let url_y = overlay.y + 2;
+    Some(Rect {
+        x: inner_x,
+        y: url_y,
+        width: inner_width,
+        height: 1,
+    })
+}
+
+impl FileBrowserState {
+    /// Handle a left-click at `(column, row)` in absolute terminal
+    /// coordinates while `modal_area` hosts this browser. Returns `true`
+    /// iff the click hit the git-prompt's URL row AND `pending_git_url`
+    /// is resolved — in which case `open::that_detached` has been fired
+    /// best-effort (errors are swallowed; see the `O` hotkey handler for
+    /// the parallel rationale). A `true` return doesn't dismiss the
+    /// prompt, matching the keyboard keypath.
+    pub fn maybe_open_url_on_click(&self, modal_area: Rect, column: u16, row: u16) -> bool {
+        if self.pending_git_prompt.is_none() {
+            return false;
+        }
+        let Some(url) = self.pending_git_url.as_deref() else {
+            return false;
+        };
+        let has_rejection = self.rejected_reason.is_some();
+        let Some(url_rect) = git_prompt_url_row_rect(modal_area, has_rejection) else {
+            return false;
+        };
+        if column < url_rect.x || column >= url_rect.x + url_rect.width || row != url_rect.y {
+            return false;
+        }
+        let _ = open::that_detached(url);
+        true
+    }
+}
+
+pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
+    use ratatui::layout::{Alignment, Direction, Layout};
+
+    frame.render_widget(ratatui::widgets::Clear, area);
+
+    // Layout: [optional rejection banner][listing][nav hint].
+    let has_rejection = state.rejected_reason.is_some();
+    let constraints = render_constraints(has_rejection);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
@@ -1329,15 +1427,15 @@ mod tests {
         let line = git_prompt_hint(false);
         let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
-            !rendered.contains("O"),
+            !rendered.contains('O'),
             "hint should not mention O when no URL: {rendered:?}"
         );
         assert!(
             !rendered.contains("open"),
             "hint should not mention 'open' when no URL: {rendered:?}"
         );
-        assert!(rendered.contains("M"));
-        assert!(rendered.contains("P"));
+        assert!(rendered.contains('M'));
+        assert!(rendered.contains('P'));
         assert!(rendered.contains("C/Esc"));
     }
 
@@ -1346,7 +1444,7 @@ mod tests {
         let line = git_prompt_hint(true);
         let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
-            rendered.contains("O"),
+            rendered.contains('O'),
             "hint should mention O when URL resolved: {rendered:?}"
         );
         assert!(
@@ -1354,8 +1452,121 @@ mod tests {
             "hint should mention 'open' when URL resolved: {rendered:?}"
         );
         // Still preserves the other segments + trailing cancel.
-        assert!(rendered.contains("M"));
-        assert!(rendered.contains("P"));
+        assert!(rendered.contains('M'));
+        assert!(rendered.contains('P'));
         assert!(rendered.contains("C/Esc"));
+    }
+
+    // ── Mouse-click hit-testing on the URL row ────────────────────────
+
+    /// Reference geometry: a 70%-wide, 22-row `modal_area` at term 120x40
+    /// gives `modal_area = Rect { x: 18, y: 9, width: 84, height: 22 }`.
+    /// The listing chunk (no rejection) = `modal_area` minus a 1-row footer
+    /// = `Rect { x: 18, y: 9, width: 84, height: 21 }`. Git-prompt overlay
+    /// width = `min(84-4, 80) = 80`, height = 8 (`has_url = true`), centered
+    /// inside listing → rect x ≈ 20, y = 9 + (21-8)/2 = 15. URL row sits
+    /// at y + 2 = 17.
+    fn manufactured_modal_area() -> Rect {
+        // Mirrors `file_browser_modal_rect` for a term of 120x40:
+        //   w = 120 * 70 / 100 = 84; h = 22.
+        //   x = 0 + (120 - 84)/2 = 18; y = 0 + (40 - 22)/2 = 9.
+        Rect {
+            x: 18,
+            y: 9,
+            width: 84,
+            height: 22,
+        }
+    }
+
+    #[test]
+    fn url_row_rect_none_when_no_url_flag() {
+        // The public helper is parameterised on has_rejection; it always
+        // assumes the git-prompt would render with a URL. This test pins
+        // the returned rect when the overlay would have a URL row.
+        let rect = git_prompt_url_row_rect(manufactured_modal_area(), false);
+        assert!(rect.is_some(), "URL row should resolve for a valid modal");
+    }
+
+    #[test]
+    fn click_on_url_row_without_url_returns_false() {
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
+        state.handle_key(key(KeyCode::Down));
+        state.handle_key(key(KeyCode::Enter));
+        assert!(state.pending_git_prompt.is_some());
+        assert!(state.pending_git_url.is_none());
+
+        // Click at the URL row's rough centre — still false because no URL.
+        let modal = manufactured_modal_area();
+        let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
+        let opened =
+            state.maybe_open_url_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y);
+        assert!(!opened, "click should not open when no URL is resolved");
+    }
+
+    #[test]
+    fn click_outside_url_row_returns_false_even_with_url() {
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
+        state.handle_key(key(KeyCode::Down));
+        state.handle_key(key(KeyCode::Enter));
+        state.pending_git_url = Some("file:///tmp/definitely-not-real".to_string());
+
+        let modal = manufactured_modal_area();
+        let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
+        // One row below the URL row — outside.
+        let opened =
+            state.maybe_open_url_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y + 1);
+        assert!(!opened, "click outside URL row should not open");
+        // Column outside the URL row's x-range.
+        let opened = state.maybe_open_url_on_click(
+            modal, modal.x, // left border column
+            url_rect.y,
+        );
+        assert!(!opened, "click on left border should not open");
+    }
+
+    #[test]
+    fn click_on_url_row_with_url_returns_true() {
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
+        state.handle_key(key(KeyCode::Down));
+        state.handle_key(key(KeyCode::Enter));
+        state.pending_git_url = Some("file:///tmp/definitely-not-real".to_string());
+
+        let modal = manufactured_modal_area();
+        let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
+        let opened =
+            state.maybe_open_url_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y);
+        assert!(opened, "click on URL row with URL should return true");
+        // Click doesn't dismiss the prompt.
+        assert!(state.pending_git_prompt.is_some());
+    }
+
+    #[test]
+    fn click_when_no_git_prompt_is_active_returns_false() {
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        std::fs::create_dir(&parent).unwrap();
+        let state = state_rooted_at(tmp.path().to_path_buf(), parent);
+        assert!(state.pending_git_prompt.is_none());
+
+        let modal = manufactured_modal_area();
+        let url_rect = git_prompt_url_row_rect(modal, false).unwrap();
+        let opened =
+            state.maybe_open_url_on_click(modal, url_rect.x + url_rect.width / 2, url_rect.y);
+        assert!(!opened, "click without active git prompt should be inert");
     }
 }

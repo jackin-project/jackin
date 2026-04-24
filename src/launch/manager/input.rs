@@ -957,31 +957,38 @@ const LIST_FOOTER_HEIGHT: u16 = 2;
 /// the mouse-draggable seam between the list pane and the details pane.
 ///
 /// Behaviour:
-/// - Ignores events on any stage other than `ManagerStage::List`.
-/// - Ignores events while a list-level modal is open (e.g. `GithubPicker`).
+/// - On `ManagerStage::List` with no list-level modal open: drives the
+///   list/details seam drag (anchor + drag + release) and click-to-select.
+/// - On `ManagerStage::Editor` / `CreatePrelude` with a `FileBrowser` modal
+///   whose git-prompt overlay is active AND has a resolved URL: a
+///   `Down(Left)` on the URL row fires `open::that_detached` best-effort.
 /// - Ignores everything when the terminal is narrower than
 ///   [`MIN_DRAGGABLE_WIDTH`] — drag bounds would be absurd.
-/// - `Down(Left)` within [`SEAM_HIT_SLACK`] of the current seam column
-///   captures the drag anchor on `state.drag_state`.
-/// - `Drag(Left)` with an active anchor updates `state.list_split_pct`,
-///   clamped via [`clamp_split`].
-/// - `Up(Left)` clears the anchor.
 /// - All other events are ignored.
 ///
 /// The caller (run-loop in `src/launch/mod.rs`) is responsible for
 /// passing the current `terminal.size()?` as `term_size` so the handler
 /// can compute the seam column as `term_size.width * list_split_pct / 100`.
 pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
-    // Stage + modal gate. Only the List view participates in drag; the
-    // Editor, CreatePrelude and ConfirmDelete stages ignore mouse events
-    // entirely for this PR.
+    if term_size.width < MIN_DRAGGABLE_WIDTH {
+        return;
+    }
+
+    // Editor / CreatePrelude file-browser URL click: only on Down(Left),
+    // only when the modal is a FileBrowser with a resolved git URL.
+    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+        && try_open_file_browser_git_url(state, mouse, term_size)
+    {
+        return;
+    }
+
+    // Stage + modal gate for the list-view seam drag. Only the List view
+    // participates in drag; the Editor, CreatePrelude and ConfirmDelete
+    // stages only observe the URL-click path above.
     if !matches!(state.stage, ManagerStage::List) {
         return;
     }
     if state.list_modal.is_some() {
-        return;
-    }
-    if term_size.width < MIN_DRAGGABLE_WIDTH {
         return;
     }
 
@@ -1015,6 +1022,50 @@ pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
         }
         _ => {}
     }
+}
+
+/// Compute the `FileBrowser` modal's outer rect, mirroring
+/// `render::render_modal`'s `centered_rect_fixed(area, 70, 22)` for
+/// `Modal::FileBrowser`. Inlined here to avoid adding a cross-module pub
+/// helper for one call-site; if another modal ever needs mouse hit-testing
+/// we can lift this into a shared module.
+fn file_browser_modal_rect(term_size: Rect) -> Rect {
+    let pct_w: u16 = 70;
+    let rows: u16 = 22;
+    let w = term_size.width * pct_w / 100;
+    let h = rows.min(term_size.height);
+    Rect {
+        x: term_size.x + term_size.width.saturating_sub(w) / 2,
+        y: term_size.y + term_size.height.saturating_sub(h) / 2,
+        width: w,
+        height: h,
+    }
+}
+
+/// If the `Editor` or `CreatePrelude` stage has an open `FileBrowser`
+/// whose git-prompt is active with a resolved URL, and the click lands
+/// on the URL row, fire `open::that_detached` best-effort. Returns
+/// `true` iff the click was consumed (URL opened). Non-matching stages,
+/// non-click events, and clicks outside the URL row all return `false`
+/// and the caller falls through to the list-view handler.
+fn try_open_file_browser_git_url(
+    state: &ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
+    let fb_state: &FileBrowserState = match &state.stage {
+        ManagerStage::Editor(editor) => match editor.modal.as_ref() {
+            Some(Modal::FileBrowser { state, .. }) => state,
+            _ => return false,
+        },
+        ManagerStage::CreatePrelude(prelude) => match prelude.modal.as_ref() {
+            Some(Modal::FileBrowser { state, .. }) => state,
+            _ => return false,
+        },
+        _ => return false,
+    };
+    let modal_area = file_browser_modal_rect(term_size);
+    fb_state.maybe_open_url_on_click(modal_area, mouse.column, mouse.row)
 }
 
 /// Return the list-row index the mouse is over, or `None` if the click
@@ -2929,6 +2980,121 @@ mod mouse_drag_tests {
             mouse(MouseEventKind::Down(MouseButton::Left), 13),
             term(30),
         );
+        assert!(state.drag_state.is_none());
+    }
+
+    // ── File-browser URL-click integration ─────────────────────────────
+    //
+    // When a FileBrowser modal with a git-prompt + resolved URL is open
+    // during the Editor or CreatePrelude stages, Down(Left) on the URL
+    // row must be consumed by the open-URL path (best-effort; silent on
+    // failure) — observable side-effect: the drag-anchor never latches.
+
+    /// Term of 120x40 ⇒ FileBrowser modal at (18, 9, 84, 22); URL row at
+    /// y = 17, column range ≈ 19..=100. Mirrors the reference geometry
+    /// used in `file_browser::tests::manufactured_modal_area`.
+    fn term_120x40() -> Rect {
+        Rect {
+            x: 0,
+            y: 0,
+            width: 120,
+            height: 40,
+        }
+    }
+
+    /// Mouse event at `(col, row)`, left-button Down.
+    const fn mouse_down_at(col: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
+        use crate::launch::manager::state::CreatePreludeState;
+        use crate::launch::widgets::file_browser::FileBrowserState;
+        let mut state = list_state();
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        // Build a FileBrowser at `parent`, select the repo, open git prompt,
+        // and inject a URL so the URL row renders.
+        let mut fb = FileBrowserState::new_at(tmp.path().to_path_buf(), parent);
+        fb.handle_key(crossterm::event::KeyEvent {
+            code: crossterm::event::KeyCode::Down,
+            modifiers: KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        });
+        fb.handle_key(crossterm::event::KeyEvent {
+            code: crossterm::event::KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        });
+        fb.pending_git_url = Some("file:///tmp/unreachable".to_string());
+
+        let prelude = CreatePreludeState {
+            modal: Some(Modal::FileBrowser {
+                target: crate::launch::manager::state::FileBrowserTarget::CreateFirstMountSrc,
+                state: fb,
+            }),
+            ..CreatePreludeState::default()
+        };
+        state.stage = ManagerStage::CreatePrelude(prelude);
+
+        // URL row at y = 17 for this term size; centre column ≈ 60.
+        handle_mouse(&mut state, mouse_down_at(60, 17), term_120x40());
+        // No drag latched — URL click is consumed before the seam path.
+        assert!(
+            state.drag_state.is_none(),
+            "URL click must not start a seam drag",
+        );
+    }
+
+    #[test]
+    fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
+        use crate::launch::manager::state::CreatePreludeState;
+        use crate::launch::widgets::file_browser::FileBrowserState;
+        let mut state = list_state();
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let mut fb = FileBrowserState::new_at(tmp.path().to_path_buf(), parent);
+        fb.handle_key(crossterm::event::KeyEvent {
+            code: crossterm::event::KeyCode::Down,
+            modifiers: KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        });
+        fb.handle_key(crossterm::event::KeyEvent {
+            code: crossterm::event::KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        });
+        fb.pending_git_url = Some("file:///tmp/unreachable".to_string());
+
+        let prelude = CreatePreludeState {
+            modal: Some(Modal::FileBrowser {
+                target: crate::launch::manager::state::FileBrowserTarget::CreateFirstMountSrc,
+                state: fb,
+            }),
+            ..CreatePreludeState::default()
+        };
+        state.stage = ManagerStage::CreatePrelude(prelude);
+
+        // Row 0 is well outside the URL row (17) and the modal entirely.
+        handle_mouse(&mut state, mouse_down_at(60, 0), term_120x40());
+        // CreatePrelude is not the List stage, so the list-drag path is
+        // also inert — no drag latched regardless of the URL branch.
         assert!(state.drag_state.is_none());
     }
 
