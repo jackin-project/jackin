@@ -1,7 +1,7 @@
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
 
-use agent::{HardlineArgs, LaunchArgs, LoadArgs};
+use agent::{ConsoleArgs, HardlineArgs, LaunchArgs, LoadArgs};
 use cleanup::{EjectArgs, PurgeArgs};
 
 pub(super) const HELP_STYLES: Styles = Styles::styled()
@@ -38,11 +38,21 @@ pub use config::{AuthCommand, ConfigCommand, MountCommand, TrustCommand};
 pub use workspace::WorkspaceCommand;
 
 /// Operator's CLI for orchestrating AI coding agents in isolated containers
+///
+/// Running `jackin` with no subcommand opens the operator console when
+/// stdout is attached to a reasonably-sized interactive terminal, and
+/// otherwise prints this help page (exit 0, silent). The flattened
+/// [`ConsoleArgs`] make `jackin --debug` equivalent to
+/// `jackin console --debug`.
 #[derive(Debug, Parser)]
 #[command(name = "jackin", version = env!("JACKIN_VERSION"), styles = HELP_STYLES, before_help = BANNER)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
+    /// Top-level console args — carried through to the console runner when
+    /// no subcommand is given (i.e. bare `jackin`).
+    #[command(flatten)]
+    pub console_args: ConsoleArgs,
 }
 
 /// Top-level `jackin` subcommand dispatch.
@@ -66,6 +76,9 @@ pub enum Command {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
     Purge(PurgeArgs),
+    Console(ConsoleArgs),
+    /// Open the operator console (deprecated — use `jackin` or `jackin console`)
+    #[command(hide = true)]
     Launch(LaunchArgs),
     /// Manage saved workspaces
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
@@ -135,12 +148,18 @@ mod tests {
             "eject",
             "exile",
             "purge",
-            "launch",
+            "console",
             "workspace",
             "config",
         ] {
             assert!(help.contains(cmd), "missing command: {cmd}");
         }
+        // `launch` is hidden (deprecated alias for `console`) and should
+        // not appear in the top-level command list.
+        assert!(
+            !help.contains("\n  launch "),
+            "deprecated `launch` should be hidden from help"
+        );
     }
 
     // ── Subcommand banner consistency ───────────────────────────────────
@@ -153,6 +172,7 @@ mod tests {
             vec!["jackin", "eject", "--help"],
             vec!["jackin", "exile", "--help"],
             vec!["jackin", "purge", "--help"],
+            vec!["jackin", "console", "--help"],
             vec!["jackin", "launch", "--help"],
             vec!["jackin", "workspace", "create", "--help"],
             vec!["jackin", "workspace", "list", "--help"],
