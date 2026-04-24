@@ -44,7 +44,7 @@ isolation = "shared"             # build cache, shared on purpose
 Modes:
 
 - **`shared`** — current behavior. Host path bind-mounted as-is.
-- **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path. Branch defaults to `jackin/<container-name>` (collision-free via the existing clone-index naming in `src/instance/naming.rs`). Base branch defaults to the host repo's current `HEAD`.
+- **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path. Branch name is rendered from the workspace's `branch_template` (default `jackin/{container}`, producing collision-free names via the existing clone-index naming in `src/instance/naming.rs`). Base branch defaults to the host repo's current `HEAD`, overridable per-mount via `base_branch`.
 - **`clone`** — jackin' runs `git clone --local --shared <src> <per-agent-copy>`. Objects hard-linked, so disk cost is minimal. Agent pushes back to `origin` (the host path) when done.
 
 ## Composition Rules
@@ -56,6 +56,7 @@ Modes:
 - **`workdir`** — unchanged. It is a container path inside a mount destination; jackin' only substitutes the host `src` at bind-mount time.
 - **Non-repo `src`** with `worktree` or `clone` → hard error. No silent fallback.
 - **Subdirectory of a repo** with `worktree` → hard error. `src` must be the repo root for v1.
+- **Dirty host working tree** with non-`shared` isolation → warn and require `--force`. The worktree branches from the host repo's `HEAD`; uncommitted host edits are not copied into the isolated copy. Silent materialization of a dirty baseline would surprise operators who expect their in-progress work to follow them into the agent — defaulting to a different base (e.g. tracking upstream) would only make the surprise worse, so we warn loudly and let the operator decide.
 
 ## Host-Side Materialization
 
@@ -71,37 +72,41 @@ Reuse the existing per-container state tree:
 
 At `load` time: walk the resolved mounts; for each non-`shared` mount, materialize (idempotent — a second `load` to an existing container reuses the same worktree/clone) and swap the effective bind `src`. The container `dst` is unchanged, so the agent sees the same path regardless of mode.
 
+Concurrent `jackin load` invocations that target the same host repo are safe: each container gets a unique materialization path and branch (via `src/instance/naming.rs`), and git's internal ref locking serializes the worktree registration in `.git/worktrees/`. Jackin' does not add its own lock; third-party tools that rewrite refs on the host repo during materialization are out of scope.
+
 ## Lifecycle
 
 - **`load`** — idempotent materialization. Second load to an existing container reuses.
 - **`eject`** — stop the container, leave `isolated/` in place (matches the existing eject = stop, purge = destroy split — operator may want to come back).
 - **`purge`** — remove the container and `isolated/`. Worktrees cleaned with `git worktree remove`. Branches left in place by default (may contain unpushed work); `--delete-branches` opts into removing them.
 - **Dirty-branch guard** — before purge, surface unpushed commits on the worktree's branch and require confirmation or `--force`.
+- **Flipping isolation on a mount requires eject.** Bind-mount sources are not mutable on a running container, so live-swapping the `src` is not supported by the platform in the first place. `workspace edit` rejects isolation changes on a running container with a clear "eject first" message.
+- **Missing host repo.** If the host `src` is deleted or moved between `load` and later operations, `purge` tolerates the missing parent (best-effort `git worktree remove --force`, then `rm -rf` the isolated tree). A subsequent `load` errors clearly pointing at the absent `src` rather than silently re-materializing from an empty path.
 
 ## V1 Scope
 
 Ship:
 
 - `default_isolation` on workspace + `isolation` per mount, values `shared | worktree | clone`
-- Hardcoded branch template (`jackin/<container-name>`) and base branch = host `HEAD`
+- Per-workspace `branch_template` (default `jackin/{container}`; variables: `{container}`, `{workspace}`, `{agent}`) and per-mount `base_branch` override (default: host `HEAD`). Teams with branch-protection or naming conventions will ask for these in week one, and the validation/serde surface is small enough to land with the core feature.
 - `load` materializes, `purge` tears down, `eject` leaves alone
-- Validation: sensitive + non-`shared` = error; `readonly` + non-`shared` = error; non-repo + `worktree` = error; subrepo + `worktree` = error
+- Validation: sensitive + non-`shared` = error; `readonly` + non-`shared` = error; non-repo + `worktree` = error; subrepo + `worktree` = error; dirty host tree + non-`shared` = warn, require `--force`
 - Docs updates in the same PR
+
+Known limitations for v1 (document, don't invest):
+
+- **Submodules and git-LFS.** Worktrees handle submodules the way the parent repo does; no extra jackin'-side orchestration. If a team hits an edge case, they'll tell us.
 
 Defer:
 
-- Per-workspace `branch_template` and `base_branch`
 - CLI override of isolation on ad-hoc mounts
 - `--delete-branches` flag on `purge`
 - `clone` mode can land after `worktree` — `worktree` solves the immediate contention problem
 
 ## Open Questions
 
-1. Should `workspace edit` allow flipping `isolation` on a mount while a container is running, or require eject first?
-2. Branch-naming template — hardcoded for v1, or expose `branch_template = "agents/{container}"` right away?
-3. Build caches (`target/`, `node_modules/`) — worth documenting a pattern (separate `shared` mount for the cache dir) or supporting a dedicated "warm from template" mode later?
-4. Submodules and git-LFS — document as known limitations for v1, or invest in handling them?
-5. Interaction with `hardline` (offline lockdown) — both `worktree` and `clone` are local-only, so this should be fine, but worth verifying.
+1. Build caches (`target/`, `node_modules/`) — worth documenting a pattern (separate `shared` mount for the cache dir) or supporting a dedicated "warm from template" mode later?
+2. Interaction with `hardline` (offline lockdown) — both `worktree` and `clone` are local-only, so this should be fine, but worth verifying.
 
 ## Related Files
 
