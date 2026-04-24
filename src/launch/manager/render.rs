@@ -468,13 +468,15 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
         ])
         .split(area);
 
-    // General — title set to "Current directory" so the operator has a
-    // clear signpost that this is the synthetic row, not a saved one.
+    // General — titled the same as the saved-workspace pane so the three
+    // sub-panel titles (General / Mounts / Agents) match across both panes.
+    // The "Current directory" signpost is already visible as the left-list
+    // row label, so repeating it here was redundant.
     let general_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
-            " Current directory ",
+            " General ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
     let general_lines = vec![Line::from(vec![
