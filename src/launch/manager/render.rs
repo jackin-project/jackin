@@ -36,7 +36,7 @@ pub fn render(frame: &mut Frame, state: &ManagerState<'_>, config: &AppConfig) {
             ])
             .split(area);
 
-        render_header(frame, chunks[0], "manage workspaces");
+        render_header(frame, chunks[0], "workspaces");
 
         if matches!(&state.stage, ManagerStage::List) {
             render_list_body(frame, chunks[1], state, config);
@@ -697,7 +697,7 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         Modal::TextInput { .. } => (60, 5), // label + input + hint = 5 rows
         Modal::Confirm { .. } => (60, 7),   // prompt + spacer + buttons + spacer + hint = 7 rows
         Modal::SaveDiscardCancel { .. } => (70, 7), // three buttons — a bit wider
-        Modal::FileBrowser { .. } => (70, 20), // ~15 entries + top/bottom hints visible
+        Modal::FileBrowser { .. } => (100, 100), // fullscreen — avoids main chrome peeking through
         Modal::WorkdirPick { .. } => (60, 12), // ~6 choices + title + hint
     };
     let modal_area = centered_rect_fixed(area, pct_w, height_rows);

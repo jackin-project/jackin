@@ -1,5 +1,11 @@
 //! Host folder picker — wraps ratatui-explorer, shows folders only,
 //! adds `s` as "select current folder".
+//!
+//! Restrictions:
+//! - Starts at $HOME.
+//! - Refuses navigation above $HOME (clamps cwd back after `handle()`).
+//! - Excludes noisy top-level directories from the listing.
+//! - Rejects $HOME itself and ~/.jackin/* as workspace sources.
 
 use std::path::PathBuf;
 
@@ -10,58 +16,108 @@ use ratatui_explorer::{FileExplorer, FileExplorerBuilder, Theme};
 
 use super::ModalOutcome;
 
+/// Directories excluded from the listing when browsing $HOME.
+const EXCLUDED: &[&str] = &[
+    "Library",
+    "Applications",
+    "Movies",
+    "Music",
+    "OrbStack",
+    "Pictures",
+];
+
 pub struct FileBrowserState {
     pub explorer: FileExplorer,
-    pub root_hint: PathBuf,
+    /// $HOME — the browser cannot navigate above this path.
+    pub root: PathBuf,
+    /// Set when the user presses `s` but the selection is rejected.
+    /// Cleared on the next keypress.
+    pub rejected_reason: Option<String>,
 }
 
 impl std::fmt::Debug for FileBrowserState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FileBrowserState")
-            .field("root_hint", &self.root_hint)
+            .field("root", &self.root)
+            .field("rejected_reason", &self.rejected_reason)
             .finish_non_exhaustive()
     }
 }
 
 impl FileBrowserState {
-    /// Build a new browser rooted at the given start path. Filters out
-    /// non-directories so only folders are pickable.
-    pub fn new(start: PathBuf) -> anyhow::Result<Self> {
-        let theme = Theme::default().add_default_title();
-        let explorer = FileExplorerBuilder::default()
-            .working_dir(&start)
-            .theme(theme)
-            .filter_map(|entry| if entry.is_dir { Some(entry) } else { None })
-            .build()
-            .map_err(|e| anyhow::anyhow!("failed to build file explorer: {e}"))?;
-        Ok(Self {
-            explorer,
-            root_hint: start,
-        })
-    }
-
+    /// Build a new browser starting at $HOME, filtered to directories only,
+    /// excluding well-known noisy top-level folders.
     pub fn new_from_home() -> anyhow::Result<Self> {
         let home = BaseDirs::new()
             .map(|b| b.home_dir().to_path_buf())
             .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?;
-        Self::new(home)
+
+        let theme = Theme::default().add_default_title();
+        let explorer = FileExplorerBuilder::default()
+            .working_dir(&home)
+            .theme(theme)
+            .filter_map(|file| {
+                // Keep only directories.
+                if !file.is_dir {
+                    return None;
+                }
+                // The `..` entry is kept so up-navigation continues to work;
+                // cwd is clamped back to root after handle() when necessary.
+                if file.name == ".." {
+                    return Some(file);
+                }
+                // Strip excluded top-level names.
+                if EXCLUDED.iter().any(|x| *x == file.name) {
+                    return None;
+                }
+                Some(file)
+            })
+            .build()
+            .map_err(|e| anyhow::anyhow!("failed to build file explorer: {e}"))?;
+
+        Ok(Self {
+            explorer,
+            root: home,
+            rejected_reason: None,
+        })
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<PathBuf> {
+        // Clear any stale rejection message on the next keypress.
+        self.rejected_reason = None;
+
         match key.code {
             KeyCode::Char('s') => {
-                // Commit the explorer's current working directory, NOT the
-                // highlighted entry. Matches user intent: "I'm viewing this
-                // folder, select it." Highlighted entry (which is `..` in
-                // an empty dir) is not what the user wants.
-                //
-                // API: FileExplorer::cwd() -> &PathBuf (ratatui-explorer 0.3.x)
-                ModalOutcome::Commit(self.explorer.cwd().clone())
+                let cwd = self.explorer.cwd().clone();
+
+                // Reject $HOME itself — user must navigate into a subfolder.
+                if cwd == self.root {
+                    self.rejected_reason =
+                        Some("Cannot use $HOME itself — navigate into a subfolder.".into());
+                    return ModalOutcome::Continue;
+                }
+
+                // Reject jackin's own data directory.
+                let jackin_data = self.root.join(".jackin");
+                if cwd.starts_with(&jackin_data) {
+                    self.rejected_reason =
+                        Some("Cannot use ~/.jackin/* — those paths are reserved.".into());
+                    return ModalOutcome::Continue;
+                }
+
+                ModalOutcome::Commit(cwd)
             }
             KeyCode::Esc => ModalOutcome::Cancel,
             _ => {
                 let event = crossterm::event::Event::Key(key);
                 let _ = self.explorer.handle(&event);
+
+                // Clamp cwd back to root if the user navigated above $HOME.
+                // set_cwd() exists in ratatui-explorer 0.3.x.
+                let cwd = self.explorer.cwd().clone();
+                if !cwd.starts_with(&self.root) {
+                    let _ = self.explorer.set_cwd(&self.root);
+                }
                 ModalOutcome::Continue
             }
         }
@@ -78,34 +134,67 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 
     frame.render_widget(ratatui::widgets::Clear, area);
 
+    let has_rejection = state.rejected_reason.is_some();
+    let constraints: Vec<Constraint> = if has_rejection {
+        vec![
+            Constraint::Length(1), // affordance
+            Constraint::Length(1), // rejection banner
+            Constraint::Min(3),    // explorer
+            Constraint::Length(1), // nav hint
+        ]
+    } else {
+        vec![
+            Constraint::Length(1), // affordance
+            Constraint::Min(3),    // explorer
+            Constraint::Length(1), // nav hint
+        ]
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // affordance line
-            Constraint::Min(3),    // explorer (owns its own bordered block)
-            Constraint::Length(1), // hint line
-        ])
+        .constraints(constraints)
         .split(area);
 
-    let affordance = Paragraph::new(Span::styled(
-        "press [S] to use this folder",
-        Style::default()
-            .fg(Color::Rgb(255, 255, 255))
-            .add_modifier(Modifier::BOLD),
-    ))
-    .alignment(Alignment::Center);
-    frame.render_widget(affordance, chunks[0]);
+    // Affordance
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "press [S] to use this folder",
+            Style::default()
+                .fg(Color::Rgb(255, 255, 255))
+                .add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center),
+        chunks[0],
+    );
 
-    frame.render_widget_ref(state.explorer.widget(), chunks[1]);
+    let explorer_idx = if has_rejection {
+        let reason = state.rejected_reason.as_ref().unwrap();
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                format!("\u{2717} {reason}"),
+                Style::default()
+                    .fg(Color::Rgb(255, 94, 122))
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Center),
+            chunks[1],
+        );
+        2
+    } else {
+        1
+    };
 
-    let hint = Paragraph::new(Span::styled(
-        "↑↓ navigate · Enter open · h/← up · s select · Esc cancel",
-        Style::default()
-            .fg(Color::Rgb(0, 140, 30))
-            .add_modifier(Modifier::ITALIC),
-    ))
-    .alignment(Alignment::Center);
-    frame.render_widget(hint, chunks[2]);
+    frame.render_widget_ref(state.explorer.widget(), chunks[explorer_idx]);
+
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            "\u{2191}\u{2193} navigate \u{b7} Enter open \u{b7} h/\u{2190} up \u{b7} s select \u{b7} Esc cancel",
+            Style::default()
+                .fg(Color::Rgb(0, 140, 30))
+                .add_modifier(Modifier::ITALIC),
+        ))
+        .alignment(Alignment::Center),
+        chunks[chunks.len() - 1],
+    );
 }
 
 #[cfg(test)]
@@ -123,11 +212,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn new_seeds_cwd_to_given_start() {
-        let tmp = tempdir().unwrap();
-        let state = FileBrowserState::new(tmp.path().to_path_buf()).unwrap();
-        assert_eq!(state.root_hint, tmp.path());
+    fn make_state_at(path: std::path::PathBuf) -> FileBrowserState {
+        let theme = Theme::default().add_default_title();
+        let explorer = FileExplorerBuilder::default()
+            .working_dir(&path)
+            .theme(theme)
+            .filter_map(|file| if file.is_dir { Some(file) } else { None })
+            .build()
+            .unwrap();
+        FileBrowserState {
+            explorer,
+            root: path.clone(),
+            rejected_reason: None,
+        }
     }
 
     #[test]
@@ -136,7 +233,7 @@ mod tests {
         std::fs::create_dir(tmp.path().join("folder")).unwrap();
         std::fs::write(tmp.path().join("file.txt"), b"x").unwrap();
 
-        let state = FileBrowserState::new(tmp.path().to_path_buf()).unwrap();
+        let state = make_state_at(tmp.path().to_path_buf());
         let files: Vec<_> = state
             .explorer
             .files()
@@ -156,15 +253,30 @@ mod tests {
     #[test]
     fn s_commits_current_cwd_not_highlighted_entry() {
         let tmp = tempdir().unwrap();
-        std::fs::create_dir(tmp.path().join("folder")).unwrap();
-        let mut state = FileBrowserState::new(tmp.path().to_path_buf()).unwrap();
+        let sub = tmp.path().join("subfolder");
+        std::fs::create_dir(&sub).unwrap();
+
+        // Set root to tmp so that tmp itself is $HOME equivalent,
+        // and navigate into the subfolder so `s` is not rejected.
+        let theme = Theme::default().add_default_title();
+        let explorer = FileExplorerBuilder::default()
+            .working_dir(&sub)
+            .theme(theme)
+            .filter_map(|file| if file.is_dir { Some(file) } else { None })
+            .build()
+            .unwrap();
+        let mut state = FileBrowserState {
+            explorer,
+            root: tmp.path().to_path_buf(),
+            rejected_reason: None,
+        };
+
         let outcome = state.handle_key(key(KeyCode::Char('s')));
-        // The committed path should be the tempdir itself, regardless of
-        // which entry is highlighted.
+        // The committed path should be the subfolder itself.
         if let ModalOutcome::Commit(path) = outcome {
             assert_eq!(
                 path.canonicalize().unwrap(),
-                tmp.path().canonicalize().unwrap(),
+                sub.canonicalize().unwrap(),
                 "s should commit the explorer's cwd, not the selected entry"
             );
         } else {
@@ -173,9 +285,72 @@ mod tests {
     }
 
     #[test]
+    fn s_rejects_root_itself() {
+        let tmp = tempdir().unwrap();
+        let mut state = make_state_at(tmp.path().to_path_buf());
+        // cwd == root, so pressing s should reject.
+        let outcome = state.handle_key(key(KeyCode::Char('s')));
+        assert!(
+            matches!(outcome, ModalOutcome::Continue),
+            "expected Continue (rejection), got {:?}",
+            outcome
+        );
+        assert!(
+            state.rejected_reason.is_some(),
+            "rejected_reason should be set"
+        );
+    }
+
+    #[test]
+    fn s_rejects_jackin_data_dir() {
+        let tmp = tempdir().unwrap();
+        let jackin = tmp.path().join(".jackin").join("workspaces");
+        std::fs::create_dir_all(&jackin).unwrap();
+
+        let theme = Theme::default().add_default_title();
+        let explorer = FileExplorerBuilder::default()
+            .working_dir(&jackin)
+            .theme(theme)
+            .filter_map(|file| if file.is_dir { Some(file) } else { None })
+            .build()
+            .unwrap();
+        let mut state = FileBrowserState {
+            explorer,
+            root: tmp.path().to_path_buf(),
+            rejected_reason: None,
+        };
+
+        let outcome = state.handle_key(key(KeyCode::Char('s')));
+        assert!(
+            matches!(outcome, ModalOutcome::Continue),
+            "expected Continue (rejection), got {:?}",
+            outcome
+        );
+        assert!(
+            state.rejected_reason.is_some(),
+            "rejected_reason should be set for .jackin path"
+        );
+    }
+
+    #[test]
+    fn rejection_cleared_on_next_keypress() {
+        let tmp = tempdir().unwrap();
+        let mut state = make_state_at(tmp.path().to_path_buf());
+        // First press: rejected.
+        state.handle_key(key(KeyCode::Char('s')));
+        assert!(state.rejected_reason.is_some());
+        // Any subsequent key clears it.
+        state.handle_key(key(KeyCode::Char('j'))); // navigate down
+        assert!(
+            state.rejected_reason.is_none(),
+            "rejection should be cleared after next key"
+        );
+    }
+
+    #[test]
     fn esc_cancels() {
         let tmp = tempdir().unwrap();
-        let mut state = FileBrowserState::new(tmp.path().to_path_buf()).unwrap();
+        let mut state = make_state_at(tmp.path().to_path_buf());
         assert!(matches!(
             state.handle_key(key(KeyCode::Esc)),
             ModalOutcome::Cancel
