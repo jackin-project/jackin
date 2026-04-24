@@ -868,17 +868,52 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             }
         }
         Modal::MountDstChoice {
-            state: modal_state, ..
+            target,
+            state: modal_state,
         } => {
-            // Wired in a follow-up commit. For now, Cancel/Esc dismisses
-            // the modal cleanly so the operator is never trapped; other
-            // keys are silently swallowed.
-            use crate::launch::widgets::ModalOutcome;
+            use crate::launch::widgets::mount_dst_choice::MountDstChoice;
+            let target = *target;
             match modal_state.handle_key(key) {
+                ModalOutcome::Commit(MountDstChoice::Ok) => {
+                    // Fast path: dst = src. Only meaningful for the Editor
+                    // `EditAddMountSrc` target; the prelude path is handled
+                    // by `handle_prelude_modal`.
+                    if target == FileBrowserTarget::EditAddMountSrc {
+                        let src = modal_state.src.clone();
+                        editor.pending.mounts.push(crate::workspace::MountConfig {
+                            src: src.clone(),
+                            dst: src,
+                            readonly: false,
+                        });
+                    }
+                    editor.modal = None;
+                }
+                ModalOutcome::Commit(MountDstChoice::Edit) => {
+                    // Fall through to today's flow: push a provisional mount
+                    // with dst = src, then open the TextInput modal so the
+                    // operator can rewrite the destination.
+                    if target == FileBrowserTarget::EditAddMountSrc {
+                        let src = modal_state.src.clone();
+                        editor.pending.mounts.push(crate::workspace::MountConfig {
+                            src: src.clone(),
+                            dst: src.clone(),
+                            readonly: false,
+                        });
+                        editor.modal = Some(Modal::TextInput {
+                            target: super::state::TextInputTarget::MountDst,
+                            state: crate::launch::widgets::text_input::TextInputState::new(
+                                "destination (default: same as host path)",
+                                src,
+                            ),
+                        });
+                    } else {
+                        editor.modal = None;
+                    }
+                }
                 ModalOutcome::Cancel => {
                     editor.modal = None;
                 }
-                ModalOutcome::Commit(_) | ModalOutcome::Continue => {}
+                ModalOutcome::Continue => {}
             }
         }
         Modal::SaveDiscardCancel { state: modal_state } => {
@@ -932,26 +967,21 @@ fn apply_file_browser_to_editor(
     editor: &mut EditorState<'_>,
     path: std::path::PathBuf,
 ) {
-    use super::super::widgets::text_input::TextInputState;
+    use crate::launch::widgets::mount_dst_choice::MountDstChoiceState;
     match target {
         FileBrowserTarget::EditAddMountSrc => {
-            // Provisional mount with dst defaulting to same as src.
-            editor.pending.mounts.push(crate::workspace::MountConfig {
-                src: path.display().to_string(),
-                dst: path.display().to_string(),
-                readonly: false,
-            });
-            // Open a TextInput for dst refinement (pre-filled with path).
-            editor.modal = Some(Modal::TextInput {
-                target: super::state::TextInputTarget::MountDst,
-                state: TextInputState::new(
-                    "destination (default: same as host path)",
-                    path.display().to_string(),
-                ),
+            // Defer the mount push to the choice modal: in the common case
+            // the operator will take "OK" (dst = src) and we skip the
+            // TextInput entirely. Only the `Edit destination` branch pushes
+            // a provisional mount and opens the TextInput.
+            editor.modal = Some(Modal::MountDstChoice {
+                target,
+                state: MountDstChoiceState::new(path.display().to_string()),
             });
         }
         FileBrowserTarget::CreateFirstMountSrc => {
-            // Only meaningful in prelude path — Task 17 handles this.
+            // Only meaningful in prelude path — handled by
+            // `handle_prelude_modal`.
             let _ = (editor, path);
         }
     }
@@ -1519,5 +1549,110 @@ mod tests {
             InputOutcome::LaunchNamed(name) => assert_eq!(name, "alpha"),
             other => panic!("row 1 Enter must produce LaunchNamed(\"alpha\"); got {other:?}"),
         }
+    }
+
+    // ── Editor FileBrowser → MountDstChoice behavioral tests ────────────
+
+    /// Build an editor sitting on the Mounts tab with an empty mount list,
+    /// and simulate the commit of a FileBrowser at `/host/path`. The bridge
+    /// function is `apply_file_browser_to_editor`, which opens the new
+    /// `MountDstChoice` modal instead of the old "push + TextInput" chain.
+    fn editor_with_browser_committed(src: &str) -> EditorState<'static> {
+        use crate::launch::manager::state::{EditorTab, FieldFocus};
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Mounts;
+        editor.active_field = FieldFocus::Row(0);
+        apply_file_browser_to_editor(
+            FileBrowserTarget::EditAddMountSrc,
+            &mut editor,
+            std::path::PathBuf::from(src),
+        );
+        editor
+    }
+
+    #[test]
+    fn filebrowser_commit_opens_mount_dst_choice_not_text_input() {
+        // Pin: the FileBrowser→TextInput chain is replaced by
+        // FileBrowser→MountDstChoice. No mount should be pushed yet — the
+        // push is deferred to the choice modal's commit handler.
+        let editor = editor_with_browser_committed("/host/path");
+        assert!(
+            matches!(editor.modal, Some(Modal::MountDstChoice { .. })),
+            "expected MountDstChoice modal; got {:?}",
+            editor.modal
+        );
+        assert_eq!(
+            editor.pending.mounts.len(),
+            0,
+            "no mount must be pushed until the operator commits in the choice modal"
+        );
+    }
+
+    #[test]
+    fn editor_ok_commits_mount_with_dst_equal_src() {
+        // OK shortcut on the choice modal → push MountConfig with dst = src
+        // and close the modal. No TextInput should appear.
+        let mut editor = editor_with_browser_committed("/host/path");
+        handle_editor_modal(&mut editor, key(KeyCode::Char('o')));
+        assert!(
+            editor.modal.is_none(),
+            "OK must close the modal; got {:?}",
+            editor.modal
+        );
+        assert_eq!(editor.pending.mounts.len(), 1, "exactly one mount pushed");
+        let m = &editor.pending.mounts[0];
+        assert_eq!(m.src, "/host/path");
+        assert_eq!(m.dst, "/host/path", "OK fast-path sets dst = src");
+        assert!(!m.readonly);
+    }
+
+    #[test]
+    fn editor_edit_opens_textinput_and_pushes_provisional() {
+        // Edit destination → push provisional mount (dst = src) + open
+        // the TextInput pre-filled with src. Mirrors today's flow so the
+        // operator can edit dst in place.
+        let mut editor = editor_with_browser_committed("/host/path");
+        handle_editor_modal(&mut editor, key(KeyCode::Char('e')));
+        match &editor.modal {
+            Some(Modal::TextInput { target, .. }) => {
+                assert_eq!(*target, super::super::state::TextInputTarget::MountDst);
+            }
+            other => panic!("expected TextInput(MountDst); got {other:?}"),
+        }
+        assert_eq!(
+            editor.pending.mounts.len(),
+            1,
+            "provisional mount pushed for the TextInput to mutate"
+        );
+        let m = &editor.pending.mounts[0];
+        assert_eq!(m.src, "/host/path");
+        assert_eq!(m.dst, "/host/path", "provisional dst mirrors src");
+    }
+
+    #[test]
+    fn editor_cancel_does_not_push_mount() {
+        // C / Esc dismisses the choice modal without touching pending.mounts.
+        let mut editor = editor_with_browser_committed("/host/path");
+        handle_editor_modal(&mut editor, key(KeyCode::Esc));
+        assert!(editor.modal.is_none(), "Esc closes the modal");
+        assert_eq!(
+            editor.pending.mounts.len(),
+            0,
+            "Cancel must not push a mount"
+        );
+
+        let mut editor = editor_with_browser_committed("/host/path");
+        handle_editor_modal(&mut editor, key(KeyCode::Char('c')));
+        assert!(editor.modal.is_none(), "`c` closes the modal");
+        assert_eq!(editor.pending.mounts.len(), 0, "`c` must not push a mount");
     }
 }
