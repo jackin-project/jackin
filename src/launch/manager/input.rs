@@ -277,7 +277,12 @@ fn handle_editor_key(
 /// Returns the highest valid `FieldFocus::Row` index for the current tab.
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
     match editor.active_tab {
-        EditorTab::General => 3, // name, workdir, default_agent, last_used
+        EditorTab::General => match editor.mode {
+            // Edit: name (0), workdir (1), default_agent (2), last_used (3)
+            EditorMode::Edit { .. } => 3,
+            // Create: name read-only (0), workdir (1)
+            EditorMode::Create => 1,
+        },
         EditorTab::Mounts => editor.pending.mounts.len().saturating_sub(1),
         EditorTab::Agents => config.agents.len(), // rows 1..=N; 0 is the header
         EditorTab::Secrets => 0,

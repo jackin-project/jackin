@@ -70,7 +70,7 @@ pub fn render(frame: &mut Frame, state: &ManagerState<'_>, config: &AppConfig) {
             // ConfirmState is a top-level field on the variant, not wrapped
             // in Modal::Confirm, so render it directly.
             let area = frame.area();
-            let modal_area = centered_rect(area, 60, 30);
+            let modal_area = centered_rect_fixed(area, 60, 6);
             super::super::widgets::confirm::render(frame, modal_area, confirm_state);
         }
         ManagerStage::List => {}
@@ -242,13 +242,20 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
         EditorTab::Secrets => render_secrets_stub(frame, chunks[2]),
     }
 
-    let footer = if state.is_dirty() {
+    // Contextual footer: row-specific hint + base hints.
+    let row_hint = contextual_row_hint(state);
+    let base = if state.is_dirty() {
         format!(
-            "Tab next · ↑↓ field · Enter edit · s save ({} changes) · Esc discard",
+            "s save workspace ({} changes) · Tab next · ↑↓ · Esc discard",
             state.change_count()
         )
     } else {
-        "Tab next · ↑↓ field · Enter edit · s save · Esc back".to_string()
+        "s save workspace · Tab next · ↑↓ · Esc back".to_string()
+    };
+    let footer = if row_hint.is_empty() {
+        base
+    } else {
+        format!("{row_hint} · {base}")
     };
     render_footer_hint(frame, chunks[3], &footer);
 
@@ -267,6 +274,50 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
         );
         frame.render_widget(ratatui::widgets::Clear, banner_area);
         frame.render_widget(banner, banner_area);
+    }
+}
+
+/// Compute a row-specific hint fragment based on the active tab and cursor.
+/// Returns an empty string when the current position has no action.
+fn contextual_row_hint(state: &EditorState<'_>) -> String {
+    let FieldFocus::Row(cursor) = state.active_field;
+    match state.active_tab {
+        EditorTab::General => {
+            // Row indices depend on mode:
+            //   Create: 0 = workdir  (name is read-only display in Create)
+            //   Edit:   0 = name, 1 = workdir, 2 = default agent (ro), 3 = last used (ro)
+            match &state.mode {
+                EditorMode::Create => match cursor {
+                    0 => "Enter pick workdir".to_string(),
+                    _ => String::new(),
+                },
+                EditorMode::Edit { .. } => {
+                    match cursor {
+                        0 => "Enter rename".to_string(),
+                        1 => "Enter pick workdir".to_string(),
+                        _ => String::new(), // default agent and last used are read-only
+                    }
+                }
+            }
+        }
+        EditorTab::Mounts => {
+            let mount_count = state.pending.mounts.len();
+            if cursor < mount_count {
+                "a add · d remove".to_string()
+            } else {
+                // Sentinel "+ Add" row
+                "a add".to_string()
+            }
+        }
+        EditorTab::Agents => {
+            if cursor == 0 {
+                // Header row — no row-level action
+                String::new()
+            } else {
+                "Space toggle · * set default".to_string()
+            }
+        }
+        EditorTab::Secrets => String::new(),
     }
 }
 
@@ -304,6 +355,8 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 
     let FieldFocus::Row(cursor) = state.active_field;
 
+    let is_edit = matches!(&state.mode, EditorMode::Edit { .. });
+
     let name_dirty = match &state.mode {
         EditorMode::Edit { name } => state.pending_name.as_deref().is_some_and(|n| n != name),
         EditorMode::Create => false,
@@ -313,33 +366,50 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
     };
 
-    let rows = vec![
-        render_editor_row(0, cursor, "name", name_value, name_dirty),
-        render_editor_row(
+    // In Create mode the row numbering is:
+    //   0 = name (read-only display — name comes from prelude)
+    //   1 = workdir
+    // In Edit mode:
+    //   0 = name (editable), 1 = workdir, 2 = default agent (ro), 3 = last used (ro)
+    let mut rows: Vec<Line> = Vec::new();
+
+    if is_edit {
+        // Edit mode: name is an editable row at index 0.
+        rows.push(render_editor_row(0, cursor, "name", name_value, name_dirty));
+        rows.push(render_editor_row(
             1,
             cursor,
             "workdir",
             &state.pending.workdir,
             state.pending.workdir != state.original.workdir,
-        ),
-        render_editor_row(
+        ));
+        // default agent — read-only here; set via Agents tab.
+        rows.push(render_editor_readonly_row(
             2,
             cursor,
             "default agent",
             state.pending.default_agent.as_deref().unwrap_or("(none)"),
-            state.pending.default_agent != state.original.default_agent,
-        ),
-        render_editor_readonly_row(
+        ));
+        // last used — read-only.
+        rows.push(render_editor_readonly_row(
             3,
             cursor,
             "last used",
-            state
-                .original
-                .last_agent
-                .as_deref()
-                .unwrap_or("(none)"),
-        ),
-    ];
+            state.original.last_agent.as_deref().unwrap_or("(none)"),
+        ));
+    } else {
+        // Create mode: name is display-only (collected by prelude), workdir is the first editable row.
+        rows.push(render_editor_readonly_row(0, cursor, "name", name_value));
+        rows.push(render_editor_row(
+            1,
+            cursor,
+            "workdir",
+            &state.pending.workdir,
+            false,
+        ));
+        // Hide "default agent" and "last used" in Create mode — they have no meaning yet.
+    }
+
     frame.render_widget(Paragraph::new(rows).block(block), area);
 }
 
@@ -423,7 +493,13 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             let selected = i == cursor;
             let prefix = if selected { "▸ " } else { "  " };
             let ro = if m.readonly { " (ro)" } else { " (rw)" };
-            let text = format!("{prefix}{} → {}{}", m.src, m.dst, ro);
+            // Collapse src → dst when they are identical (host-mirror default).
+            let path_display = if m.src == m.dst {
+                m.src.clone()
+            } else {
+                format!("{} → {}", m.src, m.dst)
+            };
+            let text = format!("{prefix}{path_display}{ro}");
             let style = if selected {
                 Style::default()
                     .fg(PHOSPHOR_GREEN)
@@ -434,12 +510,22 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             Line::from(Span::styled(text, style))
         })
         .collect();
-    lines.push(Line::from(Span::styled(
-        "  + Add (a)    − Remove selected (d)",
-        Style::default()
-            .fg(PHOSPHOR_DIM)
-            .add_modifier(Modifier::ITALIC),
-    )));
+
+    // Action footer row — white-bold action words, green key hints.
+    let hint_line = Line::from(vec![
+        Span::styled(
+            "  + Add ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("(a)", Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(
+            "    − Remove selected ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("(d)", Style::default().fg(PHOSPHOR_DIM)),
+    ]);
+    lines.push(hint_line);
+
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
@@ -448,13 +534,36 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
+
+    // Banner explaining the empty-list = "all allowed" semantic.
+    let banner = if state.pending.allowed_agents.is_empty() {
+        Line::from(Span::styled(
+            "  All agents allowed (no restrictions). Check specific agents to restrict.",
+            Style::default()
+                .fg(Color::Rgb(180, 255, 180))
+                .add_modifier(Modifier::ITALIC),
+        ))
+    } else {
+        Line::from(Span::styled(
+            format!(
+                "  Custom: {} allowed. Uncheck all to allow any agent.",
+                state.pending.allowed_agents.len()
+            ),
+            Style::default()
+                .fg(Color::Rgb(180, 255, 180))
+                .add_modifier(Modifier::ITALIC),
+        ))
+    };
+
     let header = Line::from(Span::styled(
         "  allowed? · default ·  agent",
         Style::default().fg(WHITE),
     ));
-    let mut lines = vec![header];
+
+    let mut lines = vec![banner, header];
+
     for (i, (agent_name, _)) in config.agents.iter().enumerate() {
-        let row_idx = i + 1; // row 0 is the header
+        let row_idx = i + 1; // row 0 is the header (banner is above the fold)
         let selected = row_idx == cursor;
         let allowed = state.pending.allowed_agents.contains(agent_name);
         let is_default = state.pending.default_agent.as_deref() == Some(agent_name.as_str());
@@ -494,8 +603,15 @@ fn render_secrets_stub(frame: &mut Frame, area: Rect) {
 
 pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
     let area = frame.area();
-    let modal_area = centered_rect(area, 60, 30);
-
+    // Size by variant: single-line inputs get a compact overlay;
+    // lists get a taller one.
+    let (pct_w, height_rows) = match modal {
+        Modal::TextInput { .. } => (60, 5), // label + input + hint = 5 rows
+        Modal::Confirm { .. } => (60, 6),   // prompt + buttons + hint = 6 rows
+        Modal::FileBrowser { .. } => (70, 60), // taller list
+        Modal::WorkdirPick { .. } => (60, 40), // moderate list
+    };
+    let modal_area = centered_rect_fixed(area, pct_w, height_rows);
     match modal {
         Modal::TextInput { state, .. } => text_input::render(frame, modal_area, state),
         Modal::FileBrowser { state, .. } => file_browser::render(frame, modal_area, state),
@@ -504,12 +620,14 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
     }
 }
 
-const fn centered_rect(outer: Rect, pct_w: u16, pct_h: u16) -> Rect {
+/// Like `centered_rect` but takes a fixed number of rows for the height.
+/// `pct_w` is still a percentage of the outer width. Rows are clamped to fit.
+fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
     let w = outer.width * pct_w / 100;
-    let h = outer.height * pct_h / 100;
+    let h = rows.min(outer.height);
     Rect {
-        x: outer.x + (outer.width.saturating_sub(w)) / 2,
-        y: outer.y + (outer.height.saturating_sub(h)) / 2,
+        x: outer.x + outer.width.saturating_sub(w) / 2,
+        y: outer.y + outer.height.saturating_sub(h) / 2,
         width: w,
         height: h,
     }
