@@ -608,8 +608,8 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
     let (pct_w, height_rows) = match modal {
         Modal::TextInput { .. } => (60, 5), // label + input + hint = 5 rows
         Modal::Confirm { .. } => (60, 7),   // prompt + spacer + buttons + spacer + hint = 7 rows
-        Modal::FileBrowser { .. } => (70, 60), // taller list
-        Modal::WorkdirPick { .. } => (60, 40), // moderate list
+        Modal::FileBrowser { .. } => (70, 20), // ~15 entries + top/bottom hints visible
+        Modal::WorkdirPick { .. } => (60, 12), // ~6 choices + title + hint
     };
     let modal_area = centered_rect_fixed(area, pct_w, height_rows);
     match modal {
