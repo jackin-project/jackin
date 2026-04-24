@@ -18,22 +18,21 @@ When an operator runs two or more agents in parallel against the same host proje
 
 ## Desired Behavior
 
-Introduce a declarative **isolation mode** that applies per mount, with a workspace-level default. Existing workspaces keep working unchanged (default is `shared`, i.e. today's behavior). Opting in is a single field.
+Introduce a declarative **isolation mode** that applies per mount. Existing workspaces keep working unchanged — mounts without an `isolation` field stay `shared` (today's behavior). Opting in is a single field per mount.
 
 ```toml
 [workspaces.jackin]
 workdir = "/workspace/jackin"
-default_isolation = "worktree"   # applies to every mount that doesn't override
 
 [[workspaces.jackin.mounts]]
 src = "~/projects/jackin"
 dst = "/workspace/jackin"
-# isolation inherited from default_isolation → "worktree"
+isolation = "worktree"           # isolated per agent
 
 [[workspaces.jackin.mounts]]
 src = "~/projects/jackin-docs"
 dst = "/workspace/jackin-docs"
-isolation = "shared"             # reference repo, don't fork it
+# no isolation field → defaults to "shared"
 
 [[workspaces.jackin.mounts]]
 src = "~/.cache/jackin-target"
@@ -44,64 +43,93 @@ isolation = "shared"             # build cache, shared on purpose
 Modes:
 
 - **`shared`** — current behavior. Host path bind-mounted as-is.
-- **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path. Branch defaults to `jackin/<container-name>` (collision-free via the existing clone-index naming in `src/instance/naming.rs`). Base branch defaults to the host repo's current `HEAD`.
-- **`clone`** — jackin' runs `git clone --local --shared <src> <per-agent-copy>`. Objects hard-linked, so disk cost is minimal. Agent pushes back to `origin` (the host path) when done.
+- **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path. Branch is hardcoded as `jackin/<container-name>` — an ephemeral scratch ref whose only job is to keep the agent's in-progress work reachable until it pushes. Agents (or external tooling such as the Superpowers plugin in Claude Code) rename the branch before pushing a PR. Base is always the host repo's current `HEAD`.
+- **`clone`** — deferred from V1. When it lands, jackin' will run `git clone --local --shared <src> <per-agent-copy>`, hardlinking objects for disk efficiency, with the agent pushing back to `origin` (the host path) when done. `worktree` solves the immediate contention problem; `clone` is for the untrusted-agent / full-`.git`-isolation case.
 
 ## Composition Rules
 
-- **`readonly`** + non-`shared` isolation → reject. A forked working copy that can't be written to makes no sense.
-- **Sensitive mounts** (`~/.ssh`, `~/.aws`, etc., detected by the existing `find_sensitive_mounts`) + non-`shared` isolation → reject. They aren't git repos and must never be forked.
-- **Global mounts** (`[mounts]` section) — `default_isolation` on a workspace does **not** cascade to merged global mounts. Globals stay `shared` unless a specific global mount opts in.
-- **Ad-hoc CLI mounts** (`--mount`) — inherit the resolved workspace's `default_isolation`. Per-mount overrides on the CLI deferred to a future iteration.
-- **`workdir`** — unchanged. It is a container path inside a mount destination; jackin' only substitutes the host `src` at bind-mount time.
-- **Non-repo `src`** with `worktree` or `clone` → hard error. No silent fallback.
-- **Subdirectory of a repo** with `worktree` → hard error. `src` must be the repo root for v1.
+Isolation is workspace-scoped. The `isolation` field is only valid on workspace mounts (`[[workspaces.X.mounts]]`). Global mounts (`[[mounts]]`) reject `isolation` at parse time — global mounts are typically non-repo system paths where `shared` is the only sensible answer, and removing the field from globals eliminates a whole class of cascading-default composition rules.
+
+Validation fires per the mount's declared isolation type, so error messages reference the specific mount and the isolation level it requested:
+
+- **`shared`** → no additional validation (today's behavior; works on any path).
+- **`worktree`** requires:
+  - `src` is a git repository **root** (not a subdirectory). Hard error; prevents silently materializing a worktree of the parent repo when the operator meant a subdir.
+  - Host repo is not mid-rebase, mid-merge, or mid-cherry-pick. Hard error; HEAD is semantically ambiguous in these states, and git would silently branch from a half-applied operation.
+  - `readonly` is not set. A forked working copy that can't be written to makes no sense.
+  - Not a sensitive mount (`~/.ssh`, `~/.aws`, etc., detected by the existing `find_sensitive_mounts`).
+  - Host working tree is clean **or** operator passed `--force`. Dirty host tree warns and requires `--force` — the worktree branches from `HEAD`, so uncommitted host edits don't travel into the agent; `--force` acknowledges that WIP stays on the host. In practice the host tree is almost always clean at agent launch, so this is a cold-path guard, not a primary UX.
+
+Beyond the per-type validation:
+
+- **`workdir`** is unchanged. It is a container path inside a mount destination; jackin' only substitutes the host `src` at bind-mount time.
+- Pre-flight validation only covers cases where git would silently do the wrong thing (subdirectory misrouting, mid-rebase HEAD). Obviously-broken cases (not a repo, unborn branch, bare repo) are left to git's own error messages — jackin' doesn't re-wrap errors that git already reports clearly.
 
 ## Host-Side Materialization
 
-Reuse the existing per-container state tree:
+Worktrees live inside the existing per-container state tree, matching the flat `<data_dir>/jackin-<container>/` layout already in use for `.claude/`, `.jackin/`, and other per-agent state:
 
 ```
-<data_dir>/<container_name>/
+<data_dir>/jackin-<container>/
   .claude/                # existing
   .jackin/                # existing
   isolated/
-    <mount-dst-slug>/     # one per non-shared mount
+    <mount-dst-slug>/     # one per non-shared mount (the worktree root)
 ```
 
-At `load` time: walk the resolved mounts; for each non-`shared` mount, materialize (idempotent — a second `load` to an existing container reuses the same worktree/clone) and swap the effective bind `src`. The container `dst` is unchanged, so the agent sees the same path regardless of mode.
+At `load` time: walk the resolved mounts; for each non-`shared` mount, materialize (idempotent — a second `load` to an existing container reuses the same worktree) and swap the effective bind `src`. The container `dst` is unchanged, so the agent sees the same path regardless of mode.
+
+**Per-worktree config scoping.** On first worktree creation for a host repo, jackin' enables `extensions.worktreeConfig` on the host repo (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config values written via `git config --worktree` don't leak into the shared host `.git/config`. jackin' reports this in a one-line notice the first time it happens per host repo. Keys that don't support per-worktree scoping (remotes, credentials, anything written without `--worktree`) still land in shared config — this is a git limitation, not a jackin' one, and it's documented as a known limitation rather than papered over.
+
+**Concurrent `jackin load`** invocations that target the same host repo are safe: each container gets a unique materialization path and branch (via `src/instance/naming.rs`), and git's internal ref locking serializes the worktree registration in `.git/worktrees/`. Jackin' does not add its own lock; third-party tools that rewrite refs on the host repo during materialization are out of scope.
+
+**Hooks inherit from the host repo.** Worktrees share `.git/hooks/` with the parent — operators who rely on pre-commit/pre-push to keep commits clean get that for free inside agent containers. Operators with host-specific hooks that don't work in the container fix the hook. V1 does not ship a `--no-hooks` flag; it can be added later if the use case materializes.
+
+**Back-merge is outside jackin's scope.** Agents push their branch to `origin` (GitHub or equivalent) from inside the container, and the PR is opened by the operator's usual tooling (e.g., the Superpowers plugin in Claude Code). Review happens upstream, not locally. Because worktrees inherit `.git/config` from the host, `remote.origin.url` and the operator's credential setup are available to the agent without any jackin'-side remote configuration. Jackin' does not implement `jackin diff`, `jackin integrate`, or any merge-assist command.
 
 ## Lifecycle
 
-- **`load`** — idempotent materialization. Second load to an existing container reuses.
-- **`eject`** — stop the container, leave `isolated/` in place (matches the existing eject = stop, purge = destroy split — operator may want to come back).
-- **`purge`** — remove the container and `isolated/`. Worktrees cleaned with `git worktree remove`. Branches left in place by default (may contain unpushed work); `--delete-branches` opts into removing them.
-- **Dirty-branch guard** — before purge, surface unpushed commits on the worktree's branch and require confirmation or `--force`.
+- **`load`** — idempotent materialization. Second load to an existing container reuses the existing worktree.
+- **`eject`** — stop the container, leave `isolated/` in place (matches the existing eject = stop, purge = destroy split). No new output from `eject` for isolated mounts.
+- **`purge`** — silently delete everything for the container: the container itself, the DinD sidecar, the isolated worktree (`git worktree remove --force`), the `isolated/` dir, and the local scratch branch `jackin/<container-name>`. No unpushed-commit guard, no interactive prompt, no `--delete-branches` flag. If the operator purges before the agent pushed, that is operator error — jackin' stays out of the way. Post-merge branch cleanup in the host repo is also operator-side; jackin' does not detect "branch merged upstream and gone" during normal operation.
+- **`purge` refuses to run on a running agent.** The operator must eject first (`jackin eject <name>`) or use the combo (`jackin eject <name> --purge`). This also fixes a pre-existing gap in `shared` mode where `purge` could delete state out from under a live container (`src/app/mod.rs` currently calls `remove_data_dir_if_exists` unconditionally). The guard reuses the existing `list_agent_names` primitive from `src/runtime/cleanup.rs`.
+- **Flipping isolation on a mount requires eject.** Bind-mount sources are not mutable on a running container, so live-swapping the `src` is not supported by the platform in the first place. `workspace edit` rejects isolation changes on a running container with a clear "eject first" message.
+- **Mount mode flipped between loads.** If the operator changes a mount from `worktree` to `shared` in the TOML (or removes the mount entirely) after eject but before the next `load`, the existing `isolated/<slug>/` directory is left on disk. The next `load` resolves the new config and bind-mounts accordingly; the orphan `isolated/` tree is reclaimed by `jackin purge <container>`. Jackin' does not automatically prune orphans on config change — `purge` is the single recovery path.
+- **Missing host repo.** If the host `src` is deleted or moved between `load` and later operations, `purge` tolerates the missing parent (best-effort `git worktree remove --force`, then `rm -rf` the isolated tree). A subsequent `load` errors clearly pointing at the absent `src` rather than silently re-materializing from an empty path. This matches existing `shared`-mode behavior (`load` already fails when `src` doesn't exist); worktree mode's only addition is the orphan-cleanup path in `purge`.
+- **Convenience navigation.** `jackin cd <container>` enters the worktree path on the host so operators can inspect agent work without memorizing the long data-dir path. Read-only; does not modify state.
 
 ## V1 Scope
 
 Ship:
 
-- `default_isolation` on workspace + `isolation` per mount, values `shared | worktree | clone`
-- Hardcoded branch template (`jackin/<container-name>`) and base branch = host `HEAD`
-- `load` materializes, `purge` tears down, `eject` leaves alone
-- Validation: sensitive + non-`shared` = error; `readonly` + non-`shared` = error; non-repo + `worktree` = error; subrepo + `worktree` = error
-- Docs updates in the same PR
+- `isolation` field on workspace mounts, values `shared | worktree`. Absent → `shared` (backward-compatible; zero-migration for existing TOMLs). Global mounts reject the field at parse time.
+- Branch naming hardcoded as `jackin/<container-name>` (ephemeral scratch ref). Base is always host `HEAD`. No configurable template or base in V1.
+- `extensions.worktreeConfig` enabled on the host repo on first worktree creation.
+- `load` materializes, `eject` leaves alone, `purge` silently deletes everything (container, DinD sidecar, `isolated/`, worktree, local branch).
+- `purge` refuses on running agents (also closes the pre-existing gap for `shared` mode).
+- `jackin cd <container>` convenience command.
+- Hooks inherit from host by default (no opt-out flag).
+- Pre-flight validation scoped per isolation type (see Composition Rules). Error messages reference the mount and the declared isolation level.
+- Docs updates in the same PR (guides, configuration reference, architecture reference).
+
+Known limitations for v1 (document, don't invest):
+
+- **Submodules and git-LFS.** Worktrees handle submodules the way the parent repo does; no extra jackin'-side orchestration. If a team hits an edge case, they'll tell us.
+- **Shared `.git/config` for remotes, credentials, and non-`--worktree` writes.** `extensions.worktreeConfig` closes the accidental-leak path for tools that use `git config --worktree`, but config written without that flag, plus `remote.*` and `credential.*`, still lands in shared `.git/config`. An agent that deliberately writes shared config can still affect the host — this is a trust question, not a boundary.
+- **Naming collision with existing `-clone-N` suffix.** `src/instance/naming.rs` already uses `-clone-N` for collision-avoidance in container names (e.g. `jackin-the-architect-clone-1`). When `isolation = "clone"` lands, the word "clone" will have two meanings in the data-dir layout. To be resolved when clone mode ships — not a V1 blocker.
 
 Defer:
 
-- Per-workspace `branch_template` and `base_branch`
-- CLI override of isolation on ad-hoc mounts
-- `--delete-branches` flag on `purge`
-- `clone` mode can land after `worktree` — `worktree` solves the immediate contention problem
+- `isolation = "clone"` mode. `worktree` solves the contention problem first; clone mode is for the untrusted-agent / full-isolation case and can land after.
+- Configurable `branch_template` / `base_branch`. The V1 branch name is ephemeral scratch; no user-facing use case has surfaced that a hardcoded name doesn't cover.
+- CLI override of isolation on ad-hoc mounts (`--mount`). Ad-hoc mounts default to `shared`.
+- `--no-hooks` flag to skip host hooks per worktree.
+- Any `jackin diff` / `jackin integrate` / merge-assist commands. Back-merge is handled upstream on GitHub.
 
 ## Open Questions
 
-1. Should `workspace edit` allow flipping `isolation` on a mount while a container is running, or require eject first?
-2. Branch-naming template — hardcoded for v1, or expose `branch_template = "agents/{container}"` right away?
-3. Build caches (`target/`, `node_modules/`) — worth documenting a pattern (separate `shared` mount for the cache dir) or supporting a dedicated "warm from template" mode later?
-4. Submodules and git-LFS — document as known limitations for v1, or invest in handling them?
-5. Interaction with `hardline` (offline lockdown) — both `worktree` and `clone` are local-only, so this should be fine, but worth verifying.
+1. Build caches (`target/`, `node_modules/`) — worth documenting a pattern (separate `shared` mount for the cache dir) or supporting a dedicated "warm from template" mode later?
+2. Interaction with `hardline` (offline lockdown) — `worktree` is local-only, so this should be fine, but worth verifying.
 
 ## Related Files
 
@@ -110,9 +138,12 @@ Defer:
 - `src/workspace/resolve.rs` — `resolve_load_workspace`
 - `src/instance/naming.rs` — per-container naming already provides collision-free slugs for worktree paths and branch names
 - `src/runtime/launch.rs` — `load` path where materialization hooks in
-- `src/runtime/cleanup.rs` — `purge` path where teardown hooks in
-- `src/config/mod.rs` — serialization of the new fields
+- `src/runtime/cleanup.rs` — `purge` path where teardown hooks in; `list_agent_names` is the primitive for the running-agent guard
+- `src/app/mod.rs` — `Command::Purge` dispatch; gains the running-agent guard
+- `src/config/mod.rs` — serialization of the new `isolation` field
 - `src/config/workspaces.rs` — `workspace show` output and edit flows
-- `src/cli/workspace.rs` — surfacing the new fields in edit flows
+- `src/cli/workspace.rs` — surfacing the new field in edit flows
+- `src/cli/cleanup.rs` — `PurgeArgs`; error messaging when target is running
+- New `src/cli/cd.rs` (or similar) — `jackin cd <container>` command
 - New module (e.g. `src/isolation.rs`) — host-side git shell-outs for materialize / remove, kept out of `runtime/`
 - `docs/src/content/docs/guides/workspaces.mdx`, `docs/src/content/docs/guides/mounts.mdx`, `docs/src/content/docs/reference/configuration.mdx`, `docs/src/content/docs/reference/architecture.mdx` — doc pages to update alongside the code change
