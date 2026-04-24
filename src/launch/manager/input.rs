@@ -859,9 +859,15 @@ fn commit_editor_save(
         }
     };
 
-    match save_mode {
+    // Track a pending rename across the inner match. Finding #4: the
+    // `editor.mode = EditorMode::Edit { name }` mutation is deferred
+    // until after `ce.save()` succeeds — otherwise a later
+    // `ce.edit_workspace` or `ce.save` failure would leave the editor UI
+    // advertising the new name while nothing has reached disk.
+    let pending_rename: Option<String> = match save_mode {
         SaveMode::Edit { original_name } => {
             let mut current_name = original_name.clone();
+            let mut rename_to: Option<String> = None;
             let pending_name = editor.pending_name.clone();
             if let Some(new_name) = pending_name
                 && new_name != original_name
@@ -871,7 +877,7 @@ fn commit_editor_save(
                     return Ok(());
                 }
                 current_name.clone_from(&new_name);
-                editor.mode = EditorMode::Edit { name: new_name };
+                rename_to = Some(new_name);
             }
 
             let mut edit = build_workspace_edit(&editor.original, &editor.pending);
@@ -881,6 +887,10 @@ fn commit_editor_save(
                 open_save_error_popup(editor, &e.to_string());
                 return Ok(());
             }
+
+            // Defer `editor.mode` mutation — only commit it in the
+            // `ce.save()` success arm below.
+            rename_to
         }
         SaveMode::Create => {
             let Some(name) = editor.pending_name.clone() else {
@@ -891,8 +901,9 @@ fn commit_editor_save(
                 open_save_error_popup(editor, &e.to_string());
                 return Ok(());
             }
+            None
         }
-    }
+    };
 
     match ce.save() {
         Ok(fresh) => {
@@ -900,6 +911,13 @@ fn commit_editor_save(
             // Refresh editor origin-of-truth; keep the operator on the
             // editor (direct `s` press) OR bounce to list (Esc→Save path).
             if let ManagerStage::Editor(editor) = &mut state.stage {
+                // Apply the deferred rename now that the whole write has
+                // reached disk. Doing this BEFORE the `editor.original` /
+                // `editor.pending` refresh below means that refresh can
+                // look up the new name in `config.workspaces`.
+                if let Some(new_name) = pending_rename {
+                    editor.mode = EditorMode::Edit { name: new_name };
+                }
                 let change_count = editor.change_count();
                 if let EditorMode::Edit { name } = &editor.mode
                     && let Some(ws) = config.workspaces.get(name)
@@ -2422,6 +2440,81 @@ mod tests {
             matches!(toast.kind, ToastKind::Success),
             "carried-across toast must be the Success kind; got {:?}",
             toast.kind,
+        );
+    }
+
+    #[test]
+    fn failed_post_rename_edit_leaves_editor_mode_on_original_name() {
+        // Finding #4: if `ce.rename_workspace` succeeds but the subsequent
+        // `ce.edit_workspace` fails, the old code already mutated
+        // `editor.mode` to the new name — leaving the editor UI advertising
+        // a rename that never reached disk. The fix defers the mode
+        // mutation to the `ce.save()` success arm; a pre-save failure
+        // must leave `editor.mode` on the original name.
+        //
+        // We trigger a post-rename failure by calling `commit_editor_save`
+        // directly with a hand-built plan whose `effective_removals`
+        // references a destination that doesn't exist on the workspace.
+        // `AppConfig::edit_workspace` validates `remove_destinations`
+        // against the live mount list and bails out with
+        // "unknown workspace mount destination".
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (tmp, paths, mut config) = setup_with_workspace("original-name", ws.clone()).unwrap();
+
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("original-name".into(), ws);
+        editor.pending_name = Some("renamed-in-memory".into());
+        state.stage = ManagerStage::Editor(editor);
+
+        // Drive commit_editor_save directly with a plan that will make
+        // `ce.edit_workspace` fail AFTER `ce.rename_workspace` has already
+        // moved the workspace inside ConfigEditor's in-memory buffer.
+        let bad_plan = crate::launch::manager::state::PendingSaveCommit {
+            effective_removals: vec!["/does/not/exist".to_string()],
+            final_mounts: None,
+        };
+        commit_editor_save(&mut state, &mut config, &paths, cwd, bad_plan, false).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected after failed save");
+        };
+        if let EditorMode::Edit { name } = &e.mode {
+            assert_eq!(
+                name, "original-name",
+                "editor.mode must stay on the original name when the save \
+                 fails after rename — got {name:?}",
+            );
+        } else {
+            panic!("expected EditorMode::Edit; got {:?}", e.mode);
+        }
+
+        // The error popup must have been opened so the operator knows.
+        assert!(
+            matches!(e.modal, Some(Modal::ErrorPopup { .. })),
+            "post-rename edit_workspace failure should surface via ErrorPopup; \
+             got {:?}",
+            e.modal,
+        );
+
+        // And the on-disk config must not have been touched.
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        assert!(
+            reloaded.workspaces.contains_key("original-name"),
+            "on-disk config should still have the original name; got {:?}",
+            reloaded.workspaces.keys().collect::<Vec<_>>(),
+        );
+        assert!(
+            !reloaded.workspaces.contains_key("renamed-in-memory"),
+            "rename must not have reached disk after the edit_workspace failure",
         );
     }
 
