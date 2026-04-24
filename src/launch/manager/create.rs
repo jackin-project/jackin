@@ -70,6 +70,21 @@ impl CreatePreludeState<'_> {
     pub fn name(&self) -> Option<&str> {
         self.pending_name.as_deref()
     }
+
+    /// The wizard is complete iff a name, a mount source, a mount dst,
+    /// and a workdir have all been captured. Returns the owned pair the
+    /// dispatcher needs to transition to the editor; returns None when
+    /// any field is still missing (the dispatcher then stays on the
+    /// current wizard step).
+    ///
+    /// Prefer this over individually checking fields — the returned
+    /// tuple guarantees by type that every required value is present,
+    /// so the dispatcher no longer needs `expect("prelude complete")`.
+    pub fn completed(&self) -> Option<(String, WorkspaceConfig)> {
+        let name = self.pending_name.clone()?;
+        let workspace = self.build_workspace()?;
+        Some((name, workspace))
+    }
 }
 
 #[cfg(test)]

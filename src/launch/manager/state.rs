@@ -753,6 +753,52 @@ mod tests {
         assert!(matches!(p.step, CreateStep::PickFirstMountSrc));
     }
 
+    // ── completed() helper — keeps name+ws invariants in lockstep ──
+
+    #[test]
+    fn completed_returns_none_when_name_missing() {
+        let mut p = CreatePreludeState::new();
+        p.accept_mount_src(PathBuf::from("/home/user/proj"));
+        p.accept_mount_dst("/home/user/proj".into(), false);
+        p.accept_workdir("/home/user/proj".into());
+        // No accept_name → completed() must be None.
+        assert!(p.completed().is_none());
+    }
+
+    #[test]
+    fn completed_returns_none_when_mount_src_missing() {
+        let mut p = CreatePreludeState::new();
+        // Skip accept_mount_src and accept_mount_dst.
+        p.pending_workdir = Some("/home/user/proj".into());
+        p.pending_name = Some("proj".into());
+        // build_workspace fails on missing src → completed() None.
+        assert!(p.completed().is_none());
+    }
+
+    #[test]
+    fn completed_returns_none_when_workdir_missing() {
+        let mut p = CreatePreludeState::new();
+        p.accept_mount_src(PathBuf::from("/home/user/proj"));
+        p.accept_mount_dst("/home/user/proj".into(), false);
+        // Skip accept_workdir.
+        p.pending_name = Some("proj".into());
+        assert!(p.completed().is_none());
+    }
+
+    #[test]
+    fn completed_returns_some_when_all_fields_present() {
+        let mut p = CreatePreludeState::new();
+        p.accept_mount_src(PathBuf::from("/home/user/proj"));
+        p.accept_mount_dst("/home/user/proj".into(), false);
+        p.accept_workdir("/home/user/proj".into());
+        p.accept_name("proj".into());
+        let (name, ws) = p.completed().expect("all fields present");
+        assert_eq!(name, "proj");
+        assert_eq!(ws.workdir, "/home/user/proj");
+        assert_eq!(ws.mounts.len(), 1);
+        assert_eq!(ws.mounts[0].src, "/home/user/proj");
+    }
+
     /// Pin the enum contract: round-tripping a `ManagerListRow` through
     /// `to_screen_index` / `row_at` / `selected_row` must yield the same
     /// logical row. Covers the three variants over a non-trivial saved set.

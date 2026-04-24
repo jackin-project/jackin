@@ -120,19 +120,25 @@ pub fn handle_key(
             }
             // After the modal handler runs, the prelude is in one of three states:
             // - still in a modal (user pressed a non-commit/cancel key): continue
-            // - modal cleared + pending_name set: wizard complete → transition to Editor
-            // - modal cleared + pending_name unset: wizard cancelled → back to List
+            // - modal cleared + completed() Some: wizard done → transition to Editor
+            // - modal cleared + completed() None: wizard cancelled → back to List
+            //
+            // `completed()` checks every required field together and
+            // returns the owned (name, ws) pair so we don't need a
+            // separate `pending_name.is_some()` flag plus an
+            // `expect("prelude complete")` to keep the two invariants
+            // in sync.
             #[allow(clippy::items_after_statements)]
             enum PreludeStatus {
                 InProgress,
-                Complete,
+                Complete(String, crate::workspace::WorkspaceConfig),
                 Cancelled,
             }
             let status = if let ManagerStage::CreatePrelude(p) = &state.stage {
                 if p.modal.is_some() {
                     PreludeStatus::InProgress
-                } else if p.pending_name.is_some() {
-                    PreludeStatus::Complete
+                } else if let Some((name, ws)) = p.completed() {
+                    PreludeStatus::Complete(name, ws)
                 } else {
                     PreludeStatus::Cancelled
                 }
@@ -140,15 +146,11 @@ pub fn handle_key(
                 PreludeStatus::InProgress
             };
             match status {
-                PreludeStatus::Complete => {
-                    if let ManagerStage::CreatePrelude(p) = &state.stage {
-                        let ws = p.build_workspace().expect("prelude complete");
-                        let name = p.pending_name.clone().unwrap();
-                        let mut editor = EditorState::new_create();
-                        editor.pending = ws;
-                        editor.pending_name = Some(name);
-                        state.stage = ManagerStage::Editor(editor);
-                    }
+                PreludeStatus::Complete(name, ws) => {
+                    let mut editor = EditorState::new_create();
+                    editor.pending = ws;
+                    editor.pending_name = Some(name);
+                    state.stage = ManagerStage::Editor(editor);
                 }
                 PreludeStatus::Cancelled => {
                     *state = ManagerState::from_config(config, cwd);
