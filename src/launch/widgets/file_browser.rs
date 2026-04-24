@@ -620,9 +620,9 @@ fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
         .bg(PHOSPHOR_GREEN)
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
-    let base_style = Style::default().fg(PHOSPHOR_GREEN);
+    let base_style = Style::default().fg(WHITE);
     let git_suffix_style = Style::default()
-        .fg(PHOSPHOR_DIM)
+        .fg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
 
     let lines: Vec<Line> = state
@@ -1550,6 +1550,106 @@ mod tests {
         assert!(opened, "click on URL row with URL should return true");
         // Click doesn't dismiss the prompt.
         assert!(state.pending_git_prompt.is_some());
+    }
+
+    // ── Entry name colour (WHITE) ─────────────────────────────────────
+
+    /// Plain (non-git) directory entries render their name in WHITE so
+    /// the listing stays legible against phosphor-green accents.
+    #[test]
+    fn non_git_entry_renders_in_white() {
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let tmp = tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("plain")).unwrap();
+
+        let state = make_state_at(tmp.path().to_path_buf());
+        // Make sure nothing is selected so the highlight style doesn't
+        // mask the base WHITE colour we want to assert on.
+        let mut state = state;
+        state.list_state.select(None);
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render(frame, frame.area(), &state);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        // Locate the first cell of the name "plain" — rows start at y=0
+        // with the block's top border, so the first entry sits at y=1
+        // and the name begins at x = 1 (border) + 2 (indent) = 3.
+        let cell = &buffer[(3, 1)];
+        assert_eq!(
+            cell.symbol(),
+            "p",
+            "expected 'p' at the entry's first char, got {:?}",
+            cell.symbol()
+        );
+        assert_eq!(
+            cell.fg,
+            Color::Rgb(255, 255, 255),
+            "non-git entry name should render in WHITE, got {:?}",
+            cell.fg
+        );
+    }
+
+    /// Git-repo entries render the name in WHITE and the ` (git)` suffix
+    /// in PHOSPHOR_GREEN so the marker pops against the otherwise-white row.
+    #[test]
+    fn git_entry_name_is_white_and_suffix_is_phosphor_green() {
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let tmp = tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let mut state = make_state_at(tmp.path().to_path_buf());
+        // Clear selection so the highlight style doesn't mask the spans.
+        state.list_state.select(None);
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render(frame, frame.area(), &state);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        // First entry row is at y=1 (below the block's top border).
+        // Name starts at x = 1 (border) + 2 (indent) = 3.
+        let name_cell = &buffer[(3, 1)];
+        assert_eq!(
+            name_cell.symbol(),
+            "r",
+            "expected 'r' at name's first char, got {:?}",
+            name_cell.symbol()
+        );
+        assert_eq!(
+            name_cell.fg,
+            Color::Rgb(255, 255, 255),
+            "git entry name should render in WHITE, got {:?}",
+            name_cell.fg
+        );
+
+        // Suffix: "  repo/ (git)" — the '(' of "(git)" sits at
+        // x = 3 (name start) + 5 (len of "repo/") + 1 (space) = 9.
+        let paren_cell = &buffer[(9, 1)];
+        assert_eq!(
+            paren_cell.symbol(),
+            "(",
+            "expected '(' at the suffix's first char, got {:?}",
+            paren_cell.symbol()
+        );
+        assert_eq!(
+            paren_cell.fg,
+            Color::Rgb(0, 255, 65),
+            "git suffix should render in PHOSPHOR_GREEN, got {:?}",
+            paren_cell.fg
+        );
     }
 
     #[test]
