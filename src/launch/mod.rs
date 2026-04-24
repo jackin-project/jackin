@@ -51,7 +51,6 @@ pub fn run_launch(
         }
 
         terminal.draw(|frame| match &state.stage {
-            LaunchStage::Workspace => render::draw_workspace_screen(frame, &state),
             LaunchStage::Agent => render::draw_agent_screen(frame, &state, &config, cwd),
             LaunchStage::Manager(ms) => manager::render(frame, ms),
         })?;
@@ -62,8 +61,47 @@ pub fn run_launch(
                 if let LaunchStage::Manager(ms) = &mut state.stage {
                     match manager::handle_key(ms, &mut config, paths, key)? {
                         manager::InputOutcome::Continue => {}
-                        manager::InputOutcome::ExitToLauncher => {
-                            state = LaunchState::new(&config, cwd)?;
+                        manager::InputOutcome::ExitJackin => {
+                            break Ok(None);
+                        }
+                        manager::InputOutcome::LaunchNamed(name) => {
+                            // Find the workspace by name in LaunchState.workspaces.
+                            if let Some(idx) = state
+                                .workspaces
+                                .iter()
+                                .position(|choice| choice.name == name)
+                            {
+                                state.selected_workspace = idx;
+                                state.agent_query.clear();
+
+                                // Preselect the preferred agent.
+                                let agents = state.filtered_agents();
+                                if agents.is_empty() {
+                                    break Err(anyhow::anyhow!(
+                                        "no eligible agents for workspace {name}"
+                                    ));
+                                }
+                                // Single-agent short-circuit: launch directly.
+                                if agents.len() == 1 {
+                                    let agent = agents[0].clone();
+                                    let workspace = preview::resolve_selected_workspace(
+                                        &config,
+                                        cwd,
+                                        &state.workspaces[state.selected_workspace],
+                                        &agent,
+                                    )?;
+                                    break Ok(Some((agent, workspace)));
+                                }
+
+                                let choice = &state.workspaces[state.selected_workspace];
+                                state.selected_agent = crate::app::context::preferred_agent_index(
+                                    &agents,
+                                    choice.last_agent.as_deref(),
+                                    choice.default_agent.as_deref(),
+                                )
+                                .unwrap_or(0);
+                                state.stage = LaunchStage::Agent;
+                            }
                         }
                     }
                 }

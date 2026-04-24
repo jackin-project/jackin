@@ -45,7 +45,7 @@ pub fn render(frame: &mut Frame, state: &ManagerState<'_>) {
     render_footer_hint(
         frame,
         chunks[2],
-        "↑↓ · Enter edit · n new · d delete · Esc back to launcher",
+        "↑↓ · Enter launch · e edit · n new · d delete · q quit",
     );
 }
 

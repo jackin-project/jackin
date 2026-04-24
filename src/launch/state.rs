@@ -6,9 +6,8 @@ use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, curre
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum LaunchStage {
-    Workspace,
-    Agent,
     Manager(crate::launch::manager::ManagerState<'static>),
+    Agent,
 }
 
 #[derive(Debug, Clone)]
@@ -77,7 +76,7 @@ impl LaunchState {
             .unwrap_or(0);
 
         Ok(Self {
-            stage: LaunchStage::Workspace,
+            stage: LaunchStage::Manager(crate::launch::manager::ManagerState::from_config(config)),
             selected_workspace,
             selected_agent: 0,
             agent_query: String::new(),

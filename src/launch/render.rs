@@ -1,6 +1,6 @@
 use super::preview::build_agent_detail_lines;
 use super::state::LaunchState;
-use crate::config::{AppConfig, MountConfig};
+use crate::config::AppConfig;
 use crate::tui;
 
 #[cfg(test)]
@@ -19,7 +19,6 @@ pub(super) mod colors {
     pub const DIM_GREEN: Color = Color::Rgb(0, 140, 30); // footer hints
     pub const WHITE: Color = Color::Rgb(255, 255, 255);
     pub const DIM_WHITE: Color = Color::Rgb(180, 180, 180);
-    pub const TAG: Color = Color::Rgb(120, 120, 140); // dim tags like "current directory"
     pub const PATH: Color = Color::Rgb(220, 190, 120); // paths (warm amber)
     pub const PATH_DST: Color = Color::Rgb(150, 180, 220); // mount destination
     pub const DARK_BG: Color = Color::Rgb(20, 20, 30); // subtle bg for selected
@@ -78,222 +77,7 @@ fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
     frame.render_widget(banner, cols[1]);
 }
 
-// ── Screen 1: Workspace selection ──────────────────────────────────────
-
-#[allow(clippy::too_many_lines)]
-pub(super) fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchState) {
-    use ratatui::layout::{Alignment, Constraint, Direction, Layout};
-    use ratatui::style::{Modifier, Style};
-    use ratatui::text::{Line, Span};
-    use ratatui::widgets::{
-        Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Wrap,
-    };
-
-    let area = frame.area();
-
-    // Main vertical layout: banner | body | footer
-    let root = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(BANNER_HEIGHT), // banner (includes bottom padding)
-            Constraint::Min(10),               // body
-            Constraint::Length(2),             // footer
-        ])
-        .split(area);
-
-    // Banner
-    render_banner(frame, root[0]);
-
-    // Body: workspace list (fixed height) + gap + details (fills rest)
-    let selected = &state.workspaces[state.selected_workspace];
-    let list_height = (state.workspaces.len() as u16) + 2; // items + border top/bottom
-    let body = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(list_height), // workspace list — fixed to item count
-            Constraint::Length(1),           // gap between panels
-            Constraint::Min(6),              // details — fills remaining space
-        ])
-        .split(root[1]);
-
-    // Center both panels at the same width
-    let list_area = centered_rect(body[0], 70);
-    let detail_area = centered_rect(body[2], 70);
-
-    // Workspace list
-    let workspace_items: Vec<ListItem> = state
-        .workspaces
-        .iter()
-        .enumerate()
-        .map(|(i, ws)| {
-            let is_selected = i == state.selected_workspace;
-            let name_style = if is_selected {
-                Style::default()
-                    .fg(colors::PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
-                    .bg(colors::DARK_BG)
-            } else {
-                Style::default().fg(colors::DIM_WHITE)
-            };
-
-            if ws.name == "Current directory" {
-                let path_style = if is_selected {
-                    Style::default()
-                        .fg(colors::WHITE)
-                        .add_modifier(Modifier::BOLD)
-                        .bg(colors::DARK_BG)
-                } else {
-                    Style::default().fg(colors::WHITE)
-                };
-                let tag_style = if is_selected {
-                    Style::default().fg(colors::TAG).bg(colors::DARK_BG)
-                } else {
-                    Style::default().fg(colors::TAG)
-                };
-                ListItem::new(Line::from(vec![
-                    Span::styled(
-                        format!("  {}  ", tui::shorten_home(&ws.workspace.workdir)),
-                        path_style,
-                    ),
-                    Span::styled("current directory", tag_style),
-                ]))
-            } else {
-                ListItem::new(Line::from(Span::styled(
-                    format!("  {}  ", ws.name),
-                    name_style,
-                )))
-            }
-        })
-        .collect();
-
-    let ws_block = Block::default()
-        .title(Span::styled(
-            " Select Workspace ",
-            Style::default()
-                .fg(colors::BRIGHT_BLUE)
-                .add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(colors::DIM_BLUE));
-
-    let workspace_list = List::new(workspace_items)
-        .block(ws_block)
-        .highlight_symbol("▸ ");
-    let mut workspace_state = ListState::default();
-    workspace_state.select(Some(state.selected_workspace));
-    frame.render_stateful_widget(workspace_list, list_area, &mut workspace_state);
-
-    // Details panel
-    let mut detail_lines: Vec<Line> = Vec::new();
-
-    detail_lines.push(Line::from(vec![
-        Span::styled("workdir  ", Style::default().fg(colors::BRIGHT_BLUE)),
-        Span::styled(
-            tui::shorten_home(&selected.workspace.workdir),
-            Style::default().fg(colors::WHITE),
-        ),
-    ]));
-    detail_lines.push(Line::from(vec![
-        Span::styled("agents   ", Style::default().fg(colors::BRIGHT_BLUE)),
-        Span::styled(
-            format!("{} available", selected.allowed_agents.len()),
-            Style::default().fg(colors::DIM_WHITE),
-        ),
-    ]));
-
-    let all_mounts: Vec<(&MountConfig, bool)> = selected
-        .workspace
-        .mounts
-        .iter()
-        .map(|m| (m, false))
-        .chain(selected.global_mounts.iter().map(|m| (m, true)))
-        .collect();
-
-    if !all_mounts.is_empty() {
-        detail_lines.push(Line::from(""));
-        detail_lines.push(Line::from(Span::styled(
-            "mounts",
-            Style::default()
-                .fg(colors::BRIGHT_BLUE)
-                .add_modifier(Modifier::BOLD),
-        )));
-        for (mount, is_global) in &all_mounts {
-            let src_short = tui::shorten_home(&mount.src);
-            let dst_short = tui::shorten_home(&mount.dst);
-            let ro = if mount.readonly { " (read-only)" } else { "" };
-            let global_tag = if *is_global { " [global]" } else { "" };
-
-            let mut spans = vec![Span::styled("  ", Style::default())];
-            if src_short == dst_short {
-                spans.push(Span::styled(src_short, Style::default().fg(colors::PATH)));
-            } else {
-                spans.push(Span::styled(src_short, Style::default().fg(colors::PATH)));
-                spans.push(Span::styled(
-                    " mounted as ",
-                    Style::default().fg(colors::DIM_WHITE),
-                ));
-                spans.push(Span::styled(
-                    dst_short,
-                    Style::default().fg(colors::PATH_DST),
-                ));
-            }
-            if !ro.is_empty() || !global_tag.is_empty() {
-                spans.push(Span::styled(
-                    format!("{ro}{global_tag}"),
-                    Style::default().fg(colors::DIM_WHITE),
-                ));
-            }
-            detail_lines.push(Line::from(spans));
-        }
-    }
-
-    let detail_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(colors::DETAIL_BORDER))
-        .style(Style::default().bg(colors::DETAIL_BG));
-    let details = Paragraph::new(detail_lines)
-        .block(detail_block)
-        .wrap(Wrap { trim: false });
-    frame.render_widget(details, detail_area);
-
-    // Footer
-    let footer = Paragraph::new(Line::from(vec![
-        Span::styled(
-            "  Enter ",
-            Style::default()
-                .fg(colors::PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("select   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled(
-            "↑↓ ",
-            Style::default()
-                .fg(colors::PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("navigate   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled(
-            "m ",
-            Style::default()
-                .fg(colors::PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("manage   ", Style::default().fg(colors::DIM_GREEN)),
-        Span::styled(
-            "Esc ",
-            Style::default()
-                .fg(colors::PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("quit", Style::default().fg(colors::DIM_GREEN)),
-    ]))
-    .alignment(Alignment::Center);
-    frame.render_widget(footer, root[2]);
-}
-
-// ── Screen 2: Agent selection ──────────────────────────────────────────
+// ── Screen: Agent selection ────────────────────────────────────────────
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn draw_agent_screen(
@@ -483,9 +267,8 @@ fn centered_rect(area: ratatui::layout::Rect, percent: u16) -> ratatui::layout::
 #[cfg(test)]
 fn footer_text(stage: &LaunchStage) -> &'static str {
     match stage {
-        LaunchStage::Workspace => "Enter select   ↑↓ navigate   m manage   Esc quit",
         LaunchStage::Agent => "Enter load   ↑↓ navigate   Type to filter   Esc back",
-        LaunchStage::Manager(_) => "Esc back",
+        LaunchStage::Manager(_) => "↑↓ · Enter launch · e edit · n new · d delete · q quit",
     }
 }
 
@@ -495,9 +278,6 @@ mod tests {
 
     #[test]
     fn footer_text_matches_stage_behavior() {
-        assert!(footer_text(&LaunchStage::Workspace).contains("Enter"));
-        assert!(footer_text(&LaunchStage::Workspace).contains("quit"));
-        assert!(footer_text(&LaunchStage::Workspace).contains("manage"));
         assert!(footer_text(&LaunchStage::Agent).contains("Enter"));
         assert!(footer_text(&LaunchStage::Agent).contains("back"));
         assert!(footer_text(&LaunchStage::Agent).contains("filter"));

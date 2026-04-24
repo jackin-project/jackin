@@ -18,8 +18,10 @@ use crate::paths::JackinPaths;
 pub enum InputOutcome {
     /// Stay in the manager.
     Continue,
-    /// Back to the launcher's Workspace stage.
-    ExitToLauncher,
+    /// Exit jackin entirely (Esc/q from the manager list).
+    ExitJackin,
+    /// Launch the named workspace — resolved by name in `run_launch`.
+    LaunchNamed(String),
 }
 
 pub fn handle_key(
@@ -97,7 +99,7 @@ fn handle_list_key(
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     match key.code {
-        KeyCode::Esc => Ok(InputOutcome::ExitToLauncher),
+        KeyCode::Esc | KeyCode::Char('q') => Ok(InputOutcome::ExitJackin),
         KeyCode::Up | KeyCode::Char('k') => {
             state.selected = state.selected.saturating_sub(1);
             Ok(InputOutcome::Continue)
@@ -118,8 +120,17 @@ fn handle_list_key(
                     state: FileBrowserState::new_from_home()?,
                 });
                 state.stage = ManagerStage::CreatePrelude(prelude);
+                Ok(InputOutcome::Continue)
             } else if let Some(summary) = state.workspaces.get(state.selected) {
-                // Edit existing workspace — load full WorkspaceConfig from AppConfig.
+                // Launch the selected workspace — hand control back to run_launch.
+                Ok(InputOutcome::LaunchNamed(summary.name.clone()))
+            } else {
+                Ok(InputOutcome::Continue)
+            }
+        }
+        KeyCode::Char('e') => {
+            if let Some(summary) = state.workspaces.get(state.selected) {
+                // Open the editor for the selected workspace.
                 let name = summary.name.clone();
                 if let Some(ws) = config.workspaces.get(&name) {
                     state.stage = ManagerStage::Editor(EditorState::new_edit(name, ws.clone()));
