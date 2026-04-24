@@ -958,7 +958,7 @@ mod tests {
         let bin_path = dir.path().join("fake-op");
         std::fs::write(
             &bin_path,
-            "#!/bin/sh\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://Personal/api/token\" ]; then echo -n 'tok-123'; exit 0; fi\nexit 99\n",
+            "#!/bin/sh\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://Personal/api/token\" ]; then printf '%s' 'tok-123'; exit 0; fi\nexit 99\n",
         )
         .unwrap();
         make_executable(&bin_path);
