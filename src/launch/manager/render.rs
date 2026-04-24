@@ -491,7 +491,7 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
     // `render_general_subpanel` for the shared convention.
     let general_lines = vec![Line::from(vec![
         Span::raw("  "),
-        Span::styled("workdir   ", Style::default().fg(WHITE)),
+        Span::styled("working dir ", Style::default().fg(WHITE)),
         Span::raw(workdir_short),
     ])];
     frame.render_widget(
@@ -594,12 +594,12 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
     let lines = vec![
         Line::from(vec![
             Span::raw("  "),
-            Span::styled("workdir   ", Style::default().fg(WHITE)),
+            Span::styled("working dir ", Style::default().fg(WHITE)),
             Span::raw(crate::tui::shorten_home(&ws.workdir)),
         ]),
         Line::from(vec![
             Span::raw("  "),
-            Span::styled("last      ", Style::default().fg(WHITE)),
+            Span::styled("last        ", Style::default().fg(WHITE)),
             Span::raw(
                 ws.last_agent
                     .clone()
@@ -811,12 +811,18 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
             //   Edit:   0 = name, 1 = workdir, 2 = default agent (ro), 3 = last used (ro)
             match &state.mode {
                 EditorMode::Create => match cursor {
-                    0 => vec![FooterItem::Key("Enter"), FooterItem::Text("pick workdir")],
+                    0 => vec![
+                        FooterItem::Key("Enter"),
+                        FooterItem::Text("pick working directory"),
+                    ],
                     _ => Vec::new(),
                 },
                 EditorMode::Edit { .. } => match cursor {
                     0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
-                    1 => vec![FooterItem::Key("Enter"), FooterItem::Text("pick workdir")],
+                    1 => vec![
+                        FooterItem::Key("Enter"),
+                        FooterItem::Text("pick working directory"),
+                    ],
                     _ => Vec::new(), // default agent and last used are read-only
                 },
             }
@@ -931,7 +937,7 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         rows.push(render_editor_row(
             1,
             cursor,
-            "workdir",
+            "working dir",
             &workdir_display,
             state.pending.workdir != state.original.workdir,
         ));
@@ -956,7 +962,7 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         rows.push(render_editor_row(
             1,
             cursor,
-            "workdir",
+            "working dir",
             &workdir_display,
             false,
         ));
