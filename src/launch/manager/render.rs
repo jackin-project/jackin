@@ -419,23 +419,31 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
 
-    // Mount rows needed: 1 header row + N mounts (min 1 for "(none)") + 2 borders.
-    // Clamp to a reasonable maximum so a workspace with many mounts doesn't eat the screen.
-    let mount_data_rows = if mounts.is_empty() { 1 } else { mounts.len() };
-    let mount_block_height = (mount_data_rows + 2 + 1).min(12) as u16; // +1 header, +2 borders
-
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4),                  // General: workdir + last + 2 borders
-            Constraint::Length(mount_block_height), // Mounts: header + N rows + 2 borders
-            Constraint::Min(3),                     // Agents: takes remaining space
+            Constraint::Length(4), // General: workdir + last + 2 borders
+            Constraint::Length(mount_block_height(mounts)), // Mounts: header + N rows + 2 borders
+            Constraint::Min(3),    // Agents: takes remaining space
         ])
         .split(area);
 
     render_general_subpanel(frame, rows[0], ws);
     render_mounts_subpanel(frame, rows[1], mounts);
     render_agents_subpanel(frame, rows[2], ws_config, config);
+}
+
+/// Exact row count a Mounts sub-panel needs to render `mounts` without
+/// leaving a phantom empty row inside the block. Layout: 2 borders + 1
+/// header row + N data rows (minimum 1 for the "(none)" placeholder when
+/// `mounts` is empty). Clamped to a reasonable maximum so a workspace with
+/// many mounts can't eat the full right pane.
+///
+/// Shared by `render_details_pane` and `render_current_dir_details_pane`
+/// so both produce identically-tight blocks.
+fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
+    let data_rows = if mounts.is_empty() { 1 } else { mounts.len() };
+    (data_rows + 2 + 1).min(12) as u16 // +1 header, +2 borders
 }
 
 /// Right-pane details shown when the cursor is on the synthetic "Current
@@ -462,9 +470,9 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // General: workdir + 2 borders
-            Constraint::Length(5), // Mounts: header + 1 row + 2 borders + 1 pad
-            Constraint::Min(3),    // Agents: takes remaining space
+            Constraint::Length(3),                           // General: workdir + 2 borders
+            Constraint::Length(mount_block_height(&mounts)), // Mounts: header + N rows + 2 borders
+            Constraint::Min(3),                              // Agents: takes remaining space
         ])
         .split(area);
 
@@ -1579,5 +1587,53 @@ mod contextual_row_items_tests {
         // But the existing d/a hints must still be present.
         assert!(keys.contains(&"d"));
         assert!(keys.contains(&"a"));
+    }
+}
+
+#[cfg(test)]
+mod mount_block_height_tests {
+    //! Pins the Mounts sub-panel height formula shared by
+    //! `render_details_pane` and `render_current_dir_details_pane`. Guards
+    //! against the "phantom empty row" regression where a fixed
+    //! `Constraint::Length(5)` over-allocated by 1 for a single-mount
+    //! current-directory workspace.
+    use super::mount_block_height;
+    use crate::workspace::MountConfig;
+
+    fn mount(path: &str) -> MountConfig {
+        MountConfig {
+            src: path.into(),
+            dst: path.into(),
+            readonly: false,
+        }
+    }
+
+    #[test]
+    fn empty_mounts_reserves_row_for_none_placeholder() {
+        // 0 data rows + "(none)" placeholder (1 row) + 1 header + 2 borders = 4.
+        assert_eq!(mount_block_height(&[]), 4);
+    }
+
+    #[test]
+    fn single_mount_fits_in_four_rows() {
+        // Regression: the current-dir pane used to hard-code `Length(5)`
+        // which left an extra empty line inside the block. Correct total
+        // for a 1-mount workspace is 1 data + 1 header + 2 borders = 4.
+        assert_eq!(mount_block_height(&[mount("/tmp/a")]), 4);
+    }
+
+    #[test]
+    fn multiple_mounts_scale_linearly() {
+        assert_eq!(mount_block_height(&[mount("/tmp/a"), mount("/tmp/b")]), 5);
+        assert_eq!(
+            mount_block_height(&[mount("/a"), mount("/b"), mount("/c")]),
+            6
+        );
+    }
+
+    #[test]
+    fn many_mounts_clamp_to_twelve() {
+        let mounts: Vec<MountConfig> = (0..20).map(|i| mount(&format!("/m/{i}"))).collect();
+        assert_eq!(mount_block_height(&mounts), 12);
     }
 }
