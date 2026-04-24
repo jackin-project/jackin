@@ -360,17 +360,23 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
 
     frame.render_widget(ratatui::widgets::Clear, area);
 
+    // Layout:
+    //   - When a rejection is active: [reason banner][explorer][nav hint]
+    //   - Otherwise:                   [explorer][nav hint]
+    //
+    // The "press [S] to use this folder" banner was removed: the footer
+    // `S select` hint already tells the operator the same thing and no
+    // other modal uses a top affordance banner. The `rejected_reason`
+    // banner stays — it is functional error feedback, not an affordance.
     let has_rejection = state.rejected_reason.is_some();
     let constraints: Vec<Constraint> = if has_rejection {
         vec![
-            Constraint::Length(1), // affordance
             Constraint::Length(1), // rejection banner
             Constraint::Min(3),    // explorer
             Constraint::Length(1), // nav hint
         ]
     } else {
         vec![
-            Constraint::Length(1), // affordance
             Constraint::Min(3),    // explorer
             Constraint::Length(1), // nav hint
         ]
@@ -379,26 +385,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(area);
-
-    // Affordance — match the footer key/label scheme:
-    //   Key ("[S]") = WHITE + BOLD; surrounding prose = PHOSPHOR_GREEN.
-    frame.render_widget(
-        Paragraph::new(ratatui::text::Line::from(vec![
-            Span::styled("press ", Style::default().fg(Color::Rgb(0, 255, 65))),
-            Span::styled(
-                "[S]",
-                Style::default()
-                    .fg(Color::Rgb(255, 255, 255))
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                " to use this folder",
-                Style::default().fg(Color::Rgb(0, 255, 65)),
-            ),
-        ]))
-        .alignment(Alignment::Center),
-        chunks[0],
-    );
 
     let explorer_idx = if has_rejection {
         let reason = state.rejected_reason.as_ref().unwrap();
@@ -410,11 +396,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
                     .add_modifier(Modifier::BOLD),
             ))
             .alignment(Alignment::Center),
-            chunks[1],
+            chunks[0],
         );
-        2
-    } else {
         1
+    } else {
+        0
     };
 
     frame.render_widget_ref(state.explorer.widget(), chunks[explorer_idx]);
