@@ -423,9 +423,9 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4), // General: workdir + last + 2 borders
+            Constraint::Length(3), // General: workdir + 2 borders (Last used moved to Agents)
             Constraint::Length(mount_block_height(mounts)), // Mounts: header + N rows + 2 borders
-            Constraint::Min(3),    // Agents: takes remaining space
+            Constraint::Min(5),    // Agents: last_used + blank + "any agent"/list + 2 borders
         ])
         .split(area);
 
@@ -473,7 +473,7 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
         .constraints([
             Constraint::Length(3),                           // General: workdir + 2 borders
             Constraint::Length(mount_block_height(&mounts)), // Mounts: header + N rows + 2 borders
-            Constraint::Min(3),                              // Agents: takes remaining space
+            Constraint::Min(5), // Agents: last_used + blank + "any agent" + 2 borders
         ])
         .split(area);
 
@@ -592,22 +592,15 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
     // Agents sub-panels (see `SUBPANEL_CONTENT_INDENT`). Without the prefix the
     // label sat flush against the block's left border, breaking column
     // alignment with the other two blocks in the same pane.
-    let lines = vec![
-        Line::from(vec![
-            Span::raw("  "),
-            Span::styled("Working dir ", Style::default().fg(WHITE)),
-            Span::raw(crate::tui::shorten_home(&ws.workdir)),
-        ]),
-        Line::from(vec![
-            Span::raw("  "),
-            Span::styled("Last used   ", Style::default().fg(WHITE)),
-            Span::raw(
-                ws.last_agent
-                    .clone()
-                    .unwrap_or_else(|| "(none)".to_string()),
-            ),
-        ]),
-    ];
+    //
+    // The `Last used` row used to live here; it now sits at the top of the
+    // Agents sub-panel where it semantically belongs (agent-identity data,
+    // not path/workspace-identity data).
+    let lines = vec![Line::from(vec![
+        Span::raw("  "),
+        Span::styled("Working dir ", Style::default().fg(WHITE)),
+        Span::raw(crate::tui::shorten_home(&ws.workdir)),
+    ])];
 
     let p = Paragraph::new(lines)
         .block(block)
@@ -674,6 +667,24 @@ fn render_agents_subpanel(
     let allowed = ws_config.map_or(&[][..], |w| w.allowed_agents.as_slice());
 
     let mut lines: Vec<Line> = Vec::new();
+
+    // `Last used` row — moved from the General sub-panel so the right pane's
+    // agent-identity data all lives under the Agents header. Always rendered
+    // at the top of the Agents block, whether the value is a real agent name
+    // (phosphor-green) or the `(none)` placeholder (phosphor-dim).
+    //
+    // A blank line follows so the value visually detaches from the allow list.
+    let last = ws_config.and_then(|w| w.last_agent.as_deref());
+    let (value_text, value_style): (String, Style) = last.map_or_else(
+        || ("(none)".to_string(), Style::default().fg(PHOSPHOR_DIM)),
+        |name| (name.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
+    );
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        Span::styled("Last used   ", Style::default().fg(WHITE)),
+        Span::styled(value_text, value_style),
+    ]));
+    lines.push(Line::from(""));
 
     if allowed.is_empty() {
         lines.push(Line::from(Span::styled(
@@ -1923,10 +1934,15 @@ mod subpanel_padding_tests {
     /// Non-default agent rows render the name starting at
     /// `SUBPANEL_CONTENT_INDENT` (col 2 from the border). With the
     /// trailing-star convention no glyph precedes the name.
+    ///
+    /// After the "Last used" relocation, the Agents sub-panel lays out:
+    ///   y=0 top border
+    ///   y=1 `  Last used   …`
+    ///   y=2 blank spacer
+    ///   y=3 first agent row (here: alpha, the default)
+    ///   y=4 second agent row (here: beta, the non-default)
     #[test]
     fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
-        // Two allowed agents, default = alpha. `beta` is the non-default
-        // row at y=2 (y=0 border, y=1 alpha, y=2 beta).
         let ws = ws_config_with_allowed(&["alpha", "beta"], Some("alpha"));
         let mut cfg = AppConfig::default();
         cfg.agents
@@ -1934,25 +1950,25 @@ mod subpanel_padding_tests {
         cfg.agents
             .insert("beta".into(), crate::config::AgentSource::default());
 
-        let backend = TestBackend::new(40, 5);
+        let backend = TestBackend::new(40, 7);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_agents_subpanel(f, Rect::new(0, 0, 40, 5), Some(&ws), &cfg);
+            render_agents_subpanel(f, Rect::new(0, 0, 40, 7), Some(&ws), &cfg);
         })
         .unwrap();
 
-        // Locate the first printable char on the beta row (y=2).
+        // Locate the first printable char on the beta row (y=4).
         let buf = term.backend().buffer();
         let area = buf.area;
         let border_x = (0..area.width)
             .find(|x| {
-                let sym = buf[(*x, 2)].symbol();
+                let sym = buf[(*x, 4)].symbol();
                 sym == "│" || sym == "║"
             })
             .expect("left border on beta row");
         let name_col = ((border_x + 1)..area.width)
             .find(|x| {
-                let sym = buf[(*x, 2)].symbol();
+                let sym = buf[(*x, 4)].symbol();
                 !sym.is_empty() && sym != " "
             })
             .map(|x| (x - border_x - 1) as usize)
@@ -1963,7 +1979,7 @@ mod subpanel_padding_tests {
         );
 
         // And there must be no trailing star on the non-default row.
-        let last_col = last_printable_indent(&term, 2).expect("beta row has content");
+        let last_col = last_printable_indent(&term, 4).expect("beta row has content");
         // `beta` is 4 chars starting at col 2 ⇒ last printable at col 5.
         // A trailing star would push last_col to col 7 (space + star).
         assert_eq!(
@@ -1975,6 +1991,10 @@ mod subpanel_padding_tests {
 
     /// Default agent row carries a trailing star glyph positioned after
     /// the agent name (separated by a space), not a leading star.
+    ///
+    /// Agents sub-panel layout after the `Last used` relocation: top
+    /// border at y=0, `Last used` at y=1, blank at y=2, first agent row
+    /// at y=3. For a single-allowed workspace that agent IS the default.
     #[test]
     fn agents_subpanel_default_agent_has_trailing_star() {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
@@ -1982,17 +2002,14 @@ mod subpanel_padding_tests {
         cfg.agents
             .insert("alpha".into(), crate::config::AgentSource::default());
 
-        let backend = TestBackend::new(40, 5);
+        let backend = TestBackend::new(40, 6);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_agents_subpanel(f, Rect::new(0, 0, 40, 5), Some(&ws), &cfg);
+            render_agents_subpanel(f, Rect::new(0, 0, 40, 6), Some(&ws), &cfg);
         })
         .unwrap();
 
-        // alpha row is at y=1 (y=0 border). Expect star at col
-        // SUBPANEL_CONTENT_INDENT + "alpha".len() + 1 (+1 for separator
-        // space between the name and the trailing glyph).
-        let star_col = find_symbol_indent(&term, 1, "\u{2605}")
+        let star_col = find_symbol_indent(&term, 3, "\u{2605}")
             .expect("default agent row should contain a star glyph");
         let expected = SUBPANEL_CONTENT_INDENT + "alpha".len() + 1;
         assert_eq!(
@@ -2004,6 +2021,13 @@ mod subpanel_padding_tests {
     /// Default agent row's name column matches non-default rows (and the
     /// `SUBPANEL_CONTENT_INDENT` convention). The trailing star must not
     /// shift the name right.
+    ///
+    /// `first_content_indent` scans y=1; that's now the `Last used` row,
+    /// whose label also starts at `SUBPANEL_CONTENT_INDENT`. The invariant
+    /// the test pins (every content row starts at col 2) still holds —
+    /// what we're confirming is that the block's leading indent is
+    /// consistent. We check the agent row explicitly to guard against the
+    /// trailing-star breaking the name-column alignment.
     #[test]
     fn agents_subpanel_default_agent_name_starts_at_col_2_regardless_of_star() {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
@@ -2011,17 +2035,155 @@ mod subpanel_padding_tests {
         cfg.agents
             .insert("alpha".into(), crate::config::AgentSource::default());
 
-        let backend = TestBackend::new(40, 5);
+        let backend = TestBackend::new(40, 6);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_agents_subpanel(f, Rect::new(0, 0, 40, 5), Some(&ws), &cfg);
+            render_agents_subpanel(f, Rect::new(0, 0, 40, 6), Some(&ws), &cfg);
         })
         .unwrap();
 
-        let name_col = first_content_indent(&term).expect("default agent row should have content");
+        // Locate the first printable char on the alpha row (y=3).
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let border_x = (0..area.width)
+            .find(|x| {
+                let sym = buf[(*x, 3)].symbol();
+                sym == "│" || sym == "║"
+            })
+            .expect("left border on alpha row");
+        let name_col = ((border_x + 1)..area.width)
+            .find(|x| {
+                let sym = buf[(*x, 3)].symbol();
+                !sym.is_empty() && sym != " "
+            })
+            .map(|x| (x - border_x - 1) as usize)
+            .expect("alpha row has content");
         assert_eq!(
             name_col, SUBPANEL_CONTENT_INDENT,
             "default agent name should start at col {SUBPANEL_CONTENT_INDENT} even with the trailing star, got {name_col}"
+        );
+    }
+
+    // ── Last-used relocation: General → Agents sub-panel ───────────────
+
+    /// The General sub-panel no longer shows `Last used` — it only renders
+    /// `Working dir`. Guards against a regression that reintroduces the row
+    /// and grows the block back to 4 rows.
+    #[test]
+    fn general_subpanel_no_longer_shows_last_used() {
+        let mut s = summary();
+        s.last_agent = Some("alpha".into());
+
+        let backend = TestBackend::new(60, 4);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_general_subpanel(f, Rect::new(0, 0, 60, 4), &s);
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        for y in 0..area.height {
+            let mut row = String::new();
+            for x in 0..area.width {
+                row.push_str(buf[(x, y)].symbol());
+            }
+            assert!(
+                !row.contains("Last used"),
+                "General sub-panel must not render `Last used`; got row {y}: {row:?}"
+            );
+        }
+    }
+
+    /// The Agents sub-panel renders `Last used   <agent>` at the top, above
+    /// the blank spacer and the allow list.
+    #[test]
+    fn agents_subpanel_shows_last_used_at_top() {
+        let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        ws.last_agent = Some("beta".into());
+        let mut cfg = AppConfig::default();
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+
+        let backend = TestBackend::new(60, 6);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_agents_subpanel(f, Rect::new(0, 0, 60, 6), Some(&ws), &cfg);
+        })
+        .unwrap();
+
+        // y=1 is the first content row — expect `Last used   beta`.
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut row = String::new();
+        for x in 0..area.width {
+            row.push_str(buf[(x, 1)].symbol());
+        }
+        assert!(
+            row.contains("Last used"),
+            "Agents row 1 must hold `Last used`; got {row:?}"
+        );
+        assert!(
+            row.contains("beta"),
+            "Agents row 1 must hold the last-used agent name; got {row:?}"
+        );
+    }
+
+    /// When `last_agent` is `None`, the Last-used row displays the
+    /// `(none)` placeholder. Pinned separately so the phrasing is stable.
+    #[test]
+    fn last_used_none_renders_placeholder() {
+        let ws = ws_config_with_allowed(&[], None); // last_agent defaults to None
+        let cfg = AppConfig::default();
+
+        let backend = TestBackend::new(60, 6);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_agents_subpanel(f, Rect::new(0, 0, 60, 6), Some(&ws), &cfg);
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut row = String::new();
+        for x in 0..area.width {
+            row.push_str(buf[(x, 1)].symbol());
+        }
+        assert!(
+            row.contains("Last used"),
+            "Agents row 1 must hold `Last used` even when the value is (none); got {row:?}"
+        );
+        assert!(
+            row.contains("(none)"),
+            "Last-used placeholder should be `(none)`; got {row:?}"
+        );
+    }
+
+    /// Current-directory pane also shows the Last-used row in its Agents
+    /// block for structural consistency, even though the synthetic cwd
+    /// workspace always has `last_agent = None` → renders `(none)`.
+    /// Passing `ws_config = None` exercises the same code path the
+    /// current-dir pane uses.
+    #[test]
+    fn current_dir_agents_subpanel_shows_last_used_none() {
+        let cfg = AppConfig::default();
+
+        let backend = TestBackend::new(60, 6);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_agents_subpanel(f, Rect::new(0, 0, 60, 6), None, &cfg);
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut row = String::new();
+        for x in 0..area.width {
+            row.push_str(buf[(x, 1)].symbol());
+        }
+        assert!(
+            row.contains("Last used") && row.contains("(none)"),
+            "current-dir Agents block must still show `Last used   (none)`; got {row:?}"
         );
     }
 }
