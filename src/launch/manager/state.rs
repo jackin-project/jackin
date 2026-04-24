@@ -210,7 +210,15 @@ impl EditorState<'_> {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.pending != self.original
+        if self.pending != self.original {
+            return true;
+        }
+        if let EditorMode::Edit { name } = &self.mode
+            && self.pending_name.as_deref().is_some_and(|n| n != name)
+        {
+            return true;
+        }
+        false
     }
 
     /// Count field-level differences. Used for "s save (N changes)".
@@ -223,6 +231,12 @@ impl EditorState<'_> {
             n += 1;
         }
         if self.pending.allowed_agents != self.original.allowed_agents {
+            n += 1;
+        }
+        // Rename in Edit mode counts as a change.
+        if let EditorMode::Edit { name } = &self.mode
+            && self.pending_name.as_deref().is_some_and(|pn| pn != name)
+        {
             n += 1;
         }
         // Mounts: count adds + removes + content changes.

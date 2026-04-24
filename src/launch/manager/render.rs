@@ -12,16 +12,17 @@ use super::super::widgets::{confirm, file_browser, text_input, workdir_pick};
 use super::state::{
     EditorMode, EditorState, EditorTab, ManagerStage, ManagerState, Modal, WorkspaceSummary,
 };
+use crate::config::AppConfig;
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 
-pub fn render(frame: &mut Frame, state: &ManagerState<'_>) {
+pub fn render(frame: &mut Frame, state: &ManagerState<'_>, config: &AppConfig) {
     // Phase 1: render the base stage (Editor full-screen OR List chrome).
     if let ManagerStage::Editor(editor) = &state.stage {
-        render_editor(frame, editor);
+        render_editor(frame, editor, config);
     } else {
         // List / CreatePrelude / ConfirmDelete share the list-like chrome.
         let area = frame.area();
@@ -213,7 +214,7 @@ fn render_footer_hint(frame: &mut Frame, area: Rect, hint: &str) {
 
 // ── Editor stage ────────────────────────────────────────────────────
 
-pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>) {
+pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppConfig) {
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -236,7 +237,7 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>) {
     match state.active_tab {
         EditorTab::General => render_general_tab(frame, chunks[2], state),
         EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state),
-        EditorTab::Agents => render_agents_tab(frame, chunks[2], state),
+        EditorTab::Agents => render_agents_tab(frame, chunks[2], state, config),
         EditorTab::Secrets => render_secrets_stub(frame, chunks[2]),
     }
 
@@ -300,13 +301,17 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
 
+    let name_dirty = match &state.mode {
+        EditorMode::Edit { name } => state.pending_name.as_deref().is_some_and(|n| n != name),
+        EditorMode::Create => false,
+    };
     let name_value = match &state.mode {
-        EditorMode::Edit { name } => name.as_str(),
+        EditorMode::Edit { name } => state.pending_name.as_deref().unwrap_or(name.as_str()),
         EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
     };
 
     let rows = vec![
-        render_field_row("name", name_value, false),
+        render_field_row("name", name_value, name_dirty),
         render_field_row(
             "workdir",
             &state.pending.workdir,
@@ -374,7 +379,7 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
+fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
@@ -383,10 +388,14 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         Style::default().fg(WHITE),
     ));
     let mut lines = vec![header];
-    for agent in &state.pending.allowed_agents {
-        let is_default = state.pending.default_agent.as_deref() == Some(agent);
+    for agent_name in config.agents.keys() {
+        let allowed = state.pending.allowed_agents.contains(agent_name);
+        let is_default = state.pending.default_agent.as_deref() == Some(agent_name.as_str());
+        let check = if allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };
-        lines.push(Line::from(format!("  [x]          {star}        {agent}")));
+        lines.push(Line::from(format!(
+            "  {check}          {star}        {agent_name}"
+        )));
     }
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }

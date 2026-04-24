@@ -52,7 +52,7 @@ pub fn run_launch(
 
         terminal.draw(|frame| match &state.stage {
             LaunchStage::Agent => render::draw_agent_screen(frame, &state, &config, cwd),
-            LaunchStage::Manager(ms) => manager::render(frame, ms),
+            LaunchStage::Manager(ms) => manager::render(frame, ms, &config),
         })?;
         if let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press

@@ -257,7 +257,7 @@ fn handle_editor_key(
             toggle_agent_allowed_at_cursor(editor, config);
         }
         KeyCode::Char('*') if editor.active_tab == EditorTab::Agents => {
-            set_default_agent_at_cursor(editor);
+            set_default_agent_at_cursor(editor, config);
         }
         KeyCode::Char('a') if editor.active_tab == EditorTab::Mounts => {
             editor.modal = Some(Modal::FileBrowser {
@@ -274,15 +274,27 @@ fn handle_editor_key(
 }
 
 fn open_editor_field_modal(editor: &mut EditorState<'_>) {
+    use super::super::widgets::text_input::TextInputState;
     if editor.active_tab == EditorTab::General {
         let FieldFocus::Row(n) = editor.active_field;
-        if n == 1 {
-            // workdir — use WorkdirPick if mounts exist
-            if !editor.pending.mounts.is_empty() {
+        match n {
+            0 => {
+                // Name — Edit mode only (Create mode name comes from prelude).
+                if let EditorMode::Edit { name } = &editor.mode {
+                    let current = editor.pending_name.clone().unwrap_or_else(|| name.clone());
+                    editor.modal = Some(Modal::TextInput {
+                        target: super::state::TextInputTarget::Name,
+                        state: TextInputState::new("Rename workspace", current),
+                    });
+                }
+            }
+            1 if !editor.pending.mounts.is_empty() => {
+                // workdir — use WorkdirPick if mounts exist
                 editor.modal = Some(Modal::WorkdirPick {
                     state: WorkdirPickState::from_mounts(&editor.pending.mounts),
                 });
             }
+            _ => {}
         }
     }
 }
@@ -311,14 +323,18 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
     }
 }
 
-fn set_default_agent_at_cursor(editor: &mut EditorState<'_>) {
+fn set_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
     if n == 0 {
         return;
     }
     let idx = n - 1;
-    if let Some(agent) = editor.pending.allowed_agents.get(idx).cloned() {
-        editor.pending.default_agent = Some(agent);
+    let agent_names: Vec<String> = config.agents.keys().cloned().collect();
+    if let Some(agent) = agent_names.get(idx) {
+        // Only allowed agents can be set as default.
+        if editor.pending.allowed_agents.contains(agent) {
+            editor.pending.default_agent = Some(agent.clone());
+        }
     }
 }
 
@@ -338,16 +354,47 @@ fn save_editor(
         return Ok(());
     };
     let mut ce = crate::config::ConfigEditor::open(paths)?;
-    match &editor.mode {
-        EditorMode::Edit { name } => {
-            let name = name.clone();
+
+    // Discriminate first so we can mutate editor fields inside each arm
+    // without a live borrow on editor.mode.
+    #[allow(clippy::items_after_statements)]
+    enum SaveMode {
+        Edit { original_name: String },
+        Create,
+    }
+    let save_mode = match &editor.mode {
+        EditorMode::Edit { name } => SaveMode::Edit {
+            original_name: name.clone(),
+        },
+        EditorMode::Create => SaveMode::Create,
+    };
+
+    match save_mode {
+        SaveMode::Edit { original_name } => {
+            let mut current_name = original_name.clone();
+
+            // If the user renamed, perform the rename before the field edit.
+            let pending_name = editor.pending_name.clone();
+            if let Some(new_name) = pending_name
+                && new_name != original_name
+            {
+                if let Err(e) = ce.rename_workspace(&original_name, &new_name) {
+                    editor.error_banner = Some(e.to_string());
+                    return Ok(());
+                }
+                current_name.clone_from(&new_name);
+                // Reflect the rename in the editor's mode so subsequent saves
+                // target the new name.
+                editor.mode = EditorMode::Edit { name: new_name };
+            }
+
             let edit = build_workspace_edit(&editor.original, &editor.pending);
-            if let Err(e) = ce.edit_workspace(&name, edit) {
+            if let Err(e) = ce.edit_workspace(&current_name, edit) {
                 editor.error_banner = Some(e.to_string());
                 return Ok(());
             }
         }
-        EditorMode::Create => {
+        SaveMode::Create => {
             let Some(name) = editor.pending_name.clone() else {
                 editor.error_banner = Some("missing workspace name".into());
                 return Ok(());
@@ -541,9 +588,10 @@ fn apply_text_input_to_pending(
     use super::state::TextInputTarget;
     match target {
         TextInputTarget::Name => {
-            // Rename in Edit mode requires AppConfig key rotation (future work).
-            // In Create mode the name lives on the prelude, not editor.
-            let _ = value;
+            // Both Edit and Create modes stash the pending name on the editor.
+            // Save-time plumbing distinguishes: Edit calls rename_workspace,
+            // Create passes it to create_workspace.
+            editor.pending_name = Some(value.to_string());
         }
         TextInputTarget::Workdir => editor.pending.workdir = value.to_string(),
         TextInputTarget::MountDst => {
