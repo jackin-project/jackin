@@ -871,50 +871,10 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             target,
             state: modal_state,
         } => {
-            use crate::launch::widgets::mount_dst_choice::MountDstChoice;
             let target = *target;
-            match modal_state.handle_key(key) {
-                ModalOutcome::Commit(MountDstChoice::Ok) => {
-                    // Fast path: dst = src. Only meaningful for the Editor
-                    // `EditAddMountSrc` target; the prelude path is handled
-                    // by `handle_prelude_modal`.
-                    if target == FileBrowserTarget::EditAddMountSrc {
-                        let src = modal_state.src.clone();
-                        editor.pending.mounts.push(crate::workspace::MountConfig {
-                            src: src.clone(),
-                            dst: src,
-                            readonly: false,
-                        });
-                    }
-                    editor.modal = None;
-                }
-                ModalOutcome::Commit(MountDstChoice::Edit) => {
-                    // Fall through to today's flow: push a provisional mount
-                    // with dst = src, then open the TextInput modal so the
-                    // operator can rewrite the destination.
-                    if target == FileBrowserTarget::EditAddMountSrc {
-                        let src = modal_state.src.clone();
-                        editor.pending.mounts.push(crate::workspace::MountConfig {
-                            src: src.clone(),
-                            dst: src.clone(),
-                            readonly: false,
-                        });
-                        editor.modal = Some(Modal::TextInput {
-                            target: super::state::TextInputTarget::MountDst,
-                            state: crate::launch::widgets::text_input::TextInputState::new(
-                                "destination (default: same as host path)",
-                                src,
-                            ),
-                        });
-                    } else {
-                        editor.modal = None;
-                    }
-                }
-                ModalOutcome::Cancel => {
-                    editor.modal = None;
-                }
-                ModalOutcome::Continue => {}
-            }
+            let src = modal_state.src.clone();
+            let outcome = modal_state.handle_key(key);
+            dispatch_editor_mount_dst_choice(editor, target, &src, &outcome);
         }
         Modal::SaveDiscardCancel { state: modal_state } => {
             use crate::launch::widgets::save_discard::SaveDiscardChoice;
@@ -962,6 +922,53 @@ fn apply_text_input_to_pending(
     }
 }
 
+/// Dispatch the three outcomes of `MountDstChoiceState::handle_key` into
+/// concrete editor mutations. Only the `EditAddMountSrc` target is
+/// meaningful here — the prelude's `CreateFirstMountSrc` target is routed
+/// through `handle_prelude_modal` instead.
+fn dispatch_editor_mount_dst_choice(
+    editor: &mut EditorState<'_>,
+    target: FileBrowserTarget,
+    src: &str,
+    outcome: &ModalOutcome<crate::launch::widgets::mount_dst_choice::MountDstChoice>,
+) {
+    use crate::launch::widgets::mount_dst_choice::MountDstChoice;
+    match outcome {
+        ModalOutcome::Commit(MountDstChoice::Ok) => {
+            if target == FileBrowserTarget::EditAddMountSrc {
+                editor.pending.mounts.push(crate::workspace::MountConfig {
+                    src: src.to_string(),
+                    dst: src.to_string(),
+                    readonly: false,
+                });
+            }
+            editor.modal = None;
+        }
+        ModalOutcome::Commit(MountDstChoice::Edit) => {
+            if target == FileBrowserTarget::EditAddMountSrc {
+                editor.pending.mounts.push(crate::workspace::MountConfig {
+                    src: src.to_string(),
+                    dst: src.to_string(),
+                    readonly: false,
+                });
+                editor.modal = Some(Modal::TextInput {
+                    target: super::state::TextInputTarget::MountDst,
+                    state: crate::launch::widgets::text_input::TextInputState::new(
+                        "destination (default: same as host path)",
+                        src,
+                    ),
+                });
+            } else {
+                editor.modal = None;
+            }
+        }
+        ModalOutcome::Cancel => {
+            editor.modal = None;
+        }
+        ModalOutcome::Continue => {}
+    }
+}
+
 fn apply_file_browser_to_editor(
     target: FileBrowserTarget,
     editor: &mut EditorState<'_>,
@@ -990,7 +997,7 @@ fn apply_file_browser_to_editor(
 /// Prelude-side transition: mount-src and mount-dst are both known, now
 /// advance to the `PickWorkdir` step by opening a `WorkdirPick` modal.
 ///
-/// Factored out so both the `MountDstChoice::Ok` path (no TextInput) and
+/// Factored out so both the `MountDstChoice::Ok` path (no `TextInput`) and
 /// the `TextInputDst` commit path (operator edited dst) end the same way.
 /// Callers are responsible for having already pushed the mount dst onto
 /// the prelude (via `accept_mount_dst`).
