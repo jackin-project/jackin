@@ -6,9 +6,7 @@ use crate::config::AppConfig;
 use crate::workspace::WorkspaceConfig;
 
 use crate::launch::widgets::{
-    confirm::ConfirmState,
-    file_browser::FileBrowserState,
-    text_input::TextInputState,
+    confirm::ConfirmState, file_browser::FileBrowserState, text_input::TextInputState,
     workdir_pick::WorkdirPickState,
 };
 
@@ -21,6 +19,7 @@ pub struct ManagerState<'a> {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ManagerStage<'a> {
     List,
     Editor(EditorState<'a>),
@@ -49,7 +48,7 @@ pub struct EditorState<'a> {
     pub modal: Option<Modal<'a>>,
     pub error_banner: Option<String>,
     /// In Create mode, the workspace name the prelude collected.
-    /// Unused in Edit mode (name comes from EditorMode::Edit { name }).
+    /// Unused in Edit mode (name comes from `EditorMode::Edit { name }`).
     pub pending_name: Option<String>,
 }
 
@@ -74,20 +73,41 @@ pub enum FieldFocus {
 
 #[derive(Debug)]
 pub enum Modal<'a> {
-    TextInput { target: TextInputTarget, state: TextInputState<'a> },
-    FileBrowser { target: FileBrowserTarget, state: FileBrowserState },
-    WorkdirPick { state: WorkdirPickState },
-    Confirm { target: ConfirmTarget, state: ConfirmState },
+    TextInput {
+        target: TextInputTarget,
+        state: TextInputState<'a>,
+    },
+    FileBrowser {
+        target: FileBrowserTarget,
+        state: FileBrowserState,
+    },
+    WorkdirPick {
+        state: WorkdirPickState,
+    },
+    Confirm {
+        target: ConfirmTarget,
+        state: ConfirmState,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TextInputTarget { Name, Workdir, MountDst }
+pub enum TextInputTarget {
+    Name,
+    Workdir,
+    MountDst,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileBrowserTarget { CreateFirstMountSrc, EditAddMountSrc }
+pub enum FileBrowserTarget {
+    CreateFirstMountSrc,
+    EditAddMountSrc,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfirmTarget { DeleteWorkspace, DiscardChanges }
+pub enum ConfirmTarget {
+    DeleteWorkspace,
+    DiscardChanges,
+}
 
 #[derive(Debug)]
 pub struct CreatePreludeState<'a> {
@@ -116,7 +136,10 @@ pub struct Toast {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToastKind { Success, Error }
+pub enum ToastKind {
+    Success,
+    Error,
+}
 
 // ── Impls ──────────────────────────────────────────────────────────
 
@@ -134,9 +157,11 @@ impl WorkspaceSummary {
     }
 }
 
-impl<'a> ManagerState<'a> {
+impl ManagerState<'_> {
     pub fn from_config(config: &AppConfig) -> Self {
-        let workspaces: Vec<WorkspaceSummary> = config.workspaces.iter()
+        let workspaces: Vec<WorkspaceSummary> = config
+            .workspaces
+            .iter()
             .map(|(name, ws)| WorkspaceSummary::from_config(name, ws))
             .collect();
         Self {
@@ -148,7 +173,7 @@ impl<'a> ManagerState<'a> {
     }
 }
 
-impl<'a> EditorState<'a> {
+impl EditorState<'_> {
     pub fn new_edit(name: String, ws: WorkspaceConfig) -> Self {
         Self {
             mode: EditorMode::Edit { name },
@@ -169,8 +194,8 @@ impl<'a> EditorState<'a> {
             allowed_agents: vec![],
             default_agent: None,
             last_agent: None,
-            env: Default::default(),
-            agents: Default::default(),
+            env: std::collections::BTreeMap::default(),
+            agents: std::collections::BTreeMap::default(),
         };
         Self {
             mode: EditorMode::Create,
@@ -191,16 +216,28 @@ impl<'a> EditorState<'a> {
     /// Count field-level differences. Used for "s save (N changes)".
     pub fn change_count(&self) -> usize {
         let mut n = 0;
-        if self.pending.workdir != self.original.workdir { n += 1; }
-        if self.pending.default_agent != self.original.default_agent { n += 1; }
-        if self.pending.allowed_agents != self.original.allowed_agents { n += 1; }
+        if self.pending.workdir != self.original.workdir {
+            n += 1;
+        }
+        if self.pending.default_agent != self.original.default_agent {
+            n += 1;
+        }
+        if self.pending.allowed_agents != self.original.allowed_agents {
+            n += 1;
+        }
         // Mounts: count adds + removes + content changes.
         // MountConfig doesn't implement Ord/Hash so we use linear containment
         // checks — mount lists are small so this is perfectly acceptable.
-        let added = self.pending.mounts.iter()
+        let added = self
+            .pending
+            .mounts
+            .iter()
             .filter(|m| !self.original.mounts.contains(m))
             .count();
-        let removed = self.original.mounts.iter()
+        let removed = self
+            .original
+            .mounts
+            .iter()
             .filter(|m| !self.pending.mounts.contains(m))
             .count();
         n += added + removed;
@@ -208,8 +245,14 @@ impl<'a> EditorState<'a> {
     }
 }
 
-impl<'a> CreatePreludeState<'a> {
-    pub fn new() -> Self {
+impl Default for CreatePreludeState<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CreatePreludeState<'_> {
+    pub const fn new() -> Self {
         Self {
             step: CreateStep::PickFirstMountSrc,
             pending_mount_src: None,
@@ -246,8 +289,16 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/a".into(),
             mounts: vec![
-                MountConfig { src: "/s1".into(), dst: "/a".into(), readonly: false },
-                MountConfig { src: "/s2".into(), dst: "/b".into(), readonly: true },
+                MountConfig {
+                    src: "/s1".into(),
+                    dst: "/a".into(),
+                    readonly: false,
+                },
+                MountConfig {
+                    src: "/s2".into(),
+                    dst: "/b".into(),
+                    readonly: true,
+                },
             ],
             allowed_agents: vec!["agent-smith".into()],
             default_agent: None,
@@ -290,7 +341,11 @@ mod tests {
     #[test]
     fn adding_mount_counts_as_one_change() {
         let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
-        e.pending.mounts.push(MountConfig { src: "/s".into(), dst: "/a".into(), readonly: false });
+        e.pending.mounts.push(MountConfig {
+            src: "/s".into(),
+            dst: "/a".into(),
+            readonly: false,
+        });
         assert_eq!(e.change_count(), 1);
     }
 

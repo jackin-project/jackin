@@ -3,13 +3,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
 
-use crate::workspace::MountConfig;
 use super::ModalOutcome;
+use crate::workspace::MountConfig;
 
 #[derive(Debug, Clone)]
 pub struct WorkdirChoice {
     pub path: String,
-    pub label: String,  // e.g. "(mount dst)", "(parent)", "(root)"
+    pub label: String, // e.g. "(mount dst)", "(parent)", "(root)"
 }
 
 #[derive(Debug)]
@@ -24,7 +24,7 @@ impl WorkdirPickState {
     /// vs parent vs root.
     pub fn from_mounts(mounts: &[MountConfig]) -> Self {
         let mut choices: Vec<WorkdirChoice> = Vec::new();
-        let mut seen: std::collections::BTreeSet<String> = Default::default();
+        let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::default();
 
         for m in mounts {
             if seen.insert(m.dst.clone()) {
@@ -36,10 +36,15 @@ impl WorkdirPickState {
             let mut cursor = std::path::PathBuf::from(&m.dst);
             while let Some(parent) = cursor.parent() {
                 let p = parent.display().to_string();
-                if p.is_empty() { break; }
+                if p.is_empty() {
+                    break;
+                }
                 if seen.insert(p.clone()) {
                     let label = if p == "/" { "(root)" } else { "(parent)" };
-                    choices.push(WorkdirChoice { path: p, label: label.into() });
+                    choices.push(WorkdirChoice {
+                        path: p,
+                        label: label.into(),
+                    });
                 }
                 cursor = parent.to_path_buf();
             }
@@ -49,7 +54,10 @@ impl WorkdirPickState {
         if !choices.is_empty() {
             list_state.select(Some(0));
         }
-        Self { choices, list_state }
+        Self {
+            choices,
+            list_state,
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
@@ -57,7 +65,9 @@ impl WorkdirPickState {
             KeyCode::Up | KeyCode::Char('k') => {
                 let n = self.choices.len();
                 if n > 0 {
-                    let next = self.list_state.selected
+                    let next = self
+                        .list_state
+                        .selected
                         .map_or(0, |i| if i == 0 { n - 1 } else { i - 1 });
                     self.list_state.select(Some(next));
                 }
@@ -66,17 +76,19 @@ impl WorkdirPickState {
             KeyCode::Down | KeyCode::Char('j') => {
                 let n = self.choices.len();
                 if n > 0 {
-                    let next = self.list_state.selected
+                    let next = self
+                        .list_state
+                        .selected
                         .map_or(0, |i| if i + 1 >= n { 0 } else { i + 1 });
                     self.list_state.select(Some(next));
                 }
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                if let Some(i) = self.list_state.selected {
-                    if let Some(c) = self.choices.get(i) {
-                        return ModalOutcome::Commit(c.path.clone());
-                    }
+                if let Some(i) = self.list_state.selected
+                    && let Some(c) = self.choices.get(i)
+                {
+                    return ModalOutcome::Commit(c.path.clone());
                 }
                 ModalOutcome::Continue
             }
@@ -86,7 +98,13 @@ impl WorkdirPickState {
     }
 }
 
-use ratatui::{Frame, layout::Rect, style::{Color, Style}, widgets::{Block, Borders, Paragraph}, text::Line};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Color, Style},
+    text::Line,
+    widgets::{Block, Borders, Paragraph},
+};
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 
@@ -96,10 +114,19 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
         .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title("Workdir — pick from mounts");
 
-    let lines: Vec<Line> = state.choices.iter().enumerate().map(|(i, c)| {
-        let prefix = if Some(i) == state.list_state.selected { "▸ " } else { "  " };
-        Line::from(format!("{}{}  {}", prefix, c.path, c.label))
-    }).collect();
+    let lines: Vec<Line> = state
+        .choices
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let prefix = if Some(i) == state.list_state.selected {
+                "▸ "
+            } else {
+                "  "
+            };
+            Line::from(format!("{}{}  {}", prefix, c.path, c.label))
+        })
+        .collect();
 
     let paragraph = Paragraph::new(lines)
         .block(block)
@@ -115,11 +142,20 @@ mod tests {
     use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent { code, modifiers: KeyModifiers::NONE, kind: KeyEventKind::Press, state: KeyEventState::NONE }
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
     }
 
     fn mount(src: &str, dst: &str) -> MountConfig {
-        MountConfig { src: src.into(), dst: dst.into(), readonly: false }
+        MountConfig {
+            src: src.into(),
+            dst: dst.into(),
+            readonly: false,
+        }
     }
 
     #[test]
@@ -173,6 +209,9 @@ mod tests {
     fn esc_cancels() {
         let mounts = vec![mount("/a", "/a")];
         let mut s = WorkdirPickState::from_mounts(&mounts);
-        assert!(matches!(s.handle_key(key(KeyCode::Esc)), ModalOutcome::Cancel));
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Esc)),
+            ModalOutcome::Cancel
+        ));
     }
 }

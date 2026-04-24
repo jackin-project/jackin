@@ -43,12 +43,11 @@ pub fn run_launch(
 
     let result = loop {
         // Auto-expire manager toasts after 3 seconds.
-        if let LaunchStage::Manager(ms) = &mut state.stage {
-            if let Some(toast) = &ms.toast {
-                if toast.shown_at.elapsed() > std::time::Duration::from_secs(3) {
-                    ms.toast = None;
-                }
-            }
+        if let LaunchStage::Manager(ms) = &mut state.stage
+            && let Some(toast) = &ms.toast
+            && toast.shown_at.elapsed() > std::time::Duration::from_secs(3)
+        {
+            ms.toast = None;
         }
 
         terminal.draw(|frame| match &state.stage {

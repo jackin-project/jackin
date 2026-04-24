@@ -1,4 +1,4 @@
-//! Area-bounded phosphor rain. Uses the same RainState engine as
+//! Area-bounded phosphor rain. Uses the same `RainState` engine as
 //! src/tui/animation.rs, rendered into a sub-rect rather than fullscreen.
 
 use ratatui::{Frame, layout::Rect};
@@ -12,7 +12,9 @@ pub struct PanelRainState {
 
 impl std::fmt::Debug for PanelRainState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PanelRainState").field("tick_count", &self.tick_count).finish()
+        f.debug_struct("PanelRainState")
+            .field("tick_count", &self.tick_count)
+            .finish_non_exhaustive()
     }
 }
 
@@ -38,10 +40,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut PanelRainState) {
     }
     // Tick is not called here — leave frame-rate control to the caller
     // so a slow paint doesn't starve tick.
-    animation::render_rain_frame(
-        &mut state.rain,
-        (area.x, area.y, area.width, area.height),
-    );
+    animation::render_rain_frame(&state.rain, (area.x, area.y, area.width, area.height));
     let _ = frame; // Frame is accepted for symmetry with other render fns.
 }
 

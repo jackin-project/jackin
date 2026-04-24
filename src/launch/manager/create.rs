@@ -1,13 +1,13 @@
 //! Create-workspace mounts-first wizard state transitions.
 //!
-//! Flow: PickFirstMountSrc → PickFirstMountDst → PickWorkdir → NameWorkspace → (drop into editor).
+//! Flow: `PickFirstMountSrc` → `PickFirstMountDst` → `PickWorkdir` → `NameWorkspace` → (drop into editor).
 
 use std::path::PathBuf;
 
-use crate::workspace::{MountConfig, WorkspaceConfig};
 use super::state::{CreatePreludeState, CreateStep};
+use crate::workspace::{MountConfig, WorkspaceConfig};
 
-impl<'a> CreatePreludeState<'a> {
+impl CreatePreludeState<'_> {
     pub fn accept_mount_src(&mut self, src: PathBuf) {
         self.pending_mount_src = Some(src);
         self.step = CreateStep::PickFirstMountDst;
@@ -16,7 +16,9 @@ impl<'a> CreatePreludeState<'a> {
     /// Default mount dst = same absolute path as host src. Operator can
     /// overwrite in the dst modal.
     pub fn default_mount_dst(&self) -> Option<String> {
-        self.pending_mount_src.as_ref().map(|p| p.display().to_string())
+        self.pending_mount_src
+            .as_ref()
+            .map(|p| p.display().to_string())
     }
 
     pub fn accept_mount_dst(&mut self, dst: String, readonly: bool) {
@@ -32,15 +34,18 @@ impl<'a> CreatePreludeState<'a> {
 
     /// Default name = mount dst basename.
     pub fn default_name(&self) -> Option<String> {
-        self.pending_mount_dst.as_ref()
-            .and_then(|dst| std::path::Path::new(dst).file_name().map(|s| s.to_string_lossy().to_string()))
+        self.pending_mount_dst.as_ref().and_then(|dst| {
+            std::path::Path::new(dst)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+        })
     }
 
     pub fn accept_name(&mut self, name: String) {
         self.pending_name = Some(name);
     }
 
-    /// Produce the WorkspaceConfig for commit. Returns None if any
+    /// Produce the `WorkspaceConfig` for commit. Returns None if any
     /// required field is missing (unit guard; UX gates should prevent).
     pub fn build_workspace(&self) -> Option<WorkspaceConfig> {
         let src = self.pending_mount_src.as_ref()?;
@@ -57,8 +62,8 @@ impl<'a> CreatePreludeState<'a> {
             allowed_agents: vec![],
             default_agent: None,
             last_agent: None,
-            env: Default::default(),
-            agents: Default::default(),
+            env: std::collections::BTreeMap::default(),
+            agents: std::collections::BTreeMap::default(),
         })
     }
 

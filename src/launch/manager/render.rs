@@ -8,8 +8,10 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use super::state::{EditorMode, EditorState, EditorTab, ManagerStage, ManagerState, Modal, WorkspaceSummary};
 use super::super::widgets::{confirm, file_browser, text_input, workdir_pick};
+use super::state::{
+    EditorMode, EditorState, EditorTab, ManagerStage, ManagerState, Modal, WorkspaceSummary,
+};
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
@@ -18,12 +20,9 @@ const WHITE: Color = Color::Rgb(255, 255, 255);
 
 pub fn render(frame: &mut Frame, state: &ManagerState<'_>) {
     // Some stages render their own full-screen layout.
-    match &state.stage {
-        ManagerStage::Editor(editor) => {
-            render_editor(frame, editor);
-            return;
-        }
-        _ => {}
+    if let ManagerStage::Editor(editor) = &state.stage {
+        render_editor(frame, editor);
+        return;
     }
 
     // List / CreatePrelude / ConfirmDelete share the list-like chrome.
@@ -31,26 +30,32 @@ pub fn render(frame: &mut Frame, state: &ManagerState<'_>) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // header
-            Constraint::Min(10),    // body
-            Constraint::Length(2),  // footer
+            Constraint::Length(3), // header
+            Constraint::Min(10),   // body
+            Constraint::Length(2), // footer
         ])
         .split(area);
 
     render_header(frame, chunks[0], "manage workspaces");
 
-    match &state.stage {
-        ManagerStage::List => render_list_body(frame, chunks[1], state),
-        _ => {}
+    if matches!(&state.stage, ManagerStage::List) {
+        render_list_body(frame, chunks[1], state);
     }
 
-    render_footer_hint(frame, chunks[2], "↑↓ · Enter edit · n new · d delete · Esc back to launcher");
+    render_footer_hint(
+        frame,
+        chunks[2],
+        "↑↓ · Enter edit · n new · d delete · Esc back to launcher",
+    );
 }
 
 fn render_header(frame: &mut Frame, area: Rect, title: &str) {
     let line = Line::from(vec![
         Span::styled("▓▓▓▓ ", Style::default().fg(PHOSPHOR_GREEN)),
-        Span::styled("JACKIN", Style::default().fg(WHITE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "JACKIN",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
         Span::raw("     · "),
         Span::styled(title.to_string(), Style::default().fg(PHOSPHOR_DIM)),
     ]);
@@ -64,16 +69,22 @@ fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>) {
         .split(area);
 
     // Left: list of workspaces + [+ New workspace] sentinel.
-    let mut items: Vec<ListItem> = state.workspaces.iter().map(|w| {
-        ListItem::new(Line::from(w.name.as_str()))
-    }).collect();
+    let mut items: Vec<ListItem> = state
+        .workspaces
+        .iter()
+        .map(|w| ListItem::new(Line::from(w.name.as_str())))
+        .collect();
     items.push(ListItem::new(Line::from(Span::styled(
         "+ New workspace",
         Style::default().fg(WHITE),
     ))));
 
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(PHOSPHOR_DARK)))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(PHOSPHOR_DARK)),
+        )
         .style(Style::default().fg(PHOSPHOR_GREEN))
         .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
         .highlight_symbol("▸ ");
@@ -87,7 +98,9 @@ fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>) {
         render_details_pane(frame, columns[1], ws);
     } else {
         // [+ New workspace] selected — right pane is empty.
-        let block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(PHOSPHOR_DARK));
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(PHOSPHOR_DARK));
         frame.render_widget(block, columns[1]);
     }
 
@@ -102,7 +115,9 @@ fn render_toast(frame: &mut Frame, area: Rect, toast: &super::state::Toast) {
     let elapsed = toast.shown_at.elapsed();
     // Auto-expire after 3 seconds — caller should clear before that,
     // but defensively skip rendering if we're past.
-    if elapsed > std::time::Duration::from_secs(3) { return; }
+    if elapsed > std::time::Duration::from_secs(3) {
+        return;
+    }
 
     let (prefix, color) = match toast.kind {
         ToastKind::Success => ("✓ ", PHOSPHOR_GREEN),
@@ -114,17 +129,28 @@ fn render_toast(frame: &mut Frame, area: Rect, toast: &super::state::Toast) {
         style = style.fg(WHITE);
     }
     let line = Line::from(Span::styled(format!("{}{}", prefix, toast.message), style));
-    let banner_area = Rect { x: area.x + 2, y: area.y + 1, width: area.width.saturating_sub(4), height: 1 };
+    let banner_area = Rect {
+        x: area.x + 2,
+        y: area.y + 1,
+        width: area.width.saturating_sub(4),
+        height: 1,
+    };
     frame.render_widget(ratatui::widgets::Clear, banner_area);
     frame.render_widget(Paragraph::new(line), banner_area);
 }
 
 fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary) {
     let lines = vec![
-        Line::from(vec![Span::styled("workdir ", Style::default().fg(WHITE)), Span::raw(ws.workdir.clone())]),
+        Line::from(vec![
+            Span::styled("workdir ", Style::default().fg(WHITE)),
+            Span::raw(ws.workdir.clone()),
+        ]),
         Line::from(vec![
             Span::styled("mounts  ", Style::default().fg(WHITE)),
-            Span::raw(format!("{} ({} readonly)", ws.mount_count, ws.readonly_mount_count)),
+            Span::raw(format!(
+                "{} ({} readonly)",
+                ws.mount_count, ws.readonly_mount_count
+            )),
         ]),
         Line::from(vec![
             Span::styled("agents  ", Style::default().fg(WHITE)),
@@ -132,18 +158,30 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary) {
         ]),
         Line::from(vec![
             Span::styled("last    ", Style::default().fg(WHITE)),
-            Span::raw(ws.last_agent.clone().unwrap_or_else(|| "(none)".to_string())),
+            Span::raw(
+                ws.last_agent
+                    .clone()
+                    .unwrap_or_else(|| "(none)".to_string()),
+            ),
         ]),
     ];
     let p = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(PHOSPHOR_DARK)).title(format!(" Details — {} ", ws.name)))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(PHOSPHOR_DARK))
+                .title(format!(" Details — {} ", ws.name)),
+        )
         .style(Style::default().fg(PHOSPHOR_GREEN));
     frame.render_widget(p, area);
 }
 
 fn render_footer_hint(frame: &mut Frame, area: Rect, hint: &str) {
-    let p = Paragraph::new(Span::styled(hint.to_string(), Style::default().fg(PHOSPHOR_DIM)))
-        .alignment(Alignment::Center);
+    let p = Paragraph::new(Span::styled(
+        hint.to_string(),
+        Style::default().fg(PHOSPHOR_DIM),
+    ))
+    .alignment(Alignment::Center);
     frame.render_widget(p, area);
 }
 
@@ -154,10 +192,10 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // header
-            Constraint::Length(2),  // tab strip
-            Constraint::Min(8),     // tab body
-            Constraint::Length(2),  // footer
+            Constraint::Length(3), // header
+            Constraint::Length(2), // tab strip
+            Constraint::Min(8),    // tab body
+            Constraint::Length(2), // footer
         ])
         .split(area);
 
@@ -177,7 +215,10 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>) {
     }
 
     let footer = if state.is_dirty() {
-        format!("Tab next · ↑↓ field · Enter edit · s save ({} changes) · Esc discard", state.change_count())
+        format!(
+            "Tab next · ↑↓ field · Enter edit · s save ({} changes) · Esc discard",
+            state.change_count()
+        )
     } else {
         "Tab next · ↑↓ field · Enter edit · s save · Esc back".to_string()
     };
@@ -185,9 +226,17 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>) {
 
     // Error banner overlay — top line of the body.
     if let Some(err) = &state.error_banner {
-        let banner_area = Rect { x: chunks[2].x, y: chunks[2].y, width: chunks[2].width, height: 1 };
-        let banner = Paragraph::new(format!("✗ {err}"))
-            .style(Style::default().fg(Color::Rgb(255, 94, 122)).add_modifier(Modifier::BOLD));
+        let banner_area = Rect {
+            x: chunks[2].x,
+            y: chunks[2].y,
+            width: chunks[2].width,
+            height: 1,
+        };
+        let banner = Paragraph::new(format!("✗ {err}")).style(
+            Style::default()
+                .fg(Color::Rgb(255, 94, 122))
+                .add_modifier(Modifier::BOLD),
+        );
         frame.render_widget(ratatui::widgets::Clear, banner_area);
         frame.render_widget(banner, banner_area);
     }
@@ -203,9 +252,14 @@ fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
     let mut spans = Vec::new();
     for (tab, label) in labels {
         let style = if tab == active {
-            Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD)
+            Style::default()
+                .bg(PHOSPHOR_GREEN)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD)
         } else if tab == EditorTab::Secrets {
-            Style::default().fg(Color::Rgb(90, 90, 90)).add_modifier(Modifier::ITALIC)
+            Style::default()
+                .fg(Color::Rgb(90, 90, 90))
+                .add_modifier(Modifier::ITALIC)
         } else {
             Style::default().fg(PHOSPHOR_DIM)
         };
@@ -216,7 +270,9 @@ fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
 }
 
 fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
-    let block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(PHOSPHOR_DARK));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK));
 
     let name_value = match &state.mode {
         EditorMode::Edit { name } => name.as_str(),
@@ -225,7 +281,11 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 
     let rows = vec![
         render_field_row("name", name_value, false),
-        render_field_row("workdir", &state.pending.workdir, state.pending.workdir != state.original.workdir),
+        render_field_row(
+            "workdir",
+            &state.pending.workdir,
+            state.pending.workdir != state.original.workdir,
+        ),
         render_field_row(
             "default agent",
             state.pending.default_agent.as_deref().unwrap_or("(none)"),
@@ -234,10 +294,19 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         Line::from(vec![
             Span::styled("  last used      ", Style::default().fg(WHITE)),
             Span::styled(
-                state.original.last_agent.clone().unwrap_or_else(|| "(none)".to_string()),
+                state
+                    .original
+                    .last_agent
+                    .clone()
+                    .unwrap_or_else(|| "(none)".to_string()),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
-            Span::styled(" (read-only)", Style::default().fg(PHOSPHOR_DIM).add_modifier(Modifier::ITALIC)),
+            Span::styled(
+                " (read-only)",
+                Style::default()
+                    .fg(PHOSPHOR_DIM)
+                    .add_modifier(Modifier::ITALIC),
+            ),
         ]),
     ];
     frame.render_widget(Paragraph::new(rows).block(block), area);
@@ -245,30 +314,44 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 
 fn render_field_row(label: &str, value: &str, dirty: bool) -> Line<'static> {
     let mut spans = vec![
-        Span::styled(format!("  {:15}", label), Style::default().fg(WHITE)),
+        Span::styled(format!("  {label:15}"), Style::default().fg(WHITE)),
         Span::raw(value.to_string()),
     ];
     if dirty {
-        spans.push(Span::styled("    ● unsaved", Style::default().fg(WHITE).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(
+            "    ● unsaved",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
     }
     Line::from(spans)
 }
 
 fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
-    let block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(PHOSPHOR_DARK));
-    let mut lines: Vec<Line> = state.pending.mounts.iter().map(|m| {
-        let ro = if m.readonly { " (ro)" } else { " (rw)" };
-        Line::from(format!("  {} → {}{}", m.src, m.dst, ro))
-    }).collect();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK));
+    let mut lines: Vec<Line> = state
+        .pending
+        .mounts
+        .iter()
+        .map(|m| {
+            let ro = if m.readonly { " (ro)" } else { " (rw)" };
+            Line::from(format!("  {} → {}{}", m.src, m.dst, ro))
+        })
+        .collect();
     lines.push(Line::from(Span::styled(
         "  + Add mount    − Remove selected",
-        Style::default().fg(PHOSPHOR_DIM).add_modifier(Modifier::ITALIC),
+        Style::default()
+            .fg(PHOSPHOR_DIM)
+            .add_modifier(Modifier::ITALIC),
     )));
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
-    let block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(PHOSPHOR_DARK));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK));
     let header = Line::from(Span::styled(
         "  allowed? · default ·  agent",
         Style::default().fg(WHITE),
@@ -283,12 +366,16 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 }
 
 fn render_secrets_stub(frame: &mut Frame, area: Rect) {
-    let block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(PHOSPHOR_DARK));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK));
     let body = vec![
         Line::from(""),
         Line::from(Span::styled(
             "  Secrets management lands in PR 3 of this series.",
-            Style::default().fg(PHOSPHOR_DIM).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(PHOSPHOR_DIM)
+                .add_modifier(Modifier::ITALIC),
         )),
     ];
     frame.render_widget(Paragraph::new(body).block(block), area);
@@ -308,7 +395,7 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
     }
 }
 
-fn centered_rect(outer: Rect, pct_w: u16, pct_h: u16) -> Rect {
+const fn centered_rect(outer: Rect, pct_w: u16, pct_h: u16) -> Rect {
     let w = outer.width * pct_w / 100;
     let h = outer.height * pct_h / 100;
     Rect {

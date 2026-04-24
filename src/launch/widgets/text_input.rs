@@ -10,18 +10,23 @@ pub struct TextInputState<'a> {
     pub textarea: TextArea<'a>,
 }
 
-impl<'a> std::fmt::Debug for TextInputState<'a> {
+impl std::fmt::Debug for TextInputState<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TextInputState").field("label", &self.label).finish()
+        f.debug_struct("TextInputState")
+            .field("label", &self.label)
+            .finish()
     }
 }
 
-impl<'a> TextInputState<'a> {
+impl TextInputState<'_> {
     pub fn new(label: impl Into<String>, initial: impl Into<String>) -> Self {
         let mut textarea = TextArea::new(vec![initial.into()]);
         // Position cursor at end of initial text so editing feels natural.
         textarea.move_cursor(CursorMove::End);
-        Self { label: label.into(), textarea }
+        Self {
+            label: label.into(),
+            textarea,
+        }
     }
 
     pub fn value(&self) -> String {
@@ -46,10 +51,10 @@ impl<'a> TextInputState<'a> {
 }
 
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     widgets::{Block, Borders},
-    Frame,
 };
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
@@ -65,7 +70,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
     ta.set_block(block);
     ta.set_cursor_line_style(Style::default());
     ta.set_cursor_style(
-        Style::default().bg(WHITE).fg(Color::Black).add_modifier(Modifier::SLOW_BLINK),
+        Style::default()
+            .bg(WHITE)
+            .fg(Color::Black)
+            .add_modifier(Modifier::SLOW_BLINK),
     );
 
     frame.render_widget(ratatui::widgets::Clear, area);
@@ -121,7 +129,10 @@ mod tests {
     #[test]
     fn esc_cancels() {
         let mut s = TextInputState::new("name", "abc");
-        assert!(matches!(s.handle_key(key(KeyCode::Esc)), ModalOutcome::Cancel));
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Esc)),
+            ModalOutcome::Cancel
+        ));
     }
 
     #[test]

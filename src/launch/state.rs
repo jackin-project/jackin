@@ -4,6 +4,7 @@ use crate::selector::ClassSelector;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum LaunchStage {
     Workspace,
     Agent,

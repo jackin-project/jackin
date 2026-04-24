@@ -34,7 +34,10 @@ impl FileBrowserState {
             .filter_map(|entry| if entry.is_dir { Some(entry) } else { None })
             .build()
             .map_err(|e| anyhow::anyhow!("failed to build file explorer: {e}"))?;
-        Ok(Self { explorer, root_hint: start })
+        Ok(Self {
+            explorer,
+            root_hint: start,
+        })
     }
 
     pub fn new_from_home() -> anyhow::Result<Self> {
@@ -46,9 +49,7 @@ impl FileBrowserState {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<PathBuf> {
         match key.code {
-            KeyCode::Char('s') => {
-                ModalOutcome::Commit(self.explorer.current().path.clone())
-            }
+            KeyCode::Char('s') => ModalOutcome::Commit(self.explorer.current().path.clone()),
             KeyCode::Esc => ModalOutcome::Cancel,
             _ => {
                 let event = crossterm::event::Event::Key(key);
@@ -99,7 +100,10 @@ mod tests {
             .iter()
             .map(|f| f.name.clone())
             .collect();
-        assert!(files.iter().any(|n| n == "folder/"), "folder missing: {files:?}");
+        assert!(
+            files.iter().any(|n| n == "folder/"),
+            "folder missing: {files:?}"
+        );
         assert!(
             !files.iter().any(|n| n == "file.txt"),
             "file should be filtered out: {files:?}"
@@ -119,6 +123,9 @@ mod tests {
     fn esc_cancels() {
         let tmp = tempdir().unwrap();
         let mut state = FileBrowserState::new(tmp.path().to_path_buf()).unwrap();
-        assert!(matches!(state.handle_key(key(KeyCode::Esc)), ModalOutcome::Cancel));
+        assert!(matches!(
+            state.handle_key(key(KeyCode::Esc)),
+            ModalOutcome::Cancel
+        ));
     }
 }

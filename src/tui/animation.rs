@@ -73,8 +73,9 @@ impl RainState {
             })
             .collect();
 
-        let grid: Vec<Vec<Option<RainCell>>> =
-            (0..rows).map(|_| (0..cols).map(|_| None).collect()).collect();
+        let grid: Vec<Vec<Option<RainCell>>> = (0..rows)
+            .map(|_| (0..cols).map(|_| None).collect())
+            .collect();
 
         Self {
             grid,
@@ -220,7 +221,7 @@ pub(crate) fn tick_rain(state: &mut RainState) {
 /// Used by `digital_rain` (fullscreen) and by the panel-rain widget
 /// (area-bounded). Does not clear the background — callers that need
 /// a clear should emit it before calling this.
-pub(crate) fn render_rain_frame(state: &mut RainState, area: (u16, u16, u16, u16)) {
+pub(crate) fn render_rain_frame(state: &RainState, area: (u16, u16, u16, u16)) {
     let (col_start, row_start, width, height) = area;
 
     for r in 0..height as usize {
@@ -288,7 +289,7 @@ pub(crate) fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
             break;
         }
         tick_rain(&mut state);
-        render_rain_frame(&mut state, (0, 0, cols as u16, rows as u16));
+        render_rain_frame(&state, (0, 0, cols as u16, rows as u16));
         skipped = skippable_sleep(std::time::Duration::from_millis(frame_ms));
     }
 

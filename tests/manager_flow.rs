@@ -3,13 +3,13 @@
 //! terminal.
 
 use anyhow::Result;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{
     config::{AppConfig, ConfigEditor},
-    launch::manager::{handle_key, ManagerState, ManagerStage},
+    launch::manager::{ManagerStage, ManagerState, handle_key},
     paths::JackinPaths,
     workspace::{MountConfig, WorkspaceConfig},
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use tempfile::tempdir;
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -53,7 +53,10 @@ fn delete_workspace_via_manager() -> Result<()> {
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config(&paths, temp.path())?;
 
-    assert!(config.workspaces.contains_key("big-monorepo"), "seed failed");
+    assert!(
+        config.workspaces.contains_key("big-monorepo"),
+        "seed failed"
+    );
 
     let mut state = ManagerState::from_config(&config);
     assert_eq!(state.workspaces.len(), 1);
@@ -62,7 +65,8 @@ fn delete_workspace_via_manager() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, key(KeyCode::Char('d')))?;
     assert!(
         matches!(state.stage, ManagerStage::ConfirmDelete { .. }),
-        "expected ConfirmDelete stage after 'd', got {:?}", state.stage
+        "expected ConfirmDelete stage after 'd', got {:?}",
+        state.stage
     );
 
     // Press 'y' — commits the delete.
@@ -77,7 +81,10 @@ fn delete_workspace_via_manager() -> Result<()> {
 
     // In-memory state: returned to List, empty workspace list.
     assert!(matches!(state.stage, ManagerStage::List));
-    assert!(state.workspaces.is_empty(), "in-memory list should be empty");
+    assert!(
+        state.workspaces.is_empty(),
+        "in-memory list should be empty"
+    );
 
     Ok(())
 }

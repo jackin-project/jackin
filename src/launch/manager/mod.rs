@@ -6,6 +6,6 @@ pub mod input;
 pub mod render;
 pub mod state;
 
-pub use input::{handle_key, InputOutcome};
+pub use input::{InputOutcome, handle_key};
 pub use render::render;
 pub use state::{ManagerStage, ManagerState};

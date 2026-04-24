@@ -4,16 +4,16 @@
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::config::AppConfig;
-use crate::paths::JackinPaths;
-use super::state::{
-    ConfirmTarget, EditorMode, EditorState, EditorTab, FieldFocus,
-    FileBrowserTarget, ManagerStage, ManagerState, Modal, Toast, ToastKind,
-};
 use super::super::widgets::{
-    confirm::ConfirmState, file_browser::FileBrowserState, ModalOutcome,
+    ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
     workdir_pick::WorkdirPickState,
 };
+use super::state::{
+    ConfirmTarget, EditorMode, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
+    ManagerState, Modal, Toast, ToastKind,
+};
+use crate::config::AppConfig;
+use crate::paths::JackinPaths;
 
 pub enum InputOutcome {
     /// Stay in the manager.
@@ -31,16 +31,18 @@ pub fn handle_key(
     // Modal precedence: if a modal is open, it gets the event.
     // Use a discriminant check so we can take &mut without keeping an
     // immutable borrow alive across the call.
-    if let ManagerStage::Editor(editor) = &mut state.stage {
-        if editor.modal.is_some() {
-            handle_editor_modal(editor, key);
-            return Ok(InputOutcome::Continue);
-        }
+    if let ManagerStage::Editor(editor) = &mut state.stage
+        && editor.modal.is_some()
+    {
+        handle_editor_modal(editor, key);
+        return Ok(InputOutcome::Continue);
     }
     if matches!(state.stage, ManagerStage::CreatePrelude(_)) {
         let has_modal = if let ManagerStage::CreatePrelude(p) = &state.stage {
             p.modal.is_some()
-        } else { false };
+        } else {
+            false
+        };
         if has_modal {
             if let ManagerStage::CreatePrelude(p) = &mut state.stage {
                 handle_prelude_modal(p, key);
@@ -48,16 +50,16 @@ pub fn handle_key(
             // Check for completion: prelude finished when modal cleared and name set.
             let complete = if let ManagerStage::CreatePrelude(p) = &state.stage {
                 p.modal.is_none() && p.pending_name.is_some()
-            } else { false };
-            if complete {
-                if let ManagerStage::CreatePrelude(p) = &state.stage {
-                    let ws = p.build_workspace().expect("prelude complete");
-                    let name = p.pending_name.clone().unwrap();
-                    let mut editor = EditorState::new_create();
-                    editor.pending = ws;
-                    editor.pending_name = Some(name);
-                    state.stage = ManagerStage::Editor(editor);
-                }
+            } else {
+                false
+            };
+            if complete && let ManagerStage::CreatePrelude(p) = &state.stage {
+                let ws = p.build_workspace().expect("prelude complete");
+                let name = p.pending_name.clone().unwrap();
+                let mut editor = EditorState::new_create();
+                editor.pending = ws;
+                editor.pending_name = Some(name);
+                state.stage = ManagerStage::Editor(editor);
             }
             return Ok(InputOutcome::Continue);
         }
@@ -66,7 +68,13 @@ pub fn handle_key(
     // Non-modal routing per stage — capture which stage we're in as a
     // simple enum discriminant so the immutable borrow ends before we
     // pass &mut state into the stage handler.
-    enum StageDis { List, Editor, CreatePrelude, ConfirmDelete }
+    #[allow(clippy::items_after_statements)]
+    enum StageDis {
+        List,
+        Editor,
+        CreatePrelude,
+        ConfirmDelete,
+    }
     let dis = match &state.stage {
         ManagerStage::List => StageDis::List,
         ManagerStage::Editor(_) => StageDis::Editor,
@@ -77,14 +85,14 @@ pub fn handle_key(
     match dis {
         StageDis::List => handle_list_key(state, config, paths, key),
         StageDis::Editor => handle_editor_key(state, config, paths, key),
-        StageDis::CreatePrelude => handle_prelude_key(state, config, paths, key),
+        StageDis::CreatePrelude => Ok(handle_prelude_key(state, config, paths, key)),
         StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, key),
     }
 }
 
 fn handle_list_key(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    config: &AppConfig,
     _paths: &JackinPaths,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
@@ -114,10 +122,7 @@ fn handle_list_key(
                 // Edit existing workspace — load full WorkspaceConfig from AppConfig.
                 let name = summary.name.clone();
                 if let Some(ws) = config.workspaces.get(&name) {
-                    state.stage = ManagerStage::Editor(EditorState::new_edit(
-                        name,
-                        ws.clone(),
-                    ));
+                    state.stage = ManagerStage::Editor(EditorState::new_edit(name, ws.clone()));
                 }
             }
             Ok(InputOutcome::Continue)
@@ -235,32 +240,33 @@ fn handle_editor_key(
 }
 
 fn open_editor_field_modal(editor: &mut EditorState<'_>) {
-    match editor.active_tab {
-        EditorTab::General => {
-            let FieldFocus::Row(n) = editor.active_field;
-            match n {
-                1 => {
-                    // workdir — use WorkdirPick if mounts exist
-                    if !editor.pending.mounts.is_empty() {
-                        editor.modal = Some(Modal::WorkdirPick {
-                            state: WorkdirPickState::from_mounts(&editor.pending.mounts),
-                        });
-                    }
-                }
-                _ => {}
+    if editor.active_tab == EditorTab::General {
+        let FieldFocus::Row(n) = editor.active_field;
+        if n == 1 {
+            // workdir — use WorkdirPick if mounts exist
+            if !editor.pending.mounts.is_empty() {
+                editor.modal = Some(Modal::WorkdirPick {
+                    state: WorkdirPickState::from_mounts(&editor.pending.mounts),
+                });
             }
         }
-        _ => {}
     }
 }
 
 fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    if n == 0 { return; }  // header row
+    if n == 0 {
+        return;
+    } // header row
     let idx = n - 1;
     let agent_names: Vec<String> = config.agents.keys().cloned().collect();
     if let Some(agent) = agent_names.get(idx) {
-        if let Some(pos) = editor.pending.allowed_agents.iter().position(|a| a == agent) {
+        if let Some(pos) = editor
+            .pending
+            .allowed_agents
+            .iter()
+            .position(|a| a == agent)
+        {
             editor.pending.allowed_agents.remove(pos);
             if editor.pending.default_agent.as_deref() == Some(agent) {
                 editor.pending.default_agent = None;
@@ -273,7 +279,9 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
 
 fn set_default_agent_at_cursor(editor: &mut EditorState<'_>) {
     let FieldFocus::Row(n) = editor.active_field;
-    if n == 0 { return; }
+    if n == 0 {
+        return;
+    }
     let idx = n - 1;
     if let Some(agent) = editor.pending.allowed_agents.get(idx).cloned() {
         editor.pending.default_agent = Some(agent);
@@ -386,14 +394,14 @@ fn build_workspace_edit(
 
 fn handle_prelude_key(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    config: &AppConfig,
     _paths: &JackinPaths,
     key: KeyEvent,
-) -> anyhow::Result<InputOutcome> {
-    if matches!(key.code, KeyCode::Esc) {
+) -> InputOutcome {
+    if key.code == KeyCode::Esc {
         *state = ManagerState::from_config(config);
     }
-    Ok(InputOutcome::Continue)
+    InputOutcome::Continue
 }
 
 fn handle_confirm_delete_key(
@@ -402,7 +410,11 @@ fn handle_confirm_delete_key(
     paths: &JackinPaths,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    let ManagerStage::ConfirmDelete { name, state: confirm_state } = &mut state.stage else {
+    let ManagerStage::ConfirmDelete {
+        name,
+        state: confirm_state,
+    } = &mut state.stage
+    else {
         return Ok(InputOutcome::Continue);
     };
     let outcome = confirm_state.handle_key(key);
@@ -429,46 +441,42 @@ fn handle_confirm_delete_key(
 }
 
 fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
-    let Some(modal) = editor.modal.as_mut() else { return; };
+    let Some(modal) = editor.modal.as_mut() else {
+        return;
+    };
     match modal {
-        Modal::TextInput { target, state } => {
-            match state.handle_key(key) {
-                ModalOutcome::Commit(value) => {
-                    let target = *target;
-                    editor.modal = None;
-                    apply_text_input_to_pending(target, editor, &value);
-                }
-                ModalOutcome::Cancel => {
-                    editor.modal = None;
-                }
-                ModalOutcome::Continue => {}
+        Modal::TextInput { target, state } => match state.handle_key(key) {
+            ModalOutcome::Commit(value) => {
+                let target = *target;
+                editor.modal = None;
+                apply_text_input_to_pending(target, editor, &value);
             }
-        }
-        Modal::FileBrowser { target, state } => {
-            match state.handle_key(key) {
-                ModalOutcome::Commit(path) => {
-                    let target = *target;
-                    editor.modal = None;
-                    apply_file_browser_to_editor(target, editor, path);
-                }
-                ModalOutcome::Cancel => {
-                    editor.modal = None;
-                }
-                ModalOutcome::Continue => {}
+            ModalOutcome::Cancel => {
+                editor.modal = None;
             }
-        }
-        Modal::WorkdirPick { state } => {
-            match state.handle_key(key) {
-                ModalOutcome::Commit(workdir) => {
-                    editor.pending.workdir = workdir;
-                    editor.modal = None;
-                }
-                ModalOutcome::Cancel => {
-                    editor.modal = None;
-                }
-                ModalOutcome::Continue => {}
+            ModalOutcome::Continue => {}
+        },
+        Modal::FileBrowser { target, state } => match state.handle_key(key) {
+            ModalOutcome::Commit(path) => {
+                let target = *target;
+                editor.modal = None;
+                apply_file_browser_to_editor(target, editor, path);
             }
-        }
+            ModalOutcome::Cancel => {
+                editor.modal = None;
+            }
+            ModalOutcome::Continue => {}
+        },
+        Modal::WorkdirPick { state } => match state.handle_key(key) {
+            ModalOutcome::Commit(workdir) => {
+                editor.pending.workdir = workdir;
+                editor.modal = None;
+            }
+            ModalOutcome::Cancel => {
+                editor.modal = None;
+            }
+            ModalOutcome::Continue => {}
+        },
         Modal::Confirm { target, state } => {
             let target = *target;
             match state.handle_key(key) {
@@ -546,20 +554,36 @@ fn apply_file_browser_to_editor(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key: KeyEvent) {
-    use super::state::{FileBrowserTarget, TextInputTarget};
     use super::super::widgets::text_input::TextInputState;
+    use super::state::{FileBrowserTarget, TextInputTarget};
 
     // Determine which step we're on by inspecting the modal discriminant,
     // then dispatch. We do this with a discriminant enum so we can end the
     // immutable/mutable borrow on `prelude.modal` before mutating other
     // fields on `prelude` (Rust borrow rules).
-    enum PreludeModalDis { FileBrowserSrc, TextInputDst, WorkdirPick, TextInputName, Other }
+    enum PreludeModalDis {
+        FileBrowserSrc,
+        TextInputDst,
+        WorkdirPick,
+        TextInputName,
+        Other,
+    }
     let dis = match &prelude.modal {
-        Some(Modal::FileBrowser { target: FileBrowserTarget::CreateFirstMountSrc, .. }) => PreludeModalDis::FileBrowserSrc,
-        Some(Modal::TextInput { target: TextInputTarget::MountDst, .. }) => PreludeModalDis::TextInputDst,
+        Some(Modal::FileBrowser {
+            target: FileBrowserTarget::CreateFirstMountSrc,
+            ..
+        }) => PreludeModalDis::FileBrowserSrc,
+        Some(Modal::TextInput {
+            target: TextInputTarget::MountDst,
+            ..
+        }) => PreludeModalDis::TextInputDst,
         Some(Modal::WorkdirPick { .. }) => PreludeModalDis::WorkdirPick,
-        Some(Modal::TextInput { target: TextInputTarget::Name, .. }) => PreludeModalDis::TextInputName,
+        Some(Modal::TextInput {
+            target: TextInputTarget::Name,
+            ..
+        }) => PreludeModalDis::TextInputName,
         _ => PreludeModalDis::Other,
     };
 
@@ -567,7 +591,9 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
         PreludeModalDis::FileBrowserSrc => {
             let outcome = if let Some(Modal::FileBrowser { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
-            } else { return; };
+            } else {
+                return;
+            };
             match outcome {
                 ModalOutcome::Commit(path) => {
                     prelude.modal = None;
@@ -582,14 +608,18 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
                         ),
                     });
                 }
-                ModalOutcome::Cancel => { prelude.modal = None; }
+                ModalOutcome::Cancel => {
+                    prelude.modal = None;
+                }
                 ModalOutcome::Continue => {}
             }
         }
         PreludeModalDis::TextInputDst => {
             let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
-            } else { return; };
+            } else {
+                return;
+            };
             match outcome {
                 ModalOutcome::Commit(dst) => {
                     prelude.modal = None;
@@ -598,7 +628,12 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
                     prelude.accept_mount_dst(dst, false);
                     // Push WorkdirPick with the staged mount.
                     let mount = crate::workspace::MountConfig {
-                        src: prelude.pending_mount_src.as_ref().unwrap().display().to_string(),
+                        src: prelude
+                            .pending_mount_src
+                            .as_ref()
+                            .unwrap()
+                            .display()
+                            .to_string(),
                         dst: prelude.pending_mount_dst.clone().unwrap(),
                         readonly: prelude.pending_readonly,
                     };
@@ -606,14 +641,18 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
                         state: WorkdirPickState::from_mounts(&[mount]),
                     });
                 }
-                ModalOutcome::Cancel => { prelude.modal = None; }
+                ModalOutcome::Cancel => {
+                    prelude.modal = None;
+                }
                 ModalOutcome::Continue => {}
             }
         }
         PreludeModalDis::WorkdirPick => {
             let outcome = if let Some(Modal::WorkdirPick { state }) = &mut prelude.modal {
                 state.handle_key(key)
-            } else { return; };
+            } else {
+                return;
+            };
             match outcome {
                 ModalOutcome::Commit(workdir) => {
                     prelude.modal = None;
@@ -624,14 +663,18 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
                         state: TextInputState::new("Name this workspace", default_name),
                     });
                 }
-                ModalOutcome::Cancel => { prelude.modal = None; }
+                ModalOutcome::Cancel => {
+                    prelude.modal = None;
+                }
                 ModalOutcome::Continue => {}
             }
         }
         PreludeModalDis::TextInputName => {
             let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
-            } else { return; };
+            } else {
+                return;
+            };
             match outcome {
                 ModalOutcome::Commit(name) => {
                     prelude.modal = None;
@@ -639,7 +682,9 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
                     // Prelude complete — the outer handle_key dispatcher
                     // checks for this and transitions to Editor(Create).
                 }
-                ModalOutcome::Cancel => { prelude.modal = None; }
+                ModalOutcome::Cancel => {
+                    prelude.modal = None;
+                }
                 ModalOutcome::Continue => {}
             }
         }
