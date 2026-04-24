@@ -104,17 +104,22 @@ impl FileBrowserState {
                         .add_modifier(Modifier::BOLD),
                 )
             });
+        let root_for_filter = home.clone();
         let explorer = FileExplorerBuilder::default()
             .working_dir(&home)
             .theme(theme)
-            .filter_map(|file| {
+            .filter_map(move |file| {
                 // Keep only directories.
                 if !file.is_dir {
                     return None;
                 }
-                // The `..` entry is kept so up-navigation continues to work;
-                // cwd is clamped back to root after handle() when necessary.
+                // Hide `..` when navigating up would leave the $HOME subtree.
+                // `file.path` is the parent directory that `..` leads to; if it
+                // is not inside root, the entry would escape the sandbox — hide it.
                 if file.name == ".." {
+                    if !file.path.starts_with(&root_for_filter) {
+                        return None;
+                    }
                     return Some(file);
                 }
                 // Strip excluded top-level names.
