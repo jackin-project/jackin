@@ -97,17 +97,22 @@ fn annotate_file(mut file: ratatui_explorer::File, root: &Path) -> Option<ratatu
     if !file.is_dir {
         return None;
     }
+    // ratatui-explorer appends a trailing `/` to directory entries at runtime
+    // (so "Library" renders as "Library/" and the synthetic parent-link as
+    // "../"). Strip the slash for comparisons against bare names like `..` or
+    // the `EXCLUDED` list — otherwise the filter silently misses every entry.
+    let bare = file.name.trim_end_matches('/');
     // Hide `..` when navigating up would leave the root subtree. `file.path`
     // is the parent directory that `..` leads to; if it is not inside root,
     // the entry would escape the sandbox — hide it.
-    if file.name == ".." {
+    if bare == ".." {
         if !file.path.starts_with(root) {
             return None;
         }
         return Some(file);
     }
     // Strip excluded top-level names.
-    if EXCLUDED.iter().any(|x| *x == file.name) {
+    if EXCLUDED.iter().any(|x| *x == bare) {
         return None;
     }
     // Append the git-repo marker when the directory contains a `.git` child.
@@ -200,19 +205,23 @@ impl FileBrowserState {
                 // Prefer the currently-highlighted entry (the "would navigate
                 // into" target) so the operator can pick a sibling folder
                 // without pressing Enter first. Fall back to the cwd when the
-                // highlight is `../` or the listing is empty (in that case
-                // `current()` is the parent entry or the files list is empty).
+                // highlight is `../` or the listing is empty.
                 let cwd = self.explorer.cwd().clone();
                 let target = {
                     let files = self.explorer.files();
-                    let highlighted = self.explorer.current();
-                    // An entry named `"../"` is ratatui-explorer's synthetic
-                    // parent-link row; treat it as "no real selection".
-                    let is_parent_link = highlighted.name == "../";
-                    if !files.is_empty() && highlighted.is_dir && !is_parent_link {
-                        highlighted.path.clone()
-                    } else {
+                    if files.is_empty() {
+                        // `current()` panics on an empty listing — guard it.
                         cwd
+                    } else {
+                        let highlighted = self.explorer.current();
+                        // An entry named `"../"` is ratatui-explorer's synthetic
+                        // parent-link row; treat it as "no real selection".
+                        let is_parent_link = highlighted.name == "../";
+                        if highlighted.is_dir && !is_parent_link {
+                            highlighted.path.clone()
+                        } else {
+                            cwd
+                        }
                     }
                 };
 
@@ -221,15 +230,18 @@ impl FileBrowserState {
             KeyCode::Enter => {
                 // If the highlighted entry is a git repo (and not the
                 // synthetic `../` parent link), open the choice prompt
-                // instead of navigating in.
-                let highlighted = self.explorer.current();
-                let is_parent_link = highlighted.name == "../";
-                let path = highlighted.path.clone();
-                let is_dir = highlighted.is_dir;
-                if is_dir && !is_parent_link && has_git_dir(&path) {
-                    self.pending_git_prompt = Some(path);
-                    self.pending_git_focus = GitPromptFocus::MountHere;
-                    return ModalOutcome::Continue;
+                // instead of navigating in. Guard `current()` against an
+                // empty listing (filter may have removed every entry).
+                if !self.explorer.files().is_empty() {
+                    let highlighted = self.explorer.current();
+                    let is_parent_link = highlighted.name == "../";
+                    let path = highlighted.path.clone();
+                    let is_dir = highlighted.is_dir;
+                    if is_dir && !is_parent_link && has_git_dir(&path) {
+                        self.pending_git_prompt = Some(path);
+                        self.pending_git_focus = GitPromptFocus::MountHere;
+                        return ModalOutcome::Continue;
+                    }
                 }
                 // Fall through to the explorer for non-git folders.
                 let event = crossterm::event::Event::Key(key);
@@ -242,8 +254,12 @@ impl FileBrowserState {
             }
             KeyCode::Esc => ModalOutcome::Cancel,
             _ => {
-                let event = crossterm::event::Event::Key(key);
-                let _ = self.explorer.handle(&event);
+                // Guard: ratatui-explorer panics (div-by-zero) on nav keys
+                // when the listing is empty. Skip dispatch in that case.
+                if !self.explorer.files().is_empty() {
+                    let event = crossterm::event::Event::Key(key);
+                    let _ = self.explorer.handle(&event);
+                }
 
                 // Clamp cwd back to root if the user navigated above $HOME.
                 // set_cwd() exists in ratatui-explorer 0.3.x.
@@ -820,6 +836,59 @@ mod tests {
             "submodule directory must have the marker appended; got {:?}",
             out.name
         );
+    }
+
+    #[test]
+    fn excluded_names_with_trailing_slash_are_filtered() {
+        // ratatui-explorer appends a trailing `/` to directory names at
+        // runtime. Our filter must strip that before matching against the
+        // bare EXCLUDED entries — otherwise `Library/` etc. slip through.
+        let tmp = tempdir().unwrap();
+        for name in EXCLUDED {
+            let p = tmp.path().join(name);
+            std::fs::create_dir(&p).unwrap();
+            let file = dir_file(name, p);
+            assert!(
+                annotate_file(file, tmp.path()).is_none(),
+                "excluded directory `{name}` must be filtered even with trailing slash"
+            );
+        }
+    }
+
+    #[test]
+    fn parent_link_with_trailing_slash_passes_when_inside_root() {
+        // The synthetic parent-link from ratatui-explorer has name "../" —
+        // ensure the trailing slash doesn't defeat the `..` detection.
+        let tmp = tempdir().unwrap();
+        let child = tmp.path().join("child");
+        std::fs::create_dir(&child).unwrap();
+        // `file.path` is the parent that `..` leads to — use tmp (root) itself.
+        let parent_link = ratatui_explorer::File {
+            name: "../".to_string(),
+            path: tmp.path().to_path_buf(),
+            is_dir: true,
+            is_hidden: false,
+            file_type: None,
+        };
+        assert!(annotate_file(parent_link, tmp.path()).is_some());
+    }
+
+    #[test]
+    fn parent_link_with_trailing_slash_hidden_when_would_escape_root() {
+        // If `..` leads out of `root`, the filter must drop it — otherwise
+        // the user can navigate above $HOME.
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("sandbox");
+        std::fs::create_dir(&root).unwrap();
+        // `..` from `root` leads back to `tmp`, which is NOT inside `root`.
+        let parent_link = ratatui_explorer::File {
+            name: "../".to_string(),
+            path: tmp.path().to_path_buf(),
+            is_dir: true,
+            is_hidden: false,
+            file_type: None,
+        };
+        assert!(annotate_file(parent_link, &root).is_none());
     }
 
     #[test]
