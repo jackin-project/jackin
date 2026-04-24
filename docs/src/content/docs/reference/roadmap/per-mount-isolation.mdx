@@ -151,7 +151,8 @@ For each non-`shared` mount, materialization is idempotent: a second `load` to a
 
 - **`load`** — idempotent materialization. Second load to an existing container reuses the existing worktree.
 - **`eject`** — stop the container, leave `isolated/` in place (matches the existing eject = stop, purge = destroy split). No new output from `eject` for isolated mounts.
-- **Normal clean exit** — when the attached agent process exits cleanly and Docker reports `exit_code = 0` without OOM, jackin' tears down Docker resources and attempts safe isolated-worktree cleanup. Safe cleanup removes an isolated worktree only when it has no uncommitted changes and no branch-only commits that would be lost. If cleanup is unsafe and stdin is interactive, jackin' asks what to do before deleting anything:
+- **Foreground session finalization** — every command that opens or reopens an agent foreground session uses the same post-attach finalizer: `jackin load`, `jackin launch`, `jackin hardline`, and any future console/open-workspace UI. If attach returns and Docker reports the container is still running, jackin' preserves the session for later `hardline`. If the container stopped with a non-zero exit or OOM, jackin' preserves the recovery path and isolated worktrees. If the container stopped cleanly (`exit_code = 0` without OOM), jackin' attempts safe isolated-worktree cleanup. Safe cleanup removes an isolated worktree only when it has no uncommitted changes and no branch-only commits that would be lost.
+- **Unsafe clean-exit cleanup** — if safe cleanup would lose work and stdin is interactive, jackin' asks what to do before deleting anything:
 
   ```text
   Isolated worktree for jackin-the-architect still has uncommitted changes:
@@ -163,15 +164,14 @@ For each non-`shared` mount, materialization is idempotent: a second `load` to a
     3. Force delete worktree and discard changes
   ```
 
-  Returning to the agent means restarting the just-exited container before teardown, attaching again, and retrying safe cleanup after the agent exits again. This is a launch-time cleanup loop, not normal `hardline` behavior; `hardline` may continue to reject clean-exited containers after the original `load` process has ended. Force delete uses the same destructive cleanup path as `purge` for the selected isolated worktree. If stdin is non-interactive, jackin' preserves the worktree, prints its path plus the reason, and tells the operator to inspect with `jackin cd <container>` or discard with `jackin purge <container>`. This hooks into the existing `ContainerState::Stopped { exit_code: 0, oom_killed: false }` branch in `src/runtime/launch.rs`, right next to runtime resource cleanup. Non-interactive warning shape:
+  Returning to the agent means restarting the just-exited container before teardown, attaching again, and retrying safe cleanup after the agent exits again. This works the same whether the foreground session came from `load`, `launch`, `hardline`, or a future console UI. Preserving means leaving the stopped container/DinD recovery state and isolated worktree in place so `jackin hardline <container>` can return to it later, `jackin cd <container>` can inspect it, and `jackin purge <container>` can discard it. Force delete uses the same destructive cleanup path as `purge` for the selected isolated worktree and runtime state. If stdin is non-interactive, jackin' preserves the recovery state, prints the worktree path plus the reason, and tells the operator how to return, inspect, or discard. This should live behind a shared runtime finalization helper rather than only inside `src/runtime/launch.rs`; `src/runtime/attach.rs` should call the same helper after `hardline` attaches. Non-interactive warning shape:
 
   ```text
   [jackin] preserved isolated worktree for jackin-the-architect:
            /.../.jackin/data/jackin-the-architect/isolated/workspace-jackin
            reason: worktree has uncommitted changes
-           run `jackin cd the-architect` to inspect or `jackin purge the-architect` to discard
+           run `jackin hardline the-architect` to return, `jackin cd the-architect` to inspect, or `jackin purge the-architect` to discard
   ```
-- **Detached or crashed sessions** — if the container is still running after attach returns, or it stopped with a non-zero/OOM state, jackin' preserves both the container recovery path and isolated worktrees for `hardline`/manual inspection.
 - **`purge`** — silently delete everything for the container: the container itself, the DinD sidecar, every isolated worktree recorded in `.jackin/isolation.json` (`git worktree remove --force`), the `isolated/` dir, and the recorded local scratch branch (`jackin/scratch/<instance-slug>` by default). No unpushed-commit guard, no interactive prompt, no `--delete-branches` flag. If the operator purges before the agent pushed, that is operator error — jackin' stays out of the way. Post-merge branch cleanup in the host repo is also operator-side; jackin' does not detect "branch merged upstream and gone" during normal operation.
 - **`purge` refuses to run on a running agent.** The operator must eject first (`jackin eject <name>`) or use the combo (`jackin eject <name> --purge`). This also fixes a pre-existing gap in `shared` mode where `purge` could delete state out from under a live container (`src/app/mod.rs` currently calls `remove_data_dir_if_exists` unconditionally). The guard reuses the existing `list_agent_names` primitive from `src/runtime/cleanup.rs`.
 - **Flipping isolation on a mount requires eject.** Bind-mount sources are not mutable on a running container, so live-swapping the `src` is not supported by the platform in the first place. `workspace edit` rejects isolation changes on a running container with a clear "eject first" message.
@@ -194,7 +194,7 @@ Ship:
 - Runtime materialization happens after container-name claim, not inside `resolve_load_workspace`; introduce a materialized-workspace handoff into Docker launch.
 - `.jackin/isolation.json` records materialized isolated mounts so `purge` and `cd` work even after config changes.
 - `extensions.worktreeConfig` enabled on the host repo on first worktree creation.
-- `load` materializes, clean exit safely removes throwaway isolated worktrees when no work would be lost, unsafe clean-exit cleanup asks interactive operators whether to return to the agent, preserve, or force-delete, `eject` leaves worktrees alone, and `purge` force-deletes everything (container, DinD sidecar, `isolated/`, worktree, local branch).
+- `load` materializes, foreground session finalization safely removes throwaway isolated worktrees when no work would be lost, unsafe clean-exit cleanup asks interactive operators whether to return to the agent, preserve recovery state, or force-delete, `eject` leaves worktrees alone, and `purge` force-deletes everything (container, DinD sidecar, `isolated/`, worktree, local branch).
 - `purge` refuses on running agents (also closes the pre-existing gap for `shared` mode).
 - `jackin cd <container> [dst]` opens a child shell in an isolated worktree, prompting for a mount when multiple isolated mounts exist and no destination was provided.
 - Hooks inherit from host by default (no opt-out flag).
@@ -218,7 +218,7 @@ Defer:
 ## Open Questions
 
 1. Build caches (`target/`, `node_modules/`) — worth documenting a pattern (separate `shared` mount for the cache dir) or supporting a dedicated "warm from template" mode later?
-2. Interaction with `hardline` (offline lockdown) — `worktree` is local-only, so this should be fine, but worth verifying.
+2. Interaction with `hardline` offline lockdown — `worktree` is local-only, so this should be fine, but worth verifying.
 3. Dirty-tree definition — should `--force` acknowledge untracked files too, or only tracked/staged changes?
 4. Ad-hoc load isolation — should `jackin load --mount ... --mount-isolation <dst>=worktree` ship in V1, or should V1 only support persisted workspace CLI commands?
 5. Source changes after materialization — if a mount keeps the same `dst` but changes `src`, should `load` hard-error until purge to avoid hiding old WIP?
@@ -230,7 +230,8 @@ Defer:
 - `src/workspace/mounts.rs` — mount parsing and validation entry points
 - `src/workspace/resolve.rs` — `resolve_load_workspace`
 - `src/instance/naming.rs` — per-container naming provides collision-free container names used by worktree paths and branch names
-- `src/runtime/launch.rs` — `load` path where materialization hooks in
+- `src/runtime/launch.rs` — `load`/`launch` path where materialization hooks in and foreground finalization begins
+- `src/runtime/attach.rs` — `hardline` attach/restart path; should call the shared foreground finalizer after attach returns
 - `src/runtime/cleanup.rs` — `purge` path where teardown hooks in; `list_agent_names` is the primitive for the running-agent guard
 - `src/app/mod.rs` — `Command::Purge` dispatch; gains the running-agent guard
 - `src/config/mod.rs` — serialization of the new `isolation` field
