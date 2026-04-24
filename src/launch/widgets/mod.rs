@@ -128,7 +128,7 @@ mod consistency_tests {
     /// We can't easily inspect the whole hint line's styles without knowing
     /// each widget's exact hint text; instead we look for at least one
     /// WHITE+BOLD cell followed by a PHOSPHOR_GREEN label cell on the hint
-    /// row. That matches every canonical hint (`Tab cycle`, `Enter
+    /// row. That matches every canonical hint (`Enter commit`, `Enter
     /// confirm`, `↑↓ navigate`, etc.) and rejects any widget that forgets
     /// the hint entirely.
     fn assert_hint_row_present(buf: &Buffer, area: Rect, widget: &str) {

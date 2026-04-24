@@ -558,9 +558,6 @@ fn render_footer_legend(frame: &mut Frame, area: Rect, state: &FileBrowserState)
     let sep = Style::default().fg(PHOSPHOR_DARK);
     let line = if state.pending_git_prompt.is_some() {
         Line::from(vec![
-            Span::styled("Tab", key),
-            Span::styled(" cycle", text),
-            Span::styled(" \u{b7} ", sep),
             Span::styled("Enter", key),
             Span::styled(" confirm", text),
             Span::styled(" \u{b7} ", sep),
@@ -613,15 +610,12 @@ fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
 }
 
 /// Build the canonical hint footer line for the git-repo prompt:
-/// `Tab cycle · Enter confirm   M mount · P pick · C/Esc cancel`.
+/// `Enter confirm   M mount · P pick · C/Esc cancel`.
 fn git_prompt_hint() -> Line<'static> {
     let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let text_style = Style::default().fg(PHOSPHOR_GREEN);
     let sep_style = Style::default().fg(PHOSPHOR_DARK);
     Line::from(vec![
-        Span::styled("Tab", key_style),
-        Span::styled(" cycle", text_style),
-        Span::styled(" \u{b7} ", sep_style),
         Span::styled("Enter", key_style),
         Span::styled(" confirm", text_style),
         Span::raw("   "),
