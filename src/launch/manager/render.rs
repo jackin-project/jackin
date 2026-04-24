@@ -330,6 +330,11 @@ fn render_agents_subpanel(
         )));
     } else {
         let default = ws_config.and_then(|w| w.default_agent.as_deref());
+        // TODO: agent names could link to the agent's source repository on
+        // GitHub via OSC 8 hyperlinks, but ratatui's Paragraph widget strips
+        // those escape sequences. Until there is a raw-terminal-write path,
+        // fall back to plain text — same limitation as render_mounts_subpanel's
+        // labeled_hyperlink() TODO above.
         // Show only allowed agents that exist in the global config (consistent
         // with the editor view). Fall back to listing all allowed names if the
         // agent is no longer registered globally.
@@ -568,16 +573,14 @@ fn render_editor_row(
 ) -> Line<'static> {
     let selected = row == cursor;
     let prefix = if selected { "▸ " } else { "  " };
-    let mut spans = vec![Span::styled(
-        format!("{prefix}{label:15}"),
-        if selected {
-            Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(WHITE)
-        },
-    )];
+    // Labels stay white regardless of focus — focus is signalled by the
+    // `▸` prefix and the bold weight, not by a colour shift.
+    let label_style = if selected {
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(WHITE)
+    };
+    let mut spans = vec![Span::styled(format!("{prefix}{label:15}"), label_style)];
     let value_style = if selected {
         Style::default()
             .fg(PHOSPHOR_GREEN)
@@ -603,17 +606,16 @@ fn render_editor_readonly_row(
 ) -> Line<'static> {
     let selected = row == cursor;
     let prefix = if selected { "▸ " } else { "  " };
+    // Read-only rows: label stays white (bold when focused) like editable
+    // rows; value + `(read-only)` suffix render in dim phosphor so the
+    // operator can visually skim editable vs fixed fields.
+    let label_style = if selected {
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(WHITE)
+    };
     Line::from(vec![
-        Span::styled(
-            format!("{prefix}{label:15}"),
-            if selected {
-                Style::default()
-                    .fg(PHOSPHOR_DIM)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(PHOSPHOR_DIM)
-            },
-        ),
+        Span::styled(format!("{prefix}{label:15}"), label_style),
         Span::styled(value.to_string(), Style::default().fg(PHOSPHOR_DIM)),
         Span::styled(
             " (read-only)",
