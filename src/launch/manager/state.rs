@@ -108,11 +108,27 @@ pub struct EditorState<'a> {
     /// Set by the `SaveDiscardCancel` modal handler to signal that the outer
     /// `handle_key` should perform a save and/or navigate to List.
     pub exit_after_save: Option<ExitIntent>,
-    /// Set to `true` when the operator has confirmed a mount-collapse plan
-    /// via the `ConfirmTarget::SaveCollapse` modal. Tells `save_editor` to
-    /// skip the "should I prompt?" check and proceed to write. Cleared on
-    /// every save path exit.
-    pub collapse_approved: bool,
+    /// Set to `true` when the current save cycle should return the operator
+    /// to the workspace list on success. Flipped on when `s` is pressed from
+    /// `SaveDiscardCancel`'s `Save` choice; left `false` when the operator
+    /// triggered save directly from the editor (they stay in place). Cleared
+    /// when the save cycle ends (success, cancel, or error).
+    pub exit_on_save_success: bool,
+    /// Signal set by the `Modal::ConfirmSave` handler when the operator
+    /// picks Save. Carries the planner output forward to `commit_editor_save`
+    /// which the outer `handle_key` invokes after the modal closes. This
+    /// indirection is needed because the modal handler doesn't see the
+    /// `paths` / `cwd` arguments the commit needs.
+    pub pending_save_commit: Option<PendingSaveCommit>,
+}
+
+/// Plan material the `ConfirmSave` modal stashes on the editor state when
+/// the operator clicks Save. `input.rs::commit_editor_save` drains this
+/// and actually writes to disk.
+#[derive(Debug, Clone)]
+pub struct PendingSaveCommit {
+    pub effective_removals: Vec<String>,
+    pub final_mounts: Option<Vec<crate::workspace::MountConfig>>,
 }
 
 #[derive(Debug, Clone)]
@@ -195,19 +211,12 @@ pub enum FileBrowserTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmTarget {
     DeleteWorkspace,
-    /// Operator must confirm the plan returned by `plan_edit`/`plan_create`
-    /// will collapse one or more redundant mounts before save writes.
-    SaveCollapse,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitIntent {
     Save,
     Discard,
-    /// Operator approved a mount-collapse plan. Re-run `save_editor` in
-    /// place — stay in the editor on success (mirroring a normal `s`
-    /// press) rather than transitioning to the workspace list.
-    RetrySave,
 }
 
 #[derive(Debug)]
@@ -317,7 +326,8 @@ impl EditorState<'_> {
             error_banner: None,
             pending_name: None,
             exit_after_save: None,
-            collapse_approved: false,
+            exit_on_save_success: false,
+            pending_save_commit: None,
         }
     }
 
@@ -341,7 +351,8 @@ impl EditorState<'_> {
             error_banner: None,
             pending_name: None,
             exit_after_save: None,
-            collapse_approved: false,
+            exit_on_save_success: false,
+            pending_save_commit: None,
         }
     }
 

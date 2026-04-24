@@ -58,11 +58,18 @@ fn delete_workspace_via_manager() -> Result<()> {
         "seed failed"
     );
 
-    let mut state = ManagerState::from_config(&config);
+    let cwd = temp.path();
+    let mut state = ManagerState::from_config(&config, cwd);
     assert_eq!(state.workspaces.len(), 1);
-
-    // Select big-monorepo (index 0, already selected by default), press 'd'.
-    handle_key(&mut state, &mut config, &paths, key(KeyCode::Char('d')))?;
+    // Preselect lands on the saved workspace (selected=1) because the
+    // cwd matches — press `d` to delete.
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('d')),
+    )?;
     assert!(
         matches!(state.stage, ManagerStage::ConfirmDelete { .. }),
         "expected ConfirmDelete stage after 'd', got {:?}",
@@ -70,7 +77,13 @@ fn delete_workspace_via_manager() -> Result<()> {
     );
 
     // Press 'y' — commits the delete.
-    handle_key(&mut state, &mut config, &paths, key(KeyCode::Char('y')))?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('y')),
+    )?;
 
     // Config on disk should no longer have big-monorepo.
     let reloaded = AppConfig::load_or_init(&paths)?;

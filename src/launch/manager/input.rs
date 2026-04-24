@@ -10,8 +10,8 @@ use super::super::widgets::{
     workdir_pick::WorkdirPickState,
 };
 use super::state::{
-    ConfirmTarget, DragState, EditorMode, EditorState, EditorTab, ExitIntent, FieldFocus,
-    FileBrowserTarget, ManagerStage, ManagerState, Modal, Toast, ToastKind, clamp_split,
+    DragState, EditorMode, EditorState, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
+    ManagerStage, ManagerState, Modal, Toast, ToastKind, clamp_split,
 };
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -53,6 +53,20 @@ pub fn handle_key(
         && editor.modal.is_some()
     {
         handle_editor_modal(editor, key);
+
+        // Drain the ConfirmSave → commit signal FIRST. The modal handler
+        // only closes the modal and stashes the plan; this outer layer
+        // has `paths`/`cwd` and actually performs the write.
+        let pending = if let ManagerStage::Editor(editor) = &mut state.stage {
+            editor.pending_save_commit.take()
+        } else {
+            None
+        };
+        if let Some(plan) = pending {
+            commit_editor_save(state, config, paths, cwd, plan)?;
+            return Ok(InputOutcome::Continue);
+        }
+
         // After modal handling, check if an exit intent was signalled by
         // the SaveDiscardCancel modal.
         let intent = if let ManagerStage::Editor(editor) = &state.stage {
@@ -63,28 +77,16 @@ pub fn handle_key(
         if let Some(intent) = intent {
             match intent {
                 ExitIntent::Save => {
-                    save_editor(state, config, paths)?;
-                    // If save succeeded (no error_banner), exit to list.
-                    if let ManagerStage::Editor(e) = &state.stage {
-                        if e.error_banner.is_none() {
-                            *state = ManagerState::from_config(config, cwd);
-                        } else {
-                            // Save failed — clear exit intent so user can retry.
-                            if let ManagerStage::Editor(e) = &mut state.stage {
-                                e.exit_after_save = None;
-                            }
-                        }
-                    }
-                }
-                ExitIntent::RetrySave => {
-                    // Collapse-confirm flow: operator approved, re-enter the
-                    // save path with `collapse_approved` set so the plan
-                    // commits. Stay in the editor on success — this is a
-                    // regular save, not an exit.
+                    // Route through the two-phase save: ConfirmSave opens
+                    // first; the eventual commit is the one that exits.
+                    // Mark the editor so that, if the operator picks Save
+                    // in the confirm dialog and the write succeeds, we
+                    // bounce out to the workspace list.
                     if let ManagerStage::Editor(e) = &mut state.stage {
                         e.exit_after_save = None;
+                        e.exit_on_save_success = true;
                     }
-                    save_editor(state, config, paths)?;
+                    begin_editor_save(state, config)?;
                 }
                 ExitIntent::Discard => {
                     *state = ManagerState::from_config(config, cwd);
@@ -368,9 +370,23 @@ fn handle_editor_key(
     // conflicts (both need to call back into state or config).
     match key.code {
         KeyCode::Char('s' | 'S') => {
-            if matches!(&state.stage, ManagerStage::Editor(_)) {
-                save_editor(state, config, paths)?;
+            if let ManagerStage::Editor(editor) = &state.stage {
+                // No-op when there's nothing to save — avoid putting up
+                // an empty ConfirmSave dialog. `exit_on_save_success` is
+                // NOT reset here: the `ExitIntent::Save` path explicitly
+                // sets it to `true` before calling begin_editor_save, and
+                // both paths want the flag preserved through the save cycle.
+                if editor.change_count() == 0 {
+                    return Ok(InputOutcome::Continue);
+                }
             }
+            if matches!(&state.stage, ManagerStage::Editor(_)) {
+                begin_editor_save(state, config)?;
+            }
+            // `paths` is not needed until the operator actually commits
+            // in the ConfirmSave dialog; silence the unused binding until
+            // the reborrow for commit happens in handle_editor_modal.
+            let _ = paths;
             return Ok(InputOutcome::Continue);
         }
         KeyCode::Esc => {
@@ -581,24 +597,26 @@ fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
     }
 }
 
-#[allow(clippy::too_many_lines)]
-fn save_editor(
-    state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
-    paths: &JackinPaths,
-) -> anyhow::Result<()> {
+/// Phase 1 of the save flow: run pre-save validation, compute the
+/// plan, and open a `Modal::ConfirmSave` summarising the change set.
+///
+/// Validation failures (missing name, planner reject, pre-existing-only
+/// collapse) surface as inline `editor.error_banner` messages — NOT as
+/// an `ErrorPopup`. The popup is reserved for commit-time errors (phase 2).
+///
+/// On success, the function stashes the planner's `effective_removals`
+/// / `final_mounts` on the modal state so the commit path doesn't need
+/// to re-run `plan_edit`/`plan_create`.
+#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
+fn begin_editor_save(state: &mut ManagerState<'_>, config: &mut AppConfig) -> anyhow::Result<()> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
     };
+    // A stale banner from a previous cycle should clear now that the
+    // operator has kicked off a fresh save attempt.
+    editor.error_banner = None;
 
-    // Capture and clear the operator's prior approval for this save cycle.
-    // Cleared up front so any return path leaves the editor in a known state;
-    // the save will re-request approval on the next `s` press.
-    let collapse_approved = editor.collapse_approved;
-    editor.collapse_approved = false;
-
-    // Discriminate first so we can mutate editor fields inside each arm
-    // without a live borrow on editor.mode.
+    // Classify once so mutating arms below don't keep editor.mode borrowed.
     #[allow(clippy::items_after_statements)]
     enum SaveMode {
         Edit { original_name: String },
@@ -611,20 +629,13 @@ fn save_editor(
         EditorMode::Create => SaveMode::Create,
     };
 
-    // --- Collapse planning (must precede any write) ---
-    //
-    // Both `plan_edit` and `plan_create` are pure; they tell us whether this
-    // save will silently subsume any mounts. We classify the result into:
-    // - Ok, no collapse: proceed.
-    // - CollapseError: show banner, abort.
-    // - Pre-existing collapses only: show banner mentioning `workspace prune`.
-    // - Edit-driven collapses: open Confirm modal; rerun save on approval.
-    match &save_mode {
+    let (effective_removals, final_mounts, has_collapses, collapse_lines) = match &save_mode {
         SaveMode::Edit { original_name } => {
             let Some(current_ws) = config.workspaces.get(original_name).cloned() else {
                 editor.error_banner = Some(format!(
                     "workspace {original_name:?} no longer exists in config"
                 ));
+                editor.exit_on_save_success = false;
                 return Ok(());
             };
             let edit_delta = build_workspace_edit(&editor.original, &editor.pending);
@@ -636,6 +647,7 @@ fn save_editor(
             ) {
                 Err(e) => {
                     editor.error_banner = Some(e.to_string());
+                    editor.exit_on_save_success = false;
                     return Ok(());
                 }
                 Ok(plan) => {
@@ -655,28 +667,24 @@ fn save_editor(
                             .collect();
                         editor.error_banner = Some(format!(
                             "pre-existing redundant mount(s) in this workspace: {}; \
-                             run `jackin workspace prune {original_name}` to clean up",
+                             run `jackin' workspace prune {original_name}` to clean up",
                             details.join(", "),
                         ));
+                        editor.exit_on_save_success = false;
                         return Ok(());
                     }
-                    if !plan.edit_driven_collapses.is_empty() && !collapse_approved {
-                        editor.modal = Some(Modal::Confirm {
-                            target: ConfirmTarget::SaveCollapse,
-                            state: ConfirmState::new(collapse_confirm_prompt(
-                                &plan.edit_driven_collapses,
-                            )),
-                        });
-                        return Ok(());
-                    }
+                    let has = !plan.edit_driven_collapses.is_empty();
+                    let lines = collapse_section_lines(&plan.edit_driven_collapses);
+                    (plan.effective_removals, None, has, lines)
                 }
             }
         }
         SaveMode::Create => {
-            let Some(name) = editor.pending_name.clone() else {
+            if editor.pending_name.is_none() {
                 editor.error_banner = Some("missing workspace name".into());
+                editor.exit_on_save_success = false;
                 return Ok(());
-            };
+            }
             match crate::workspace::planner::plan_create(
                 &editor.pending.workdir,
                 editor.pending.mounts.clone(),
@@ -684,139 +692,398 @@ fn save_editor(
             ) {
                 Err(e) => {
                     editor.error_banner = Some(e.to_string());
+                    editor.exit_on_save_success = false;
                     return Ok(());
                 }
                 Ok(plan) => {
-                    if !plan.collapsed.is_empty() && !collapse_approved {
-                        editor.modal = Some(Modal::Confirm {
-                            target: ConfirmTarget::SaveCollapse,
-                            state: ConfirmState::new(collapse_confirm_prompt(&plan.collapsed)),
-                        });
-                        return Ok(());
-                    }
-                    // Stash the collapsed mount set on pending so the actual
-                    // write below persists the collapsed form.
-                    editor.pending.mounts = plan.final_mounts;
-                    // Keep pending_name consistent for the later save.
-                    let _ = name;
+                    let has = !plan.collapsed.is_empty();
+                    let lines = collapse_section_lines(&plan.collapsed);
+                    (Vec::new(), Some(plan.final_mounts), has, lines)
                 }
             }
         }
+    };
+
+    // Build the display lines describing the plan. These pre-computed
+    // lines are what the ConfirmSave widget renders; the widget itself
+    // stays dumb.
+    let lines = build_confirm_save_lines(editor, config, &collapse_lines);
+    let mut confirm_state = crate::launch::widgets::confirm_save::ConfirmSaveState::new(lines);
+    confirm_state.effective_removals = effective_removals;
+    confirm_state.final_mounts = final_mounts;
+    confirm_state.has_collapses = has_collapses;
+    editor.modal = Some(Modal::ConfirmSave {
+        state: confirm_state,
+    });
+    Ok(())
+}
+
+/// Phase 2 of the save flow: the operator clicked Save in the `ConfirmSave`
+/// dialog. Actually write to the on-disk config via the internal
+/// `ConfigEditor` API (NO CLI subprocess).
+///
+/// On Err, opens an `ErrorPopup` describing the failure. On Ok, refreshes
+/// the editor's origin-of-truth snapshot and — if `exit_on_save_success`
+/// is set — transitions the whole manager back to the list view.
+#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
+fn commit_editor_save(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+    plan: super::state::PendingSaveCommit,
+) -> anyhow::Result<()> {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return Ok(());
+    };
+
+    // Reuse the classify-first pattern from begin_editor_save so the
+    // mutating write arms don't keep editor.mode borrowed.
+    #[allow(clippy::items_after_statements)]
+    enum SaveMode {
+        Edit { original_name: String },
+        Create,
+    }
+    let save_mode = match &editor.mode {
+        EditorMode::Edit { name } => SaveMode::Edit {
+            original_name: name.clone(),
+        },
+        EditorMode::Create => SaveMode::Create,
+    };
+
+    // If plan_create stashed a collapsed mount set, honour it now — the
+    // operator already saw + approved it in the confirm dialog.
+    if let Some(final_mounts) = plan.final_mounts {
+        editor.pending.mounts = final_mounts;
     }
 
-    let mut ce = crate::config::ConfigEditor::open(paths)?;
+    let ce_res = crate::config::ConfigEditor::open(paths);
+    let mut ce = match ce_res {
+        Ok(ce) => ce,
+        Err(e) => {
+            open_save_error_popup(editor, &e.to_string());
+            editor.exit_on_save_success = false;
+            return Ok(());
+        }
+    };
 
     match save_mode {
         SaveMode::Edit { original_name } => {
             let mut current_name = original_name.clone();
-
-            // If the user renamed, perform the rename before the field edit.
             let pending_name = editor.pending_name.clone();
             if let Some(new_name) = pending_name
                 && new_name != original_name
             {
                 if let Err(e) = ce.rename_workspace(&original_name, &new_name) {
-                    editor.error_banner = Some(e.to_string());
+                    open_save_error_popup(editor, &e.to_string());
+                    editor.exit_on_save_success = false;
                     return Ok(());
                 }
                 current_name.clone_from(&new_name);
-                // Reflect the rename in the editor's mode so subsequent saves
-                // target the new name.
                 editor.mode = EditorMode::Edit { name: new_name };
             }
 
-            // Recompute plan_edit against the (possibly-renamed) current
-            // config to pick up effective_removals — this folds collapsed
-            // children into the remove list so AppConfig::edit_workspace's
-            // internal rule-C check passes.
-            let current_ws_for_removals = config
-                .workspaces
-                .get(&original_name)
-                .cloned()
-                .expect("current_ws existed above; planner pass can't have deleted it");
             let mut edit = build_workspace_edit(&editor.original, &editor.pending);
-            match crate::workspace::planner::plan_edit(
-                &current_ws_for_removals,
-                &edit.upsert_mounts,
-                &edit.remove_destinations,
-                false,
-            ) {
-                Ok(plan) => {
-                    edit.remove_destinations = plan.effective_removals;
-                }
-                Err(e) => {
-                    editor.error_banner = Some(e.to_string());
-                    return Ok(());
-                }
-            }
+            edit.remove_destinations = plan.effective_removals;
 
             if let Err(e) = ce.edit_workspace(&current_name, edit) {
-                editor.error_banner = Some(e.to_string());
+                open_save_error_popup(editor, &e.to_string());
+                editor.exit_on_save_success = false;
                 return Ok(());
             }
         }
         SaveMode::Create => {
             let Some(name) = editor.pending_name.clone() else {
-                editor.error_banner = Some("missing workspace name".into());
+                open_save_error_popup(editor, "missing workspace name");
+                editor.exit_on_save_success = false;
                 return Ok(());
             };
             if let Err(e) = ce.create_workspace(&name, editor.pending.clone()) {
-                editor.error_banner = Some(e.to_string());
+                open_save_error_popup(editor, &e.to_string());
+                editor.exit_on_save_success = false;
                 return Ok(());
             }
         }
     }
+
     match ce.save() {
         Ok(fresh) => {
             *config = fresh;
-            // Refresh editor original/pending from the new config.
-            if let ManagerStage::Editor(editor) = &mut state.stage {
+            // Refresh editor origin-of-truth; keep the operator on the
+            // editor (direct `s` press) OR bounce to list (Esc→Save path).
+            let should_exit = if let ManagerStage::Editor(editor) = &mut state.stage {
                 let change_count = editor.change_count();
-                match &editor.mode {
-                    EditorMode::Edit { name } => {
-                        if let Some(ws) = config.workspaces.get(name) {
-                            editor.original = ws.clone();
-                            editor.pending = ws.clone();
-                        }
-                    }
-                    EditorMode::Create => {
-                        // After create, jump back to manager list with toast.
-                    }
+                if let EditorMode::Edit { name } = &editor.mode
+                    && let Some(ws) = config.workspaces.get(name)
+                {
+                    editor.original = ws.clone();
+                    editor.pending = ws.clone();
                 }
                 editor.error_banner = None;
+                let exit = editor.exit_on_save_success;
+                editor.exit_on_save_success = false;
                 state.toast = Some(Toast {
                     message: format!("saved · {change_count} changes written"),
                     kind: ToastKind::Success,
                     shown_at: std::time::Instant::now(),
                 });
+                exit
+            } else {
+                false
+            };
+            if should_exit
+                || matches!(
+                    state.stage,
+                    ManagerStage::Editor(EditorState {
+                        mode: EditorMode::Create,
+                        ..
+                    })
+                )
+            {
+                // Create mode always exits to the list after a successful
+                // write; there's no persistent "edit" view for a freshly-
+                // created workspace until the operator picks it.
+                *state = ManagerState::from_config(config, cwd);
             }
         }
         Err(e) => {
             if let ManagerStage::Editor(editor) = &mut state.stage {
-                editor.error_banner = Some(e.to_string());
+                open_save_error_popup(editor, &e.to_string());
+                editor.exit_on_save_success = false;
             }
         }
     }
     Ok(())
 }
 
-/// Build the Confirm-modal prompt for a mount-collapse plan. Mirrors the
-/// CLI wording in `src/app/mod.rs` so operators who move between the CLI
-/// and the TUI see familiar text.
-fn collapse_confirm_prompt(collapses: &[crate::workspace::Removal]) -> String {
-    use std::fmt::Write as _;
-    let mut prompt = format!(
-        "Adding mount(s) will subsume {} existing mount(s):",
-        collapses.len()
-    );
-    for r in collapses {
-        let child = crate::tui::shorten_home(&r.child.src);
-        let parent = crate::tui::shorten_home(&r.covered_by.src);
-        // write! into a String cannot fail.
-        write!(prompt, "\n  {child} covered by {parent}").ok();
+fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
+    editor.modal = Some(Modal::ErrorPopup {
+        state: crate::launch::widgets::error_popup::ErrorPopupState::new(
+            "Save failed",
+            message.to_string(),
+        ),
+    });
+}
+
+/// Build the list of display lines shown inside the `ConfirmSave` modal.
+/// In Create mode we show a summary; in Edit mode a structured diff
+/// between `editor.original` and `editor.pending`. If the planner
+/// reports mount collapses, a final "Mount collapse required:" section
+/// is appended.
+#[allow(clippy::too_many_lines)]
+fn build_confirm_save_lines(
+    editor: &EditorState<'_>,
+    config: &AppConfig,
+    collapse_lines: &[ratatui::text::Line<'static>],
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
+
+    let phosphor_green = Color::Rgb(0, 255, 65);
+    let phosphor_dim = Color::Rgb(0, 140, 30);
+    let white = Color::Rgb(255, 255, 255);
+    let heading = Style::default().fg(white).add_modifier(Modifier::BOLD);
+    let value = Style::default().fg(phosphor_green);
+    let dim = Style::default().fg(phosphor_dim);
+
+    let mut out: Vec<Line<'static>> = Vec::new();
+
+    match &editor.mode {
+        EditorMode::Create => {
+            let name = editor
+                .pending_name
+                .clone()
+                .unwrap_or_else(|| "(unnamed)".into());
+            out.push(Line::from(vec![
+                Span::styled("Create workspace: ", heading),
+                Span::styled(name, value),
+            ]));
+            out.push(Line::raw(""));
+            out.push(Line::from(vec![
+                Span::styled("Working directory: ", heading),
+                Span::styled(crate::tui::shorten_home(&editor.pending.workdir), value),
+            ]));
+            if !editor.pending.mounts.is_empty() {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled(
+                    format!("Mounts ({}):", editor.pending.mounts.len()),
+                    heading,
+                )));
+                for m in &editor.pending.mounts {
+                    out.push(Line::from(Span::styled(
+                        format!("  \u{2022} {}", mount_summary(m)),
+                        value,
+                    )));
+                }
+            }
+            out.push(Line::raw(""));
+            out.push(Line::from(vec![
+                Span::styled("Allowed agents: ", heading),
+                Span::styled(allowed_agents_summary(editor, config), value),
+            ]));
+            out.push(Line::raw(""));
+            out.push(Line::from(vec![
+                Span::styled("Default agent: ", heading),
+                Span::styled(
+                    editor
+                        .pending
+                        .default_agent
+                        .clone()
+                        .unwrap_or_else(|| "(none)".into()),
+                    value,
+                ),
+            ]));
+        }
+        EditorMode::Edit { name } => {
+            let display_name = editor.pending_name.clone().unwrap_or_else(|| name.clone());
+            out.push(Line::from(vec![
+                Span::styled("Edit workspace: ", heading),
+                Span::styled(display_name, value),
+            ]));
+
+            // Rename diff (a rename counts even though it's not a
+            // workspace-field change per se).
+            if let Some(new_name) = &editor.pending_name
+                && new_name != name
+            {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Rename:", heading)));
+                out.push(Line::from(Span::styled(format!("  - {name}"), dim)));
+                out.push(Line::from(Span::styled(format!("  + {new_name}"), value)));
+            }
+
+            if editor.pending.workdir != editor.original.workdir {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Working directory:", heading)));
+                out.push(Line::from(Span::styled(
+                    format!("  - {}", crate::tui::shorten_home(&editor.original.workdir)),
+                    dim,
+                )));
+                out.push(Line::from(Span::styled(
+                    format!("  + {}", crate::tui::shorten_home(&editor.pending.workdir)),
+                    value,
+                )));
+            }
+
+            let added_mounts: Vec<_> = editor
+                .pending
+                .mounts
+                .iter()
+                .filter(|m| !editor.original.mounts.contains(m))
+                .collect();
+            let removed_mounts: Vec<_> = editor
+                .original
+                .mounts
+                .iter()
+                .filter(|m| !editor.pending.mounts.contains(m))
+                .collect();
+            if !added_mounts.is_empty() || !removed_mounts.is_empty() {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Mounts:", heading)));
+                for m in &added_mounts {
+                    out.push(Line::from(Span::styled(
+                        format!("  + {}", mount_summary(m)),
+                        value,
+                    )));
+                }
+                for m in &removed_mounts {
+                    out.push(Line::from(Span::styled(
+                        format!("  - {}", mount_summary(m)),
+                        dim,
+                    )));
+                }
+            }
+
+            let added_agents: Vec<_> = editor
+                .pending
+                .allowed_agents
+                .iter()
+                .filter(|a| !editor.original.allowed_agents.contains(a))
+                .collect();
+            let removed_agents: Vec<_> = editor
+                .original
+                .allowed_agents
+                .iter()
+                .filter(|a| !editor.pending.allowed_agents.contains(a))
+                .collect();
+            if !added_agents.is_empty() || !removed_agents.is_empty() {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Allowed agents:", heading)));
+                for a in &added_agents {
+                    out.push(Line::from(Span::styled(format!("  + {a}"), value)));
+                }
+                for a in &removed_agents {
+                    out.push(Line::from(Span::styled(format!("  - {a}"), dim)));
+                }
+            }
+
+            if editor.pending.default_agent != editor.original.default_agent {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Default agent:", heading)));
+                if let Some(old) = &editor.original.default_agent {
+                    out.push(Line::from(Span::styled(format!("  - {old}"), dim)));
+                }
+                if let Some(new) = &editor.pending.default_agent {
+                    out.push(Line::from(Span::styled(format!("  + {new}"), value)));
+                } else {
+                    out.push(Line::from(Span::styled("  + (none)", value)));
+                }
+            }
+        }
     }
-    prompt.push_str("\nProceed?");
-    prompt
+
+    if !collapse_lines.is_empty() {
+        out.push(Line::raw(""));
+        out.push(Line::from(Span::styled(
+            "Mount collapse required:",
+            heading,
+        )));
+        out.extend(collapse_lines.iter().cloned());
+    }
+
+    out
+}
+
+/// Summarise a mount as `<src>  (rw|ro, <label>)` where label is
+/// github/git/folder/missing from `mount_info::inspect`.
+fn mount_summary(m: &crate::workspace::MountConfig) -> String {
+    let src = crate::tui::shorten_home(&m.src);
+    let kind = super::mount_info::inspect(&m.src);
+    let rw = if m.readonly { "ro" } else { "rw" };
+    format!("{src}  ({rw}, {})", kind.label())
+}
+
+/// Summarise the allowed-agent selection — `any (N agents)` when the
+/// workspace lets every configured agent run, otherwise a comma-separated
+/// list.
+fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {
+    if editor.pending.allowed_agents.is_empty() {
+        return format!("any ({} agents)", config.agents.len());
+    }
+    editor.pending.allowed_agents.join(", ")
+}
+
+/// Render each mount-collapse entry as `  <child> → <parent>`, to be
+/// appended to the `ConfirmSave` lines under a "Mount collapse required:"
+/// heading.
+fn collapse_section_lines(
+    collapses: &[crate::workspace::Removal],
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::style::{Color, Style};
+    use ratatui::text::{Line, Span};
+    let phosphor_dim = Color::Rgb(0, 140, 30);
+    let style = Style::default().fg(phosphor_dim);
+    collapses
+        .iter()
+        .map(|r| {
+            let child = crate::tui::shorten_home(&r.child.src);
+            let parent = crate::tui::shorten_home(&r.covered_by.src);
+            Line::from(Span::styled(
+                format!("  {child} will be subsumed under {parent}"),
+                style,
+            ))
+        })
+        .collect()
 }
 
 fn build_workspace_edit(
@@ -1189,27 +1456,15 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             }
             ModalOutcome::Continue => {}
         },
-        Modal::Confirm { target, state } => {
-            let target = *target;
-            match state.handle_key(key) {
-                ModalOutcome::Commit(confirmed) => {
-                    editor.modal = None;
-                    if target == ConfirmTarget::SaveCollapse && confirmed {
-                        // Operator approved the collapse plan — re-enter the
-                        // save path with `collapse_approved` set so the
-                        // planner's pre-check passes and the write proceeds.
-                        editor.collapse_approved = true;
-                        editor.exit_after_save = Some(ExitIntent::RetrySave);
-                    }
-                    // confirmed==false OR non-SaveCollapse target: just close
-                    // the modal and return to the editor unchanged.
-                }
-                ModalOutcome::Cancel => {
-                    editor.modal = None;
-                }
-                ModalOutcome::Continue => {}
+        Modal::Confirm { target: _, state } => match state.handle_key(key) {
+            // Editor-side Confirm only reaches here for non-destructive
+            // variants now that SaveCollapse folds into ConfirmSave.
+            // Treat Commit/Cancel identically — close the modal.
+            ModalOutcome::Commit(_) | ModalOutcome::Cancel => {
+                editor.modal = None;
             }
-        }
+            ModalOutcome::Continue => {}
+        },
         Modal::MountDstChoice {
             target,
             state: modal_state,
@@ -1242,13 +1497,32 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
         Modal::GithubPicker { .. } => {
             editor.modal = None;
         }
-        // ConfirmSave and ErrorPopup are wired into `save_editor` in
-        // commit 2 of this batch. Commit-1 scope is variant + render
-        // only; a stray event here closes the modal cleanly so nothing
-        // deadlocks while the wiring is in progress.
-        Modal::ConfirmSave { .. } | Modal::ErrorPopup { .. } => {
-            editor.modal = None;
+        Modal::ConfirmSave { state: modal_state } => {
+            use crate::launch::widgets::confirm_save::SaveChoice;
+            match modal_state.handle_key(key) {
+                ModalOutcome::Commit(SaveChoice::Save) => {
+                    // Stash the plan on the editor so the outer handler
+                    // (which has `paths`/`cwd`) can drive the write.
+                    let pending = super::state::PendingSaveCommit {
+                        effective_removals: modal_state.effective_removals.clone(),
+                        final_mounts: modal_state.final_mounts.clone(),
+                    };
+                    editor.modal = None;
+                    editor.pending_save_commit = Some(pending);
+                }
+                ModalOutcome::Cancel => {
+                    editor.modal = None;
+                    editor.exit_on_save_success = false;
+                }
+                ModalOutcome::Continue => {}
+            }
         }
+        Modal::ErrorPopup { state: popup_state } => match popup_state.handle_key(key) {
+            ModalOutcome::Cancel | ModalOutcome::Commit(()) => {
+                editor.modal = None;
+            }
+            ModalOutcome::Continue => {}
+        },
     }
 }
 
@@ -1665,10 +1939,22 @@ mod tests {
         Ok((tmp, paths, reloaded))
     }
 
+    /// Press `s` in the editor. Convenience helper that routes through
+    /// the public `handle_key` to mirror real operator input.
+    fn press_s(
+        state: &mut ManagerState<'_>,
+        config: &mut AppConfig,
+        paths: &JackinPaths,
+        cwd: &std::path::Path,
+    ) {
+        handle_key(state, config, paths, cwd, key(KeyCode::Char('s'))).unwrap();
+    }
+
     #[test]
-    fn save_editor_opens_confirm_on_edit_driven_collapse() {
+    fn save_editor_opens_confirm_save_on_edit_driven_collapse() {
         // Existing workspace with /work/sub; operator adds /work which
-        // subsumes the child. Expected: Confirm modal opens, no write yet.
+        // subsumes the child. Expected: ConfirmSave modal opens with a
+        // "Mount collapse required" section; no write yet.
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
@@ -1683,26 +1969,20 @@ mod tests {
         let cwd = _tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
-        // Add the /work parent to pending mounts — this is the edit-driven
-        // case.
         editor.pending.mounts.insert(0, mount("/work", "/work"));
         state.stage = ManagerStage::Editor(editor);
 
-        save_editor(&mut state, &mut config, &paths).unwrap();
+        press_s(&mut state, &mut config, &paths, cwd);
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
+        let Some(Modal::ConfirmSave { state: modal }) = &e.modal else {
+            panic!("expected ConfirmSave modal; got {:?}", e.modal);
+        };
         assert!(
-            matches!(
-                e.modal,
-                Some(Modal::Confirm {
-                    target: ConfirmTarget::SaveCollapse,
-                    ..
-                })
-            ),
-            "expected SaveCollapse confirm modal; got {:?}",
-            e.modal
+            modal.has_collapses,
+            "modal must flag the collapse for the display layer"
         );
         assert!(e.error_banner.is_none(), "no error banner expected");
         // The on-disk config should not have been touched yet.
@@ -1717,9 +1997,9 @@ mod tests {
 
     #[test]
     fn confirming_collapse_writes_collapsed_set() {
-        // Same setup, then simulate Y press on the confirm modal — this
-        // should approve and re-run save_editor, committing the collapsed
-        // mount set.
+        // Same setup, then simulate the operator pressing Enter on the
+        // ConfirmSave modal — this should drain pending_save_commit,
+        // call commit_editor_save, and write the collapsed mount set.
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
@@ -1737,27 +2017,18 @@ mod tests {
         editor.pending.mounts.insert(0, mount("/work", "/work"));
         state.stage = ManagerStage::Editor(editor);
 
-        // Step 1: first save opens the confirm modal.
-        save_editor(&mut state, &mut config, &paths).unwrap();
+        press_s(&mut state, &mut config, &paths, cwd);
 
-        // Step 2: deliver Y through the modal path. We call handle_key which
-        // routes through handle_editor_modal → SaveCollapse approval →
-        // RetrySave intent → save_editor re-entry.
-        handle_key(
-            &mut state,
-            &mut config,
-            &paths,
-            cwd,
-            key(KeyCode::Char('y')),
-        )
-        .unwrap();
+        // Step 2: Enter on the ConfirmSave modal (default focus = Save)
+        // commits the save.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
         assert!(
             e.modal.is_none(),
-            "modal should be closed after approval; got {:?}",
+            "modal should be closed after confirm; got {:?}",
             e.modal
         );
         assert!(
@@ -1774,7 +2045,7 @@ mod tests {
     }
 
     #[test]
-    fn cancelling_collapse_keeps_pending_mounts_intact() {
+    fn cancelling_confirm_save_keeps_pending_intact() {
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
@@ -1792,15 +2063,15 @@ mod tests {
         editor.pending.mounts.insert(0, mount("/work", "/work"));
         state.stage = ManagerStage::Editor(editor);
 
-        save_editor(&mut state, &mut config, &paths).unwrap();
+        press_s(&mut state, &mut config, &paths, cwd);
 
-        // Press N — cancel the collapse.
+        // Press C — cancel the ConfirmSave dialog.
         handle_key(
             &mut state,
             &mut config,
             &paths,
             cwd,
-            key(KeyCode::Char('n')),
+            key(KeyCode::Char('c')),
         )
         .unwrap();
 
@@ -1813,7 +2084,7 @@ mod tests {
             2,
             "pending mounts stay so operator can fix by hand"
         );
-        assert!(!e.collapse_approved, "approval flag must be clear");
+        assert!(e.pending_save_commit.is_none(), "plan must be cleared");
 
         // On-disk config unchanged.
         let reloaded = AppConfig::load_or_init(&paths).unwrap();
@@ -1824,7 +2095,9 @@ mod tests {
     #[test]
     fn readonly_mismatch_produces_error_banner_no_write() {
         // Add a rw /work that would subsume an existing ro /work/sub —
-        // plan_edit must reject with ReadonlyMismatch.
+        // plan_edit must reject with ReadonlyMismatch. Per spec, hard
+        // planner errors surface as an inline banner, NOT as the new
+        // ErrorPopup (which is reserved for commit-time failures).
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![ro_mount("/work/sub", "/work/sub")],
@@ -1842,12 +2115,12 @@ mod tests {
         editor.pending.mounts.insert(0, mount("/work", "/work")); // rw
         state.stage = ManagerStage::Editor(editor);
 
-        save_editor(&mut state, &mut config, &paths).unwrap();
+        press_s(&mut state, &mut config, &paths, cwd);
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
-        assert!(e.modal.is_none(), "no modal for hard errors");
+        assert!(e.modal.is_none(), "no modal for hard planner errors");
         let banner = e
             .error_banner
             .as_deref()
@@ -1864,9 +2137,6 @@ mod tests {
 
     #[test]
     fn pre_existing_collapse_produces_prune_error_banner() {
-        // Workspace already has overlapping mounts. Operator opens editor
-        // and saves without mount changes — plan_edit reports
-        // pre_existing_collapses; no write, error banner references prune.
         let ws = WorkspaceConfig {
             workdir: "/work".into(),
             mounts: vec![
@@ -1884,10 +2154,15 @@ mod tests {
 
         let cwd = _tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
-        let editor = EditorState::new_edit("legacy-workspace".into(), ws);
+        let mut editor = EditorState::new_edit("legacy-workspace".into(), ws);
+        // The editor must be dirty to trigger the save path — bump workdir
+        // so change_count > 0. Previously the test relied on save_editor
+        // running unconditionally; under the new no-op-on-clean rule we
+        // have to force a change.
+        editor.pending.workdir = "/work/altered".into();
         state.stage = ManagerStage::Editor(editor);
 
-        save_editor(&mut state, &mut config, &paths).unwrap();
+        press_s(&mut state, &mut config, &paths, cwd);
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
@@ -1904,6 +2179,355 @@ mod tests {
         assert!(
             banner.contains("legacy-workspace"),
             "banner should name the workspace: {banner}"
+        );
+    }
+
+    // ── New behavioural tests for the two-phase save flow ─────────────
+
+    #[test]
+    fn s_with_zero_changes_is_noop() {
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("clean-ws", ws.clone()).unwrap();
+
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let editor = EditorState::new_edit("clean-ws".into(), ws);
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.modal.is_none(),
+            "no ConfirmSave should open when change_count is 0"
+        );
+        assert!(e.error_banner.is_none());
+    }
+
+    #[test]
+    fn s_with_changes_opens_confirm_save_modal() {
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("edit-me", ws.clone()).unwrap();
+
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("edit-me".into(), ws);
+        editor.pending.workdir = "/w/elsewhere".into();
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            matches!(e.modal, Some(Modal::ConfirmSave { .. })),
+            "expected ConfirmSave; got {:?}",
+            e.modal
+        );
+    }
+
+    #[test]
+    fn confirm_save_save_exits_editor_on_success_from_save_discard_path() {
+        // Set exit_on_save_success = true (as the SaveDiscardCancel Save
+        // path would). After Enter on ConfirmSave, we should land back
+        // on ManagerStage::List.
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("exit-me", ws.clone()).unwrap();
+
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("exit-me".into(), ws);
+        editor.pending.workdir = "/w/elsewhere".into();
+        editor.exit_on_save_success = true;
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        assert!(
+            matches!(state.stage, ManagerStage::List),
+            "save with exit_on_save_success should return to the list stage"
+        );
+    }
+
+    #[test]
+    fn confirm_save_save_stays_in_editor_on_success_from_direct_s() {
+        // Bare `s` press (not from SaveDiscardCancel) keeps the operator
+        // in the editor after a successful save.
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("stay-here", ws.clone()).unwrap();
+
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("stay-here".into(), ws);
+        editor.pending.workdir = "/w/new".into();
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("should stay in editor on direct `s` save");
+        };
+        assert!(e.modal.is_none());
+        // Origin-of-truth refreshed so the editor is clean again.
+        assert_eq!(e.change_count(), 0);
+    }
+
+    #[test]
+    fn confirm_save_save_opens_error_popup_on_duplicate_name() {
+        // Two workspaces on disk; rename one to the other's name. The
+        // write hits ConfigEditor::rename_workspace's duplicate-name
+        // guard and we expect an ErrorPopup.
+        let ws_a = WorkspaceConfig {
+            workdir: "/a".into(),
+            mounts: vec![mount("/a", "/a")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let ws_b = WorkspaceConfig {
+            workdir: "/b".into(),
+            mounts: vec![mount("/b", "/b")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, _config0) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
+        // Add the second workspace on disk.
+        let mut config = {
+            let mut ce = crate::config::ConfigEditor::open(&paths).unwrap();
+            ce.create_workspace("beta", ws_b.clone()).unwrap();
+            ce.save().unwrap()
+        };
+
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("alpha".into(), ws_a);
+        editor.pending_name = Some("beta".into()); // collides
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("stay in editor when save fails");
+        };
+        assert!(
+            matches!(e.modal, Some(Modal::ErrorPopup { .. })),
+            "expected ErrorPopup on duplicate-name; got {:?}",
+            e.modal
+        );
+    }
+
+    #[test]
+    fn error_popup_dismiss_returns_to_editor_with_changes_intact() {
+        let ws_a = WorkspaceConfig {
+            workdir: "/a".into(),
+            mounts: vec![mount("/a", "/a")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let ws_b = WorkspaceConfig {
+            workdir: "/b".into(),
+            mounts: vec![mount("/b", "/b")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, _config0) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
+        let mut config = {
+            let mut ce = crate::config::ConfigEditor::open(&paths).unwrap();
+            ce.create_workspace("beta", ws_b.clone()).unwrap();
+            ce.save().unwrap()
+        };
+
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("alpha".into(), ws_a);
+        editor.pending_name = Some("beta".into());
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc)).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("stay in editor after ErrorPopup dismiss");
+        };
+        assert!(e.modal.is_none(), "popup should be closed on Esc");
+        assert_eq!(
+            e.pending_name.as_deref(),
+            Some("beta"),
+            "pending rename must survive the popup so operator can adjust"
+        );
+    }
+
+    #[test]
+    fn create_mode_confirm_save_includes_mounts_in_lines() {
+        let (_tmp, paths, mut config) = {
+            let tmp = tempfile::tempdir().unwrap();
+            let paths = JackinPaths::for_tests(tmp.path());
+            paths.ensure_base_dirs().unwrap();
+            let config = AppConfig::default();
+            let toml = toml::to_string(&config).unwrap();
+            std::fs::write(&paths.config_file, toml).unwrap();
+            let loaded = AppConfig::load_or_init(&paths).unwrap();
+            (tmp, paths, loaded)
+        };
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_create();
+        editor.pending_name = Some("new-one".into());
+        editor.pending.workdir = "/code/proj".into();
+        editor.pending.mounts = vec![mount("/code/proj", "/code/proj")];
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        let Some(Modal::ConfirmSave { state: modal }) = &e.modal else {
+            panic!("expected ConfirmSave");
+        };
+        // Crude assertion: at least one line mentions the mount path.
+        let joined: String = modal
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect::<Vec<_>>()
+            .join("|");
+        assert!(
+            joined.contains("/code/proj"),
+            "mount path must appear in ConfirmSave lines: {joined}"
+        );
+        assert!(
+            joined.contains("new-one"),
+            "workspace name must appear: {joined}"
+        );
+    }
+
+    #[test]
+    fn edit_mode_confirm_save_shows_diff() {
+        let ws = WorkspaceConfig {
+            workdir: "/old".into(),
+            mounts: vec![mount("/old", "/old")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("diff-me", ws.clone()).unwrap();
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("diff-me".into(), ws);
+        editor.pending.workdir = "/new".into();
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        let Some(Modal::ConfirmSave { state: modal }) = &e.modal else {
+            panic!("expected ConfirmSave");
+        };
+        let joined: String = modal
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect::<Vec<_>>()
+            .join("|");
+        assert!(joined.contains("/old"), "old value shown: {joined}");
+        assert!(joined.contains("/new"), "new value shown: {joined}");
+    }
+
+    #[test]
+    fn confirm_save_integrates_mount_collapse_section_when_plan_has_collapses() {
+        let ws = WorkspaceConfig {
+            workdir: "/work/sub".into(),
+            mounts: vec![mount("/work/sub", "/work/sub")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("collapsy", ws.clone()).unwrap();
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("collapsy".into(), ws);
+        editor.pending.mounts.insert(0, mount("/work", "/work"));
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        let Some(Modal::ConfirmSave { state: modal }) = &e.modal else {
+            panic!();
+        };
+        assert!(modal.has_collapses);
+        let joined: String = modal
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect::<Vec<_>>()
+            .join("|");
+        assert!(
+            joined.contains("Mount collapse required:"),
+            "collapse section heading must appear: {joined}"
+        );
+        assert!(
+            joined.contains("will be subsumed under"),
+            "collapse detail must appear: {joined}"
         );
     }
 
