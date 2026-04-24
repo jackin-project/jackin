@@ -359,9 +359,15 @@ pub(super) fn resolve_github_mounts_for_workspace(
         .collect()
 }
 
+// Central keymap dispatch for the editor view: one giant match on
+// `key.code` with per-tab guards. Extracting each arm into a helper would
+// just scatter the keymap across a dozen tiny functions without making
+// the dispatch easier to read — the table-like structure here is the
+// point. Accept the length over an awkward split.
+#[allow(clippy::too_many_lines)]
 fn handle_editor_key(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    config: &AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
     key: KeyEvent,
@@ -665,7 +671,7 @@ fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
 /// / `final_mounts` on the modal state so the commit path doesn't need
 /// to re-run `plan_edit`/`plan_create`.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
-fn begin_editor_save(state: &mut ManagerState<'_>, config: &mut AppConfig) -> anyhow::Result<()> {
+fn begin_editor_save(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow::Result<()> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
     };
@@ -1903,8 +1909,8 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
     }
 }
 
-/// Reopen the FileBrowserSrc modal positioned at the last-seen cwd.
-/// Used by step-back navigation from MountDstChoice. Silently starts at
+/// Reopen the `FileBrowserSrc` modal positioned at the last-seen cwd.
+/// Used by step-back navigation from `MountDstChoice`. Silently starts at
 /// `$HOME` when the browser fails to build or no cwd was recorded.
 fn reopen_file_browser_at_last_cwd(prelude: &mut super::state::CreatePreludeState<'_>) {
     use super::state::FileBrowserTarget;
@@ -1921,8 +1927,8 @@ fn reopen_file_browser_at_last_cwd(prelude: &mut super::state::CreatePreludeStat
     });
 }
 
-/// Reopen the MountDstChoice modal seeded from the stashed mount src.
-/// Used by step-back navigation from TextInputDst / WorkdirPick.
+/// Reopen the `MountDstChoice` modal seeded from the stashed mount src.
+/// Used by step-back navigation from `TextInputDst` / `WorkdirPick`.
 fn reopen_mount_dst_choice(prelude: &mut super::state::CreatePreludeState<'_>) {
     use super::state::FileBrowserTarget;
     let src = prelude

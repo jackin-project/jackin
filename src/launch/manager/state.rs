@@ -150,6 +150,11 @@ pub enum FieldFocus {
     Row(usize),
 }
 
+// `TextInputState` is ~600B while other variants are ~330B. Boxing the state
+// field would cascade through 19 construction/match sites (including wizard
+// step transitions that move state in and out of `Modal`). The ergonomic cost
+// is worse than the small stack-size win here, so we accept the variance.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Modal<'a> {
     TextInput {
@@ -228,15 +233,15 @@ pub struct CreatePreludeState<'a> {
     pub pending_workdir: Option<String>,
     pub pending_name: Option<String>,
     pub modal: Option<Modal<'a>>,
-    /// Last cwd the FileBrowser was pointing at when the operator
+    /// Last cwd the `FileBrowser` was pointing at when the operator
     /// committed a mount src. Captured so that pressing Esc on the
-    /// MountDstChoice step can re-open FileBrowser at the same directory
+    /// `MountDstChoice` step can re-open `FileBrowser` at the same directory
     /// instead of starting back at `$HOME`.
     pub last_browser_cwd: Option<PathBuf>,
     /// Tracks whether the operator took the "Edit destination" branch
     /// during the current wizard run. Determines which step Esc on
-    /// WorkdirPick should rewind to — TextInputDst if Edit was used,
-    /// MountDstChoice otherwise.
+    /// `WorkdirPick` should rewind to — `TextInputDst` if Edit was used,
+    /// `MountDstChoice` otherwise.
     pub used_edit_dst: bool,
 }
 

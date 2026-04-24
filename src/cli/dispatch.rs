@@ -68,7 +68,7 @@ pub fn is_tui_capable() -> bool {
 
 /// Pure-function form of [`is_tui_capable`]'s size check — easy to test.
 #[must_use]
-pub fn is_size_tui_capable(cols: u16, rows: u16) -> bool {
+pub const fn is_size_tui_capable(cols: u16, rows: u16) -> bool {
     cols >= MIN_TUI_COLS && rows >= MIN_TUI_ROWS
 }
 

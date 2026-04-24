@@ -400,7 +400,7 @@ fn render_mount_lines(rows: &[(String, &str, String)], path_w: usize) -> Vec<Lin
             Line::from(vec![
                 Span::raw(format!("  {path:<path_w$}  ")),
                 Span::styled(
-                    format!("{mode:<mw$}", mw = MOUNT_MODE_COL_WIDTH),
+                    format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
                     Style::default().fg(PHOSPHOR_DIM),
                 ),
                 // Two-space gap before the type column — matches the header.
@@ -766,14 +766,12 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
 
     // Save group — label varies with dirty/clean.
     items.push(FooterItem::Key("S"));
+    items.push(FooterItem::Text("save workspace"));
     if state.is_dirty() {
-        items.push(FooterItem::Text("save workspace"));
         items.push(FooterItem::Dyn(format!(
             "({} changes)",
             state.change_count()
         )));
-    } else {
-        items.push(FooterItem::Text("save workspace"));
     }
 
     // Tab-for-next-tab and ↑↓-for-cursor-move are universal across every
@@ -1073,7 +1071,7 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         Line::from(vec![
             Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
             Span::styled(
-                format!("{mode:<mw$}", mw = MOUNT_MODE_COL_WIDTH),
+                format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             // Two-space gap before the type column — matches the header.
