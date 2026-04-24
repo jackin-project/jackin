@@ -64,14 +64,23 @@ pub fn run_launch(
     cwd: &std::path::Path,
 ) -> anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>> {
     use crossterm::ExecutableCommand;
-    use crossterm::event::{self, Event, KeyEventKind};
+    use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
     use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 
+    // NOTE: `EnableMouseCapture` intercepts mouse events so the workspace
+    // manager can drive a draggable split between the list and details
+    // panes. A known side-effect is that the terminal's native text
+    // selection (click-drag to select, cmd/ctrl-C to copy) stops working
+    // while the TUI is running. Operators who need to copy text from the
+    // TUI can hold Shift (Terminal.app, iTerm2) or Option (iTerm2) to
+    // bypass capture at the terminal level. A runtime toggle could be
+    // added later but is out of scope here.
     struct TerminalGuard;
     impl Drop for TerminalGuard {
         fn drop(&mut self) {
             let _ = crossterm::terminal::disable_raw_mode();
             let mut stdout = std::io::stdout();
+            let _ = stdout.execute(DisableMouseCapture);
             let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
             let _ = stdout.execute(crossterm::cursor::Show);
         }
@@ -82,6 +91,7 @@ pub fn run_launch(
     enable_raw_mode()?;
     let guard = TerminalGuard;
     stdout.execute(EnterAlternateScreen)?;
+    stdout.execute(EnableMouseCapture)?;
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
 
@@ -98,49 +108,65 @@ pub fn run_launch(
             LaunchStage::Agent => render::draw_agent_screen(frame, &state, &config, cwd),
             LaunchStage::Manager(ms) => manager::render(frame, ms, &config, cwd),
         })?;
-        if let Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
-            if matches!(state.stage, LaunchStage::Manager(_)) {
-                if let LaunchStage::Manager(ms) = &mut state.stage {
-                    match manager::handle_key(ms, &mut config, paths, cwd, key)? {
-                        manager::InputOutcome::Continue => {}
-                        manager::InputOutcome::ExitJackin => {
-                            break Ok(None);
-                        }
-                        manager::InputOutcome::LaunchNamed(name) => {
-                            // Find the workspace by name in LaunchState.workspaces.
-                            if let Some(idx) = state
-                                .workspaces
-                                .iter()
-                                .position(|choice| choice.name == name)
-                            {
-                                match transition_to_agent_stage(&config, cwd, &mut state, idx) {
+        // Capture terminal size before the blocking read so the mouse
+        // handler can hit-test against the current seam position. Harmless
+        // to call every loop turn — it's a cheap syscall and the render
+        // path already needs the size via the Frame abstraction. Convert
+        // the `Size` into a `Rect` with zero origin so the handler signature
+        // stays aligned with ratatui's own area-based hit-test conventions.
+        let term_size: ratatui::layout::Rect = terminal.size()?.into();
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                if matches!(state.stage, LaunchStage::Manager(_)) {
+                    if let LaunchStage::Manager(ms) = &mut state.stage {
+                        match manager::handle_key(ms, &mut config, paths, cwd, key)? {
+                            manager::InputOutcome::Continue => {}
+                            manager::InputOutcome::ExitJackin => {
+                                break Ok(None);
+                            }
+                            manager::InputOutcome::LaunchNamed(name) => {
+                                // Find the workspace by name in LaunchState.workspaces.
+                                if let Some(idx) = state
+                                    .workspaces
+                                    .iter()
+                                    .position(|choice| choice.name == name)
+                                {
+                                    match transition_to_agent_stage(&config, cwd, &mut state, idx) {
+                                        Ok(Some(outcome)) => break Ok(Some(outcome)),
+                                        Ok(None) => {}
+                                        Err(e) => break Err(e),
+                                    }
+                                }
+                            }
+                            manager::InputOutcome::LaunchCurrentDir => {
+                                // Index 0 of LaunchState.workspaces is the synthetic
+                                // "Current directory" choice (built in
+                                // LaunchState::new). Route it through the same
+                                // agent-picker path as a saved workspace.
+                                match transition_to_agent_stage(&config, cwd, &mut state, 0) {
                                     Ok(Some(outcome)) => break Ok(Some(outcome)),
                                     Ok(None) => {}
                                     Err(e) => break Err(e),
                                 }
                             }
                         }
-                        manager::InputOutcome::LaunchCurrentDir => {
-                            // Index 0 of LaunchState.workspaces is the synthetic
-                            // "Current directory" choice (built in
-                            // LaunchState::new). Route it through the same
-                            // agent-picker path as a saved workspace.
-                            match transition_to_agent_stage(&config, cwd, &mut state, 0) {
-                                Ok(Some(outcome)) => break Ok(Some(outcome)),
-                                Ok(None) => {}
-                                Err(e) => break Err(e),
-                            }
-                        }
+                    }
+                } else {
+                    match input::handle_event(&mut state, key.code, &config, cwd) {
+                        input::EventOutcome::Continue => {}
+                        input::EventOutcome::Exit(outcome) => break outcome,
                     }
                 }
-            } else {
-                match input::handle_event(&mut state, key.code, &config, cwd) {
-                    input::EventOutcome::Continue => {}
-                    input::EventOutcome::Exit(outcome) => break outcome,
+            }
+            Event::Mouse(mouse) => {
+                // Only the Manager/List stage consumes mouse events today
+                // (list/details seam drag). Agent-stage + modals on other
+                // stages fall through as silent no-ops.
+                if let LaunchStage::Manager(ms) = &mut state.stage {
+                    manager::input::handle_mouse(ms, mouse, term_size);
                 }
             }
+            _ => {}
         }
     };
 

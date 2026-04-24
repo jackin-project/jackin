@@ -21,6 +21,54 @@ pub struct ManagerState<'a> {
     /// from the list view (e.g. `Modal::GithubPicker`). The Editor and
     /// `CreatePrelude` stages own their own modal slots on their inner state.
     pub list_modal: Option<Modal<'a>>,
+    /// Left-pane (workspace list) width as percentage of total terminal
+    /// width. Clamped to [`MIN_SPLIT_PCT`, `MAX_SPLIT_PCT`]. Drives the
+    /// 45/55 split in `render_list_body`; mouse-drag on the seam column
+    /// updates it via `handle_mouse`.
+    pub list_split_pct: u16,
+    /// Active mouse-drag on the list/details seam. `Some` while a left
+    /// button is held down after a seam-anchored Down event; cleared on
+    /// Up. Readers (render) never need this — only the mouse handler.
+    pub drag_state: Option<DragState>,
+}
+
+/// Anchors a mouse-drag resize of the list/details seam.
+///
+/// Captured on `MouseEventKind::Down(Left)` when the click lands within
+/// ±1 column of the current seam; consumed by `MouseEventKind::Drag(Left)`
+/// events to compute the new `list_split_pct`; cleared on `Up`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DragState {
+    /// `list_split_pct` at the moment the drag began.
+    pub anchor_pct: u16,
+    /// Mouse column (0-based) at the moment the drag began.
+    pub anchor_x: u16,
+}
+
+/// Minimum list-pane width as percentage of total terminal width.
+///
+/// Keeps the workspace-name list readable even when operator drags the
+/// seam left. Mirrors the cap on the details pane (`100 - MAX_SPLIT_PCT`
+/// is 20).
+pub const MIN_SPLIT_PCT: u16 = 20;
+/// Maximum list-pane width as percentage of total terminal width. Keeps
+/// the details pane viable when the operator drags the seam right.
+pub const MAX_SPLIT_PCT: u16 = 80;
+/// Initial split value — matches the legacy hard-coded 45/55.
+pub const DEFAULT_SPLIT_PCT: u16 = 45;
+
+/// Clamp `pct` into the allowed [`MIN_SPLIT_PCT`, `MAX_SPLIT_PCT`] range.
+/// Used by `handle_mouse` to keep drag-computed percentages sane, and by
+/// `ManagerState::from_config` for defense in depth.
+#[must_use]
+pub const fn clamp_split(pct: u16) -> u16 {
+    if pct < MIN_SPLIT_PCT {
+        MIN_SPLIT_PCT
+    } else if pct > MAX_SPLIT_PCT {
+        MAX_SPLIT_PCT
+    } else {
+        pct
+    }
 }
 
 #[derive(Debug)]
@@ -226,6 +274,8 @@ impl ManagerState<'_> {
             selected,
             toast: None,
             list_modal: None,
+            list_split_pct: DEFAULT_SPLIT_PCT,
+            drag_state: None,
         }
     }
 }

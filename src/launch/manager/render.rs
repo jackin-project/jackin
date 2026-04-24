@@ -243,14 +243,20 @@ fn render_list_body(
     let is_current_dir = state.selected == 0;
     let is_sentinel = state.selected == sentinel_idx;
 
-    // Always split 45/55 so the right pane stays visible on every row.
-    // Row-specific right-pane renderers:
+    // Split driven by `state.list_split_pct` (default 45), adjustable via
+    // mouse-drag on the seam column. Keeps the right pane visible on every
+    // row. Row-specific right-pane renderers:
     //   row 0             → current-dir details
     //   saved rows        → saved-workspace details
     //   sentinel          → description-of-what-a-workspace-is pane
+    let left_pct = state.list_split_pct;
+    let right_pct = 100u16.saturating_sub(left_pct);
     let columns = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+        .constraints([
+            Constraint::Percentage(left_pct),
+            Constraint::Percentage(right_pct),
+        ])
         .split(area);
     let list_area = columns[0];
 

@@ -2,15 +2,16 @@
 //! if a modal is open, events go to the modal handler; otherwise they
 //! go to the active stage's handler.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::layout::Rect;
 
 use super::super::widgets::{
     ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
     workdir_pick::WorkdirPickState,
 };
 use super::state::{
-    ConfirmTarget, EditorMode, EditorState, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
-    ManagerStage, ManagerState, Modal, Toast, ToastKind,
+    ConfirmTarget, DragState, EditorMode, EditorState, EditorTab, ExitIntent, FieldFocus,
+    FileBrowserTarget, ManagerStage, ManagerState, Modal, Toast, ToastKind, clamp_split,
 };
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -932,6 +933,105 @@ fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) {
             state.list_modal = None;
         }
     }
+}
+
+/// Minimum terminal width (in columns) at which the list/details seam is
+/// draggable. Below this, the 20/80 clamp bounds leave the right pane
+/// implausibly narrow for meaningful interaction — silently ignore mouse
+/// events rather than produce an unusable layout.
+const MIN_DRAGGABLE_WIDTH: u16 = 40;
+/// Half-width of the seam hit-region. A Down event lands within ±1 column
+/// of the computed seam to initiate drag. Narrow enough that operators
+/// don't accidentally start a drag while clicking in either pane.
+const SEAM_HIT_SLACK: u16 = 1;
+
+/// Dispatch a mouse event into the workspace manager's list view. Drives
+/// the mouse-draggable seam between the list pane and the details pane.
+///
+/// Behaviour:
+/// - Ignores events on any stage other than `ManagerStage::List`.
+/// - Ignores events while a list-level modal is open (e.g. `GithubPicker`).
+/// - Ignores everything when the terminal is narrower than
+///   [`MIN_DRAGGABLE_WIDTH`] — drag bounds would be absurd.
+/// - `Down(Left)` within [`SEAM_HIT_SLACK`] of the current seam column
+///   captures the drag anchor on `state.drag_state`.
+/// - `Drag(Left)` with an active anchor updates `state.list_split_pct`,
+///   clamped via [`clamp_split`].
+/// - `Up(Left)` clears the anchor.
+/// - All other events are ignored.
+///
+/// The caller (run-loop in `src/launch/mod.rs`) is responsible for
+/// passing the current `terminal.size()?` as `term_size` so the handler
+/// can compute the seam column as `term_size.width * list_split_pct / 100`.
+pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
+    // Stage + modal gate. Only the List view participates in drag; the
+    // Editor, CreatePrelude and ConfirmDelete stages ignore mouse events
+    // entirely for this PR.
+    if !matches!(state.stage, ManagerStage::List) {
+        return;
+    }
+    if state.list_modal.is_some() {
+        return;
+    }
+    if term_size.width < MIN_DRAGGABLE_WIDTH {
+        return;
+    }
+
+    match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            let seam_x = seam_column(state.list_split_pct, term_size.width);
+            if near_seam(mouse.column, seam_x) {
+                state.drag_state = Some(DragState {
+                    anchor_pct: state.list_split_pct,
+                    anchor_x: mouse.column,
+                });
+            }
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            if let Some(anchor) = state.drag_state {
+                let new_pct = pct_from_drag(anchor, mouse.column, term_size.width);
+                state.list_split_pct = clamp_split(new_pct);
+            }
+        }
+        MouseEventKind::Up(MouseButton::Left) => {
+            state.drag_state = None;
+        }
+        _ => {}
+    }
+}
+
+/// Compute the seam column (0-based) for a given split percentage and
+/// total terminal width. Mirrors ratatui's own `Layout::split` arithmetic
+/// closely enough for hit-testing purposes.
+const fn seam_column(pct: u16, width: u16) -> u16 {
+    // (width * pct) / 100 — saturating so a pathological width of 0 doesn't
+    // panic. Under MIN_DRAGGABLE_WIDTH this arithmetic is already gated off
+    // by the caller, but keep the helper safe for direct unit-testing.
+    width.saturating_mul(pct) / 100
+}
+
+/// `true` when `column` is within ±`SEAM_HIT_SLACK` of `seam_x`.
+const fn near_seam(column: u16, seam_x: u16) -> bool {
+    let lo = seam_x.saturating_sub(SEAM_HIT_SLACK);
+    let hi = seam_x.saturating_add(SEAM_HIT_SLACK);
+    column >= lo && column <= hi
+}
+
+/// Derive the new split percentage from an active drag anchor and the
+/// current mouse column. Handles the signed delta safely (mouse can move
+/// either way along x) without underflow on u16.
+fn pct_from_drag(anchor: DragState, mouse_col: u16, width: u16) -> u16 {
+    // Signed delta in columns, scaled to a percentage of terminal width.
+    let delta_cols = i32::from(mouse_col) - i32::from(anchor.anchor_x);
+    let delta_pct = delta_cols * 100 / i32::from(width.max(1));
+    let candidate = i32::from(anchor.anchor_pct) + delta_pct;
+    // Clamp into [0, 100] before the narrower [MIN..=MAX] clamp so we can
+    // safely cast back to u16.
+    let bounded = candidate.clamp(0, 100);
+    // `as u16` is safe: bounded is in [0,100].
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let narrowed = bounded as u16;
+    narrowed
 }
 
 fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
@@ -2316,5 +2416,240 @@ mod tests {
             "Esc must not toast: {:?}",
             state.toast
         );
+    }
+}
+
+#[cfg(test)]
+mod mouse_drag_tests {
+    //! Unit tests for `handle_mouse`: the list/details seam is a
+    //! mouse-draggable resize affordance driven entirely from `ManagerState`.
+    //! These build `MouseEvent` values directly and bypass the ratatui
+    //! event loop — enough to pin the seam hit-test + drag math without a
+    //! real terminal.
+    use super::{handle_mouse, resolve_github_mounts_for_workspace};
+    use crate::launch::manager::state::{
+        DEFAULT_SPLIT_PCT, EditorState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState,
+        Modal,
+    };
+    use crate::workspace::{MountConfig, WorkspaceConfig};
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::layout::Rect;
+
+    /// Build a `ManagerState` in the List stage at the default split,
+    /// with no workspaces and no modal.
+    fn list_state() -> ManagerState<'static> {
+        let config = crate::config::AppConfig::default();
+        let tmp = tempfile::tempdir().unwrap();
+        ManagerState::from_config(&config, tmp.path())
+    }
+
+    /// Build a `MouseEvent` at column `col`, row 0.
+    const fn mouse(kind: MouseEventKind, col: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: col,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    /// A 100-col-wide terminal area.
+    const fn term(width: u16) -> Rect {
+        Rect {
+            x: 0,
+            y: 0,
+            width,
+            height: 30,
+        }
+    }
+
+    #[test]
+    fn mouse_down_on_seam_starts_drag() {
+        // Default split = 45, 100-col terminal => seam at column 45.
+        let mut state = list_state();
+        assert_eq!(state.list_split_pct, DEFAULT_SPLIT_PCT);
+        let e = mouse(MouseEventKind::Down(MouseButton::Left), 45);
+        handle_mouse(&mut state, e, term(100));
+        assert!(
+            state.drag_state.is_some(),
+            "Down on seam must capture drag anchor; got {:?}",
+            state.drag_state,
+        );
+        let drag = state.drag_state.unwrap();
+        assert_eq!(drag.anchor_pct, DEFAULT_SPLIT_PCT);
+        assert_eq!(drag.anchor_x, 45);
+    }
+
+    #[test]
+    fn mouse_drag_updates_split_pct() {
+        // Anchor at 45 @ x=45. Drag to x=55 on a 100-col terminal ⇒ +10%.
+        let mut state = list_state();
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            term(100),
+        );
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Drag(MouseButton::Left), 55),
+            term(100),
+        );
+        assert_eq!(state.list_split_pct, 55);
+    }
+
+    #[test]
+    fn mouse_drag_clamps_to_min_and_max() {
+        // Drag far left ⇒ clamp to MIN_SPLIT_PCT.
+        let mut state = list_state();
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            term(100),
+        );
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Drag(MouseButton::Left), 0),
+            term(100),
+        );
+        assert_eq!(state.list_split_pct, MIN_SPLIT_PCT);
+
+        // Drag far right ⇒ clamp to MAX_SPLIT_PCT.
+        let mut state = list_state();
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            term(100),
+        );
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Drag(MouseButton::Left), 99),
+            term(100),
+        );
+        assert_eq!(state.list_split_pct, MAX_SPLIT_PCT);
+    }
+
+    #[test]
+    fn mouse_up_ends_drag() {
+        let mut state = list_state();
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            term(100),
+        );
+        assert!(state.drag_state.is_some());
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Up(MouseButton::Left), 60),
+            term(100),
+        );
+        assert!(state.drag_state.is_none(), "Up must clear drag anchor");
+    }
+
+    #[test]
+    fn mouse_down_far_from_seam_does_not_start_drag() {
+        // Clicks in the middle of either pane must be ignored — the
+        // operator's intent is "click a row/button", not "start a resize".
+        let mut state = list_state();
+        // Seam at column 45; column 10 (left pane) and 80 (right pane)
+        // are both far enough from the seam to be rejected.
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Down(MouseButton::Left), 10),
+            term(100),
+        );
+        assert!(state.drag_state.is_none(), "left-pane click must not drag");
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Down(MouseButton::Left), 80),
+            term(100),
+        );
+        assert!(state.drag_state.is_none(), "right-pane click must not drag",);
+    }
+
+    #[test]
+    fn drag_ignored_when_list_modal_open() {
+        // GithubPicker is the only list-level modal today. Any mouse event
+        // while it's up must be a silent no-op — the picker owns the
+        // keyboard + (implicitly) the mouse focus.
+        let mut state = list_state();
+        // Use resolve_github_mounts_for_workspace indirectly — easier to
+        // just synthesize a GithubPicker state with an arbitrary choice.
+        // The picker's exact contents don't matter; only `list_modal.is_some()`.
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![MountConfig {
+                src: "/w".into(),
+                dst: "/w".into(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        // Ensure the helper signature compiles (guards against future refactors).
+        let _ = resolve_github_mounts_for_workspace(&ws);
+        state.list_modal = Some(Modal::GithubPicker {
+            state: crate::launch::widgets::github_picker::GithubPickerState::new(vec![
+                crate::launch::widgets::github_picker::GithubChoice {
+                    src: "/w".into(),
+                    branch: "main".into(),
+                    url: "https://github.com/o/r".into(),
+                },
+            ]),
+        });
+
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            term(100),
+        );
+        assert!(
+            state.drag_state.is_none(),
+            "Down with list_modal open must not drag",
+        );
+    }
+
+    #[test]
+    fn drag_ignored_on_non_list_stage() {
+        // While in the Editor (or any non-List stage), mouse events are
+        // ignored outright — no seam to drag.
+        let mut state = list_state();
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        state.stage = ManagerStage::Editor(EditorState::new_edit("x".into(), ws));
+
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Down(MouseButton::Left), 45),
+            term(100),
+        );
+        assert!(
+            state.drag_state.is_none(),
+            "Down on Editor stage must not drag",
+        );
+    }
+
+    #[test]
+    fn drag_ignored_when_terminal_too_narrow() {
+        // Terminals narrower than MIN_DRAGGABLE_WIDTH skip hit-testing
+        // entirely — below that the clamp bounds already leave the right
+        // pane implausibly small.
+        let mut state = list_state();
+        // 30-col terminal is below the 40-col threshold.
+        handle_mouse(
+            &mut state,
+            mouse(MouseEventKind::Down(MouseButton::Left), 13),
+            term(30),
+        );
+        assert!(state.drag_state.is_none());
     }
 }
