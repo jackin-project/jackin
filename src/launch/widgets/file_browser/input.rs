@@ -90,27 +90,36 @@ impl FileBrowserState {
     /// Shared commit-or-reject logic used by `s` and the git-repo prompt's
     /// "Mount this repository" option. Enforces the same sandbox rules.
     pub(super) fn commit_or_reject(&mut self, target: PathBuf) -> ModalOutcome<PathBuf> {
+        // Canonicalize once — every reserved-target check below uses the
+        // canonical form so a symlink pointing to a reserved path cannot
+        // bypass the rule just because its lexical path looks innocent.
+        let canonical = canonicalize_or_self(target.clone());
+
         // Sandbox: belt-and-suspenders check that `target`'s canonical
         // form is inside `root`. Upstream steps (load_entries, set_cwd,
         // handle_enter) already filter escaping symlinks, but a TOCTOU
         // race between listing and commit could still slip one through.
-        if !is_within_root(&target, &self.root) {
+        if !is_within_root(&canonical, &self.root) {
             self.rejected_reason = Some("Cannot commit a path outside $HOME.".into());
             return ModalOutcome::Continue;
         }
         // Reject root itself — user must navigate into a subfolder.
-        if target == self.root {
+        if canonical == self.root {
             self.rejected_reason =
                 Some("Cannot use $HOME itself — navigate into a subfolder.".into());
             return ModalOutcome::Continue;
         }
-        // Reject jackin's own data directory.
-        let jackin_data = self.root.join(".jackin");
-        if target.starts_with(&jackin_data) {
+        // Reject jackin's own data directory. Canonicalize the join so a
+        // symlinked `.jackin` can't fool `starts_with` either.
+        let jackin_data = canonicalize_or_self(self.root.join(".jackin"));
+        if canonical.starts_with(&jackin_data) {
             self.rejected_reason =
                 Some("Cannot use ~/.jackin/* — those paths are reserved.".into());
             return ModalOutcome::Continue;
         }
+        // Return the original (lexical) path — the UI displays it as the
+        // operator typed/clicked it; canonicalization is purely a policy
+        // check.
         ModalOutcome::Commit(target)
     }
 
@@ -465,6 +474,83 @@ mod tests {
             reason.contains("outside"),
             "rejection should cite the sandbox boundary; got {reason:?}",
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn commit_rejects_symlink_resolving_to_root() {
+        // A symlink under root whose canonical form IS root itself must
+        // be rejected by the $HOME-itself rule — not allowed through just
+        // because the lexical path is `<root>/escape_to_root`.
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("home");
+        std::fs::create_dir_all(&root).unwrap();
+        let link = root.join("escape_to_root");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+
+        let mut fb = FileBrowserState::new_at(root.clone(), root);
+        let outcome = fb.commit_or_reject(link);
+        assert!(matches!(outcome, ModalOutcome::Continue));
+        let reason = fb
+            .rejected_reason
+            .as_deref()
+            .expect("root-aliased symlink should set rejected_reason");
+        assert!(
+            reason.contains("$HOME"),
+            "rejection should cite the $HOME-itself rule; got {reason:?}",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn commit_rejects_symlink_resolving_to_jackin_data() {
+        // A symlink under root whose canonical form lands inside .jackin
+        // must be rejected by the reserved-paths rule — not allowed
+        // through because the lexical path doesn't start with `.jackin`.
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("home");
+        let jackin = root.join(".jackin").join("workspaces");
+        std::fs::create_dir_all(&jackin).unwrap();
+        let link = root.join("escape_to_jackin");
+        std::os::unix::fs::symlink(&jackin, &link).unwrap();
+
+        let mut fb = FileBrowserState::new_at(root.clone(), root);
+        let outcome = fb.commit_or_reject(link);
+        assert!(matches!(outcome, ModalOutcome::Continue));
+        let reason = fb
+            .rejected_reason
+            .as_deref()
+            .expect("jackin-aliased symlink should set rejected_reason");
+        assert!(
+            reason.contains(".jackin"),
+            "rejection should cite the reserved-paths rule; got {reason:?}",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn commit_accepts_symlink_resolving_to_normal_in_root_folder() {
+        // Sanity check: a symlink to a normal subfolder of root should
+        // still commit successfully — the canonicalize-everywhere policy
+        // must not over-reject legitimate symlinks.
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("home");
+        let plain = root.join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        let link = root.join("link_to_plain");
+        std::os::unix::fs::symlink(&plain, &link).unwrap();
+
+        let mut fb = FileBrowserState::new_at(root.clone(), root);
+        let outcome = fb.commit_or_reject(link.clone());
+        match outcome {
+            ModalOutcome::Commit(path) => {
+                // The lexical (returned) path is the symlink itself,
+                // preserving what the operator clicked/highlighted.
+                assert_eq!(path, link);
+            }
+            other => panic!("expected Commit, got {other:?}"),
+        }
+        assert!(fb.rejected_reason.is_none());
     }
 
     #[test]
