@@ -242,7 +242,7 @@ pub(crate) fn render_rain_frame(state: &mut RainState, area: (u16, u16, u16, u16
 }
 
 #[allow(clippy::too_many_lines)]
-fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
+pub(crate) fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
     let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let cols = term_cols as usize;
     // Reserve last row to avoid scroll when writing to it

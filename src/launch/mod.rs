@@ -42,6 +42,15 @@ pub fn run_launch(
     let mut terminal = ratatui::Terminal::new(backend)?;
 
     let result = loop {
+        // Auto-expire manager toasts after 3 seconds.
+        if let LaunchStage::Manager(ms) = &mut state.stage {
+            if let Some(toast) = &ms.toast {
+                if toast.shown_at.elapsed() > std::time::Duration::from_secs(3) {
+                    ms.toast = None;
+                }
+            }
+        }
+
         terminal.draw(|frame| match &state.stage {
             LaunchStage::Workspace => render::draw_workspace_screen(frame, &state),
             LaunchStage::Agent => render::draw_agent_screen(frame, &state, &config, cwd),

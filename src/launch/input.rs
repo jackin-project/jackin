@@ -27,6 +27,9 @@ pub(super) fn handle_event(
                     (state.selected_workspace + 1).min(state.workspaces.len().saturating_sub(1));
             }
             KeyCode::Char('m') => {
+                if std::env::var("JACKIN_NO_ANIMATIONS").ok().as_deref() != Some("1") {
+                    crate::tui::animation::digital_rain(400, None);
+                }
                 state.stage = LaunchStage::Manager(
                     crate::launch::manager::ManagerState::from_config(config),
                 );
