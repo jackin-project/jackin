@@ -55,6 +55,38 @@ pub(crate) struct RainState {
     pub(crate) frame: u64,
 }
 
+impl RainState {
+    pub(crate) fn new(cols: usize, rows: usize) -> Self {
+        let mut seed: u64 = 0xDEAD_BEEF_CAFE_1337;
+
+        let columns: Vec<RainColumn> = (0..cols)
+            .map(|_| {
+                let s = xorshift(&mut seed);
+                let s2 = xorshift(&mut seed);
+                RainColumn {
+                    head: -((s % (rows as u64 + 6)) as i32),
+                    speed: 1 + (s % 4) as u32,
+                    fade: 1 + (s2 % 3) as u16,
+                    active: !s.is_multiple_of(3),
+                    cooldown: 0,
+                }
+            })
+            .collect();
+
+        let grid: Vec<Vec<Option<RainCell>>> =
+            (0..rows).map(|_| (0..cols).map(|_| None).collect()).collect();
+
+        Self {
+            grid,
+            columns,
+            cols,
+            rows,
+            seed,
+            frame: 0,
+        }
+    }
+}
+
 pub(crate) const fn age_to_color(age: u16) -> Option<(u8, u8, u8)> {
     match age {
         0 => Some(WHITE),
