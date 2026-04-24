@@ -85,7 +85,12 @@ fn render_footer(frame: &mut Frame, area: Rect, items: &[FooterItem]) {
     frame.render_widget(p, area);
 }
 
-pub fn render(frame: &mut Frame, state: &ManagerState<'_>, config: &AppConfig) {
+pub fn render(
+    frame: &mut Frame,
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) {
     // Phase 1: render the base stage (Editor full-screen OR List chrome).
     if let ManagerStage::Editor(editor) = &state.stage {
         render_editor(frame, editor, config);
@@ -104,7 +109,7 @@ pub fn render(frame: &mut Frame, state: &ManagerState<'_>, config: &AppConfig) {
         render_header(frame, chunks[0], "workspaces");
 
         if matches!(&state.stage, ManagerStage::List) {
-            render_list_body(frame, chunks[1], state, config);
+            render_list_body(frame, chunks[1], state, config, cwd);
         }
 
         let footer_items: Vec<FooterItem> = match &state.stage {
@@ -189,31 +194,54 @@ fn render_header(frame: &mut Frame, area: Rect, title: &str) {
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Left), area);
 }
 
-fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>, config: &AppConfig) {
-    let is_sentinel = state.selected >= state.workspaces.len();
+fn render_list_body(
+    frame: &mut Frame,
+    area: Rect,
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) {
+    // Row layout (mirrors ManagerState::from_config / handle_list_key):
+    //   0                 → synthetic "Current directory"
+    //   1..=saved_count   → saved workspaces (saved_index = selected - 1)
+    //   saved_count + 1   → "+ New workspace" sentinel
+    let saved_count = state.workspaces.len();
+    let sentinel_idx = saved_count + 1;
+    let is_current_dir = state.selected == 0;
+    let is_sentinel = state.selected == sentinel_idx;
 
-    // Always split 45/55 so the right pane stays visible even when the
-    // cursor is on "+ New workspace". On the sentinel we render an empty
-    // bordered pane (same border style as the details pane) instead of the
-    // General/Mounts/Agents blocks.
+    // Always split 45/55 so the right pane stays visible on every row.
+    // Row-specific right-pane renderers:
+    //   row 0             → current-dir details
+    //   saved rows        → saved-workspace details
+    //   sentinel          → description-of-what-a-workspace-is pane
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
         .split(area);
     let list_area = columns[0];
 
-    if is_sentinel {
+    if is_current_dir {
+        render_current_dir_details_pane(frame, columns[1], cwd);
+    } else if is_sentinel {
         render_sentinel_description_pane(frame, columns[1]);
-    } else if let Some(ws) = state.workspaces.get(state.selected) {
+    } else if let Some(ws) = state.workspaces.get(state.selected - 1) {
         render_details_pane(frame, columns[1], ws, config);
     }
 
-    // Left: list of workspaces + [+ New workspace] sentinel.
-    let mut items: Vec<ListItem> = state
-        .workspaces
-        .iter()
-        .map(|w| ListItem::new(Line::from(w.name.as_str())))
-        .collect();
+    // Left: [Current directory] + saved workspaces + [+ New workspace].
+    let cwd_short = crate::tui::shorten_home(&cwd.display().to_string());
+    let mut items: Vec<ListItem> = Vec::with_capacity(saved_count + 2);
+    items.push(ListItem::new(Line::from(Span::styled(
+        format!("Current directory ({cwd_short})"),
+        Style::default().fg(WHITE),
+    ))));
+    items.extend(
+        state
+            .workspaces
+            .iter()
+            .map(|w| ListItem::new(Line::from(w.name.as_str()))),
+    );
     items.push(ListItem::new(Line::from(Span::styled(
         "+ New workspace",
         Style::default().fg(WHITE),
@@ -361,6 +389,64 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     render_general_subpanel(frame, rows[0], ws);
     render_mounts_subpanel(frame, rows[1], mounts);
     render_agents_subpanel(frame, rows[2], ws_config, config);
+}
+
+/// Right-pane details shown when the cursor is on the synthetic "Current
+/// directory" row (row 0). Summarises the cwd workspace that would be
+/// launched: workdir + the auto-mount derived from cwd + "any agent".
+///
+/// Keeps the General/Mounts/Agents three-block vertical layout of
+/// `render_details_pane` so operators see a familiar shape, but uses
+/// a dedicated General block (no "last used" row — not meaningful for
+/// a non-persistent launch) with the " Current directory " title.
+fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::path::Path) {
+    let cwd_str = cwd.display().to_string();
+    let workdir_short = crate::tui::shorten_home(&cwd_str);
+
+    // The single auto-mount mirrors `workspace::current_dir_workspace`:
+    // src = dst = cwd, rw. Built here as a local so we can pass it into
+    // the shared `render_mounts_subpanel` helper.
+    let mounts = [crate::workspace::MountConfig {
+        src: cwd_str.clone(),
+        dst: cwd_str,
+        readonly: false,
+    }];
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // General: workdir + 2 borders
+            Constraint::Length(5), // Mounts: header + 1 row + 2 borders + 1 pad
+            Constraint::Min(3),    // Agents: takes remaining space
+        ])
+        .split(area);
+
+    // General — title set to "Current directory" so the operator has a
+    // clear signpost that this is the synthetic row, not a saved one.
+    let general_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Current directory ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let general_lines = vec![Line::from(vec![
+        Span::styled("workdir   ", Style::default().fg(WHITE)),
+        Span::raw(workdir_short),
+    ])];
+    frame.render_widget(
+        Paragraph::new(general_lines)
+            .block(general_block)
+            .style(Style::default().fg(PHOSPHOR_GREEN)),
+        rows[0],
+    );
+
+    render_mounts_subpanel(frame, rows[1], &mounts);
+
+    // Agents block — reuse the empty-allowed-list branch of the shared
+    // renderer by passing `ws_config = None`, which falls through to the
+    // "any agent" italic-light-green path.
+    render_agents_subpanel(frame, rows[2], None, &AppConfig::default());
 }
 
 /// Right-pane description shown when the cursor is on the "+ New workspace"

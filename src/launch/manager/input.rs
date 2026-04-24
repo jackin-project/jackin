@@ -15,6 +15,7 @@ use super::state::{
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
+#[derive(Debug)]
 pub enum InputOutcome {
     /// Stay in the manager.
     Continue,
@@ -22,6 +23,11 @@ pub enum InputOutcome {
     ExitJackin,
     /// Launch the named workspace — resolved by name in `run_launch`.
     LaunchNamed(String),
+    /// Launch against the synthetic "Current directory" choice (row 0).
+    /// `run_launch` routes this through the same agent-picker path as
+    /// `LaunchNamed`, using `LaunchState::workspaces[0]` which is built
+    /// in `LaunchState::new` from the current cwd.
+    LaunchCurrentDir,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -29,6 +35,7 @@ pub fn handle_key(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &JackinPaths,
+    cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     // Modal precedence: if a modal is open, it gets the event.
@@ -52,7 +59,7 @@ pub fn handle_key(
                     // If save succeeded (no error_banner), exit to list.
                     if let ManagerStage::Editor(e) = &state.stage {
                         if e.error_banner.is_none() {
-                            *state = ManagerState::from_config(config);
+                            *state = ManagerState::from_config(config, cwd);
                         } else {
                             // Save failed — clear exit intent so user can retry.
                             if let ManagerStage::Editor(e) = &mut state.stage {
@@ -72,7 +79,7 @@ pub fn handle_key(
                     save_editor(state, config, paths)?;
                 }
                 ExitIntent::Discard => {
-                    *state = ManagerState::from_config(config);
+                    *state = ManagerState::from_config(config, cwd);
                 }
             }
             return Ok(InputOutcome::Continue);
@@ -122,7 +129,7 @@ pub fn handle_key(
                     }
                 }
                 PreludeStatus::Cancelled => {
-                    *state = ManagerState::from_config(config);
+                    *state = ManagerState::from_config(config, cwd);
                 }
                 PreludeStatus::InProgress => {}
             }
@@ -148,10 +155,10 @@ pub fn handle_key(
     };
 
     match dis {
-        StageDis::List => handle_list_key(state, config, paths, key),
-        StageDis::Editor => handle_editor_key(state, config, paths, key),
-        StageDis::CreatePrelude => Ok(handle_prelude_key(state, config, paths, key)),
-        StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, key),
+        StageDis::List => handle_list_key(state, config, paths, cwd, key),
+        StageDis::Editor => handle_editor_key(state, config, paths, cwd, key),
+        StageDis::CreatePrelude => Ok(handle_prelude_key(state, config, paths, cwd, key)),
+        StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, cwd, key),
     }
 }
 
@@ -159,8 +166,16 @@ fn handle_list_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
     _paths: &JackinPaths,
+    _cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
+    // Row layout (mirrors ManagerState::from_config):
+    //   0                 → synthetic "Current directory"
+    //   1..=saved_count   → saved workspaces (saved_index = selected - 1)
+    //   saved_count + 1   → "+ New workspace" sentinel
+    let saved_count = state.workspaces.len();
+    let sentinel_idx = saved_count + 1;
+    let total_rows = sentinel_idx + 1; // 0..=sentinel_idx are valid
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => Ok(InputOutcome::ExitJackin),
         KeyCode::Up | KeyCode::Char('k') => {
@@ -168,13 +183,15 @@ fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            // +1 because the "+ New workspace" row is also selectable.
-            let max = state.workspaces.len();
-            state.selected = (state.selected + 1).min(max);
+            state.selected = (state.selected + 1).min(total_rows - 1);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Enter => {
-            if state.selected == state.workspaces.len() {
+            if state.selected == 0 {
+                // Row 0 — launch against cwd. Run-loop routes through the
+                // same agent-picker stage as LaunchNamed.
+                Ok(InputOutcome::LaunchCurrentDir)
+            } else if state.selected == sentinel_idx {
                 // [+ New workspace] sentinel: start the create prelude
                 // with a FileBrowser modal open.
                 let mut prelude = super::state::CreatePreludeState::new();
@@ -184,15 +201,26 @@ fn handle_list_key(
                 });
                 state.stage = ManagerStage::CreatePrelude(prelude);
                 Ok(InputOutcome::Continue)
-            } else if let Some(summary) = state.workspaces.get(state.selected) {
-                // Launch the selected workspace — hand control back to run_launch.
+            } else if let Some(summary) = state.workspaces.get(state.selected - 1) {
+                // Launch the selected saved workspace.
                 Ok(InputOutcome::LaunchNamed(summary.name.clone()))
             } else {
                 Ok(InputOutcome::Continue)
             }
         }
         KeyCode::Char('e') => {
-            if let Some(summary) = state.workspaces.get(state.selected) {
+            if state.selected == 0 {
+                state.toast = Some(Toast {
+                    message: "Current directory cannot be edited".into(),
+                    kind: ToastKind::Error,
+                    shown_at: std::time::Instant::now(),
+                });
+                return Ok(InputOutcome::Continue);
+            }
+            if state.selected == sentinel_idx {
+                return Ok(InputOutcome::Continue);
+            }
+            if let Some(summary) = state.workspaces.get(state.selected - 1) {
                 // Open the editor for the selected workspace.
                 let name = summary.name.clone();
                 if let Some(ws) = config.workspaces.get(&name) {
@@ -211,7 +239,18 @@ fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('d') => {
-            if let Some(ws) = state.workspaces.get(state.selected) {
+            if state.selected == 0 {
+                state.toast = Some(Toast {
+                    message: "Current directory cannot be deleted".into(),
+                    kind: ToastKind::Error,
+                    shown_at: std::time::Instant::now(),
+                });
+                return Ok(InputOutcome::Continue);
+            }
+            if state.selected == sentinel_idx {
+                return Ok(InputOutcome::Continue);
+            }
+            if let Some(ws) = state.workspaces.get(state.selected - 1) {
                 let name = ws.name.clone();
                 state.stage = ManagerStage::ConfirmDelete {
                     name: name.clone(),
@@ -228,6 +267,7 @@ fn handle_editor_key(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &JackinPaths,
+    cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     // Handle s and Esc outside the editor borrow to avoid re-borrow
@@ -252,7 +292,7 @@ fn handle_editor_key(
                         });
                     }
                 } else {
-                    *state = ManagerState::from_config(config);
+                    *state = ManagerState::from_config(config, cwd);
                 }
             }
             return Ok(InputOutcome::Continue);
@@ -686,10 +726,11 @@ fn handle_prelude_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
     _paths: &JackinPaths,
+    cwd: &std::path::Path,
     key: KeyEvent,
 ) -> InputOutcome {
     if key.code == KeyCode::Esc {
-        *state = ManagerState::from_config(config);
+        *state = ManagerState::from_config(config, cwd);
     }
     InputOutcome::Continue
 }
@@ -698,6 +739,7 @@ fn handle_confirm_delete_key(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &JackinPaths,
+    cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     let ManagerStage::ConfirmDelete {
@@ -714,7 +756,7 @@ fn handle_confirm_delete_key(
             let mut editor = crate::config::ConfigEditor::open(paths)?;
             editor.remove_workspace(&ws_name)?;
             *config = editor.save()?;
-            *state = ManagerState::from_config(config);
+            *state = ManagerState::from_config(config, cwd);
             state.toast = Some(Toast {
                 message: format!("deleted \"{ws_name}\""),
                 kind: ToastKind::Success,
@@ -1077,7 +1119,8 @@ mod tests {
         };
         let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
-        let mut state = ManagerState::from_config(&config);
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
         // Add the /work parent to pending mounts — this is the edit-driven
         // case.
@@ -1127,7 +1170,8 @@ mod tests {
         };
         let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
-        let mut state = ManagerState::from_config(&config);
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
         editor.pending.mounts.insert(0, mount("/work", "/work"));
         state.stage = ManagerStage::Editor(editor);
@@ -1138,7 +1182,14 @@ mod tests {
         // Step 2: deliver Y through the modal path. We call handle_key which
         // routes through handle_editor_modal → SaveCollapse approval →
         // RetrySave intent → save_editor re-entry.
-        handle_key(&mut state, &mut config, &paths, key(KeyCode::Char('y'))).unwrap();
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            key(KeyCode::Char('y')),
+        )
+        .unwrap();
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
@@ -1174,7 +1225,8 @@ mod tests {
         };
         let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
-        let mut state = ManagerState::from_config(&config);
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
         editor.pending.mounts.insert(0, mount("/work", "/work"));
         state.stage = ManagerStage::Editor(editor);
@@ -1182,7 +1234,14 @@ mod tests {
         save_editor(&mut state, &mut config, &paths).unwrap();
 
         // Press N — cancel the collapse.
-        handle_key(&mut state, &mut config, &paths, key(KeyCode::Char('n'))).unwrap();
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            key(KeyCode::Char('n')),
+        )
+        .unwrap();
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
@@ -1216,7 +1275,8 @@ mod tests {
         };
         let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
-        let mut state = ManagerState::from_config(&config);
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
         editor.pending.mounts.insert(0, mount("/work", "/work")); // rw
         state.stage = ManagerStage::Editor(editor);
@@ -1261,7 +1321,8 @@ mod tests {
         let (_tmp, paths, mut config) =
             setup_with_workspace("legacy-workspace", ws.clone()).unwrap();
 
-        let mut state = ManagerState::from_config(&config);
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
         let editor = EditorState::new_edit("legacy-workspace".into(), ws);
         state.stage = ManagerStage::Editor(editor);
 
@@ -1283,5 +1344,129 @@ mod tests {
             banner.contains("legacy-workspace"),
             "banner should name the workspace: {banner}"
         );
+    }
+
+    /// Current-directory row (index 0) must reject the `e` edit shortcut and
+    /// the `d` delete shortcut with a toast, without entering the Editor or
+    /// ConfirmDelete stages. Paired with the render-side assertion that row 0
+    /// is labelled "Current directory".
+    #[test]
+    fn current_directory_row_rejects_edit_and_delete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let cwd = tmp.path();
+
+        // Minimal config with one saved workspace so the list has a non-
+        // trivial shape (current-dir + one saved + sentinel).
+        let mut config = AppConfig::default();
+        config.workspaces.insert(
+            "some-ws".into(),
+            WorkspaceConfig {
+                workdir: "/unrelated".into(),
+                mounts: vec![],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
+            },
+        );
+        let mut state = ManagerState::from_config(&config, cwd);
+        // cwd is unrelated to /unrelated, so preselect falls back to row 0.
+        assert_eq!(state.selected, 0);
+
+        // Press `e` — must produce a toast and remain in the List stage.
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            key(KeyCode::Char('e')),
+        )
+        .unwrap();
+        assert!(
+            matches!(&state.stage, ManagerStage::List),
+            "e on row 0 must not open the Editor; got {:?}",
+            state.stage
+        );
+        let toast = state.toast.as_ref().expect("edit rejection must toast");
+        assert!(
+            matches!(toast.kind, ToastKind::Error),
+            "edit rejection must be an error toast"
+        );
+        assert!(
+            toast.message.contains("edit"),
+            "toast should mention edit: {}",
+            toast.message
+        );
+        state.toast = None;
+
+        // Press `d` — must produce a toast and remain in the List stage
+        // (no ConfirmDelete transition).
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            key(KeyCode::Char('d')),
+        )
+        .unwrap();
+        assert!(
+            matches!(&state.stage, ManagerStage::List),
+            "d on row 0 must not open ConfirmDelete; got {:?}",
+            state.stage
+        );
+        let toast = state.toast.as_ref().expect("delete rejection must toast");
+        assert!(
+            matches!(toast.kind, ToastKind::Error),
+            "delete rejection must be an error toast"
+        );
+        assert!(
+            toast.message.contains("delete"),
+            "toast should mention delete: {}",
+            toast.message
+        );
+    }
+
+    /// Enter on row 0 returns `LaunchCurrentDir`; Enter on row 1 returns
+    /// `LaunchNamed(<name>)`. Pins the index arithmetic that maps list-row
+    /// indices to launch targets.
+    #[test]
+    fn enter_on_current_directory_returns_launch_current_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let cwd = tmp.path();
+
+        let mut config = AppConfig::default();
+        config.workspaces.insert(
+            "alpha".into(),
+            WorkspaceConfig {
+                workdir: "/alpha".into(),
+                mounts: vec![],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+                env: std::collections::BTreeMap::new(),
+                agents: std::collections::BTreeMap::new(),
+            },
+        );
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.selected = 0;
+        let outcome =
+            handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        assert!(
+            matches!(outcome, InputOutcome::LaunchCurrentDir),
+            "row 0 Enter must produce LaunchCurrentDir"
+        );
+
+        state.selected = 1;
+        let outcome =
+            handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        match outcome {
+            InputOutcome::LaunchNamed(name) => assert_eq!(name, "alpha"),
+            other => panic!("row 1 Enter must produce LaunchNamed(\"alpha\"); got {other:?}"),
+        }
     }
 }

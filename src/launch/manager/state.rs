@@ -181,16 +181,34 @@ impl WorkspaceSummary {
 }
 
 impl ManagerState<'_> {
-    pub fn from_config(config: &AppConfig) -> Self {
+    /// Build the manager state from config, preselecting the row that best
+    /// matches `cwd`.
+    ///
+    /// Row layout in the manager list (mirrored in `render_list_body` and
+    /// `handle_list_key`):
+    ///
+    ///   row 0              → synthetic "Current directory" choice
+    ///   rows 1..=N         → saved workspaces, in `BTreeMap` order
+    ///   row N+1            → "+ New workspace" sentinel
+    ///
+    /// When cwd is covered by a saved workspace, preselect the saved row
+    /// (index = 1 + its position in config.workspaces). Otherwise land on
+    /// row 0 so Enter launches against the current directory without saving.
+    pub fn from_config(config: &AppConfig, cwd: &std::path::Path) -> Self {
         let workspaces: Vec<WorkspaceSummary> = config
             .workspaces
             .iter()
             .map(|(name, ws)| WorkspaceSummary::from_config(name, ws))
             .collect();
+
+        let selected = crate::app::context::find_saved_workspace_for_cwd(config, cwd)
+            .and_then(|(name, _)| workspaces.iter().position(|w| w.name == name))
+            .map_or(0, |idx| idx + 1);
+
         Self {
             stage: ManagerStage::List,
             workspaces,
-            selected: 0,
+            selected,
             toast: None,
         }
     }
@@ -358,10 +376,100 @@ mod tests {
     fn manager_from_config_lists_all_workspaces() {
         let mut config = AppConfig::default();
         config.workspaces.insert("a".into(), empty_ws("/a"));
-        let state = ManagerState::from_config(&config);
+        // cwd is unrelated to /a — landing row is the synthetic
+        // "Current directory" at index 0.
+        let tmp = tempfile::tempdir().unwrap();
+        let state = ManagerState::from_config(&config, tmp.path());
         assert_eq!(state.workspaces.len(), 1);
         assert!(matches!(state.stage, ManagerStage::List));
         assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn manager_preselects_saved_workspace_matching_cwd() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().canonicalize().unwrap();
+        let workdir = project.display().to_string();
+
+        let mut config = AppConfig::default();
+        config.workspaces.insert(
+            "big-monorepo".into(),
+            WorkspaceConfig {
+                workdir: workdir.clone(),
+                mounts: vec![MountConfig {
+                    src: workdir.clone(),
+                    dst: workdir,
+                    readonly: false,
+                }],
+                allowed_agents: vec![],
+                default_agent: None,
+                last_agent: None,
+                env: Default::default(),
+                agents: Default::default(),
+            },
+        );
+        // Second workspace that does NOT match cwd — used to verify the
+        // preselect calculation points at the matching one, not simply
+        // "index 1" which works for a single workspace by accident.
+        config
+            .workspaces
+            .insert("z-unrelated".into(), empty_ws("/some/other/path"));
+
+        let state = ManagerState::from_config(&config, &project);
+        // Workspaces are ordered by BTreeMap key: ["big-monorepo", "z-unrelated"].
+        // "big-monorepo" is at saved_index 0, so selected = 1 + 0 = 1.
+        assert_eq!(state.selected, 1);
+        assert_eq!(state.workspaces[state.selected - 1].name, "big-monorepo");
+    }
+
+    /// Pins that `ms.selected == 0` means "Current directory" regardless
+    /// of how many saved workspaces are present. The render path
+    /// (`render_list_body`) and the input path (`handle_list_key`) both
+    /// depend on this: selected==0 is the synthetic cwd row, 1..=N are
+    /// saved workspaces, N+1 is the "+ New workspace" sentinel.
+    #[test]
+    fn manager_current_directory_is_first_row() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().canonicalize().unwrap();
+
+        // Empty config: only the synthetic "Current directory" + sentinel.
+        let config_empty = AppConfig::default();
+        let state_empty = ManagerState::from_config(&config_empty, &cwd);
+        assert_eq!(state_empty.selected, 0);
+        assert_eq!(state_empty.workspaces.len(), 0);
+
+        // Non-empty config with unrelated saved workspaces — preselect
+        // still lands on row 0.
+        let mut config = AppConfig::default();
+        config
+            .workspaces
+            .insert("a".into(), empty_ws("/some/other/path"));
+        config
+            .workspaces
+            .insert("b".into(), empty_ws("/yet/another"));
+        let state = ManagerState::from_config(&config, &cwd);
+        assert_eq!(
+            state.selected, 0,
+            "selected==0 must always map to Current directory"
+        );
+        assert_eq!(state.workspaces.len(), 2);
+    }
+
+    #[test]
+    fn manager_preselects_current_directory_when_no_saved_matches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().canonicalize().unwrap();
+
+        let mut config = AppConfig::default();
+        config
+            .workspaces
+            .insert("unrelated".into(), empty_ws("/some/other/path"));
+
+        let state = ManagerState::from_config(&config, &cwd);
+        assert_eq!(
+            state.selected, 0,
+            "no saved workspace covers cwd → land on Current directory"
+        );
     }
 
     #[test]

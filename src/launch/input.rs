@@ -20,8 +20,9 @@ pub(super) fn handle_event(
         LaunchStage::Agent => match key {
             KeyCode::Esc => {
                 // Return to the manager list.
-                state.stage =
-                    LaunchStage::Manager(crate::launch::manager::ManagerState::from_config(config));
+                state.stage = LaunchStage::Manager(
+                    crate::launch::manager::ManagerState::from_config(config, cwd),
+                );
                 state.agent_query.clear();
                 state.selected_agent = 0;
             }

@@ -76,7 +76,9 @@ impl LaunchState {
             .unwrap_or(0);
 
         Ok(Self {
-            stage: LaunchStage::Manager(crate::launch::manager::ManagerState::from_config(config)),
+            stage: LaunchStage::Manager(crate::launch::manager::ManagerState::from_config(
+                config, cwd,
+            )),
             selected_workspace,
             selected_agent: 0,
             agent_query: String::new(),
