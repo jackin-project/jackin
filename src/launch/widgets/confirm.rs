@@ -89,25 +89,82 @@ mod tests {
 
 use ratatui::{
     Frame,
-    layout::Rect,
-    style::{Color, Style},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
+const WHITE: Color = Color::Rgb(255, 255, 255);
+const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
+    // Outer block
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title("Confirm");
-
-    let body = format!("{}\n\n[Y]es · [N]o (default) · Esc cancel", state.prompt);
-
-    let paragraph = Paragraph::new(body)
-        .block(block)
-        .style(Style::default().fg(PHOSPHOR_GREEN));
-
+        .title(Span::styled(
+            " Confirm ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(paragraph, area);
+    frame.render_widget(block, area);
+
+    // Vertical layout inside the inner rect:
+    //   prompt (1)
+    //   spacer (1)
+    //   button row (1)
+    //   flex (remainder)
+    //   footer hint (1)
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // prompt
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // button row
+            Constraint::Min(0),    // flex
+            Constraint::Length(1), // footer
+        ])
+        .split(inner);
+
+    // Prompt
+    let prompt = Paragraph::new(Span::styled(
+        state.prompt.clone(),
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    ))
+    .alignment(Alignment::Center);
+    frame.render_widget(prompt, chunks[0]);
+
+    // Button row — Yes (phosphor-on-black) and No default (white-on-black).
+    let yes_btn = Span::styled(
+        "  Yes  ",
+        Style::default()
+            .bg(PHOSPHOR_GREEN)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD),
+    );
+    let no_btn = Span::styled(
+        "  No (default)  ",
+        Style::default()
+            .bg(WHITE)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD),
+    );
+    let button_line = Line::from(vec![yes_btn, Span::raw("    "), no_btn]);
+    frame.render_widget(
+        Paragraph::new(button_line).alignment(Alignment::Center),
+        chunks[2],
+    );
+
+    // Footer hint — dim italic keyboard legend.
+    let hint = Paragraph::new(Span::styled(
+        "Y yes · N no · Esc cancel",
+        Style::default()
+            .fg(PHOSPHOR_DIM)
+            .add_modifier(Modifier::ITALIC),
+    ))
+    .alignment(Alignment::Center);
+    frame.render_widget(hint, chunks[4]);
 }
