@@ -474,18 +474,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "educe"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d7bc049e1bd8cdeb31b68bbd586a9464ecf9f3944af3958a7a9d0f8b9799417"
-dependencies = [
- "enum-ordinalize",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -496,26 +484,6 @@ name = "encode_unicode"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
-
-[[package]]
-name = "enum-ordinalize"
-version = "4.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a1091a7bb1f8f2c4b28f1fe2cef4980ca2d410a3d727d67ecc3178c9b0800f0"
-dependencies = [
- "enum-ordinalize-derive",
-]
-
-[[package]]
-name = "enum-ordinalize-derive"
-version = "4.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ca9601fb2d62598ee17836250842873a413586e5d7ed88b356e38ddbb0ec631"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
 
 [[package]]
 name = "equivalent"
@@ -821,7 +789,6 @@ dependencies = [
  "owo-colors",
  "predicates",
  "ratatui",
- "ratatui-explorer",
  "ratatui-textarea",
  "serde",
  "serde_json",
@@ -1391,16 +1358,6 @@ dependencies = [
  "crossterm",
  "instability",
  "ratatui-core",
-]
-
-[[package]]
-name = "ratatui-explorer"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1034d08c806b090cf2eb450f60717e38d28b3a0a9fae01eee282db488d2e513b"
-dependencies = [
- "educe",
- "ratatui",
 ]
 
 [[package]]

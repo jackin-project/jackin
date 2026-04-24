@@ -1,9 +1,11 @@
 //! Reusable widgets for the workspace manager TUI.
 //!
-//! Three of the widgets wrap ratatui ecosystem crates
-//! (`ratatui-textarea`, `ratatui-explorer`, `tui-widget-list`). Two are
-//! hand-rolled (`Confirm`, `PanelRain`). All are consumed by both the
-//! manager (PR 2) and the Secrets tab (PR 3).
+//! Two of the widgets wrap ratatui ecosystem crates (`ratatui-textarea`,
+//! `tui-widget-list`). The rest are hand-rolled — `FileBrowser` was
+//! originally built on `ratatui-explorer` but was rewritten in-house so
+//! git-repo rows can carry a distinct trailing suffix (the library
+//! exposes only a single shared `dir_style`). All are consumed by both
+//! the manager (PR 2) and the Secrets tab (PR 3).
 
 pub mod confirm;
 pub mod file_browser;

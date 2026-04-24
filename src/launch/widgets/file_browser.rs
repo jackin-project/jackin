@@ -1,11 +1,21 @@
-//! Host folder picker — wraps ratatui-explorer, shows folders only,
-//! adds `s` as "select current folder".
+//! Host folder picker — custom directory browser scoped to $HOME.
 //!
-//! Restrictions:
+//! Behavior:
 //! - Starts at $HOME.
-//! - Refuses navigation above $HOME (clamps cwd back after `handle()`).
-//! - Excludes noisy top-level directories from the listing.
+//! - Refuses navigation above $HOME (clamps cwd back to root).
+//! - Excludes noisy top-level directories at the $HOME level.
 //! - Rejects $HOME itself and ~/.jackin/* as workspace sources.
+//! - Tags git-repo rows with a trailing ` (git)` suffix in a distinct
+//!   colour so the operator can scan for repos at a glance. Enter on a
+//!   repo row opens a prompt (mount / pick-subdir / cancel) before
+//!   committing or navigating in.
+//!
+//! The browser was originally built on `ratatui-explorer`, but that
+//! crate's `Theme` exposes a single `dir_style` shared by every row —
+//! meaning "colour git repos differently" is impossible. Rewriting in-
+//! house costs ~400 lines and unlocks per-entry styling plus a simpler
+//! keymap (`h/l` / arrows / `s` / `Esc` handled directly instead of
+//! round-tripping through the explorer's event handler).
 
 use std::path::{Path, PathBuf};
 
@@ -15,15 +25,21 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
-    text::Line,
-    widgets::{Block, Borders, FrameExt as _},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
 };
-use ratatui_explorer::{FileExplorer, FileExplorerBuilder, Theme};
+use tui_widget_list::ListState;
 
 /// Phosphor green — matches jackin's primary colour.
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-/// Dimmed phosphor — used for non-selected text.
+/// Dimmed phosphor — used for the ` (git)` suffix and italic metadata.
 const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
+/// Bright white — used for cwd titles + focus highlights.
+const WHITE: Color = Color::Rgb(255, 255, 255);
+/// Sandbox-rejection / error red.
+const DANGER_RED: Color = Color::Rgb(255, 94, 122);
+/// Dark phosphor — block borders, separator glyphs.
+const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 
 use super::ModalOutcome;
 
@@ -37,21 +53,9 @@ const EXCLUDED: &[&str] = &[
     "Pictures",
 ];
 
-/// Marker prepended to directory names that are git repos. U+2387
-/// (alternative key symbol) reads as a branch and puts the marker where
-/// the eye lands first. Renders as a small icon in monospace terminals
-/// without needing a nerd-font.
-///
-/// Note: ratatui-explorer 0.3's Theme exposes a single `dir_style` shared
-/// by every directory entry, so per-entry colouring (green for repos) is
-/// not possible here. A future PR that drops ratatui-explorer for a
-/// custom list renderer could add colour; for now the textual prefix is
-/// the affordance.
-const GIT_REPO_MARKER: &str = "\u{2387} ";
-
 /// Does `path` contain a `.git` child? Dir (regular clone) OR file
 /// (submodule worktree, `.git` is a file pointing at the real gitdir).
-/// Single `metadata` call per directory listing — no filesystem walk.
+/// Single `metadata` call per directory entry — no filesystem walk.
 fn has_git_dir(path: &Path) -> bool {
     let dotgit = path.join(".git");
     dotgit.is_dir() || dotgit.is_file()
@@ -68,45 +72,44 @@ pub enum GitPromptFocus {
     Cancel,
 }
 
+/// One row in the folder listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderEntry {
+    /// Display name, no trailing slash. `".."` for the synthetic parent link.
+    pub name: String,
+    /// Absolute path the row resolves to. For `..` this is the parent dir.
+    pub path: PathBuf,
+    /// True for the synthetic `..` parent-link row.
+    pub is_parent: bool,
+    /// True iff `path` contains a `.git` child (dir or submodule file).
+    pub is_git: bool,
+}
+
+#[derive(Debug)]
 pub struct FileBrowserState {
-    pub explorer: FileExplorer,
     /// $HOME — the browser cannot navigate above this path.
     pub root: PathBuf,
-    /// Set when the user presses `s` but the selection is rejected.
-    /// Cleared on the next keypress.
+    /// Currently-displayed directory.
+    pub cwd: PathBuf,
+    /// Entries loaded from `cwd`, after filtering + sorting.
+    pub entries: Vec<FolderEntry>,
+    /// tui-widget-list selection state. Drives which row is highlighted.
+    pub list_state: ListState,
+    /// Set when the operator presses `s` but the selection is rejected
+    /// (e.g. `$HOME` itself, `~/.jackin/...`). Cleared on the next key.
     pub rejected_reason: Option<String>,
     /// Active when the operator has pressed Enter on a git-repo row.
-    /// Carries the repo path so approving "mount this repo" commits to it
-    /// without re-walking the listing.
     pub pending_git_prompt: Option<PathBuf>,
-    /// Origin URL (web form, e.g. `https://github.com/owner/repo`) for the
-    /// repo referenced by `pending_git_prompt`. Computed via
-    /// `mount_info::inspect` when the prompt opens. `None` for non-GitHub
-    /// remotes, repos without an `origin`, or any other case where the URL
-    /// can't be resolved — the overlay simply omits the URL line then.
+    /// Origin URL (web form) for the repo referenced by
+    /// `pending_git_prompt`. `None` for non-GitHub remotes or any repo
+    /// whose origin can't be resolved — the overlay then omits the row.
     pub pending_git_url: Option<String>,
-    /// Which choice is highlighted in the git-repo prompt. Cycled by Tab.
-    /// Ignored when `pending_git_prompt` is `None`.
+    /// Which button is highlighted in the git-repo prompt.
     pub pending_git_focus: GitPromptFocus,
 }
 
-impl std::fmt::Debug for FileBrowserState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FileBrowserState")
-            .field("root", &self.root)
-            .field("rejected_reason", &self.rejected_reason)
-            .field("pending_git_prompt", &self.pending_git_prompt)
-            .field("pending_git_url", &self.pending_git_url)
-            .field("pending_git_focus", &self.pending_git_focus)
-            .finish_non_exhaustive()
-    }
-}
-
 /// Resolve the origin web URL for a git-repo path via `mount_info::inspect`.
-/// Returns `Some` only for GitHub remotes that expose a resolvable web URL;
-/// returns `None` for non-GitHub remotes, missing/unreadable `config`, or
-/// any branch-resolution failure. Used by the git-prompt overlay to show
-/// the origin line below the title.
+/// Returns `Some` only for GitHub remotes that expose a resolvable web URL.
 fn resolve_git_url(path: &Path) -> Option<String> {
     match crate::launch::manager::mount_info::inspect(&path.display().to_string()) {
         crate::launch::manager::mount_info::MountKind::Git { web_url, .. } => web_url,
@@ -114,42 +117,71 @@ fn resolve_git_url(path: &Path) -> Option<String> {
     }
 }
 
-/// Shared `filter_map` body: apply sandbox/exclusion rules and append the
-/// git-repo marker to directory names that contain a `.git` child. Extracted
-/// into a free function so unit tests can drive it without constructing a
-/// full `FileExplorer`.
-fn annotate_file(mut file: ratatui_explorer::File, root: &Path) -> Option<ratatui_explorer::File> {
-    // Keep only directories.
-    if !file.is_dir {
-        return None;
+/// Is `name` one of the top-level noise directories we hide at `$HOME`?
+fn is_excluded(name: &str) -> bool {
+    EXCLUDED.contains(&name)
+}
+
+/// Read directories under `cwd` and build the entry list. Hidden files
+/// (leading `.`) are excluded; the `..` synthetic parent-link is prepended
+/// iff `cwd != root`; at the root level the `EXCLUDED` list filters out
+/// the macOS-style noise folders. Unreadable directories yield an empty
+/// list — the caller surfaces that as an empty listing, not an error.
+fn load_entries(cwd: &Path, root: &Path) -> Vec<FolderEntry> {
+    let mut out: Vec<FolderEntry> = Vec::new();
+
+    // Synthetic parent link — only shown when there's somewhere to go.
+    if cwd != root
+        && let Some(parent) = cwd.parent()
+        && parent.starts_with(root)
+    {
+        out.push(FolderEntry {
+            name: "..".to_string(),
+            path: parent.to_path_buf(),
+            is_parent: true,
+            is_git: false,
+        });
     }
-    // ratatui-explorer appends a trailing `/` to directory entries at runtime
-    // (so "Library" renders as "Library/" and the synthetic parent-link as
-    // "../"). Strip the slash for comparisons against bare names like `..` or
-    // the `EXCLUDED` list — otherwise the filter silently misses every entry.
-    let bare = file.name.trim_end_matches('/');
-    // Hide `..` when navigating up would leave the root subtree. `file.path`
-    // is the parent directory that `..` leads to; if it is not inside root,
-    // the entry would escape the sandbox — hide it.
-    if bare == ".." {
-        if !file.path.starts_with(root) {
-            return None;
+
+    let Ok(read) = std::fs::read_dir(cwd) else {
+        return out;
+    };
+
+    let at_root = cwd == root;
+    let mut dirs: Vec<FolderEntry> = Vec::new();
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Skip hidden files (leading dot).
+        if name.starts_with('.') {
+            continue;
         }
-        return Some(file);
+        // Skip the $HOME-level noise folders.
+        if at_root && is_excluded(&name) {
+            continue;
+        }
+        // Only keep directories.
+        let Ok(ty) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        // Follow symlinks to detect dir-symlinks; stat failures skip the entry.
+        let is_dir = ty.is_dir() || (ty.is_symlink() && path.is_dir());
+        if !is_dir {
+            continue;
+        }
+        let is_git = has_git_dir(&path);
+        dirs.push(FolderEntry {
+            name,
+            path,
+            is_parent: false,
+            is_git,
+        });
     }
-    // Strip excluded top-level names.
-    if EXCLUDED.contains(&bare) {
-        return None;
-    }
-    // Prepend the git-repo marker when the directory contains a `.git` child.
-    // Works for both plain clones (`.git` is a dir) and submodules (`.git` is
-    // a file containing `gitdir: <path>`). Prefix puts the marker where the
-    // eye lands first — "⎇ scentbird-root/" vs the trailing marker that was
-    // easy to miss.
-    if has_git_dir(&file.path) {
-        file.name.insert_str(0, GIT_REPO_MARKER);
-    }
-    Some(file)
+    // Alphabetical, case-insensitive. `..` (if present) was pushed first
+    // and stays at index 0.
+    dirs.sort_by_key(|e| e.name.to_lowercase());
+    out.extend(dirs);
+    out
 }
 
 impl FileBrowserState {
@@ -159,188 +191,178 @@ impl FileBrowserState {
         let home = BaseDirs::new()
             .map(|b| b.home_dir().to_path_buf())
             .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?;
+        Ok(Self::new_at(home.clone(), home))
+    }
 
-        // Build a phosphor-palette theme that matches jackin's TUI style.
-        let theme = Theme::default()
-            // Block with ALL borders styled phosphor dark would be overridden by
-            // the block in the default theme; replace with a jackin-coloured block.
-            .with_block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(PHOSPHOR_DIM)),
-            )
-            // Base list text: white (dir entries are the only thing shown).
-            .with_style(Style::default().fg(Color::Rgb(255, 255, 255)))
-            // Directory entries: white (same — all entries are dirs).
-            .with_dir_style(Style::default().fg(Color::Rgb(255, 255, 255)))
-            // Non-directory items: dim (shouldn't appear, but keep safe).
-            .with_item_style(Style::default().fg(PHOSPHOR_DIM))
-            // Highlighted directory: bright phosphor bg + black fg.
-            .with_highlight_dir_style(
-                Style::default()
-                    .bg(PHOSPHOR_GREEN)
-                    .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            )
-            // Highlighted non-dir item.
-            .with_highlight_item_style(
-                Style::default()
-                    .bg(PHOSPHOR_GREEN)
-                    .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            )
-            // Use ▸ as selection indicator.
-            .with_highlight_symbol("▸ ")
-            // Dynamic title: shortened CWD, styled bold-white.
-            .with_title_top(|fe| {
-                let cwd = crate::tui::shorten_home(&fe.cwd().display().to_string());
-                Line::styled(
-                    cwd,
-                    Style::default()
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD),
-                )
-            });
-        let root_for_filter = home.clone();
-        let explorer = FileExplorerBuilder::default()
-            .working_dir(&home)
-            .theme(theme)
-            .filter_map(move |file| annotate_file(file, &root_for_filter))
-            .build()
-            .map_err(|e| anyhow::anyhow!("failed to build file explorer: {e}"))?;
-
-        Ok(Self {
-            explorer,
-            root: home,
+    /// Build a browser with `root` as the sandbox boundary and `cwd` as
+    /// the initial directory. Primarily for tests — production callers
+    /// should use `new_from_home`.
+    pub fn new_at(root: PathBuf, cwd: PathBuf) -> Self {
+        let entries = load_entries(&cwd, &root);
+        let mut list_state = ListState::default();
+        if !entries.is_empty() {
+            list_state.select(Some(0));
+        }
+        Self {
+            root,
+            cwd,
+            entries,
+            list_state,
             rejected_reason: None,
             pending_git_prompt: None,
             pending_git_url: None,
             pending_git_focus: GitPromptFocus::MountHere,
-        })
+        }
+    }
+
+    /// Current working directory. Exposed so the create-workspace wizard
+    /// can breadcrumb this across a step-back.
+    pub fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
+    /// Re-point the browser at `cwd`, clamped to the sandbox root.
+    /// Silently falls back to the root when `cwd` is outside the sandbox
+    /// or not a readable directory.
+    pub fn set_cwd(&mut self, cwd: &Path) {
+        let target = if cwd.starts_with(&self.root) && cwd.is_dir() {
+            cwd.to_path_buf()
+        } else {
+            self.root.clone()
+        };
+        self.cwd = target;
+        self.reload();
+    }
+
+    /// Re-read entries from disk and reset the selection to index 0.
+    pub fn reload(&mut self) {
+        self.entries = load_entries(&self.cwd, &self.root);
+        let sel = if self.entries.is_empty() {
+            None
+        } else {
+            Some(0)
+        };
+        self.list_state.select(sel);
+    }
+
+    /// Move selection down one, wrapping at the end.
+    fn select_next(&mut self) {
+        let n = self.entries.len();
+        if n == 0 {
+            return;
+        }
+        let next = self
+            .list_state
+            .selected
+            .map_or(0, |i| if i + 1 >= n { 0 } else { i + 1 });
+        self.list_state.select(Some(next));
+    }
+
+    /// Move selection up one, wrapping at the start.
+    fn select_prev(&mut self) {
+        let n = self.entries.len();
+        if n == 0 {
+            return;
+        }
+        let prev = self
+            .list_state
+            .selected
+            .map_or(0, |i| if i == 0 { n - 1 } else { i - 1 });
+        self.list_state.select(Some(prev));
+    }
+
+    /// The currently-highlighted entry, if any.
+    fn highlighted(&self) -> Option<&FolderEntry> {
+        self.list_state.selected.and_then(|i| self.entries.get(i))
+    }
+
+    /// Navigate up one level (`cwd` → `cwd.parent()`), clamped to `root`.
+    fn navigate_up(&mut self) {
+        if self.cwd == self.root {
+            return;
+        }
+        let Some(parent) = self.cwd.parent() else {
+            return;
+        };
+        if !parent.starts_with(&self.root) {
+            return;
+        }
+        self.cwd = parent.to_path_buf();
+        self.reload();
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<PathBuf> {
-        // Git-repo prompt has its own key map; delegate before clearing any
-        // state the main handler would otherwise reset.
+        // Git-repo prompt has its own key map; delegate before clearing
+        // any state the main handler would otherwise reset.
         if self.pending_git_prompt.is_some() {
             return self.handle_git_prompt_key(key);
         }
 
-        // Clear any stale rejection message on the next keypress.
+        // Clear any stale rejection on the next keypress.
         self.rejected_reason = None;
 
         match key.code {
-            KeyCode::Char('s' | 'S') => {
-                // Prefer the currently-highlighted entry (the "would navigate
-                // into" target) so the operator can pick a sibling folder
-                // without pressing Enter first. Fall back to the cwd when the
-                // highlight is `../` or the listing is empty.
-                let cwd = self.explorer.cwd().clone();
-                let target = {
-                    let files = self.explorer.files();
-                    if files.is_empty() {
-                        // `current()` panics on an empty listing — guard it.
-                        cwd
-                    } else {
-                        let highlighted = self.explorer.current();
-                        // An entry named `"../"` is ratatui-explorer's synthetic
-                        // parent-link row; treat it as "no real selection".
-                        let is_parent_link = highlighted.name == "../";
-                        if highlighted.is_dir && !is_parent_link {
-                            highlighted.path.clone()
-                        } else {
-                            cwd
-                        }
-                    }
-                };
-
-                self.commit_or_reject(target)
-            }
-            KeyCode::Enter => {
-                // If the highlighted entry is a git repo (and not the
-                // synthetic `../` parent link), open the choice prompt
-                // instead of navigating in. Guard `current()` against an
-                // empty listing (filter may have removed every entry).
-                if !self.explorer.files().is_empty() {
-                    let highlighted = self.explorer.current();
-                    let is_parent_link = highlighted.name == "../";
-                    let path = highlighted.path.clone();
-                    let is_dir = highlighted.is_dir;
-                    if is_dir && !is_parent_link && has_git_dir(&path) {
-                        self.pending_git_url = resolve_git_url(&path);
-                        self.pending_git_prompt = Some(path);
-                        self.pending_git_focus = GitPromptFocus::MountHere;
-                        return ModalOutcome::Continue;
-                    }
-                }
-                // Fall through to the explorer for non-git folders.
-                let event = crossterm::event::Event::Key(key);
-                let _ = self.explorer.handle(&event);
-                let cwd = self.explorer.cwd().clone();
-                if !cwd.starts_with(&self.root) {
-                    let _ = self.explorer.set_cwd(&self.root);
-                }
+            KeyCode::Up | KeyCode::Char('k' | 'K') => {
+                self.select_prev();
                 ModalOutcome::Continue
             }
+            KeyCode::Down | KeyCode::Char('j' | 'J') => {
+                self.select_next();
+                ModalOutcome::Continue
+            }
+            KeyCode::Left | KeyCode::Char('h' | 'H') => {
+                self.navigate_up();
+                ModalOutcome::Continue
+            }
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l' | 'L') => self.handle_enter(),
+            KeyCode::Char('s' | 'S') => {
+                // Prefer the highlighted entry (so the operator can pick a
+                // sibling without first Entering). Fall back to cwd when
+                // there's no real selection (empty listing, `..` row).
+                let target = self
+                    .highlighted()
+                    .filter(|e| !e.is_parent)
+                    .map_or_else(|| self.cwd.clone(), |e| e.path.clone());
+                self.commit_or_reject(target)
+            }
             KeyCode::Esc => {
-                // Esc steps back one directory when the operator has drilled
-                // below root — mirroring `h` / `←`. Only cancels the modal
-                // when already at root. The `rejected_reason` was cleared
-                // above; any "navigate-up" branch here must preserve that.
-                if self.explorer.cwd() == &self.root {
+                // Esc steps back one directory when the operator has
+                // drilled below root — mirroring `h` / `←`. Only cancels
+                // the modal when already at root. `rejected_reason` was
+                // cleared above; preserve that in both branches.
+                if self.cwd == self.root {
                     ModalOutcome::Cancel
                 } else {
-                    let parent = self
-                        .explorer
-                        .cwd()
-                        .parent()
-                        .map(std::path::Path::to_path_buf);
-                    if let Some(parent) = parent {
-                        // Guard: only if parent stays inside the sandbox.
-                        if parent.starts_with(&self.root) {
-                            let _ = self.explorer.set_cwd(&parent);
-                        }
-                    }
+                    self.navigate_up();
                     ModalOutcome::Continue
                 }
             }
-            _ => {
-                // Guard: ratatui-explorer panics (div-by-zero) on nav keys
-                // when the listing is empty. Skip dispatch in that case.
-                if !self.explorer.files().is_empty() {
-                    let event = crossterm::event::Event::Key(key);
-                    let _ = self.explorer.handle(&event);
-                }
-
-                // Clamp cwd back to root if the user navigated above $HOME.
-                // set_cwd() exists in ratatui-explorer 0.3.x.
-                let cwd = self.explorer.cwd().clone();
-                if !cwd.starts_with(&self.root) {
-                    let _ = self.explorer.set_cwd(&self.root);
-                }
-                ModalOutcome::Continue
-            }
+            _ => ModalOutcome::Continue,
         }
     }
 
-    /// Current working directory inside the sandbox. Exposed for callers
-    /// that need to breadcrumb the browser position — e.g. the create-
-    /// workspace wizard stashes this when the operator commits a mount
-    /// src, so a later Esc can re-open the browser at the same location
-    /// instead of re-starting at `$HOME`.
-    pub fn cwd(&self) -> &Path {
-        self.explorer.cwd()
-    }
-
-    /// Re-point the browser at `cwd`, clamped to the sandbox root.
-    /// Used by step-back navigation to restore the previous cwd. Silently
-    /// falls back to the root when `cwd` is outside the sandbox or the
-    /// explorer rejects it.
-    pub fn set_cwd(&mut self, cwd: &Path) {
-        if cwd.starts_with(&self.root) && self.explorer.set_cwd(cwd).is_ok() {
-            return;
+    /// Shared path for Enter / l / → on a highlighted entry: navigate
+    /// into dirs, open the git-repo prompt on repo rows, up on the `..` row.
+    fn handle_enter(&mut self) -> ModalOutcome<PathBuf> {
+        let Some(entry) = self.highlighted().cloned() else {
+            return ModalOutcome::Continue;
+        };
+        if entry.is_parent {
+            self.navigate_up();
+            return ModalOutcome::Continue;
         }
-        let _ = self.explorer.set_cwd(&self.root);
+        if entry.is_git {
+            self.pending_git_url = resolve_git_url(&entry.path);
+            self.pending_git_prompt = Some(entry.path);
+            self.pending_git_focus = GitPromptFocus::MountHere;
+            return ModalOutcome::Continue;
+        }
+        // Plain folder — navigate in.
+        if entry.path.starts_with(&self.root) && entry.path.is_dir() {
+            self.cwd = entry.path;
+            self.reload();
+        }
+        ModalOutcome::Continue
     }
 
     /// Shared commit-or-reject logic used by `s` and the git-repo prompt's
@@ -363,19 +385,13 @@ impl FileBrowserState {
     }
 
     /// Clear the git-repo prompt state in one shot — both the pending
-    /// path and the resolved URL. Used whenever the prompt is dismissed
-    /// (commit, navigate-in, cancel, Esc) so the URL line doesn't leak
-    /// into the next prompt for a different repo.
+    /// path and the resolved URL.
     fn dismiss_git_prompt(&mut self) {
         self.pending_git_prompt = None;
         self.pending_git_url = None;
     }
 
     /// Key handler used while the git-repo prompt is active.
-    /// - Tab / `BackTab` / ←→ / h/l cycle focus.
-    /// - Enter commits the focused option.
-    /// - M / E / C are direct shortcuts.
-    /// - Esc dismisses the prompt (but does NOT cancel the browser).
     fn handle_git_prompt_key(&mut self, key: KeyEvent) -> ModalOutcome<PathBuf> {
         let Some(path) = self.pending_git_prompt.clone() else {
             return ModalOutcome::Continue;
@@ -386,11 +402,8 @@ impl FileBrowserState {
                 self.commit_or_reject(path)
             }
             KeyCode::Char('e' | 'E') => {
-                // "Pick a subdirectory" — navigate into the repo dir and
-                // clear the prompt. Uses `set_cwd` to avoid re-posting the
-                // Enter event (which would re-open the prompt).
                 self.dismiss_git_prompt();
-                let _ = self.explorer.set_cwd(&path);
+                self.set_cwd(&path);
                 ModalOutcome::Continue
             }
             KeyCode::Char('c' | 'C') | KeyCode::Esc => {
@@ -403,7 +416,7 @@ impl FileBrowserState {
                 match focus {
                     GitPromptFocus::MountHere => self.commit_or_reject(path),
                     GitPromptFocus::EnterIn => {
-                        let _ = self.explorer.set_cwd(&path);
+                        self.set_cwd(&path);
                         ModalOutcome::Continue
                     }
                     GitPromptFocus::Cancel => ModalOutcome::Continue,
@@ -431,49 +444,32 @@ impl FileBrowserState {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
-    use ratatui::{
-        layout::{Alignment, Constraint, Direction, Layout},
-        style::{Color, Modifier, Style},
-        text::Span,
-        widgets::Paragraph,
-    };
+    use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 
     frame.render_widget(ratatui::widgets::Clear, area);
 
-    // Layout:
-    //   - When a rejection is active: [reason banner][explorer][nav hint]
-    //   - Otherwise:                   [explorer][nav hint]
-    //
-    // The "press [S] to use this folder" banner was removed: the footer
-    // `S select` hint already tells the operator the same thing and no
-    // other modal uses a top affordance banner. The `rejected_reason`
-    // banner stays — it is functional error feedback, not an affordance.
+    // Layout: [optional rejection banner][listing][nav hint].
     let has_rejection = state.rejected_reason.is_some();
     let constraints: Vec<Constraint> = if has_rejection {
         vec![
-            Constraint::Length(1), // rejection banner
-            Constraint::Min(3),    // explorer
-            Constraint::Length(1), // nav hint
+            Constraint::Length(1),
+            Constraint::Min(3),
+            Constraint::Length(1),
         ]
     } else {
-        vec![
-            Constraint::Min(3),    // explorer
-            Constraint::Length(1), // nav hint
-        ]
+        vec![Constraint::Min(3), Constraint::Length(1)]
     };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(area);
 
-    let explorer_idx = if has_rejection {
+    let listing_idx = if has_rejection {
         let reason = state.rejected_reason.as_ref().unwrap();
         frame.render_widget(
             Paragraph::new(Span::styled(
                 format!("\u{2717} {reason}"),
-                Style::default()
-                    .fg(Color::Rgb(255, 94, 122))
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD),
             ))
             .alignment(Alignment::Center),
             chunks[0],
@@ -483,31 +479,81 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
         0
     };
 
-    frame.render_widget_ref(state.explorer.widget(), chunks[explorer_idx]);
-
+    render_listing(frame, chunks[listing_idx], state);
     render_footer_legend(frame, chunks[chunks.len() - 1], state);
 
-    // Git-repo prompt overlay — centred inside the explorer area so the
+    // Git-repo prompt overlay — centred inside the listing area so the
     // listing stays visible as context behind the modal.
     if state.pending_git_prompt.is_some() {
-        render_git_prompt(frame, chunks[explorer_idx], state);
+        render_git_prompt(frame, chunks[listing_idx], state);
     }
+}
+
+/// Render the folder listing inside `area` with a phosphor-framed block
+/// and a bold-white cwd title.
+fn render_listing(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
+    let title = Span::styled(
+        format!(
+            " {} ",
+            crate::tui::shorten_home(&state.cwd.display().to_string())
+        ),
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(title);
+
+    let selected = state.list_state.selected;
+    let highlight_style = Style::default()
+        .bg(PHOSPHOR_GREEN)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    let base_style = Style::default().fg(PHOSPHOR_GREEN);
+    let git_suffix_style = Style::default()
+        .fg(PHOSPHOR_DIM)
+        .add_modifier(Modifier::BOLD);
+
+    let lines: Vec<Line> = state
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let is_sel = Some(i) == selected;
+            let name_slash = if e.is_parent {
+                "../".to_string()
+            } else {
+                format!("{}/", e.name)
+            };
+            if is_sel {
+                // Highlight row: single span covering name + optional git suffix.
+                let mut text = format!("  {name_slash}");
+                if e.is_git {
+                    text.push_str(" (git)");
+                }
+                Line::from(Span::styled(text, highlight_style))
+            } else if e.is_git {
+                Line::from(vec![
+                    Span::styled(format!("  {name_slash}"), base_style),
+                    Span::styled(" (git)", git_suffix_style),
+                ])
+            } else {
+                Line::from(Span::styled(format!("  {name_slash}"), base_style))
+            }
+        })
+        .collect();
+
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, area);
 }
 
 /// Render the bottom footer legend. Swaps the usual nav+`s` legend for a
 /// prompt-focused legend when the git-repo confirm overlay is active.
 fn render_footer_legend(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
-    use ratatui::{
-        layout::Alignment,
-        style::{Color, Modifier, Style},
-        text::{Line, Span},
-        widgets::Paragraph,
-    };
-    let key = Style::default()
-        .fg(Color::Rgb(255, 255, 255))
-        .add_modifier(Modifier::BOLD);
-    let text = Style::default().fg(Color::Rgb(0, 255, 65));
-    let sep = Style::default().fg(Color::Rgb(0, 80, 18));
+    use ratatui::layout::Alignment;
+    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let text = Style::default().fg(PHOSPHOR_GREEN);
+    let sep = Style::default().fg(PHOSPHOR_DARK);
     let line = if state.pending_git_prompt.is_some() {
         Line::from(vec![
             Span::styled("Tab", key),
@@ -540,21 +586,52 @@ fn render_footer_legend(frame: &mut Frame, area: Rect, state: &FileBrowserState)
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
-/// Overlay renderer for the in-browser "Git repository detected" prompt.
-/// Mirrors the phosphor palette + focus styling used by `confirm.rs`
-/// (bright white bg on focused button, phosphor green on unfocused) so
-/// it feels native next to the other modals.
-fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrowserState) {
-    use ratatui::{
-        layout::{Alignment, Constraint, Direction, Layout},
-        style::{Color, Modifier, Style},
-        text::{Line, Span},
-        widgets::{Block, Borders, Paragraph},
+/// Build the three focus-styled button spans for the git-repo prompt.
+fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
+    let focused = Style::default()
+        .bg(WHITE)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    let unfocused = Style::default()
+        .bg(PHOSPHOR_GREEN)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    let btn = |target: GitPromptFocus, label: &'static str| -> Span<'static> {
+        let style = if focus == target { focused } else { unfocused };
+        Span::styled(format!(" {label} "), style)
     };
+    Line::from(vec![
+        btn(GitPromptFocus::MountHere, "Mount this repository"),
+        Span::raw("  "),
+        btn(GitPromptFocus::EnterIn, "Pick a subdirectory"),
+        Span::raw("  "),
+        btn(GitPromptFocus::Cancel, "Cancel"),
+    ])
+}
+
+/// Build the M/E/C hint footer line for the git-repo prompt.
+fn git_prompt_hint() -> Line<'static> {
+    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let text_style = Style::default().fg(PHOSPHOR_GREEN);
+    let sep_style = Style::default().fg(PHOSPHOR_DARK);
+    Line::from(vec![
+        Span::styled("M", key_style),
+        Span::styled(" mount", text_style),
+        Span::styled(" \u{b7} ", sep_style),
+        Span::styled("E", key_style),
+        Span::styled(" enter", text_style),
+        Span::styled(" \u{b7} ", sep_style),
+        Span::styled("C/Esc", key_style),
+        Span::styled(" cancel", text_style),
+    ])
+}
+
+/// Overlay renderer for the in-browser "Git repository detected" prompt.
+fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBrowserState) {
+    use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 
     // Add a row when we have an origin URL to show under the title.
     let has_url = state.pending_git_url.is_some();
-    // Centre a fixed-size overlay inside the explorer area.
     let w = parent.width.saturating_sub(4).min(60);
     let base_h: u16 = if has_url { 8 } else { 7 };
     let h = base_h.min(parent.height);
@@ -567,43 +644,20 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
         height: h,
     };
 
-    let phosphor = Color::Rgb(0, 255, 65);
-    let phosphor_dim = Color::Rgb(0, 140, 30);
-    let white = Color::Rgb(255, 255, 255);
-    let phosphor_dark = Color::Rgb(0, 80, 18);
-
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(phosphor))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(Span::styled(
             " Git repository detected ",
-            Style::default().fg(white).add_modifier(Modifier::BOLD),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // Layout rows: optional URL row slots between the "What would you like
-    // to do?" prompt and the button row. Skipped entirely when there is
-    // no URL so we don't render a blank "no URL" noise line.
-    let constraints: Vec<Constraint> = if has_url {
-        vec![
-            Constraint::Length(1), // prompt
-            Constraint::Length(1), // url
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // buttons
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // hint
-        ]
-    } else {
-        vec![
-            Constraint::Length(1), // prompt
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // buttons
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // hint
-        ]
-    };
+    // Row constraints: [prompt][url?][spacer][buttons][spacer][hint].
+    let row_count = if has_url { 6 } else { 5 };
+    let constraints: Vec<Constraint> = (0..row_count).map(|_| Constraint::Length(1)).collect();
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
@@ -612,21 +666,19 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
     frame.render_widget(
         Paragraph::new(Span::styled(
             "What would you like to do?",
-            Style::default().fg(white).add_modifier(Modifier::BOLD),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
         rows[0],
     );
 
-    // URL line, italic + phosphor-dim, centered. Only rendered when we
-    // resolved an origin URL; otherwise the row isn't in the layout at all.
     let (buttons_idx, hint_idx) = if has_url {
         let url = state.pending_git_url.as_deref().unwrap_or_default();
         frame.render_widget(
             Paragraph::new(Span::styled(
                 url.to_string(),
                 Style::default()
-                    .fg(phosphor_dim)
+                    .fg(PHOSPHOR_DIM)
                     .add_modifier(Modifier::ITALIC),
             ))
             .alignment(Alignment::Center),
@@ -637,49 +689,12 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
         (2, 4)
     };
 
-    let focused = Style::default()
-        .bg(white)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
-    let unfocused = Style::default()
-        .bg(phosphor)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
-    let btn = |focus: GitPromptFocus, label: &'static str| -> Span<'static> {
-        let style = if state.pending_git_focus == focus {
-            focused
-        } else {
-            unfocused
-        };
-        Span::styled(format!(" {label} "), style)
-    };
-    let buttons = Line::from(vec![
-        btn(GitPromptFocus::MountHere, "Mount this repository"),
-        Span::raw("  "),
-        btn(GitPromptFocus::EnterIn, "Pick a subdirectory"),
-        Span::raw("  "),
-        btn(GitPromptFocus::Cancel, "Cancel"),
-    ]);
     frame.render_widget(
-        Paragraph::new(buttons).alignment(Alignment::Center),
+        Paragraph::new(git_prompt_buttons(state.pending_git_focus)).alignment(Alignment::Center),
         rows[buttons_idx],
     );
-
-    let key_style = Style::default().fg(white).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(phosphor);
-    let sep_style = Style::default().fg(phosphor_dark);
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("M", key_style),
-            Span::styled(" mount", text_style),
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("E", key_style),
-            Span::styled(" enter", text_style),
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("C/Esc", key_style),
-            Span::styled(" cancel", text_style),
-        ]))
-        .alignment(Alignment::Center),
+        Paragraph::new(git_prompt_hint()).alignment(Alignment::Center),
         rows[hint_idx],
     );
 }
@@ -699,24 +714,15 @@ mod tests {
         }
     }
 
-    fn make_state_at(path: std::path::PathBuf) -> FileBrowserState {
-        let theme = Theme::default().add_default_title();
-        let root_for_filter = path.clone();
-        let explorer = FileExplorerBuilder::default()
-            .working_dir(&path)
-            .theme(theme)
-            .filter_map(move |file| annotate_file(file, &root_for_filter))
-            .build()
-            .unwrap();
-        FileBrowserState {
-            explorer,
-            root: path,
-            rejected_reason: None,
-            pending_git_prompt: None,
-            pending_git_url: None,
-            pending_git_focus: GitPromptFocus::MountHere,
-        }
+    fn make_state_at(path: PathBuf) -> FileBrowserState {
+        FileBrowserState::new_at(path.clone(), path)
     }
+
+    fn state_rooted_at(root: PathBuf, cwd: PathBuf) -> FileBrowserState {
+        FileBrowserState::new_at(root, cwd)
+    }
+
+    // ── Filtering + directory-only listing ────────────────────────────
 
     #[test]
     fn filter_excludes_files() {
@@ -725,99 +731,202 @@ mod tests {
         std::fs::write(tmp.path().join("file.txt"), b"x").unwrap();
 
         let state = make_state_at(tmp.path().to_path_buf());
-        let files: Vec<_> = state
-            .explorer
-            .files()
-            .iter()
-            .map(|f| f.name.clone())
-            .collect();
+        let names: Vec<&str> = state.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"folder"), "folder missing: {names:?}");
         assert!(
-            files.iter().any(|n| n == "folder/"),
-            "folder missing: {files:?}"
-        );
-        assert!(
-            !files.iter().any(|n| n == "file.txt"),
-            "file should be filtered out: {files:?}"
+            !names.contains(&"file.txt"),
+            "file should be filtered out: {names:?}"
         );
     }
 
     #[test]
+    fn hidden_files_are_excluded() {
+        let tmp = tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("visible")).unwrap();
+        std::fs::create_dir(tmp.path().join(".hidden")).unwrap();
+
+        let state = make_state_at(tmp.path().to_path_buf());
+        let names: Vec<&str> = state.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"visible"));
+        assert!(!names.contains(&".hidden"));
+    }
+
+    #[test]
+    fn excluded_names_filtered_at_root() {
+        let tmp = tempdir().unwrap();
+        for name in EXCLUDED {
+            std::fs::create_dir(tmp.path().join(name)).unwrap();
+        }
+        std::fs::create_dir(tmp.path().join("Projects")).unwrap();
+
+        let state = make_state_at(tmp.path().to_path_buf());
+        let names: Vec<&str> = state.entries.iter().map(|e| e.name.as_str()).collect();
+        for name in EXCLUDED {
+            assert!(!names.contains(name), "excluded `{name}` slipped through");
+        }
+        assert!(names.contains(&"Projects"));
+    }
+
+    #[test]
+    fn excluded_names_visible_below_root() {
+        // EXCLUDED only applies at the sandbox root; a folder named
+        // "Library" one level below should still be visible.
+        let tmp = tempdir().unwrap();
+        let sub = tmp.path().join("sub");
+        std::fs::create_dir_all(sub.join("Library")).unwrap();
+
+        let state = state_rooted_at(tmp.path().to_path_buf(), sub);
+        let names: Vec<&str> = state.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"Library"));
+    }
+
+    #[test]
+    fn parent_link_absent_at_root() {
+        let tmp = tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("a")).unwrap();
+        let state = make_state_at(tmp.path().to_path_buf());
+        assert!(
+            state.entries.iter().all(|e| !e.is_parent),
+            "`..` must not appear at root: {:?}",
+            state.entries
+        );
+    }
+
+    #[test]
+    fn parent_link_present_below_root() {
+        let tmp = tempdir().unwrap();
+        let sub = tmp.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        let state = state_rooted_at(tmp.path().to_path_buf(), sub);
+        assert!(state.entries.first().is_some_and(|e| e.is_parent));
+    }
+
+    // ── Git-repo detection ────────────────────────────────────────────
+
+    #[test]
+    fn git_repo_entries_have_is_git_true() {
+        let tmp = tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let state = make_state_at(tmp.path().to_path_buf());
+        let entry = state
+            .entries
+            .iter()
+            .find(|e| e.name == "repo")
+            .expect("repo row must exist");
+        assert!(entry.is_git, "repo row must be flagged as git");
+    }
+
+    #[test]
+    fn non_git_folders_have_is_git_false() {
+        let tmp = tempdir().unwrap();
+        let plain = tmp.path().join("plain");
+        std::fs::create_dir(&plain).unwrap();
+
+        let state = make_state_at(tmp.path().to_path_buf());
+        let entry = state
+            .entries
+            .iter()
+            .find(|e| e.name == "plain")
+            .expect("plain row must exist");
+        assert!(!entry.is_git);
+    }
+
+    #[test]
+    fn submodule_gitfile_counts_as_git() {
+        let tmp = tempdir().unwrap();
+        let sub = tmp.path().join("submodule");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join(".git"), "gitdir: ../.git/modules/submodule\n").unwrap();
+
+        let state = make_state_at(tmp.path().to_path_buf());
+        let entry = state
+            .entries
+            .iter()
+            .find(|e| e.name == "submodule")
+            .expect("submodule row must exist");
+        assert!(entry.is_git);
+    }
+
+    // ── Render: ensure the ` (git)` suffix actually appears ───────────
+
+    #[test]
+    fn git_entries_render_with_git_suffix() {
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let tmp = tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::create_dir(tmp.path().join("plain")).unwrap();
+
+        // Use a state where the selection is NOT on the git row, so the
+        // suffix renders as a separate span rather than getting absorbed
+        // into the highlight style.
+        let mut state = make_state_at(tmp.path().to_path_buf());
+        // Sort order is alphabetical lowercase: plain < repo. Select plain
+        // (index 0) so repo's ` (git)` suffix renders unhighlighted.
+        state.list_state.select(Some(0));
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render(frame, frame.area(), &state);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let dump = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(dump.contains("repo/"), "repo row should render: {dump:?}");
+        assert!(
+            dump.contains("(git)"),
+            "git suffix should render on the repo row: {dump:?}"
+        );
+        assert!(dump.contains("plain/"));
+    }
+
+    // ── `s` behaviour ─────────────────────────────────────────────────
+
+    #[test]
     fn s_commits_highlighted_entry() {
-        // Inside a folder with a nested directory, `s` should commit the
-        // highlighted child entry — not the parent cwd.
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let child = parent.join("child");
         std::fs::create_dir_all(&child).unwrap();
 
-        let theme = Theme::default().add_default_title();
-        let explorer = FileExplorerBuilder::default()
-            .working_dir(&parent)
-            .theme(theme)
-            .filter_map(|file| if file.is_dir { Some(file) } else { None })
-            .build()
-            .unwrap();
-        let mut state = FileBrowserState {
-            explorer,
-            // root = tmp so that `parent` is a subfolder of the sandbox and
-            // neither parent nor child are rejected by the $HOME guard.
-            root: tmp.path().to_path_buf(),
-            rejected_reason: None,
-            pending_git_prompt: None,
-            pending_git_url: None,
-            pending_git_focus: GitPromptFocus::MountHere,
-        };
-
-        // Ratatui-explorer puts the synthetic `../` entry at index 0, so
-        // advance the selection once to land on `child/`.
+        // root = tmp so that neither parent nor child trip the $HOME guard.
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent.clone());
+        // Highlighted entry at index 0 is `..`; advance to `child`.
         state.handle_key(key(KeyCode::Down));
 
         let outcome = state.handle_key(key(KeyCode::Char('s')));
-        if let ModalOutcome::Commit(path) = outcome {
-            assert_eq!(
-                path.canonicalize().unwrap(),
-                child.canonicalize().unwrap(),
-                "s should commit the highlighted child, not the parent cwd"
-            );
-        } else {
-            panic!("expected Commit, got {:?}", outcome);
+        match outcome {
+            ModalOutcome::Commit(path) => {
+                assert_eq!(path.canonicalize().unwrap(), child.canonicalize().unwrap(),);
+            }
+            other => panic!("expected Commit, got {other:?}"),
         }
     }
 
     #[test]
     fn s_falls_back_to_cwd_when_directory_is_empty() {
-        // Inside an empty folder there is no highlighted entry to commit;
-        // `s` should fall back to committing the cwd itself.
         let tmp = tempdir().unwrap();
         let empty = tmp.path().join("empty");
         std::fs::create_dir(&empty).unwrap();
 
-        let theme = Theme::default().add_default_title();
-        let explorer = FileExplorerBuilder::default()
-            .working_dir(&empty)
-            .theme(theme)
-            .filter_map(|file| if file.is_dir { Some(file) } else { None })
-            .build()
-            .unwrap();
-        let mut state = FileBrowserState {
-            explorer,
-            // root = tmp so that `empty` is not $HOME itself and s is not rejected.
-            root: tmp.path().to_path_buf(),
-            rejected_reason: None,
-            pending_git_prompt: None,
-            pending_git_url: None,
-            pending_git_focus: GitPromptFocus::MountHere,
-        };
-
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), empty.clone());
+        // Empty except for `..` — `s` should commit cwd, not `..`.
         let outcome = state.handle_key(key(KeyCode::Char('s')));
-        if let ModalOutcome::Commit(path) = outcome {
-            assert_eq!(
-                path.canonicalize().unwrap(),
-                empty.canonicalize().unwrap(),
-                "s should commit cwd when no child is highlighted"
-            );
-        } else {
-            panic!("expected Commit, got {:?}", outcome);
+        match outcome {
+            ModalOutcome::Commit(path) => {
+                assert_eq!(path.canonicalize().unwrap(), empty.canonicalize().unwrap(),);
+            }
+            other => panic!("expected Commit, got {other:?}"),
         }
     }
 
@@ -825,17 +934,9 @@ mod tests {
     fn s_rejects_root_itself() {
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
-        // cwd == root, so pressing s should reject.
         let outcome = state.handle_key(key(KeyCode::Char('s')));
-        assert!(
-            matches!(outcome, ModalOutcome::Continue),
-            "expected Continue (rejection), got {:?}",
-            outcome
-        );
-        assert!(
-            state.rejected_reason.is_some(),
-            "rejected_reason should be set"
-        );
+        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(state.rejected_reason.is_some());
     }
 
     #[test]
@@ -844,333 +945,130 @@ mod tests {
         let jackin = tmp.path().join(".jackin").join("workspaces");
         std::fs::create_dir_all(&jackin).unwrap();
 
-        let theme = Theme::default().add_default_title();
-        let explorer = FileExplorerBuilder::default()
-            .working_dir(&jackin)
-            .theme(theme)
-            .filter_map(|file| if file.is_dir { Some(file) } else { None })
-            .build()
-            .unwrap();
-        let mut state = FileBrowserState {
-            explorer,
-            root: tmp.path().to_path_buf(),
-            rejected_reason: None,
-            pending_git_prompt: None,
-            pending_git_url: None,
-            pending_git_focus: GitPromptFocus::MountHere,
-        };
-
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), jackin);
         let outcome = state.handle_key(key(KeyCode::Char('s')));
-        assert!(
-            matches!(outcome, ModalOutcome::Continue),
-            "expected Continue (rejection), got {:?}",
-            outcome
-        );
-        assert!(
-            state.rejected_reason.is_some(),
-            "rejected_reason should be set for .jackin path"
-        );
+        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(state.rejected_reason.is_some());
     }
 
     #[test]
     fn rejection_cleared_on_next_keypress() {
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
-        // First press: rejected.
         state.handle_key(key(KeyCode::Char('s')));
         assert!(state.rejected_reason.is_some());
-        // Any subsequent key clears it.
-        state.handle_key(key(KeyCode::Char('j'))); // navigate down
-        assert!(
-            state.rejected_reason.is_none(),
-            "rejection should be cleared after next key"
-        );
-    }
-
-    #[test]
-    fn esc_cancels() {
-        let tmp = tempdir().unwrap();
-        let mut state = make_state_at(tmp.path().to_path_buf());
-        assert!(matches!(
-            state.handle_key(key(KeyCode::Esc)),
-            ModalOutcome::Cancel
-        ));
+        state.handle_key(key(KeyCode::Char('j')));
+        assert!(state.rejected_reason.is_none());
     }
 
     // ── Esc step-back navigation ──────────────────────────────────────
 
     #[test]
     fn esc_at_root_cancels_modal() {
-        // cwd == root → Esc closes the browser.
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
-        assert_eq!(state.explorer.cwd(), tmp.path());
         let outcome = state.handle_key(key(KeyCode::Esc));
-        assert!(
-            matches!(outcome, ModalOutcome::Cancel),
-            "Esc at root must cancel; got {outcome:?}"
-        );
+        assert!(matches!(outcome, ModalOutcome::Cancel));
     }
 
     #[test]
     fn esc_inside_subfolder_navigates_up() {
-        // cwd is one level below root → Esc should nav up and Continue,
-        // not cancel the modal.
         let tmp = tempdir().unwrap();
         let sub = tmp.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), sub.clone());
-        assert_eq!(
-            state.explorer.cwd().canonicalize().unwrap(),
-            sub.canonicalize().unwrap(),
-        );
         let outcome = state.handle_key(key(KeyCode::Esc));
-        assert!(
-            matches!(outcome, ModalOutcome::Continue),
-            "Esc in subfolder must not cancel; got {outcome:?}"
-        );
+        assert!(matches!(outcome, ModalOutcome::Continue));
         assert_eq!(
-            state.explorer.cwd().canonicalize().unwrap(),
+            state.cwd.canonicalize().unwrap(),
             tmp.path().canonicalize().unwrap(),
-            "Esc must step up to the parent directory"
         );
     }
 
     #[test]
     fn esc_deep_navigates_up_one_level() {
-        // cwd is three levels below root → Esc should go up one level only,
-        // not jump all the way back to root.
         let tmp = tempdir().unwrap();
         let l1 = tmp.path().join("a");
         let l2 = l1.join("b");
         let l3 = l2.join("c");
         std::fs::create_dir_all(&l3).unwrap();
 
-        let mut state = state_rooted_at(tmp.path().to_path_buf(), l3.clone());
-        let outcome = state.handle_key(key(KeyCode::Esc));
-        assert!(matches!(outcome, ModalOutcome::Continue));
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), l3);
+        state.handle_key(key(KeyCode::Esc));
         assert_eq!(
-            state.explorer.cwd().canonicalize().unwrap(),
+            state.cwd.canonicalize().unwrap(),
             l2.canonicalize().unwrap(),
-            "Esc must step up exactly one level, not jump to root"
         );
     }
 
     #[test]
     fn esc_clears_rejected_reason() {
-        // At root with a pending rejection: Esc still cancels (root
-        // behavior) but must also clear the rejection message so the
-        // modal doesn't carry a stale banner if reopened.
         let tmp = tempdir().unwrap();
         let mut state = make_state_at(tmp.path().to_path_buf());
         state.rejected_reason = Some("stale reason".into());
-
         let outcome = state.handle_key(key(KeyCode::Esc));
-        assert!(
-            matches!(outcome, ModalOutcome::Cancel),
-            "Esc at root must still cancel; got {outcome:?}"
-        );
-        assert!(
-            state.rejected_reason.is_none(),
-            "Esc must clear rejected_reason"
-        );
+        assert!(matches!(outcome, ModalOutcome::Cancel));
+        assert!(state.rejected_reason.is_none());
     }
+
+    // ── h / l navigation ──────────────────────────────────────────────
 
     #[test]
-    fn esc_in_git_prompt_dismisses_prompt_only() {
-        // Regression: Esc while the git-repo prompt is open must only
-        // clear the prompt — cwd unchanged, outcome Continue.
+    fn h_navigates_up() {
         let tmp = tempdir().unwrap();
-        let parent = tmp.path().join("parent");
-        let repo = parent.join("repo");
-        std::fs::create_dir_all(repo.join(".git")).unwrap();
-
-        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent.clone());
-        state.pending_git_prompt = Some(repo.clone());
-
-        let outcome = state.handle_key(key(KeyCode::Esc));
-        assert!(
-            matches!(outcome, ModalOutcome::Continue),
-            "Esc with git prompt active must not cancel; got {outcome:?}"
-        );
-        assert!(
-            state.pending_git_prompt.is_none(),
-            "Esc must dismiss the git prompt"
-        );
-        assert_eq!(
-            state.explorer.cwd().canonicalize().unwrap(),
-            parent.canonicalize().unwrap(),
-            "Esc on the prompt must leave cwd untouched"
-        );
-    }
-
-    // ── Item 7: git-repo marker + Enter-on-git-repo prompt ────────────
-
-    /// Helper: build a File that looks like a ratatui-explorer-provided
-    /// directory entry so we can exercise `annotate_file` directly.
-    fn dir_file(name: &str, path: std::path::PathBuf) -> ratatui_explorer::File {
-        ratatui_explorer::File {
-            name: format!("{name}/"),
-            path,
-            is_dir: true,
-            is_hidden: false,
-            file_type: None,
-        }
-    }
-
-    #[test]
-    fn git_repo_in_filter_map_gets_marker() {
-        // Create a directory with a `.git` subdir — the marker should be
-        // appended to the entry's display name by `annotate_file`.
-        let tmp = tempdir().unwrap();
-        let repo = tmp.path().join("repo");
-        std::fs::create_dir_all(repo.join(".git")).unwrap();
-
-        let file = dir_file("repo", repo.clone());
-        let out = annotate_file(file, tmp.path()).expect("directory should pass filter");
-        assert!(
-            out.name.starts_with(GIT_REPO_MARKER),
-            "git-repo directory must have the marker prepended; got {:?}",
-            out.name
-        );
-    }
-
-    #[test]
-    fn git_repo_via_submodule_gitfile_also_gets_marker() {
-        // Submodules have `.git` as a FILE pointing at the real gitdir.
-        // `has_git_dir` must treat those as repos too.
-        let tmp = tempdir().unwrap();
-        let sub = tmp.path().join("submodule");
+        let sub = tmp.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
-        std::fs::write(sub.join(".git"), "gitdir: ../.git/modules/submodule\n").unwrap();
-
-        let file = dir_file("submodule", sub.clone());
-        let out = annotate_file(file, tmp.path()).expect("directory should pass filter");
-        assert!(
-            out.name.starts_with(GIT_REPO_MARKER),
-            "submodule directory must have the marker prepended; got {:?}",
-            out.name
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), sub);
+        state.handle_key(key(KeyCode::Char('h')));
+        assert_eq!(
+            state.cwd.canonicalize().unwrap(),
+            tmp.path().canonicalize().unwrap(),
         );
     }
 
     #[test]
-    fn excluded_names_with_trailing_slash_are_filtered() {
-        // ratatui-explorer appends a trailing `/` to directory names at
-        // runtime. Our filter must strip that before matching against the
-        // bare EXCLUDED entries — otherwise `Library/` etc. slip through.
+    fn h_at_root_is_noop() {
         let tmp = tempdir().unwrap();
-        for name in EXCLUDED {
-            let p = tmp.path().join(name);
-            std::fs::create_dir(&p).unwrap();
-            let file = dir_file(name, p);
-            assert!(
-                annotate_file(file, tmp.path()).is_none(),
-                "excluded directory `{name}` must be filtered even with trailing slash"
-            );
-        }
+        let mut state = make_state_at(tmp.path().to_path_buf());
+        state.handle_key(key(KeyCode::Char('h')));
+        assert_eq!(state.cwd, tmp.path());
     }
 
     #[test]
-    fn parent_link_with_trailing_slash_passes_when_inside_root() {
-        // The synthetic parent-link from ratatui-explorer has name "../" —
-        // ensure the trailing slash doesn't defeat the `..` detection.
+    fn l_navigates_into_highlighted_dir() {
         let tmp = tempdir().unwrap();
         let child = tmp.path().join("child");
         std::fs::create_dir(&child).unwrap();
-        // `file.path` is the parent that `..` leads to — use tmp (root) itself.
-        let parent_link = ratatui_explorer::File {
-            name: "../".to_string(),
-            path: tmp.path().to_path_buf(),
-            is_dir: true,
-            is_hidden: false,
-            file_type: None,
-        };
-        assert!(annotate_file(parent_link, tmp.path()).is_some());
-    }
-
-    #[test]
-    fn parent_link_with_trailing_slash_hidden_when_would_escape_root() {
-        // If `..` leads out of `root`, the filter must drop it — otherwise
-        // the user can navigate above $HOME.
-        let tmp = tempdir().unwrap();
-        let root = tmp.path().join("sandbox");
-        std::fs::create_dir(&root).unwrap();
-        // `..` from `root` leads back to `tmp`, which is NOT inside `root`.
-        let parent_link = ratatui_explorer::File {
-            name: "../".to_string(),
-            path: tmp.path().to_path_buf(),
-            is_dir: true,
-            is_hidden: false,
-            file_type: None,
-        };
-        assert!(annotate_file(parent_link, &root).is_none());
-    }
-
-    #[test]
-    fn non_git_folder_in_filter_map_unchanged() {
-        // A plain folder with no `.git` child must NOT receive the marker.
-        let tmp = tempdir().unwrap();
-        let plain = tmp.path().join("plain");
-        std::fs::create_dir(&plain).unwrap();
-
-        let file = dir_file("plain", plain.clone());
-        let out = annotate_file(file, tmp.path()).expect("directory should pass filter");
-        assert!(
-            !out.name.contains(GIT_REPO_MARKER),
-            "non-git directory must not have the marker; got {:?}",
-            out.name
+        let mut state = make_state_at(tmp.path().to_path_buf());
+        // No `..` at root — index 0 is `child`.
+        state.handle_key(key(KeyCode::Char('l')));
+        assert_eq!(
+            state.cwd.canonicalize().unwrap(),
+            child.canonicalize().unwrap(),
         );
-        // Name should be the bare `plain/` (what ratatui-explorer produced).
-        assert_eq!(out.name, "plain/");
     }
 
-    /// Construct a state rooted at `root` whose explorer cwd is `cwd`.
-    /// The explorer uses the real `annotate_file` so git markers show up.
-    fn state_rooted_at(root: std::path::PathBuf, cwd: std::path::PathBuf) -> FileBrowserState {
-        let theme = Theme::default().add_default_title();
-        let root_for_filter = root.clone();
-        let explorer = FileExplorerBuilder::default()
-            .working_dir(&cwd)
-            .theme(theme)
-            .filter_map(move |file| annotate_file(file, &root_for_filter))
-            .build()
-            .unwrap();
-        FileBrowserState {
-            explorer,
-            root,
-            rejected_reason: None,
-            pending_git_prompt: None,
-            pending_git_url: None,
-            pending_git_focus: GitPromptFocus::MountHere,
-        }
-    }
+    // ── Git-repo prompt ───────────────────────────────────────────────
 
     #[test]
     fn enter_on_git_repo_opens_prompt() {
-        // Parent contains a git-repo subfolder. Navigating past `../` to
-        // land on the repo and pressing Enter should open the prompt
-        // (not navigate into it).
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let repo = parent.join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
-        // Skip past `../` onto `repo`.
+        // Index 0 is `..`; advance to `repo`.
         state.handle_key(key(KeyCode::Down));
         let outcome = state.handle_key(key(KeyCode::Enter));
         assert!(matches!(outcome, ModalOutcome::Continue));
-        assert!(
-            state.pending_git_prompt.is_some(),
-            "Enter on a git-repo row must open the prompt"
-        );
+        assert!(state.pending_git_prompt.is_some());
         assert_eq!(state.pending_git_focus, GitPromptFocus::MountHere);
     }
 
-    /// Write a minimal `.git/HEAD` + `.git/config` with the given origin
-    /// URL so `mount_info::inspect` resolves a GitHub `web_url`.
-    fn seed_git_repo_with_origin(repo: &std::path::Path, remote: &str) {
+    /// Write a minimal `.git/HEAD` + `.git/config` with the given origin.
+    fn seed_git_repo_with_origin(repo: &Path, remote: &str) {
         let git = repo.join(".git");
         std::fs::create_dir_all(&git).unwrap();
         std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
@@ -1183,8 +1081,6 @@ mod tests {
 
     #[test]
     fn enter_on_git_repo_with_origin_sets_url() {
-        // A repo with a GitHub origin URL should populate pending_git_url
-        // when the prompt opens, so the overlay can render the origin line.
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let repo = parent.join("repo");
@@ -1193,43 +1089,31 @@ mod tests {
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
         state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter)); // open prompt
+        state.handle_key(key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
         let url = state
             .pending_git_url
             .as_deref()
-            .expect("GitHub origin must resolve to a web URL");
-        assert!(
-            url.contains("github.com/jackin-project/jackin"),
-            "unexpected web URL: {url}",
-        );
+            .expect("GitHub origin must resolve");
+        assert!(url.contains("github.com/jackin-project/jackin"));
     }
 
     #[test]
     fn enter_on_git_repo_without_origin_leaves_url_none() {
-        // A repo with no origin (empty config) must leave pending_git_url
-        // as None — the overlay then omits the URL row entirely.
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let repo = parent.join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
-        // No config file → no remotes → no web URL.
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
         state.handle_key(key(KeyCode::Down));
         state.handle_key(key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
-        assert!(
-            state.pending_git_url.is_none(),
-            "no origin → no URL; got {:?}",
-            state.pending_git_url
-        );
+        assert!(state.pending_git_url.is_none());
     }
 
     #[test]
     fn mount_here_commits_git_path() {
-        // Prompt open on a repo path → focus MountHere → Enter commits
-        // that path via the same sandbox rules as `s`.
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let repo = parent.join("repo");
@@ -1237,46 +1121,38 @@ mod tests {
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
         state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter)); // open prompt
+        state.handle_key(key(KeyCode::Enter));
         assert_eq!(state.pending_git_focus, GitPromptFocus::MountHere);
         let outcome = state.handle_key(key(KeyCode::Enter));
         match outcome {
             ModalOutcome::Commit(p) => {
-                assert_eq!(
-                    p.canonicalize().unwrap(),
-                    repo.canonicalize().unwrap(),
-                    "MountHere must commit the highlighted repo path"
-                );
+                assert_eq!(p.canonicalize().unwrap(), repo.canonicalize().unwrap(),);
             }
             other => panic!("expected Commit, got {other:?}"),
         }
-        assert!(state.pending_git_prompt.is_none(), "prompt should clear");
+        assert!(state.pending_git_prompt.is_none());
     }
 
     #[test]
     fn enter_in_navigates_into_subdir() {
-        // Prompt open → focus EnterIn → Enter navigates into the repo
-        // and clears the prompt. No Commit is emitted.
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let repo = parent.join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
         std::fs::create_dir(repo.join("sub")).unwrap();
 
-        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent.clone());
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
         state.handle_key(key(KeyCode::Down));
         state.handle_key(key(KeyCode::Enter)); // open prompt
-        // Cycle focus once: MountHere -> EnterIn.
-        state.handle_key(key(KeyCode::Tab));
+        state.handle_key(key(KeyCode::Tab)); // MountHere -> EnterIn
         assert_eq!(state.pending_git_focus, GitPromptFocus::EnterIn);
 
         let outcome = state.handle_key(key(KeyCode::Enter));
         assert!(matches!(outcome, ModalOutcome::Continue));
         assert!(state.pending_git_prompt.is_none());
         assert_eq!(
-            state.explorer.cwd().canonicalize().unwrap(),
+            state.cwd.canonicalize().unwrap(),
             repo.canonicalize().unwrap(),
-            "EnterIn must navigate into the repo directory"
         );
     }
 
@@ -1290,7 +1166,6 @@ mod tests {
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent.clone());
         state.handle_key(key(KeyCode::Down));
         state.handle_key(key(KeyCode::Enter));
-        // Tab twice → Cancel focus.
         state.handle_key(key(KeyCode::Tab));
         state.handle_key(key(KeyCode::Tab));
         assert_eq!(state.pending_git_focus, GitPromptFocus::Cancel);
@@ -1298,17 +1173,14 @@ mod tests {
         let outcome = state.handle_key(key(KeyCode::Enter));
         assert!(matches!(outcome, ModalOutcome::Continue));
         assert!(state.pending_git_prompt.is_none());
-        // cwd unchanged.
         assert_eq!(
-            state.explorer.cwd().canonicalize().unwrap(),
+            state.cwd.canonicalize().unwrap(),
             parent.canonicalize().unwrap(),
         );
     }
 
     #[test]
     fn esc_dismisses_prompt_without_cancelling_browser() {
-        // Esc while the prompt is active clears the prompt but keeps the
-        // browser open (no Cancel outcome).
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let repo = parent.join("repo");
@@ -1319,17 +1191,12 @@ mod tests {
         state.handle_key(key(KeyCode::Enter));
         assert!(state.pending_git_prompt.is_some());
         let outcome = state.handle_key(key(KeyCode::Esc));
-        assert!(
-            matches!(outcome, ModalOutcome::Continue),
-            "Esc in the prompt must not cancel the browser; got {outcome:?}"
-        );
+        assert!(matches!(outcome, ModalOutcome::Continue));
         assert!(state.pending_git_prompt.is_none());
     }
 
     #[test]
     fn enter_on_plain_folder_still_navigates() {
-        // Regression guard: non-git directories keep their usual Enter =
-        // navigate-in behavior.
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let plain = parent.join("plain");
@@ -1338,21 +1205,15 @@ mod tests {
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
         state.handle_key(key(KeyCode::Down));
         state.handle_key(key(KeyCode::Enter));
-        assert!(
-            state.pending_git_prompt.is_none(),
-            "plain folder must not open the prompt"
-        );
+        assert!(state.pending_git_prompt.is_none());
         assert_eq!(
-            state.explorer.cwd().canonicalize().unwrap(),
+            state.cwd.canonicalize().unwrap(),
             plain.canonicalize().unwrap(),
-            "Enter on a plain folder must navigate into it"
         );
     }
 
     #[test]
     fn m_shortcut_commits_repo_from_prompt() {
-        // The `M` shortcut should short-circuit to MountHere regardless
-        // of the current focus.
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let repo = parent.join("repo");
@@ -1360,16 +1221,14 @@ mod tests {
 
         let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
         state.handle_key(key(KeyCode::Down));
-        state.handle_key(key(KeyCode::Enter)); // open
-        // Cycle focus away from MountHere so we know the shortcut works
-        // regardless of what's focused.
+        state.handle_key(key(KeyCode::Enter));
         state.handle_key(key(KeyCode::Tab));
         let outcome = state.handle_key(key(KeyCode::Char('m')));
         match outcome {
             ModalOutcome::Commit(p) => {
                 assert_eq!(p.canonicalize().unwrap(), repo.canonicalize().unwrap(),);
             }
-            other => panic!("expected Commit from M shortcut, got {other:?}"),
+            other => panic!("expected Commit, got {other:?}"),
         }
     }
 }
