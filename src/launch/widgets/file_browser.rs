@@ -408,6 +408,17 @@ impl FileBrowserState {
                 self.set_cwd(&path);
                 ModalOutcome::Continue
             }
+            // `o` for "open the repo's web URL in the browser" — best-effort;
+            // silent no-op when `pending_git_url` is `None` (non-GitHub origin
+            // or unresolvable remote) or when the launcher fails. The overlay
+            // drops the `· O open` hint segment in the None case so the
+            // keystroke is only advertised when it actually does something.
+            KeyCode::Char('o' | 'O') => {
+                if let Some(url) = self.pending_git_url.as_deref() {
+                    let _ = open::that_detached(url);
+                }
+                ModalOutcome::Continue
+            }
             KeyCode::Char('c' | 'C') | KeyCode::Esc => {
                 self.dismiss_git_prompt();
                 ModalOutcome::Continue
@@ -609,13 +620,18 @@ fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
     ])
 }
 
-/// Build the canonical hint footer line for the git-repo prompt:
+/// Build the canonical hint footer line for the git-repo prompt.
+///
+/// When `has_url` is true:
+/// `Enter confirm   M mount · P pick · O open · C/Esc cancel`.
+/// When `has_url` is false, the `· O open` segment is dropped so the
+/// hint doesn't advertise a disabled action:
 /// `Enter confirm   M mount · P pick · C/Esc cancel`.
-fn git_prompt_hint() -> Line<'static> {
+fn git_prompt_hint(has_url: bool) -> Line<'static> {
     let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let text_style = Style::default().fg(PHOSPHOR_GREEN);
     let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    Line::from(vec![
+    let mut spans: Vec<Span<'static>> = vec![
         Span::styled("Enter", key_style),
         Span::styled(" confirm", text_style),
         Span::raw("   "),
@@ -624,10 +640,20 @@ fn git_prompt_hint() -> Line<'static> {
         Span::styled(" \u{b7} ", sep_style),
         Span::styled("P", key_style),
         Span::styled(" pick", text_style),
+    ];
+    if has_url {
+        spans.extend([
+            Span::styled(" \u{b7} ", sep_style),
+            Span::styled("O", key_style),
+            Span::styled(" open", text_style),
+        ]);
+    }
+    spans.extend([
         Span::styled(" \u{b7} ", sep_style),
         Span::styled("C/Esc", key_style),
         Span::styled(" cancel", text_style),
-    ])
+    ]);
+    Line::from(spans)
 }
 
 /// Overlay renderer for the in-browser "Git repository detected" prompt.
@@ -700,7 +726,7 @@ fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBrowserState) 
         rows[buttons_idx],
     );
     frame.render_widget(
-        Paragraph::new(git_prompt_hint()).alignment(Alignment::Center),
+        Paragraph::new(git_prompt_hint(has_url)).alignment(Alignment::Center),
         rows[hint_idx],
     );
 }
@@ -1236,5 +1262,100 @@ mod tests {
             }
             other => panic!("expected Commit, got {other:?}"),
         }
+    }
+
+    // ── O hotkey (open URL in browser) ────────────────────────────────
+
+    /// With `pending_git_url == None`, `O` must be a silent no-op: the
+    /// prompt stays open, focus is unchanged, and no commit/cancel fires.
+    /// We can't assert that `open::that_detached` *didn't* run (it doesn't
+    /// run when the URL is None — that's the code path we're testing),
+    /// but we can pin the observable state.
+    #[test]
+    fn o_shortcut_without_url_is_silent_noop() {
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
+        state.handle_key(key(KeyCode::Down));
+        state.handle_key(key(KeyCode::Enter));
+        assert!(state.pending_git_prompt.is_some());
+        assert!(state.pending_git_url.is_none());
+        let focus_before = state.pending_git_focus;
+
+        let outcome = state.handle_key(key(KeyCode::Char('o')));
+        assert!(matches!(outcome, ModalOutcome::Continue));
+        // Prompt still open, focus unchanged.
+        assert!(state.pending_git_prompt.is_some());
+        assert_eq!(state.pending_git_focus, focus_before);
+    }
+
+    /// With `pending_git_url == Some(url)`, `O` still returns Continue
+    /// and keeps the prompt open (open-in-browser is best-effort and
+    /// doesn't dismiss). Hidden file:// URL so `open::that_detached` is
+    /// a silent no-op in CI even when a GUI isn't available.
+    #[test]
+    fn o_shortcut_with_url_returns_continue_and_keeps_prompt_open() {
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
+        state.handle_key(key(KeyCode::Down));
+        state.handle_key(key(KeyCode::Enter));
+        // Force a URL into state for the test; the real handler would have
+        // populated this via `resolve_git_url` when origin is a GitHub URL.
+        state.pending_git_url = Some("file:///tmp/definitely-not-real".to_string());
+
+        let outcome = state.handle_key(key(KeyCode::Char('O')));
+        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert!(state.pending_git_prompt.is_some());
+        // URL stays on state — O doesn't dismiss the prompt.
+        assert_eq!(
+            state.pending_git_url.as_deref(),
+            Some("file:///tmp/definitely-not-real"),
+        );
+    }
+
+    // ── Conditional hint segment ──────────────────────────────────────
+
+    /// The `O open` hint segment is only rendered when a URL is resolved.
+    /// With `has_url == false` the hint must not advertise `O open`.
+    #[test]
+    fn git_prompt_hint_omits_open_segment_when_url_is_none() {
+        let line = git_prompt_hint(false);
+        let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            !rendered.contains("O"),
+            "hint should not mention O when no URL: {rendered:?}"
+        );
+        assert!(
+            !rendered.contains("open"),
+            "hint should not mention 'open' when no URL: {rendered:?}"
+        );
+        assert!(rendered.contains("M"));
+        assert!(rendered.contains("P"));
+        assert!(rendered.contains("C/Esc"));
+    }
+
+    #[test]
+    fn git_prompt_hint_includes_open_segment_when_url_is_present() {
+        let line = git_prompt_hint(true);
+        let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            rendered.contains("O"),
+            "hint should mention O when URL resolved: {rendered:?}"
+        );
+        assert!(
+            rendered.contains("open"),
+            "hint should mention 'open' when URL resolved: {rendered:?}"
+        );
+        // Still preserves the other segments + trailing cancel.
+        assert!(rendered.contains("M"));
+        assert!(rendered.contains("P"));
+        assert!(rendered.contains("C/Esc"));
     }
 }
