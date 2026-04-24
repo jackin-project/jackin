@@ -357,16 +357,16 @@ fn format_mount_rows(
         .collect()
 }
 
-/// Width of the `mode` column. Pinned to the length of the header label
-/// "mode" (4 chars) so the data-row values "rw"/"ro" pad to the same width.
+/// Width of the `Mode` column. Pinned to the length of the header label
+/// "Mode" (4 chars) so the data-row values "rw"/"ro" pad to the same width.
 /// Without the pad, `rw`/`ro` (2 chars) would render 2 chars short of the
-/// header's 4, shifting the `type` column left by 2 on every data row.
+/// header's 4, shifting the `Type` column left by 2 on every data row.
 /// Both the header and data rows emit a two-space gutter after this column
-/// before the `type` column so "mode" and "type" never run together.
+/// before the `Type` column so "Mode" and "Type" never run together.
 const MOUNT_MODE_COL_WIDTH: usize = 4;
 
-/// Compute the width used for the `path` column so that header and data rows
-/// align. Derived from both the "path" header label and the widest row path,
+/// Compute the width used for the `Path` column so that header and data rows
+/// align. Derived from both the "Path" header label and the widest row path,
 /// with a minimum floor so short-path tables still look tabular.
 fn mount_path_width(rows: &[(String, &str, String)]) -> usize {
     rows.iter()
@@ -374,19 +374,19 @@ fn mount_path_width(rows: &[(String, &str, String)]) -> usize {
         .max()
         .unwrap_or(0)
         .max(10) // floor so a single-row mount still has a clear column
-        .max("path".len())
+        .max("Path".len())
 }
 
 /// Header row for the mount table. `path_w` must come from
 /// [`mount_path_width`] over the same `rows` used for the data lines so the
 /// columns line up.
 fn render_mount_header(path_w: usize) -> Line<'static> {
-    // Format: "  <path padded to path_w>  <mode padded>  type"
-    // Leading two-space gutter + two-space gap between mode and type both
-    // match the data-row format — so "mode" never runs into "type".
-    let mode_col = format!("{:<mw$}", "mode", mw = MOUNT_MODE_COL_WIDTH);
+    // Format: "  <path padded to path_w>  <mode padded>  Type"
+    // Leading two-space gutter + two-space gap between Mode and Type both
+    // match the data-row format — so "Mode" never runs into "Type".
+    let mode_col = format!("{:<mw$}", "Mode", mw = MOUNT_MODE_COL_WIDTH);
     Line::from(Span::styled(
-        format!("  {path:<path_w$}  {mode_col}  type", path = "path"),
+        format!("  {path:<path_w$}  {mode_col}  Type", path = "Path"),
         Style::default().fg(WHITE),
     ))
 }
@@ -491,7 +491,7 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
     // `render_general_subpanel` for the shared convention.
     let general_lines = vec![Line::from(vec![
         Span::raw("  "),
-        Span::styled("working dir ", Style::default().fg(WHITE)),
+        Span::styled("Working dir ", Style::default().fg(WHITE)),
         Span::raw(workdir_short),
     ])];
     frame.render_widget(
@@ -594,12 +594,12 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
     let lines = vec![
         Line::from(vec![
             Span::raw("  "),
-            Span::styled("working dir ", Style::default().fg(WHITE)),
+            Span::styled("Working dir ", Style::default().fg(WHITE)),
             Span::raw(crate::tui::shorten_home(&ws.workdir)),
         ]),
         Line::from(vec![
             Span::raw("  "),
-            Span::styled("last        ", Style::default().fg(WHITE)),
+            Span::styled("Last used   ", Style::default().fg(WHITE)),
             Span::raw(
                 ws.last_agent
                     .clone()
@@ -932,41 +932,41 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 
     if is_edit {
         // Edit mode: name is an editable row at index 0.
-        rows.push(render_editor_row(0, cursor, "name", name_value, name_dirty));
+        rows.push(render_editor_row(0, cursor, "Name", name_value, name_dirty));
         let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
         rows.push(render_editor_row(
             1,
             cursor,
-            "working dir",
+            "Working dir",
             &workdir_display,
             state.pending.workdir != state.original.workdir,
         ));
-        // default agent — read-only here; set via Agents tab.
+        // Default agent — read-only here; set via Agents tab.
         rows.push(render_editor_readonly_row(
             2,
             cursor,
-            "default agent",
+            "Default agent",
             state.pending.default_agent.as_deref().unwrap_or("(none)"),
         ));
-        // last used — read-only.
+        // Last used — read-only.
         rows.push(render_editor_readonly_row(
             3,
             cursor,
-            "last used",
+            "Last used",
             state.original.last_agent.as_deref().unwrap_or("(none)"),
         ));
     } else {
         // Create mode: name is display-only (collected by prelude), workdir is the first editable row.
-        rows.push(render_editor_readonly_row(0, cursor, "name", name_value));
+        rows.push(render_editor_readonly_row(0, cursor, "Name", name_value));
         let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
         rows.push(render_editor_row(
             1,
             cursor,
-            "working dir",
+            "Working dir",
             &workdir_display,
             false,
         ));
-        // Hide "default agent" and "last used" in Create mode — they have no meaning yet.
+        // Hide "Default agent" and "Last used" in Create mode — they have no meaning yet.
     }
 
     frame.render_widget(Paragraph::new(rows).block(block), area);
@@ -1128,13 +1128,11 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     }
     let status_line = Line::from(status_spans);
 
-    // Column header
-    let header = Line::from(Span::styled(
-        "  allowed?  ·  agent",
-        Style::default().fg(WHITE),
-    ));
-
-    let mut lines = vec![status_line, header];
+    // Blank spacer between the status line and the agent rows. The old
+    // `allowed?  ·  agent` column header got dropped — the `[x]` / `[ ]`
+    // prefix on each row already signals the toggle semantics, so a
+    // dedicated header added noise without clarity.
+    let mut lines = vec![status_line, Line::from("")];
 
     // Agent rows. Cursor is 0-based into config.agents (no header offset).
     for (i, (agent_name, _)) in config.agents.iter().enumerate() {
@@ -1144,7 +1142,7 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
         let check = if allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };
         let prefix = if selected { "▸ " } else { "  " };
-        let text = format!("{prefix}{check}    {star} {agent_name}");
+        let text = format!("{prefix}{check}  {star} {agent_name}");
         let style = if selected {
             Style::default()
                 .fg(PHOSPHOR_GREEN)
@@ -1382,30 +1380,30 @@ mod mount_table_tests {
             .collect::<String>()
     }
 
-    /// Return the character index of the start of the `mode` column (i.e. the
-    /// "m" in "mode" for the header, or the first char of "ro"/"rw" for a data
+    /// Return the character index of the start of the `Mode` column (i.e. the
+    /// "M" in "Mode" for the header, or the first char of "ro"/"rw" for a data
     /// row). Both are found at: `"  " + path_w + "  "` — so the index equals
     /// `2 + path_w + 2` for a header and for data rows that have no selection
     /// prefix (and the selection prefix is always two chars too — "▸ " or
     /// "  " — so the column boundary is stable).
     fn mode_col_start(line: &ratatui::text::Line<'_>) -> usize {
         let s = line_text(line);
-        // The mode column is the first two-letter "rw"/"ro" after the gap,
-        // or the literal "mode" for the header. Scan for the first non-space
+        // The Mode column is the first two-letter "rw"/"ro" after the gap,
+        // or the literal "Mode" for the header. Scan for the first non-space
         // character after the gap-of-two-spaces that follows the path.
-        // Simpler: find the offset of the two-space gap before mode.
-        // Header: "  path<pad>  mode<pad>type"
+        // Simpler: find the offset of the two-space gap before Mode.
+        // Header: "  Path<pad>  Mode<pad>Type"
         // Data:   "  path<pad>  rw<pad>type"
-        // In both cases the left edge of "mode"/"rw" is exactly 2 + path_w + 2
+        // In both cases the left edge of "Mode"/"rw" is exactly 2 + path_w + 2
         // from the start — we recover it by scanning for the first non-space
         // char at position >= 4 (past the left gutter + at least one path char).
-        // Instead, just look for the substring "  m" (mode header) or "  r"
+        // Instead, just look for the substring "  M" (Mode header) or "  r"
         // (data row, always "rw"/"ro" starting with r).
         for (i, c) in s.chars().enumerate() {
             if i < 4 {
                 continue;
             }
-            if c == 'm' || c == 'r' {
+            if c == 'M' || c == 'r' {
                 // Make sure this is preceded by the two-space gap — the first
                 // such occurrence past the left gutter is the column boundary.
                 let prev_two: String = s.chars().skip(i.saturating_sub(2)).take(2).collect();
@@ -1468,15 +1466,15 @@ mod mount_table_tests {
     #[test]
     fn empty_rows_uses_floor_for_header() {
         // Empty case: header should still render with the floor width and
-        // include the two-space gap between "mode" and "type".
+        // include the two-space gap between "Mode" and "Type".
         let path_w = mount_path_width(&[]);
         assert_eq!(path_w, 10);
         let header = render_mount_header(path_w);
-        // "  <path padded>  <mode padded>  type"
+        // "  <path padded>  <mode padded>  Type"
         let expected = format!(
-            "  {path:<path_w$}  {mode:<mw$}  type",
-            path = "path",
-            mode = "mode",
+            "  {path:<path_w$}  {mode:<mw$}  Type",
+            path = "Path",
+            mode = "Mode",
             path_w = path_w,
             mw = MOUNT_MODE_COL_WIDTH,
         );
@@ -1486,13 +1484,13 @@ mod mount_table_tests {
 
     #[test]
     fn header_has_two_space_gap_between_mode_and_type() {
-        // Regression for the "modetype" bug: header must emit a literal
-        // two-space gap between the `mode` column and the `type` label,
-        // mirroring the gap data rows emit between `rw`/`ro` and the kind.
-        // Additionally pins the type-column alignment: the `type` header
-        // label must start at the same character offset as the data row's
-        // kind label (e.g. "folder") — without padding `rw`/`ro` to the
-        // full width of "mode", the kind column would render 2 chars
+        // Regression for the "Mode Type" spacing bug: header must emit a
+        // literal two-space gap between the `Mode` column and the `Type`
+        // label, mirroring the gap data rows emit between `rw`/`ro` and the
+        // kind. Additionally pins the type-column alignment: the `Type`
+        // header label must start at the same character offset as the data
+        // row's kind label (e.g. "folder") — without padding `rw`/`ro` to
+        // the full width of "Mode", the kind column would render 2 chars
         // left of the header.
         let rows: Vec<(String, &str, String)> = vec![("~/p".into(), "rw", "folder".into())];
         let path_w = mount_path_width(&rows);
@@ -1501,14 +1499,14 @@ mod mount_table_tests {
         let header_text = line_text(&header);
         let data_text = line_text(&data[0]);
         assert!(
-            header_text.contains("mode  type"),
-            "expected 'mode  type' (two spaces between mode and type); got {header_text:?}"
+            header_text.contains("Mode  Type"),
+            "expected 'Mode  Type' (two spaces between Mode and Type); got {header_text:?}"
         );
-        let header_type_offset = header_text.find("type").expect("header has 'type'");
+        let header_type_offset = header_text.find("Type").expect("header has 'Type'");
         let data_kind_offset = data_text.find("folder").expect("data row has 'folder'");
         assert_eq!(
             header_type_offset, data_kind_offset,
-            "type column misaligned: header at {header_type_offset}, data at {data_kind_offset}"
+            "Type column misaligned: header at {header_type_offset}, data at {data_kind_offset}"
         );
     }
 }
