@@ -87,7 +87,7 @@ CLI behavior:
 - `clone` is recognized as part of the future enum vocabulary, but V1 rejects it before persistence/materialization with a precise "planned but not implemented yet" error.
 - `workspace list` may stay count-only for V1; detailed per-mount isolation belongs in `workspace show`.
 - `config mount add` and global/scoped Docker mounts do **not** gain an isolation flag in V1. Isolation remains a workspace-mount concept.
-- Ad-hoc `jackin load --mount` mounts default to `shared` in V1 unless we deliberately expand the same `--mount-isolation` syntax to load-time mounts. The saved-workspace CLI path is the required V1 surface.
+- Ad-hoc `jackin load --mount` mounts do **not** gain isolation support. They always remain `shared`; operators who want isolated source mounts should create or edit a saved workspace.
 
 ## Composition Rules
 
@@ -212,7 +212,7 @@ Defer:
 
 - `isolation = "clone"` mode. `worktree` solves the contention problem first; clone mode is for the untrusted-agent / full-isolation case and can land after.
 - Configurable `branch_template` / `base_branch`. The V1 branch name is ephemeral scratch; no user-facing use case has surfaced that a hardcoded name doesn't cover.
-- CLI override of isolation on ad-hoc `jackin load --mount` mounts, unless we decide the V1 saved-workspace CLI surface is not enough. Ad-hoc mounts default to `shared`.
+- CLI override of isolation on ad-hoc `jackin load --mount` mounts. Isolation is intentionally a saved-workspace mount feature.
 - `--no-hooks` flag to skip host hooks per worktree.
 - Any `jackin diff` / `jackin integrate` / merge-assist commands. Back-merge is handled upstream on GitHub.
 
@@ -221,9 +221,8 @@ Defer:
 1. Build caches (`target/`, `node_modules/`) — worth documenting a pattern (separate `shared` mount for the cache dir) or supporting a dedicated "warm from template" mode later?
 2. Interaction with `hardline` offline lockdown — `worktree` is local-only, so this should be fine, but worth verifying.
 3. Dirty-tree definition — should `--force` acknowledge untracked files too, or only tracked/staged changes?
-4. Ad-hoc load isolation — should `jackin load --mount ... --mount-isolation <dst>=worktree` ship in V1, or should V1 only support persisted workspace CLI commands?
-5. Source changes after materialization — if a mount keeps the same `dst` but changes `src`, should `load` hard-error until purge to avoid hiding old WIP?
-6. Branch reuse — confirm that first materialization branches from host `HEAD`, while later loads reuse the existing worktree/branch without resetting or rebasing it.
+4. Source changes after materialization — if a mount keeps the same `dst` but changes `src`, should `load` hard-error until purge to avoid hiding old WIP?
+5. Branch reuse — confirm that first materialization branches from host `HEAD`, while later loads reuse the existing worktree/branch without resetting or rebasing it.
 
 ## Related Files
 
