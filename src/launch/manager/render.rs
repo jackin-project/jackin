@@ -609,11 +609,8 @@ fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::worksp
             Style::default().fg(PHOSPHOR_DIM),
         )));
     } else {
-        // TODO: labeled_hyperlink() emits OSC 8 ESC sequences which ratatui's
-        // Paragraph widget may strip or render as garbage (it doesn't pass raw
-        // bytes through). Until there is a raw-terminal-write path, fall back
-        // to label() (plain text). The hyperlink infrastructure is wired up in
-        // MountKind::labeled_hyperlink() for future use.
+        // Plain-text labels — the operator uses the `o` key on a selected
+        // mount row to open the GitHub URL in a real browser instead.
         let rows = format_mount_rows(mounts);
         let path_w = mount_path_width(&rows);
         lines.push(render_mount_header(path_w));
@@ -653,11 +650,6 @@ fn render_agents_subpanel(
         )));
     } else {
         let default = ws_config.and_then(|w| w.default_agent.as_deref());
-        // TODO: agent names could link to the agent's source repository on
-        // GitHub via OSC 8 hyperlinks, but ratatui's Paragraph widget strips
-        // those escape sequences. Until there is a raw-terminal-write path,
-        // fall back to plain text — same limitation as render_mounts_subpanel's
-        // labeled_hyperlink() TODO above.
         // Show only allowed agents that exist in the global config (consistent
         // with the editor view). Fall back to listing all allowed names if the
         // agent is no longer registered globally.

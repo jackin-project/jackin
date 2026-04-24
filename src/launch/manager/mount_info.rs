@@ -207,17 +207,6 @@ fn remote_to_web(remote: &str) -> Option<String> {
     None
 }
 
-/// Wrap `text` in OSC 8 hyperlink escape codes targeting `url`.
-/// Unsupported terminals display just `text` (the escapes are invisible).
-///
-/// NOTE: currently unused from the ratatui render path because `Paragraph`
-/// strips raw ESC bytes. Kept for future use when a raw-terminal-write path
-/// becomes available.
-#[allow(dead_code)]
-fn osc8_link(url: &str, text: &str) -> String {
-    format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\")
-}
-
 impl MountKind {
     /// Short label for display next to a mount. GitHub-hosted repos use a
     /// `github · …` prefix so the operator can tell at a glance which
@@ -241,37 +230,6 @@ impl MountKind {
                     GitBranch::Unknown => prefix.to_string(),
                 }
             }
-        }
-    }
-
-    /// Label with branch as OSC 8 hyperlink if possible.
-    /// Falls back to plain label when no web URL resolved.
-    ///
-    /// NOTE: Ratatui's Paragraph widget may strip or mangle the ESC bytes
-    /// from OSC 8 sequences when measuring/rendering text. If rendered output
-    /// shows escape garbage, fall back to `label()` — we cannot fix this at
-    /// the ratatui layer without raw terminal writes.
-    ///
-    /// Currently unused from the render path for the above reason; wired up
-    /// for future use once a raw-terminal-write path exists.
-    #[allow(dead_code)]
-    pub fn labeled_hyperlink(&self) -> String {
-        match self {
-            Self::Git {
-                branch: GitBranch::Named(b),
-                host: GitHost::Github,
-                web_url: Some(url),
-            } => {
-                format!("github · {}", osc8_link(url, b))
-            }
-            Self::Git {
-                branch: GitBranch::Detached { short_sha },
-                host: GitHost::Github,
-                web_url: Some(url),
-            } => {
-                format!("github · detached {}", osc8_link(url, short_sha))
-            }
-            _ => self.label(),
         }
     }
 }
