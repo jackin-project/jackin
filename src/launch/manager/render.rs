@@ -91,10 +91,24 @@ fn render_header(frame: &mut Frame, area: Rect, title: &str) {
 }
 
 fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>, config: &AppConfig) {
+    // Compute content height: list items + sentinel + block borders.
+    // workspaces.len() + 1 (sentinel) + 2 (top & bottom border) = rows.
+    let content_rows = (state.workspaces.len() as u16 + 1 + 2).min(area.height.saturating_sub(1));
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(content_rows),
+            Constraint::Min(0), // rest is empty
+        ])
+        .split(area);
+
+    let content_area = rows[0];
+
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-        .split(area);
+        .split(content_area);
 
     // Left: list of workspaces + [+ New workspace] sentinel.
     let mut items: Vec<ListItem> = state
@@ -672,7 +686,7 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
 
     // Column header
     let header = Line::from(Span::styled(
-        "  allowed?  ·  default  ·  agent",
+        "  allowed?  ·  agent",
         Style::default().fg(WHITE),
     ));
 
@@ -686,7 +700,7 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
         let check = if allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };
         let prefix = if selected { "▸ " } else { "  " };
-        let text = format!("{prefix}{check}          {star}        {agent_name}");
+        let text = format!("{prefix}{check}    {star} {agent_name}");
         let style = if selected {
             Style::default()
                 .fg(PHOSPHOR_GREEN)
