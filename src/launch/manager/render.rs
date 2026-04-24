@@ -10,7 +10,8 @@ use ratatui::{
 
 use super::super::widgets::{confirm, file_browser, text_input, workdir_pick};
 use super::state::{
-    EditorMode, EditorState, EditorTab, ManagerStage, ManagerState, Modal, WorkspaceSummary,
+    EditorMode, EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, Modal,
+    WorkspaceSummary,
 };
 use crate::config::AppConfig;
 
@@ -301,6 +302,8 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
 
+    let FieldFocus::Row(cursor) = state.active_field;
+
     let name_dirty = match &state.mode {
         EditorMode::Edit { name } => state.pending_name.as_deref().is_some_and(|n| n != name),
         EditorMode::Create => false,
@@ -311,43 +314,63 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     };
 
     let rows = vec![
-        render_field_row("name", name_value, name_dirty),
-        render_field_row(
+        render_editor_row(0, cursor, "name", name_value, name_dirty),
+        render_editor_row(
+            1,
+            cursor,
             "workdir",
             &state.pending.workdir,
             state.pending.workdir != state.original.workdir,
         ),
-        render_field_row(
+        render_editor_row(
+            2,
+            cursor,
             "default agent",
             state.pending.default_agent.as_deref().unwrap_or("(none)"),
             state.pending.default_agent != state.original.default_agent,
         ),
-        Line::from(vec![
-            Span::styled("  last used      ", Style::default().fg(WHITE)),
-            Span::styled(
-                state
-                    .original
-                    .last_agent
-                    .clone()
-                    .unwrap_or_else(|| "(none)".to_string()),
-                Style::default().fg(PHOSPHOR_DIM),
-            ),
-            Span::styled(
-                " (read-only)",
-                Style::default()
-                    .fg(PHOSPHOR_DIM)
-                    .add_modifier(Modifier::ITALIC),
-            ),
-        ]),
+        render_editor_readonly_row(
+            3,
+            cursor,
+            "last used",
+            state
+                .original
+                .last_agent
+                .as_deref()
+                .unwrap_or("(none)"),
+        ),
     ];
     frame.render_widget(Paragraph::new(rows).block(block), area);
 }
 
-fn render_field_row(label: &str, value: &str, dirty: bool) -> Line<'static> {
-    let mut spans = vec![
-        Span::styled(format!("  {label:15}"), Style::default().fg(WHITE)),
-        Span::raw(value.to_string()),
-    ];
+/// Render a field row with cursor highlight when `row == cursor`.
+fn render_editor_row(
+    row: usize,
+    cursor: usize,
+    label: &str,
+    value: &str,
+    dirty: bool,
+) -> Line<'static> {
+    let selected = row == cursor;
+    let prefix = if selected { "▸ " } else { "  " };
+    let mut spans = vec![Span::styled(
+        format!("{prefix}{label:15}"),
+        if selected {
+            Style::default()
+                .fg(PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(WHITE)
+        },
+    )];
+    let value_style = if selected {
+        Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(PHOSPHOR_GREEN)
+    };
+    spans.push(Span::styled(value.to_string(), value_style));
     if dirty {
         spans.push(Span::styled(
             "    ● unsaved",
@@ -357,21 +380,62 @@ fn render_field_row(label: &str, value: &str, dirty: bool) -> Line<'static> {
     Line::from(spans)
 }
 
+fn render_editor_readonly_row(
+    row: usize,
+    cursor: usize,
+    label: &str,
+    value: &str,
+) -> Line<'static> {
+    let selected = row == cursor;
+    let prefix = if selected { "▸ " } else { "  " };
+    Line::from(vec![
+        Span::styled(
+            format!("{prefix}{label:15}"),
+            if selected {
+                Style::default()
+                    .fg(PHOSPHOR_DIM)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(PHOSPHOR_DIM)
+            },
+        ),
+        Span::styled(value.to_string(), Style::default().fg(PHOSPHOR_DIM)),
+        Span::styled(
+            " (read-only)",
+            Style::default()
+                .fg(PHOSPHOR_DIM)
+                .add_modifier(Modifier::ITALIC),
+        ),
+    ])
+}
+
 fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
+    let FieldFocus::Row(cursor) = state.active_field;
     let mut lines: Vec<Line> = state
         .pending
         .mounts
         .iter()
-        .map(|m| {
+        .enumerate()
+        .map(|(i, m)| {
+            let selected = i == cursor;
+            let prefix = if selected { "▸ " } else { "  " };
             let ro = if m.readonly { " (ro)" } else { " (rw)" };
-            Line::from(format!("  {} → {}{}", m.src, m.dst, ro))
+            let text = format!("{prefix}{} → {}{}", m.src, m.dst, ro);
+            let style = if selected {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(PHOSPHOR_GREEN)
+            };
+            Line::from(Span::styled(text, style))
         })
         .collect();
     lines.push(Line::from(Span::styled(
-        "  + Add mount    − Remove selected",
+        "  + Add (a)    − Remove selected (d)",
         Style::default()
             .fg(PHOSPHOR_DIM)
             .add_modifier(Modifier::ITALIC),
@@ -383,19 +447,29 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
+    let FieldFocus::Row(cursor) = state.active_field;
     let header = Line::from(Span::styled(
         "  allowed? · default ·  agent",
         Style::default().fg(WHITE),
     ));
     let mut lines = vec![header];
-    for agent_name in config.agents.keys() {
+    for (i, (agent_name, _)) in config.agents.iter().enumerate() {
+        let row_idx = i + 1; // row 0 is the header
+        let selected = row_idx == cursor;
         let allowed = state.pending.allowed_agents.contains(agent_name);
         let is_default = state.pending.default_agent.as_deref() == Some(agent_name.as_str());
         let check = if allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };
-        lines.push(Line::from(format!(
-            "  {check}          {star}        {agent_name}"
-        )));
+        let prefix = if selected { "▸ " } else { "  " };
+        let text = format!("{prefix}{check}          {star}        {agent_name}");
+        let style = if selected {
+            Style::default()
+                .fg(PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(PHOSPHOR_GREEN)
+        };
+        lines.push(Line::from(Span::styled(text, style)));
     }
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }

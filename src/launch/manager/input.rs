@@ -248,7 +248,8 @@ fn handle_editor_key(
         }
         KeyCode::Down | KeyCode::Char('j') => {
             let FieldFocus::Row(n) = editor.active_field;
-            editor.active_field = FieldFocus::Row(n + 1);
+            let max = max_row_for_tab(editor, config);
+            editor.active_field = FieldFocus::Row((n + 1).min(max));
         }
         KeyCode::Enter => {
             open_editor_field_modal(editor);
@@ -271,6 +272,16 @@ fn handle_editor_key(
         _ => {}
     }
     Ok(InputOutcome::Continue)
+}
+
+/// Returns the highest valid `FieldFocus::Row` index for the current tab.
+fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
+    match editor.active_tab {
+        EditorTab::General => 3, // name, workdir, default_agent, last_used
+        EditorTab::Mounts => editor.pending.mounts.len().saturating_sub(1),
+        EditorTab::Agents => config.agents.len(), // rows 1..=N; 0 is the header
+        EditorTab::Secrets => 0,
+    }
 }
 
 fn open_editor_field_modal(editor: &mut EditorState<'_>) {
