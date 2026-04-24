@@ -57,12 +57,25 @@ If the selected workspace has:
 
 ## When to use the console vs `load`
 
-| | `jackin` / `jackin console` | `jackin load` |
+`jackin console` is the simplified, intuitive TUI for everyday
+workspace launches. [`jackin load`](/commands/load/) is the full-surface
+CLI — together with its neighbours (`hardline`, `eject`, `exile`,
+`purge`, `workspace`, `config`) it exposes every flag and capability
+jackin offers.
+
+The console intentionally stays narrower. **New niche flags and
+detail-level options land on the CLI first, and sometimes exclusively.**
+The console surfaces only what fits into an intuitive flow — treat it
+as a fast path for the common cases, not as a visual alias for the CLI.
+
+| | `jackin console` | `jackin load` |
 |---|---|---|
 | **Interface** | Visual TUI | Command-line arguments |
-| **Best for** | Exploring options, first-time setup | Scripting, repeatable workflows |
+| **Best for** | Exploring options, first-time setup, day-to-day launches | Scripting, repeatable workflows, feature-specific flags |
 | **Workspace selection** | Interactive picker | Explicit argument |
 | **Agent selection** | Interactive picker | Explicit argument |
+| **Feature surface** | Simplified — common flows only | Complete — every flag jackin exposes |
+| **Where new niche flags land** | Rarely | First, and sometimes exclusively |
 
 <Aside type="tip">
 The older spelling `jackin launch` still works but is deprecated and
