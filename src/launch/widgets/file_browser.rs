@@ -159,7 +159,7 @@ impl FileBrowserState {
                     if !files.is_empty() && highlighted.is_dir && !is_parent_link {
                         highlighted.path.clone()
                     } else {
-                        cwd.clone()
+                        cwd
                     }
                 };
 
@@ -295,7 +295,7 @@ mod tests {
             .unwrap();
         FileBrowserState {
             explorer,
-            root: path.clone(),
+            root: path,
             rejected_reason: None,
         }
     }

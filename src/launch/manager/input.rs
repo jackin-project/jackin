@@ -9,8 +9,8 @@ use super::super::widgets::{
     workdir_pick::WorkdirPickState,
 };
 use super::state::{
-    EditorMode, EditorState, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget, ManagerStage,
-    ManagerState, Modal, Toast, ToastKind,
+    ConfirmTarget, EditorMode, EditorState, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
+    ManagerStage, ManagerState, Modal, Toast, ToastKind,
 };
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -24,6 +24,7 @@ pub enum InputOutcome {
     LaunchNamed(String),
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn handle_key(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
@@ -59,6 +60,16 @@ pub fn handle_key(
                             }
                         }
                     }
+                }
+                ExitIntent::RetrySave => {
+                    // Collapse-confirm flow: operator approved, re-enter the
+                    // save path with `collapse_approved` set so the plan
+                    // commits. Stay in the editor on success — this is a
+                    // regular save, not an exit.
+                    if let ManagerStage::Editor(e) = &mut state.stage {
+                        e.exit_after_save = None;
+                    }
+                    save_editor(state, config, paths)?;
                 }
                 ExitIntent::Discard => {
                     *state = ManagerState::from_config(config);
@@ -399,6 +410,7 @@ fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn save_editor(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
@@ -407,7 +419,12 @@ fn save_editor(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
     };
-    let mut ce = crate::config::ConfigEditor::open(paths)?;
+
+    // Capture and clear the operator's prior approval for this save cycle.
+    // Cleared up front so any return path leaves the editor in a known state;
+    // the save will re-request approval on the next `s` press.
+    let collapse_approved = editor.collapse_approved;
+    editor.collapse_approved = false;
 
     // Discriminate first so we can mutate editor fields inside each arm
     // without a live borrow on editor.mode.
@@ -422,6 +439,101 @@ fn save_editor(
         },
         EditorMode::Create => SaveMode::Create,
     };
+
+    // --- Collapse planning (must precede any write) ---
+    //
+    // Both `plan_edit` and `plan_create` are pure; they tell us whether this
+    // save will silently subsume any mounts. We classify the result into:
+    // - Ok, no collapse: proceed.
+    // - CollapseError: show banner, abort.
+    // - Pre-existing collapses only: show banner mentioning `workspace prune`.
+    // - Edit-driven collapses: open Confirm modal; rerun save on approval.
+    match &save_mode {
+        SaveMode::Edit { original_name } => {
+            let Some(current_ws) = config.workspaces.get(original_name).cloned() else {
+                editor.error_banner = Some(format!(
+                    "workspace {original_name:?} no longer exists in config"
+                ));
+                return Ok(());
+            };
+            let edit_delta = build_workspace_edit(&editor.original, &editor.pending);
+            match crate::workspace::planner::plan_edit(
+                &current_ws,
+                &edit_delta.upsert_mounts,
+                &edit_delta.remove_destinations,
+                false,
+            ) {
+                Err(e) => {
+                    editor.error_banner = Some(e.to_string());
+                    return Ok(());
+                }
+                Ok(plan) => {
+                    if plan.edit_driven_collapses.is_empty()
+                        && !plan.pre_existing_collapses.is_empty()
+                    {
+                        let details: Vec<String> = plan
+                            .pre_existing_collapses
+                            .iter()
+                            .map(|r| {
+                                format!(
+                                    "{} covered by {}",
+                                    crate::tui::shorten_home(&r.child.src),
+                                    crate::tui::shorten_home(&r.covered_by.src),
+                                )
+                            })
+                            .collect();
+                        editor.error_banner = Some(format!(
+                            "pre-existing redundant mount(s) in this workspace: {}; \
+                             run `jackin workspace prune {original_name}` to clean up",
+                            details.join(", "),
+                        ));
+                        return Ok(());
+                    }
+                    if !plan.edit_driven_collapses.is_empty() && !collapse_approved {
+                        editor.modal = Some(Modal::Confirm {
+                            target: ConfirmTarget::SaveCollapse,
+                            state: ConfirmState::new(collapse_confirm_prompt(
+                                &plan.edit_driven_collapses,
+                            )),
+                        });
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        SaveMode::Create => {
+            let Some(name) = editor.pending_name.clone() else {
+                editor.error_banner = Some("missing workspace name".into());
+                return Ok(());
+            };
+            match crate::workspace::planner::plan_create(
+                &editor.pending.workdir,
+                editor.pending.mounts.clone(),
+                false,
+            ) {
+                Err(e) => {
+                    editor.error_banner = Some(e.to_string());
+                    return Ok(());
+                }
+                Ok(plan) => {
+                    if !plan.collapsed.is_empty() && !collapse_approved {
+                        editor.modal = Some(Modal::Confirm {
+                            target: ConfirmTarget::SaveCollapse,
+                            state: ConfirmState::new(collapse_confirm_prompt(&plan.collapsed)),
+                        });
+                        return Ok(());
+                    }
+                    // Stash the collapsed mount set on pending so the actual
+                    // write below persists the collapsed form.
+                    editor.pending.mounts = plan.final_mounts;
+                    // Keep pending_name consistent for the later save.
+                    let _ = name;
+                }
+            }
+        }
+    }
+
+    let mut ce = crate::config::ConfigEditor::open(paths)?;
 
     match save_mode {
         SaveMode::Edit { original_name } => {
@@ -442,7 +554,31 @@ fn save_editor(
                 editor.mode = EditorMode::Edit { name: new_name };
             }
 
-            let edit = build_workspace_edit(&editor.original, &editor.pending);
+            // Recompute plan_edit against the (possibly-renamed) current
+            // config to pick up effective_removals — this folds collapsed
+            // children into the remove list so AppConfig::edit_workspace's
+            // internal rule-C check passes.
+            let current_ws_for_removals = config
+                .workspaces
+                .get(&original_name)
+                .cloned()
+                .expect("current_ws existed above; planner pass can't have deleted it");
+            let mut edit = build_workspace_edit(&editor.original, &editor.pending);
+            match crate::workspace::planner::plan_edit(
+                &current_ws_for_removals,
+                &edit.upsert_mounts,
+                &edit.remove_destinations,
+                false,
+            ) {
+                Ok(plan) => {
+                    edit.remove_destinations = plan.effective_removals;
+                }
+                Err(e) => {
+                    editor.error_banner = Some(e.to_string());
+                    return Ok(());
+                }
+            }
+
             if let Err(e) = ce.edit_workspace(&current_name, edit) {
                 editor.error_banner = Some(e.to_string());
                 return Ok(());
@@ -491,6 +627,25 @@ fn save_editor(
         }
     }
     Ok(())
+}
+
+/// Build the Confirm-modal prompt for a mount-collapse plan. Mirrors the
+/// CLI wording in `src/app/mod.rs` so operators who move between the CLI
+/// and the TUI see familiar text.
+fn collapse_confirm_prompt(collapses: &[crate::workspace::Removal]) -> String {
+    use std::fmt::Write as _;
+    let mut prompt = format!(
+        "Adding mount(s) will subsume {} existing mount(s):",
+        collapses.len()
+    );
+    for r in collapses {
+        let child = crate::tui::shorten_home(&r.child.src);
+        let parent = crate::tui::shorten_home(&r.covered_by.src);
+        // write! into a String cannot fail.
+        write!(prompt, "\n  {child} covered by {parent}").ok();
+    }
+    prompt.push_str("\nProceed?");
+    prompt
 }
 
 fn build_workspace_edit(
@@ -612,12 +767,27 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             }
             ModalOutcome::Continue => {}
         },
-        Modal::Confirm { state, .. } => match state.handle_key(key) {
-            ModalOutcome::Commit(_) | ModalOutcome::Cancel => {
-                editor.modal = None;
+        Modal::Confirm { target, state } => {
+            let target = *target;
+            match state.handle_key(key) {
+                ModalOutcome::Commit(confirmed) => {
+                    editor.modal = None;
+                    if target == ConfirmTarget::SaveCollapse && confirmed {
+                        // Operator approved the collapse plan — re-enter the
+                        // save path with `collapse_approved` set so the
+                        // planner's pre-check passes and the write proceeds.
+                        editor.collapse_approved = true;
+                        editor.exit_after_save = Some(ExitIntent::RetrySave);
+                    }
+                    // confirmed==false OR non-SaveCollapse target: just close
+                    // the modal and return to the editor unchanged.
+                }
+                ModalOutcome::Cancel => {
+                    editor.modal = None;
+                }
+                ModalOutcome::Continue => {}
             }
-            ModalOutcome::Continue => {}
-        },
+        }
         Modal::SaveDiscardCancel { state: modal_state } => {
             use crate::launch::widgets::save_discard::SaveDiscardChoice;
             match modal_state.handle_key(key) {
@@ -829,5 +999,289 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
             }
         }
         PreludeModalDis::Other => {}
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_lines)]
+mod tests {
+    //! Tests for the mount-collapse confirm flow in `save_editor`.
+    //!
+    //! These exercise the editor-side integration of
+    //! `workspace::planner::plan_edit`: the editor must intercept collapse
+    //! decisions before calling into `ConfigEditor::edit_workspace`, prompt
+    //! the operator, and write only on approval.
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::launch::manager::state::ManagerState;
+    use crate::paths::JackinPaths;
+    use crate::workspace::{MountConfig, WorkspaceConfig};
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use tempfile::TempDir;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    fn mount(src: &str, dst: &str) -> MountConfig {
+        MountConfig {
+            src: src.into(),
+            dst: dst.into(),
+            readonly: false,
+        }
+    }
+
+    fn ro_mount(src: &str, dst: &str) -> MountConfig {
+        MountConfig {
+            src: src.into(),
+            dst: dst.into(),
+            readonly: true,
+        }
+    }
+
+    /// Persist an `AppConfig` with one workspace to a test `JackinPaths`.
+    fn setup_with_workspace(
+        name: &str,
+        ws: WorkspaceConfig,
+    ) -> anyhow::Result<(TempDir, JackinPaths, AppConfig)> {
+        let tmp = tempfile::tempdir()?;
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs()?;
+
+        let mut config = AppConfig::default();
+        config.workspaces.insert(name.to_string(), ws);
+        let toml = toml::to_string(&config)?;
+        std::fs::write(&paths.config_file, toml)?;
+
+        let reloaded = AppConfig::load_or_init(&paths)?;
+        Ok((tmp, paths, reloaded))
+    }
+
+    #[test]
+    fn save_editor_opens_confirm_on_edit_driven_collapse() {
+        // Existing workspace with /work/sub; operator adds /work which
+        // subsumes the child. Expected: Confirm modal opens, no write yet.
+        let ws = WorkspaceConfig {
+            workdir: "/work/sub".into(),
+            mounts: vec![mount("/work/sub", "/work/sub")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
+
+        let mut state = ManagerState::from_config(&config);
+        let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
+        // Add the /work parent to pending mounts — this is the edit-driven
+        // case.
+        editor.pending.mounts.insert(0, mount("/work", "/work"));
+        state.stage = ManagerStage::Editor(editor);
+
+        save_editor(&mut state, &mut config, &paths).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            matches!(
+                e.modal,
+                Some(Modal::Confirm {
+                    target: ConfirmTarget::SaveCollapse,
+                    ..
+                })
+            ),
+            "expected SaveCollapse confirm modal; got {:?}",
+            e.modal
+        );
+        assert!(e.error_banner.is_none(), "no error banner expected");
+        // The on-disk config should not have been touched yet.
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        let ws_on_disk = reloaded.workspaces.get("big-monorepo").unwrap();
+        assert_eq!(
+            ws_on_disk.mounts.len(),
+            1,
+            "write must be deferred until confirm"
+        );
+    }
+
+    #[test]
+    fn confirming_collapse_writes_collapsed_set() {
+        // Same setup, then simulate Y press on the confirm modal — this
+        // should approve and re-run save_editor, committing the collapsed
+        // mount set.
+        let ws = WorkspaceConfig {
+            workdir: "/work/sub".into(),
+            mounts: vec![mount("/work/sub", "/work/sub")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
+
+        let mut state = ManagerState::from_config(&config);
+        let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
+        editor.pending.mounts.insert(0, mount("/work", "/work"));
+        state.stage = ManagerStage::Editor(editor);
+
+        // Step 1: first save opens the confirm modal.
+        save_editor(&mut state, &mut config, &paths).unwrap();
+
+        // Step 2: deliver Y through the modal path. We call handle_key which
+        // routes through handle_editor_modal → SaveCollapse approval →
+        // RetrySave intent → save_editor re-entry.
+        handle_key(&mut state, &mut config, &paths, key(KeyCode::Char('y'))).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.modal.is_none(),
+            "modal should be closed after approval; got {:?}",
+            e.modal
+        );
+        assert!(
+            e.error_banner.is_none(),
+            "save should have succeeded: {:?}",
+            e.error_banner
+        );
+
+        // On-disk config now contains only the collapsed parent.
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        let ws_on_disk = reloaded.workspaces.get("big-monorepo").unwrap();
+        assert_eq!(ws_on_disk.mounts.len(), 1);
+        assert_eq!(ws_on_disk.mounts[0].dst, "/work");
+    }
+
+    #[test]
+    fn cancelling_collapse_keeps_pending_mounts_intact() {
+        let ws = WorkspaceConfig {
+            workdir: "/work/sub".into(),
+            mounts: vec![mount("/work/sub", "/work/sub")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
+
+        let mut state = ManagerState::from_config(&config);
+        let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
+        editor.pending.mounts.insert(0, mount("/work", "/work"));
+        state.stage = ManagerStage::Editor(editor);
+
+        save_editor(&mut state, &mut config, &paths).unwrap();
+
+        // Press N — cancel the collapse.
+        handle_key(&mut state, &mut config, &paths, key(KeyCode::Char('n'))).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(e.modal.is_none(), "modal should close on cancel");
+        assert_eq!(
+            e.pending.mounts.len(),
+            2,
+            "pending mounts stay so operator can fix by hand"
+        );
+        assert!(!e.collapse_approved, "approval flag must be clear");
+
+        // On-disk config unchanged.
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        let ws_on_disk = reloaded.workspaces.get("big-monorepo").unwrap();
+        assert_eq!(ws_on_disk.mounts.len(), 1);
+    }
+
+    #[test]
+    fn readonly_mismatch_produces_error_banner_no_write() {
+        // Add a rw /work that would subsume an existing ro /work/sub —
+        // plan_edit must reject with ReadonlyMismatch.
+        let ws = WorkspaceConfig {
+            workdir: "/work/sub".into(),
+            mounts: vec![ro_mount("/work/sub", "/work/sub")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
+
+        let mut state = ManagerState::from_config(&config);
+        let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
+        editor.pending.mounts.insert(0, mount("/work", "/work")); // rw
+        state.stage = ManagerStage::Editor(editor);
+
+        save_editor(&mut state, &mut config, &paths).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(e.modal.is_none(), "no modal for hard errors");
+        let banner = e
+            .error_banner
+            .as_deref()
+            .expect("readonly mismatch should produce banner");
+        assert!(
+            banner.contains("readonly"),
+            "banner should mention readonly: {banner}"
+        );
+        // On-disk config unchanged.
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        let ws_on_disk = reloaded.workspaces.get("big-monorepo").unwrap();
+        assert_eq!(ws_on_disk.mounts.len(), 1);
+    }
+
+    #[test]
+    fn pre_existing_collapse_produces_prune_error_banner() {
+        // Workspace already has overlapping mounts. Operator opens editor
+        // and saves without mount changes — plan_edit reports
+        // pre_existing_collapses; no write, error banner references prune.
+        let ws = WorkspaceConfig {
+            workdir: "/work".into(),
+            mounts: vec![
+                mount("/work", "/work"),
+                mount("/work/sub", "/work/sub"), // already redundant
+            ],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) =
+            setup_with_workspace("legacy-workspace", ws.clone()).unwrap();
+
+        let mut state = ManagerState::from_config(&config);
+        let editor = EditorState::new_edit("legacy-workspace".into(), ws);
+        state.stage = ManagerStage::Editor(editor);
+
+        save_editor(&mut state, &mut config, &paths).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(e.modal.is_none(), "no confirm for pre-existing-only case");
+        let banner = e
+            .error_banner
+            .as_deref()
+            .expect("pre-existing collapse should produce banner");
+        assert!(
+            banner.contains("prune"),
+            "banner should reference `workspace prune`: {banner}"
+        );
+        assert!(
+            banner.contains("legacy-workspace"),
+            "banner should name the workspace: {banner}"
+        );
     }
 }

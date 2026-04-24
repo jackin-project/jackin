@@ -169,6 +169,16 @@ const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 
+/// Height (rows) this Confirm modal wants, given its current prompt text.
+/// Layout is: N prompt lines + 1 spacer + 1 buttons + 1 spacer + 1 hint.
+/// Callers use this to size the surrounding modal rect.
+#[must_use]
+pub fn required_height(state: &ConfirmState) -> u16 {
+    let prompt_lines = state.prompt.lines().count().max(1) as u16;
+    // Fixed chrome: top/bottom border (2) + spacer + buttons + spacer + hint (4).
+    prompt_lines + 6
+}
+
 pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     // Outer block
     let block = Block::default()
@@ -182,29 +192,33 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // Vertical layout inside the inner rect:
-    //   prompt (1)
-    //   spacer (1)
-    //   button row (1)
-    //   spacer between buttons and hint (1)
-    //   footer hint (1)
+    // Vertical layout inside the inner rect. The prompt area grows with the
+    // number of lines in `state.prompt` so multi-line confirmations (e.g.
+    // the mount-collapse prompt) render without clipping.
+    let prompt_lines = state.prompt.lines().count().max(1) as u16;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // prompt
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // button row
-            Constraint::Length(1), // spacer between buttons and hint
-            Constraint::Length(1), // footer hint
+            Constraint::Length(prompt_lines), // prompt (may span multiple lines)
+            Constraint::Length(1),            // spacer
+            Constraint::Length(1),            // button row
+            Constraint::Length(1),            // spacer between buttons and hint
+            Constraint::Length(1),            // footer hint
         ])
         .split(inner);
 
-    // Prompt
-    let prompt = Paragraph::new(Span::styled(
-        state.prompt.clone(),
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    ))
-    .alignment(Alignment::Center);
+    // Prompt — render each line in turn so centering applies per-line.
+    let prompt_lines_vec: Vec<Line> = state
+        .prompt
+        .lines()
+        .map(|l| {
+            Line::from(Span::styled(
+                l.to_string(),
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            ))
+        })
+        .collect();
+    let prompt = Paragraph::new(prompt_lines_vec).alignment(Alignment::Center);
     frame.render_widget(prompt, chunks[0]);
 
     // Button row — focused button gets brighter styling (white bg),

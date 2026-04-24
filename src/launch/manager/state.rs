@@ -53,6 +53,11 @@ pub struct EditorState<'a> {
     /// Set by the `SaveDiscardCancel` modal handler to signal that the outer
     /// `handle_key` should perform a save and/or navigate to List.
     pub exit_after_save: Option<ExitIntent>,
+    /// Set to `true` when the operator has confirmed a mount-collapse plan
+    /// via the `ConfirmTarget::SaveCollapse` modal. Tells `save_editor` to
+    /// skip the "should I prompt?" check and proceed to write. Cleared on
+    /// every save path exit.
+    pub collapse_approved: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -112,12 +117,19 @@ pub enum FileBrowserTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmTarget {
     DeleteWorkspace,
+    /// Operator must confirm the plan returned by `plan_edit`/`plan_create`
+    /// will collapse one or more redundant mounts before save writes.
+    SaveCollapse,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitIntent {
     Save,
     Discard,
+    /// Operator approved a mount-collapse plan. Re-run `save_editor` in
+    /// place — stay in the editor on success (mirroring a normal `s`
+    /// press) rather than transitioning to the workspace list.
+    RetrySave,
 }
 
 #[derive(Debug)]
@@ -196,6 +208,7 @@ impl EditorState<'_> {
             error_banner: None,
             pending_name: None,
             exit_after_save: None,
+            collapse_approved: false,
         }
     }
 
@@ -219,6 +232,7 @@ impl EditorState<'_> {
             error_banner: None,
             pending_name: None,
             exit_after_save: None,
+            collapse_approved: false,
         }
     }
 

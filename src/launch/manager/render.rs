@@ -772,7 +772,9 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
     // lists get a taller one.
     let (pct_w, height_rows) = match modal {
         Modal::TextInput { .. } => (60, 5), // label + input + hint = 5 rows
-        Modal::Confirm { .. } => (60, 7),   // prompt + spacer + buttons + spacer + hint = 7 rows
+        // Confirm height varies with prompt length (e.g. the mount-collapse
+        // prompt lists each child/parent pair on its own line).
+        Modal::Confirm { state, .. } => (60, confirm::required_height(state)),
         Modal::SaveDiscardCancel { .. } => (70, 7), // three buttons — a bit wider
         Modal::FileBrowser { .. } => (70, 70), // dialog-sized — 70%×70% lets chrome show around it
         Modal::WorkdirPick { .. } => (60, 12), // ~6 choices + title + hint
