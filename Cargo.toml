@@ -39,6 +39,7 @@ ratatui-explorer = "0.3"
 tui-widget-list = "0.15"
 dialoguer = "0.12"
 tabled = "0.20.0"
+open = "5.3.4"
 
 [dev-dependencies]
 assert_cmd = "2.0"

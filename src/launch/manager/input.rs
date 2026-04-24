@@ -364,6 +364,43 @@ fn handle_editor_key(
         KeyCode::Char('d') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
         }
+        KeyCode::Char('o') if editor.active_tab == EditorTab::Mounts => {
+            // Open the highlighted mount's GitHub URL in the system browser.
+            // Silent no-op when the cursor is on the `+ Add mount` sentinel,
+            // or when the row's MountKind doesn't expose a resolvable URL
+            // (non-GitHub remotes, repos without `origin`, plain folders).
+            // On non-GitHub mounts we emit a toast so the hint is discoverable.
+            let FieldFocus::Row(n) = editor.active_field;
+            if let Some(m) = editor.pending.mounts.get(n) {
+                let kind = super::mount_info::inspect(&m.src);
+                match kind {
+                    super::mount_info::MountKind::Git {
+                        host: super::mount_info::GitHost::Github,
+                        web_url: Some(url),
+                        ..
+                    } => {
+                        // End the editor borrow before we set `state.toast`.
+                        if let Err(e) = open::that_detached(&url) {
+                            state.toast = Some(Toast {
+                                message: format!("failed to open URL: {e}"),
+                                kind: ToastKind::Error,
+                                shown_at: std::time::Instant::now(),
+                            });
+                        }
+                    }
+                    super::mount_info::MountKind::Git { .. }
+                    | super::mount_info::MountKind::Folder
+                    | super::mount_info::MountKind::Missing => {
+                        state.toast = Some(Toast {
+                            message: "no GitHub URL for this mount".into(),
+                            kind: ToastKind::Error,
+                            shown_at: std::time::Instant::now(),
+                        });
+                    }
+                }
+            }
+            // Sentinel row (n == mounts.len()): silent no-op.
+        }
         _ => {}
     }
     Ok(InputOutcome::Continue)

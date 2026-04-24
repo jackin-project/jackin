@@ -758,13 +758,32 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
         EditorTab::Mounts => {
             let mount_count = state.pending.mounts.len();
             if cursor < mount_count {
-                vec![
+                let mut items = vec![
                     FooterItem::Key("d"),
                     FooterItem::Text("remove"),
                     FooterItem::Sep,
                     FooterItem::Key("a"),
                     FooterItem::Text("add"),
-                ]
+                ];
+                // Surface `o open in GitHub` when the cursor is on a mount
+                // whose source resolves to a GitHub-hosted git repo with a
+                // web URL. Editor-only — the list view's mounts pane is
+                // a preview, not a focus target.
+                if let Some(m) = state.pending.mounts.get(cursor)
+                    && matches!(
+                        super::mount_info::inspect(&m.src),
+                        super::mount_info::MountKind::Git {
+                            host: super::mount_info::GitHost::Github,
+                            web_url: Some(_),
+                            ..
+                        }
+                    )
+                {
+                    items.push(FooterItem::Sep);
+                    items.push(FooterItem::Key("o"));
+                    items.push(FooterItem::Text("open in GitHub"));
+                }
+                items
             } else {
                 // Sentinel "+ Add mount" row
                 vec![
@@ -1390,5 +1409,113 @@ mod mount_table_tests {
             s.contains("mode  type"),
             "expected 'mode  type' (two spaces between mode and type); got {s:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod contextual_row_items_tests {
+    //! Row-specific footer-hint composition for the editor tabs.
+
+    use super::{EditorState, FieldFocus, FooterItem, contextual_row_items};
+    use crate::launch::manager::state::EditorTab;
+    use crate::workspace::{MountConfig, WorkspaceConfig};
+
+    /// Collect every `FooterItem::Text` label from a hint list.
+    fn text_labels(items: &[FooterItem]) -> Vec<&str> {
+        items
+            .iter()
+            .filter_map(|it| {
+                if let FooterItem::Text(t) = it {
+                    Some(*t)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Collect every `FooterItem::Key` glyph from a hint list.
+    fn key_glyphs(items: &[FooterItem]) -> Vec<&str> {
+        items
+            .iter()
+            .filter_map(|it| {
+                if let FooterItem::Key(k) = it {
+                    Some(*k)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Build an editor state sitting on the Mounts tab with a single mount
+    /// pointing at `src`. The cursor is on row 0 (the mount we just added).
+    fn editor_at_mounts_row0(src: &str) -> EditorState<'static> {
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![MountConfig {
+                src: src.to_string(),
+                dst: src.to_string(),
+                readonly: false,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Mounts;
+        editor.active_field = FieldFocus::Row(0);
+        editor
+    }
+
+    #[test]
+    fn github_mount_row_includes_open_in_github_hint() {
+        // Build a synthetic GitHub repo on-disk so `mount_info::inspect`
+        // classifies the source as `MountKind::Git { host: Github, web_url: Some }`.
+        let tmp = tempfile::tempdir().unwrap();
+        let git_dir = tmp.path().join(".git");
+        std::fs::create_dir(&git_dir).unwrap();
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(
+            git_dir.join("config"),
+            r#"[remote "origin"]
+    url = git@github.com:owner/repo.git
+"#,
+        )
+        .unwrap();
+
+        let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
+        let hint = contextual_row_items(&editor);
+        let keys = key_glyphs(&hint);
+        let labels = text_labels(&hint);
+        assert!(
+            keys.contains(&"o"),
+            "GitHub mount row must include `o` key hint; got keys={keys:?}"
+        );
+        assert!(
+            labels.contains(&"open in GitHub"),
+            "GitHub mount row must include `open in GitHub` label; got labels={labels:?}"
+        );
+        // Composes with the existing d/a pair, so all three keys are present.
+        assert!(keys.contains(&"d"));
+        assert!(keys.contains(&"a"));
+    }
+
+    #[test]
+    fn non_github_mount_row_omits_open_in_github_hint() {
+        // Plain folder (no .git) — no GitHub URL, so `o` must not appear.
+        let tmp = tempfile::tempdir().unwrap();
+        let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
+        let hint = contextual_row_items(&editor);
+        let keys = key_glyphs(&hint);
+        assert!(
+            !keys.contains(&"o"),
+            "plain-folder mount must not include `o`; got keys={keys:?}"
+        );
+        // But the existing d/a hints must still be present.
+        assert!(keys.contains(&"d"));
+        assert!(keys.contains(&"a"));
     }
 }
