@@ -1,26 +1,53 @@
-//! Y/N confirmation modal. Centered, bordered, two-line body.
+//! Y/N confirmation modal with keyboard focus.
+//!
 //! Y / N / Esc return distinct outcomes; case-insensitive.
+//! Tab / Shift+Tab / ←→ / h/l cycle focus between Yes and No.
+//! Enter commits the focused button.
 
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::ModalOutcome;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmFocus {
+    Yes,
+    No,
+}
+
 #[derive(Debug, Clone)]
 pub struct ConfirmState {
     pub prompt: String,
+    pub focus: ConfirmFocus,
 }
 
 impl ConfirmState {
+    /// Build a new Confirm modal. Default focus = No (safer for
+    /// destructive actions — Enter won't accidentally commit Yes).
     pub fn new(prompt: impl Into<String>) -> Self {
         Self {
             prompt: prompt.into(),
+            focus: ConfirmFocus::No,
         }
     }
 
     pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<bool> {
         match key.code {
+            // Direct shortcuts (case-insensitive).
             KeyCode::Char('y' | 'Y') => ModalOutcome::Commit(true),
             KeyCode::Char('n' | 'N') => ModalOutcome::Commit(false),
+            // Focus-based interaction — Tab/Shift+Tab/←→/h/l all toggle focus.
+            KeyCode::Tab
+            | KeyCode::BackTab
+            | KeyCode::Right
+            | KeyCode::Left
+            | KeyCode::Char('l' | 'h') => {
+                self.focus = match self.focus {
+                    ConfirmFocus::Yes => ConfirmFocus::No,
+                    ConfirmFocus::No => ConfirmFocus::Yes,
+                };
+                ModalOutcome::Continue
+            }
+            KeyCode::Enter => ModalOutcome::Commit(matches!(self.focus, ConfirmFocus::Yes)),
             KeyCode::Esc => ModalOutcome::Cancel,
             _ => ModalOutcome::Continue,
         }
@@ -85,6 +112,49 @@ mod tests {
             ModalOutcome::Continue
         ));
     }
+
+    #[test]
+    fn default_focus_is_no() {
+        let s = ConfirmState::new("Delete?");
+        assert_eq!(s.focus, ConfirmFocus::No);
+    }
+
+    #[test]
+    fn tab_cycles_focus() {
+        let mut s = ConfirmState::new("Delete?");
+        assert_eq!(s.focus, ConfirmFocus::No);
+        s.handle_key(key(KeyCode::Tab));
+        assert_eq!(s.focus, ConfirmFocus::Yes);
+        s.handle_key(key(KeyCode::Tab));
+        assert_eq!(s.focus, ConfirmFocus::No);
+    }
+
+    #[test]
+    fn enter_commits_focused_option() {
+        let mut s = ConfirmState::new("Delete?");
+        // Default focus is No, Enter commits No.
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Commit(false)
+        ));
+
+        let mut s = ConfirmState::new("Delete?");
+        s.handle_key(key(KeyCode::Tab)); // focus Yes
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Commit(true)
+        ));
+    }
+
+    #[test]
+    fn y_still_works_regardless_of_focus() {
+        let mut s = ConfirmState::new("Delete?");
+        // Focus is No by default; Y should still commit true directly.
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Char('y'))),
+            ModalOutcome::Commit(true)
+        ));
+    }
 }
 
 use ratatui::{
@@ -116,7 +186,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     //   prompt (1)
     //   spacer (1)
     //   button row (1)
-    //   flex (remainder)
+    //   spacer between buttons and hint (1)
     //   footer hint (1)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -124,8 +194,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
             Constraint::Length(1), // prompt
             Constraint::Length(1), // spacer
             Constraint::Length(1), // button row
-            Constraint::Min(0),    // flex
-            Constraint::Length(1), // footer
+            Constraint::Length(1), // spacer between buttons and hint
+            Constraint::Length(1), // footer hint
         ])
         .split(inner);
 
@@ -137,22 +207,39 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     .alignment(Alignment::Center);
     frame.render_widget(prompt, chunks[0]);
 
-    // Button row — Yes (phosphor-on-black) and No default (white-on-black).
-    let yes_btn = Span::styled(
-        "  Yes  ",
-        Style::default()
-            .bg(PHOSPHOR_GREEN)
-            .fg(Color::Black)
-            .add_modifier(Modifier::BOLD),
-    );
-    let no_btn = Span::styled(
-        "  No (default)  ",
+    // Button row — focused button gets brighter styling (white bg),
+    // unfocused gets phosphor bg. Default text is black.
+    let yes_focused = matches!(state.focus, ConfirmFocus::Yes);
+    let no_focused = matches!(state.focus, ConfirmFocus::No);
+
+    let yes_btn_style = if yes_focused {
         Style::default()
             .bg(WHITE)
             .fg(Color::Black)
-            .add_modifier(Modifier::BOLD),
-    );
-    let button_line = Line::from(vec![yes_btn, Span::raw("    "), no_btn]);
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .bg(PHOSPHOR_GREEN)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD)
+    };
+    let no_btn_style = if no_focused {
+        Style::default()
+            .bg(WHITE)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .bg(PHOSPHOR_GREEN)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD)
+    };
+
+    let button_line = Line::from(vec![
+        Span::styled("  Yes  ", yes_btn_style),
+        Span::raw("    "),
+        Span::styled("  No  ", no_btn_style),
+    ]);
     frame.render_widget(
         Paragraph::new(button_line).alignment(Alignment::Center),
         chunks[2],
@@ -160,7 +247,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
 
     // Footer hint — dim italic keyboard legend.
     let hint = Paragraph::new(Span::styled(
-        "Y yes · N no · Esc cancel",
+        "Tab cycle · Enter confirm · Y yes · N no · Esc cancel",
         Style::default()
             .fg(PHOSPHOR_DIM)
             .add_modifier(Modifier::ITALIC),

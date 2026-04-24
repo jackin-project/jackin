@@ -70,7 +70,7 @@ pub fn render(frame: &mut Frame, state: &ManagerState<'_>, config: &AppConfig) {
             // ConfirmState is a top-level field on the variant, not wrapped
             // in Modal::Confirm, so render it directly.
             let area = frame.area();
-            let modal_area = centered_rect_fixed(area, 60, 6);
+            let modal_area = centered_rect_fixed(area, 60, 7);
             super::super::widgets::confirm::render(frame, modal_area, confirm_state);
         }
         ManagerStage::List => {}
@@ -607,7 +607,7 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
     // lists get a taller one.
     let (pct_w, height_rows) = match modal {
         Modal::TextInput { .. } => (60, 5), // label + input + hint = 5 rows
-        Modal::Confirm { .. } => (60, 6),   // prompt + buttons + hint = 6 rows
+        Modal::Confirm { .. } => (60, 7),   // prompt + spacer + buttons + spacer + hint = 7 rows
         Modal::FileBrowser { .. } => (70, 60), // taller list
         Modal::WorkdirPick { .. } => (60, 40), // moderate list
     };
