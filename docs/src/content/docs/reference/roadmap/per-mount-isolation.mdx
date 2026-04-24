@@ -156,23 +156,7 @@ For each non-`shared` mount, materialization is idempotent: a second `load` to a
 - **Flipping isolation on a mount requires eject.** Bind-mount sources are not mutable on a running container, so live-swapping the `src` is not supported by the platform in the first place. `workspace edit` rejects isolation changes on a running container with a clear "eject first" message.
 - **Mount mode flipped between loads.** If the operator changes a mount from `worktree` to `shared` in the TOML (or removes the mount entirely) after eject but before the next `load`, the existing `isolated/<slug>/` directory is left on disk. The next `load` resolves the new config and bind-mounts accordingly; the orphan `isolated/` tree is reclaimed by `jackin purge <container>`. Jackin' does not automatically prune orphans on config change — `purge` is the single recovery path.
 - **Missing host repo.** If the host `src` is deleted or moved between `load` and later operations, `purge` tolerates the missing parent (best-effort `git worktree remove --force`, then `rm -rf` the isolated tree). A subsequent `load` errors clearly pointing at the absent `src` rather than silently re-materializing from an empty path. This matches existing `shared`-mode behavior (`load` already fails when `src` doesn't exist); worktree mode's only addition is the orphan-cleanup path in `purge`.
-- **Convenience navigation.** `jackin cd <container>` should not pretend it can mutate the parent shell process. The portable V1 behavior is to print the host worktree path for the container's primary isolated mount, which composes cleanly with shell tools:
-
-  ```sh
-  cd "$(jackin cd the-architect)"
-  code "$(jackin cd the-architect)"
-  git -C "$(jackin cd the-architect)" status
-  ```
-
-  Docs can provide a shell helper for operators who want direct parent-shell navigation:
-
-  ```sh
-  jcd() {
-    cd "$(jackin cd "$@")"
-  }
-  ```
-
-  For an interactive inspection workflow, `jackin cd <container> [dst] --shell` spawns a child shell with its current directory set to the isolated worktree path. Exiting that shell returns the operator to the original parent shell and original directory. If a container has multiple isolated mounts, the optional `dst` argument disambiguates.
+- **Convenience navigation.** `jackin cd <container> [dst]` opens a child shell with its current directory set to an isolated worktree path. It does not mutate the parent shell process; when the operator exits the child shell, they return to their original shell and original directory. If `dst` is provided, jackin' exact-matches that isolated mount destination. If `dst` is omitted and exactly one isolated mount exists, jackin' opens that mount. If multiple isolated mounts exist, jackin' shows an interactive picker in TTY mode; in non-interactive mode it fails and prints the candidate destinations. The shell uses the real isolated worktree path as its working directory; jackin' does not spoof `PWD` or pretend the original `src` path has been remapped. It may set contextual env vars such as `JACKIN_CONTAINER`, `JACKIN_MOUNT_DST`, `JACKIN_ORIGINAL_SRC`, and `JACKIN_WORKTREE`.
 
 ## V1 Scope
 
@@ -191,7 +175,7 @@ Ship:
 - `extensions.worktreeConfig` enabled on the host repo on first worktree creation.
 - `load` materializes, `eject` leaves alone, `purge` silently deletes everything (container, DinD sidecar, `isolated/`, worktree, local branch).
 - `purge` refuses on running agents (also closes the pre-existing gap for `shared` mode).
-- `jackin cd <container> [dst]` prints the host path for an isolated worktree; `--shell` opens a child shell in that path.
+- `jackin cd <container> [dst]` opens a child shell in an isolated worktree, prompting for a mount when multiple isolated mounts exist and no destination was provided.
 - Hooks inherit from host by default (no opt-out flag).
 - Pre-flight validation scoped per isolation type (see Composition Rules). Error messages reference the mount and the declared isolation level.
 - Docs updates in the same PR (guides, configuration reference, architecture reference).
@@ -233,6 +217,6 @@ Defer:
 - `src/cli/workspace.rs` — `--mount-isolation` create/edit flags and `workspace show` output
 - `src/cli/agent.rs` — `load --force` dirty-host acknowledgement
 - `src/cli/cleanup.rs` — `PurgeArgs`; error messaging when target is running
-- New `src/cli/cd.rs` (or similar) — `jackin cd <container> [dst] [--shell]` command
+- New `src/cli/cd.rs` (or similar) — `jackin cd <container> [dst]` command
 - New module (e.g. `src/isolation.rs`) — materialization, `isolation.json`, mount-destination slugging, and host-side git shell-outs
 - `docs/src/content/docs/guides/workspaces.mdx`, `docs/src/content/docs/guides/mounts.mdx`, `docs/src/content/docs/reference/configuration.mdx`, `docs/src/content/docs/reference/architecture.mdx` — doc pages to update alongside the code change
