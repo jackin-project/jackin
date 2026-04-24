@@ -144,10 +144,27 @@ impl FileBrowserState {
 
         match key.code {
             KeyCode::Char('s') => {
+                // Prefer the currently-highlighted entry (the "would navigate
+                // into" target) so the operator can pick a sibling folder
+                // without pressing Enter first. Fall back to the cwd when the
+                // highlight is `../` or the listing is empty (in that case
+                // `current()` is the parent entry or the files list is empty).
                 let cwd = self.explorer.cwd().clone();
+                let target = {
+                    let files = self.explorer.files();
+                    let highlighted = self.explorer.current();
+                    // An entry named `"../"` is ratatui-explorer's synthetic
+                    // parent-link row; treat it as "no real selection".
+                    let is_parent_link = highlighted.name == "../";
+                    if !files.is_empty() && highlighted.is_dir && !is_parent_link {
+                        highlighted.path.clone()
+                    } else {
+                        cwd.clone()
+                    }
+                };
 
                 // Reject $HOME itself — user must navigate into a subfolder.
-                if cwd == self.root {
+                if target == self.root {
                     self.rejected_reason =
                         Some("Cannot use $HOME itself — navigate into a subfolder.".into());
                     return ModalOutcome::Continue;
@@ -155,13 +172,13 @@ impl FileBrowserState {
 
                 // Reject jackin's own data directory.
                 let jackin_data = self.root.join(".jackin");
-                if cwd.starts_with(&jackin_data) {
+                if target.starts_with(&jackin_data) {
                     self.rejected_reason =
                         Some("Cannot use ~/.jackin/* — those paths are reserved.".into());
                     return ModalOutcome::Continue;
                 }
 
-                ModalOutcome::Commit(cwd)
+                ModalOutcome::Commit(target)
             }
             KeyCode::Esc => ModalOutcome::Cancel,
             _ => {
@@ -307,33 +324,73 @@ mod tests {
     }
 
     #[test]
-    fn s_commits_current_cwd_not_highlighted_entry() {
+    fn s_commits_highlighted_entry() {
+        // Inside a folder with a nested directory, `s` should commit the
+        // highlighted child entry — not the parent cwd.
         let tmp = tempdir().unwrap();
-        let sub = tmp.path().join("subfolder");
-        std::fs::create_dir(&sub).unwrap();
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
 
-        // Set root to tmp so that tmp itself is $HOME equivalent,
-        // and navigate into the subfolder so `s` is not rejected.
         let theme = Theme::default().add_default_title();
         let explorer = FileExplorerBuilder::default()
-            .working_dir(&sub)
+            .working_dir(&parent)
             .theme(theme)
             .filter_map(|file| if file.is_dir { Some(file) } else { None })
             .build()
             .unwrap();
         let mut state = FileBrowserState {
             explorer,
+            // root = tmp so that `parent` is a subfolder of the sandbox and
+            // neither parent nor child are rejected by the $HOME guard.
+            root: tmp.path().to_path_buf(),
+            rejected_reason: None,
+        };
+
+        // Ratatui-explorer puts the synthetic `../` entry at index 0, so
+        // advance the selection once to land on `child/`.
+        state.handle_key(key(KeyCode::Down));
+
+        let outcome = state.handle_key(key(KeyCode::Char('s')));
+        if let ModalOutcome::Commit(path) = outcome {
+            assert_eq!(
+                path.canonicalize().unwrap(),
+                child.canonicalize().unwrap(),
+                "s should commit the highlighted child, not the parent cwd"
+            );
+        } else {
+            panic!("expected Commit, got {:?}", outcome);
+        }
+    }
+
+    #[test]
+    fn s_falls_back_to_cwd_when_directory_is_empty() {
+        // Inside an empty folder there is no highlighted entry to commit;
+        // `s` should fall back to committing the cwd itself.
+        let tmp = tempdir().unwrap();
+        let empty = tmp.path().join("empty");
+        std::fs::create_dir(&empty).unwrap();
+
+        let theme = Theme::default().add_default_title();
+        let explorer = FileExplorerBuilder::default()
+            .working_dir(&empty)
+            .theme(theme)
+            .filter_map(|file| if file.is_dir { Some(file) } else { None })
+            .build()
+            .unwrap();
+        let mut state = FileBrowserState {
+            explorer,
+            // root = tmp so that `empty` is not $HOME itself and s is not rejected.
             root: tmp.path().to_path_buf(),
             rejected_reason: None,
         };
 
         let outcome = state.handle_key(key(KeyCode::Char('s')));
-        // The committed path should be the subfolder itself.
         if let ModalOutcome::Commit(path) = outcome {
             assert_eq!(
                 path.canonicalize().unwrap(),
-                sub.canonicalize().unwrap(),
-                "s should commit the explorer's cwd, not the selected entry"
+                empty.canonicalize().unwrap(),
+                "s should commit cwd when no child is highlighted"
             );
         } else {
             panic!("expected Commit, got {:?}", outcome);
