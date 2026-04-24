@@ -91,10 +91,21 @@ fn render_header(frame: &mut Frame, area: Rect, title: &str) {
 }
 
 fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>, config: &AppConfig) {
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-        .split(area);
+    let is_sentinel = state.selected >= state.workspaces.len();
+
+    let list_area = if is_sentinel {
+        // Cursor is on "+ New workspace" — no details to show, use full width.
+        area
+    } else {
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+            .split(area);
+        if let Some(ws) = state.workspaces.get(state.selected) {
+            render_details_pane(frame, columns[1], ws, config);
+        }
+        columns[0]
+    };
 
     // Left: list of workspaces + [+ New workspace] sentinel.
     let mut items: Vec<ListItem> = state
@@ -119,18 +130,7 @@ fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>, con
 
     let mut ls = ListState::default();
     ls.select(Some(state.selected));
-    frame.render_stateful_widget(list, columns[0], &mut ls);
-
-    // Right: details pane for currently-selected workspace.
-    if let Some(ws) = state.workspaces.get(state.selected) {
-        render_details_pane(frame, columns[1], ws, config);
-    } else {
-        // [+ New workspace] selected — right pane is empty.
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(PHOSPHOR_DARK));
-        frame.render_widget(block, columns[1]);
-    }
+    frame.render_stateful_widget(list, list_area, &mut ls);
 
     // Toast overlay — rendered last so it appears on top.
     if let Some(toast) = &state.toast {
@@ -213,93 +213,140 @@ fn render_mount_lines(rows: &[(String, &str, String)]) -> Vec<Line<'static>> {
 }
 
 fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, config: &AppConfig) {
+    let ws_config = config.workspaces.get(&ws.name);
+    let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
+
+    // Mount rows needed: 1 header row + N mounts (min 1 for "(none)") + 2 borders.
+    // Clamp to a reasonable maximum so a workspace with many mounts doesn't eat the screen.
+    let mount_data_rows = if mounts.is_empty() { 1 } else { mounts.len() };
+    let mount_block_height = (mount_data_rows + 2 + 1).min(12) as u16; // +1 header, +2 borders
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),                  // General: workdir + last + 2 borders
+            Constraint::Length(mount_block_height), // Mounts: header + N rows + 2 borders
+            Constraint::Min(3),                     // Agents: takes remaining space
+        ])
+        .split(area);
+
+    render_general_subpanel(frame, rows[0], ws);
+    render_mounts_subpanel(frame, rows[1], mounts);
+    render_agents_subpanel(frame, rows[2], ws_config, config);
+}
+
+fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
-            " Details ",
+            " General ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("workdir   ", Style::default().fg(WHITE)),
+            Span::raw(crate::tui::shorten_home(&ws.workdir)),
+        ]),
+        Line::from(vec![
+            Span::styled("last      ", Style::default().fg(WHITE)),
+            Span::raw(
+                ws.last_agent
+                    .clone()
+                    .unwrap_or_else(|| "(none)".to_string()),
+            ),
+        ]),
+    ];
+
+    let p = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN));
+    frame.render_widget(p, area);
+}
+
+fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::workspace::MountConfig]) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Mounts ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
 
     let mut lines: Vec<Line> = Vec::new();
 
-    // workdir
-    lines.push(Line::from(vec![
-        Span::styled("workdir   ", Style::default().fg(WHITE)),
-        Span::raw(crate::tui::shorten_home(&ws.workdir)),
-    ]));
-
-    // blank
-    lines.push(Line::from(""));
-
-    // mounts (actual list)
+    // Header row
     lines.push(Line::from(Span::styled(
-        "mounts",
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        "  path                       mode   type",
+        Style::default().fg(WHITE),
     )));
-    let mounts = config
-        .workspaces
-        .get(&ws.name)
-        .map_or(&[][..], |w| w.mounts.as_slice());
+
     if mounts.is_empty() {
         lines.push(Line::from(Span::styled(
             "  (none)",
             Style::default().fg(PHOSPHOR_DIM),
         )));
     } else {
+        // TODO: labeled_hyperlink() emits OSC 8 ESC sequences which ratatui's
+        // Paragraph widget may strip or render as garbage (it doesn't pass raw
+        // bytes through). Until there is a raw-terminal-write path, fall back
+        // to label() (plain text). The hyperlink infrastructure is wired up in
+        // MountKind::labeled_hyperlink() for future use.
         let rows = format_mount_rows(mounts);
         lines.extend(render_mount_lines(&rows));
     }
 
-    // blank
-    lines.push(Line::from(""));
+    let p = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN));
+    frame.render_widget(p, area);
+}
 
-    // agents
-    let allowed = config
-        .workspaces
-        .get(&ws.name)
-        .map_or(&[][..], |w| w.allowed_agents.as_slice());
-    if allowed.is_empty() {
-        lines.push(Line::from(vec![
-            Span::styled("agents    ", Style::default().fg(WHITE)),
-            Span::styled(
-                "any agent",
-                Style::default()
-                    .fg(Color::Rgb(180, 255, 180))
-                    .add_modifier(Modifier::ITALIC),
-            ),
-        ]));
-    } else {
-        lines.push(Line::from(Span::styled(
-            "agents",
+fn render_agents_subpanel(
+    frame: &mut Frame,
+    area: Rect,
+    ws_config: Option<&crate::workspace::WorkspaceConfig>,
+    config: &AppConfig,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Agents ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+
+    let allowed = ws_config.map_or(&[][..], |w| w.allowed_agents.as_slice());
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    if allowed.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  any agent",
+            Style::default()
+                .fg(Color::Rgb(180, 255, 180))
+                .add_modifier(Modifier::ITALIC),
         )));
-        let default = config
-            .workspaces
-            .get(&ws.name)
-            .and_then(|w| w.default_agent.as_deref());
+    } else {
+        let default = ws_config.and_then(|w| w.default_agent.as_deref());
+        // Show only allowed agents that exist in the global config (consistent
+        // with the editor view). Fall back to listing all allowed names if the
+        // agent is no longer registered globally.
         for agent in allowed {
             let star = if Some(agent.as_str()) == default {
                 "\u{2605} "
             } else {
                 "  "
             };
-            lines.push(Line::from(format!("  {star}{agent}")));
+            let style = if config.agents.contains_key(agent) {
+                Style::default().fg(PHOSPHOR_GREEN)
+            } else {
+                Style::default().fg(PHOSPHOR_DIM)
+            };
+            lines.push(Line::from(Span::styled(format!("  {star}{agent}"), style)));
         }
     }
-
-    // blank
-    lines.push(Line::from(""));
-
-    // last used
-    lines.push(Line::from(vec![
-        Span::styled("last      ", Style::default().fg(WHITE)),
-        Span::raw(
-            ws.last_agent
-                .clone()
-                .unwrap_or_else(|| "(none)".to_string()),
-        ),
-    ]));
 
     let p = Paragraph::new(lines)
         .block(block)
