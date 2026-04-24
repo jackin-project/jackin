@@ -76,8 +76,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
 
     // Block title styled WHITE + BOLD to match the main-screen block titles
     // (General/Mounts/Agents). The default widget text stays PHOSPHOR_GREEN.
+    // Wrap the label in leading/trailing spaces so `┌ Label ─┐` renders
+    // with breathing room (matches the canonical modal template).
     let title = Span::styled(
-        state.label.clone(),
+        format!(" {} ", state.label),
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
     );
     let block = Block::default()

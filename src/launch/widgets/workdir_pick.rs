@@ -135,7 +135,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
     // Block title styled WHITE + BOLD to match the main-screen block titles
     // (General/Mounts/Agents) and the other modal widgets.
     let title = Span::styled(
-        "Workdir — pick from mounts",
+        " Workdir — pick from mounts ",
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
     );
     let block = Block::default()
