@@ -151,7 +151,19 @@ For each non-`shared` mount, materialization is idempotent: a second `load` to a
 
 - **`load`** — idempotent materialization. Second load to an existing container reuses the existing worktree.
 - **`eject`** — stop the container, leave `isolated/` in place (matches the existing eject = stop, purge = destroy split). No new output from `eject` for isolated mounts.
-- **Normal clean exit** — when the attached agent process exits cleanly and Docker reports `exit_code = 0` without OOM, jackin' tears down Docker resources and attempts safe isolated-worktree cleanup. Safe cleanup removes an isolated worktree only when it has no uncommitted changes and no branch-only commits that would be lost. If cleanup is unsafe, jackin' preserves the worktree, prints its path plus the reason, and tells the operator to inspect with `jackin cd <container>` or discard with `jackin purge <container>`. This hooks into the existing `ContainerState::Stopped { exit_code: 0, oom_killed: false }` branch in `src/runtime/launch.rs`, right next to runtime resource cleanup. Warning shape:
+- **Normal clean exit** — when the attached agent process exits cleanly and Docker reports `exit_code = 0` without OOM, jackin' tears down Docker resources and attempts safe isolated-worktree cleanup. Safe cleanup removes an isolated worktree only when it has no uncommitted changes and no branch-only commits that would be lost. If cleanup is unsafe and stdin is interactive, jackin' asks what to do before deleting anything:
+
+  ```text
+  Isolated worktree for jackin-the-architect still has uncommitted changes:
+    /.../.jackin/data/jackin-the-architect/isolated/workspace-jackin
+
+  What do you want to do?
+    1. Return to agent to address it
+    2. Preserve worktree and exit
+    3. Force delete worktree and discard changes
+  ```
+
+  Returning to the agent means restarting the just-exited container before teardown, attaching again, and retrying safe cleanup after the agent exits again. This is a launch-time cleanup loop, not normal `hardline` behavior; `hardline` may continue to reject clean-exited containers after the original `load` process has ended. Force delete uses the same destructive cleanup path as `purge` for the selected isolated worktree. If stdin is non-interactive, jackin' preserves the worktree, prints its path plus the reason, and tells the operator to inspect with `jackin cd <container>` or discard with `jackin purge <container>`. This hooks into the existing `ContainerState::Stopped { exit_code: 0, oom_killed: false }` branch in `src/runtime/launch.rs`, right next to runtime resource cleanup. Non-interactive warning shape:
 
   ```text
   [jackin] preserved isolated worktree for jackin-the-architect:
@@ -182,7 +194,7 @@ Ship:
 - Runtime materialization happens after container-name claim, not inside `resolve_load_workspace`; introduce a materialized-workspace handoff into Docker launch.
 - `.jackin/isolation.json` records materialized isolated mounts so `purge` and `cd` work even after config changes.
 - `extensions.worktreeConfig` enabled on the host repo on first worktree creation.
-- `load` materializes, clean exit safely removes throwaway isolated worktrees when no work would be lost, `eject` leaves worktrees alone, and `purge` force-deletes everything (container, DinD sidecar, `isolated/`, worktree, local branch).
+- `load` materializes, clean exit safely removes throwaway isolated worktrees when no work would be lost, unsafe clean-exit cleanup asks interactive operators whether to return to the agent, preserve, or force-delete, `eject` leaves worktrees alone, and `purge` force-deletes everything (container, DinD sidecar, `isolated/`, worktree, local branch).
 - `purge` refuses on running agents (also closes the pre-existing gap for `shared` mode).
 - `jackin cd <container> [dst]` opens a child shell in an isolated worktree, prompting for a mount when multiple isolated mounts exist and no destination was provided.
 - Hooks inherit from host by default (no opt-out flag).
