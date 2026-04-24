@@ -218,7 +218,7 @@ fn render_header(frame: &mut Frame, area: Rect, title: &str) {
     let line = Line::from(vec![
         Span::styled("▓▓▓▓ ", Style::default().fg(PHOSPHOR_GREEN)),
         Span::styled(
-            "JACKIN",
+            "jackin'",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ),
         Span::raw("     · "),
@@ -1965,6 +1965,44 @@ mod subpanel_padding_tests {
         assert_eq!(
             name_col, SUBPANEL_CONTENT_INDENT,
             "default agent name should start at col {SUBPANEL_CONTENT_INDENT} even with the trailing star, got {name_col}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod header_branding_tests {
+    //! Pins the product-name rendering convention: the top-of-screen
+    //! header must display the name as lowercase + trailing apostrophe
+    //! (`jackin'`) in every user-facing string. All-caps `JACKIN` and
+    //! apostrophe-less `jackin` are both disallowed for display text —
+    //! though `jackin` without an apostrophe still appears in CLI-command
+    //! references rendered in backticks (e.g. `` `jackin launch` ``), in
+    //! filesystem paths like `~/.jackin/`, and in URLs, all of which are
+    //! intentionally exempt and not audited here.
+    use super::render_header;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+
+    #[test]
+    fn tui_header_uses_lowercase_jackin_with_apostrophe() {
+        let backend = TestBackend::new(40, 1);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_header(f, Rect::new(0, 0, 40, 1), "workspaces");
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let dump: String = buf.content().iter().map(|cell| cell.symbol()).collect();
+
+        assert!(
+            dump.contains("jackin'"),
+            "header must render 'jackin'' (lowercase + trailing apostrophe); got {dump:?}"
+        );
+        assert!(
+            !dump.contains("JACKIN"),
+            "header must not render 'JACKIN' (uppercase); got {dump:?}"
         );
     }
 }
