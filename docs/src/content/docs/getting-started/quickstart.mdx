@@ -39,21 +39,26 @@ In jackin', the first thing you choose is usually an **agent class**. That is th
 </Steps>
 If you already know you want a more specialized agent class, swap `agent-smith` for something else such as `the-architect`.
 
-## Use the interactive launcher
+## Use the interactive console
 
 If you prefer a visual interface:
 
 ```bash
-jackin launch
+jackin
 ```
 
-This opens a TUI where you can:
+This opens the operator console — a TUI where you can:
 - Pick from saved workspaces or use the current directory
 - Preview the final directory mounts for the highlighted agent before loading it
 - Choose which agent to load
 
+Running `jackin` with no arguments opens the console when your terminal
+can host it; otherwise it silently prints help. You can also ask for it
+explicitly with `jackin console`.
+
 <Aside type="tip">
-`launch` is the human-first flow — visual and interactive. `load` is the terminal-first flow — explicit and scriptable.
+The operator console is the human-first flow — visual and interactive.
+`load` is the terminal-first flow — explicit and scriptable.
 </Aside>
 ## Reconnect to a running agent
 

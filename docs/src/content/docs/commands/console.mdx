@@ -1,0 +1,71 @@
+---
+title: jackin console
+description: "Interactive operator console"
+---
+import { Aside } from '@astrojs/starlight/components'
+
+
+## Synopsis
+
+```bash
+jackin console [--debug]
+```
+
+Open the operator console — an interactive terminal UI for picking a
+workspace and agent, managing saved workspaces, and launching agents
+into isolated containers.
+
+Running `jackin` with no subcommand opens the same console when stdout
+is attached to an interactive terminal that is at least 40x15 in size.
+On non-interactive shells (piped output, CI, very small terminals) bare
+`jackin` silently prints top-level help instead. `jackin console` makes
+the intent explicit and errors out when the terminal cannot host the
+TUI.
+
+The important distinction is:
+
+- **workspace** = which files are mounted
+- **agent** = which tool profile is loaded
+
+## How it works
+
+The console presents a two-step selection flow:
+
+1. **Pick a workspace** — choose from saved workspaces or "Current directory"
+2. **Pick an agent** — choose which agent class to load
+
+The TUI shows a preview of the working directory and mounts before you
+confirm. Once you move to the agent step, that preview updates to the
+final resolved mount set for the highlighted agent, including
+selector-scoped global mounts.
+
+## Workspace selection
+
+The console shows two kinds of choices:
+
+- **Current directory** — a synthetic workspace that mounts your `cwd` at the same path inside the container
+- **Saved workspaces** — named definitions from `~/.config/jackin/config.toml`
+
+If your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace is preselected.
+
+## Agent selection
+
+If the selected workspace has:
+- **A default agent** — it's preselected
+- **Allowed agents** — only those are shown
+- **No restrictions** — all known agents are listed
+
+## When to use the console vs `load`
+
+| | `jackin` / `jackin console` | `jackin load` |
+|---|---|---|
+| **Interface** | Visual TUI | Command-line arguments |
+| **Best for** | Exploring options, first-time setup | Scripting, repeatable workflows |
+| **Workspace selection** | Interactive picker | Explicit argument |
+| **Agent selection** | Interactive picker | Explicit argument |
+
+<Aside type="tip">
+The older spelling `jackin launch` still works but is deprecated and
+emits a warning. It delegates to the same console handler as
+`jackin console`.
+</Aside>
