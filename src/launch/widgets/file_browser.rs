@@ -11,8 +11,19 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
 use directories::BaseDirs;
-use ratatui::{Frame, layout::Rect, widgets::FrameExt as _};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::Line,
+    widgets::{Block, Borders, FrameExt as _},
+};
 use ratatui_explorer::{FileExplorer, FileExplorerBuilder, Theme};
+
+/// Phosphor green — matches jackin's primary colour.
+const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
+/// Dimmed phosphor — used for non-selected text.
+const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 
 use super::ModalOutcome;
 
@@ -52,7 +63,47 @@ impl FileBrowserState {
             .map(|b| b.home_dir().to_path_buf())
             .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?;
 
-        let theme = Theme::default().add_default_title();
+        // Build a phosphor-palette theme that matches jackin's TUI style.
+        let theme = Theme::default()
+            // Block with ALL borders styled phosphor dark would be overridden by
+            // the block in the default theme; replace with a jackin-coloured block.
+            .with_block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(PHOSPHOR_DIM)),
+            )
+            // Base list text: phosphor green.
+            .with_style(Style::default().fg(PHOSPHOR_GREEN))
+            // Directory entries: phosphor green (same — all entries are dirs).
+            .with_dir_style(Style::default().fg(PHOSPHOR_GREEN))
+            // Non-directory items: dim (shouldn't appear, but keep safe).
+            .with_item_style(Style::default().fg(PHOSPHOR_DIM))
+            // Highlighted directory: bright phosphor bg + black fg.
+            .with_highlight_dir_style(
+                Style::default()
+                    .bg(PHOSPHOR_GREEN)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            )
+            // Highlighted non-dir item.
+            .with_highlight_item_style(
+                Style::default()
+                    .bg(PHOSPHOR_GREEN)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            )
+            // Use ▸ as selection indicator.
+            .with_highlight_symbol("▸ ")
+            // Dynamic title: shortened CWD, styled bold-white.
+            .with_title_top(|fe| {
+                let cwd = crate::tui::shorten_home(&fe.cwd().display().to_string());
+                Line::styled(
+                    cwd,
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )
+            });
         let explorer = FileExplorerBuilder::default()
             .working_dir(&home)
             .theme(theme)

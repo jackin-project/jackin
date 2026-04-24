@@ -167,6 +167,51 @@ fn render_toast(frame: &mut Frame, area: Rect, toast: &super::state::Toast) {
     frame.render_widget(Paragraph::new(line), banner_area);
 }
 
+/// Build aligned 3-column mount rows: (`path_display`, mode, `kind_label`).
+fn format_mount_rows(
+    mounts: &[crate::workspace::MountConfig],
+) -> Vec<(String, &'static str, String)> {
+    mounts
+        .iter()
+        .map(|m| {
+            let src = crate::tui::shorten_home(&m.src);
+            let dst = crate::tui::shorten_home(&m.dst);
+            let path = if m.src == m.dst {
+                src
+            } else {
+                format!("{src} \u{2192} {dst}")
+            };
+            let mode: &'static str = if m.readonly { "ro" } else { "rw" };
+            let kind = super::mount_info::inspect(&m.src).label();
+            (path, mode, kind)
+        })
+        .collect()
+}
+
+/// Render aligned mount rows as `Line`s (no selection prefix).
+fn render_mount_lines(rows: &[(String, &str, String)]) -> Vec<Line<'static>> {
+    let path_w = rows
+        .iter()
+        .map(|(p, _, _)| p.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(10);
+    rows.iter()
+        .map(|(path, mode, kind)| {
+            Line::from(vec![
+                Span::raw(format!("  {path:<path_w$}  ")),
+                Span::styled(format!("{mode:<3}"), Style::default().fg(PHOSPHOR_DIM)),
+                Span::styled(
+                    format!("  {kind}"),
+                    Style::default()
+                        .fg(PHOSPHOR_DIM)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ])
+        })
+        .collect()
+}
+
 fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, config: &AppConfig) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -202,26 +247,8 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
             Style::default().fg(PHOSPHOR_DIM),
         )));
     } else {
-        for m in mounts {
-            let ro = if m.readonly { " (ro)" } else { " (rw)" };
-            let src_display = crate::tui::shorten_home(&m.src);
-            let dst_display = crate::tui::shorten_home(&m.dst);
-            let path_display = if m.src == m.dst {
-                src_display
-            } else {
-                format!("{src_display} \u{2192} {dst_display}")
-            };
-            let kind_label = super::mount_info::inspect(&m.src).label();
-            lines.push(Line::from(vec![
-                Span::raw(format!("  {path_display}{ro}")),
-                Span::styled(
-                    format!("  \u{b7} {kind_label}"),
-                    Style::default()
-                        .fg(PHOSPHOR_DIM)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ]));
-        }
+        let rows = format_mount_rows(mounts);
+        lines.extend(render_mount_lines(&rows));
     }
 
     // blank
@@ -556,43 +583,38 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
 
-    let phosphor = PHOSPHOR_GREEN;
     let white = WHITE;
 
-    let mut lines: Vec<Line> = state
-        .pending
-        .mounts
+    // Build aligned table rows for all mounts.
+    let rows = format_mount_rows(&state.pending.mounts);
+    let path_w = rows
+        .iter()
+        .map(|(p, _, _)| p.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(10);
+
+    let mut lines: Vec<Line> = rows
         .iter()
         .enumerate()
-        .map(|(i, m)| {
+        .map(|(i, (path, mode, kind))| {
             let selected = i == cursor;
             let prefix = if selected { "▸ " } else { "  " };
-            let ro = if m.readonly { " (ro)" } else { " (rw)" };
-            // Collapse src → dst when they are identical (host-mirror default).
-            let src_display = crate::tui::shorten_home(&m.src);
-            let dst_display = crate::tui::shorten_home(&m.dst);
-            let path_display = if m.src == m.dst {
-                src_display
+            let base_style = if selected {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                format!("{src_display} → {dst_display}")
+                Style::default().fg(PHOSPHOR_GREEN)
             };
-            let style = if selected {
-                Style::default().fg(phosphor).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(phosphor)
-            };
-            // Inspect the host-side src path for type/branch.
-            let kind_label = super::mount_info::inspect(&m.src).label();
-            let spans = vec![
-                Span::styled(format!("{prefix}{path_display}{ro}"), style),
-                Span::styled(
-                    format!("  · {kind_label}"),
-                    Style::default()
-                        .fg(PHOSPHOR_DIM)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ];
-            Line::from(spans)
+            let dim_style = Style::default()
+                .fg(PHOSPHOR_DIM)
+                .add_modifier(Modifier::ITALIC);
+            Line::from(vec![
+                Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
+                Span::styled(format!("{mode:<3}"), Style::default().fg(PHOSPHOR_DIM)),
+                Span::styled(format!("  {kind}"), dim_style),
+            ])
         })
         .collect();
 
@@ -703,7 +725,7 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         Modal::TextInput { .. } => (60, 5), // label + input + hint = 5 rows
         Modal::Confirm { .. } => (60, 7),   // prompt + spacer + buttons + spacer + hint = 7 rows
         Modal::SaveDiscardCancel { .. } => (70, 7), // three buttons — a bit wider
-        Modal::FileBrowser { .. } => (100, 100), // fullscreen — avoids main chrome peeking through
+        Modal::FileBrowser { .. } => (70, 70), // dialog-sized — 70%×70% lets chrome show around it
         Modal::WorkdirPick { .. } => (60, 12), // ~6 choices + title + hint
     };
     let modal_area = centered_rect_fixed(area, pct_w, height_rows);
