@@ -987,6 +987,32 @@ fn apply_file_browser_to_editor(
     }
 }
 
+/// Prelude-side transition: mount-src and mount-dst are both known, now
+/// advance to the `PickWorkdir` step by opening a `WorkdirPick` modal.
+///
+/// Factored out so both the `MountDstChoice::Ok` path (no TextInput) and
+/// the `TextInputDst` commit path (operator edited dst) end the same way.
+/// Callers are responsible for having already pushed the mount dst onto
+/// the prelude (via `accept_mount_dst`).
+fn prelude_advance_to_workdir_pick(prelude: &mut super::state::CreatePreludeState<'_>) {
+    let mount = crate::workspace::MountConfig {
+        src: prelude
+            .pending_mount_src
+            .as_ref()
+            .expect("mount src must be set before advancing to workdir pick")
+            .display()
+            .to_string(),
+        dst: prelude
+            .pending_mount_dst
+            .clone()
+            .expect("mount dst must be set before advancing to workdir pick"),
+        readonly: prelude.pending_readonly,
+    };
+    prelude.modal = Some(Modal::WorkdirPick {
+        state: WorkdirPickState::from_mounts(&[mount]),
+    });
+}
+
 #[allow(clippy::too_many_lines)]
 fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key: KeyEvent) {
     use super::super::widgets::text_input::TextInputState;
@@ -998,6 +1024,7 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
     // fields on `prelude` (Rust borrow rules).
     enum PreludeModalDis {
         FileBrowserSrc,
+        MountDstChoice,
         TextInputDst,
         WorkdirPick,
         TextInputName,
@@ -1008,6 +1035,10 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
             target: FileBrowserTarget::CreateFirstMountSrc,
             ..
         }) => PreludeModalDis::FileBrowserSrc,
+        Some(Modal::MountDstChoice {
+            target: FileBrowserTarget::CreateFirstMountSrc,
+            ..
+        }) => PreludeModalDis::MountDstChoice,
         Some(Modal::TextInput {
             target: TextInputTarget::MountDst,
             ..
@@ -1031,7 +1062,46 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
                 ModalOutcome::Commit(path) => {
                     prelude.modal = None;
                     prelude.accept_mount_src(path);
-                    // Push dst TextInput pre-filled with host path (host-path-mirror rule).
+                    // Offer the 3-button choice: OK (dst=src, skip TextInput),
+                    // Edit destination (open TextInput), or Cancel.
+                    let src = prelude
+                        .pending_mount_src
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default();
+                    prelude.modal = Some(Modal::MountDstChoice {
+                        target: FileBrowserTarget::CreateFirstMountSrc,
+                        state: crate::launch::widgets::mount_dst_choice::MountDstChoiceState::new(
+                            src,
+                        ),
+                    });
+                }
+                ModalOutcome::Cancel => {
+                    prelude.modal = None;
+                }
+                ModalOutcome::Continue => {}
+            }
+        }
+        PreludeModalDis::MountDstChoice => {
+            use crate::launch::widgets::mount_dst_choice::MountDstChoice;
+            let outcome = if let Some(Modal::MountDstChoice { state, .. }) = &mut prelude.modal {
+                state.handle_key(key)
+            } else {
+                return;
+            };
+            match outcome {
+                ModalOutcome::Commit(MountDstChoice::Ok) => {
+                    // Fast path: dst = src, skip TextInput, chain straight
+                    // to WorkdirPick (mirrors the post-TextInputDst tail).
+                    let default_dst = prelude.default_mount_dst().unwrap_or_default();
+                    prelude.modal = None;
+                    prelude.accept_mount_dst(default_dst, false);
+                    prelude_advance_to_workdir_pick(prelude);
+                }
+                ModalOutcome::Commit(MountDstChoice::Edit) => {
+                    // Re-enter today's flow: open TextInput pre-filled with
+                    // the host path. The TextInputDst branch below handles
+                    // the advance to WorkdirPick once the operator commits.
                     let default_dst = prelude.default_mount_dst().unwrap_or_default();
                     prelude.modal = Some(Modal::TextInput {
                         target: TextInputTarget::MountDst,
@@ -1042,6 +1112,11 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
                     });
                 }
                 ModalOutcome::Cancel => {
+                    // Match today's Esc-during-TextInput behaviour — close
+                    // the modal and leave the prelude at its current step
+                    // (src stashed but no dst). The outer wizard dispatcher
+                    // treats a closed modal + no pending_name as "cancelled"
+                    // and drops back to the manager list.
                     prelude.modal = None;
                 }
                 ModalOutcome::Continue => {}
@@ -1059,20 +1134,7 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
                     // readonly defaults to false (toggle for readonly is
                     // future work — spec allows this simplification).
                     prelude.accept_mount_dst(dst, false);
-                    // Push WorkdirPick with the staged mount.
-                    let mount = crate::workspace::MountConfig {
-                        src: prelude
-                            .pending_mount_src
-                            .as_ref()
-                            .unwrap()
-                            .display()
-                            .to_string(),
-                        dst: prelude.pending_mount_dst.clone().unwrap(),
-                        readonly: prelude.pending_readonly,
-                    };
-                    prelude.modal = Some(Modal::WorkdirPick {
-                        state: WorkdirPickState::from_mounts(&[mount]),
-                    });
+                    prelude_advance_to_workdir_pick(prelude);
                 }
                 ModalOutcome::Cancel => {
                     prelude.modal = None;
@@ -1636,6 +1698,90 @@ mod tests {
         let m = &editor.pending.mounts[0];
         assert_eq!(m.src, "/host/path");
         assert_eq!(m.dst, "/host/path", "provisional dst mirrors src");
+    }
+
+    // ── Prelude FileBrowser → MountDstChoice behavioral tests ──────────
+
+    /// Seed a `CreatePreludeState` whose `MountDstChoice` modal is open
+    /// for `src`. Mirrors the state the `FileBrowserSrc::Commit` branch of
+    /// `handle_prelude_modal` leaves the prelude in, without needing to
+    /// synthesise a FileBrowser `Commit(path)` event (no public way to do
+    /// that cleanly from outside the widget).
+    fn prelude_with_browser_committed(
+        src: &str,
+    ) -> super::super::state::CreatePreludeState<'static> {
+        let mut prelude = super::super::state::CreatePreludeState::new();
+        prelude.accept_mount_src(std::path::PathBuf::from(src));
+        prelude.modal = Some(Modal::MountDstChoice {
+            target: FileBrowserTarget::CreateFirstMountSrc,
+            state: crate::launch::widgets::mount_dst_choice::MountDstChoiceState::new(src),
+        });
+        prelude
+    }
+
+    #[test]
+    fn prelude_ok_chains_to_workdir_pick_with_dst_equal_src() {
+        // OK on the choice modal should: (a) set prelude.pending_mount_dst
+        // to src, (b) advance the step to PickWorkdir, (c) open the
+        // WorkdirPick modal pre-loaded with the staged mount.
+        let mut prelude = prelude_with_browser_committed("/home/user/project");
+        handle_prelude_modal(&mut prelude, key(KeyCode::Char('o')));
+
+        assert!(
+            matches!(prelude.modal, Some(Modal::WorkdirPick { .. })),
+            "OK must chain to WorkdirPick; got {:?}",
+            prelude.modal
+        );
+        assert_eq!(
+            prelude.pending_mount_dst.as_deref(),
+            Some("/home/user/project"),
+            "OK fast-path stores dst = src on the prelude"
+        );
+        assert!(!prelude.pending_readonly);
+        assert!(matches!(
+            prelude.step,
+            super::super::state::CreateStep::PickWorkdir
+        ));
+    }
+
+    #[test]
+    fn prelude_edit_opens_textinput_preserving_chain_to_workdir_pick() {
+        // Edit destination on the choice modal must open a TextInput
+        // pre-filled with the src (today's flow). The TextInputDst
+        // commit branch then advances to WorkdirPick — so this test pins
+        // that the Edit-path does not short-circuit; the chain continues
+        // through TextInput like before.
+        let mut prelude = prelude_with_browser_committed("/home/user/project");
+        handle_prelude_modal(&mut prelude, key(KeyCode::Char('e')));
+
+        match &prelude.modal {
+            Some(Modal::TextInput { target, .. }) => {
+                assert_eq!(*target, super::super::state::TextInputTarget::MountDst);
+            }
+            other => panic!("expected TextInput(MountDst); got {other:?}"),
+        }
+        // Edit must not itself store a dst — the TextInput commit will.
+        assert!(prelude.pending_mount_dst.is_none());
+        // The prelude's internal step is still PickFirstMountDst (not
+        // advanced yet) — TextInput commit is what calls accept_mount_dst.
+        assert!(matches!(
+            prelude.step,
+            super::super::state::CreateStep::PickFirstMountDst
+        ));
+    }
+
+    #[test]
+    fn prelude_cancel_closes_modal_without_advancing() {
+        let mut prelude = prelude_with_browser_committed("/home/user/project");
+        handle_prelude_modal(&mut prelude, key(KeyCode::Esc));
+        assert!(prelude.modal.is_none(), "Esc closes the modal");
+        assert!(
+            prelude.pending_mount_dst.is_none(),
+            "Cancel must not store a dst"
+        );
+        // Step stays where it was (PickFirstMountDst) — outer dispatcher
+        // sees no modal + no pending_name and drops back to the manager
+        // list; that's the contract that matches today's behaviour.
     }
 
     #[test]
