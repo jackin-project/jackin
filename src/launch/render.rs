@@ -275,6 +275,13 @@ pub(super) fn draw_workspace_screen(frame: &mut ratatui::Frame, state: &LaunchSt
         ),
         Span::styled("navigate   ", Style::default().fg(colors::DIM_GREEN)),
         Span::styled(
+            "m ",
+            Style::default()
+                .fg(colors::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("manage   ", Style::default().fg(colors::DIM_GREEN)),
+        Span::styled(
             "Esc ",
             Style::default()
                 .fg(colors::PHOSPHOR_GREEN)
@@ -474,10 +481,11 @@ fn centered_rect(area: ratatui::layout::Rect, percent: u16) -> ratatui::layout::
 }
 
 #[cfg(test)]
-const fn footer_text(stage: LaunchStage) -> &'static str {
+fn footer_text(stage: &LaunchStage) -> &'static str {
     match stage {
-        LaunchStage::Workspace => "Enter select   ↑↓ navigate   Esc quit",
+        LaunchStage::Workspace => "Enter select   ↑↓ navigate   m manage   Esc quit",
         LaunchStage::Agent => "Enter load   ↑↓ navigate   Type to filter   Esc back",
+        LaunchStage::Manager(_) => "Esc back",
     }
 }
 
@@ -487,10 +495,11 @@ mod tests {
 
     #[test]
     fn footer_text_matches_stage_behavior() {
-        assert!(footer_text(LaunchStage::Workspace).contains("Enter"));
-        assert!(footer_text(LaunchStage::Workspace).contains("quit"));
-        assert!(footer_text(LaunchStage::Agent).contains("Enter"));
-        assert!(footer_text(LaunchStage::Agent).contains("back"));
-        assert!(footer_text(LaunchStage::Agent).contains("filter"));
+        assert!(footer_text(&LaunchStage::Workspace).contains("Enter"));
+        assert!(footer_text(&LaunchStage::Workspace).contains("quit"));
+        assert!(footer_text(&LaunchStage::Workspace).contains("manage"));
+        assert!(footer_text(&LaunchStage::Agent).contains("Enter"));
+        assert!(footer_text(&LaunchStage::Agent).contains("back"));
+        assert!(footer_text(&LaunchStage::Agent).contains("filter"));
     }
 }

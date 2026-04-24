@@ -3,10 +3,11 @@ use crate::config::{AppConfig, MountEntry};
 use crate::selector::ClassSelector;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum LaunchStage {
     Workspace,
     Agent,
+    Manager(crate::launch::manager::ManagerState<'static>),
 }
 
 #[derive(Debug, Clone)]
@@ -20,7 +21,7 @@ pub struct WorkspaceChoice {
     pub input: LoadWorkspaceInput,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LaunchState {
     pub stage: LaunchStage,
     pub selected_workspace: usize,

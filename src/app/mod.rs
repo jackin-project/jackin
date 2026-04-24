@@ -117,9 +117,13 @@ pub fn run(cli: Cli) -> Result<()> {
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
-            let Some((class, workspace)) = launch::run_launch(&config, &cwd)? else {
+            let Some((class, workspace)) = launch::run_launch(config, &paths, &cwd)? else {
                 return Ok(());
             };
+
+            // config was consumed by run_launch (the manager may have written to
+            // disk). Reload so the post-launch path sees the latest state.
+            let mut config = AppConfig::load_or_init(&paths)?;
 
             let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
             if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {

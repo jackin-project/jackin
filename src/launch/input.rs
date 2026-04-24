@@ -17,7 +17,7 @@ pub(super) fn handle_event(
     cwd: &std::path::Path,
 ) -> EventOutcome {
     use crossterm::event::KeyCode;
-    match state.stage {
+    match &state.stage {
         LaunchStage::Workspace => match key {
             KeyCode::Up | KeyCode::Char('k') => {
                 state.selected_workspace = state.selected_workspace.saturating_sub(1);
@@ -25,6 +25,11 @@ pub(super) fn handle_event(
             KeyCode::Down | KeyCode::Char('j') => {
                 state.selected_workspace =
                     (state.selected_workspace + 1).min(state.workspaces.len().saturating_sub(1));
+            }
+            KeyCode::Char('m') => {
+                state.stage = LaunchStage::Manager(
+                    crate::launch::manager::ManagerState::from_config(config),
+                );
             }
             KeyCode::Enter => {
                 let agents = state.filtered_agents();
@@ -105,6 +110,10 @@ pub(super) fn handle_event(
             }
             _ => {}
         },
+        LaunchStage::Manager(_) => {
+            // Manager stage is handled directly in run_launch; this branch
+            // should never be reached via handle_event.
+        }
     }
     EventOutcome::Continue
 }
