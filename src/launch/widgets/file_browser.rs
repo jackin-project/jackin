@@ -323,6 +323,26 @@ impl FileBrowserState {
         }
     }
 
+    /// Current working directory inside the sandbox. Exposed for callers
+    /// that need to breadcrumb the browser position — e.g. the create-
+    /// workspace wizard stashes this when the operator commits a mount
+    /// src, so a later Esc can re-open the browser at the same location
+    /// instead of re-starting at `$HOME`.
+    pub fn cwd(&self) -> &Path {
+        self.explorer.cwd()
+    }
+
+    /// Re-point the browser at `cwd`, clamped to the sandbox root.
+    /// Used by step-back navigation to restore the previous cwd. Silently
+    /// falls back to the root when `cwd` is outside the sandbox or the
+    /// explorer rejects it.
+    pub fn set_cwd(&mut self, cwd: &Path) {
+        if cwd.starts_with(&self.root) && self.explorer.set_cwd(cwd).is_ok() {
+            return;
+        }
+        let _ = self.explorer.set_cwd(&self.root);
+    }
+
     /// Shared commit-or-reject logic used by `s` and the git-repo prompt's
     /// "Mount this repository" option. Enforces the same sandbox rules.
     fn commit_or_reject(&mut self, target: PathBuf) -> ModalOutcome<PathBuf> {
