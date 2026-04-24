@@ -8,7 +8,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use super::state::{EditorMode, EditorState, EditorTab, ManagerStage, ManagerState, WorkspaceSummary};
+use super::state::{EditorMode, EditorState, EditorTab, ManagerStage, ManagerState, Modal, WorkspaceSummary};
+use super::super::widgets::{confirm, file_browser, text_input, workdir_pick};
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
@@ -264,4 +265,29 @@ fn render_secrets_stub(frame: &mut Frame, area: Rect) {
         )),
     ];
     frame.render_widget(Paragraph::new(body).block(block), area);
+}
+
+// ── Modal dispatcher ────────────────────────────────────────────────
+
+pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
+    let area = frame.area();
+    let modal_area = centered_rect(area, 60, 30);
+
+    match modal {
+        Modal::TextInput { state, .. } => text_input::render(frame, modal_area, state),
+        Modal::FileBrowser { state, .. } => file_browser::render(frame, modal_area, state),
+        Modal::WorkdirPick { state } => workdir_pick::render(frame, modal_area, state),
+        Modal::Confirm { state, .. } => confirm::render(frame, modal_area, state),
+    }
+}
+
+fn centered_rect(outer: Rect, pct_w: u16, pct_h: u16) -> Rect {
+    let w = outer.width * pct_w / 100;
+    let h = outer.height * pct_h / 100;
+    Rect {
+        x: outer.x + (outer.width.saturating_sub(w)) / 2,
+        y: outer.y + (outer.height.saturating_sub(h)) / 2,
+        width: w,
+        height: h,
+    }
 }
