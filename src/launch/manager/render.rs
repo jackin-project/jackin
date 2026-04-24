@@ -13,8 +13,8 @@ use super::super::widgets::{
     save_discard, text_input, workdir_pick,
 };
 use super::state::{
-    EditorMode, EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, Modal,
-    WorkspaceSummary,
+    EditorMode, EditorState, EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState,
+    Modal, WorkspaceSummary,
 };
 use crate::config::AppConfig;
 
@@ -119,19 +119,16 @@ pub fn render(
             ManagerStage::List => {
                 // Surface "o open in GitHub" on rows whose workspace has at
                 // least one GitHub-hosted mount with a resolvable web URL.
-                // Current-dir row 0 and the "+ New workspace" sentinel skip
-                // the hint entirely.
-                let saved_count = state.workspaces.len();
-                let sentinel_idx = saved_count + 1;
-                let show_open_hint = state.selected >= 1
-                    && state.selected < sentinel_idx
-                    && state
-                        .workspaces
-                        .get(state.selected - 1)
-                        .and_then(|s| config.workspaces.get(&s.name))
-                        .is_some_and(|ws| {
-                            !super::input::resolve_github_mounts_for_workspace(ws).is_empty()
-                        });
+                // See `ManagerListRow` docs for row layout — current-dir and
+                // the "+ New workspace" sentinel skip the hint entirely.
+                let show_open_hint =
+                    matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
+                        && state
+                            .selected_workspace_summary()
+                            .and_then(|s| config.workspaces.get(&s.name))
+                            .is_some_and(|ws| {
+                                !super::input::resolve_github_mounts_for_workspace(ws).is_empty()
+                            });
 
                 let mut items = vec![
                     // Navigation group
@@ -235,21 +232,15 @@ fn render_list_body(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
-    // Row layout (mirrors ManagerState::from_config / handle_list_key):
-    //   0                 → synthetic "Current directory"
-    //   1..=saved_count   → saved workspaces (saved_index = selected - 1)
-    //   saved_count + 1   → "+ New workspace" sentinel
+    // See ManagerListRow docs for row layout.
     let saved_count = state.workspaces.len();
-    let sentinel_idx = saved_count + 1;
-    let is_current_dir = state.selected == 0;
-    let is_sentinel = state.selected == sentinel_idx;
 
     // Split driven by `state.list_split_pct` (default 30), adjustable via
     // mouse-drag on the seam column. Keeps the right pane visible on every
     // row. Row-specific right-pane renderers:
-    //   row 0             → current-dir details
-    //   saved rows        → saved-workspace details
-    //   sentinel          → description-of-what-a-workspace-is pane
+    //   CurrentDirectory  → current-dir details
+    //   SavedWorkspace(i) → saved-workspace details
+    //   NewWorkspace      → description-of-what-a-workspace-is pane
     let left_pct = state.list_split_pct;
     let right_pct = 100u16.saturating_sub(left_pct);
     let columns = Layout::default()
@@ -261,12 +252,18 @@ fn render_list_body(
         .split(area);
     let list_area = columns[0];
 
-    if is_current_dir {
-        render_current_dir_details_pane(frame, columns[1], cwd);
-    } else if is_sentinel {
-        render_sentinel_description_pane(frame, columns[1]);
-    } else if let Some(ws) = state.workspaces.get(state.selected - 1) {
-        render_details_pane(frame, columns[1], ws, config);
+    match state.selected_row() {
+        ManagerListRow::CurrentDirectory => {
+            render_current_dir_details_pane(frame, columns[1], cwd);
+        }
+        ManagerListRow::NewWorkspace => {
+            render_sentinel_description_pane(frame, columns[1]);
+        }
+        ManagerListRow::SavedWorkspace(i) => {
+            if let Some(ws) = state.workspaces.get(i) {
+                render_details_pane(frame, columns[1], ws, config);
+            }
+        }
     }
 
     // Left: [Current directory] + saved workspaces + [+ New workspace].

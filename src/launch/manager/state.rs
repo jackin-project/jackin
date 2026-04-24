@@ -12,6 +12,36 @@ use crate::launch::widgets::{
     workdir_pick::WorkdirPickState,
 };
 
+/// Logical identity of a row in the workspace-manager list.
+///
+/// The list has a fixed shape:
+///   - `CurrentDirectory` — the synthetic "Current directory" row (always row 0 on screen)
+///   - `SavedWorkspace(i)` — the i-th saved workspace (0-indexed into `ManagerState::workspaces`)
+///   - `NewWorkspace`     — the "+ New workspace" sentinel (always the last row on screen)
+///
+/// Prefer this enum (and the `ManagerState` helpers below) over the raw
+/// `selected: usize` when reasoning about what the operator is pointing at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManagerListRow {
+    CurrentDirectory,
+    SavedWorkspace(usize),
+    NewWorkspace,
+}
+
+impl ManagerListRow {
+    /// Inverse of [`ManagerState::row_at`]. Maps a logical row back to the
+    /// raw screen index — used by callers that still need to hand a `usize`
+    /// to ratatui's [`ListState::select`].
+    #[must_use]
+    pub const fn to_screen_index(self, saved_count: usize) -> usize {
+        match self {
+            Self::CurrentDirectory => 0,
+            Self::SavedWorkspace(i) => i + 1,
+            Self::NewWorkspace => saved_count + 1,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ManagerState<'a> {
     pub stage: ManagerStage<'a>,
@@ -286,16 +316,11 @@ impl ManagerState<'_> {
     /// Build the manager state from config, preselecting the row that best
     /// matches `cwd`.
     ///
-    /// Row layout in the manager list (mirrored in `render_list_body` and
-    /// `handle_list_key`):
+    /// See [`ManagerListRow`] docs for row layout.
     ///
-    ///   row 0              → synthetic "Current directory" choice
-    ///   rows 1..=N         → saved workspaces, in `BTreeMap` order
-    ///   row N+1            → "+ New workspace" sentinel
-    ///
-    /// When cwd is covered by a saved workspace, preselect the saved row
-    /// (index = 1 + its position in config.workspaces). Otherwise land on
-    /// row 0 so Enter launches against the current directory without saving.
+    /// When cwd is covered by a saved workspace, preselect the saved row.
+    /// Otherwise land on the current-directory row so Enter launches against
+    /// the current directory without saving.
     pub fn from_config(config: &AppConfig, cwd: &std::path::Path) -> Self {
         let workspaces: Vec<WorkspaceSummary> = config
             .workspaces
@@ -303,9 +328,13 @@ impl ManagerState<'_> {
             .map(|(name, ws)| WorkspaceSummary::from_config(name, ws))
             .collect();
 
+        let saved_count = workspaces.len();
         let selected = crate::app::context::find_saved_workspace_for_cwd(config, cwd)
             .and_then(|(name, _)| workspaces.iter().position(|w| w.name == name))
-            .map_or(0, |idx| idx + 1);
+            .map_or(
+                ManagerListRow::CurrentDirectory.to_screen_index(saved_count),
+                |idx| ManagerListRow::SavedWorkspace(idx).to_screen_index(saved_count),
+            );
 
         Self {
             stage: ManagerStage::List,
@@ -315,6 +344,66 @@ impl ManagerState<'_> {
             list_modal: None,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
+        }
+    }
+
+    /// Total number of rows in the list (current-dir + saved + sentinel).
+    #[must_use]
+    pub fn row_count(&self) -> usize {
+        self.workspaces.len() + 2
+    }
+
+    /// Index of the "+ New workspace" sentinel row.
+    #[must_use]
+    pub fn new_workspace_row_index(&self) -> usize {
+        self.workspaces.len() + 1
+    }
+
+    /// Decode a raw screen-row `usize` into a [`ManagerListRow`]. Returns
+    /// `None` when `idx` is out of range.
+    #[must_use]
+    pub fn row_at(&self, idx: usize) -> Option<ManagerListRow> {
+        let saved_count = self.workspaces.len();
+        if idx == 0 {
+            Some(ManagerListRow::CurrentDirectory)
+        } else if idx == saved_count + 1 {
+            Some(ManagerListRow::NewWorkspace)
+        } else if idx <= saved_count {
+            Some(ManagerListRow::SavedWorkspace(idx - 1))
+        } else {
+            None
+        }
+    }
+
+    /// What the operator currently has highlighted.
+    #[must_use]
+    pub fn selected_row(&self) -> ManagerListRow {
+        self.row_at(self.selected)
+            .unwrap_or(ManagerListRow::CurrentDirectory)
+    }
+
+    /// Convenience: `true` when the selection is on the synthetic
+    /// "Current directory" row.
+    #[must_use]
+    pub fn is_current_dir_selected(&self) -> bool {
+        matches!(self.selected_row(), ManagerListRow::CurrentDirectory)
+    }
+
+    /// Convenience: `true` when the selection is on the "+ New workspace"
+    /// sentinel.
+    #[must_use]
+    pub fn is_new_workspace_selected(&self) -> bool {
+        matches!(self.selected_row(), ManagerListRow::NewWorkspace)
+    }
+
+    /// The [`WorkspaceSummary`] currently highlighted, or `None` when the
+    /// selection is on Current Directory or New Workspace.
+    #[must_use]
+    pub fn selected_workspace_summary(&self) -> Option<&WorkspaceSummary> {
+        if let ManagerListRow::SavedWorkspace(i) = self.selected_row() {
+            self.workspaces.get(i)
+        } else {
+            None
         }
     }
 }
@@ -611,5 +700,69 @@ mod tests {
     fn create_prelude_starts_at_first_step() {
         let p = CreatePreludeState::new();
         assert!(matches!(p.step, CreateStep::PickFirstMountSrc));
+    }
+
+    /// Pin the enum contract: round-tripping a `ManagerListRow` through
+    /// `to_screen_index` / `row_at` / `selected_row` must yield the same
+    /// logical row. Covers the three variants over a non-trivial saved set.
+    #[test]
+    fn manager_list_row_round_trip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        config.workspaces.insert("a".into(), empty_ws("/a"));
+        config.workspaces.insert("b".into(), empty_ws("/b"));
+        config.workspaces.insert("c".into(), empty_ws("/c"));
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        let saved_count = state.workspaces.len();
+        assert_eq!(state.row_count(), saved_count + 2);
+        assert_eq!(state.new_workspace_row_index(), saved_count + 1);
+
+        let rows = [
+            ManagerListRow::CurrentDirectory,
+            ManagerListRow::SavedWorkspace(0),
+            ManagerListRow::SavedWorkspace(1),
+            ManagerListRow::SavedWorkspace(2),
+            ManagerListRow::NewWorkspace,
+        ];
+        for row in rows {
+            let idx = row.to_screen_index(saved_count);
+            assert_eq!(state.row_at(idx), Some(row), "row_at({idx}) for {row:?}");
+            state.selected = idx;
+            assert_eq!(state.selected_row(), row, "selected_row for idx={idx}");
+        }
+
+        // Out-of-range index returns None.
+        assert_eq!(state.row_at(saved_count + 2), None);
+    }
+
+    /// `selected_workspace_summary` must return `None` for both synthetic
+    /// rows (cwd + sentinel) and `Some(&WorkspaceSummary)` for a real
+    /// saved row.
+    #[test]
+    fn manager_selected_workspace_summary_is_none_for_synthetic_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        config.workspaces.insert("alpha".into(), empty_ws("/alpha"));
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        // Current directory row.
+        state.selected = ManagerListRow::CurrentDirectory.to_screen_index(1);
+        assert!(state.selected_workspace_summary().is_none());
+        assert!(state.is_current_dir_selected());
+
+        // Saved workspace row.
+        state.selected = ManagerListRow::SavedWorkspace(0).to_screen_index(1);
+        let summary = state
+            .selected_workspace_summary()
+            .expect("saved row exposes summary");
+        assert_eq!(summary.name, "alpha");
+
+        // "+ New workspace" sentinel.
+        state.selected = ManagerListRow::NewWorkspace.to_screen_index(1);
+        assert!(state.selected_workspace_summary().is_none());
+        assert!(state.is_new_workspace_selected());
     }
 }

@@ -11,7 +11,7 @@ use super::super::widgets::{
 };
 use super::state::{
     DragState, EditorMode, EditorState, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
-    ManagerStage, ManagerState, Modal, Toast, ToastKind, clamp_split,
+    ManagerListRow, ManagerStage, ManagerState, Modal, Toast, ToastKind, clamp_split,
 };
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -179,13 +179,7 @@ fn handle_list_key(
     _cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    // Row layout (mirrors ManagerState::from_config):
-    //   0                 → synthetic "Current directory"
-    //   1..=saved_count   → saved workspaces (saved_index = selected - 1)
-    //   saved_count + 1   → "+ New workspace" sentinel
-    let saved_count = state.workspaces.len();
-    let sentinel_idx = saved_count + 1;
-    let total_rows = sentinel_idx + 1; // 0..=sentinel_idx are valid
+    // See ManagerListRow docs for row layout.
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
@@ -193,17 +187,17 @@ fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            state.selected = (state.selected + 1).min(total_rows - 1);
+            state.selected = (state.selected + 1).min(state.row_count() - 1);
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Enter => {
-            if state.selected == 0 {
-                // Row 0 — launch against cwd. Run-loop routes through the
-                // same agent-picker stage as LaunchNamed.
+        KeyCode::Enter => match state.selected_row() {
+            ManagerListRow::CurrentDirectory => {
+                // Launch against cwd. Run-loop routes through the same
+                // agent-picker stage as LaunchNamed.
                 Ok(InputOutcome::LaunchCurrentDir)
-            } else if state.selected == sentinel_idx {
-                // [+ New workspace] sentinel: start the create prelude
-                // with a FileBrowser modal open.
+            }
+            ManagerListRow::NewWorkspace => {
+                // Start the create prelude with a FileBrowser modal open.
                 let mut prelude = super::state::CreatePreludeState::new();
                 prelude.modal = Some(Modal::FileBrowser {
                     target: FileBrowserTarget::CreateFirstMountSrc,
@@ -211,30 +205,35 @@ fn handle_list_key(
                 });
                 state.stage = ManagerStage::CreatePrelude(prelude);
                 Ok(InputOutcome::Continue)
-            } else if let Some(summary) = state.workspaces.get(state.selected - 1) {
-                // Launch the selected saved workspace.
-                Ok(InputOutcome::LaunchNamed(summary.name.clone()))
-            } else {
-                Ok(InputOutcome::Continue)
             }
-        }
+            ManagerListRow::SavedWorkspace(i) => {
+                if let Some(summary) = state.workspaces.get(i) {
+                    Ok(InputOutcome::LaunchNamed(summary.name.clone()))
+                } else {
+                    Ok(InputOutcome::Continue)
+                }
+            }
+        },
         KeyCode::Char('e' | 'E') => {
-            if state.selected == 0 {
-                state.toast = Some(Toast {
-                    message: "Current directory cannot be edited".into(),
-                    kind: ToastKind::Error,
-                    shown_at: std::time::Instant::now(),
-                });
-                return Ok(InputOutcome::Continue);
-            }
-            if state.selected == sentinel_idx {
-                return Ok(InputOutcome::Continue);
-            }
-            if let Some(summary) = state.workspaces.get(state.selected - 1) {
-                // Open the editor for the selected workspace.
-                let name = summary.name.clone();
-                if let Some(ws) = config.workspaces.get(&name) {
-                    state.stage = ManagerStage::Editor(EditorState::new_edit(name, ws.clone()));
+            match state.selected_row() {
+                ManagerListRow::CurrentDirectory => {
+                    state.toast = Some(Toast {
+                        message: "Current directory cannot be edited".into(),
+                        kind: ToastKind::Error,
+                        shown_at: std::time::Instant::now(),
+                    });
+                }
+                ManagerListRow::NewWorkspace => {
+                    // Silent no-op on the sentinel.
+                }
+                ManagerListRow::SavedWorkspace(i) => {
+                    if let Some(summary) = state.workspaces.get(i) {
+                        let name = summary.name.clone();
+                        if let Some(ws) = config.workspaces.get(&name) {
+                            state.stage =
+                                ManagerStage::Editor(EditorState::new_edit(name, ws.clone()));
+                        }
+                    }
                 }
             }
             Ok(InputOutcome::Continue)
@@ -249,28 +248,31 @@ fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('d' | 'D') => {
-            if state.selected == 0 {
-                state.toast = Some(Toast {
-                    message: "Current directory cannot be deleted".into(),
-                    kind: ToastKind::Error,
-                    shown_at: std::time::Instant::now(),
-                });
-                return Ok(InputOutcome::Continue);
-            }
-            if state.selected == sentinel_idx {
-                return Ok(InputOutcome::Continue);
-            }
-            if let Some(ws) = state.workspaces.get(state.selected - 1) {
-                let name = ws.name.clone();
-                state.stage = ManagerStage::ConfirmDelete {
-                    name: name.clone(),
-                    state: ConfirmState::new(format!("Delete \"{name}\"?")),
-                };
+            match state.selected_row() {
+                ManagerListRow::CurrentDirectory => {
+                    state.toast = Some(Toast {
+                        message: "Current directory cannot be deleted".into(),
+                        kind: ToastKind::Error,
+                        shown_at: std::time::Instant::now(),
+                    });
+                }
+                ManagerListRow::NewWorkspace => {
+                    // Silent no-op on the sentinel.
+                }
+                ManagerListRow::SavedWorkspace(i) => {
+                    if let Some(ws) = state.workspaces.get(i) {
+                        let name = ws.name.clone();
+                        state.stage = ManagerStage::ConfirmDelete {
+                            name: name.clone(),
+                            state: ConfirmState::new(format!("Delete \"{name}\"?")),
+                        };
+                    }
+                }
             }
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('o' | 'O') => {
-            handle_list_open_in_github(state, config, sentinel_idx);
+            handle_list_open_in_github(state, config);
             Ok(InputOutcome::Continue)
         }
         _ => Ok(InputOutcome::Continue),
@@ -280,20 +282,13 @@ fn handle_list_key(
 /// Dispatch the `o` key on the workspace list view. Keeps `handle_list_key`
 /// below clippy's `too_many_lines` threshold and isolates the
 /// toast/open/picker decision tree.
-fn handle_list_open_in_github(
-    state: &mut ManagerState<'_>,
-    config: &AppConfig,
-    sentinel_idx: usize,
-) {
-    if state.selected == 0 || state.selected == sentinel_idx {
+fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) {
+    let Some(summary) = state.selected_workspace_summary() else {
         state.toast = Some(Toast {
             message: "no workspace selected".into(),
             kind: ToastKind::Error,
             shown_at: std::time::Instant::now(),
         });
-        return;
-    }
-    let Some(summary) = state.workspaces.get(state.selected - 1) else {
         return;
     };
     let Some(ws) = config.workspaces.get(&summary.name) else {
@@ -1338,7 +1333,7 @@ pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
             // Otherwise, treat as click-to-select if the click lands inside
             // the list pane's content area (excluding borders).
             if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x) {
-                state.selected = row;
+                state.selected = row.to_screen_index(state.workspaces.len());
             }
         }
         MouseEventKind::Drag(MouseButton::Left) => {
@@ -1398,7 +1393,7 @@ fn try_open_file_browser_git_url(
     fb_state.maybe_open_url_on_click(modal_area, mouse.column, mouse.row)
 }
 
-/// Return the list-row index the mouse is over, or `None` if the click
+/// Return the logical list row the mouse is over, or `None` if the click
 /// falls outside the list pane's content area.
 ///
 /// Mirrors the layout from `render::render` + `render::render_list_body`:
@@ -1407,19 +1402,19 @@ fn try_open_file_browser_git_url(
 ///   - The list itself sits inside a bordered block — row 0 of list
 ///     items is at y = header + 1 (the +1 skips the top border).
 ///
-/// Returns `Some(idx)` only when:
+/// Returns `Some(row)` only when:
 ///   - `mouse.column` is inside `[1, seam_x - 1]` (left pane interior,
 ///     i.e. excluding both the left border and the seam column itself)
 ///   - `mouse.row` is inside `[header + 1, body_end - 1]` (body interior,
 ///     excluding the top and bottom border rows)
-///   - The computed index is within `[0, sentinel_idx]` (the valid range
-///     of rows the operator can select)
+///   - The computed index maps to a valid `ManagerListRow`. See
+///     `ManagerListRow` docs for row layout.
 fn list_content_row_index(
     state: &ManagerState<'_>,
     mouse: MouseEvent,
     term_size: Rect,
     seam_x: u16,
-) -> Option<usize> {
+) -> Option<ManagerListRow> {
     // Column check — strictly inside the left pane (exclude left border
     // and seam column, which is also the left pane's right border).
     if mouse.column == 0 || mouse.column >= seam_x {
@@ -1437,15 +1432,7 @@ fn list_content_row_index(
     // Row index into the list: items start at y = content_top (the first
     // row below the top border).
     let idx = usize::from(mouse.row - content_top);
-    // The selectable range is [0, sentinel_idx] where:
-    //   0                 → "Current directory"
-    //   1..=saved_count   → saved workspaces
-    //   saved_count + 1   → "+ New workspace" sentinel
-    let sentinel_idx = state.workspaces.len() + 1;
-    if idx > sentinel_idx {
-        return None;
-    }
-    Some(idx)
+    state.row_at(idx)
 }
 
 /// Compute the seam column (0-based) for a given split percentage and
