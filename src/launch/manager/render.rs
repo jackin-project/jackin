@@ -203,12 +203,7 @@ fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>, con
     let list_area = columns[0];
 
     if is_sentinel {
-        // Empty bordered pane — matches the PHOSPHOR_DARK border used by the
-        // General/Mounts/Agents sub-panels.
-        let empty = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(PHOSPHOR_DARK));
-        frame.render_widget(empty, columns[1]);
+        render_sentinel_description_pane(frame, columns[1]);
     } else if let Some(ws) = state.workspaces.get(state.selected) {
         render_details_pane(frame, columns[1], ws, config);
     }
@@ -366,6 +361,75 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     render_general_subpanel(frame, rows[0], ws);
     render_mounts_subpanel(frame, rows[1], mounts);
     render_agents_subpanel(frame, rows[2], ws_config, config);
+}
+
+/// Right-pane description shown when the cursor is on the "+ New workspace"
+/// sentinel. Explains what a workspace is and why the operator might create
+/// one — compacted from `docs/src/content/docs/guides/workspaces.mdx`
+/// sections "What is a workspace?" + "Why save a workspace?".
+fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
+    // Two stacked sub-panels so the section titles render as block titles
+    // with the same PHOSPHOR_DARK border used by General/Mounts/Agents.
+    // The "What is a workspace?" intro is short (fits in 4 rows); the
+    // rest of the area hosts the bullet list + closing hint.
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5), // "What is a workspace?" intro (2 text rows + 2 borders + 1 pad)
+            Constraint::Min(9),    // "Why create one?" bullets + hint
+        ])
+        .split(area);
+
+    let intro_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " What is a workspace? ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let intro_lines = vec![
+        Line::from(Span::styled(
+            "  A workspace saves a project boundary once so you",
+            Style::default().fg(PHOSPHOR_GREEN),
+        )),
+        Line::from(Span::styled(
+            "  can launch agents into it from anywhere \u{2014} without",
+            Style::default().fg(PHOSPHOR_GREEN),
+        )),
+        Line::from(Span::styled(
+            "  retyping mount paths.",
+            Style::default().fg(PHOSPHOR_GREEN),
+        )),
+    ];
+    frame.render_widget(Paragraph::new(intro_lines).block(intro_block), rows[0]);
+
+    let why_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Why create one? ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let bullet_style = Style::default().fg(PHOSPHOR_GREEN);
+    let bullets = [
+        "Name a project once, launch from any cwd",
+        "Keep extra mounts consistent across sessions",
+        "Reuse one boundary with different agent classes",
+        "Set a default agent or restrict which classes apply",
+        "Let `jackin launch` auto-detect and preselect it",
+    ];
+    let mut why_lines: Vec<Line<'static>> = bullets
+        .iter()
+        .map(|b| Line::from(Span::styled(format!("  \u{2022} {b}"), bullet_style)))
+        .collect();
+    why_lines.push(Line::from(""));
+    why_lines.push(Line::from(Span::styled(
+        "  Press Enter to start the setup wizard.",
+        Style::default()
+            .fg(PHOSPHOR_DIM)
+            .add_modifier(Modifier::ITALIC),
+    )));
+    frame.render_widget(Paragraph::new(why_lines).block(why_block), rows[1]);
 }
 
 fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary) {
