@@ -192,19 +192,26 @@ fn render_header(frame: &mut Frame, area: Rect, title: &str) {
 fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>, config: &AppConfig) {
     let is_sentinel = state.selected >= state.workspaces.len();
 
-    let list_area = if is_sentinel {
-        // Cursor is on "+ New workspace" — no details to show, use full width.
-        area
-    } else {
-        let columns = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-            .split(area);
-        if let Some(ws) = state.workspaces.get(state.selected) {
-            render_details_pane(frame, columns[1], ws, config);
-        }
-        columns[0]
-    };
+    // Always split 45/55 so the right pane stays visible even when the
+    // cursor is on "+ New workspace". On the sentinel we render an empty
+    // bordered pane (same border style as the details pane) instead of the
+    // General/Mounts/Agents blocks.
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+        .split(area);
+    let list_area = columns[0];
+
+    if is_sentinel {
+        // Empty bordered pane — matches the PHOSPHOR_DARK border used by the
+        // General/Mounts/Agents sub-panels.
+        let empty = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(PHOSPHOR_DARK));
+        frame.render_widget(empty, columns[1]);
+    } else if let Some(ws) = state.workspaces.get(state.selected) {
+        render_details_pane(frame, columns[1], ws, config);
+    }
 
     // Left: list of workspaces + [+ New workspace] sentinel.
     let mut items: Vec<ListItem> = state
