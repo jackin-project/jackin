@@ -351,12 +351,13 @@ fn format_mount_rows(
         .collect()
 }
 
-/// Minimum width of the `mode` column. Matches the length of `rw`/`ro`.
-/// The header's literal "mode" label is 4 chars (wider than the floor), so
-/// `{:<MOUNT_MODE_COL_WIDTH}` expands to fit without clipping. Both the
-/// header and data rows emit a two-space gutter after this column before
-/// the `type` column so "mode" and "type" never run together.
-const MOUNT_MODE_COL_WIDTH: usize = 2;
+/// Width of the `mode` column. Pinned to the length of the header label
+/// "mode" (4 chars) so the data-row values "rw"/"ro" pad to the same width.
+/// Without the pad, `rw`/`ro` (2 chars) would render 2 chars short of the
+/// header's 4, shifting the `type` column left by 2 on every data row.
+/// Both the header and data rows emit a two-space gutter after this column
+/// before the `type` column so "mode" and "type" never run together.
+const MOUNT_MODE_COL_WIDTH: usize = 4;
 
 /// Compute the width used for the `path` column so that header and data rows
 /// align. Derived from both the "path" header label and the widest row path,
@@ -1449,13 +1450,26 @@ mod mount_table_tests {
         // Regression for the "modetype" bug: header must emit a literal
         // two-space gap between the `mode` column and the `type` label,
         // mirroring the gap data rows emit between `rw`/`ro` and the kind.
-        let rows: Vec<(String, &str, String)> = vec![("~/p".into(), "rw", "git · main".into())];
+        // Additionally pins the type-column alignment: the `type` header
+        // label must start at the same character offset as the data row's
+        // kind label (e.g. "folder") — without padding `rw`/`ro` to the
+        // full width of "mode", the kind column would render 2 chars
+        // left of the header.
+        let rows: Vec<(String, &str, String)> = vec![("~/p".into(), "rw", "folder".into())];
         let path_w = mount_path_width(&rows);
         let header = render_mount_header(path_w);
-        let s = line_text(&header);
+        let data = render_mount_lines(&rows, path_w);
+        let header_text = line_text(&header);
+        let data_text = line_text(&data[0]);
         assert!(
-            s.contains("mode  type"),
-            "expected 'mode  type' (two spaces between mode and type); got {s:?}"
+            header_text.contains("mode  type"),
+            "expected 'mode  type' (two spaces between mode and type); got {header_text:?}"
+        );
+        let header_type_offset = header_text.find("type").expect("header has 'type'");
+        let data_kind_offset = data_text.find("folder").expect("data row has 'folder'");
+        assert_eq!(
+            header_type_offset, data_kind_offset,
+            "type column misaligned: header at {header_type_offset}, data at {data_kind_offset}"
         );
     }
 }
