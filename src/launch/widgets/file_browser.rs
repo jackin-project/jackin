@@ -261,7 +261,28 @@ impl FileBrowserState {
                 }
                 ModalOutcome::Continue
             }
-            KeyCode::Esc => ModalOutcome::Cancel,
+            KeyCode::Esc => {
+                // Esc steps back one directory when the operator has drilled
+                // below root — mirroring `h` / `←`. Only cancels the modal
+                // when already at root. The `rejected_reason` was cleared
+                // above; any "navigate-up" branch here must preserve that.
+                if self.explorer.cwd() == &self.root {
+                    ModalOutcome::Cancel
+                } else {
+                    let parent = self
+                        .explorer
+                        .cwd()
+                        .parent()
+                        .map(std::path::Path::to_path_buf);
+                    if let Some(parent) = parent {
+                        // Guard: only if parent stays inside the sandbox.
+                        if parent.starts_with(&self.root) {
+                            let _ = self.explorer.set_cwd(&parent);
+                        }
+                    }
+                    ModalOutcome::Continue
+                }
+            }
             _ => {
                 // Guard: ratatui-explorer panics (div-by-zero) on nav keys
                 // when the listing is empty. Skip dispatch in that case.
@@ -463,7 +484,7 @@ fn render_footer_legend(frame: &mut Frame, area: Rect, state: &FileBrowserState)
             Span::styled(" select", text),
             Span::raw("   "),
             Span::styled("Esc", key),
-            Span::styled(" cancel", text),
+            Span::styled(" up/cancel", text),
         ])
     };
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
@@ -782,6 +803,114 @@ mod tests {
             state.handle_key(key(KeyCode::Esc)),
             ModalOutcome::Cancel
         ));
+    }
+
+    // ── Esc step-back navigation ──────────────────────────────────────
+
+    #[test]
+    fn esc_at_root_cancels_modal() {
+        // cwd == root → Esc closes the browser.
+        let tmp = tempdir().unwrap();
+        let mut state = make_state_at(tmp.path().to_path_buf());
+        assert_eq!(state.explorer.cwd(), tmp.path());
+        let outcome = state.handle_key(key(KeyCode::Esc));
+        assert!(
+            matches!(outcome, ModalOutcome::Cancel),
+            "Esc at root must cancel; got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn esc_inside_subfolder_navigates_up() {
+        // cwd is one level below root → Esc should nav up and Continue,
+        // not cancel the modal.
+        let tmp = tempdir().unwrap();
+        let sub = tmp.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), sub.clone());
+        assert_eq!(
+            state.explorer.cwd().canonicalize().unwrap(),
+            sub.canonicalize().unwrap(),
+        );
+        let outcome = state.handle_key(key(KeyCode::Esc));
+        assert!(
+            matches!(outcome, ModalOutcome::Continue),
+            "Esc in subfolder must not cancel; got {outcome:?}"
+        );
+        assert_eq!(
+            state.explorer.cwd().canonicalize().unwrap(),
+            tmp.path().canonicalize().unwrap(),
+            "Esc must step up to the parent directory"
+        );
+    }
+
+    #[test]
+    fn esc_deep_navigates_up_one_level() {
+        // cwd is three levels below root → Esc should go up one level only,
+        // not jump all the way back to root.
+        let tmp = tempdir().unwrap();
+        let l1 = tmp.path().join("a");
+        let l2 = l1.join("b");
+        let l3 = l2.join("c");
+        std::fs::create_dir_all(&l3).unwrap();
+
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), l3.clone());
+        let outcome = state.handle_key(key(KeyCode::Esc));
+        assert!(matches!(outcome, ModalOutcome::Continue));
+        assert_eq!(
+            state.explorer.cwd().canonicalize().unwrap(),
+            l2.canonicalize().unwrap(),
+            "Esc must step up exactly one level, not jump to root"
+        );
+    }
+
+    #[test]
+    fn esc_clears_rejected_reason() {
+        // At root with a pending rejection: Esc still cancels (root
+        // behavior) but must also clear the rejection message so the
+        // modal doesn't carry a stale banner if reopened.
+        let tmp = tempdir().unwrap();
+        let mut state = make_state_at(tmp.path().to_path_buf());
+        state.rejected_reason = Some("stale reason".into());
+
+        let outcome = state.handle_key(key(KeyCode::Esc));
+        assert!(
+            matches!(outcome, ModalOutcome::Cancel),
+            "Esc at root must still cancel; got {outcome:?}"
+        );
+        assert!(
+            state.rejected_reason.is_none(),
+            "Esc must clear rejected_reason"
+        );
+    }
+
+    #[test]
+    fn esc_in_git_prompt_dismisses_prompt_only() {
+        // Regression: Esc while the git-repo prompt is open must only
+        // clear the prompt — cwd unchanged, outcome Continue.
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent.clone());
+        state.pending_git_prompt = Some(repo.clone());
+
+        let outcome = state.handle_key(key(KeyCode::Esc));
+        assert!(
+            matches!(outcome, ModalOutcome::Continue),
+            "Esc with git prompt active must not cancel; got {outcome:?}"
+        );
+        assert!(
+            state.pending_git_prompt.is_none(),
+            "Esc must dismiss the git prompt"
+        );
+        assert_eq!(
+            state.explorer.cwd().canonicalize().unwrap(),
+            parent.canonicalize().unwrap(),
+            "Esc on the prompt must leave cwd untouched"
+        );
     }
 
     // ── Item 7: git-repo marker + Enter-on-git-repo prompt ────────────
