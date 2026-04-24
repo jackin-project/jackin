@@ -43,7 +43,7 @@ isolation = "shared"             # build cache, shared on purpose
 Modes:
 
 - **`shared`** — current behavior. Host path bind-mounted as-is.
-- **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path. Branch is hardcoded as `jackin/scratch/<instance-slug>` — an ephemeral scratch ref whose only job is to keep the agent's in-progress work reachable until it pushes. Agents (or external tooling such as the Superpowers plugin in Claude Code) rename the branch before pushing a PR. Base is always the host repo's current `HEAD`.
+- **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path. Branch is hardcoded as `jackin/scratch/<branch-instance>` — an ephemeral scratch ref whose only job is to keep the agent's in-progress work reachable until it pushes. Agents (or external tooling such as the Superpowers plugin in Claude Code) rename the branch before pushing a PR. Base is always the host repo's current `HEAD`.
 - **`clone`** — deferred from V1. When it lands, jackin' will run `git clone --local --shared <src> <per-agent-copy>`, hardlinking objects for disk efficiency, with the agent pushing back to `origin` (the host path) when done. `worktree` solves the immediate contention problem; `clone` is for the untrusted-agent / full-`.git`-isolation case.
 
 The mode vocabulary is intentionally enum-shaped from the start: `shared | worktree | clone`. `shared` is the canonical spelling, not `share`, because it describes the mount state and matches the persisted TOML value. V1 implements `shared` and `worktree`; `clone` is reserved in the public vocabulary but rejected by validation with a clear "planned but not implemented yet" message until clone mode ships.
@@ -52,9 +52,10 @@ Branch naming:
 
 - Primary instance: `jackin/scratch/the-architect`
 - Clone instance: `jackin/scratch/the-architect-clone-1`
-- Namespaced instance: `jackin/scratch/chainargos__the-architect`
+- Namespaced instance: `jackin/scratch/chainargos/the-architect`
+- Namespaced clone instance: `jackin/scratch/chainargos/the-architect-clone-1`
 
-`<instance-slug>` is the claimed container name with the leading `jackin-` prefix removed. The branch intentionally says `scratch` instead of repeating the Docker-facing container prefix: it is jackin-managed, disposable, and stable enough for recovery until the agent or operator renames it.
+`<branch-instance>` is derived from the agent selector key, not from the Docker container name. Namespace separators stay as `/` so the branch mirrors the way operators invoke agents (`jackin load chainargos/the-architect`). Clone suffixes still use the claimed instance index (`-clone-1`, `-clone-2`, etc.) and are appended to the final agent segment. Container/data-dir names can continue using Docker-safe runtime slugs such as `jackin-chainargos__the-architect`; git branch refs should preserve the operator-facing selector shape. The branch intentionally says `scratch` instead of repeating the Docker-facing container prefix: it is jackin-managed, disposable, and stable enough for recovery until the agent or operator renames it.
 
 ## CLI Surface
 
@@ -172,7 +173,7 @@ For each non-`shared` mount, materialization is idempotent: a second `load` to a
            reason: worktree has uncommitted changes
            run `jackin hardline the-architect` to return, `jackin cd the-architect` to inspect, or `jackin purge the-architect` to discard
   ```
-- **`purge`** — silently delete everything for the container: the container itself, the DinD sidecar, every isolated worktree recorded in `.jackin/isolation.json` (`git worktree remove --force`), the `isolated/` dir, and the recorded local scratch branch (`jackin/scratch/<instance-slug>` by default). No unpushed-commit guard, no interactive prompt, no `--delete-branches` flag. If the operator purges before the agent pushed, that is operator error — jackin' stays out of the way. Post-merge branch cleanup in the host repo is also operator-side; jackin' does not detect "branch merged upstream and gone" during normal operation.
+- **`purge`** — silently delete everything for the container: the container itself, the DinD sidecar, every isolated worktree recorded in `.jackin/isolation.json` (`git worktree remove --force`), the `isolated/` dir, and the recorded local scratch branch (`jackin/scratch/<branch-instance>` by default). No unpushed-commit guard, no interactive prompt, no `--delete-branches` flag. If the operator purges before the agent pushed, that is operator error — jackin' stays out of the way. Post-merge branch cleanup in the host repo is also operator-side; jackin' does not detect "branch merged upstream and gone" during normal operation.
 - **`purge` refuses to run on a running agent.** The operator must eject first (`jackin eject <name>`) or use the combo (`jackin eject <name> --purge`). This also fixes a pre-existing gap in `shared` mode where `purge` could delete state out from under a live container (`src/app/mod.rs` currently calls `remove_data_dir_if_exists` unconditionally). The guard reuses the existing `list_agent_names` primitive from `src/runtime/cleanup.rs`.
 - **Flipping isolation on a mount requires eject.** Bind-mount sources are not mutable on a running container, so live-swapping the `src` is not supported by the platform in the first place. `workspace edit` rejects isolation changes on a running container with a clear "eject first" message.
 - **Mount mode flipped between loads.** If the operator changes a mount from `worktree` to `shared` in the TOML (or removes the mount entirely) after eject but before the next `load`, the existing `isolated/<slug>/` directory is left on disk. The next `load` resolves the new config and bind-mounts accordingly; the orphan `isolated/` tree is reclaimed by `jackin purge <container>`. Jackin' does not automatically prune orphans on config change — `purge` is the single recovery path.
@@ -190,7 +191,7 @@ Ship:
   - `workspace show` displays each mount's effective isolation
 - A shared `MountIsolation` parser/model for TOML and CLI, with canonical values `shared | worktree | clone`; `clone` is reserved but rejected in V1 until implemented.
 - `jackin load --force` dirty-host acknowledgement for non-interactive worktree materialization; `jackin launch` gets an interactive confirmation path.
-- Branch naming hardcoded as `jackin/scratch/<instance-slug>` (ephemeral scratch ref), where `<instance-slug>` is the claimed container name without the leading `jackin-` prefix. Base is always host `HEAD`. No configurable template or base in V1.
+- Branch naming hardcoded as `jackin/scratch/<branch-instance>` (ephemeral scratch ref), where `<branch-instance>` is based on the agent selector key with namespace `/` preserved and clone suffixes appended to the final segment. Base is always host `HEAD`. No configurable template or base in V1.
 - Runtime materialization happens after container-name claim, not inside `resolve_load_workspace`; introduce a materialized-workspace handoff into Docker launch.
 - `.jackin/isolation.json` records materialized isolated mounts so `purge` and `cd` work even after config changes.
 - `extensions.worktreeConfig` enabled on the host repo on first worktree creation.
