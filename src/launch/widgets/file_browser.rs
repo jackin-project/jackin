@@ -70,45 +70,42 @@ impl FileBrowserState {
 
 pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
     use ratatui::{
-        layout::{Constraint, Direction, Layout},
+        layout::{Alignment, Constraint, Direction, Layout},
         style::{Color, Modifier, Style},
         text::Span,
-        widgets::{Block, Borders, Paragraph},
+        widgets::Paragraph,
     };
 
     frame.render_widget(ratatui::widgets::Clear, area);
 
-    // Outer block with prominent title banner showing cwd and the select key.
-    let cwd = state.explorer.cwd().display().to_string();
-    let title = format!(" {cwd} · press [S] to use this folder ");
-    let outer = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Rgb(0, 255, 65)))
-        .title(Span::styled(
-            title,
-            Style::default()
-                .fg(Color::Rgb(255, 255, 255))
-                .add_modifier(Modifier::BOLD),
-        ));
-    let inner = outer.inner(area);
-    frame.render_widget(outer, area);
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(1)])
-        .split(inner);
+        .constraints([
+            Constraint::Length(1), // affordance line
+            Constraint::Min(3),    // explorer (owns its own bordered block)
+            Constraint::Length(1), // hint line
+        ])
+        .split(area);
 
-    // The ratatui-explorer widget draws its own internal block/title ("dir").
-    // We keep it as-is — the outer block's title is the primary affordance.
-    frame.render_widget_ref(state.explorer.widget(), chunks[0]);
+    let affordance = Paragraph::new(Span::styled(
+        "press [S] to use this folder",
+        Style::default()
+            .fg(Color::Rgb(255, 255, 255))
+            .add_modifier(Modifier::BOLD),
+    ))
+    .alignment(Alignment::Center);
+    frame.render_widget(affordance, chunks[0]);
 
-    let hint = Span::styled(
+    frame.render_widget_ref(state.explorer.widget(), chunks[1]);
+
+    let hint = Paragraph::new(Span::styled(
         "↑↓ navigate · Enter open · h/← up · s select · Esc cancel",
         Style::default()
             .fg(Color::Rgb(0, 140, 30))
             .add_modifier(Modifier::ITALIC),
-    );
-    frame.render_widget(Paragraph::new(hint), chunks[1]);
+    ))
+    .alignment(Alignment::Center);
+    frame.render_widget(hint, chunks[2]);
 }
 
 #[cfg(test)]
