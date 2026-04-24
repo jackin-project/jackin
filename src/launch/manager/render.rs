@@ -127,7 +127,7 @@ pub fn render(
                             .selected_workspace_summary()
                             .and_then(|s| config.workspaces.get(&s.name))
                             .is_some_and(|ws| {
-                                !super::input::resolve_github_mounts_for_workspace(ws).is_empty()
+                                !super::github_mounts::resolve_for_workspace(ws).is_empty()
                             });
 
                 let mut items = vec![

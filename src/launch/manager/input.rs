@@ -303,7 +303,7 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
     let Some(ws) = config.workspaces.get(&summary.name) else {
         return;
     };
-    let choices = resolve_github_mounts_for_workspace(ws);
+    let choices = super::github_mounts::resolve_for_workspace(ws);
     match choices.len() {
         0 => {
             state.toast = Some(Toast {
@@ -327,40 +327,6 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
             });
         }
     }
-}
-
-/// Inspect each mount of `ws`, keep only those whose src resolves to a
-/// GitHub-hosted git working copy with a web URL, and return a picker-
-/// friendly tuple `(src, branch, url)` per surviving mount. Used by the
-/// list-view `o` key to decide whether to toast / open / show a picker.
-pub(super) fn resolve_github_mounts_for_workspace(
-    ws: &crate::workspace::WorkspaceConfig,
-) -> Vec<crate::launch::widgets::github_picker::GithubChoice> {
-    use super::mount_info::{GitBranch, GitHost, MountKind, inspect};
-    use crate::launch::widgets::github_picker::GithubChoice;
-    ws.mounts
-        .iter()
-        .filter_map(|m| {
-            let MountKind::Git {
-                branch,
-                host: GitHost::Github,
-                web_url: Some(url),
-            } = inspect(&m.src)
-            else {
-                return None;
-            };
-            let branch_label = match branch {
-                GitBranch::Named(b) => b,
-                GitBranch::Detached { short_sha } => format!("detached {short_sha}"),
-                GitBranch::Unknown => "unknown".to_string(),
-            };
-            Some(GithubChoice {
-                src: m.src.clone(),
-                branch: branch_label,
-                url,
-            })
-        })
-        .collect()
 }
 
 // Central keymap dispatch for the editor view: one giant match on
@@ -3632,7 +3598,7 @@ mod tests {
             agents: std::collections::BTreeMap::new(),
         };
 
-        let choices = resolve_github_mounts_for_workspace(&ws);
+        let choices = crate::launch::manager::github_mounts::resolve_for_workspace(&ws);
         assert_eq!(choices.len(), 2);
         // URLs track the HEAD ref per-repo.
         let urls: Vec<&str> = choices.iter().map(|c| c.url.as_str()).collect();
@@ -3675,7 +3641,7 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let choices = resolve_github_mounts_for_workspace(&ws);
+        let choices = crate::launch::manager::github_mounts::resolve_for_workspace(&ws);
         assert_eq!(choices.len(), 1);
         assert_eq!(choices[0].url, "https://github.com/owner/solo/tree/trunk");
     }
@@ -4326,7 +4292,7 @@ mod mouse_drag_tests {
     //! These build `MouseEvent` values directly and bypass the ratatui
     //! event loop — enough to pin the seam hit-test + drag math without a
     //! real terminal.
-    use super::{handle_mouse, resolve_github_mounts_for_workspace};
+    use super::handle_mouse;
     use crate::launch::manager::state::{
         DEFAULT_SPLIT_PCT, EditorState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState,
         Modal,
@@ -4475,7 +4441,7 @@ mod mouse_drag_tests {
         // while it's up must be a silent no-op — the picker owns the
         // keyboard + (implicitly) the mouse focus.
         let mut state = list_state();
-        // Use resolve_github_mounts_for_workspace indirectly — easier to
+        // Use the github_mounts resolver indirectly — easier to
         // just synthesize a GithubPicker state with an arbitrary choice.
         // The picker's exact contents don't matter; only `list_modal.is_some()`.
         let ws = WorkspaceConfig {
@@ -4492,7 +4458,7 @@ mod mouse_drag_tests {
             agents: std::collections::BTreeMap::new(),
         };
         // Ensure the helper signature compiles (guards against future refactors).
-        let _ = resolve_github_mounts_for_workspace(&ws);
+        let _ = crate::launch::manager::github_mounts::resolve_for_workspace(&ws);
         state.list_modal = Some(Modal::GithubPicker {
             state: crate::launch::widgets::github_picker::GithubPickerState::new(vec![
                 crate::launch::widgets::github_picker::GithubChoice {
