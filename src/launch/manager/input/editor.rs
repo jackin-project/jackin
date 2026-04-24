@@ -544,3 +544,761 @@ pub(super) fn apply_file_browser_to_editor(
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::too_many_lines)]
+mod tests {
+    //! Editor-stage tests: tab cycling, modal dispatch, agent allow/default
+    //! bindings, and mount-row readonly toggle.
+    use super::super::super::state::{
+        EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal,
+        TextInputTarget,
+    };
+    use super::super::test_support::{key, mount};
+    use super::{apply_file_browser_to_editor, apply_text_input_to_pending, handle_editor_modal};
+    use crate::config::AppConfig;
+    use crate::launch::manager::input::handle_key;
+    use crate::paths::JackinPaths;
+    use crate::workspace::{MountConfig, WorkspaceConfig};
+    use crossterm::event::KeyCode;
+    use tempfile::TempDir;
+
+    fn empty_ws() -> WorkspaceConfig {
+        WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn config_with_agents(names: &[&str]) -> AppConfig {
+        let mut config = AppConfig::default();
+        for name in names {
+            config.agents.insert(
+                (*name).into(),
+                crate::config::AgentSource {
+                    git: format!("https://example.test/{name}.git"),
+                    ..Default::default()
+                },
+            );
+        }
+        config.workspaces.insert("ws".into(), empty_ws());
+        config
+    }
+
+    fn editor_on_agents_tab<'a>(ws: WorkspaceConfig, row: usize) -> ManagerState<'a> {
+        let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Agents;
+        editor.active_field = FieldFocus::Row(row);
+        state.stage = ManagerStage::Editor(editor);
+        state
+    }
+
+    fn editor_on_mounts_tab<'a>(ws: WorkspaceConfig, row: usize) -> ManagerState<'a> {
+        let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Mounts;
+        editor.active_field = FieldFocus::Row(row);
+        state.stage = ManagerStage::Editor(editor);
+        state
+    }
+
+    fn ws_with_one_mount(readonly: bool) -> WorkspaceConfig {
+        WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![MountConfig {
+                src: "/host/a".into(),
+                dst: "/host/a".into(),
+                readonly,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn press(
+        state: &mut ManagerState<'_>,
+        config: &mut AppConfig,
+        code: KeyCode,
+    ) -> anyhow::Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs()?;
+        handle_key(state, config, &paths, tmp.path(), key(code))?;
+        Ok(())
+    }
+
+    fn pending_allowed(state: &ManagerState<'_>) -> Vec<String> {
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        e.pending.allowed_agents.clone()
+    }
+
+    /// Build an editor sitting on the Mounts tab with an empty mount list,
+    /// and simulate the commit of a FileBrowser at `/host/path`. The bridge
+    /// function is `apply_file_browser_to_editor`, which opens the new
+    /// `MountDstChoice` modal instead of the old "push + TextInput" chain.
+    fn editor_with_browser_committed(src: &str) -> EditorState<'static> {
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Mounts;
+        editor.active_field = FieldFocus::Row(0);
+        apply_file_browser_to_editor(
+            FileBrowserTarget::EditAddMountSrc,
+            &mut editor,
+            std::path::PathBuf::from(src),
+        );
+        editor
+    }
+
+    /// Build a minimal `(ManagerState, AppConfig, JackinPaths, TempDir)` with
+    /// the state stage parked in an Editor on the given `start_tab`. Used
+    /// to drive `handle_key` through `handle_editor_key`'s tab-cycle branch.
+    fn editor_state_on_tab(
+        start_tab: EditorTab,
+    ) -> (ManagerState<'static>, AppConfig, JackinPaths, TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let config = AppConfig::default();
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = start_tab;
+        state.stage = ManagerStage::Editor(editor);
+        (state, config, paths, tmp)
+    }
+
+    // ── Editor: rename modal entry on the name row ────────────────────
+
+    #[test]
+    fn create_mode_enter_on_name_row_opens_rename_modal() {
+        // In Create mode, pressing Enter on row 0 (Name) must open the
+        // rename TextInput modal pre-filled with the current pending_name
+        // — the same flow Edit mode uses. This is the operator's escape
+        // hatch from a prelude-captured name they mistyped.
+        let (_tmp, paths, mut config) = {
+            let tmp = tempfile::tempdir().unwrap();
+            let paths = JackinPaths::for_tests(tmp.path());
+            paths.ensure_base_dirs().unwrap();
+            let config = AppConfig::default();
+            let toml = toml::to_string(&config).unwrap();
+            std::fs::write(&paths.config_file, toml).unwrap();
+            let loaded = AppConfig::load_or_init(&paths).unwrap();
+            (tmp, paths, loaded)
+        };
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_create();
+        editor.pending_name = Some("typo-name".into());
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("still in editor after Enter on name row");
+        };
+        match &e.modal {
+            Some(Modal::TextInput { target, state }) => {
+                assert_eq!(*target, TextInputTarget::Name);
+                assert_eq!(
+                    state.value(),
+                    "typo-name",
+                    "TextInput must be pre-filled with current pending_name"
+                );
+            }
+            other => panic!("expected TextInput(Name); got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_mode_rename_commit_updates_pending_name() {
+        // After the TextInput commits a new value, pending_name should
+        // reflect the operator's edit. Same code path as Edit mode —
+        // apply_text_input_to_pending doesn't distinguish modes.
+        let mut editor = EditorState::new_create();
+        editor.pending_name = Some("old-name".into());
+
+        apply_text_input_to_pending(TextInputTarget::Name, &mut editor, "new-name");
+
+        assert_eq!(editor.pending_name.as_deref(), Some("new-name"));
+    }
+
+    #[test]
+    fn edit_mode_enter_on_name_row_still_opens_rename_modal() {
+        // Regression guard: the Create-mode extension to row 0 Enter must
+        // not break the Edit-mode path that already worked.
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        config.workspaces.insert("keep-me".into(), ws.clone());
+        let toml = toml::to_string(&config).unwrap();
+        std::fs::write(&paths.config_file, toml).unwrap();
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("keep-me".into(), ws);
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        match &e.modal {
+            Some(Modal::TextInput { target, state }) => {
+                assert_eq!(*target, TextInputTarget::Name);
+                assert_eq!(state.value(), "keep-me");
+            }
+            other => panic!("expected TextInput(Name); got {other:?}"),
+        }
+    }
+
+    // ── Editor FileBrowser → MountDstChoice behavioral tests ────────────
+
+    #[test]
+    fn filebrowser_commit_opens_mount_dst_choice_not_text_input() {
+        // Pin: the FileBrowser→TextInput chain is replaced by
+        // FileBrowser→MountDstChoice. No mount should be pushed yet — the
+        // push is deferred to the choice modal's commit handler.
+        let editor = editor_with_browser_committed("/host/path");
+        assert!(
+            matches!(editor.modal, Some(Modal::MountDstChoice { .. })),
+            "expected MountDstChoice modal; got {:?}",
+            editor.modal
+        );
+        assert_eq!(
+            editor.pending.mounts.len(),
+            0,
+            "no mount must be pushed until the operator commits in the choice modal"
+        );
+    }
+
+    #[test]
+    fn editor_ok_commits_mount_with_dst_equal_src() {
+        // OK shortcut on the choice modal → push MountConfig with dst = src
+        // and close the modal. No TextInput should appear.
+        let mut editor = editor_with_browser_committed("/host/path");
+        handle_editor_modal(&mut editor, key(KeyCode::Char('o')));
+        assert!(
+            editor.modal.is_none(),
+            "OK must close the modal; got {:?}",
+            editor.modal
+        );
+        assert_eq!(editor.pending.mounts.len(), 1, "exactly one mount pushed");
+        let m = &editor.pending.mounts[0];
+        assert_eq!(m.src, "/host/path");
+        assert_eq!(m.dst, "/host/path", "OK fast-path sets dst = src");
+        assert!(!m.readonly);
+    }
+
+    #[test]
+    fn editor_edit_opens_textinput_and_pushes_provisional() {
+        // Edit destination → push provisional mount (dst = src) + open
+        // the TextInput pre-filled with src. Mirrors today's flow so the
+        // operator can edit dst in place.
+        let mut editor = editor_with_browser_committed("/host/path");
+        handle_editor_modal(&mut editor, key(KeyCode::Char('e')));
+        match &editor.modal {
+            Some(Modal::TextInput { target, .. }) => {
+                assert_eq!(*target, TextInputTarget::MountDst);
+            }
+            other => panic!("expected TextInput(MountDst); got {other:?}"),
+        }
+        assert_eq!(
+            editor.pending.mounts.len(),
+            1,
+            "provisional mount pushed for the TextInput to mutate"
+        );
+        let m = &editor.pending.mounts[0];
+        assert_eq!(m.src, "/host/path");
+        assert_eq!(m.dst, "/host/path", "provisional dst mirrors src");
+    }
+
+    #[test]
+    fn editor_cancel_does_not_push_mount() {
+        // C / Esc dismisses the choice modal without touching pending.mounts.
+        let mut editor = editor_with_browser_committed("/host/path");
+        handle_editor_modal(&mut editor, key(KeyCode::Esc));
+        assert!(editor.modal.is_none(), "Esc closes the modal");
+        assert_eq!(
+            editor.pending.mounts.len(),
+            0,
+            "Cancel must not push a mount"
+        );
+
+        let mut editor = editor_with_browser_committed("/host/path");
+        handle_editor_modal(&mut editor, key(KeyCode::Char('c')));
+        assert!(editor.modal.is_none(), "`c` closes the modal");
+        assert_eq!(editor.pending.mounts.len(), 0, "`c` must not push a mount");
+    }
+
+    // ── Editor Left/Right = prev/next tab ──────────────────────────────
+
+    #[test]
+    fn editor_right_arrow_advances_tab() {
+        // Right should match Tab's forward cycle: General → Mounts.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Right),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.active_tab, EditorTab::Mounts);
+    }
+
+    #[test]
+    fn editor_left_arrow_rewinds_tab() {
+        // Left should match BackTab's reverse cycle: Mounts → General.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Mounts);
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Left),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.active_tab, EditorTab::General);
+    }
+
+    #[test]
+    fn editor_left_wraps_to_last_tab_from_first() {
+        // Match Tab's wrap contract: Left from General → Secrets.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Left),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.active_tab, EditorTab::Secrets);
+    }
+
+    #[test]
+    fn editor_right_wraps_to_first_tab_from_last() {
+        // Match Tab's wrap contract: Right from Secrets → General.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Secrets);
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Right),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.active_tab, EditorTab::General);
+    }
+
+    // ── Agents tab: D-key default binding ──────────────────────────────
+
+    #[test]
+    fn d_key_sets_default_agent_on_current_row() {
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        // Cursor on row 1 (agent "beta"), no default set yet. The
+        // workspace starts in the "all agents allowed" shorthand (empty
+        // `allowed_agents`), so picking a default must NOT collapse the
+        // shorthand into a single-agent allow list — see finding #1.
+        let mut state = editor_on_agents_tab(empty_ws(), 1);
+
+        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            e.pending.default_agent.as_deref(),
+            Some("beta"),
+            "D on row 1 should pin agent `beta` as default",
+        );
+        assert!(
+            e.pending.allowed_agents.is_empty(),
+            "default-agent pick must preserve the all-agents shorthand \
+             (empty allowed_agents); got {:?}",
+            e.pending.allowed_agents,
+        );
+    }
+
+    #[test]
+    fn d_key_preserves_all_agents_shorthand() {
+        // Explicit guard on the shorthand-preservation behavior: setting
+        // a default on a workspace in "all agents" mode must leave the
+        // allow list empty, not switch it to a one-agent custom list.
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut state = editor_on_agents_tab(empty_ws(), 2);
+        {
+            let ManagerStage::Editor(e) = &state.stage else {
+                panic!("editor stage expected");
+            };
+            assert!(
+                e.pending.allowed_agents.is_empty(),
+                "precondition: workspace should start in all-agents mode",
+            );
+        }
+
+        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.pending.allowed_agents.is_empty(),
+            "all-agents shorthand must survive D; got {:?}",
+            e.pending.allowed_agents,
+        );
+        assert_eq!(e.pending.default_agent.as_deref(), Some("gamma"));
+    }
+
+    #[test]
+    fn d_key_appends_to_custom_allow_list_when_missing() {
+        // Complementary case: when the workspace is already in "custom"
+        // mode (non-empty allow list) and the chosen default is NOT in
+        // the list, pressing D must append it — otherwise the config
+        // would reference a forbidden default.
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into()];
+        // Cursor on row 1 (agent "beta"), which is NOT in the allow list.
+        let mut state = editor_on_agents_tab(ws, 1);
+
+        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.pending.default_agent.as_deref(), Some("beta"));
+        assert_eq!(
+            e.pending.allowed_agents,
+            vec!["alpha".to_string(), "beta".to_string()],
+            "custom allow list must pick up the new default when missing",
+        );
+    }
+
+    #[test]
+    fn lowercase_d_key_sets_default_agent_on_current_row() {
+        // Operators often hit `d` without holding shift; the binding
+        // must accept both cases.
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut state = editor_on_agents_tab(empty_ws(), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('d')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.pending.default_agent.as_deref(), Some("alpha"));
+    }
+
+    #[test]
+    fn star_key_no_longer_sets_default_agent() {
+        // Regression guard: the legacy `*` binding was removed in favour
+        // of `D`. Pressing `*` on an agent row must now be a no-op.
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut state = editor_on_agents_tab(empty_ws(), 1);
+
+        press(&mut state, &mut config, KeyCode::Char('*')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.pending.default_agent.is_none(),
+            "`*` must no longer set the default agent",
+        );
+    }
+
+    // ── Agents tab: Space toggle matches effective allow-state ────────
+
+    #[test]
+    fn toggle_in_all_mode_demotes_to_custom_without_this_agent() {
+        // Starting state: "all" mode (empty list), three agents. Pressing
+        // Space on row 1 (`beta`) must produce a custom list containing
+        // every other agent — i.e. `[alpha, gamma]` — so that `beta`
+        // flips from `[x]` to `[ ]` and the status line reads
+        // `custom (2 of 3 allowed)`.
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut state = editor_on_agents_tab(empty_ws(), 1);
+
+        press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
+
+        let list = pending_allowed(&state);
+        assert_eq!(
+            list,
+            vec!["alpha".to_string(), "gamma".to_string()],
+            "list must be populated with every other agent when demoting from 'all'"
+        );
+    }
+
+    #[test]
+    fn toggle_custom_last_item_clears_to_empty() {
+        // Starting state: "custom" mode with a single allowed agent.
+        // Toggling that agent off must leave the list empty (reverting
+        // to the "all" shorthand) — NOT pinning it at a phantom
+        // `custom (0 of N allowed)` state.
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into()];
+        let mut state = editor_on_agents_tab(ws, 0);
+
+        press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
+
+        assert_eq!(
+            pending_allowed(&state),
+            Vec::<String>::new(),
+            "removing the last custom entry must leave the list empty (= all allowed)",
+        );
+    }
+
+    #[test]
+    fn toggle_adds_back_to_custom() {
+        // Starting state: "custom" mode with `[alpha]` (so `beta` reads
+        // `[ ]`). Pressing Space on `beta` (row 1) must add it, producing
+        // `[alpha, beta]` — and since that still doesn't cover every
+        // agent (`gamma` is missing), the list must stay non-empty.
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into()];
+        let mut state = editor_on_agents_tab(ws, 1);
+
+        press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
+
+        let mut list = pending_allowed(&state);
+        list.sort();
+        assert_eq!(
+            list,
+            vec!["alpha".to_string(), "beta".to_string()],
+            "adding `beta` with `gamma` still missing must produce a 2-of-3 custom list",
+        );
+    }
+
+    #[test]
+    fn toggle_refills_custom_to_all_when_last_agent_added_makes_it_complete() {
+        // Starting state: "custom" mode with all-but-one agent present.
+        // Adding the missing one would yield `custom (N of N allowed)` —
+        // semantically identical to "all allowed". The toggle must
+        // collapse back to the empty-list shorthand so the status badge
+        // reads `all`, not `custom (3 of 3 allowed)`.
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into(), "beta".into()];
+        // Cursor on row 2 (agent `gamma`, the missing one).
+        let mut state = editor_on_agents_tab(ws, 2);
+
+        press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
+
+        assert_eq!(
+            pending_allowed(&state),
+            Vec::<String>::new(),
+            "filling the custom list must collapse it to empty (= all allowed)",
+        );
+    }
+
+    // ── Mounts tab: R toggles readonly (rw ↔ ro) ──────────────────────
+
+    #[test]
+    fn r_key_toggles_readonly_on_current_mount_row() {
+        // Start rw → one R press should flip to ro and register as a change.
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.pending.mounts[0].readonly,
+            "R on rw mount must flip to ro",
+        );
+        assert!(
+            e.change_count() > 0,
+            "flipping readonly must surface as a change; got change_count={}",
+            e.change_count()
+        );
+    }
+
+    #[test]
+    fn r_key_lowercase_also_toggles_readonly() {
+        // Operators often hit `r` without holding shift; both cases must work.
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('r')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(e.pending.mounts[0].readonly);
+    }
+
+    #[test]
+    fn r_key_on_sentinel_is_noop() {
+        // Cursor on the `+ Add mount` sentinel (row == mounts.len()) — R must
+        // not mutate mounts or trigger a change.
+        let mut config = AppConfig::default();
+        let ws = ws_with_one_mount(false);
+        let before = ws.mounts.clone();
+        let mut state = editor_on_mounts_tab(ws, 1); // sentinel row
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            e.pending.mounts, before,
+            "R on sentinel must leave mounts untouched"
+        );
+        assert_eq!(
+            e.change_count(),
+            0,
+            "R on sentinel must not mark editor dirty"
+        );
+    }
+
+    #[test]
+    fn r_key_twice_restores_original() {
+        // Flipping twice must bring `readonly` back to the starting value AND
+        // net out to zero changes — the diff-based change_count treats
+        // identical mounts as unchanged.
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            !e.pending.mounts[0].readonly,
+            "two R presses must restore original rw state"
+        );
+        assert_eq!(
+            e.change_count(),
+            0,
+            "two R presses must net zero changes; got {}",
+            e.change_count()
+        );
+    }
+
+    #[test]
+    fn r_key_on_non_mounts_tab_is_noop() {
+        // Cursor set to row 0 on General tab with a mount present; pressing R
+        // must not mutate the mount list (the handler is gated on
+        // `active_tab == EditorTab::Mounts`).
+        let mut config = AppConfig::default();
+        let ws = ws_with_one_mount(false);
+        let before = ws.mounts.clone();
+        let mut state = editor_on_mounts_tab(ws, 0);
+        if let ManagerStage::Editor(e) = &mut state.stage {
+            e.active_tab = EditorTab::General;
+        }
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            e.pending.mounts, before,
+            "R on non-Mounts tab must leave mounts untouched"
+        );
+    }
+
+    #[test]
+    fn toggle_rw_to_ro_reflects_in_render() {
+        // After pressing R, render the Mounts tab and check the visible
+        // `mode` column displays `ro`. Guards against a future regression
+        // where the flip only updates state but the render helper ignores
+        // the new value.
+        use ratatui::backend::TestBackend;
+
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        let backend = TestBackend::new(80, 10);
+        let mut term = ratatui::Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            crate::launch::manager::render::render_editor(f, editor, &config);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut found = false;
+        for y in 0..area.height {
+            let mut row = String::new();
+            for x in 0..area.width {
+                row.push_str(buf[(x, y)].symbol());
+            }
+            if row.contains(" ro ") || row.trim_end().ends_with(" ro") || row.contains(" ro  ") {
+                found = true;
+                break;
+            }
+        }
+        assert!(
+            found,
+            "post-toggle render must show `ro` in the mode column"
+        );
+    }
+}
