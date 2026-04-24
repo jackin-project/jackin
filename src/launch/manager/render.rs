@@ -303,10 +303,10 @@ fn contextual_row_hint(state: &EditorState<'_>) -> String {
         EditorTab::Mounts => {
             let mount_count = state.pending.mounts.len();
             if cursor < mount_count {
-                "a add · d remove".to_string()
+                "d remove · a add".to_string()
             } else {
-                // Sentinel "+ Add" row
-                "a add".to_string()
+                // Sentinel "+ Add mount" row
+                "Enter add · a add".to_string()
             }
         }
         EditorTab::Agents => {
@@ -484,6 +484,10 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
+
+    let phosphor = PHOSPHOR_GREEN;
+    let white = WHITE;
+
     let mut lines: Vec<Line> = state
         .pending
         .mounts
@@ -501,30 +505,27 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             };
             let text = format!("{prefix}{path_display}{ro}");
             let style = if selected {
-                Style::default()
-                    .fg(PHOSPHOR_GREEN)
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(phosphor).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(PHOSPHOR_GREEN)
+                Style::default().fg(phosphor)
             };
             Line::from(Span::styled(text, style))
         })
         .collect();
 
-    // Action footer row — white-bold action words, green key hints.
-    let hint_line = Line::from(vec![
-        Span::styled(
-            "  + Add ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("(a)", Style::default().fg(PHOSPHOR_DIM)),
-        Span::styled(
-            "    − Remove selected ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("(d)", Style::default().fg(PHOSPHOR_DIM)),
-    ]);
-    lines.push(hint_line);
+    // Sentinel row: + Add mount — selectable, styled distinctly from mounts.
+    let sentinel_idx = state.pending.mounts.len();
+    let sentinel_selected = cursor == sentinel_idx;
+    let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
+    let sentinel_style = if sentinel_selected {
+        Style::default().fg(white).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(white)
+    };
+    lines.push(Line::from(Span::styled(
+        format!("{sentinel_prefix}+ Add mount"),
+        sentinel_style,
+    )));
 
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }

@@ -252,7 +252,21 @@ fn handle_editor_key(
             editor.active_field = FieldFocus::Row((n + 1).min(max));
         }
         KeyCode::Enter => {
-            open_editor_field_modal(editor);
+            match editor.active_tab {
+                EditorTab::General => open_editor_field_modal(editor),
+                EditorTab::Mounts => {
+                    // Enter on the "+ Add mount" sentinel row triggers add flow.
+                    let FieldFocus::Row(n) = editor.active_field;
+                    if n == editor.pending.mounts.len() {
+                        editor.modal = Some(Modal::FileBrowser {
+                            target: FileBrowserTarget::EditAddMountSrc,
+                            state: FileBrowserState::new_from_home()?,
+                        });
+                    }
+                    // Enter on an existing mount row: no-op for now.
+                }
+                _ => {}
+            }
         }
         KeyCode::Char(' ') if editor.active_tab == EditorTab::Agents => {
             toggle_agent_allowed_at_cursor(editor, config);
@@ -283,8 +297,8 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
             // Create: name read-only (0), workdir (1)
             EditorMode::Create => 1,
         },
-        EditorTab::Mounts => editor.pending.mounts.len().saturating_sub(1),
-        EditorTab::Agents => config.agents.len(), // rows 1..=N; 0 is the header
+        EditorTab::Mounts => editor.pending.mounts.len(), // mounts fill 0..N-1, sentinel at N
+        EditorTab::Agents => config.agents.len(),         // rows 1..=N; 0 is the header
         EditorTab::Secrets => 0,
     }
 }
