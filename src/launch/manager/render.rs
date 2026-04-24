@@ -496,13 +496,23 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             } else {
                 format!("{} → {}", m.src, m.dst)
             };
-            let text = format!("{prefix}{path_display}{ro}");
             let style = if selected {
                 Style::default().fg(phosphor).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(phosphor)
             };
-            Line::from(Span::styled(text, style))
+            // Inspect the host-side src path for type/branch.
+            let kind_label = super::mount_info::inspect(&m.src).label();
+            let spans = vec![
+                Span::styled(format!("{prefix}{path_display}{ro}"), style),
+                Span::styled(
+                    format!("  · {kind_label}"),
+                    Style::default()
+                        .fg(PHOSPHOR_DIM)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ];
+            Line::from(spans)
         })
         .collect();
 
