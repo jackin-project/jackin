@@ -32,6 +32,7 @@ pub(super) const BANNER: &str = concat!(
 pub mod agent;
 pub mod cleanup;
 pub mod config;
+pub mod dispatch;
 pub mod workspace;
 
 pub use config::{AuthCommand, ConfigCommand, MountCommand, TrustCommand};
