@@ -37,9 +37,28 @@ pub fn handle_key(
             return Ok(InputOutcome::Continue);
         }
     }
-    if let ManagerStage::CreatePrelude(prelude) = &mut state.stage {
-        if prelude.modal.is_some() {
-            handle_prelude_modal(prelude, key);
+    if matches!(state.stage, ManagerStage::CreatePrelude(_)) {
+        let has_modal = if let ManagerStage::CreatePrelude(p) = &state.stage {
+            p.modal.is_some()
+        } else { false };
+        if has_modal {
+            if let ManagerStage::CreatePrelude(p) = &mut state.stage {
+                handle_prelude_modal(p, key);
+            }
+            // Check for completion: prelude finished when modal cleared and name set.
+            let complete = if let ManagerStage::CreatePrelude(p) = &state.stage {
+                p.modal.is_none() && p.pending_name.is_some()
+            } else { false };
+            if complete {
+                if let ManagerStage::CreatePrelude(p) = &state.stage {
+                    let ws = p.build_workspace().expect("prelude complete");
+                    let name = p.pending_name.clone().unwrap();
+                    let mut editor = EditorState::new_create();
+                    editor.pending = ws;
+                    editor.pending_name = Some(name);
+                    state.stage = ManagerStage::Editor(editor);
+                }
+            }
             return Ok(InputOutcome::Continue);
         }
     }
@@ -366,12 +385,14 @@ fn build_workspace_edit(
 }
 
 fn handle_prelude_key(
-    _state: &mut ManagerState<'_>,
-    _config: &mut AppConfig,
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
     _paths: &JackinPaths,
-    _key: KeyEvent,
+    key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    // Stub — full implementation in Task 17.
+    if matches!(key.code, KeyCode::Esc) {
+        *state = ManagerState::from_config(config);
+    }
     Ok(InputOutcome::Continue)
 }
 
@@ -526,20 +547,102 @@ fn apply_file_browser_to_editor(
 }
 
 fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key: KeyEvent) {
-    // Stub — full wizard chain in Task 17. For now, only close-on-Esc.
-    let Some(modal) = prelude.modal.as_mut() else { return; };
-    match modal {
-        Modal::TextInput { state, .. } => {
-            if matches!(state.handle_key(key), ModalOutcome::Cancel) { prelude.modal = None; }
+    use super::state::{FileBrowserTarget, TextInputTarget};
+    use super::super::widgets::text_input::TextInputState;
+
+    // Determine which step we're on by inspecting the modal discriminant,
+    // then dispatch. We do this with a discriminant enum so we can end the
+    // immutable/mutable borrow on `prelude.modal` before mutating other
+    // fields on `prelude` (Rust borrow rules).
+    enum PreludeModalDis { FileBrowserSrc, TextInputDst, WorkdirPick, TextInputName, Other }
+    let dis = match &prelude.modal {
+        Some(Modal::FileBrowser { target: FileBrowserTarget::CreateFirstMountSrc, .. }) => PreludeModalDis::FileBrowserSrc,
+        Some(Modal::TextInput { target: TextInputTarget::MountDst, .. }) => PreludeModalDis::TextInputDst,
+        Some(Modal::WorkdirPick { .. }) => PreludeModalDis::WorkdirPick,
+        Some(Modal::TextInput { target: TextInputTarget::Name, .. }) => PreludeModalDis::TextInputName,
+        _ => PreludeModalDis::Other,
+    };
+
+    match dis {
+        PreludeModalDis::FileBrowserSrc => {
+            let outcome = if let Some(Modal::FileBrowser { state, .. }) = &mut prelude.modal {
+                state.handle_key(key)
+            } else { return; };
+            match outcome {
+                ModalOutcome::Commit(path) => {
+                    prelude.modal = None;
+                    prelude.accept_mount_src(path);
+                    // Push dst TextInput pre-filled with host path (host-path-mirror rule).
+                    let default_dst = prelude.default_mount_dst().unwrap_or_default();
+                    prelude.modal = Some(Modal::TextInput {
+                        target: TextInputTarget::MountDst,
+                        state: TextInputState::new(
+                            "Mount dst (default: same as host path)",
+                            default_dst,
+                        ),
+                    });
+                }
+                ModalOutcome::Cancel => { prelude.modal = None; }
+                ModalOutcome::Continue => {}
+            }
         }
-        Modal::FileBrowser { state, .. } => {
-            if matches!(state.handle_key(key), ModalOutcome::Cancel) { prelude.modal = None; }
+        PreludeModalDis::TextInputDst => {
+            let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
+                state.handle_key(key)
+            } else { return; };
+            match outcome {
+                ModalOutcome::Commit(dst) => {
+                    prelude.modal = None;
+                    // readonly defaults to false (toggle for readonly is
+                    // future work — spec allows this simplification).
+                    prelude.accept_mount_dst(dst, false);
+                    // Push WorkdirPick with the staged mount.
+                    let mount = crate::workspace::MountConfig {
+                        src: prelude.pending_mount_src.as_ref().unwrap().display().to_string(),
+                        dst: prelude.pending_mount_dst.clone().unwrap(),
+                        readonly: prelude.pending_readonly,
+                    };
+                    prelude.modal = Some(Modal::WorkdirPick {
+                        state: WorkdirPickState::from_mounts(&[mount]),
+                    });
+                }
+                ModalOutcome::Cancel => { prelude.modal = None; }
+                ModalOutcome::Continue => {}
+            }
         }
-        Modal::WorkdirPick { state } => {
-            if matches!(state.handle_key(key), ModalOutcome::Cancel) { prelude.modal = None; }
+        PreludeModalDis::WorkdirPick => {
+            let outcome = if let Some(Modal::WorkdirPick { state }) = &mut prelude.modal {
+                state.handle_key(key)
+            } else { return; };
+            match outcome {
+                ModalOutcome::Commit(workdir) => {
+                    prelude.modal = None;
+                    prelude.accept_workdir(workdir);
+                    let default_name = prelude.default_name().unwrap_or_default();
+                    prelude.modal = Some(Modal::TextInput {
+                        target: TextInputTarget::Name,
+                        state: TextInputState::new("Name this workspace", default_name),
+                    });
+                }
+                ModalOutcome::Cancel => { prelude.modal = None; }
+                ModalOutcome::Continue => {}
+            }
         }
-        Modal::Confirm { state, .. } => {
-            if matches!(state.handle_key(key), ModalOutcome::Cancel) { prelude.modal = None; }
+        PreludeModalDis::TextInputName => {
+            let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
+                state.handle_key(key)
+            } else { return; };
+            match outcome {
+                ModalOutcome::Commit(name) => {
+                    prelude.modal = None;
+                    prelude.accept_name(name);
+                    // Prelude complete — the outer handle_key dispatcher
+                    // checks for this and transitions to Editor(Create).
+                }
+                ModalOutcome::Cancel => { prelude.modal = None; }
+                ModalOutcome::Continue => {}
+            }
         }
+        PreludeModalDis::Other => {}
     }
 }
