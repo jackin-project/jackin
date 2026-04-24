@@ -3,5 +3,4 @@
 
 pub mod state;
 
-// TODO(Task 8): uncomment once state.rs defines ManagerStage + ManagerState.
-// pub use state::{ManagerStage, ManagerState};
+pub use state::{ManagerStage, ManagerState};
