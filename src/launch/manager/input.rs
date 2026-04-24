@@ -954,7 +954,7 @@ fn dispatch_editor_mount_dst_choice(
                 editor.modal = Some(Modal::TextInput {
                     target: super::state::TextInputTarget::MountDst,
                     state: crate::launch::widgets::text_input::TextInputState::new(
-                        "destination (default: same as host path)",
+                        "Destination",
                         src,
                     ),
                 });
@@ -1112,10 +1112,7 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
                     let default_dst = prelude.default_mount_dst().unwrap_or_default();
                     prelude.modal = Some(Modal::TextInput {
                         target: TextInputTarget::MountDst,
-                        state: TextInputState::new(
-                            "destination (default: same as host path)",
-                            default_dst,
-                        ),
+                        state: TextInputState::new("Destination", default_dst),
                     });
                 }
                 ModalOutcome::Cancel => {
