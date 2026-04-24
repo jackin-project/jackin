@@ -49,7 +49,15 @@ impl FileBrowserState {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<PathBuf> {
         match key.code {
-            KeyCode::Char('s') => ModalOutcome::Commit(self.explorer.current().path.clone()),
+            KeyCode::Char('s') => {
+                // Commit the explorer's current working directory, NOT the
+                // highlighted entry. Matches user intent: "I'm viewing this
+                // folder, select it." Highlighted entry (which is `..` in
+                // an empty dir) is not what the user wants.
+                //
+                // API: FileExplorer::cwd() -> &PathBuf (ratatui-explorer 0.3.x)
+                ModalOutcome::Commit(self.explorer.cwd().clone())
+            }
             KeyCode::Esc => ModalOutcome::Cancel,
             _ => {
                 let event = crossterm::event::Event::Key(key);
@@ -78,7 +86,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
     frame.render_widget_ref(state.explorer.widget(), chunks[0]);
 
     let hint = Span::styled(
-        "↑↓ navigate · Enter open · h/← up · s select · Esc cancel",
+        "↑↓ navigate · Enter open · h/← up · s use this folder · Esc cancel",
         Style::default()
             .fg(Color::Rgb(0, 140, 30))
             .add_modifier(Modifier::ITALIC),
@@ -132,12 +140,22 @@ mod tests {
     }
 
     #[test]
-    fn s_commits_currently_selected_path() {
+    fn s_commits_current_cwd_not_highlighted_entry() {
         let tmp = tempdir().unwrap();
         std::fs::create_dir(tmp.path().join("folder")).unwrap();
         let mut state = FileBrowserState::new(tmp.path().to_path_buf()).unwrap();
         let outcome = state.handle_key(key(KeyCode::Char('s')));
-        assert!(matches!(outcome, ModalOutcome::Commit(_)));
+        // The committed path should be the tempdir itself, regardless of
+        // which entry is highlighted.
+        if let ModalOutcome::Commit(path) = outcome {
+            assert_eq!(
+                path.canonicalize().unwrap(),
+                tmp.path().canonicalize().unwrap(),
+                "s should commit the explorer's cwd, not the selected entry"
+            );
+        } else {
+            panic!("expected Commit, got {:?}", outcome);
+        }
     }
 
     #[test]
