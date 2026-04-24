@@ -309,14 +309,7 @@ fn contextual_row_hint(state: &EditorState<'_>) -> String {
                 "Enter add · a add".to_string()
             }
         }
-        EditorTab::Agents => {
-            if cursor == 0 {
-                // Header row — no row-level action
-                String::new()
-            } else {
-                "Space toggle · * set default".to_string()
-            }
-        }
+        EditorTab::Agents => "Space toggle · * set default".to_string(),
         EditorTab::Secrets => String::new(),
     }
 }
@@ -536,36 +529,46 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
         .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
 
-    // Banner explaining the empty-list = "all allowed" semantic.
-    let banner = if state.pending.allowed_agents.is_empty() {
-        Line::from(Span::styled(
-            "  All agents allowed (no restrictions). Check specific agents to restrict.",
-            Style::default()
-                .fg(Color::Rgb(180, 255, 180))
-                .add_modifier(Modifier::ITALIC),
-        ))
-    } else {
-        Line::from(Span::styled(
-            format!(
-                "  Custom: {} allowed. Uncheck all to allow any agent.",
-                state.pending.allowed_agents.len()
-            ),
-            Style::default()
-                .fg(Color::Rgb(180, 255, 180))
-                .add_modifier(Modifier::ITALIC),
-        ))
-    };
+    // Status line: "Allowed agents:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
+    let is_all = state.pending.allowed_agents.is_empty();
+    let total = config.agents.len();
+    let allowed_count = state.pending.allowed_agents.len();
 
+    let badge_text = if is_all { "  all  " } else { "  custom  " };
+    let badge_bg = if is_all { PHOSPHOR_GREEN } else { WHITE };
+    let badge_style = Style::default()
+        .bg(badge_bg)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+
+    let mut status_spans = vec![
+        Span::styled(
+            "  Allowed agents:  ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(badge_text, badge_style),
+    ];
+    if !is_all {
+        status_spans.push(Span::styled(
+            format!("   ({allowed_count} of {total} allowed)"),
+            Style::default()
+                .fg(Color::Rgb(180, 255, 180))
+                .add_modifier(Modifier::ITALIC),
+        ));
+    }
+    let status_line = Line::from(status_spans);
+
+    // Column header
     let header = Line::from(Span::styled(
-        "  allowed? · default ·  agent",
+        "  allowed?  ·  default  ·  agent",
         Style::default().fg(WHITE),
     ));
 
-    let mut lines = vec![banner, header];
+    let mut lines = vec![status_line, header];
 
+    // Agent rows. Cursor is 0-based into config.agents (no header offset).
     for (i, (agent_name, _)) in config.agents.iter().enumerate() {
-        let row_idx = i + 1; // row 0 is the header (banner is above the fold)
-        let selected = row_idx == cursor;
+        let selected = i == cursor;
         let allowed = state.pending.allowed_agents.contains(agent_name);
         let is_default = state.pending.default_agent.as_deref() == Some(agent_name.as_str());
         let check = if allowed { "[x]" } else { "[ ]" };

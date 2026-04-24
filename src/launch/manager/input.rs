@@ -298,7 +298,7 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
             EditorMode::Create => 1,
         },
         EditorTab::Mounts => editor.pending.mounts.len(), // mounts fill 0..N-1, sentinel at N
-        EditorTab::Agents => config.agents.len(),         // rows 1..=N; 0 is the header
+        EditorTab::Agents => config.agents.len().saturating_sub(1), // 0-based into agents
         EditorTab::Secrets => 0,
     }
 }
@@ -331,12 +331,9 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
 
 fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    if n == 0 {
-        return;
-    } // header row
-    let idx = n - 1;
+    // n is 0-based into config.agents (no header offset).
     let agent_names: Vec<String> = config.agents.keys().cloned().collect();
-    if let Some(agent) = agent_names.get(idx) {
+    if let Some(agent) = agent_names.get(n) {
         if let Some(pos) = editor
             .pending
             .allowed_agents
@@ -355,16 +352,13 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
 
 fn set_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    if n == 0 {
-        return;
-    }
-    let idx = n - 1;
     let agent_names: Vec<String> = config.agents.keys().cloned().collect();
-    if let Some(agent) = agent_names.get(idx) {
-        // Only allowed agents can be set as default.
-        if editor.pending.allowed_agents.contains(agent) {
-            editor.pending.default_agent = Some(agent.clone());
+    if let Some(agent) = agent_names.get(n) {
+        // Setting a default also implies allowing that agent.
+        if !editor.pending.allowed_agents.contains(agent) {
+            editor.pending.allowed_agents.push(agent.clone());
         }
+        editor.pending.default_agent = Some(agent.clone());
     }
 }
 
