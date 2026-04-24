@@ -61,6 +61,19 @@ const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 
 pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
+    use ratatui::{
+        layout::{Constraint, Direction, Layout},
+        text::Span,
+        widgets::Paragraph,
+    };
+
+    frame.render_widget(ratatui::widgets::Clear, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)])
+        .split(area);
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_GREEN))
@@ -76,8 +89,15 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
             .add_modifier(Modifier::SLOW_BLINK),
     );
 
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(&ta, area);
+    frame.render_widget(&ta, chunks[0]);
+
+    let hint = Span::styled(
+        "Enter confirm · Esc cancel",
+        Style::default()
+            .fg(Color::Rgb(0, 140, 30))
+            .add_modifier(Modifier::ITALIC),
+    );
+    frame.render_widget(Paragraph::new(hint), chunks[1]);
 }
 
 #[cfg(test)]

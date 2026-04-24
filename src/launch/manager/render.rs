@@ -40,11 +40,13 @@ pub fn render(frame: &mut Frame, state: &ManagerState<'_>) {
             render_list_body(frame, chunks[1], state);
         }
 
-        render_footer_hint(
-            frame,
-            chunks[2],
-            "↑↓ · Enter launch · e edit · n new · d delete · q quit",
-        );
+        let footer_text = match &state.stage {
+            ManagerStage::List => "↑↓ · Enter launch · e edit · n new · d delete · q quit",
+            ManagerStage::CreatePrelude(_) => "Create workspace · follow the prompts · Esc cancel",
+            ManagerStage::ConfirmDelete { .. } => "Y yes · N no · Esc cancel",
+            ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
+        };
+        render_footer_hint(frame, chunks[2], footer_text);
     }
 
     // Phase 2: overlay any active modal.
@@ -59,7 +61,10 @@ pub fn render(frame: &mut Frame, state: &ManagerState<'_>) {
                 render_modal(frame, modal);
             }
         }
-        ManagerStage::ConfirmDelete { state: confirm_state, .. } => {
+        ManagerStage::ConfirmDelete {
+            state: confirm_state,
+            ..
+        } => {
             // ConfirmState is a top-level field on the variant, not wrapped
             // in Modal::Confirm, so render it directly.
             let area = frame.area();

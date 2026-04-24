@@ -61,8 +61,29 @@ impl FileBrowserState {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
+    use ratatui::{
+        layout::{Constraint, Direction, Layout},
+        style::{Color, Modifier, Style},
+        text::Span,
+        widgets::Paragraph,
+    };
+
     frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget_ref(state.explorer.widget(), area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)])
+        .split(area);
+
+    frame.render_widget_ref(state.explorer.widget(), chunks[0]);
+
+    let hint = Span::styled(
+        "↑↓ navigate · Enter open · h/← up · s select · Esc cancel",
+        Style::default()
+            .fg(Color::Rgb(0, 140, 30))
+            .add_modifier(Modifier::ITALIC),
+    );
+    frame.render_widget(Paragraph::new(hint), chunks[1]);
 }
 
 #[cfg(test)]
