@@ -12,7 +12,7 @@ use jackin::{
 };
 use tempfile::tempdir;
 
-fn key(code: KeyCode) -> KeyEvent {
+const fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
         code,
         modifiers: KeyModifiers::NONE,
@@ -32,14 +32,14 @@ fn seed_config(paths: &JackinPaths, temp_dir: &std::path::Path) -> Result<AppCon
         workdir: host_path.clone(),
         mounts: vec![MountConfig {
             src: host_path.clone(),
-            dst: host_path.clone(),
+            dst: host_path,
             readonly: false,
         }],
         allowed_agents: vec![],
         default_agent: None,
         last_agent: None,
-        env: Default::default(),
-        agents: Default::default(),
+        env: std::collections::BTreeMap::new(),
+        agents: std::collections::BTreeMap::new(),
     };
 
     let mut ce = ConfigEditor::open(paths)?;

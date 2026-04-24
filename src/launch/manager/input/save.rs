@@ -633,9 +633,9 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
+        let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
         editor.pending.mounts.insert(0, mount("/work", "/work"));
@@ -679,9 +679,9 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
+        let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
         editor.pending.mounts.insert(0, mount("/work", "/work"));
@@ -725,9 +725,9 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
+        let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
         editor.pending.mounts.insert(0, mount("/work", "/work"));
@@ -781,9 +781,9 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
+        let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
         editor.pending.mounts.insert(0, mount("/work", "/work")); // rw
@@ -823,10 +823,10 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) =
+        let (tmp, paths, mut config) =
             setup_with_workspace("legacy-workspace", ws.clone()).unwrap();
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("legacy-workspace".into(), ws);
         // The editor must be dirty to trigger the save path — bump workdir
@@ -867,9 +867,9 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) = setup_with_workspace("clean-ws", ws.clone()).unwrap();
+        let (tmp, paths, mut config) = setup_with_workspace("clean-ws", ws.clone()).unwrap();
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let editor = EditorState::new_edit("clean-ws".into(), ws);
         state.stage = ManagerStage::Editor(editor);
@@ -897,9 +897,9 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) = setup_with_workspace("edit-me", ws.clone()).unwrap();
+        let (tmp, paths, mut config) = setup_with_workspace("edit-me", ws.clone()).unwrap();
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("edit-me".into(), ws);
         editor.pending.workdir = "/w/elsewhere".into();
@@ -932,9 +932,9 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) = setup_with_workspace("exit-me", ws.clone()).unwrap();
+        let (tmp, paths, mut config) = setup_with_workspace("exit-me", ws.clone()).unwrap();
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("exit-me".into(), ws);
         editor.pending.workdir = "/w/elsewhere".into();
@@ -1118,9 +1118,9 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) = setup_with_workspace("stay-here", ws.clone()).unwrap();
+        let (tmp, paths, mut config) = setup_with_workspace("stay-here", ws.clone()).unwrap();
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("stay-here".into(), ws);
         editor.pending.workdir = "/w/new".into();
@@ -1160,15 +1160,15 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, _config0) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
+        let (tmp, paths, _) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
         // Add the second workspace on disk.
         let mut config = {
             let mut ce = crate::config::ConfigEditor::open(&paths).unwrap();
-            ce.create_workspace("beta", ws_b.clone()).unwrap();
+            ce.create_workspace("beta", ws_b).unwrap();
             ce.save().unwrap()
         };
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("alpha".into(), ws_a);
         editor.pending_name = Some("beta".into()); // collides
@@ -1207,14 +1207,14 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, _config0) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
+        let (tmp, paths, _) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
         let mut config = {
             let mut ce = crate::config::ConfigEditor::open(&paths).unwrap();
-            ce.create_workspace("beta", ws_b.clone()).unwrap();
+            ce.create_workspace("beta", ws_b).unwrap();
             ce.save().unwrap()
         };
 
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("alpha".into(), ws_a);
         editor.pending_name = Some("beta".into());
@@ -1237,7 +1237,7 @@ mod tests {
 
     #[test]
     fn create_mode_confirm_save_includes_mounts_in_lines() {
-        let (_tmp, paths, mut config) = {
+        let (tmp, paths, mut config) = {
             let tmp = tempfile::tempdir().unwrap();
             let paths = JackinPaths::for_tests(tmp.path());
             paths.ensure_base_dirs().unwrap();
@@ -1247,7 +1247,7 @@ mod tests {
             let loaded = AppConfig::load_or_init(&paths).unwrap();
             (tmp, paths, loaded)
         };
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_create();
         editor.pending_name = Some("new-one".into());
@@ -1285,7 +1285,7 @@ mod tests {
         // The ConfirmSave dialog's first line reads
         // "Create workspace: <name>" — after an in-editor rename, the
         // summary must pick up the edited name, not the prelude-captured one.
-        let (_tmp, paths, mut config) = {
+        let (tmp, paths, mut config) = {
             let tmp = tempfile::tempdir().unwrap();
             let paths = JackinPaths::for_tests(tmp.path());
             paths.ensure_base_dirs().unwrap();
@@ -1295,7 +1295,7 @@ mod tests {
             let loaded = AppConfig::load_or_init(&paths).unwrap();
             (tmp, paths, loaded)
         };
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_create();
         editor.pending_name = Some("prelude-captured".into());
@@ -1348,8 +1348,8 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) = setup_with_workspace("diff-me", ws.clone()).unwrap();
-        let cwd = _tmp.path();
+        let (tmp, paths, mut config) = setup_with_workspace("diff-me", ws.clone()).unwrap();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("diff-me".into(), ws);
         editor.pending.workdir = "/new".into();
@@ -1384,8 +1384,8 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let (_tmp, paths, mut config) = setup_with_workspace("collapsy", ws.clone()).unwrap();
-        let cwd = _tmp.path();
+        let (tmp, paths, mut config) = setup_with_workspace("collapsy", ws.clone()).unwrap();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("collapsy".into(), ws);
         editor.pending.mounts.insert(0, mount("/work", "/work"));
