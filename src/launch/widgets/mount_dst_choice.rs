@@ -127,15 +127,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
         chunks[2],
     );
 
-    // Buttons — same focused/unfocused styling as save_discard.
+    // Buttons — focused choice highlights on white; unfocused stays
+    // flush with the modal background so only the focused choice pops.
     let focused_style = Style::default()
         .bg(white)
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default()
-        .bg(phosphor)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
+    let unfocused_style = Style::default().fg(phosphor).add_modifier(Modifier::BOLD);
 
     let ok_style = if state.focus == MountDstFocus::Ok {
         focused_style

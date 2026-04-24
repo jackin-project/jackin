@@ -78,7 +78,7 @@ impl GithubPickerState {
 
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
@@ -86,6 +86,7 @@ use ratatui::{
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
+const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 
 pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
@@ -97,8 +98,24 @@ pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
     );
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(title);
+
+    let inner = block.inner(area);
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame.render_widget(block, area);
+
+    // Inner layout: blank / list / blank / hint — matches the canonical
+    // list-modal layout used by WorkdirPick.
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // top padding
+            Constraint::Min(1),    // list
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // hint
+        ])
+        .split(inner);
 
     // Pre-compute shortened src + width so the `· github · <branch>` suffix
     // lines up across rows.
@@ -139,10 +156,24 @@ pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
         })
         .collect();
 
-    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(Paragraph::new(lines), rows[1]);
 
-    frame.render_widget(ratatui::widgets::Clear, area);
-    frame.render_widget(paragraph, area);
+    // Hint line — canonical list-modal hint (↑↓ navigate · Enter confirm · Esc cancel).
+    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let text_style = Style::default().fg(PHOSPHOR_GREEN);
+    let sep_style = Style::default().fg(PHOSPHOR_DARK);
+    let hint = Paragraph::new(Line::from(vec![
+        Span::styled("\u{2191}\u{2193}", key_style),
+        Span::styled(" navigate", text_style),
+        Span::styled(" \u{b7} ", sep_style),
+        Span::styled("Enter", key_style),
+        Span::styled(" confirm", text_style),
+        Span::styled(" \u{b7} ", sep_style),
+        Span::styled("Esc", key_style),
+        Span::styled(" cancel", text_style),
+    ]))
+    .alignment(Alignment::Center);
+    frame.render_widget(hint, rows[3]);
 }
 
 #[cfg(test)]

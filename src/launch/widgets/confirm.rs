@@ -166,6 +166,7 @@ use ratatui::{
 };
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
+const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 
 /// Height (rows) this Confirm modal wants, given its current prompt text.
@@ -182,7 +183,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     // Outer block
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
             " Confirm ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
@@ -220,32 +221,28 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     let prompt = Paragraph::new(prompt_lines_vec).alignment(Alignment::Center);
     frame.render_widget(prompt, chunks[0]);
 
-    // Button row — focused button gets brighter styling (white bg),
-    // unfocused gets phosphor bg. Default text is black.
+    // Button row — focused choice highlights on white; unfocused stays
+    // flush with the modal background so only the focused choice pops.
     let yes_focused = matches!(state.focus, ConfirmFocus::Yes);
     let no_focused = matches!(state.focus, ConfirmFocus::No);
 
+    let focused_style = Style::default()
+        .bg(WHITE)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    let unfocused_style = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
+
     let yes_btn_style = if yes_focused {
-        Style::default()
-            .bg(WHITE)
-            .fg(Color::Black)
-            .add_modifier(Modifier::BOLD)
+        focused_style
     } else {
-        Style::default()
-            .bg(PHOSPHOR_GREEN)
-            .fg(Color::Black)
-            .add_modifier(Modifier::BOLD)
+        unfocused_style
     };
     let no_btn_style = if no_focused {
-        Style::default()
-            .bg(WHITE)
-            .fg(Color::Black)
-            .add_modifier(Modifier::BOLD)
+        focused_style
     } else {
-        Style::default()
-            .bg(PHOSPHOR_GREEN)
-            .fg(Color::Black)
-            .add_modifier(Modifier::BOLD)
+        unfocused_style
     };
 
     let button_line = Line::from(vec![
@@ -259,11 +256,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     );
 
     // Footer hint — same key/text/sep scheme as the main TUI footer.
-    let key = Style::default()
-        .fg(Color::Rgb(255, 255, 255))
-        .add_modifier(Modifier::BOLD);
-    let text = Style::default().fg(Color::Rgb(0, 255, 65));
-    let sep = Style::default().fg(Color::Rgb(0, 80, 18));
+    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let text = Style::default().fg(PHOSPHOR_GREEN);
+    let sep = Style::default().fg(PHOSPHOR_DARK);
     let hint = Paragraph::new(ratatui::text::Line::from(vec![
         Span::styled("Tab", key),
         Span::styled(" cycle", text),

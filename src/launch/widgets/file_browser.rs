@@ -401,7 +401,9 @@ impl FileBrowserState {
                 self.dismiss_git_prompt();
                 self.commit_or_reject(path)
             }
-            KeyCode::Char('e' | 'E') => {
+            // `p` for "pick a subdirectory" — matches the button label
+            // (renamed from `Enter` to `Pick` in batch 16).
+            KeyCode::Char('p' | 'P') => {
                 self.dismiss_git_prompt();
                 self.set_cwd(&path);
                 ModalOutcome::Continue
@@ -587,39 +589,47 @@ fn render_footer_legend(frame: &mut Frame, area: Rect, state: &FileBrowserState)
 }
 
 /// Build the three focus-styled button spans for the git-repo prompt.
+/// Focused choice highlights on white; unfocused stays flush with the
+/// modal background so only the focused choice pops (canonical template).
 fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
     let focused = Style::default()
         .bg(WHITE)
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
     let unfocused = Style::default()
-        .bg(PHOSPHOR_GREEN)
-        .fg(Color::Black)
+        .fg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
     let btn = |target: GitPromptFocus, label: &'static str| -> Span<'static> {
         let style = if focus == target { focused } else { unfocused };
-        Span::styled(format!(" {label} "), style)
+        Span::styled(format!("  {label}  "), style)
     };
     Line::from(vec![
         btn(GitPromptFocus::MountHere, "Mount this repository"),
-        Span::raw("  "),
+        Span::raw("    "),
         btn(GitPromptFocus::EnterIn, "Pick a subdirectory"),
-        Span::raw("  "),
+        Span::raw("    "),
         btn(GitPromptFocus::Cancel, "Cancel"),
     ])
 }
 
-/// Build the M/E/C hint footer line for the git-repo prompt.
+/// Build the canonical hint footer line for the git-repo prompt:
+/// `Tab cycle · Enter confirm   M mount · P pick · C/Esc cancel`.
 fn git_prompt_hint() -> Line<'static> {
     let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let text_style = Style::default().fg(PHOSPHOR_GREEN);
     let sep_style = Style::default().fg(PHOSPHOR_DARK);
     Line::from(vec![
+        Span::styled("Tab", key_style),
+        Span::styled(" cycle", text_style),
+        Span::styled(" \u{b7} ", sep_style),
+        Span::styled("Enter", key_style),
+        Span::styled(" confirm", text_style),
+        Span::raw("   "),
         Span::styled("M", key_style),
         Span::styled(" mount", text_style),
         Span::styled(" \u{b7} ", sep_style),
-        Span::styled("E", key_style),
-        Span::styled(" enter", text_style),
+        Span::styled("P", key_style),
+        Span::styled(" pick", text_style),
         Span::styled(" \u{b7} ", sep_style),
         Span::styled("C/Esc", key_style),
         Span::styled(" cancel", text_style),
@@ -632,7 +642,9 @@ fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBrowserState) 
 
     // Add a row when we have an origin URL to show under the title.
     let has_url = state.pending_git_url.is_some();
-    let w = parent.width.saturating_sub(4).min(60);
+    // Overlay widens to 80 cols so the three-button row and the canonical
+    // hint line both fit on one line without wrapping.
+    let w = parent.width.saturating_sub(4).min(80);
     let base_h: u16 = if has_url { 8 } else { 7 };
     let h = base_h.min(parent.height);
     let x = parent.x + parent.width.saturating_sub(w) / 2;
@@ -646,7 +658,7 @@ fn render_git_prompt(frame: &mut Frame, parent: Rect, state: &FileBrowserState) 
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
             " Git repository detected ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),

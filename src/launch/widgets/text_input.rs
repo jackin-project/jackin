@@ -59,20 +59,16 @@ use ratatui::{
 };
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
+const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 
 pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
     use ratatui::{
-        layout::{Constraint, Direction, Layout},
+        layout::{Alignment, Constraint, Direction, Layout},
         widgets::Paragraph,
     };
 
     frame.render_widget(ratatui::widgets::Clear, area);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(1)])
-        .split(area);
 
     // Block title styled WHITE + BOLD to match the main-screen block titles
     // (General/Mounts/Agents). The default widget text stays PHOSPHOR_GREEN.
@@ -84,11 +80,26 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
     );
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_GREEN))
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(title);
 
+    let inner = block.inner(area);
+    frame.render_widget(&block, area);
+
+    // Inner layout: top pad / input / bottom pad / hint — matches the
+    // canonical modal template. The hint lives inside the bordered block
+    // so the bottom border stays unbroken.
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // top padding
+            Constraint::Min(1),    // input field
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // hint
+        ])
+        .split(inner);
+
     let mut ta = state.textarea.clone();
-    ta.set_block(block);
     ta.set_cursor_line_style(Style::default());
     ta.set_cursor_style(
         Style::default()
@@ -96,8 +107,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
             .fg(Color::Black)
             .add_modifier(Modifier::SLOW_BLINK),
     );
-
-    frame.render_widget(&ta, chunks[0]);
+    frame.render_widget(&ta, rows[1]);
 
     // Footer legend — same key/text/sep scheme as the main TUI footer:
     //   Key      = WHITE + BOLD
@@ -109,14 +119,14 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ),
         Span::styled(" confirm", Style::default().fg(PHOSPHOR_GREEN)),
-        Span::styled(" \u{b7} ", Style::default().fg(Color::Rgb(0, 80, 18))),
+        Span::styled(" \u{b7} ", Style::default().fg(PHOSPHOR_DARK)),
         Span::styled(
             "Esc",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ),
         Span::styled(" cancel", Style::default().fg(PHOSPHOR_GREEN)),
     ]);
-    frame.render_widget(Paragraph::new(hint), chunks[1]);
+    frame.render_widget(Paragraph::new(hint).alignment(Alignment::Center), rows[3]);
 }
 
 #[cfg(test)]

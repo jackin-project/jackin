@@ -73,11 +73,12 @@ use ratatui::{
 
 pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
     let phosphor = Color::Rgb(0, 255, 65);
+    let phosphor_dark = Color::Rgb(0, 80, 18);
     let white = Color::Rgb(255, 255, 255);
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(phosphor))
+        .border_style(Style::default().fg(phosphor_dark))
         .title(Span::styled(
             " Unsaved changes ",
             Style::default().fg(white).add_modifier(Modifier::BOLD),
@@ -107,15 +108,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
         chunks[0],
     );
 
-    // Buttons
+    // Buttons — focused row highlights on white; unfocused stays flush
+    // with the modal background so only the focused choice pops.
     let focused_style = Style::default()
         .bg(white)
         .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
-    let unfocused_style = Style::default()
-        .bg(phosphor)
-        .fg(Color::Black)
-        .add_modifier(Modifier::BOLD);
+    let unfocused_style = Style::default().fg(phosphor).add_modifier(Modifier::BOLD);
 
     let save_style = if state.focus == SaveDiscardFocus::Save {
         focused_style
@@ -148,7 +147,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
     // Hint — same key/text/sep scheme as the main TUI footer.
     let key_style = Style::default().fg(white).add_modifier(Modifier::BOLD);
     let text_style = Style::default().fg(phosphor);
-    let sep_style = Style::default().fg(Color::Rgb(0, 80, 18));
+    let sep_style = Style::default().fg(phosphor_dark);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("Tab", key_style),

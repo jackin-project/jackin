@@ -1180,7 +1180,8 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
     // Size by variant: single-line inputs get a compact overlay;
     // lists get a taller one.
     let (pct_w, height_rows) = match modal {
-        Modal::TextInput { .. } => (60, 5), // label + input + hint = 5 rows
+        // TextInput layout: 2 borders + top pad + input + spacer + hint = 6 rows.
+        Modal::TextInput { .. } => (60, 6),
         // Confirm height varies with prompt length (e.g. the mount-collapse
         // prompt lists each child/parent pair on its own line).
         Modal::Confirm { state, .. } => (60, confirm::required_height(state)),
@@ -1194,10 +1195,11 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         // plus 2 borders handled by centered_rect_fixed; widen to 80% so the
         // explanation sentence fits comfortably on one line.
         Modal::MountDstChoice { .. } => (80, 9),
-        // GithubPicker: scale rows with repo count (title + choices + borders),
-        // capped at 15 so a sprawling monorepo can't consume the viewport.
+        // GithubPicker: scale rows with repo count (choices + canonical
+        // chrome: top pad + spacer + hint + 2 borders = 5), capped at 15
+        // so a sprawling monorepo can't consume the viewport.
         Modal::GithubPicker { state } => {
-            let rows = (state.choices.len() as u16).saturating_add(4).min(15);
+            let rows = (state.choices.len() as u16).saturating_add(5).min(15);
             (60, rows)
         }
     };
