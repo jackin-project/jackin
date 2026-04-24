@@ -789,8 +789,14 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
 
     render_footer(frame, chunks[3], &items);
 
-    // Error banner overlay — top line of the body.
-    if let Some(err) = &state.error_banner {
+    // Error banner overlay — top line of the body. Only rendered when
+    // `save_flow` is in the `Error` state AND no ErrorPopup modal is up
+    // (the popup is the commit-time error surface; the banner is the
+    // pre-commit validation surface — they share the `Error` variant but
+    // present differently).
+    if state.modal.is_none()
+        && let Some(err) = state.save_flow.error_message()
+    {
         let banner_area = Rect {
             x: chunks[2].x,
             y: chunks[2].y,

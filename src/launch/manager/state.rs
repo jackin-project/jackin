@@ -131,25 +131,79 @@ pub struct EditorState<'a> {
     pub original: WorkspaceConfig,
     pub pending: WorkspaceConfig,
     pub modal: Option<Modal<'a>>,
-    pub error_banner: Option<String>,
     /// In Create mode, the workspace name the prelude collected.
     /// Unused in Edit mode (name comes from `EditorMode::Edit { name }`).
     pub pending_name: Option<String>,
     /// Set by the `SaveDiscardCancel` modal handler to signal that the outer
     /// `handle_key` should perform a save and/or navigate to List.
     pub exit_after_save: Option<ExitIntent>,
-    /// Set to `true` when the current save cycle should return the operator
-    /// to the workspace list on success. Flipped on when `s` is pressed from
-    /// `SaveDiscardCancel`'s `Save` choice; left `false` when the operator
-    /// triggered save directly from the editor (they stay in place). Cleared
-    /// when the save cycle ends (success, cancel, or error).
-    pub exit_on_save_success: bool,
-    /// Signal set by the `Modal::ConfirmSave` handler when the operator
-    /// picks Save. Carries the planner output forward to `commit_editor_save`
-    /// which the outer `handle_key` invokes after the modal closes. This
-    /// indirection is needed because the modal handler doesn't see the
-    /// `paths` / `cwd` arguments the commit needs.
-    pub pending_save_commit: Option<PendingSaveCommit>,
+    /// Explicit state machine for the multi-step save protocol (open
+    /// `ConfirmSave` → stash plan → outer-loop commit → maybe `ErrorPopup`).
+    /// Replaces the sibling `error_banner`, `exit_on_save_success`, and
+    /// `pending_save_commit` flags that used to live on this struct.
+    pub save_flow: EditorSaveFlow,
+}
+
+/// Explicit state-machine for the workspace editor's save cycle.
+///
+/// The save path is a multi-step protocol:
+///
+/// 1. Operator presses `s` (or picks `Save` in the `SaveDiscardCancel` modal).
+/// 2. `begin_editor_save` runs validation + planning and opens the
+///    `ConfirmSave` modal — transitions `Idle → Confirming`.
+/// 3. Operator picks `Save` in `ConfirmSave`: the modal handler stashes
+///    the plan — transitions `Confirming → PendingCommit`.
+/// 4. The outer `handle_key` (which holds `paths` / `cwd`) drains the
+///    `PendingCommit` variant and calls `commit_editor_save`, which writes
+///    to disk — success transitions back to `Idle`; failure transitions
+///    to `Error` which renders as an `ErrorPopup` until the operator
+///    dismisses it.
+///
+/// Validation failures from `begin_editor_save` (missing name, planner
+/// reject, pre-existing-only collapse) also land in `Error`, with the
+/// message surfaced as an inline banner instead of a modal — see the
+/// rendering in `render_editor`.
+#[derive(Debug, Clone, Default)]
+pub enum EditorSaveFlow {
+    #[default]
+    Idle,
+    /// Operator has opened the `ConfirmSave` modal; when they click Save,
+    /// the modal handler stashes the commit plan and closes the modal.
+    /// `exit_on_success` is true when this save cycle originated from
+    /// `SaveDiscardCancel`'s Save choice (so the outer loop should pop
+    /// back to the workspace list on success), false when the operator
+    /// triggered save directly from the editor (stay in place).
+    Confirming { exit_on_success: bool },
+    /// `ConfirmSave` handler has handed off a ready-to-commit plan.
+    /// Drained by the outer `handle_key` which actually performs the
+    /// write (it holds `paths` / `cwd`).
+    PendingCommit {
+        plan: PendingSaveCommit,
+        exit_on_success: bool,
+    },
+    /// The last commit attempt failed; `message` is shown in the
+    /// `ErrorPopup` overlay (or, for pre-commit validation errors, as
+    /// an inline banner) until dismissed.
+    Error { message: String },
+}
+
+impl EditorSaveFlow {
+    /// True when the save flow is in the `Error` state — used by the
+    /// render path to decide whether to draw the inline banner.
+    #[must_use]
+    pub const fn is_error(&self) -> bool {
+        matches!(self, Self::Error { .. })
+    }
+
+    /// The error message currently pending display, if any.
+    #[must_use]
+    pub const fn error_message(&self) -> Option<&str> {
+        if let Self::Error { message } = self {
+            Some(message.as_str())
+        } else {
+            None
+        }
+    }
 }
 
 /// Plan material the `ConfirmSave` modal stashes on the editor state when
@@ -418,11 +472,9 @@ impl EditorState<'_> {
             original: ws.clone(),
             pending: ws,
             modal: None,
-            error_banner: None,
             pending_name: None,
             exit_after_save: None,
-            exit_on_save_success: false,
-            pending_save_commit: None,
+            save_flow: EditorSaveFlow::Idle,
         }
     }
 
@@ -443,11 +495,9 @@ impl EditorState<'_> {
             original: empty.clone(),
             pending: empty,
             modal: None,
-            error_banner: None,
             pending_name: None,
             exit_after_save: None,
-            exit_on_save_success: false,
-            pending_save_commit: None,
+            save_flow: EditorSaveFlow::Idle,
         }
     }
 

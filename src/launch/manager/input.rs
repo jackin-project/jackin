@@ -10,8 +10,9 @@ use super::super::widgets::{
     workdir_pick::WorkdirPickState,
 };
 use super::state::{
-    DragState, EditorMode, EditorState, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget,
-    ManagerListRow, ManagerStage, ManagerState, Modal, Toast, ToastKind, clamp_split,
+    DragState, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
+    FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal, Toast, ToastKind,
+    clamp_split,
 };
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
@@ -58,12 +59,22 @@ pub fn handle_key(
         // only closes the modal and stashes the plan; this outer layer
         // has `paths`/`cwd` and actually performs the write.
         let pending = if let ManagerStage::Editor(editor) = &mut state.stage {
-            editor.pending_save_commit.take()
+            match std::mem::replace(&mut editor.save_flow, EditorSaveFlow::Idle) {
+                EditorSaveFlow::PendingCommit {
+                    plan,
+                    exit_on_success,
+                } => Some((plan, exit_on_success)),
+                other => {
+                    // Not a commit transition — put the flow back untouched.
+                    editor.save_flow = other;
+                    None
+                }
+            }
         } else {
             None
         };
-        if let Some(plan) = pending {
-            commit_editor_save(state, config, paths, cwd, plan)?;
+        if let Some((plan, exit_on_success)) = pending {
+            commit_editor_save(state, config, paths, cwd, plan, exit_on_success)?;
             return Ok(InputOutcome::Continue);
         }
 
@@ -79,14 +90,13 @@ pub fn handle_key(
                 ExitIntent::Save => {
                     // Route through the two-phase save: ConfirmSave opens
                     // first; the eventual commit is the one that exits.
-                    // Mark the editor so that, if the operator picks Save
-                    // in the confirm dialog and the write succeeds, we
-                    // bounce out to the workspace list.
+                    // Pass `exit_on_success = true` so that, if the operator
+                    // picks Save in the confirm dialog and the write
+                    // succeeds, we bounce out to the workspace list.
                     if let ManagerStage::Editor(e) = &mut state.stage {
                         e.exit_after_save = None;
-                        e.exit_on_save_success = true;
                     }
-                    begin_editor_save(state, config)?;
+                    begin_editor_save(state, config, true)?;
                 }
                 ExitIntent::Discard => {
                     *state = ManagerState::from_config(config, cwd);
@@ -372,16 +382,16 @@ fn handle_editor_key(
         KeyCode::Char('s' | 'S') => {
             if let ManagerStage::Editor(editor) = &state.stage {
                 // No-op when there's nothing to save — avoid putting up
-                // an empty ConfirmSave dialog. `exit_on_save_success` is
-                // NOT reset here: the `ExitIntent::Save` path explicitly
-                // sets it to `true` before calling begin_editor_save, and
-                // both paths want the flag preserved through the save cycle.
+                // an empty ConfirmSave dialog.
                 if editor.change_count() == 0 {
                     return Ok(InputOutcome::Continue);
                 }
             }
             if matches!(&state.stage, ManagerStage::Editor(_)) {
-                begin_editor_save(state, config)?;
+                // Direct `s` press: stay in the editor after a successful
+                // save. The `ExitIntent::Save` path in the outer dispatcher
+                // passes `true` so that path exits to the list on success.
+                begin_editor_save(state, config, false)?;
             }
             // `paths` is not needed until the operator actually commits
             // in the ConfirmSave dialog; silence the unused binding until
@@ -662,20 +672,30 @@ fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
 /// plan, and open a `Modal::ConfirmSave` summarising the change set.
 ///
 /// Validation failures (missing name, planner reject, pre-existing-only
-/// collapse) surface as inline `editor.error_banner` messages — NOT as
-/// an `ErrorPopup`. The popup is reserved for commit-time errors (phase 2).
+/// collapse) surface via `EditorSaveFlow::Error { message }` and render
+/// as an inline banner — NOT as an `ErrorPopup`. The popup is reserved
+/// for commit-time errors (phase 2). See `EditorSaveFlow` for the full
+/// state machine.
+///
+/// `exit_on_success` is remembered on the `Confirming` variant so that
+/// the commit phase can decide whether to bounce to the workspace list
+/// after a successful write.
 ///
 /// On success, the function stashes the planner's `effective_removals`
 /// / `final_mounts` on the modal state so the commit path doesn't need
 /// to re-run `plan_edit`/`plan_create`.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
-fn begin_editor_save(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow::Result<()> {
+fn begin_editor_save(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    exit_on_success: bool,
+) -> anyhow::Result<()> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
     };
     // A stale banner from a previous cycle should clear now that the
     // operator has kicked off a fresh save attempt.
-    editor.error_banner = None;
+    editor.save_flow = EditorSaveFlow::Idle;
 
     // Classify once so mutating arms below don't keep editor.mode borrowed.
     #[allow(clippy::items_after_statements)]
@@ -693,10 +713,9 @@ fn begin_editor_save(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow
     let (effective_removals, final_mounts, has_collapses, collapse_lines) = match &save_mode {
         SaveMode::Edit { original_name } => {
             let Some(current_ws) = config.workspaces.get(original_name).cloned() else {
-                editor.error_banner = Some(format!(
-                    "workspace {original_name:?} no longer exists in config"
-                ));
-                editor.exit_on_save_success = false;
+                editor.save_flow = EditorSaveFlow::Error {
+                    message: format!("workspace {original_name:?} no longer exists in config"),
+                };
                 return Ok(());
             };
             let edit_delta = build_workspace_edit(&editor.original, &editor.pending);
@@ -707,8 +726,9 @@ fn begin_editor_save(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow
                 false,
             ) {
                 Err(e) => {
-                    editor.error_banner = Some(e.to_string());
-                    editor.exit_on_save_success = false;
+                    editor.save_flow = EditorSaveFlow::Error {
+                        message: e.to_string(),
+                    };
                     return Ok(());
                 }
                 Ok(plan) => {
@@ -726,12 +746,13 @@ fn begin_editor_save(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow
                                 )
                             })
                             .collect();
-                        editor.error_banner = Some(format!(
-                            "pre-existing redundant mount(s) in this workspace: {}; \
-                             run `jackin' workspace prune {original_name}` to clean up",
-                            details.join(", "),
-                        ));
-                        editor.exit_on_save_success = false;
+                        editor.save_flow = EditorSaveFlow::Error {
+                            message: format!(
+                                "pre-existing redundant mount(s) in this workspace: {}; \
+                                 run `jackin' workspace prune {original_name}` to clean up",
+                                details.join(", "),
+                            ),
+                        };
                         return Ok(());
                     }
                     let has = !plan.edit_driven_collapses.is_empty();
@@ -742,8 +763,9 @@ fn begin_editor_save(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow
         }
         SaveMode::Create => {
             if editor.pending_name.is_none() {
-                editor.error_banner = Some("missing workspace name".into());
-                editor.exit_on_save_success = false;
+                editor.save_flow = EditorSaveFlow::Error {
+                    message: "missing workspace name".into(),
+                };
                 return Ok(());
             }
             match crate::workspace::planner::plan_create(
@@ -752,8 +774,9 @@ fn begin_editor_save(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow
                 false,
             ) {
                 Err(e) => {
-                    editor.error_banner = Some(e.to_string());
-                    editor.exit_on_save_success = false;
+                    editor.save_flow = EditorSaveFlow::Error {
+                        message: e.to_string(),
+                    };
                     return Ok(());
                 }
                 Ok(plan) => {
@@ -776,6 +799,7 @@ fn begin_editor_save(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow
     editor.modal = Some(Modal::ConfirmSave {
         state: confirm_state,
     });
+    editor.save_flow = EditorSaveFlow::Confirming { exit_on_success };
     Ok(())
 }
 
@@ -783,9 +807,10 @@ fn begin_editor_save(state: &mut ManagerState<'_>, config: &AppConfig) -> anyhow
 /// dialog. Actually write to the on-disk config via the internal
 /// `ConfigEditor` API (NO CLI subprocess).
 ///
-/// On Err, opens an `ErrorPopup` describing the failure. On Ok, refreshes
-/// the editor's origin-of-truth snapshot and — if `exit_on_save_success`
-/// is set — transitions the whole manager back to the list view.
+/// On Err, transitions the editor's `save_flow` to `Error` and surfaces
+/// the failure as an `ErrorPopup`. On Ok, refreshes the editor's
+/// origin-of-truth snapshot and — if `exit_on_success` is set —
+/// transitions the whole manager back to the list view.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 fn commit_editor_save(
     state: &mut ManagerState<'_>,
@@ -793,6 +818,7 @@ fn commit_editor_save(
     paths: &JackinPaths,
     cwd: &std::path::Path,
     plan: super::state::PendingSaveCommit,
+    exit_on_success: bool,
 ) -> anyhow::Result<()> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
@@ -823,7 +849,6 @@ fn commit_editor_save(
         Ok(ce) => ce,
         Err(e) => {
             open_save_error_popup(editor, &e.to_string());
-            editor.exit_on_save_success = false;
             return Ok(());
         }
     };
@@ -837,7 +862,6 @@ fn commit_editor_save(
             {
                 if let Err(e) = ce.rename_workspace(&original_name, &new_name) {
                     open_save_error_popup(editor, &e.to_string());
-                    editor.exit_on_save_success = false;
                     return Ok(());
                 }
                 current_name.clone_from(&new_name);
@@ -849,19 +873,16 @@ fn commit_editor_save(
 
             if let Err(e) = ce.edit_workspace(&current_name, edit) {
                 open_save_error_popup(editor, &e.to_string());
-                editor.exit_on_save_success = false;
                 return Ok(());
             }
         }
         SaveMode::Create => {
             let Some(name) = editor.pending_name.clone() else {
                 open_save_error_popup(editor, "missing workspace name");
-                editor.exit_on_save_success = false;
                 return Ok(());
             };
             if let Err(e) = ce.create_workspace(&name, editor.pending.clone()) {
                 open_save_error_popup(editor, &e.to_string());
-                editor.exit_on_save_success = false;
                 return Ok(());
             }
         }
@@ -872,7 +893,7 @@ fn commit_editor_save(
             *config = fresh;
             // Refresh editor origin-of-truth; keep the operator on the
             // editor (direct `s` press) OR bounce to list (Esc→Save path).
-            let should_exit = if let ManagerStage::Editor(editor) = &mut state.stage {
+            if let ManagerStage::Editor(editor) = &mut state.stage {
                 let change_count = editor.change_count();
                 if let EditorMode::Edit { name } = &editor.mode
                     && let Some(ws) = config.workspaces.get(name)
@@ -880,19 +901,14 @@ fn commit_editor_save(
                     editor.original = ws.clone();
                     editor.pending = ws.clone();
                 }
-                editor.error_banner = None;
-                let exit = editor.exit_on_save_success;
-                editor.exit_on_save_success = false;
+                editor.save_flow = EditorSaveFlow::Idle;
                 state.toast = Some(Toast {
                     message: format!("saved · {change_count} changes written"),
                     kind: ToastKind::Success,
                     shown_at: std::time::Instant::now(),
                 });
-                exit
-            } else {
-                false
-            };
-            if should_exit
+            }
+            if exit_on_success
                 || matches!(
                     state.stage,
                     ManagerStage::Editor(EditorState {
@@ -910,7 +926,6 @@ fn commit_editor_save(
         Err(e) => {
             if let ManagerStage::Editor(editor) = &mut state.stage {
                 open_save_error_popup(editor, &e.to_string());
-                editor.exit_on_save_success = false;
             }
         }
     }
@@ -924,6 +939,9 @@ fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
             message.to_string(),
         ),
     });
+    editor.save_flow = EditorSaveFlow::Error {
+        message: message.to_string(),
+    };
 }
 
 /// Build the list of display lines shown inside the `ConfirmSave` modal.
@@ -1472,6 +1490,7 @@ fn pct_from_drag(anchor: DragState, mouse_col: u16, width: u16) -> u16 {
     narrowed
 }
 
+#[allow(clippy::too_many_lines)]
 fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
     let Some(modal) = editor.modal.as_mut() else {
         return;
@@ -1554,18 +1573,29 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             use crate::launch::widgets::confirm_save::SaveChoice;
             match modal_state.handle_key(key) {
                 ModalOutcome::Commit(SaveChoice::Save) => {
-                    // Stash the plan on the editor so the outer handler
-                    // (which has `paths`/`cwd`) can drive the write.
-                    let pending = super::state::PendingSaveCommit {
+                    // Transition `Confirming → PendingCommit` atomically so
+                    // the plan and the originating `exit_on_success` flag
+                    // travel together. The outer handler (which has
+                    // `paths` / `cwd`) drains this and drives the write.
+                    let plan = super::state::PendingSaveCommit {
                         effective_removals: modal_state.effective_removals.clone(),
                         final_mounts: modal_state.final_mounts.clone(),
                     };
+                    let exit_on_success = matches!(
+                        editor.save_flow,
+                        EditorSaveFlow::Confirming {
+                            exit_on_success: true
+                        }
+                    );
                     editor.modal = None;
-                    editor.pending_save_commit = Some(pending);
+                    editor.save_flow = EditorSaveFlow::PendingCommit {
+                        plan,
+                        exit_on_success,
+                    };
                 }
                 ModalOutcome::Cancel => {
                     editor.modal = None;
-                    editor.exit_on_save_success = false;
+                    editor.save_flow = EditorSaveFlow::Idle;
                 }
                 ModalOutcome::Continue => {}
             }
@@ -1573,6 +1603,7 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
         Modal::ErrorPopup { state: popup_state } => match popup_state.handle_key(key) {
             ModalOutcome::Cancel | ModalOutcome::Commit(()) => {
                 editor.modal = None;
+                editor.save_flow = EditorSaveFlow::Idle;
             }
             ModalOutcome::Continue => {}
         },
@@ -2037,7 +2068,7 @@ mod tests {
             modal.has_collapses,
             "modal must flag the collapse for the display layer"
         );
-        assert!(e.error_banner.is_none(), "no error banner expected");
+        assert!(!e.save_flow.is_error(), "no error state expected");
         // The on-disk config should not have been touched yet.
         let reloaded = AppConfig::load_or_init(&paths).unwrap();
         let ws_on_disk = reloaded.workspaces.get("big-monorepo").unwrap();
@@ -2051,8 +2082,9 @@ mod tests {
     #[test]
     fn confirming_collapse_writes_collapsed_set() {
         // Same setup, then simulate the operator pressing Enter on the
-        // ConfirmSave modal — this should drain pending_save_commit,
-        // call commit_editor_save, and write the collapsed mount set.
+        // ConfirmSave modal — this should transition save_flow to
+        // PendingCommit, drive commit_editor_save, and write the
+        // collapsed mount set.
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
@@ -2085,9 +2117,9 @@ mod tests {
             e.modal
         );
         assert!(
-            e.error_banner.is_none(),
+            !e.save_flow.is_error(),
             "save should have succeeded: {:?}",
-            e.error_banner
+            e.save_flow.error_message()
         );
 
         // On-disk config now contains only the collapsed parent.
@@ -2137,7 +2169,11 @@ mod tests {
             2,
             "pending mounts stay so operator can fix by hand"
         );
-        assert!(e.pending_save_commit.is_none(), "plan must be cleared");
+        assert!(
+            matches!(e.save_flow, EditorSaveFlow::Idle),
+            "save flow must return to Idle on cancel; got {:?}",
+            e.save_flow,
+        );
 
         // On-disk config unchanged.
         let reloaded = AppConfig::load_or_init(&paths).unwrap();
@@ -2175,8 +2211,8 @@ mod tests {
         };
         assert!(e.modal.is_none(), "no modal for hard planner errors");
         let banner = e
-            .error_banner
-            .as_deref()
+            .save_flow
+            .error_message()
             .expect("readonly mismatch should produce banner");
         assert!(
             banner.contains("readonly"),
@@ -2222,8 +2258,8 @@ mod tests {
         };
         assert!(e.modal.is_none(), "no confirm for pre-existing-only case");
         let banner = e
-            .error_banner
-            .as_deref()
+            .save_flow
+            .error_message()
             .expect("pre-existing collapse should produce banner");
         assert!(
             banner.contains("prune"),
@@ -2264,7 +2300,7 @@ mod tests {
             e.modal.is_none(),
             "no ConfirmSave should open when change_count is 0"
         );
-        assert!(e.error_banner.is_none());
+        assert!(!e.save_flow.is_error());
     }
 
     #[test]
@@ -2300,9 +2336,10 @@ mod tests {
 
     #[test]
     fn confirm_save_save_exits_editor_on_success_from_save_discard_path() {
-        // Set exit_on_save_success = true (as the SaveDiscardCancel Save
-        // path would). After Enter on ConfirmSave, we should land back
-        // on ManagerStage::List.
+        // Call `begin_editor_save` with `exit_on_success = true` directly
+        // (as the SaveDiscardCancel Save path would, via the outer
+        // `ExitIntent::Save` dispatcher). After Enter on the resulting
+        // ConfirmSave modal, we should land back on ManagerStage::List.
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
@@ -2318,15 +2355,14 @@ mod tests {
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("exit-me".into(), ws);
         editor.pending.workdir = "/w/elsewhere".into();
-        editor.exit_on_save_success = true;
         state.stage = ManagerStage::Editor(editor);
 
-        press_s(&mut state, &mut config, &paths, cwd);
+        begin_editor_save(&mut state, &config, true).unwrap();
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
         assert!(
             matches!(state.stage, ManagerStage::List),
-            "save with exit_on_save_success should return to the list stage"
+            "save with exit_on_success = true should return to the list stage"
         );
     }
 
