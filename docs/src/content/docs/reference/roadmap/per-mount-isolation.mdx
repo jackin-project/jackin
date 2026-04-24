@@ -108,6 +108,8 @@ Beyond the per-type validation:
 - **`workdir`** is unchanged. It is a container path inside a mount destination; jackin' only substitutes the host `src` at bind-mount time.
 - Pre-flight validation only covers cases where git would silently do the wrong thing (subdirectory misrouting, mid-rebase HEAD). Obviously-broken cases (not a repo, unborn branch, bare repo) are left to git's own error messages — jackin' doesn't re-wrap errors that git already reports clearly.
 - Mount collapse / redundancy planning must treat `isolation` as part of the mount's semantics. A `shared` child under a `worktree` parent is not automatically equivalent to the parent just because `src`/`dst` suffixes line up; collapse is only safe when `readonly` and `isolation` match.
+- Shared cache overrides are a supported composition pattern. A workspace can mount an isolated source tree at `/workspace/app` and then mount a shared cache under it, such as `/workspace/app/target` or `/workspace/app/node_modules`. The effective Docker mount order must preserve this behavior by emitting parent mounts before deeper child mounts, so the child cache mount overlays the corresponding path inside the isolated worktree.
+- Duplicate isolated mounts that point at the same canonical repo root are allowed in V1. They materialize as separate worktrees keyed by mount destination, not as one shared worktree. Branch naming must avoid collisions for this case, for example by appending the mount-destination slug when more than one isolated mount in the same container would otherwise use the same scratch branch.
 
 ## Host-Side Materialization
 
@@ -143,6 +145,22 @@ For each non-`shared` mount, materialization is idempotent: a second `load` to a
 **Per-worktree config scoping.** On first worktree creation for a host repo, jackin' enables `extensions.worktreeConfig` on the host repo (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config values written via `git config --worktree` don't leak into the shared host `.git/config`. jackin' reports this in a one-line notice the first time it happens per host repo. Keys that don't support per-worktree scoping (remotes, credentials, anything written without `--worktree`) still land in shared config — this is a git limitation, not a jackin' one, and it's documented as a known limitation rather than papered over.
 
 **Concurrent `jackin load`** invocations that target the same host repo are safe: each container gets a unique container name from `src/instance/naming.rs`, and each isolated mount gets a deterministic mount-destination slug under that container's state directory. Git's internal ref locking serializes the worktree registration in `.git/worktrees/`. Jackin' does not add its own lock; third-party tools that rewrite refs on the host repo during materialization are out of scope.
+
+**Shared caches under isolated source.** The recommended pattern for expensive build artifacts is to keep source isolated and mount cache directories back in as explicit `shared` children:
+
+```toml
+[[workspaces.jackin.mounts]]
+src = "~/projects/jackin"
+dst = "/workspace/jackin"
+isolation = "worktree"
+
+[[workspaces.jackin.mounts]]
+src = "~/.cache/jackin/target"
+dst = "/workspace/jackin/target"
+isolation = "shared"
+```
+
+The agent sees an isolated checkout at `/workspace/jackin` while `target/` is backed by a shared host cache. This is intentional, not a redundant mount to collapse.
 
 **Hooks inherit from the host repo.** Worktrees share `.git/hooks/` with the parent — operators who rely on pre-commit/pre-push to keep commits clean get that for free inside agent containers. Operators with host-specific hooks that don't work in the container fix the hook. V1 does not ship a `--no-hooks` flag; it can be added later if the use case materializes.
 
@@ -194,7 +212,9 @@ Ship:
 - A shared `MountIsolation` parser/model for TOML and CLI, with canonical values `shared | worktree | clone`; `clone` is reserved but rejected in V1 until implemented.
 - `jackin load --force` dirty-host acknowledgement for non-interactive worktree materialization; `jackin launch` gets an interactive confirmation path.
 - Branch naming hardcoded as `jackin/scratch/<branch-instance>` (ephemeral scratch ref), where `<branch-instance>` is based on the agent selector key with namespace `/` preserved and clone suffixes appended to the final segment. Base is always host `HEAD`. No configurable template or base in V1.
+- Duplicate isolated mounts for the same repo root are allowed; each mount gets its own worktree, and branch names disambiguate by mount-destination slug when needed.
 - Runtime materialization happens after container-name claim, not inside `resolve_load_workspace`; introduce a materialized-workspace handoff into Docker launch.
+- Docker bind-mount emission preserves parent-before-child ordering so explicit shared cache child mounts overlay isolated source parents.
 - `.jackin/isolation.json` records materialized isolated mounts so `purge` and `cd` work even after config changes.
 - Runtime source-drift guard: `load` errors when a saved workspace mount reuses a materialized isolated `dst` with a different `src`; CLI/TUI workspace edits should detect the same drift before saving and ask whether to delete preserved state or cancel. Non-interactive edits require `--delete-isolated-state` to delete affected preserved state.
 - Clean-exit cleanup deletes clean worktrees automatically when no commits would be lost, including clean branches whose local commits are already reachable from their upstream/remote tracking branch.
@@ -222,10 +242,9 @@ Defer:
 
 ## Open Questions
 
-1. Build caches (`target/`, `node_modules/`) — worth documenting a pattern (separate `shared` mount for the cache dir) or supporting a dedicated "warm from template" mode later?
-2. Interaction with `hardline` offline lockdown — `worktree` is local-only, so this should be fine, but worth verifying.
-3. Dirty-tree definition — should `--force` acknowledge untracked files too, or only tracked/staged changes?
-4. Branch reuse — confirm that first materialization branches from host `HEAD`, while later loads reuse the existing worktree/branch without resetting or rebasing it.
+1. Interaction with `hardline` offline lockdown — `worktree` is local-only, so this should be fine, but worth verifying.
+2. Dirty-tree definition — should `--force` acknowledge untracked files too, or only tracked/staged changes?
+3. Branch reuse — confirm that first materialization branches from host `HEAD`, while later loads reuse the existing worktree/branch without resetting or rebasing it.
 
 ## Related Files
 
