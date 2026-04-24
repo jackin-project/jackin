@@ -72,10 +72,10 @@ impl FileBrowserState {
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(PHOSPHOR_DIM)),
             )
-            // Base list text: phosphor green.
-            .with_style(Style::default().fg(PHOSPHOR_GREEN))
-            // Directory entries: phosphor green (same — all entries are dirs).
-            .with_dir_style(Style::default().fg(PHOSPHOR_GREEN))
+            // Base list text: white (dir entries are the only thing shown).
+            .with_style(Style::default().fg(Color::Rgb(255, 255, 255)))
+            // Directory entries: white (same — all entries are dirs).
+            .with_dir_style(Style::default().fg(Color::Rgb(255, 255, 255)))
             // Non-directory items: dim (shouldn't appear, but keep safe).
             .with_item_style(Style::default().fg(PHOSPHOR_DIM))
             // Highlighted directory: bright phosphor bg + black fg.

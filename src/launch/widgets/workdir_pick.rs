@@ -21,8 +21,19 @@ pub struct WorkdirPickState {
 impl WorkdirPickState {
     /// Build choices: each mount dst followed by each of its ancestors
     /// up to `/`. Deduplicated across mounts. Labels distinguish dst
-    /// vs parent vs root.
+    /// vs parent vs root vs home.
+    ///
+    /// Excludes `/` and the literal parent of `$HOME` (typically `/Users`
+    /// on macOS or `/home` on Linux) as workdir choices — they're never
+    /// useful targets for a workspace workdir.
     pub fn from_mounts(mounts: &[MountConfig]) -> Self {
+        let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
+        let home_str = home.as_ref().map(|p| p.display().to_string());
+        let home_parent_str = home
+            .as_ref()
+            .and_then(|p| p.parent())
+            .map_or_else(|| "/Users".to_string(), |p| p.display().to_string());
+
         let mut choices: Vec<WorkdirChoice> = Vec::new();
         let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::default();
 
@@ -40,7 +51,13 @@ impl WorkdirPickState {
                     break;
                 }
                 if seen.insert(p.clone()) {
-                    let label = if p == "/" { "(root)" } else { "(parent)" };
+                    let label = if p == "/" {
+                        "(root)"
+                    } else if home_str.as_deref() == Some(p.as_str()) {
+                        "(home)"
+                    } else {
+                        "(parent)"
+                    };
                     choices.push(WorkdirChoice {
                         path: p,
                         label: label.into(),
@@ -49,6 +66,10 @@ impl WorkdirPickState {
                 cursor = parent.to_path_buf();
             }
         }
+
+        // Filter out `/` and the parent-of-home (e.g. `/Users`, `/home`) —
+        // they're never useful workdir targets.
+        choices.retain(|c| c.path != "/" && c.path != home_parent_str);
 
         let mut list_state = ListState::default();
         if !choices.is_empty() {
@@ -101,18 +122,32 @@ impl WorkdirPickState {
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
-    text::Line,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
+const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 
 pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title("Workdir — pick from mounts");
+
+    // Pre-compute display paths and column width so labels line up.
+    let displays: Vec<String> = state
+        .choices
+        .iter()
+        .map(|c| crate::tui::shorten_home(&c.path))
+        .collect();
+    let path_w = displays
+        .iter()
+        .map(|d| d.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(10);
 
     let lines: Vec<Line> = state
         .choices
@@ -124,18 +159,25 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
             } else {
                 "  "
             };
-            Line::from(format!(
-                "{}{}  {}",
-                prefix,
-                crate::tui::shorten_home(&c.path),
-                c.label
-            ))
+            let display = &displays[i];
+            let pad = path_w.saturating_sub(display.chars().count());
+            Line::from(vec![
+                Span::styled(
+                    format!("{prefix}{display}"),
+                    Style::default().fg(PHOSPHOR_GREEN),
+                ),
+                Span::raw(format!("{}  ", " ".repeat(pad))),
+                Span::styled(
+                    c.label.clone(),
+                    Style::default()
+                        .fg(PHOSPHOR_DIM)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ])
         })
         .collect();
 
-    let paragraph = Paragraph::new(lines)
-        .block(block)
-        .style(Style::default().fg(PHOSPHOR_GREEN));
+    let paragraph = Paragraph::new(lines).block(block);
 
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(paragraph, area);
@@ -164,49 +206,110 @@ mod tests {
     }
 
     #[test]
-    fn single_mount_generates_dst_plus_ancestors() {
-        let mounts = vec![mount("/home/x/p", "/home/x/p")];
+    fn single_mount_generates_dst_plus_ancestors_minus_filtered() {
+        // Intermediate ancestors are kept; `/` and the $HOME-parent are
+        // always filtered out regardless of host OS.
+        let mounts = vec![mount("/opt/jackin/p", "/opt/jackin/p")];
         let s = WorkdirPickState::from_mounts(&mounts);
         let paths: Vec<&str> = s.choices.iter().map(|c| c.path.as_str()).collect();
-        assert_eq!(paths, vec!["/home/x/p", "/home/x", "/home", "/"]);
+        assert!(paths.contains(&"/opt/jackin/p"));
+        assert!(paths.contains(&"/opt/jackin"));
+        assert!(paths.contains(&"/opt"));
+        assert!(!paths.contains(&"/"), "`/` must always be filtered");
     }
 
     #[test]
     fn first_choice_is_dst_with_mount_dst_label() {
-        let mounts = vec![mount("/a", "/a")];
+        let mounts = vec![mount("/opt/app", "/opt/app")];
         let s = WorkdirPickState::from_mounts(&mounts);
         assert_eq!(s.choices[0].label, "(mount dst)");
     }
 
     #[test]
-    fn root_choice_is_labelled_root() {
-        let mounts = vec![mount("/a", "/a")];
+    fn root_path_is_filtered_out() {
+        let mounts = vec![mount("/opt/app", "/opt/app")];
         let s = WorkdirPickState::from_mounts(&mounts);
-        assert_eq!(s.choices.last().unwrap().label, "(root)");
+        assert!(
+            s.choices.iter().all(|c| c.path != "/"),
+            "`/` must be filtered out of the choice list: {:?}",
+            s.choices
+                .iter()
+                .map(|c| c.path.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn home_parent_is_filtered_out() {
+        // Build a mount whose dst walks through the user's $HOME so the
+        // ancestor chain includes the $HOME-parent directory — which must
+        // be filtered.
+        let home = directories::BaseDirs::new().map_or_else(
+            || "/home/test".to_string(),
+            |b| b.home_dir().display().to_string(),
+        );
+        let dst = format!("{home}/Projects/app");
+        let mounts = vec![mount(&dst, &dst)];
+        let s = WorkdirPickState::from_mounts(&mounts);
+
+        let home_parent = std::path::Path::new(&home)
+            .parent()
+            .map_or_else(|| "/Users".to_string(), |p| p.display().to_string());
+
+        assert!(
+            s.choices.iter().all(|c| c.path != home_parent),
+            "home-parent `{home_parent}` must be filtered out of the choice list: {:?}",
+            s.choices
+                .iter()
+                .map(|c| c.path.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            s.choices.iter().all(|c| c.path != "/"),
+            "`/` must also be filtered out"
+        );
+    }
+
+    #[test]
+    fn home_itself_is_labelled_home_not_parent() {
+        let home = directories::BaseDirs::new().map_or_else(
+            || "/home/test".to_string(),
+            |b| b.home_dir().display().to_string(),
+        );
+        let dst = format!("{home}/Projects/app");
+        let mounts = vec![mount(&dst, &dst)];
+        let s = WorkdirPickState::from_mounts(&mounts);
+
+        let home_choice = s
+            .choices
+            .iter()
+            .find(|c| c.path == home)
+            .expect("home should appear in ancestor chain");
+        assert_eq!(home_choice.label, "(home)");
     }
 
     #[test]
     fn enter_commits_selected_path() {
-        let mounts = vec![mount("/a", "/a")];
+        let mounts = vec![mount("/opt/app", "/opt/app")];
         let mut s = WorkdirPickState::from_mounts(&mounts);
         let outcome = s.handle_key(key(KeyCode::Enter));
-        assert!(matches!(outcome, ModalOutcome::Commit(v) if v == "/a"));
+        assert!(matches!(outcome, ModalOutcome::Commit(v) if v == "/opt/app"));
     }
 
     #[test]
     fn down_then_enter_picks_second_choice() {
-        let mounts = vec![mount("/a/b", "/a/b")];
+        let mounts = vec![mount("/opt/app/sub", "/opt/app/sub")];
         let mut s = WorkdirPickState::from_mounts(&mounts);
         s.handle_key(key(KeyCode::Down));
         let outcome = s.handle_key(key(KeyCode::Enter));
-        assert!(matches!(outcome, ModalOutcome::Commit(v) if v == "/a"));
+        assert!(matches!(outcome, ModalOutcome::Commit(v) if v == "/opt/app"));
     }
 
     #[test]
     fn duplicate_ancestors_across_mounts_are_deduped() {
-        let mounts = vec![mount("/a/b", "/a/b"), mount("/a/c", "/a/c")];
+        let mounts = vec![mount("/opt/a/b", "/opt/a/b"), mount("/opt/a/c", "/opt/a/c")];
         let s = WorkdirPickState::from_mounts(&mounts);
-        let a_count = s.choices.iter().filter(|c| c.path == "/a").count();
+        let a_count = s.choices.iter().filter(|c| c.path == "/opt/a").count();
         assert_eq!(a_count, 1);
     }
 

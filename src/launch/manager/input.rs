@@ -682,7 +682,7 @@ fn apply_file_browser_to_editor(
             editor.modal = Some(Modal::TextInput {
                 target: super::state::TextInputTarget::MountDst,
                 state: TextInputState::new(
-                    "Mount dst (default: same as host path)",
+                    "destination (default: same as host path)",
                     path.display().to_string(),
                 ),
             });
@@ -743,7 +743,7 @@ fn handle_prelude_modal(prelude: &mut super::state::CreatePreludeState<'_>, key:
                     prelude.modal = Some(Modal::TextInput {
                         target: TextInputTarget::MountDst,
                         state: TextInputState::new(
-                            "Mount dst (default: same as host path)",
+                            "destination (default: same as host path)",
                             default_dst,
                         ),
                     });
