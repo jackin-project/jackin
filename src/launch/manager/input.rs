@@ -185,12 +185,12 @@ fn handle_list_key(
     let sentinel_idx = saved_count + 1;
     let total_rows = sentinel_idx + 1; // 0..=sentinel_idx are valid
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => Ok(InputOutcome::ExitJackin),
-        KeyCode::Up | KeyCode::Char('k') => {
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
             state.selected = state.selected.saturating_sub(1);
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Down | KeyCode::Char('j') => {
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
             state.selected = (state.selected + 1).min(total_rows - 1);
             Ok(InputOutcome::Continue)
         }
@@ -216,7 +216,7 @@ fn handle_list_key(
                 Ok(InputOutcome::Continue)
             }
         }
-        KeyCode::Char('e') => {
+        KeyCode::Char('e' | 'E') => {
             if state.selected == 0 {
                 state.toast = Some(Toast {
                     message: "Current directory cannot be edited".into(),
@@ -237,7 +237,7 @@ fn handle_list_key(
             }
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Char('n') => {
+        KeyCode::Char('n' | 'N') => {
             let mut prelude = super::state::CreatePreludeState::new();
             prelude.modal = Some(Modal::FileBrowser {
                 target: FileBrowserTarget::CreateFirstMountSrc,
@@ -246,7 +246,7 @@ fn handle_list_key(
             state.stage = ManagerStage::CreatePrelude(prelude);
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Char('d') => {
+        KeyCode::Char('d' | 'D') => {
             if state.selected == 0 {
                 state.toast = Some(Toast {
                     message: "Current directory cannot be deleted".into(),
@@ -267,7 +267,7 @@ fn handle_list_key(
             }
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Char('o') => {
+        KeyCode::Char('o' | 'O') => {
             handle_list_open_in_github(state, config, sentinel_idx);
             Ok(InputOutcome::Continue)
         }
@@ -367,7 +367,7 @@ fn handle_editor_key(
     // Handle s and Esc outside the editor borrow to avoid re-borrow
     // conflicts (both need to call back into state or config).
     match key.code {
-        KeyCode::Char('s') => {
+        KeyCode::Char('s' | 'S') => {
             if matches!(&state.stage, ManagerStage::Editor(_)) {
                 save_editor(state, config, paths)?;
             }
@@ -417,11 +417,11 @@ fn handle_editor_key(
             };
             editor.active_field = FieldFocus::Row(0);
         }
-        KeyCode::Up | KeyCode::Char('k') => {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
             let FieldFocus::Row(n) = editor.active_field;
             editor.active_field = FieldFocus::Row(n.saturating_sub(1));
         }
-        KeyCode::Down | KeyCode::Char('j') => {
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
             let FieldFocus::Row(n) = editor.active_field;
             let max = max_row_for_tab(editor, config);
             editor.active_field = FieldFocus::Row((n + 1).min(max));
@@ -449,16 +449,16 @@ fn handle_editor_key(
         KeyCode::Char('*') if editor.active_tab == EditorTab::Agents => {
             set_default_agent_at_cursor(editor, config);
         }
-        KeyCode::Char('a') if editor.active_tab == EditorTab::Mounts => {
+        KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
             editor.modal = Some(Modal::FileBrowser {
                 target: FileBrowserTarget::EditAddMountSrc,
                 state: FileBrowserState::new_from_home()?,
             });
         }
-        KeyCode::Char('d') if editor.active_tab == EditorTab::Mounts => {
+        KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
         }
-        KeyCode::Char('o') if editor.active_tab == EditorTab::Mounts => {
+        KeyCode::Char('o' | 'O') if editor.active_tab == EditorTab::Mounts => {
             // Open the highlighted mount's GitHub URL in the system browser.
             // Silent no-op when the cursor is on the `+ Add mount` sentinel,
             // or when the row's MountKind doesn't expose a resolvable URL

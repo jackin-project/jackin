@@ -83,7 +83,7 @@ impl WorkdirPickState {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up | KeyCode::Char('k' | 'K') => {
                 let n = self.choices.len();
                 if n > 0 {
                     let next = self
@@ -94,7 +94,7 @@ impl WorkdirPickState {
                 }
                 ModalOutcome::Continue
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down | KeyCode::Char('j' | 'J') => {
                 let n = self.choices.len();
                 if n > 0 {
                     let next = self

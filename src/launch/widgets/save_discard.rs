@@ -37,7 +37,7 @@ impl SaveDiscardState {
             KeyCode::Char('s' | 'S') => ModalOutcome::Commit(SaveDiscardChoice::Save),
             KeyCode::Char('d' | 'D') => ModalOutcome::Commit(SaveDiscardChoice::Discard),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
-            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
+            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l' | 'L') => {
                 self.focus = match self.focus {
                     SaveDiscardFocus::Save => SaveDiscardFocus::Discard,
                     SaveDiscardFocus::Discard => SaveDiscardFocus::Cancel,
@@ -45,7 +45,7 @@ impl SaveDiscardState {
                 };
                 ModalOutcome::Continue
             }
-            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
+            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h' | 'H') => {
                 self.focus = match self.focus {
                     SaveDiscardFocus::Save => SaveDiscardFocus::Cancel,
                     SaveDiscardFocus::Discard => SaveDiscardFocus::Save,

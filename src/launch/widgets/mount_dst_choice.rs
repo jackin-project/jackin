@@ -49,7 +49,7 @@ impl MountDstChoiceState {
             KeyCode::Char('o' | 'O') => ModalOutcome::Commit(MountDstChoice::Ok),
             KeyCode::Char('e' | 'E') => ModalOutcome::Commit(MountDstChoice::Edit),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
-            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
+            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l' | 'L') => {
                 self.focus = match self.focus {
                     MountDstFocus::Ok => MountDstFocus::Edit,
                     MountDstFocus::Edit => MountDstFocus::Cancel,
@@ -57,7 +57,7 @@ impl MountDstChoiceState {
                 };
                 ModalOutcome::Continue
             }
-            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
+            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h' | 'H') => {
                 self.focus = match self.focus {
                     MountDstFocus::Ok => MountDstFocus::Cancel,
                     MountDstFocus::Edit => MountDstFocus::Ok,

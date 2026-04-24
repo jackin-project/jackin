@@ -140,23 +140,23 @@ pub fn render(
                     FooterItem::Text("launch"),
                     FooterItem::GroupSep,
                     // Per-row actions
-                    FooterItem::Key("e"),
+                    FooterItem::Key("E"),
                     FooterItem::Text("edit"),
                     FooterItem::Sep,
-                    FooterItem::Key("n"),
+                    FooterItem::Key("N"),
                     FooterItem::Text("new"),
                     FooterItem::Sep,
-                    FooterItem::Key("d"),
+                    FooterItem::Key("D"),
                     FooterItem::Text("delete"),
                 ];
                 if show_open_hint {
                     items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("o"));
+                    items.push(FooterItem::Key("O"));
                     items.push(FooterItem::Text("open in GitHub"));
                 }
                 items.push(FooterItem::GroupSep);
                 // Exit
-                items.push(FooterItem::Key("q"));
+                items.push(FooterItem::Key("Q"));
                 items.push(FooterItem::Text("quit"));
                 items
             }
@@ -747,7 +747,7 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
     }
 
     // Save group — label varies with dirty/clean.
-    items.push(FooterItem::Key("s"));
+    items.push(FooterItem::Key("S"));
     if state.is_dirty() {
         items.push(FooterItem::Text("save workspace"));
         items.push(FooterItem::Dyn(format!(
@@ -819,13 +819,13 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
             let mount_count = state.pending.mounts.len();
             if cursor < mount_count {
                 let mut items = vec![
-                    FooterItem::Key("d"),
+                    FooterItem::Key("D"),
                     FooterItem::Text("remove"),
                     FooterItem::Sep,
-                    FooterItem::Key("a"),
+                    FooterItem::Key("A"),
                     FooterItem::Text("add"),
                 ];
-                // Surface `o open in GitHub` when the cursor is on a mount
+                // Surface `O open in GitHub` when the cursor is on a mount
                 // whose source resolves to a GitHub-hosted git repo with a
                 // web URL. Editor-only — the list view's mounts pane is
                 // a preview, not a focus target.
@@ -840,7 +840,7 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
                     )
                 {
                     items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("o"));
+                    items.push(FooterItem::Key("O"));
                     items.push(FooterItem::Text("open in GitHub"));
                 }
                 items
@@ -850,7 +850,7 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
                     FooterItem::Key("Enter"),
                     FooterItem::Text("add"),
                     FooterItem::Sep,
-                    FooterItem::Key("a"),
+                    FooterItem::Key("A"),
                     FooterItem::Text("add"),
                 ]
             }
@@ -1245,10 +1245,10 @@ mod footer_tests {
     #[test]
     fn sep_renders_with_phosphor_dark() {
         let items = vec![
-            FooterItem::Key("e"),
+            FooterItem::Key("E"),
             FooterItem::Text("edit"),
             FooterItem::Sep,
-            FooterItem::Key("n"),
+            FooterItem::Key("N"),
             FooterItem::Text("new"),
         ];
         let spans = footer_spans(&items);
@@ -1263,7 +1263,7 @@ mod footer_tests {
             FooterItem::Key("Enter"),
             FooterItem::Text("launch"),
             FooterItem::GroupSep,
-            FooterItem::Key("q"),
+            FooterItem::Key("Q"),
             FooterItem::Text("quit"),
         ];
         let spans = footer_spans(&items);
@@ -1290,16 +1290,16 @@ mod footer_tests {
             FooterItem::Key("Enter"),
             FooterItem::Text("launch"),
             FooterItem::GroupSep,
-            FooterItem::Key("e"),
+            FooterItem::Key("E"),
             FooterItem::Text("edit"),
             FooterItem::Sep,
-            FooterItem::Key("n"),
+            FooterItem::Key("N"),
             FooterItem::Text("new"),
             FooterItem::Sep,
-            FooterItem::Key("d"),
+            FooterItem::Key("D"),
             FooterItem::Text("delete"),
             FooterItem::GroupSep,
-            FooterItem::Key("q"),
+            FooterItem::Key("Q"),
             FooterItem::Text("quit"),
         ];
         let spans = footer_spans(&items);
@@ -1308,7 +1308,7 @@ mod footer_tests {
             .iter()
             .filter(|s| s.style.fg == Some(super::WHITE))
             .count();
-        assert_eq!(key_count, 6, "↑↓, Enter, e, n, d, q");
+        assert_eq!(key_count, 6, "↑↓, Enter, E, N, D, Q");
         // Every Text should be styled PHOSPHOR_GREEN; count them.
         let text_count = spans
             .iter()
@@ -1578,32 +1578,79 @@ mod contextual_row_items_tests {
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
-            keys.contains(&"o"),
-            "GitHub mount row must include `o` key hint; got keys={keys:?}"
+            keys.contains(&"O"),
+            "GitHub mount row must include `O` key hint; got keys={keys:?}"
         );
         assert!(
             labels.contains(&"open in GitHub"),
             "GitHub mount row must include `open in GitHub` label; got labels={labels:?}"
         );
-        // Composes with the existing d/a pair, so all three keys are present.
-        assert!(keys.contains(&"d"));
-        assert!(keys.contains(&"a"));
+        // Composes with the existing D/A pair, so all three keys are present.
+        assert!(keys.contains(&"D"));
+        assert!(keys.contains(&"A"));
     }
 
     #[test]
     fn non_github_mount_row_omits_open_in_github_hint() {
-        // Plain folder (no .git) — no GitHub URL, so `o` must not appear.
+        // Plain folder (no .git) — no GitHub URL, so `O` must not appear.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         let hint = contextual_row_items(&editor);
         let keys = key_glyphs(&hint);
         assert!(
-            !keys.contains(&"o"),
-            "plain-folder mount must not include `o`; got keys={keys:?}"
+            !keys.contains(&"O"),
+            "plain-folder mount must not include `O`; got keys={keys:?}"
         );
-        // But the existing d/a hints must still be present.
-        assert!(keys.contains(&"d"));
-        assert!(keys.contains(&"a"));
+        // But the existing D/A hints must still be present.
+        assert!(keys.contains(&"D"));
+        assert!(keys.contains(&"A"));
+    }
+
+    /// Guard that every footer hint built by `contextual_row_items` exposes
+    /// single-letter hotkeys in uppercase. Multi-character glyphs (Enter,
+    /// Tab, Esc, arrows, `*`) pass through unchanged.
+    #[test]
+    fn footer_hotkeys_are_uppercase() {
+        // A representative spread: Mounts (data row + sentinel) + Agents.
+        // General row 0 Edit + Create uses only `Enter`, which is multi-char.
+        let tmp = tempfile::tempdir().unwrap();
+        let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
+
+        // Mounts data-row hint.
+        let mounts_row = contextual_row_items(&editor);
+        assert_hint_hotkeys_uppercase(&mounts_row, "Mounts row 0");
+
+        // Mounts sentinel "+ Add mount" row.
+        let mut sentinel_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
+        sentinel_editor.active_field = FieldFocus::Row(sentinel_editor.pending.mounts.len());
+        let sentinel_row = contextual_row_items(&sentinel_editor);
+        assert_hint_hotkeys_uppercase(&sentinel_row, "Mounts sentinel");
+
+        // Agents tab uses Space + `*` — both multi-char / non-alpha.
+        let mut agents_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
+        agents_editor.active_tab = EditorTab::Agents;
+        let agents_row = contextual_row_items(&agents_editor);
+        assert_hint_hotkeys_uppercase(&agents_row, "Agents");
+    }
+
+    /// Scan a footer-hint list and assert every single-character `Key`
+    /// alphabetic glyph is uppercase. Multi-character glyphs (Enter, Tab,
+    /// Esc, arrows, etc.) and non-alpha keys (`*`) pass through.
+    fn assert_hint_hotkeys_uppercase(hint: &[FooterItem], context: &str) {
+        for item in hint {
+            if let FooterItem::Key(k) = item {
+                let chars: Vec<char> = k.chars().collect();
+                if chars.len() == 1 {
+                    let c = chars[0];
+                    if c.is_alphabetic() {
+                        assert!(
+                            c.is_uppercase(),
+                            "[{context}] single-letter hotkey must be uppercase; got {k:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }
 

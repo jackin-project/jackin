@@ -210,7 +210,7 @@ impl FileBrowserState {
         self.rejected_reason = None;
 
         match key.code {
-            KeyCode::Char('s') => {
+            KeyCode::Char('s' | 'S') => {
                 // Prefer the currently-highlighted entry (the "would navigate
                 // into" target) so the operator can pick a sibling folder
                 // without pressing Enter first. Fall back to the cwd when the
@@ -338,7 +338,7 @@ impl FileBrowserState {
                     GitPromptFocus::Cancel => ModalOutcome::Continue,
                 }
             }
-            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
+            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l' | 'L') => {
                 self.pending_git_focus = match self.pending_git_focus {
                     GitPromptFocus::MountHere => GitPromptFocus::EnterIn,
                     GitPromptFocus::EnterIn => GitPromptFocus::Cancel,
@@ -346,7 +346,7 @@ impl FileBrowserState {
                 };
                 ModalOutcome::Continue
             }
-            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
+            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h' | 'H') => {
                 self.pending_git_focus = match self.pending_git_focus {
                     GitPromptFocus::MountHere => GitPromptFocus::Cancel,
                     GitPromptFocus::EnterIn => GitPromptFocus::MountHere,
@@ -456,10 +456,10 @@ fn render_footer_legend(frame: &mut Frame, area: Rect, state: &FileBrowserState)
             Span::styled("Enter", key),
             Span::styled(" open", text),
             Span::styled(" \u{b7} ", sep),
-            Span::styled("h/\u{2190}", key),
+            Span::styled("H/\u{2190}", key),
             Span::styled(" up", text),
             Span::raw("   "),
-            Span::styled("s", key),
+            Span::styled("S", key),
             Span::styled(" select", text),
             Span::raw("   "),
             Span::styled("Esc", key),
