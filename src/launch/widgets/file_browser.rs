@@ -79,6 +79,12 @@ pub struct FileBrowserState {
     /// Carries the repo path so approving "mount this repo" commits to it
     /// without re-walking the listing.
     pub pending_git_prompt: Option<PathBuf>,
+    /// Origin URL (web form, e.g. `https://github.com/owner/repo`) for the
+    /// repo referenced by `pending_git_prompt`. Computed via
+    /// `mount_info::inspect` when the prompt opens. `None` for non-GitHub
+    /// remotes, repos without an `origin`, or any other case where the URL
+    /// can't be resolved — the overlay simply omits the URL line then.
+    pub pending_git_url: Option<String>,
     /// Which choice is highlighted in the git-repo prompt. Cycled by Tab.
     /// Ignored when `pending_git_prompt` is `None`.
     pub pending_git_focus: GitPromptFocus,
@@ -90,8 +96,21 @@ impl std::fmt::Debug for FileBrowserState {
             .field("root", &self.root)
             .field("rejected_reason", &self.rejected_reason)
             .field("pending_git_prompt", &self.pending_git_prompt)
+            .field("pending_git_url", &self.pending_git_url)
             .field("pending_git_focus", &self.pending_git_focus)
             .finish_non_exhaustive()
+    }
+}
+
+/// Resolve the origin web URL for a git-repo path via `mount_info::inspect`.
+/// Returns `Some` only for GitHub remotes that expose a resolvable web URL;
+/// returns `None` for non-GitHub remotes, missing/unreadable `config`, or
+/// any branch-resolution failure. Used by the git-prompt overlay to show
+/// the origin line below the title.
+fn resolve_git_url(path: &Path) -> Option<String> {
+    match crate::launch::manager::mount_info::inspect(&path.display().to_string()) {
+        crate::launch::manager::mount_info::MountKind::Git { web_url, .. } => web_url,
+        _ => None,
     }
 }
 
@@ -195,6 +214,7 @@ impl FileBrowserState {
             root: home,
             rejected_reason: None,
             pending_git_prompt: None,
+            pending_git_url: None,
             pending_git_focus: GitPromptFocus::MountHere,
         })
     }
@@ -247,6 +267,7 @@ impl FileBrowserState {
                     let path = highlighted.path.clone();
                     let is_dir = highlighted.is_dir;
                     if is_dir && !is_parent_link && has_git_dir(&path) {
+                        self.pending_git_url = resolve_git_url(&path);
                         self.pending_git_prompt = Some(path);
                         self.pending_git_focus = GitPromptFocus::MountHere;
                         return ModalOutcome::Continue;
@@ -321,6 +342,15 @@ impl FileBrowserState {
         ModalOutcome::Commit(target)
     }
 
+    /// Clear the git-repo prompt state in one shot — both the pending
+    /// path and the resolved URL. Used whenever the prompt is dismissed
+    /// (commit, navigate-in, cancel, Esc) so the URL line doesn't leak
+    /// into the next prompt for a different repo.
+    fn dismiss_git_prompt(&mut self) {
+        self.pending_git_prompt = None;
+        self.pending_git_url = None;
+    }
+
     /// Key handler used while the git-repo prompt is active.
     /// - Tab / `BackTab` / ←→ / h/l cycle focus.
     /// - Enter commits the focused option.
@@ -332,24 +362,24 @@ impl FileBrowserState {
         };
         match key.code {
             KeyCode::Char('m' | 'M') => {
-                self.pending_git_prompt = None;
+                self.dismiss_git_prompt();
                 self.commit_or_reject(path)
             }
             KeyCode::Char('e' | 'E') => {
                 // "Pick a subdirectory" — navigate into the repo dir and
                 // clear the prompt. Uses `set_cwd` to avoid re-posting the
                 // Enter event (which would re-open the prompt).
-                self.pending_git_prompt = None;
+                self.dismiss_git_prompt();
                 let _ = self.explorer.set_cwd(&path);
                 ModalOutcome::Continue
             }
             KeyCode::Char('c' | 'C') | KeyCode::Esc => {
-                self.pending_git_prompt = None;
+                self.dismiss_git_prompt();
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
                 let focus = self.pending_git_focus;
-                self.pending_git_prompt = None;
+                self.dismiss_git_prompt();
                 match focus {
                     GitPromptFocus::MountHere => self.commit_or_reject(path),
                     GitPromptFocus::EnterIn => {
@@ -502,9 +532,12 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
         widgets::{Block, Borders, Paragraph},
     };
 
+    // Add a row when we have an origin URL to show under the title.
+    let has_url = state.pending_git_url.is_some();
     // Centre a fixed-size overlay inside the explorer area.
     let w = parent.width.saturating_sub(4).min(60);
-    let h = 7u16.min(parent.height);
+    let base_h: u16 = if has_url { 8 } else { 7 };
+    let h = base_h.min(parent.height);
     let x = parent.x + parent.width.saturating_sub(w) / 2;
     let y = parent.y + parent.height.saturating_sub(h) / 2;
     let area = Rect {
@@ -515,6 +548,7 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
     };
 
     let phosphor = Color::Rgb(0, 255, 65);
+    let phosphor_dim = Color::Rgb(0, 140, 30);
     let white = Color::Rgb(255, 255, 255);
     let phosphor_dark = Color::Rgb(0, 80, 18);
 
@@ -529,15 +563,30 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
+    // Layout rows: optional URL row slots between the "What would you like
+    // to do?" prompt and the button row. Skipped entirely when there is
+    // no URL so we don't render a blank "no URL" noise line.
+    let constraints: Vec<Constraint> = if has_url {
+        vec![
+            Constraint::Length(1), // prompt
+            Constraint::Length(1), // url
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // buttons
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // hint
+        ]
+    } else {
+        vec![
             Constraint::Length(1), // prompt
             Constraint::Length(1), // spacer
             Constraint::Length(1), // buttons
             Constraint::Length(1), // spacer
             Constraint::Length(1), // hint
-        ])
+        ]
+    };
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
         .split(inner);
 
     frame.render_widget(
@@ -548,6 +597,25 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
         .alignment(Alignment::Center),
         rows[0],
     );
+
+    // URL line, italic + phosphor-dim, centered. Only rendered when we
+    // resolved an origin URL; otherwise the row isn't in the layout at all.
+    let (buttons_idx, hint_idx) = if has_url {
+        let url = state.pending_git_url.as_deref().unwrap_or_default();
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                url.to_string(),
+                Style::default()
+                    .fg(phosphor_dim)
+                    .add_modifier(Modifier::ITALIC),
+            ))
+            .alignment(Alignment::Center),
+            rows[1],
+        );
+        (3, 5)
+    } else {
+        (2, 4)
+    };
 
     let focused = Style::default()
         .bg(white)
@@ -574,7 +642,7 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
     ]);
     frame.render_widget(
         Paragraph::new(buttons).alignment(Alignment::Center),
-        rows[2],
+        rows[buttons_idx],
     );
 
     let key_style = Style::default().fg(white).add_modifier(Modifier::BOLD);
@@ -592,7 +660,7 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
             Span::styled(" cancel", text_style),
         ]))
         .alignment(Alignment::Center),
-        rows[4],
+        rows[hint_idx],
     );
 }
 
@@ -625,6 +693,7 @@ mod tests {
             root: path,
             rejected_reason: None,
             pending_git_prompt: None,
+            pending_git_url: None,
             pending_git_focus: GitPromptFocus::MountHere,
         }
     }
@@ -675,6 +744,7 @@ mod tests {
             root: tmp.path().to_path_buf(),
             rejected_reason: None,
             pending_git_prompt: None,
+            pending_git_url: None,
             pending_git_focus: GitPromptFocus::MountHere,
         };
 
@@ -715,6 +785,7 @@ mod tests {
             root: tmp.path().to_path_buf(),
             rejected_reason: None,
             pending_git_prompt: None,
+            pending_git_url: None,
             pending_git_focus: GitPromptFocus::MountHere,
         };
 
@@ -765,6 +836,7 @@ mod tests {
             root: tmp.path().to_path_buf(),
             rejected_reason: None,
             pending_git_prompt: None,
+            pending_git_url: None,
             pending_git_focus: GitPromptFocus::MountHere,
         };
 
@@ -1049,6 +1121,7 @@ mod tests {
             root,
             rejected_reason: None,
             pending_git_prompt: None,
+            pending_git_url: None,
             pending_git_focus: GitPromptFocus::MountHere,
         }
     }
@@ -1073,6 +1146,64 @@ mod tests {
             "Enter on a git-repo row must open the prompt"
         );
         assert_eq!(state.pending_git_focus, GitPromptFocus::MountHere);
+    }
+
+    /// Write a minimal `.git/HEAD` + `.git/config` with the given origin
+    /// URL so `mount_info::inspect` resolves a GitHub `web_url`.
+    fn seed_git_repo_with_origin(repo: &std::path::Path, remote: &str) {
+        let git = repo.join(".git");
+        std::fs::create_dir_all(&git).unwrap();
+        std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(
+            git.join("config"),
+            format!("[remote \"origin\"]\n\turl = {remote}\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn enter_on_git_repo_with_origin_sets_url() {
+        // A repo with a GitHub origin URL should populate pending_git_url
+        // when the prompt opens, so the overlay can render the origin line.
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        seed_git_repo_with_origin(&repo, "git@github.com:jackin-project/jackin.git");
+
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
+        state.handle_key(key(KeyCode::Down));
+        state.handle_key(key(KeyCode::Enter)); // open prompt
+        assert!(state.pending_git_prompt.is_some());
+        let url = state
+            .pending_git_url
+            .as_deref()
+            .expect("GitHub origin must resolve to a web URL");
+        assert!(
+            url.contains("github.com/jackin-project/jackin"),
+            "unexpected web URL: {url}",
+        );
+    }
+
+    #[test]
+    fn enter_on_git_repo_without_origin_leaves_url_none() {
+        // A repo with no origin (empty config) must leave pending_git_url
+        // as None — the overlay then omits the URL row entirely.
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        // No config file → no remotes → no web URL.
+
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
+        state.handle_key(key(KeyCode::Down));
+        state.handle_key(key(KeyCode::Enter));
+        assert!(state.pending_git_prompt.is_some());
+        assert!(
+            state.pending_git_url.is_none(),
+            "no origin → no URL; got {:?}",
+            state.pending_git_url
+        );
     }
 
     #[test]
