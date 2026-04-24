@@ -46,6 +46,8 @@ Modes:
 - **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path. Branch is hardcoded as `jackin/scratch/<instance-slug>` — an ephemeral scratch ref whose only job is to keep the agent's in-progress work reachable until it pushes. Agents (or external tooling such as the Superpowers plugin in Claude Code) rename the branch before pushing a PR. Base is always the host repo's current `HEAD`.
 - **`clone`** — deferred from V1. When it lands, jackin' will run `git clone --local --shared <src> <per-agent-copy>`, hardlinking objects for disk efficiency, with the agent pushing back to `origin` (the host path) when done. `worktree` solves the immediate contention problem; `clone` is for the untrusted-agent / full-`.git`-isolation case.
 
+The mode vocabulary is intentionally enum-shaped from the start: `shared | worktree | clone`. `shared` is the canonical spelling, not `share`, because it describes the mount state and matches the persisted TOML value. V1 implements `shared` and `worktree`; `clone` is reserved in the public vocabulary but rejected by validation with a clear "planned but not implemented yet" message until clone mode ships.
+
 Branch naming:
 
 - Primary instance: `jackin/scratch/the-architect`
@@ -73,13 +75,15 @@ jackin workspace edit jackin \
   --mount-isolation /workspace/jackin=shared
 ```
 
-`--mount-isolation <dst>=<mode>` is keyed by mount destination because destination is already the identity used by workspace upserts and removals. Keeping isolation out of the `--mount` string avoids overloading the existing `src:dst[:ro]` grammar and lets operators change only the isolation mode without retyping the mount source.
+`--mount-isolation <dst>=<type>` is keyed by mount destination because destination is already the identity used by workspace upserts and removals. `<type>` uses the same canonical isolation enum as TOML (`shared | worktree | clone`). Keeping isolation out of the `--mount` string avoids overloading the existing `src:dst[:ro]` grammar and lets operators change only the isolation mode without retyping the mount source.
 
 CLI behavior:
 
 - `workspace create` accepts one `--mount-isolation` entry per destination present in the final mount plan. Unknown destinations are a hard error.
 - `workspace edit` can change isolation for an existing mount without also passing `--mount`. It can also set isolation for a mount being upserted in the same command.
 - `workspace show` adds an **Isolation** column. Omitted TOML fields display as `shared`.
+- `shared` is the canonical CLI/config spelling. Do not document `share` as an alias in V1; exact copy-paste between CLI output, TOML, and docs is more valuable than a second spelling.
+- `clone` is recognized as part of the future enum vocabulary, but V1 rejects it before persistence/materialization with a precise "planned but not implemented yet" error.
 - `workspace list` may stay count-only for V1; detailed per-mount isolation belongs in `workspace show`.
 - `config mount add` and global/scoped Docker mounts do **not** gain an isolation flag in V1. Isolation remains a workspace-mount concept.
 - Ad-hoc `jackin load --mount` mounts default to `shared` in V1 unless we deliberately expand the same `--mount-isolation` syntax to load-time mounts. The saved-workspace CLI path is the required V1 surface.
@@ -160,9 +164,10 @@ Ship:
 
 - `isolation` field on workspace mounts, values `shared | worktree`. Absent → `shared` (backward-compatible; zero-migration for existing TOMLs). Global mounts reject the field at parse time.
 - CLI support for setting isolation on saved workspace mounts:
-  - `workspace create --mount-isolation <dst>=<mode>`
-  - `workspace edit --mount-isolation <dst>=<mode>`
+  - `workspace create --mount-isolation <dst>=<type>`
+  - `workspace edit --mount-isolation <dst>=<type>`
   - `workspace show` displays each mount's effective isolation
+- A shared `MountIsolation` parser/model for TOML and CLI, with canonical values `shared | worktree | clone`; `clone` is reserved but rejected in V1 until implemented.
 - `jackin load --force` dirty-host acknowledgement for non-interactive worktree materialization; `jackin launch` gets an interactive confirmation path.
 - Branch naming hardcoded as `jackin/scratch/<instance-slug>` (ephemeral scratch ref), where `<instance-slug>` is the claimed container name without the leading `jackin-` prefix. Base is always host `HEAD`. No configurable template or base in V1.
 - Runtime materialization happens after container-name claim, not inside `resolve_load_workspace`; introduce a materialized-workspace handoff into Docker launch.
