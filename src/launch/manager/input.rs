@@ -945,6 +945,14 @@ const MIN_DRAGGABLE_WIDTH: u16 = 40;
 /// don't accidentally start a drag while clicking in either pane.
 const SEAM_HIT_SLACK: u16 = 1;
 
+/// Height of the header chunk in the list-view chrome. Mirrors
+/// `Constraint::Length(3)` in `render::render`. Used by mouse hit-testing
+/// to convert a terminal row into a list item index.
+const LIST_HEADER_HEIGHT: u16 = 3;
+/// Height of the footer chunk in the list-view chrome. Mirrors
+/// `Constraint::Length(2)` in `render::render`.
+const LIST_FOOTER_HEIGHT: u16 = 2;
+
 /// Dispatch a mouse event into the workspace manager's list view. Drives
 /// the mouse-draggable seam between the list pane and the details pane.
 ///
@@ -980,11 +988,20 @@ pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
     match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) => {
             let seam_x = seam_column(state.list_split_pct, term_size.width);
+            // Seam hit always wins — a click on the seam column starts a
+            // drag, never a row select. Even if the seam happens to overlap
+            // a valid row position, the resize affordance takes precedence.
             if near_seam(mouse.column, seam_x) {
                 state.drag_state = Some(DragState {
                     anchor_pct: state.list_split_pct,
                     anchor_x: mouse.column,
                 });
+                return;
+            }
+            // Otherwise, treat as click-to-select if the click lands inside
+            // the list pane's content area (excluding borders).
+            if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x) {
+                state.selected = row;
             }
         }
         MouseEventKind::Drag(MouseButton::Left) => {
@@ -998,6 +1015,56 @@ pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
         }
         _ => {}
     }
+}
+
+/// Return the list-row index the mouse is over, or `None` if the click
+/// falls outside the list pane's content area.
+///
+/// Mirrors the layout from `render::render` + `render::render_list_body`:
+///   - Chrome: `[header (3 rows)][body][footer (2 rows)]`
+///   - Body is horizontally split; left column hosts the workspace list.
+///   - The list itself sits inside a bordered block — row 0 of list
+///     items is at y = header + 1 (the +1 skips the top border).
+///
+/// Returns `Some(idx)` only when:
+///   - `mouse.column` is inside `[1, seam_x - 1]` (left pane interior,
+///     i.e. excluding both the left border and the seam column itself)
+///   - `mouse.row` is inside `[header + 1, body_end - 1]` (body interior,
+///     excluding the top and bottom border rows)
+///   - The computed index is within `[0, sentinel_idx]` (the valid range
+///     of rows the operator can select)
+fn list_content_row_index(
+    state: &ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    seam_x: u16,
+) -> Option<usize> {
+    // Column check — strictly inside the left pane (exclude left border
+    // and seam column, which is also the left pane's right border).
+    if mouse.column == 0 || mouse.column >= seam_x {
+        return None;
+    }
+    // Row check — strictly inside the bordered list block.
+    let content_top = LIST_HEADER_HEIGHT + 1; // +1 skips the top border
+    let body_end = term_size.height.saturating_sub(LIST_FOOTER_HEIGHT);
+    // Content bottom is body_end - 1 (skip bottom border). Guard against
+    // a terminal so short that the list has no interior.
+    let content_bottom = body_end.saturating_sub(1);
+    if mouse.row < content_top || mouse.row >= content_bottom {
+        return None;
+    }
+    // Row index into the list: items start at y = content_top (the first
+    // row below the top border).
+    let idx = usize::from(mouse.row - content_top);
+    // The selectable range is [0, sentinel_idx] where:
+    //   0                 → "Current directory"
+    //   1..=saved_count   → saved workspaces
+    //   saved_count + 1   → "+ New workspace" sentinel
+    let sentinel_idx = state.workspaces.len() + 1;
+    if idx > sentinel_idx {
+        return None;
+    }
+    Some(idx)
 }
 
 /// Compute the seam column (0-based) for a given split percentage and
@@ -2651,5 +2718,136 @@ mod mouse_drag_tests {
             term(30),
         );
         assert!(state.drag_state.is_none());
+    }
+
+    // ── Click-to-select tests ──────────────────────────────────────
+    //
+    // Layout (100x30 terminal, header=3 footer=2 body=25):
+    //   y = 0..=2   → header (chunks[0])
+    //   y = 3       → body top border (list block)
+    //   y = 4       → list item 0 ("Current directory")
+    //   y = 5       → list item 1 (first saved workspace)
+    //   ...
+    //   y = 28      → body bottom border
+    //   y = 29      → footer (chunks[2])
+    //
+    // Left pane (default split 45%): x = 0..=44 with x=0 = left border and
+    // x=44 = seam (right border of left block, also the drag-handle).
+    // Interior content columns: x ∈ [1, 43].
+
+    /// Mouse event at `(col, row)`, left-button Down.
+    const fn mouse_at(col: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    /// Build a list state with `n` saved workspaces (row 0 + n + sentinel).
+    fn list_state_with_saved(n: usize) -> ManagerState<'static> {
+        let mut config = crate::config::AppConfig::default();
+        for i in 0..n {
+            config.workspaces.insert(
+                format!("ws-{i:02}"),
+                WorkspaceConfig {
+                    workdir: format!("/w/{i}"),
+                    mounts: vec![],
+                    allowed_agents: vec![],
+                    default_agent: None,
+                    last_agent: None,
+                    env: std::collections::BTreeMap::new(),
+                    agents: std::collections::BTreeMap::new(),
+                },
+            );
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        ManagerState::from_config(&config, tmp.path())
+    }
+
+    #[test]
+    fn click_on_first_row_sets_selected_to_zero() {
+        // y=4 = first list item (index 0, "Current directory").
+        let mut state = list_state_with_saved(3);
+        state.selected = 2;
+        handle_mouse(&mut state, mouse_at(10, 4), term(100));
+        assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn click_on_fifth_row_sets_selected_to_four() {
+        // y=8 = fifth list row (index 4). Needs enough saved workspaces
+        // to make index 4 a valid selection target.
+        let mut state = list_state_with_saved(5);
+        state.selected = 0;
+        handle_mouse(&mut state, mouse_at(10, 8), term(100));
+        assert_eq!(state.selected, 4);
+    }
+
+    #[test]
+    fn click_on_sentinel_row_sets_selected_to_sentinel_idx() {
+        // 3 saved workspaces ⇒ rows are:
+        //   y=4  → index 0 ("Current directory")
+        //   y=5,6,7 → indices 1, 2, 3 (saved)
+        //   y=8  → index 4 (sentinel "+ New workspace")
+        let mut state = list_state_with_saved(3);
+        state.selected = 0;
+        handle_mouse(&mut state, mouse_at(10, 8), term(100));
+        assert_eq!(state.selected, 4, "sentinel_idx = saved_count + 1 = 4");
+    }
+
+    #[test]
+    fn click_outside_list_rows_does_not_change_selected() {
+        // Several "outside" positions must all leave selected untouched:
+        //   - Click above the list (y < 4, e.g. in the header)
+        //   - Click on the left border (x=0)
+        //   - Click at x >= seam (right pane territory)
+        //   - Click below the list content (footer)
+        let mut state = list_state_with_saved(3);
+        state.selected = 2;
+        let initial = state.selected;
+
+        // In the header.
+        handle_mouse(&mut state, mouse_at(10, 1), term(100));
+        assert_eq!(state.selected, initial, "click in header must not select");
+
+        // On the top border of the list block.
+        handle_mouse(&mut state, mouse_at(10, 3), term(100));
+        assert_eq!(state.selected, initial, "click on top border");
+
+        // On the left border column.
+        handle_mouse(&mut state, mouse_at(0, 4), term(100));
+        assert_eq!(state.selected, initial, "click on left border");
+
+        // Past the sentinel row (y=9+ when we have 3 saved workspaces).
+        handle_mouse(&mut state, mouse_at(10, 10), term(100));
+        assert_eq!(state.selected, initial, "click below sentinel");
+
+        // In the right pane (x=60, well clear of seam at col 45).
+        handle_mouse(&mut state, mouse_at(60, 5), term(100));
+        assert_eq!(state.selected, initial, "click in details pane");
+
+        // In the footer.
+        handle_mouse(&mut state, mouse_at(10, 29), term(100));
+        assert_eq!(state.selected, initial, "click on footer row");
+    }
+
+    #[test]
+    fn click_on_seam_still_starts_drag_not_selection() {
+        // Regression guard for batch 14: a click on the seam column must
+        // kick off a drag and NOT retarget selection, even when the y
+        // coordinate happens to overlap a valid list row.
+        let mut state = list_state_with_saved(3);
+        state.selected = 0;
+        // Default split = 45 on a 100-col terminal ⇒ seam at column 45.
+        // y=5 maps to list index 1 in our layout — if seam didn't win,
+        // selection would flip to 1.
+        handle_mouse(&mut state, mouse_at(45, 5), term(100));
+        assert!(state.drag_state.is_some(), "click on seam must start drag");
+        assert_eq!(
+            state.selected, 0,
+            "seam-click must not change selection even when y lands on a list row"
+        );
     }
 }
