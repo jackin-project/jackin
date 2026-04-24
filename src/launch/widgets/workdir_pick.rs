@@ -129,12 +129,19 @@ use ratatui::{
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
+const WHITE: Color = Color::Rgb(255, 255, 255);
 
 pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
+    // Block title styled WHITE + BOLD to match the main-screen block titles
+    // (General/Mounts/Agents) and the other modal widgets.
+    let title = Span::styled(
+        "Workdir — pick from mounts",
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    );
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title("Workdir — pick from mounts");
+        .title(title);
 
     // Pre-compute display paths and column width so labels line up.
     let displays: Vec<String> = state
@@ -162,10 +169,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
             let display = &displays[i];
             let pad = path_w.saturating_sub(display.chars().count());
             Line::from(vec![
-                Span::styled(
-                    format!("{prefix}{display}"),
-                    Style::default().fg(PHOSPHOR_GREEN),
-                ),
+                Span::styled(format!("{prefix}{display}"), Style::default().fg(WHITE)),
                 Span::raw(format!("{}  ", " ".repeat(pad))),
                 Span::styled(
                     c.label.clone(),

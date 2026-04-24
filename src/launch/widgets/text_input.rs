@@ -54,6 +54,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
+    text::Span,
     widgets::{Block, Borders},
 };
 
@@ -63,7 +64,6 @@ const WHITE: Color = Color::Rgb(255, 255, 255);
 pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
     use ratatui::{
         layout::{Constraint, Direction, Layout},
-        text::Span,
         widgets::Paragraph,
     };
 
@@ -74,10 +74,16 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
         .constraints([Constraint::Min(3), Constraint::Length(1)])
         .split(area);
 
+    // Block title styled WHITE + BOLD to match the main-screen block titles
+    // (General/Mounts/Agents). The default widget text stays PHOSPHOR_GREEN.
+    let title = Span::styled(
+        state.label.clone(),
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    );
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_GREEN))
-        .title(state.label.as_str());
+        .title(title);
 
     let mut ta = state.textarea.clone();
     ta.set_block(block);

@@ -317,9 +317,12 @@ fn format_mount_rows(
         .collect()
 }
 
-/// Width of the `mode` column, including one trailing space that separates it
-/// from the `type` column. Also matches the `mode` label in the header.
-const MOUNT_MODE_COL_WIDTH: usize = 4;
+/// Minimum width of the `mode` column. Matches the length of `rw`/`ro`.
+/// The header's literal "mode" label is 4 chars (wider than the floor), so
+/// `{:<MOUNT_MODE_COL_WIDTH}` expands to fit without clipping. Both the
+/// header and data rows emit a two-space gutter after this column before
+/// the `type` column so "mode" and "type" never run together.
+const MOUNT_MODE_COL_WIDTH: usize = 2;
 
 /// Compute the width used for the `path` column so that header and data rows
 /// align. Derived from both the "path" header label and the widest row path,
@@ -337,11 +340,12 @@ fn mount_path_width(rows: &[(String, &str, String)]) -> usize {
 /// [`mount_path_width`] over the same `rows` used for the data lines so the
 /// columns line up.
 fn render_mount_header(path_w: usize) -> Line<'static> {
-    // Format: "  <path padded to path_w>  <mode padded to MODE_W>type"
-    // Leading two-space gutter matches the data-row format.
+    // Format: "  <path padded to path_w>  <mode padded>  type"
+    // Leading two-space gutter + two-space gap between mode and type both
+    // match the data-row format — so "mode" never runs into "type".
     let mode_col = format!("{:<mw$}", "mode", mw = MOUNT_MODE_COL_WIDTH);
     Line::from(Span::styled(
-        format!("  {path:<path_w$}  {mode_col}type", path = "path"),
+        format!("  {path:<path_w$}  {mode_col}  type", path = "path"),
         Style::default().fg(WHITE),
     ))
 }
@@ -357,6 +361,8 @@ fn render_mount_lines(rows: &[(String, &str, String)], path_w: usize) -> Vec<Lin
                     format!("{mode:<mw$}", mw = MOUNT_MODE_COL_WIDTH),
                     Style::default().fg(PHOSPHOR_DIM),
                 ),
+                // Two-space gap before the type column — matches the header.
+                Span::raw("  "),
                 Span::styled(
                     kind.clone(),
                     Style::default()
@@ -973,6 +979,8 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
                 format!("{mode:<mw$}", mw = MOUNT_MODE_COL_WIDTH),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
+            // Two-space gap before the type column — matches the header.
+            Span::raw("  "),
             Span::styled(kind.clone(), dim_style),
         ])
     }));
@@ -1086,7 +1094,10 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         // prompt lists each child/parent pair on its own line).
         Modal::Confirm { state, .. } => (60, confirm::required_height(state)),
         Modal::SaveDiscardCancel { .. } => (70, 7), // three buttons — a bit wider
-        Modal::FileBrowser { .. } => (70, 70), // dialog-sized — 70%×70% lets chrome show around it
+        // File browser: compact overlay — 70% width, 22 rows (~20 visible
+        // entries + banner + nav hint). Rows are an absolute count, not a
+        // percentage — centered_rect_fixed takes rows for the height arg.
+        Modal::FileBrowser { .. } => (70, 22),
         Modal::WorkdirPick { .. } => (60, 12), // ~6 choices + title + hint
     };
     let modal_area = centered_rect_fixed(area, pct_w, height_rows);
@@ -1349,14 +1360,14 @@ mod mount_table_tests {
 
     #[test]
     fn empty_rows_uses_floor_for_header() {
-        // Empty case: header should still render with the floor width
-        // (so the 'type' column is at least `4 + 10 + 2 + 4 = 20`).
+        // Empty case: header should still render with the floor width and
+        // include the two-space gap between "mode" and "type".
         let path_w = mount_path_width(&[]);
         assert_eq!(path_w, 10);
         let header = render_mount_header(path_w);
-        // "  path      <2 pad>  mode<4-w pad>type"
+        // "  <path padded>  <mode padded>  type"
         let expected = format!(
-            "  {path:<path_w$}  {mode:<mw$}type",
+            "  {path:<path_w$}  {mode:<mw$}  type",
             path = "path",
             mode = "mode",
             path_w = path_w,
@@ -1364,5 +1375,20 @@ mod mount_table_tests {
         );
         let s = line_text(&header);
         assert_eq!(s, expected);
+    }
+
+    #[test]
+    fn header_has_two_space_gap_between_mode_and_type() {
+        // Regression for the "modetype" bug: header must emit a literal
+        // two-space gap between the `mode` column and the `type` label,
+        // mirroring the gap data rows emit between `rw`/`ro` and the kind.
+        let rows: Vec<(String, &str, String)> = vec![("~/p".into(), "rw", "git · main".into())];
+        let path_w = mount_path_width(&rows);
+        let header = render_mount_header(path_w);
+        let s = line_text(&header);
+        assert!(
+            s.contains("mode  type"),
+            "expected 'mode  type' (two spaces between mode and type); got {s:?}"
+        );
     }
 }
