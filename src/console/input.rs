@@ -1,5 +1,5 @@
 use super::preview::resolve_selected_workspace;
-use super::state::{LaunchStage, LaunchState};
+use super::state::{ConsoleStage, ConsoleState};
 use crate::config::AppConfig;
 use crate::selector::ClassSelector;
 use crate::workspace::ResolvedWorkspace;
@@ -10,18 +10,18 @@ pub(super) enum EventOutcome {
 }
 
 pub(super) fn handle_event(
-    state: &mut LaunchState,
+    state: &mut ConsoleState,
     key: crossterm::event::KeyCode,
     config: &AppConfig,
     cwd: &std::path::Path,
 ) -> EventOutcome {
     use crossterm::event::KeyCode;
     match &state.stage {
-        LaunchStage::Agent => match key {
+        ConsoleStage::Agent => match key {
             KeyCode::Esc => {
                 // Return to the manager list.
-                state.stage = LaunchStage::Manager(
-                    crate::launch::manager::ManagerState::from_config(config, cwd),
+                state.stage = ConsoleStage::Manager(
+                    crate::console::manager::ManagerState::from_config(config, cwd),
                 );
                 state.agent_query.clear();
                 state.selected_agent = 0;
@@ -63,8 +63,8 @@ pub(super) fn handle_event(
             }
             _ => {}
         },
-        LaunchStage::Manager(_) => {
-            // Manager stage is handled directly in run_launch; this branch
+        ConsoleStage::Manager(_) => {
+            // Manager stage is handled directly in run_console; this branch
             // should never be reached via handle_event.
         }
     }
@@ -80,8 +80,8 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();
         // Construct a state in Agent stage to test Esc.
-        let mut state = LaunchState::new(&config, temp.path()).unwrap();
-        state.stage = LaunchStage::Agent;
+        let mut state = ConsoleState::new(&config, temp.path()).unwrap();
+        state.stage = ConsoleStage::Agent;
 
         let outcome = handle_event(
             &mut state,
@@ -95,7 +95,7 @@ mod tests {
             "Esc from Agent should return Continue (not Exit)"
         );
         assert!(
-            matches!(state.stage, LaunchStage::Manager(_)),
+            matches!(state.stage, ConsoleStage::Manager(_)),
             "Esc from Agent should transition stage to Manager"
         );
     }

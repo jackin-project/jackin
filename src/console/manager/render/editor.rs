@@ -486,7 +486,7 @@ mod contextual_row_items_tests {
 
     use super::super::FooterItem;
     use super::contextual_row_items;
-    use crate::launch::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{MountConfig, WorkspaceConfig};
 
     /// Collect every `FooterItem::Text` label from a hint list.
@@ -679,7 +679,7 @@ mod agents_tab_render_tests {
     //! and every row must render `[x]` in that mode.
     use super::render_agents_tab;
     use crate::config::{AgentSource, AppConfig};
-    use crate::launch::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;

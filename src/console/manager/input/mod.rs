@@ -25,12 +25,12 @@ pub enum InputOutcome {
     Continue,
     /// Exit jackin entirely (Esc/q from the manager list).
     ExitJackin,
-    /// Launch the named workspace — resolved by name in `run_launch`.
+    /// Launch the named workspace — resolved by name in `run_console`.
     LaunchNamed(String),
     /// Launch against the synthetic "Current directory" choice (row 0).
-    /// `run_launch` routes this through the same agent-picker path as
-    /// `LaunchNamed`, using `LaunchState::workspaces[0]` which is built
-    /// in `LaunchState::new` from the current cwd.
+    /// `run_console` routes this through the same agent-picker path as
+    /// `LaunchNamed`, using `ConsoleState::workspaces[0]` which is built
+    /// in `ConsoleState::new` from the current cwd.
     LaunchCurrentDir,
 }
 

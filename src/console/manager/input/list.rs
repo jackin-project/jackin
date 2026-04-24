@@ -155,7 +155,7 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
         }
         _ => {
             state.list_modal = Some(Modal::GithubPicker {
-                state: crate::launch::widgets::github_picker::GithubPickerState::new(choices),
+                state: crate::console::widgets::github_picker::GithubPickerState::new(choices),
             });
         }
     }
@@ -201,7 +201,7 @@ mod tests {
     use super::super::test_support::{key, mount};
     use super::InputOutcome;
     use crate::config::AppConfig;
-    use crate::launch::manager::input::handle_key;
+    use crate::console::manager::input::handle_key;
     use crate::paths::JackinPaths;
     use crate::workspace::WorkspaceConfig;
     use crossterm::event::KeyCode;
@@ -398,7 +398,7 @@ mod tests {
             agents: std::collections::BTreeMap::new(),
         };
 
-        let choices = crate::launch::manager::github_mounts::resolve_for_workspace(&ws);
+        let choices = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
         assert_eq!(choices.len(), 2);
         // URLs track the HEAD ref per-repo.
         let urls: Vec<&str> = choices.iter().map(|c| c.url.as_str()).collect();
@@ -426,7 +426,7 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
         };
-        let choices = crate::launch::manager::github_mounts::resolve_for_workspace(&ws);
+        let choices = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
         assert_eq!(choices.len(), 1);
         assert_eq!(choices[0].url, "https://github.com/owner/solo/tree/trunk");
     }
@@ -547,7 +547,7 @@ mod tests {
         // We can't assert `open::that_detached` ran, but we *can* pin that
         // the modal closes (no lingering state) and no error toast appears
         // when the underlying call path doesn't error out synchronously.
-        use crate::launch::widgets::github_picker::{GithubChoice, GithubPickerState};
+        use crate::console::widgets::github_picker::{GithubChoice, GithubPickerState};
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -581,7 +581,7 @@ mod tests {
 
     #[test]
     fn picker_esc_closes_without_opening_url() {
-        use crate::launch::widgets::github_picker::{GithubChoice, GithubPickerState};
+        use crate::console::widgets::github_picker::{GithubChoice, GithubPickerState};
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();

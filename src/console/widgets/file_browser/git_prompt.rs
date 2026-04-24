@@ -20,7 +20,7 @@ use ratatui::{
 
 use super::state::FileBrowserState;
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
-use crate::launch::widgets::ModalOutcome;
+use crate::console::widgets::ModalOutcome;
 
 /// Focus target for the in-browser "git-repo row, what now?" prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,8 +36,8 @@ pub enum GitPromptFocus {
 /// Resolve the origin web URL for a git-repo path via `mount_info::inspect`.
 /// Returns `Some` only for GitHub remotes that expose a resolvable web URL.
 pub(super) fn resolve_git_url(path: &Path) -> Option<String> {
-    match crate::launch::manager::mount_info::inspect(&path.display().to_string()) {
-        crate::launch::manager::mount_info::MountKind::Git { web_url, .. } => web_url,
+    match crate::console::manager::mount_info::inspect(&path.display().to_string()) {
+        crate::console::manager::mount_info::MountKind::Git { web_url, .. } => web_url,
         _ => None,
     }
 }

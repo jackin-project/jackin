@@ -116,7 +116,7 @@ pub(super) fn handle_prelude_modal(
                         .unwrap_or_default();
                     prelude.modal = Some(Modal::MountDstChoice {
                         target: FileBrowserTarget::CreateFirstMountSrc,
-                        state: crate::launch::widgets::mount_dst_choice::MountDstChoiceState::new(
+                        state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(
                             src,
                         ),
                     });
@@ -132,7 +132,7 @@ pub(super) fn handle_prelude_modal(
             }
         }
         PreludeModalDis::MountDstChoice => {
-            use crate::launch::widgets::mount_dst_choice::MountDstChoice;
+            use crate::console::widgets::mount_dst_choice::MountDstChoice;
             let outcome = if let Some(Modal::MountDstChoice { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
@@ -253,7 +253,8 @@ pub(super) fn handle_prelude_modal(
 /// `$HOME` when the browser fails to build or no cwd was recorded.
 fn reopen_file_browser_at_last_cwd(prelude: &mut super::super::state::CreatePreludeState<'_>) {
     use super::super::state::FileBrowserTarget;
-    let Ok(mut fb) = crate::launch::widgets::file_browser::FileBrowserState::new_from_home() else {
+    let Ok(mut fb) = crate::console::widgets::file_browser::FileBrowserState::new_from_home()
+    else {
         prelude.modal = None;
         return;
     };
@@ -277,7 +278,7 @@ fn reopen_mount_dst_choice(prelude: &mut super::super::state::CreatePreludeState
         .unwrap_or_default();
     prelude.modal = Some(Modal::MountDstChoice {
         target: FileBrowserTarget::CreateFirstMountSrc,
-        state: crate::launch::widgets::mount_dst_choice::MountDstChoiceState::new(src),
+        state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(src),
     });
 }
 
@@ -303,7 +304,7 @@ mod tests {
         prelude.accept_mount_src(std::path::PathBuf::from(src));
         prelude.modal = Some(Modal::MountDstChoice {
             target: FileBrowserTarget::CreateFirstMountSrc,
-            state: crate::launch::widgets::mount_dst_choice::MountDstChoiceState::new(src),
+            state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(src),
         });
         prelude
     }
@@ -396,7 +397,7 @@ mod tests {
         prelude.last_browser_cwd = Some(home.clone());
         prelude.modal = Some(Modal::MountDstChoice {
             target: FileBrowserTarget::CreateFirstMountSrc,
-            state: crate::launch::widgets::mount_dst_choice::MountDstChoiceState::new(
+            state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(
                 &home.display().to_string(),
             ),
         });
@@ -461,7 +462,7 @@ mod tests {
         prelude.used_edit_dst = true;
         prelude.accept_mount_dst("/home/user/project".into(), false);
         prelude.modal = Some(Modal::WorkdirPick {
-            state: crate::launch::widgets::workdir_pick::WorkdirPickState::from_mounts(&[
+            state: crate::console::widgets::workdir_pick::WorkdirPickState::from_mounts(&[
                 crate::workspace::MountConfig {
                     src: "/home/user/project".into(),
                     dst: "/home/user/project".into(),
@@ -493,7 +494,7 @@ mod tests {
         prelude.accept_workdir("/home/user/project".into());
         prelude.modal = Some(Modal::TextInput {
             target: super::super::super::state::TextInputTarget::Name,
-            state: crate::launch::widgets::text_input::TextInputState::new(
+            state: crate::console::widgets::text_input::TextInputState::new(
                 "Name this workspace",
                 "project",
             ),
@@ -514,7 +515,7 @@ mod tests {
         // must close the modal so the outer dispatcher drops back to
         // the workspace list (today's "cancelled" contract).
         let mut prelude = super::super::super::state::CreatePreludeState::new();
-        let fb = crate::launch::widgets::file_browser::FileBrowserState::new_from_home()
+        let fb = crate::console::widgets::file_browser::FileBrowserState::new_from_home()
             .expect("file browser should build in test env");
         prelude.modal = Some(Modal::FileBrowser {
             target: FileBrowserTarget::CreateFirstMountSrc,

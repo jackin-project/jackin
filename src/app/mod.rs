@@ -8,9 +8,9 @@ use crate::cli::agent::{ConsoleArgs, HardlineArgs, LoadArgs};
 use crate::cli::cleanup::{EjectArgs, PurgeArgs};
 use crate::cli::{self, Cli, Command, WorkspaceCommand};
 use crate::config::{self, AppConfig};
+use crate::console;
 use crate::docker::ShellRunner;
 use crate::instance;
-use crate::launch;
 use crate::paths::JackinPaths;
 use crate::runtime;
 use crate::selector::{ClassSelector, Selector};
@@ -125,12 +125,12 @@ pub fn run(cli: Cli) -> Result<()> {
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
-            let Some((class, workspace)) = launch::run_launch(config, &paths, &cwd)? else {
+            let Some((class, workspace)) = console::run_console(config, &paths, &cwd)? else {
                 return Ok(());
             };
 
-            // config was consumed by run_launch (the manager may have written to
-            // disk). Reload so the post-launch path sees the latest state.
+            // config was consumed by run_console (the manager may have written to
+            // disk). Reload so the post-console path sees the latest state.
             let mut config = AppConfig::load_or_init(&paths)?;
 
             let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);

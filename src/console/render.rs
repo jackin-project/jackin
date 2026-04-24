@@ -1,10 +1,10 @@
 use super::preview::build_agent_detail_lines;
-use super::state::LaunchState;
+use super::state::ConsoleState;
 use crate::config::AppConfig;
 use crate::tui;
 
 #[cfg(test)]
-use super::state::LaunchStage;
+use super::state::ConsoleStage;
 
 // ── Color palette (matching CLI banner) ────────────────────────────────
 
@@ -81,7 +81,7 @@ fn render_banner(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
 #[allow(clippy::too_many_lines)]
 pub(super) fn draw_agent_screen(
     frame: &mut ratatui::Frame,
-    state: &LaunchState,
+    state: &ConsoleState,
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
@@ -259,10 +259,10 @@ fn centered_rect(area: ratatui::layout::Rect, percent: u16) -> ratatui::layout::
 }
 
 #[cfg(test)]
-fn footer_text(stage: &LaunchStage) -> &'static str {
+fn footer_text(stage: &ConsoleStage) -> &'static str {
     match stage {
-        LaunchStage::Agent => "Enter load   ↑↓ navigate   Type to filter   Esc back",
-        LaunchStage::Manager(_) => "↑↓ · Enter launch · e edit · n new · d delete · q quit",
+        ConsoleStage::Agent => "Enter load   ↑↓ navigate   Type to filter   Esc back",
+        ConsoleStage::Manager(_) => "↑↓ · Enter launch · e edit · n new · d delete · q quit",
     }
 }
 
@@ -272,8 +272,8 @@ mod tests {
 
     #[test]
     fn footer_text_matches_stage_behavior() {
-        assert!(footer_text(&LaunchStage::Agent).contains("Enter"));
-        assert!(footer_text(&LaunchStage::Agent).contains("back"));
-        assert!(footer_text(&LaunchStage::Agent).contains("filter"));
+        assert!(footer_text(&ConsoleStage::Agent).contains("Enter"));
+        assert!(footer_text(&ConsoleStage::Agent).contains("back"));
+        assert!(footer_text(&ConsoleStage::Agent).contains("filter"));
     }
 }

@@ -57,7 +57,7 @@ pub(super) fn handle_editor_key(
                 if dirty {
                     if let ManagerStage::Editor(editor) = &mut state.stage {
                         editor.modal = Some(Modal::SaveDiscardCancel {
-                            state: crate::launch::widgets::save_discard::SaveDiscardState::new(
+                            state: crate::console::widgets::save_discard::SaveDiscardState::new(
                                 "Save changes before leaving?",
                             ),
                         });
@@ -384,7 +384,7 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             dispatch_editor_mount_dst_choice(editor, target, &src, &outcome);
         }
         Modal::SaveDiscardCancel { state: modal_state } => {
-            use crate::launch::widgets::save_discard::SaveDiscardChoice;
+            use crate::console::widgets::save_discard::SaveDiscardChoice;
             match modal_state.handle_key(key) {
                 ModalOutcome::Commit(SaveDiscardChoice::Save) => {
                     editor.modal = None;
@@ -407,7 +407,7 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             editor.modal = None;
         }
         Modal::ConfirmSave { state: modal_state } => {
-            use crate::launch::widgets::confirm_save::SaveChoice;
+            use crate::console::widgets::confirm_save::SaveChoice;
             match modal_state.handle_key(key) {
                 ModalOutcome::Commit(SaveChoice::Save) => {
                     // Transition `Confirming → PendingCommit` atomically so
@@ -481,9 +481,9 @@ fn dispatch_editor_mount_dst_choice(
     editor: &mut EditorState<'_>,
     target: FileBrowserTarget,
     src: &str,
-    outcome: &ModalOutcome<crate::launch::widgets::mount_dst_choice::MountDstChoice>,
+    outcome: &ModalOutcome<crate::console::widgets::mount_dst_choice::MountDstChoice>,
 ) {
-    use crate::launch::widgets::mount_dst_choice::MountDstChoice;
+    use crate::console::widgets::mount_dst_choice::MountDstChoice;
     match outcome {
         ModalOutcome::Commit(MountDstChoice::Ok) => {
             if target == FileBrowserTarget::EditAddMountSrc {
@@ -504,7 +504,7 @@ fn dispatch_editor_mount_dst_choice(
                 });
                 editor.modal = Some(Modal::TextInput {
                     target: super::super::state::TextInputTarget::MountDst,
-                    state: crate::launch::widgets::text_input::TextInputState::new(
+                    state: crate::console::widgets::text_input::TextInputState::new(
                         "Destination",
                         src,
                     ),
@@ -525,7 +525,7 @@ pub(super) fn apply_file_browser_to_editor(
     editor: &mut EditorState<'_>,
     path: std::path::PathBuf,
 ) {
-    use crate::launch::widgets::mount_dst_choice::MountDstChoiceState;
+    use crate::console::widgets::mount_dst_choice::MountDstChoiceState;
     match target {
         FileBrowserTarget::EditAddMountSrc => {
             // Defer the mount push to the choice modal: in the common case
@@ -557,7 +557,7 @@ mod tests {
     use super::super::test_support::{key, mount};
     use super::{apply_file_browser_to_editor, apply_text_input_to_pending, handle_editor_modal};
     use crate::config::AppConfig;
-    use crate::launch::manager::input::handle_key;
+    use crate::console::manager::input::handle_key;
     use crate::paths::JackinPaths;
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::KeyCode;
@@ -1280,7 +1280,7 @@ mod tests {
         let backend = TestBackend::new(80, 10);
         let mut term = ratatui::Terminal::new(backend).unwrap();
         term.draw(|f| {
-            crate::launch::manager::render::render_editor(f, editor, &config);
+            crate::console::manager::render::render_editor(f, editor, &config);
         })
         .unwrap();
         let buf = term.backend().buffer();

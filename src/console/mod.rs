@@ -5,8 +5,8 @@ mod render;
 pub mod state;
 pub mod widgets;
 
-pub use state::LaunchStage;
-pub use state::LaunchState;
+pub use state::ConsoleStage;
+pub use state::ConsoleState;
 pub use state::WorkspaceChoice;
 
 use crate::config::AppConfig;
@@ -15,14 +15,14 @@ use crate::selector::ClassSelector;
 use crate::workspace::ResolvedWorkspace;
 
 /// Shared `LaunchNamed` / `LaunchCurrentDir` transition: preselect the workspace
-/// at `idx` in `LaunchState::workspaces`, compute filtered agents, and either
+/// at `idx` in `ConsoleState::workspaces`, compute filtered agents, and either
 /// short-circuit (single agent → immediate launch outcome) or stage the
 /// agent-picker. Returns `Ok(Some(_))` if the caller should break with that
 /// outcome, `Ok(None)` to stay in the run-loop.
 fn transition_to_agent_stage(
     config: &AppConfig,
     cwd: &std::path::Path,
-    state: &mut LaunchState,
+    state: &mut ConsoleState,
     idx: usize,
 ) -> anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>> {
     state.selected_workspace = idx;
@@ -54,11 +54,11 @@ fn transition_to_agent_stage(
         choice.default_agent.as_deref(),
     )
     .unwrap_or(0);
-    state.stage = LaunchStage::Agent;
+    state.stage = ConsoleStage::Agent;
     Ok(None)
 }
 
-pub fn run_launch(
+pub fn run_console(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
@@ -86,7 +86,7 @@ pub fn run_launch(
         }
     }
 
-    let mut state = LaunchState::new(&config, cwd)?;
+    let mut state = ConsoleState::new(&config, cwd)?;
     let mut stdout = std::io::stdout();
     enable_raw_mode()?;
     let guard = TerminalGuard;
@@ -97,7 +97,7 @@ pub fn run_launch(
 
     let result = loop {
         // Auto-expire manager toasts after 3 seconds.
-        if let LaunchStage::Manager(ms) = &mut state.stage
+        if let ConsoleStage::Manager(ms) = &mut state.stage
             && let Some(toast) = &ms.toast
             && toast.shown_at.elapsed() > std::time::Duration::from_secs(3)
         {
@@ -105,8 +105,8 @@ pub fn run_launch(
         }
 
         terminal.draw(|frame| match &state.stage {
-            LaunchStage::Agent => render::draw_agent_screen(frame, &state, &config, cwd),
-            LaunchStage::Manager(ms) => manager::render(frame, ms, &config, cwd),
+            ConsoleStage::Agent => render::draw_agent_screen(frame, &state, &config, cwd),
+            ConsoleStage::Manager(ms) => manager::render(frame, ms, &config, cwd),
         })?;
         // Capture terminal size before the blocking read so the mouse
         // handler can hit-test against the current seam position. Harmless
@@ -117,15 +117,15 @@ pub fn run_launch(
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
-                if matches!(state.stage, LaunchStage::Manager(_)) {
-                    if let LaunchStage::Manager(ms) = &mut state.stage {
+                if matches!(state.stage, ConsoleStage::Manager(_)) {
+                    if let ConsoleStage::Manager(ms) = &mut state.stage {
                         match manager::handle_key(ms, &mut config, paths, cwd, key)? {
                             manager::InputOutcome::Continue => {}
                             manager::InputOutcome::ExitJackin => {
                                 break Ok(None);
                             }
                             manager::InputOutcome::LaunchNamed(name) => {
-                                // Find the workspace by name in LaunchState.workspaces.
+                                // Find the workspace by name in ConsoleState.workspaces.
                                 if let Some(idx) = state
                                     .workspaces
                                     .iter()
@@ -139,9 +139,9 @@ pub fn run_launch(
                                 }
                             }
                             manager::InputOutcome::LaunchCurrentDir => {
-                                // Index 0 of LaunchState.workspaces is the synthetic
+                                // Index 0 of ConsoleState.workspaces is the synthetic
                                 // "Current directory" choice (built in
-                                // LaunchState::new). Route it through the same
+                                // ConsoleState::new). Route it through the same
                                 // agent-picker path as a saved workspace.
                                 match transition_to_agent_stage(&config, cwd, &mut state, 0) {
                                     Ok(Some(outcome)) => break Ok(Some(outcome)),
@@ -162,7 +162,7 @@ pub fn run_launch(
                 // Only the Manager/List stage consumes mouse events today
                 // (list/details seam drag). Agent-stage + modals on other
                 // stages fall through as silent no-ops.
-                if let LaunchStage::Manager(ms) = &mut state.stage {
+                if let ConsoleStage::Manager(ms) = &mut state.stage {
                     manager::input::handle_mouse(ms, mouse, term_size);
                 }
             }

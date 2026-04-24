@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::config::AppConfig;
 use crate::workspace::WorkspaceConfig;
 
-use crate::launch::widgets::{
+use crate::console::widgets::{
     confirm::ConfirmState, confirm_save::ConfirmSaveState, error_popup::ErrorPopupState,
     file_browser::FileBrowserState, github_picker::GithubPickerState,
     mount_dst_choice::MountDstChoiceState, text_input::TextInputState,
@@ -261,7 +261,7 @@ pub enum Modal<'a> {
         state: ConfirmState,
     },
     SaveDiscardCancel {
-        state: crate::launch::widgets::save_discard::SaveDiscardState,
+        state: crate::console::widgets::save_discard::SaveDiscardState,
     },
     /// Opened from the workspace list view when the highlighted workspace
     /// has ≥2 GitHub mounts and the operator presses `o`. Committing picks

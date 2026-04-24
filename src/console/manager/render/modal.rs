@@ -18,7 +18,7 @@ use super::centered_rect_fixed;
 /// from this rect, and `input::file_browser_modal_rect` re-uses it for
 /// mouse hit-testing so both views stay in sync. A layout tweak in one
 /// site can't silently desynchronize from the other.
-pub(in crate::launch::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
+pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
     // Size by variant: single-line inputs get a compact overlay;
     // lists get a taller one.
     let (pct_w, height_rows) = match modal {

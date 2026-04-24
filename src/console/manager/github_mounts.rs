@@ -17,7 +17,7 @@
 //! dedicated module under `launch/manager` lets both render and input
 //! call a neutral helper.
 
-use crate::launch::widgets::github_picker::GithubChoice;
+use crate::console::widgets::github_picker::GithubChoice;
 use crate::workspace::WorkspaceConfig;
 
 use super::mount_info::{GitBranch, GitHost, MountKind, inspect};

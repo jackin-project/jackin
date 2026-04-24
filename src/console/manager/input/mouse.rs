@@ -40,7 +40,7 @@ const LIST_FOOTER_HEIGHT: u16 = 2;
 ///   [`MIN_DRAGGABLE_WIDTH`] — drag bounds would be absurd.
 /// - All other events are ignored.
 ///
-/// The caller (run-loop in `src/launch/mod.rs`) is responsible for
+/// The caller (run-loop in `src/console/mod.rs`) is responsible for
 /// passing the current `terminal.size()?` as `term_size` so the handler
 /// can compute the seam column as `term_size.width * list_split_pct / 100`.
 pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
@@ -212,7 +212,7 @@ mod mouse_drag_tests {
     //! event loop — enough to pin the seam hit-test + drag math without a
     //! real terminal.
     use super::handle_mouse;
-    use crate::launch::manager::state::{
+    use crate::console::manager::state::{
         DEFAULT_SPLIT_PCT, EditorState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState,
         Modal,
     };
@@ -377,10 +377,10 @@ mod mouse_drag_tests {
             agents: std::collections::BTreeMap::new(),
         };
         // Ensure the helper signature compiles (guards against future refactors).
-        let _ = crate::launch::manager::github_mounts::resolve_for_workspace(&ws);
+        let _ = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
         state.list_modal = Some(Modal::GithubPicker {
-            state: crate::launch::widgets::github_picker::GithubPickerState::new(vec![
-                crate::launch::widgets::github_picker::GithubChoice {
+            state: crate::console::widgets::github_picker::GithubPickerState::new(vec![
+                crate::console::widgets::github_picker::GithubChoice {
                     src: "/w".into(),
                     branch: "main".into(),
                     url: "https://github.com/o/r".into(),
@@ -472,8 +472,8 @@ mod mouse_drag_tests {
 
     #[test]
     fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
-        use crate::launch::manager::state::CreatePreludeState;
-        use crate::launch::widgets::file_browser::FileBrowserState;
+        use crate::console::manager::state::CreatePreludeState;
+        use crate::console::widgets::file_browser::FileBrowserState;
         let mut state = list_state();
         let tmp = tempfile::tempdir().unwrap();
         let parent = tmp.path().join("parent");
@@ -499,7 +499,7 @@ mod mouse_drag_tests {
 
         let prelude = CreatePreludeState {
             modal: Some(Modal::FileBrowser {
-                target: crate::launch::manager::state::FileBrowserTarget::CreateFirstMountSrc,
+                target: crate::console::manager::state::FileBrowserTarget::CreateFirstMountSrc,
                 state: fb,
             }),
             ..CreatePreludeState::default()
@@ -517,8 +517,8 @@ mod mouse_drag_tests {
 
     #[test]
     fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
-        use crate::launch::manager::state::CreatePreludeState;
-        use crate::launch::widgets::file_browser::FileBrowserState;
+        use crate::console::manager::state::CreatePreludeState;
+        use crate::console::widgets::file_browser::FileBrowserState;
         let mut state = list_state();
         let tmp = tempfile::tempdir().unwrap();
         let parent = tmp.path().join("parent");
@@ -542,7 +542,7 @@ mod mouse_drag_tests {
 
         let prelude = CreatePreludeState {
             modal: Some(Modal::FileBrowser {
-                target: crate::launch::manager::state::FileBrowserTarget::CreateFirstMountSrc,
+                target: crate::console::manager::state::FileBrowserTarget::CreateFirstMountSrc,
                 state: fb,
             }),
             ..CreatePreludeState::default()

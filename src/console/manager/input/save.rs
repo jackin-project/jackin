@@ -131,7 +131,7 @@ pub(super) fn begin_editor_save(
     // lines are what the ConfirmSave widget renders; the widget itself
     // stays dumb.
     let lines = build_confirm_save_lines(editor, config, &collapse_lines);
-    let mut confirm_state = crate::launch::widgets::confirm_save::ConfirmSaveState::new(lines);
+    let mut confirm_state = crate::console::widgets::confirm_save::ConfirmSaveState::new(lines);
     confirm_state.effective_removals = effective_removals;
     confirm_state.final_mounts = final_mounts;
     confirm_state.has_collapses = has_collapses;
@@ -300,7 +300,7 @@ pub(super) fn commit_editor_save(
 
 pub(super) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
     editor.modal = Some(Modal::ErrorPopup {
-        state: crate::launch::widgets::error_popup::ErrorPopupState::new(
+        state: crate::console::widgets::error_popup::ErrorPopupState::new(
             "Save failed",
             message.to_string(),
         ),
@@ -576,7 +576,7 @@ mod tests {
     use super::super::test_support::{key, mount};
     use super::{begin_editor_save, commit_editor_save};
     use crate::config::AppConfig;
-    use crate::launch::manager::input::handle_key;
+    use crate::console::manager::input::handle_key;
     use crate::paths::JackinPaths;
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::KeyCode;
@@ -1028,7 +1028,7 @@ mod tests {
         // Drive commit_editor_save directly with a plan that will make
         // `ce.edit_workspace` fail AFTER `ce.rename_workspace` has already
         // moved the workspace inside ConfigEditor's in-memory buffer.
-        let bad_plan = crate::launch::manager::state::PendingSaveCommit {
+        let bad_plan = crate::console::manager::state::PendingSaveCommit {
             effective_removals: vec!["/does/not/exist".to_string()],
             final_mounts: None,
         };

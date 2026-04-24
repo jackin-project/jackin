@@ -720,7 +720,7 @@ mod subpanel_padding_tests {
         render_mounts_subpanel,
     };
     use crate::config::AppConfig;
-    use crate::launch::manager::state::WorkspaceSummary;
+    use crate::console::manager::state::WorkspaceSummary;
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;

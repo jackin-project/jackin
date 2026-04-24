@@ -6,7 +6,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{
     config::{AppConfig, ConfigEditor},
-    launch::manager::{ManagerStage, ManagerState, handle_key},
+    console::manager::{ManagerStage, ManagerState, handle_key},
     paths::JackinPaths,
     workspace::{MountConfig, WorkspaceConfig},
 };
