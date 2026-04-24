@@ -305,7 +305,7 @@ fn handle_editor_key(
     };
 
     match key.code {
-        KeyCode::Tab => {
+        KeyCode::Tab | KeyCode::Right => {
             editor.active_tab = match editor.active_tab {
                 EditorTab::General => EditorTab::Mounts,
                 EditorTab::Mounts => EditorTab::Agents,
@@ -314,7 +314,7 @@ fn handle_editor_key(
             };
             editor.active_field = FieldFocus::Row(0);
         }
-        KeyCode::BackTab => {
+        KeyCode::BackTab | KeyCode::Left => {
             editor.active_tab = match editor.active_tab {
                 EditorTab::General => EditorTab::Secrets,
                 EditorTab::Mounts => EditorTab::General,
@@ -1804,5 +1804,105 @@ mod tests {
         handle_editor_modal(&mut editor, key(KeyCode::Char('c')));
         assert!(editor.modal.is_none(), "`c` closes the modal");
         assert_eq!(editor.pending.mounts.len(), 0, "`c` must not push a mount");
+    }
+
+    // ── Editor Left/Right = prev/next tab ──────────────────────────────
+
+    /// Build a minimal `(ManagerState, AppConfig, JackinPaths, TempDir)` with
+    /// the state stage parked in an Editor on the given `start_tab`. Used
+    /// to drive `handle_key` through `handle_editor_key`'s tab-cycle branch.
+    fn editor_state_on_tab(
+        start_tab: EditorTab,
+    ) -> (ManagerState<'static>, AppConfig, JackinPaths, TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let config = AppConfig::default();
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = start_tab;
+        state.stage = ManagerStage::Editor(editor);
+        (state, config, paths, tmp)
+    }
+
+    #[test]
+    fn editor_right_arrow_advances_tab() {
+        // Right should match Tab's forward cycle: General → Mounts.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Right),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.active_tab, EditorTab::Mounts);
+    }
+
+    #[test]
+    fn editor_left_arrow_rewinds_tab() {
+        // Left should match BackTab's reverse cycle: Mounts → General.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Mounts);
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Left),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.active_tab, EditorTab::General);
+    }
+
+    #[test]
+    fn editor_left_wraps_to_last_tab_from_first() {
+        // Match Tab's wrap contract: Left from General → Secrets.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Left),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.active_tab, EditorTab::Secrets);
+    }
+
+    #[test]
+    fn editor_right_wraps_to_first_tab_from_last() {
+        // Match Tab's wrap contract: Right from Secrets → General.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Secrets);
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Right),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.active_tab, EditorTab::General);
     }
 }
