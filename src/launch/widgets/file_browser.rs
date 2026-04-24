@@ -37,10 +37,17 @@ const EXCLUDED: &[&str] = &[
     "Pictures",
 ];
 
-/// Marker appended to directory names that are git repos. U+25A3 (white
-/// square containing black small square) — renders as a small icon in
-/// monospace terminals without needing a nerd-font.
-const GIT_REPO_MARKER: &str = " \u{25a3}";
+/// Marker prepended to directory names that are git repos. U+2387
+/// (alternative key symbol) reads as a branch and puts the marker where
+/// the eye lands first. Renders as a small icon in monospace terminals
+/// without needing a nerd-font.
+///
+/// Note: ratatui-explorer 0.3's Theme exposes a single `dir_style` shared
+/// by every directory entry, so per-entry colouring (green for repos) is
+/// not possible here. A future PR that drops ratatui-explorer for a
+/// custom list renderer could add colour; for now the textual prefix is
+/// the affordance.
+const GIT_REPO_MARKER: &str = "\u{2387} ";
 
 /// Does `path` contain a `.git` child? Dir (regular clone) OR file
 /// (submodule worktree, `.git` is a file pointing at the real gitdir).
@@ -115,11 +122,13 @@ fn annotate_file(mut file: ratatui_explorer::File, root: &Path) -> Option<ratatu
     if EXCLUDED.contains(&bare) {
         return None;
     }
-    // Append the git-repo marker when the directory contains a `.git` child.
+    // Prepend the git-repo marker when the directory contains a `.git` child.
     // Works for both plain clones (`.git` is a dir) and submodules (`.git` is
-    // a file containing `gitdir: <path>`).
+    // a file containing `gitdir: <path>`). Prefix puts the marker where the
+    // eye lands first — "⎇ scentbird-root/" vs the trailing marker that was
+    // easy to miss.
     if has_git_dir(&file.path) {
-        file.name.push_str(GIT_REPO_MARKER);
+        file.name.insert_str(0, GIT_REPO_MARKER);
     }
     Some(file)
 }
@@ -273,7 +282,7 @@ impl FileBrowserState {
     }
 
     /// Shared commit-or-reject logic used by `s` and the git-repo prompt's
-    /// "Mount this repo" option. Enforces the same sandbox rules.
+    /// "Mount this repository" option. Enforces the same sandbox rules.
     fn commit_or_reject(&mut self, target: PathBuf) -> ModalOutcome<PathBuf> {
         // Reject root itself — user must navigate into a subfolder.
         if target == self.root {
@@ -306,9 +315,9 @@ impl FileBrowserState {
                 self.commit_or_reject(path)
             }
             KeyCode::Char('e' | 'E') => {
-                // "Enter to pick subdirectory" — navigate into the repo dir
-                // and clear the prompt. Uses `set_cwd` to avoid re-posting
-                // the Enter event (which would re-open the prompt).
+                // "Pick a subdirectory" — navigate into the repo dir and
+                // clear the prompt. Uses `set_cwd` to avoid re-posting the
+                // Enter event (which would re-open the prompt).
                 self.pending_git_prompt = None;
                 let _ = self.explorer.set_cwd(&path);
                 ModalOutcome::Continue
@@ -460,7 +469,7 @@ fn render_footer_legend(frame: &mut Frame, area: Rect, state: &FileBrowserState)
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
-/// Overlay renderer for the in-browser "Git repo detected" prompt.
+/// Overlay renderer for the in-browser "Git repository detected" prompt.
 /// Mirrors the phosphor palette + focus styling used by `confirm.rs`
 /// (bright white bg on focused button, phosphor green on unfocused) so
 /// it feels native next to the other modals.
@@ -492,7 +501,7 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
         .borders(Borders::ALL)
         .border_style(Style::default().fg(phosphor))
         .title(Span::styled(
-            " Git repo detected ",
+            " Git repository detected ",
             Style::default().fg(white).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
@@ -536,9 +545,9 @@ fn render_git_prompt(frame: &mut ratatui::Frame, parent: Rect, state: &FileBrows
         Span::styled(format!(" {label} "), style)
     };
     let buttons = Line::from(vec![
-        btn(GitPromptFocus::MountHere, "Mount this repo"),
+        btn(GitPromptFocus::MountHere, "Mount this repository"),
         Span::raw("  "),
-        btn(GitPromptFocus::EnterIn, "Enter to pick subdir"),
+        btn(GitPromptFocus::EnterIn, "Pick a subdirectory"),
         Span::raw("  "),
         btn(GitPromptFocus::Cancel, "Cancel"),
     ]);
@@ -800,8 +809,8 @@ mod tests {
         let file = dir_file("repo", repo.clone());
         let out = annotate_file(file, tmp.path()).expect("directory should pass filter");
         assert!(
-            out.name.ends_with(GIT_REPO_MARKER),
-            "git-repo directory must have the marker appended; got {:?}",
+            out.name.starts_with(GIT_REPO_MARKER),
+            "git-repo directory must have the marker prepended; got {:?}",
             out.name
         );
     }
@@ -818,8 +827,8 @@ mod tests {
         let file = dir_file("submodule", sub.clone());
         let out = annotate_file(file, tmp.path()).expect("directory should pass filter");
         assert!(
-            out.name.ends_with(GIT_REPO_MARKER),
-            "submodule directory must have the marker appended; got {:?}",
+            out.name.starts_with(GIT_REPO_MARKER),
+            "submodule directory must have the marker prepended; got {:?}",
             out.name
         );
     }
