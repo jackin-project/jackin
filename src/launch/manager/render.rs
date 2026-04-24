@@ -803,27 +803,19 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
-            // Row indices for both modes:
-            //   row 0 = Name        (editable in Edit, read-only in Create)
-            //   row 1 = Working dir (editable)
-            //   row 2 = Default agent (read-only, Edit only)
-            //   row 3 = Last used     (read-only, Edit only)
-            match &state.mode {
-                EditorMode::Create => match cursor {
-                    1 => vec![
-                        FooterItem::Key("Enter"),
-                        FooterItem::Text("pick working directory"),
-                    ],
-                    _ => Vec::new(), // name is read-only in Create mode
-                },
-                EditorMode::Edit { .. } => match cursor {
-                    0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
-                    1 => vec![
-                        FooterItem::Key("Enter"),
-                        FooterItem::Text("pick working directory"),
-                    ],
-                    _ => Vec::new(), // default agent and last used are read-only
-                },
+            // Row indices are uniform across both modes for Enter-affordance
+            // purposes. Create mode has rows 0-1; Edit mode also has 2-3
+            // (default agent, last used) which are read-only and surface no
+            // Enter action either way.
+            //   row 0 = Name        (editable in both modes — Enter opens rename)
+            //   row 1 = Working dir (editable — Enter opens workdir picker)
+            match cursor {
+                0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
+                1 => vec![
+                    FooterItem::Key("Enter"),
+                    FooterItem::Text("pick working directory"),
+                ],
+                _ => Vec::new(),
             }
         }
         EditorTab::Mounts => {
@@ -918,7 +910,7 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     };
 
     // In Create mode the row numbering is:
-    //   0 = name (read-only display — name comes from prelude)
+    //   0 = name (editable — Enter opens rename TextInput, pre-filled from prelude)
     //   1 = workdir
     // In Edit mode:
     //   0 = name (editable), 1 = workdir, 2 = default agent (ro), 3 = last used (ro)
@@ -950,8 +942,11 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             state.original.last_agent.as_deref().unwrap_or("(none)"),
         ));
     } else {
-        // Create mode: name is display-only (collected by prelude), workdir is the first editable row.
-        rows.push(render_editor_readonly_row(0, cursor, "Name", name_value));
+        // Create mode: name is editable (Enter opens the rename TextInput)
+        // but we don't show an `● unsaved` marker because there's no
+        // "original" workspace to diff against — the save_count already
+        // tracks field-level changes.
+        rows.push(render_editor_row(0, cursor, "Name", name_value, false));
         let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
         rows.push(render_editor_row(
             1,

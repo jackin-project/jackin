@@ -537,14 +537,22 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
         let FieldFocus::Row(n) = editor.active_field;
         match n {
             0 => {
-                // Name — Edit mode only (Create mode name comes from prelude).
-                if let EditorMode::Edit { name } = &editor.mode {
-                    let current = editor.pending_name.clone().unwrap_or_else(|| name.clone());
-                    editor.modal = Some(Modal::TextInput {
-                        target: super::state::TextInputTarget::Name,
-                        state: TextInputState::new("Rename workspace", current),
-                    });
-                }
+                // Name — editable in both Edit and Create modes. The
+                // TextInput is pre-filled with the current pending name
+                // (in Create mode that's the value captured by the
+                // create-prelude; in Edit mode it's the workspace's
+                // current on-disk name unless the operator has already
+                // staged a rename).
+                let current = match &editor.mode {
+                    EditorMode::Edit { name } => {
+                        editor.pending_name.clone().unwrap_or_else(|| name.clone())
+                    }
+                    EditorMode::Create => editor.pending_name.clone().unwrap_or_default(),
+                };
+                editor.modal = Some(Modal::TextInput {
+                    target: super::state::TextInputTarget::Name,
+                    state: TextInputState::new("Rename workspace", current),
+                });
             }
             1 if !editor.pending.mounts.is_empty() => {
                 // workdir — use WorkdirPick if mounts exist
@@ -2487,6 +2495,213 @@ mod tests {
             joined.contains("new-one"),
             "workspace name must appear: {joined}"
         );
+    }
+
+    #[test]
+    fn create_mode_enter_on_name_row_opens_rename_modal() {
+        // In Create mode, pressing Enter on row 0 (Name) must open the
+        // rename TextInput modal pre-filled with the current pending_name
+        // — the same flow Edit mode uses. This is the operator's escape
+        // hatch from a prelude-captured name they mistyped.
+        let (_tmp, paths, mut config) = {
+            let tmp = tempfile::tempdir().unwrap();
+            let paths = JackinPaths::for_tests(tmp.path());
+            paths.ensure_base_dirs().unwrap();
+            let config = AppConfig::default();
+            let toml = toml::to_string(&config).unwrap();
+            std::fs::write(&paths.config_file, toml).unwrap();
+            let loaded = AppConfig::load_or_init(&paths).unwrap();
+            (tmp, paths, loaded)
+        };
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_create();
+        editor.pending_name = Some("typo-name".into());
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("still in editor after Enter on name row");
+        };
+        match &e.modal {
+            Some(Modal::TextInput { target, state }) => {
+                assert_eq!(*target, super::super::state::TextInputTarget::Name);
+                assert_eq!(
+                    state.value(),
+                    "typo-name",
+                    "TextInput must be pre-filled with current pending_name"
+                );
+            }
+            other => panic!("expected TextInput(Name); got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_mode_rename_commit_updates_pending_name() {
+        // After the TextInput commits a new value, pending_name should
+        // reflect the operator's edit. Same code path as Edit mode —
+        // apply_text_input_to_pending doesn't distinguish modes.
+        let mut editor = EditorState::new_create();
+        editor.pending_name = Some("old-name".into());
+
+        apply_text_input_to_pending(
+            super::super::state::TextInputTarget::Name,
+            &mut editor,
+            "new-name",
+        );
+
+        assert_eq!(editor.pending_name.as_deref(), Some("new-name"));
+    }
+
+    #[test]
+    fn create_mode_save_uses_updated_pending_name() {
+        // End-to-end: start Create, rename via Enter-on-row-0, commit the
+        // save, and verify the workspace on disk has the updated name.
+        let (_tmp, paths, mut config) = {
+            let tmp = tempfile::tempdir().unwrap();
+            let paths = JackinPaths::for_tests(tmp.path());
+            paths.ensure_base_dirs().unwrap();
+            let config = AppConfig::default();
+            let toml = toml::to_string(&config).unwrap();
+            std::fs::write(&paths.config_file, toml).unwrap();
+            let loaded = AppConfig::load_or_init(&paths).unwrap();
+            (tmp, paths, loaded)
+        };
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_create();
+        editor.pending_name = Some("original".into());
+        editor.pending.workdir = "/code/proj".into();
+        editor.pending.mounts = vec![mount("/code/proj", "/code/proj")];
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        // Open rename modal via Enter on row 0.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+        // Clear the pre-filled "original" and type "renamed".
+        for _ in 0..8 {
+            handle_key(
+                &mut state,
+                &mut config,
+                &paths,
+                cwd,
+                key(KeyCode::Backspace),
+            )
+            .unwrap();
+        }
+        for ch in "renamed".chars() {
+            handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch))).unwrap();
+        }
+        // Commit the TextInput.
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        // Kick off the save: `s` → ConfirmSave → Enter commits.
+        press_s(&mut state, &mut config, &paths, cwd);
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        assert!(
+            reloaded.workspaces.contains_key("renamed"),
+            "save must persist the edited name; got workspaces={:?}",
+            reloaded.workspaces.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            !reloaded.workspaces.contains_key("original"),
+            "the original (pre-edit) name must not end up on disk"
+        );
+    }
+
+    #[test]
+    fn create_mode_confirm_save_reflects_renamed_workspace_name() {
+        // The ConfirmSave dialog's first line reads
+        // "Create workspace: <name>" — after an in-editor rename, the
+        // summary must pick up the edited name, not the prelude-captured one.
+        let (_tmp, paths, mut config) = {
+            let tmp = tempfile::tempdir().unwrap();
+            let paths = JackinPaths::for_tests(tmp.path());
+            paths.ensure_base_dirs().unwrap();
+            let config = AppConfig::default();
+            let toml = toml::to_string(&config).unwrap();
+            std::fs::write(&paths.config_file, toml).unwrap();
+            let loaded = AppConfig::load_or_init(&paths).unwrap();
+            (tmp, paths, loaded)
+        };
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_create();
+        editor.pending_name = Some("prelude-captured".into());
+        editor.pending.workdir = "/code/proj".into();
+        editor.pending.mounts = vec![mount("/code/proj", "/code/proj")];
+        state.stage = ManagerStage::Editor(editor);
+
+        // Operator renames mid-edit.
+        apply_text_input_to_pending(
+            super::super::state::TextInputTarget::Name,
+            match &mut state.stage {
+                ManagerStage::Editor(e) => e,
+                _ => unreachable!(),
+            },
+            "edited-in-place",
+        );
+
+        press_s(&mut state, &mut config, &paths, cwd);
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        let Some(Modal::ConfirmSave { state: modal }) = &e.modal else {
+            panic!("expected ConfirmSave");
+        };
+        let joined: String = modal
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect::<Vec<_>>()
+            .join("|");
+        assert!(
+            joined.contains("edited-in-place"),
+            "ConfirmSave must reflect the edited name: {joined}"
+        );
+        assert!(
+            !joined.contains("prelude-captured"),
+            "prelude-captured name must not leak into the summary: {joined}"
+        );
+    }
+
+    #[test]
+    fn edit_mode_enter_on_name_row_still_opens_rename_modal() {
+        // Regression guard: the Create-mode extension to row 0 Enter must
+        // not break the Edit-mode path that already worked.
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (_tmp, paths, mut config) = setup_with_workspace("keep-me", ws.clone()).unwrap();
+        let cwd = _tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("keep-me".into(), ws);
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        match &e.modal {
+            Some(Modal::TextInput { target, state }) => {
+                assert_eq!(*target, super::super::state::TextInputTarget::Name);
+                assert_eq!(state.value(), "keep-me");
+            }
+            other => panic!("expected TextInput(Name); got {other:?}"),
+        }
     }
 
     #[test]
