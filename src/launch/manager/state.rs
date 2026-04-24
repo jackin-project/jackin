@@ -50,6 +50,9 @@ pub struct EditorState<'a> {
     /// In Create mode, the workspace name the prelude collected.
     /// Unused in Edit mode (name comes from `EditorMode::Edit { name }`).
     pub pending_name: Option<String>,
+    /// Set by the `SaveDiscardCancel` modal handler to signal that the outer
+    /// `handle_key` should perform a save and/or navigate to List.
+    pub exit_after_save: Option<ExitIntent>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +91,9 @@ pub enum Modal<'a> {
         target: ConfirmTarget,
         state: ConfirmState,
     },
+    SaveDiscardCancel {
+        state: crate::launch::widgets::save_discard::SaveDiscardState,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,7 +112,12 @@ pub enum FileBrowserTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmTarget {
     DeleteWorkspace,
-    DiscardChanges,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitIntent {
+    Save,
+    Discard,
 }
 
 #[derive(Debug)]
@@ -184,6 +195,7 @@ impl EditorState<'_> {
             modal: None,
             error_banner: None,
             pending_name: None,
+            exit_after_save: None,
         }
     }
 
@@ -206,6 +218,7 @@ impl EditorState<'_> {
             modal: None,
             error_banner: None,
             pending_name: None,
+            exit_after_save: None,
         }
     }
 

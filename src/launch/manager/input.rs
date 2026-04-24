@@ -9,7 +9,7 @@ use super::super::widgets::{
     workdir_pick::WorkdirPickState,
 };
 use super::state::{
-    ConfirmTarget, EditorMode, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
+    EditorMode, EditorState, EditorTab, ExitIntent, FieldFocus, FileBrowserTarget, ManagerStage,
     ManagerState, Modal, Toast, ToastKind,
 };
 use crate::config::AppConfig;
@@ -37,6 +37,35 @@ pub fn handle_key(
         && editor.modal.is_some()
     {
         handle_editor_modal(editor, key);
+        // After modal handling, check if an exit intent was signalled by
+        // the SaveDiscardCancel modal.
+        let intent = if let ManagerStage::Editor(editor) = &state.stage {
+            editor.exit_after_save
+        } else {
+            None
+        };
+        if let Some(intent) = intent {
+            match intent {
+                ExitIntent::Save => {
+                    save_editor(state, config, paths)?;
+                    // If save succeeded (no error_banner), exit to list.
+                    if let ManagerStage::Editor(e) = &state.stage {
+                        if e.error_banner.is_none() {
+                            *state = ManagerState::from_config(config);
+                        } else {
+                            // Save failed — clear exit intent so user can retry.
+                            if let ManagerStage::Editor(e) = &mut state.stage {
+                                e.exit_after_save = None;
+                            }
+                        }
+                    }
+                }
+                ExitIntent::Discard => {
+                    *state = ManagerState::from_config(config);
+                }
+            }
+            return Ok(InputOutcome::Continue);
+        }
         return Ok(InputOutcome::Continue);
     }
     if matches!(state.stage, ManagerStage::CreatePrelude(_)) {
@@ -205,9 +234,10 @@ fn handle_editor_key(
                 let dirty = editor.is_dirty();
                 if dirty {
                     if let ManagerStage::Editor(editor) = &mut state.stage {
-                        editor.modal = Some(Modal::Confirm {
-                            target: ConfirmTarget::DiscardChanges,
-                            state: ConfirmState::new("Discard unsaved changes?"),
+                        editor.modal = Some(Modal::SaveDiscardCancel {
+                            state: crate::launch::widgets::save_discard::SaveDiscardState::new(
+                                "Save changes before leaving?",
+                            ),
                         });
                     }
                 } else {
@@ -582,18 +612,22 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             }
             ModalOutcome::Continue => {}
         },
-        Modal::Confirm { target, state } => {
-            let target = *target;
-            match state.handle_key(key) {
-                ModalOutcome::Commit(yes) => {
+        Modal::Confirm { state, .. } => match state.handle_key(key) {
+            ModalOutcome::Commit(_) | ModalOutcome::Cancel => {
+                editor.modal = None;
+            }
+            ModalOutcome::Continue => {}
+        },
+        Modal::SaveDiscardCancel { state: modal_state } => {
+            use crate::launch::widgets::save_discard::SaveDiscardChoice;
+            match modal_state.handle_key(key) {
+                ModalOutcome::Commit(SaveDiscardChoice::Save) => {
                     editor.modal = None;
-                    if target == ConfirmTarget::DiscardChanges && yes {
-                        // Caller transitions out of editor — we set a
-                        // flag by making the editor look "clean" again.
-                        editor.pending = editor.original.clone();
-                        editor.error_banner = None;
-                        // The transition back to List happens on next Esc.
-                    }
+                    editor.exit_after_save = Some(ExitIntent::Save);
+                }
+                ModalOutcome::Commit(SaveDiscardChoice::Discard) => {
+                    editor.modal = None;
+                    editor.exit_after_save = Some(ExitIntent::Discard);
                 }
                 ModalOutcome::Cancel => {
                     editor.modal = None;

@@ -8,6 +8,7 @@
 pub mod confirm;
 pub mod file_browser;
 pub mod panel_rain;
+pub mod save_discard;
 pub mod text_input;
 pub mod workdir_pick;
 

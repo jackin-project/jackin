@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use super::super::widgets::{confirm, file_browser, text_input, workdir_pick};
+use super::super::widgets::{confirm, file_browser, save_discard, text_input, workdir_pick};
 use super::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, Modal,
     WorkspaceSummary,
@@ -39,7 +39,7 @@ pub fn render(frame: &mut Frame, state: &ManagerState<'_>, config: &AppConfig) {
         render_header(frame, chunks[0], "manage workspaces");
 
         if matches!(&state.stage, ManagerStage::List) {
-            render_list_body(frame, chunks[1], state);
+            render_list_body(frame, chunks[1], state, config);
         }
 
         let footer_text = match &state.stage {
@@ -90,7 +90,7 @@ fn render_header(frame: &mut Frame, area: Rect, title: &str) {
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Left), area);
 }
 
-fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>) {
+fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>, config: &AppConfig) {
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
@@ -123,7 +123,7 @@ fn render_list_body(frame: &mut Frame, area: Rect, state: &ManagerState<'_>) {
 
     // Right: details pane for currently-selected workspace.
     if let Some(ws) = state.workspaces.get(state.selected) {
-        render_details_pane(frame, columns[1], ws);
+        render_details_pane(frame, columns[1], ws, config);
     } else {
         // [+ New workspace] selected — right pane is empty.
         let block = Block::default()
@@ -167,39 +167,113 @@ fn render_toast(frame: &mut Frame, area: Rect, toast: &super::state::Toast) {
     frame.render_widget(Paragraph::new(line), banner_area);
 }
 
-fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary) {
-    let lines = vec![
-        Line::from(vec![
-            Span::styled("workdir ", Style::default().fg(WHITE)),
-            Span::raw(ws.workdir.clone()),
-        ]),
-        Line::from(vec![
-            Span::styled("mounts  ", Style::default().fg(WHITE)),
-            Span::raw(format!(
-                "{} ({} readonly)",
-                ws.mount_count, ws.readonly_mount_count
-            )),
-        ]),
-        Line::from(vec![
-            Span::styled("agents  ", Style::default().fg(WHITE)),
-            Span::raw(format!("{} allowed", ws.allowed_agent_count)),
-        ]),
-        Line::from(vec![
-            Span::styled("last    ", Style::default().fg(WHITE)),
-            Span::raw(
-                ws.last_agent
-                    .clone()
-                    .unwrap_or_else(|| "(none)".to_string()),
+fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, config: &AppConfig) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Details ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // workdir
+    lines.push(Line::from(vec![
+        Span::styled("workdir   ", Style::default().fg(WHITE)),
+        Span::raw(ws.workdir.clone()),
+    ]));
+
+    // blank
+    lines.push(Line::from(""));
+
+    // mounts (actual list)
+    lines.push(Line::from(Span::styled(
+        "mounts",
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    )));
+    let mounts = config
+        .workspaces
+        .get(&ws.name)
+        .map_or(&[][..], |w| w.mounts.as_slice());
+    if mounts.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (none)",
+            Style::default().fg(PHOSPHOR_DIM),
+        )));
+    } else {
+        for m in mounts {
+            let ro = if m.readonly { " (ro)" } else { " (rw)" };
+            let path_display = if m.src == m.dst {
+                m.src.clone()
+            } else {
+                format!("{} \u{2192} {}", m.src, m.dst)
+            };
+            let kind_label = super::mount_info::inspect(&m.src).label();
+            lines.push(Line::from(vec![
+                Span::raw(format!("  {path_display}{ro}")),
+                Span::styled(
+                    format!("  \u{b7} {kind_label}"),
+                    Style::default()
+                        .fg(PHOSPHOR_DIM)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ]));
+        }
+    }
+
+    // blank
+    lines.push(Line::from(""));
+
+    // agents
+    let allowed = config
+        .workspaces
+        .get(&ws.name)
+        .map_or(&[][..], |w| w.allowed_agents.as_slice());
+    if allowed.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled("agents    ", Style::default().fg(WHITE)),
+            Span::styled(
+                "any agent",
+                Style::default()
+                    .fg(Color::Rgb(180, 255, 180))
+                    .add_modifier(Modifier::ITALIC),
             ),
-        ]),
-    ];
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "agents",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        )));
+        let default = config
+            .workspaces
+            .get(&ws.name)
+            .and_then(|w| w.default_agent.as_deref());
+        for agent in allowed {
+            let star = if Some(agent.as_str()) == default {
+                "\u{2605} "
+            } else {
+                "  "
+            };
+            lines.push(Line::from(format!("  {star}{agent}")));
+        }
+    }
+
+    // blank
+    lines.push(Line::from(""));
+
+    // last used
+    lines.push(Line::from(vec![
+        Span::styled("last      ", Style::default().fg(WHITE)),
+        Span::raw(
+            ws.last_agent
+                .clone()
+                .unwrap_or_else(|| "(none)".to_string()),
+        ),
+    ]));
+
     let p = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(PHOSPHOR_DARK))
-                .title(format!(" Details — {} ", ws.name)),
-        )
+        .block(block)
         .style(Style::default().fg(PHOSPHOR_GREEN));
     frame.render_widget(p, area);
 }
@@ -622,6 +696,7 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
     let (pct_w, height_rows) = match modal {
         Modal::TextInput { .. } => (60, 5), // label + input + hint = 5 rows
         Modal::Confirm { .. } => (60, 7),   // prompt + spacer + buttons + spacer + hint = 7 rows
+        Modal::SaveDiscardCancel { .. } => (70, 7), // three buttons — a bit wider
         Modal::FileBrowser { .. } => (70, 20), // ~15 entries + top/bottom hints visible
         Modal::WorkdirPick { .. } => (60, 12), // ~6 choices + title + hint
     };
@@ -631,6 +706,7 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         Modal::FileBrowser { state, .. } => file_browser::render(frame, modal_area, state),
         Modal::WorkdirPick { state } => workdir_pick::render(frame, modal_area, state),
         Modal::Confirm { state, .. } => confirm::render(frame, modal_area, state),
+        Modal::SaveDiscardCancel { state } => save_discard::render(frame, modal_area, state),
     }
 }
 
