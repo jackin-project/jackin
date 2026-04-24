@@ -6,8 +6,8 @@ use crate::config::AppConfig;
 use crate::workspace::WorkspaceConfig;
 
 use crate::launch::widgets::{
-    confirm::ConfirmState, file_browser::FileBrowserState, text_input::TextInputState,
-    workdir_pick::WorkdirPickState,
+    confirm::ConfirmState, file_browser::FileBrowserState, mount_dst_choice::MountDstChoiceState,
+    text_input::TextInputState, workdir_pick::WorkdirPickState,
 };
 
 #[derive(Debug)]
@@ -88,6 +88,10 @@ pub enum Modal<'a> {
     FileBrowser {
         target: FileBrowserTarget,
         state: FileBrowserState,
+    },
+    MountDstChoice {
+        target: FileBrowserTarget,
+        state: MountDstChoiceState,
     },
     WorkdirPick {
         state: WorkdirPickState,

@@ -867,6 +867,20 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
                 ModalOutcome::Continue => {}
             }
         }
+        Modal::MountDstChoice {
+            state: modal_state, ..
+        } => {
+            // Wired in a follow-up commit. For now, Cancel/Esc dismisses
+            // the modal cleanly so the operator is never trapped; other
+            // keys are silently swallowed.
+            use crate::launch::widgets::ModalOutcome;
+            match modal_state.handle_key(key) {
+                ModalOutcome::Cancel => {
+                    editor.modal = None;
+                }
+                ModalOutcome::Commit(_) | ModalOutcome::Continue => {}
+            }
+        }
         Modal::SaveDiscardCancel { state: modal_state } => {
             use crate::launch::widgets::save_discard::SaveDiscardChoice;
             match modal_state.handle_key(key) {

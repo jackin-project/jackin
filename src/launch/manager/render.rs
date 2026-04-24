@@ -8,7 +8,9 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use super::super::widgets::{confirm, file_browser, save_discard, text_input, workdir_pick};
+use super::super::widgets::{
+    confirm, file_browser, mount_dst_choice, save_discard, text_input, workdir_pick,
+};
 use super::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, Modal,
     WorkspaceSummary,
@@ -1118,6 +1120,10 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         // percentage — centered_rect_fixed takes rows for the height arg.
         Modal::FileBrowser { .. } => (70, 22),
         Modal::WorkdirPick { .. } => (60, 12), // ~6 choices + title + hint
+        // Title bar + path + blank + explanation + blank + buttons + blank + hint = 9
+        // plus 2 borders handled by centered_rect_fixed; widen to 80% so the
+        // explanation sentence fits comfortably on one line.
+        Modal::MountDstChoice { .. } => (80, 9),
     };
     let modal_area = centered_rect_fixed(area, pct_w, height_rows);
     match modal {
@@ -1126,6 +1132,9 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         Modal::WorkdirPick { state } => workdir_pick::render(frame, modal_area, state),
         Modal::Confirm { state, .. } => confirm::render(frame, modal_area, state),
         Modal::SaveDiscardCancel { state } => save_discard::render(frame, modal_area, state),
+        Modal::MountDstChoice { state, .. } => {
+            mount_dst_choice::render(frame, modal_area, state);
+        }
     }
 }
 
