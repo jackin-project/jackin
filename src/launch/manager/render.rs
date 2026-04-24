@@ -1129,11 +1129,18 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     let mut lines = vec![status_line, Line::from("")];
 
     // Agent rows. Cursor is 0-based into config.agents (no header offset).
+    //
+    // `[x]` reflects the *effectively allowed* state, not literal list
+    // membership. An empty `allowed_agents` list is the shorthand for
+    // "all agents allowed" (matches the `all` badge above) — in that
+    // mode every row renders `[x]`. Otherwise only agents named in the
+    // list render `[x]`.
     for (i, (agent_name, _)) in config.agents.iter().enumerate() {
         let selected = i == cursor;
-        let allowed = state.pending.allowed_agents.contains(agent_name);
+        let effectively_allowed = state.pending.allowed_agents.is_empty()
+            || state.pending.allowed_agents.contains(agent_name);
         let is_default = state.pending.default_agent.as_deref() == Some(agent_name.as_str());
-        let check = if allowed { "[x]" } else { "[ ]" };
+        let check = if effectively_allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };
         let prefix = if selected { "▸ " } else { "  " };
         let text = format!("{prefix}{check}  {star} {agent_name}");
@@ -2018,5 +2025,115 @@ mod header_branding_tests {
             !dump.contains("JACKIN"),
             "header must not render 'JACKIN' (uppercase); got {dump:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod agents_tab_render_tests {
+    //! Pins the `[x]` / `[ ]` glyph on each agent row to the
+    //! *effectively allowed* state, not literal `allowed_agents` list
+    //! membership. An empty list is the shorthand for "all allowed",
+    //! and every row must render `[x]` in that mode.
+    use super::render_agents_tab;
+    use crate::config::{AgentSource, AppConfig};
+    use crate::launch::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::workspace::WorkspaceConfig;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+
+    fn ws_with_allowed(names: &[&str]) -> WorkspaceConfig {
+        WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: names.iter().map(|s| (*s).into()).collect(),
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn config_with_agents(names: &[&str]) -> AppConfig {
+        let mut config = AppConfig::default();
+        for name in names {
+            config.agents.insert((*name).into(), AgentSource::default());
+        }
+        config
+    }
+
+    fn render_to_dump(ws: WorkspaceConfig, config: &AppConfig) -> String {
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Agents;
+        editor.active_field = FieldFocus::Row(0);
+        let backend = TestBackend::new(60, 10);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_agents_tab(f, Rect::new(0, 0, 60, 10), &editor, config);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        // Collapse the buffer to newline-delimited rows so the test
+        // assertion can match per-row semantics ("row N contains `[x]`").
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn in_all_mode_all_rows_render_as_checked() {
+        // Empty `allowed_agents` ⇒ "all" mode ⇒ every row is `[x]`.
+        let cfg = config_with_agents(&["alpha", "beta", "gamma"]);
+        let ws = ws_with_allowed(&[]);
+        let dump = render_to_dump(ws, &cfg);
+
+        // Every agent name should appear on a line that also carries `[x]`.
+        for name in ["alpha", "beta", "gamma"] {
+            let line = dump
+                .lines()
+                .find(|l| l.contains(name))
+                .unwrap_or_else(|| panic!("agent `{name}` not rendered in:\n{dump}"));
+            assert!(
+                line.contains("[x]"),
+                "in 'all' mode agent `{name}` row must render `[x]`; got `{line}`"
+            );
+            assert!(
+                !line.contains("[ ]"),
+                "in 'all' mode agent `{name}` must not render `[ ]`; got `{line}`"
+            );
+        }
+    }
+
+    #[test]
+    fn in_custom_mode_only_listed_agents_show_checked() {
+        // Non-empty list ⇒ "custom" mode ⇒ only listed rows are `[x]`.
+        let cfg = config_with_agents(&["alpha", "beta", "gamma"]);
+        let ws = ws_with_allowed(&["beta"]);
+        let dump = render_to_dump(ws, &cfg);
+
+        let beta_line = dump
+            .lines()
+            .find(|l| l.contains("beta"))
+            .expect("beta must render");
+        assert!(
+            beta_line.contains("[x]"),
+            "listed agent `beta` must render `[x]`; got `{beta_line}`"
+        );
+
+        for name in ["alpha", "gamma"] {
+            let line = dump
+                .lines()
+                .find(|l| l.contains(name))
+                .unwrap_or_else(|| panic!("agent `{name}` not rendered in:\n{dump}"));
+            assert!(
+                line.contains("[ ]"),
+                "unlisted agent `{name}` must render `[ ]` in 'custom' mode; got `{line}`"
+            );
+        }
     }
 }

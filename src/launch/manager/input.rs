@@ -557,23 +557,60 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
     }
 }
 
+/// Space on an agent row toggles its **effective** allow-state.
+///
+/// The underlying data model uses an "empty list = all allowed" shorthand,
+/// so the checkbox on each row must reflect
+/// `list.is_empty() || list.contains(name)`. The toggle preserves that
+/// invariant in both directions:
+///
+/// - **Effective-allowed + empty list** (in "all" mode): populate the list
+///   with every agent *except* this one. Status flips to
+///   `custom (total-1 of total)`; the row flips to `[ ]`.
+/// - **Effective-allowed + non-empty list** (row is in the list): remove it.
+///   An empty remainder is left empty (semantically = "all"); otherwise
+///   stays `custom`. The row flips to `[ ]`.
+/// - **Effective-blocked** (row not in list): add the name. If the list now
+///   contains every agent in `config.agents`, clear it back to empty
+///   (= "all"). Otherwise stays `custom`. The row flips to `[x]`.
 fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
     // n is 0-based into config.agents (no header offset).
     let agent_names: Vec<String> = config.agents.keys().cloned().collect();
-    if let Some(agent) = agent_names.get(n) {
-        if let Some(pos) = editor
-            .pending
-            .allowed_agents
+    let Some(agent) = agent_names.get(n) else {
+        return;
+    };
+
+    let list = &mut editor.pending.allowed_agents;
+    let in_list = list.iter().position(|a| a == agent);
+
+    if list.is_empty() {
+        // "all" mode → effective-allowed. Demote to "custom" without this
+        // agent by enumerating the full roster minus the current row.
+        *list = agent_names
             .iter()
-            .position(|a| a == agent)
-        {
-            editor.pending.allowed_agents.remove(pos);
-            if editor.pending.default_agent.as_deref() == Some(agent) {
-                editor.pending.default_agent = None;
-            }
-        } else {
-            editor.pending.allowed_agents.push(agent.clone());
+            .filter(|a| a.as_str() != agent.as_str())
+            .cloned()
+            .collect();
+        if editor.pending.default_agent.as_deref() == Some(agent.as_str()) {
+            editor.pending.default_agent = None;
+        }
+    } else if let Some(pos) = in_list {
+        // "custom" mode, row is present → remove it. A resulting empty
+        // list reverts to "all" shorthand on the next render tick.
+        list.remove(pos);
+        if editor.pending.default_agent.as_deref() == Some(agent.as_str()) {
+            editor.pending.default_agent = None;
+        }
+    } else {
+        // "custom" mode, row absent → add it. If the addition fills in the
+        // complete roster, collapse back to the "all" shorthand (empty
+        // list) so the status badge reads `all` rather than
+        // `custom (N of N allowed)` — the two states are semantically
+        // identical and the shorthand is less noisy.
+        list.push(agent.clone());
+        if list.len() == agent_names.len() && agent_names.iter().all(|a| list.contains(a)) {
+            list.clear();
         }
     }
 }
@@ -3489,6 +3526,106 @@ mod tests {
         assert!(
             e.pending.default_agent.is_none(),
             "`*` must no longer set the default agent",
+        );
+    }
+
+    // ── Agents tab: Space toggle matches effective allow-state ────────
+    //
+    // An empty `allowed_agents` list is the "all allowed" shorthand. The
+    // UI renders `[x]` on every row in that mode, so toggling must
+    // preserve the operator's mental model: Space on an `[x]` row flips
+    // it to `[ ]`, Space on a `[ ]` row flips it to `[x]`, and the list
+    // collapses to the empty shorthand whenever the resulting set
+    // covers every agent in `config.agents`.
+
+    fn pending_allowed(state: &ManagerState<'_>) -> Vec<String> {
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        e.pending.allowed_agents.clone()
+    }
+
+    #[test]
+    fn toggle_in_all_mode_demotes_to_custom_without_this_agent() {
+        // Starting state: "all" mode (empty list), three agents. Pressing
+        // Space on row 1 (`beta`) must produce a custom list containing
+        // every other agent — i.e. `[alpha, gamma]` — so that `beta`
+        // flips from `[x]` to `[ ]` and the status line reads
+        // `custom (2 of 3 allowed)`.
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut state = editor_on_agents_tab(empty_ws(), 1);
+
+        press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
+
+        let list = pending_allowed(&state);
+        assert_eq!(
+            list,
+            vec!["alpha".to_string(), "gamma".to_string()],
+            "list must be populated with every other agent when demoting from 'all'"
+        );
+    }
+
+    #[test]
+    fn toggle_custom_last_item_clears_to_empty() {
+        // Starting state: "custom" mode with a single allowed agent.
+        // Toggling that agent off must leave the list empty (reverting
+        // to the "all" shorthand) — NOT pinning it at a phantom
+        // `custom (0 of N allowed)` state.
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into()];
+        let mut state = editor_on_agents_tab(ws, 0);
+
+        press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
+
+        assert_eq!(
+            pending_allowed(&state),
+            Vec::<String>::new(),
+            "removing the last custom entry must leave the list empty (= all allowed)",
+        );
+    }
+
+    #[test]
+    fn toggle_adds_back_to_custom() {
+        // Starting state: "custom" mode with `[alpha]` (so `beta` reads
+        // `[ ]`). Pressing Space on `beta` (row 1) must add it, producing
+        // `[alpha, beta]` — and since that still doesn't cover every
+        // agent (`gamma` is missing), the list must stay non-empty.
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into()];
+        let mut state = editor_on_agents_tab(ws, 1);
+
+        press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
+
+        let mut list = pending_allowed(&state);
+        list.sort();
+        assert_eq!(
+            list,
+            vec!["alpha".to_string(), "beta".to_string()],
+            "adding `beta` with `gamma` still missing must produce a 2-of-3 custom list",
+        );
+    }
+
+    #[test]
+    fn toggle_refills_custom_to_all_when_last_agent_added_makes_it_complete() {
+        // Starting state: "custom" mode with all-but-one agent present.
+        // Adding the missing one would yield `custom (N of N allowed)` —
+        // semantically identical to "all allowed". The toggle must
+        // collapse back to the empty-list shorthand so the status badge
+        // reads `all`, not `custom (3 of 3 allowed)`.
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into(), "beta".into()];
+        // Cursor on row 2 (agent `gamma`, the missing one).
+        let mut state = editor_on_agents_tab(ws, 2);
+
+        press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
+
+        assert_eq!(
+            pending_allowed(&state),
+            Vec::<String>::new(),
+            "filling the custom list must collapse it to empty (= all allowed)",
         );
     }
 }
