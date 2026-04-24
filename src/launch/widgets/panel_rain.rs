@@ -1,0 +1,1 @@
+//! Area-bounded phosphor rain.

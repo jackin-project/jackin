@@ -474,6 +474,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "educe"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d7bc049e1bd8cdeb31b68bbd586a9464ecf9f3944af3958a7a9d0f8b9799417"
+dependencies = [
+ "enum-ordinalize",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -484,6 +496,26 @@ name = "encode_unicode"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
+
+[[package]]
+name = "enum-ordinalize"
+version = "4.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a1091a7bb1f8f2c4b28f1fe2cef4980ca2d410a3d727d67ecc3178c9b0800f0"
+dependencies = [
+ "enum-ordinalize-derive",
+]
+
+[[package]]
+name = "enum-ordinalize-derive"
+version = "4.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ca9601fb2d62598ee17836250842873a413586e5d7ed88b356e38ddbb0ec631"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
 
 [[package]]
 name = "equivalent"
@@ -769,6 +801,8 @@ dependencies = [
  "owo-colors",
  "predicates",
  "ratatui",
+ "ratatui-explorer",
+ "ratatui-textarea",
  "serde",
  "serde_json",
  "tabled",
@@ -776,6 +810,7 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "toml_edit",
+ "tui-widget-list",
 ]
 
 [[package]]
@@ -1322,6 +1357,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratatui-explorer"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1034d08c806b090cf2eb450f60717e38d28b3a0a9fae01eee282db488d2e513b"
+dependencies = [
+ "educe",
+ "ratatui",
+]
+
+[[package]]
 name = "ratatui-macros"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1339,6 +1384,19 @@ checksum = "0f76fe0bd0ed4295f0321b1676732e2454024c15a35d01904ddb315afd3d545c"
 dependencies = [
  "ratatui-core",
  "termwiz",
+]
+
+[[package]]
+name = "ratatui-textarea"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2950274c0e155944158cf766848dd87bd6db6dad27da1c23ee4a7c8de71dbf1f"
+dependencies = [
+ "ratatui-core",
+ "ratatui-crossterm",
+ "ratatui-widgets",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]
@@ -1879,6 +1937,16 @@ name = "toml_writer"
 version = "1.1.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
+
+[[package]]
+name = "tui-widget-list"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fbf7f6c7d04beb3602630d83db44e81d7a1de1fea11ca3435d82e094c5c0192"
+dependencies = [
+ "ratatui-core",
+ "ratatui-widgets",
+]
 
 [[package]]
 name = "typenum"

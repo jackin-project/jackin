@@ -1,0 +1,1 @@
+//! Y/N confirmation modal.

@@ -32,8 +32,11 @@ thiserror = "2.0"
 dockerfile-parser-rs = "3.3.0"
 tempfile = "3.20"
 owo-colors = { version = "4", features = ["supports-colors"] }
-ratatui = "0.30"
+ratatui = { version = "0.30", features = ["unstable-widget-ref"] }
 crossterm = "0.29"
+ratatui-textarea = "0.9"
+ratatui-explorer = "0.3"
+tui-widget-list = "0.15"
 dialoguer = "0.12"
 tabled = "0.20.0"
 
