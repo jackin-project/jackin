@@ -1242,6 +1242,13 @@ fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
         Modal::GithubPicker { .. } => {
             editor.modal = None;
         }
+        // ConfirmSave and ErrorPopup are wired into `save_editor` in
+        // commit 2 of this batch. Commit-1 scope is variant + render
+        // only; a stray event here closes the modal cleanly so nothing
+        // deadlocks while the wiring is in progress.
+        Modal::ConfirmSave { .. } | Modal::ErrorPopup { .. } => {
+            editor.modal = None;
+        }
     }
 }
 

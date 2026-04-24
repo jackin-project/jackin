@@ -6,7 +6,8 @@ use crate::config::AppConfig;
 use crate::workspace::WorkspaceConfig;
 
 use crate::launch::widgets::{
-    confirm::ConfirmState, file_browser::FileBrowserState, github_picker::GithubPickerState,
+    confirm::ConfirmState, confirm_save::ConfirmSaveState, error_popup::ErrorPopupState,
+    file_browser::FileBrowserState, github_picker::GithubPickerState,
     mount_dst_choice::MountDstChoiceState, text_input::TextInputState,
     workdir_pick::WorkdirPickState,
 };
@@ -162,6 +163,19 @@ pub enum Modal<'a> {
     /// one URL to hand to `open::that_detached`.
     GithubPicker {
         state: GithubPickerState,
+    },
+    /// Preview-and-confirm modal shown when the operator presses `s` in
+    /// the editor with changes pending. Lists every field-level change
+    /// (and any mount-collapse warning) up-front so the operator sees a
+    /// single dialog covering the whole plan.
+    ConfirmSave {
+        state: ConfirmSaveState,
+    },
+    /// Error popup opened by the save path when an internal-API call
+    /// returns an Err (e.g. duplicate workspace name, planner reject).
+    /// Dismiss returns the operator to the editor with changes intact.
+    ErrorPopup {
+        state: ErrorPopupState,
     },
 }
 

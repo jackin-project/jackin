@@ -9,7 +9,8 @@ use ratatui::{
 };
 
 use super::super::widgets::{
-    confirm, file_browser, github_picker, mount_dst_choice, save_discard, text_input, workdir_pick,
+    confirm, confirm_save, error_popup, file_browser, github_picker, mount_dst_choice,
+    save_discard, text_input, workdir_pick,
 };
 use super::state::{
     EditorMode, EditorState, EditorTab, FieldFocus, ManagerStage, ManagerState, Modal,
@@ -1193,6 +1194,17 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             let rows = (state.choices.len() as u16).saturating_add(5).min(15);
             (60, rows)
         }
+        // ConfirmSave: 80% width, height grows with line count. Clamped
+        // to screen height by `centered_rect_fixed`.
+        Modal::ConfirmSave { state } => (80, confirm_save::required_height(state).min(area.height)),
+        // ErrorPopup: 60% width, word-wrapped message. Height capped at
+        // 15 so even a novella error message can't blot out the screen.
+        Modal::ErrorPopup { state } => {
+            // Estimate inner width from outer width: 60% of frame, minus
+            // 2 border columns, minus 2-column left gutter for safety.
+            let inner_width = (area.width * 60 / 100).saturating_sub(4);
+            (60, error_popup::required_height(state, inner_width))
+        }
     };
     let modal_area = centered_rect_fixed(area, pct_w, height_rows);
     match modal {
@@ -1205,6 +1217,8 @@ pub fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
             mount_dst_choice::render(frame, modal_area, state);
         }
         Modal::GithubPicker { state } => github_picker::render(frame, modal_area, state),
+        Modal::ConfirmSave { state } => confirm_save::render(frame, modal_area, state),
+        Modal::ErrorPopup { state } => error_popup::render(frame, modal_area, state),
     }
 }
 

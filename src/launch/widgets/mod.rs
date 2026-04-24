@@ -8,6 +8,8 @@
 //! the manager (PR 2) and the Secrets tab (PR 3).
 
 pub mod confirm;
+pub mod confirm_save;
+pub mod error_popup;
 pub mod file_browser;
 pub mod github_picker;
 pub mod mount_dst_choice;
@@ -223,6 +225,19 @@ mod consistency_tests {
         (buf, area)
     }
 
+    fn render_confirm_save() -> (Buffer, Rect) {
+        use super::confirm_save::{ConfirmSaveState, render};
+        use ratatui::text::Line;
+        let area = Rect::new(0, 0, 70, 10);
+        let state = ConfirmSaveState::new(vec![
+            Line::from("Create workspace: demo"),
+            Line::from(""),
+            Line::from("Working directory: /home/user/demo"),
+        ]);
+        let buf = draw(area.width, area.height, |f| render(f, area, &state));
+        (buf, area)
+    }
+
     /// Every choice/list modal's title must start AND end with a space so
     /// `┌ Title ...` renders with breathing room around the label.
     #[test]
@@ -234,6 +249,7 @@ mod consistency_tests {
             ("TextInput", render_text_input()),
             ("WorkdirPick", render_workdir_pick()),
             ("GithubPicker", render_github_picker()),
+            ("ConfirmSave", render_confirm_save()),
         ] {
             let title = top_border_title(&buf);
             assert!(
@@ -257,6 +273,7 @@ mod consistency_tests {
             ("TextInput", render_text_input()),
             ("WorkdirPick", render_workdir_pick()),
             ("GithubPicker", render_github_picker()),
+            ("ConfirmSave", render_confirm_save()),
         ] {
             assert_border_is_phosphor_dark(&buf, area, name);
         }
@@ -273,6 +290,7 @@ mod consistency_tests {
             ("TextInput", render_text_input()),
             ("WorkdirPick", render_workdir_pick()),
             ("GithubPicker", render_github_picker()),
+            ("ConfirmSave", render_confirm_save()),
         ] {
             assert_hint_row_present(&buf, area, name);
         }
