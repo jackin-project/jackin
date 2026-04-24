@@ -926,7 +926,16 @@ fn commit_editor_save(
                 // Create mode always exits to the list after a successful
                 // write; there's no persistent "edit" view for a freshly-
                 // created workspace until the operator picks it.
+                //
+                // `ManagerState::from_config` allocates a fresh state
+                // with `toast: None`, which would discard the success
+                // toast we just set above — leaving the two exit-to-list
+                // flows (create-save, Esc→Save) with no positive
+                // feedback while direct `s` saves (which stay on the
+                // editor) keep theirs. Carry the toast across the reset.
+                let carry_toast = state.toast.take();
                 *state = ManagerState::from_config(config, cwd);
+                state.toast = carry_toast;
             }
         }
         Err(e) => {
@@ -2370,6 +2379,87 @@ mod tests {
             matches!(state.stage, ManagerStage::List),
             "save with exit_on_success = true should return to the list stage"
         );
+    }
+
+    #[test]
+    fn exit_on_success_save_preserves_success_toast_across_state_refresh() {
+        // Finding #3: when `commit_editor_save` exits to the list view,
+        // it reinitialises the whole `ManagerState` via
+        // `ManagerState::from_config` — which allocates `toast: None`.
+        // That discarded the success toast the same function had just
+        // set. Verify the carry-across keeps it intact so the operator
+        // still sees the positive feedback after the reset.
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (tmp, paths, mut config) = setup_with_workspace("toast-me", ws.clone()).unwrap();
+
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("toast-me".into(), ws);
+        editor.pending.workdir = "/w/elsewhere".into();
+        state.stage = ManagerStage::Editor(editor);
+
+        begin_editor_save(&mut state, &config, true).unwrap();
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        assert!(
+            matches!(state.stage, ManagerStage::List),
+            "exit_on_success should land us in the list; got {:?}",
+            state.stage,
+        );
+        let toast = state
+            .toast
+            .as_ref()
+            .expect("success toast must survive the exit-to-list reset");
+        assert!(
+            matches!(toast.kind, ToastKind::Success),
+            "carried-across toast must be the Success kind; got {:?}",
+            toast.kind,
+        );
+    }
+
+    #[test]
+    fn create_mode_save_preserves_success_toast_across_state_refresh() {
+        // Create mode also goes through the `ManagerState::from_config`
+        // reset. Same regression guard as the Edit-with-exit flow above.
+        let (tmp, paths, mut config) = {
+            let tmp = tempfile::tempdir().unwrap();
+            let paths = JackinPaths::for_tests(tmp.path());
+            paths.ensure_base_dirs().unwrap();
+            let config = AppConfig::default();
+            let toml = toml::to_string(&config).unwrap();
+            std::fs::write(&paths.config_file, toml).unwrap();
+            let loaded = AppConfig::load_or_init(&paths).unwrap();
+            (tmp, paths, loaded)
+        };
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_create();
+        editor.pending_name = Some("toasty-create".into());
+        editor.pending.workdir = "/code/proj".into();
+        editor.pending.mounts = vec![mount("/code/proj", "/code/proj")];
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        assert!(
+            matches!(state.stage, ManagerStage::List),
+            "create save should return to the list; got {:?}",
+            state.stage,
+        );
+        let toast = state
+            .toast
+            .as_ref()
+            .expect("create-save success toast must survive the reset");
+        assert!(matches!(toast.kind, ToastKind::Success));
     }
 
     #[test]
