@@ -764,12 +764,8 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
         items.push(FooterItem::Text("save workspace"));
     }
 
-    // Navigation group.
-    items.push(FooterItem::GroupSep);
-    items.push(FooterItem::Key("Tab"));
-    items.push(FooterItem::Text("next"));
-    items.push(FooterItem::Sep);
-    items.push(FooterItem::Key("\u{2191}\u{2193}"));
+    // Tab-for-next-tab and ↑↓-for-cursor-move are universal across every
+    // editor tab — they don't need to be advertised in the base footer.
 
     // Exit group — discard if dirty, back if clean.
     items.push(FooterItem::GroupSep);
@@ -806,16 +802,18 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
-            // Row indices depend on mode:
-            //   Create: 0 = workdir  (name is read-only display in Create)
-            //   Edit:   0 = name, 1 = workdir, 2 = default agent (ro), 3 = last used (ro)
+            // Row indices for both modes:
+            //   row 0 = Name        (editable in Edit, read-only in Create)
+            //   row 1 = Working dir (editable)
+            //   row 2 = Default agent (read-only, Edit only)
+            //   row 3 = Last used     (read-only, Edit only)
             match &state.mode {
                 EditorMode::Create => match cursor {
-                    0 => vec![
+                    1 => vec![
                         FooterItem::Key("Enter"),
                         FooterItem::Text("pick working directory"),
                     ],
-                    _ => Vec::new(),
+                    _ => Vec::new(), // name is read-only in Create mode
                 },
                 EditorMode::Edit { .. } => match cursor {
                     0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
@@ -857,14 +855,9 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
                 }
                 items
             } else {
-                // Sentinel "+ Add mount" row
-                vec![
-                    FooterItem::Key("Enter"),
-                    FooterItem::Text("add"),
-                    FooterItem::Sep,
-                    FooterItem::Key("A"),
-                    FooterItem::Text("add"),
-                ]
+                // Sentinel "+ Add mount" row — both Enter and A invoke the
+                // same add-mount flow, so render as a single combined key.
+                vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")]
             }
         }
         EditorTab::Agents => vec![
