@@ -151,6 +151,15 @@ For each non-`shared` mount, materialization is idempotent: a second `load` to a
 
 - **`load`** — idempotent materialization. Second load to an existing container reuses the existing worktree.
 - **`eject`** — stop the container, leave `isolated/` in place (matches the existing eject = stop, purge = destroy split). No new output from `eject` for isolated mounts.
+- **Normal clean exit** — when the attached agent process exits cleanly and Docker reports `exit_code = 0` without OOM, jackin' tears down Docker resources and attempts safe isolated-worktree cleanup. Safe cleanup removes an isolated worktree only when it has no uncommitted changes and no branch-only commits that would be lost. If cleanup is unsafe, jackin' preserves the worktree, prints its path plus the reason, and tells the operator to inspect with `jackin cd <container>` or discard with `jackin purge <container>`. This hooks into the existing `ContainerState::Stopped { exit_code: 0, oom_killed: false }` branch in `src/runtime/launch.rs`, right next to runtime resource cleanup. Warning shape:
+
+  ```text
+  [jackin] preserved isolated worktree for jackin-the-architect:
+           /.../.jackin/data/jackin-the-architect/isolated/workspace-jackin
+           reason: worktree has uncommitted changes
+           run `jackin cd the-architect` to inspect or `jackin purge the-architect` to discard
+  ```
+- **Detached or crashed sessions** — if the container is still running after attach returns, or it stopped with a non-zero/OOM state, jackin' preserves both the container recovery path and isolated worktrees for `hardline`/manual inspection.
 - **`purge`** — silently delete everything for the container: the container itself, the DinD sidecar, every isolated worktree recorded in `.jackin/isolation.json` (`git worktree remove --force`), the `isolated/` dir, and the recorded local scratch branch (`jackin/scratch/<instance-slug>` by default). No unpushed-commit guard, no interactive prompt, no `--delete-branches` flag. If the operator purges before the agent pushed, that is operator error — jackin' stays out of the way. Post-merge branch cleanup in the host repo is also operator-side; jackin' does not detect "branch merged upstream and gone" during normal operation.
 - **`purge` refuses to run on a running agent.** The operator must eject first (`jackin eject <name>`) or use the combo (`jackin eject <name> --purge`). This also fixes a pre-existing gap in `shared` mode where `purge` could delete state out from under a live container (`src/app/mod.rs` currently calls `remove_data_dir_if_exists` unconditionally). The guard reuses the existing `list_agent_names` primitive from `src/runtime/cleanup.rs`.
 - **Flipping isolation on a mount requires eject.** Bind-mount sources are not mutable on a running container, so live-swapping the `src` is not supported by the platform in the first place. `workspace edit` rejects isolation changes on a running container with a clear "eject first" message.
@@ -173,7 +182,7 @@ Ship:
 - Runtime materialization happens after container-name claim, not inside `resolve_load_workspace`; introduce a materialized-workspace handoff into Docker launch.
 - `.jackin/isolation.json` records materialized isolated mounts so `purge` and `cd` work even after config changes.
 - `extensions.worktreeConfig` enabled on the host repo on first worktree creation.
-- `load` materializes, `eject` leaves alone, `purge` silently deletes everything (container, DinD sidecar, `isolated/`, worktree, local branch).
+- `load` materializes, clean exit safely removes throwaway isolated worktrees when no work would be lost, `eject` leaves worktrees alone, and `purge` force-deletes everything (container, DinD sidecar, `isolated/`, worktree, local branch).
 - `purge` refuses on running agents (also closes the pre-existing gap for `shared` mode).
 - `jackin cd <container> [dst]` opens a child shell in an isolated worktree, prompting for a mount when multiple isolated mounts exist and no destination was provided.
 - Hooks inherit from host by default (no opt-out flag).
