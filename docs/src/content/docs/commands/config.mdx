@@ -121,3 +121,69 @@ Show the current authentication forwarding mode.
 jackin config auth show
 jackin config auth show --agent agent-smith
 ```
+
+## `config env`
+
+Manage operator env vars at global and per-agent scope.
+
+Values are stored verbatim — whatever you type is what goes into the TOML. No editor-side validation of key names or value shape. jackin' resolves values at launch time through the operator-env layer, so `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work.
+
+Without `--agent`, writes and reads target the global `[env]` table. With `--agent <SELECTOR>`, they target `[agents.<SELECTOR>.env]`. The agent selector is not pre-validated — the table path is written even if the agent is not registered, matching how `config auth set --agent` behaves.
+
+### `config env set`
+
+```bash
+jackin config env set <KEY> <VALUE> [OPTIONS]
+```
+
+Set or overwrite an env var at the chosen scope.
+
+| Option | Description |
+|---|---|
+| `--agent <SELECTOR>` | Apply to `[agents.<SELECTOR>.env]` instead of the global `[env]` |
+| `--comment <TEXT>` | Write a TOML line comment directly above the key |
+
+```bash
+# Global scope — 1Password reference
+jackin config env set API_TOKEN "op://Personal/api/token"
+
+# Per-agent override
+jackin config env set LOG_LEVEL debug --agent agent-smith
+
+# Attach a comment (useful for rotation reminders)
+jackin config env set OPENAI_KEY "op://Work/OpenAI/key" --comment "rotate quarterly"
+```
+
+### `config env unset`
+
+```bash
+jackin config env unset <KEY> [OPTIONS]
+```
+
+Remove an env var from the chosen scope. Idempotent: if the key is not present, prints `<KEY> not set.` and exits 0 without modifying the config file.
+
+| Option | Description |
+|---|---|
+| `--agent <SELECTOR>` | Unset from `[agents.<SELECTOR>.env]` instead of the global `[env]` |
+
+```bash
+jackin config env unset API_TOKEN
+jackin config env unset LOG_LEVEL --agent agent-smith
+```
+
+### `config env list`
+
+```bash
+jackin config env list [OPTIONS]
+```
+
+Show the env vars registered at the chosen scope as a table with `Key` and `Value` columns. Prints `No env vars set.` when the scope is empty. Values are shown as-stored (no resolution, no masking).
+
+| Option | Description |
+|---|---|
+| `--agent <SELECTOR>` | List vars from `[agents.<SELECTOR>.env]` instead of the global `[env]` |
+
+```bash
+jackin config env list
+jackin config env list --agent agent-smith
+```

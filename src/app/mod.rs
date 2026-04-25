@@ -364,6 +364,63 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
             },
+            cli::ConfigCommand::Env(env_cmd) => match env_cmd {
+                cli::EnvCommand::Set {
+                    key,
+                    value,
+                    agent,
+                    comment,
+                } => {
+                    if key.is_empty() {
+                        anyhow::bail!("env var key cannot be empty");
+                    }
+                    let scope = agent.map_or(config::EnvScope::Global, config::EnvScope::Agent);
+                    let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                    editor.set_env_var(&scope, &key, &value);
+                    if let Some(ref c) = comment {
+                        editor.set_env_comment(&scope, &key, Some(c));
+                    }
+                    editor.save()?;
+                    println!("Set {key}.");
+                    Ok(())
+                }
+                cli::EnvCommand::Unset { key, agent } => {
+                    if key.is_empty() {
+                        anyhow::bail!("env var key cannot be empty");
+                    }
+                    let scope = agent.map_or(config::EnvScope::Global, config::EnvScope::Agent);
+                    let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                    if editor.remove_env_var(&scope, &key) {
+                        editor.save()?;
+                        println!("Removed {key}.");
+                    } else {
+                        drop(editor);
+                        println!("{key} not set.");
+                    }
+                    Ok(())
+                }
+                cli::EnvCommand::List { agent } => {
+                    let vars: Vec<(String, String)> = agent.as_ref().map_or_else(
+                        || {
+                            config
+                                .env
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect()
+                        },
+                        |a| {
+                            config.agents.get(a).map_or_else(Vec::new, |src| {
+                                src.env
+                                    .iter()
+                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                    .collect()
+                            })
+                        },
+                    );
+                    print_env_table(&vars);
+                    Ok(())
+                }
+            },
         },
         Command::Workspace(command) => match command {
             WorkspaceCommand::Create {
@@ -746,6 +803,62 @@ pub fn run(cli: Cli) -> Result<()> {
                 println!("Removed workspace {name:?}.");
                 Ok(())
             }
+            WorkspaceCommand::Env(env_cmd) => match env_cmd {
+                cli::WorkspaceEnvCommand::Set {
+                    workspace,
+                    key,
+                    value,
+                    agent,
+                    comment,
+                } => {
+                    if key.is_empty() {
+                        anyhow::bail!("env var key cannot be empty");
+                    }
+                    config.require_workspace(&workspace)?;
+                    let scope = workspace_env_scope(workspace, agent);
+                    let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                    editor.set_env_var(&scope, &key, &value);
+                    if let Some(ref c) = comment {
+                        editor.set_env_comment(&scope, &key, Some(c));
+                    }
+                    editor.save()?;
+                    println!("Set {key}.");
+                    Ok(())
+                }
+                cli::WorkspaceEnvCommand::Unset {
+                    workspace,
+                    key,
+                    agent,
+                } => {
+                    if key.is_empty() {
+                        anyhow::bail!("env var key cannot be empty");
+                    }
+                    config.require_workspace(&workspace)?;
+                    let scope = workspace_env_scope(workspace, agent);
+                    let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                    if editor.remove_env_var(&scope, &key) {
+                        editor.save()?;
+                        println!("Removed {key}.");
+                    } else {
+                        drop(editor);
+                        println!("{key} not set.");
+                    }
+                    Ok(())
+                }
+                cli::WorkspaceEnvCommand::List { workspace, agent } => {
+                    let ws = config.require_workspace(&workspace)?;
+                    let vars: Vec<(String, String)> = agent.as_ref().map_or_else(
+                        || ws.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                        |a| {
+                            ws.agents.get(a).map_or_else(Vec::new, |ov| {
+                                ov.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                            })
+                        },
+                    );
+                    print_env_table(&vars);
+                    Ok(())
+                }
+            },
         },
         Command::Purge(PurgeArgs { selector, all }) => match Selector::parse(&selector)? {
             Selector::Container(container) => {
@@ -766,6 +879,43 @@ pub fn run(cli: Cli) -> Result<()> {
             }
         },
     }
+}
+
+fn workspace_env_scope(workspace: String, agent: Option<String>) -> config::EnvScope {
+    match agent {
+        Some(a) => config::EnvScope::WorkspaceAgent {
+            workspace,
+            agent: a,
+        },
+        None => config::EnvScope::Workspace(workspace),
+    }
+}
+
+#[derive(tabled::Tabled)]
+struct EnvRow {
+    #[tabled(rename = "Key")]
+    key: String,
+    #[tabled(rename = "Value")]
+    value: String,
+}
+
+fn print_env_table(vars: &[(String, String)]) {
+    use tabled::Table;
+    use tabled::settings::Style;
+    if vars.is_empty() {
+        println!("No env vars set.");
+        return;
+    }
+    let rows: Vec<EnvRow> = vars
+        .iter()
+        .map(|(k, v)| EnvRow {
+            key: k.clone(),
+            value: v.clone(),
+        })
+        .collect();
+    let mut table = Table::new(rows);
+    table.with(Style::modern_rounded());
+    println!("{table}");
 }
 
 fn remove_data_dir_if_exists(path: &Path) -> Result<()> {

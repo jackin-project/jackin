@@ -621,6 +621,123 @@ OTHER = "y"
     }
 
     #[test]
+    fn remove_env_var_agent_scope() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[agents.agent-smith]
+git = "https://example.com/a.git"
+"#,
+        )
+        .unwrap();
+
+        let scope = EnvScope::Agent("agent-smith".to_string());
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_var(&scope, "LOG_LEVEL", "debug");
+        assert!(
+            editor.remove_env_var(&scope, "LOG_LEVEL"),
+            "first remove should return true"
+        );
+        assert!(
+            !editor.remove_env_var(&scope, "LOG_LEVEL"),
+            "second remove should return false"
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("LOG_LEVEL"), "key not purged: {out}");
+    }
+
+    #[test]
+    fn remove_env_var_workspace_scope() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.prod]
+workdir = "/workspace/prod"
+"#,
+        )
+        .unwrap();
+
+        let scope = EnvScope::Workspace("prod".to_string());
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_var(&scope, "DB_URL", "op://Work/Prod/db-url");
+        assert!(
+            editor.remove_env_var(&scope, "DB_URL"),
+            "first remove should return true"
+        );
+        assert!(
+            !editor.remove_env_var(&scope, "DB_URL"),
+            "second remove should return false"
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("DB_URL"), "key not purged: {out}");
+    }
+
+    #[test]
+    fn remove_env_var_workspace_agent_scope() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.prod]
+workdir = "/workspace/prod"
+"#,
+        )
+        .unwrap();
+
+        let scope = EnvScope::WorkspaceAgent {
+            workspace: "prod".to_string(),
+            agent: "agent-smith".to_string(),
+        };
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_var(&scope, "OPENAI_API_KEY", "op://Work/OpenAI/default");
+        assert!(
+            editor.remove_env_var(&scope, "OPENAI_API_KEY"),
+            "first remove should return true"
+        );
+        assert!(
+            !editor.remove_env_var(&scope, "OPENAI_API_KEY"),
+            "second remove should return false"
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("OPENAI_API_KEY"), "key not purged: {out}");
+    }
+
+    #[test]
+    fn remove_env_var_leaves_sibling_keys_intact() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_env_var(&EnvScope::Global, "KEY_A", "value-a");
+        editor.set_env_var(&EnvScope::Global, "KEY_B", "value-b");
+        editor.save().unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        assert!(editor.remove_env_var(&EnvScope::Global, "KEY_A"));
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("KEY_A"), "KEY_A still present: {out}");
+        assert!(
+            out.contains(r#"KEY_B = "value-b""#),
+            "sibling KEY_B gone: {out}"
+        );
+    }
+
+    #[test]
     fn set_env_comment_adds_line_above_key() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
