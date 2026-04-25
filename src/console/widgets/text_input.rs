@@ -214,15 +214,17 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
     // the 1-cell pads on each side) so the operator sees a clean
     // 1-row band hinting "this is where you type".
     let input_row = rows[1];
-    let bg_block = Block::default().style(Style::default().bg(INPUT_BG_DIM));
-    frame.render_widget(bg_block, input_row);
-
     let textarea_area = Rect {
         x: input_row.x.saturating_add(1),
         y: input_row.y,
         width: input_row.width.saturating_sub(2),
         height: input_row.height,
     };
+    // Paint the dim background only on the textarea_area (inset by 1
+    // cell on each side) so the 1-cell padding stays the panel color
+    // and the dim band visually delimits where input lives.
+    let bg_block = Block::default().style(Style::default().bg(INPUT_BG_DIM));
+    frame.render_widget(bg_block, textarea_area);
     let mut ta = state.textarea.clone();
     ta.set_cursor_line_style(Style::default());
     ta.set_cursor_style(
@@ -492,9 +494,9 @@ mod tests {
         );
     }
 
-    /// The input row is painted with the dim INPUT_BG_DIM background
-    /// across the full row, so the input region reads as a visible
-    /// "this is where you type" band even when empty.
+    /// The input row's textarea_area is painted with the dim INPUT_BG_DIM
+    /// background, but the 1-cell padding on each side stays panel
+    /// background. Operator sees the dim band only where input lives.
     #[test]
     fn text_input_input_row_has_dim_background() {
         use ratatui::{Terminal, backend::TestBackend, layout::Rect};
@@ -507,19 +509,36 @@ mod tests {
         term.draw(|f| render(f, area, &state)).unwrap();
         let buf = term.backend().buffer();
 
-        // Row y=2 is the input field row. The whole row (excluding the
-        // left/right borders at x=0 and x=width-1, and the single
-        // cursor cell which carries the WHITE-bg cursor highlight)
-        // must carry the dim background. Sample a few representative
-        // cells: the left-pad cell, the right-pad cell, and an
-        // interior cell well away from the cursor.
+        // Row y=2 is the input field row. The textarea_area is inset by
+        // 1 cell on each side of the inner content area (x=1 to
+        // x=area.width-2), so the dim band spans x=2 to x=area.width-3.
+        // The 1-cell pads at x=1 and x=area.width-2 must NOT carry the
+        // dim background — they stay the panel color.
         let row_y: u16 = 2;
         let left_pad = &buf[(1, row_y)];
         let right_pad = &buf[(area.width - 2, row_y)];
+        assert_ne!(
+            left_pad.bg, INPUT_BG_DIM,
+            "left pad cell at x=1 must NOT carry INPUT_BG_DIM (it's the 1-cell padding outside the textarea); got bg={:?}",
+            left_pad.bg,
+        );
+        assert_ne!(
+            right_pad.bg,
+            INPUT_BG_DIM,
+            "right pad cell at x={} must NOT carry INPUT_BG_DIM; got bg={:?}",
+            area.width - 2,
+            right_pad.bg,
+        );
+
+        // Sample cells inside the textarea_area: the left-edge of the
+        // band, the right-edge, and an interior cell well away from
+        // the cursor (which lives at x=2 with a WHITE highlight).
+        let band_left = &buf[(3, row_y)];
+        let band_right = &buf[(area.width - 3, row_y)];
         let interior = &buf[(area.width / 2, row_y)];
         for (label, cell) in [
-            ("left pad", left_pad),
-            ("right pad", right_pad),
+            ("band left edge", band_left),
+            ("band right edge", band_right),
             ("interior (mid-row)", interior),
         ] {
             assert_eq!(
