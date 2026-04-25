@@ -39,7 +39,8 @@ impl CommandRunner for ScriptedRunner {
         _cwd: Option<&Path>,
         _opts: &RunOptions,
     ) -> anyhow::Result<()> {
-        self.run_recorded.push(format!("{program} {}", args.join(" ")));
+        self.run_recorded
+            .push(format!("{program} {}", args.join(" ")));
         Ok(())
     }
 
@@ -78,13 +79,8 @@ fn materialize_then_clean_exit_removes_record_and_branch() {
     //   ext.worktreeConfig --get
     //   format --get
     //   rev-parse HEAD
-    let mut runner = ScriptedRunner::new(&[
-        &repo.path().to_string_lossy(),
-        "",
-        "",
-        "0",
-        "deadbeef\n",
-    ]);
+    let mut runner =
+        ScriptedRunner::new(&[&repo.path().to_string_lossy(), "", "", "0", "deadbeef\n"]);
     let _mat = materialize_workspace(
         &resolved,
         &cdir,
