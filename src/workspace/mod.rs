@@ -76,6 +76,45 @@ pub struct WorkspaceEdit {
     pub default_agent: Option<Option<String>>,
 }
 
+/// Reject two `Worktree` mounts where one's `dst` is a strict ancestor of
+/// the other's. Sibling isolated mounts and isolated-parent-with-shared-child
+/// remain allowed.
+pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
+    use crate::isolation::MountIsolation;
+
+    let isolated: Vec<(usize, &str)> = mounts
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| matches!(m.isolation, MountIsolation::Worktree))
+        .map(|(i, m)| (i, m.dst.trim_end_matches('/')))
+        .collect();
+
+    for (i, (_, a)) in isolated.iter().enumerate() {
+        for (_, b) in &isolated[i + 1..] {
+            if is_strict_ancestor(a, b) || is_strict_ancestor(b, a) {
+                anyhow::bail!(
+                    "isolated mount `{b}` cannot be nested inside isolated mount `{a}`; \
+                     either make the inner mount `shared` or move the inner mount outside \
+                     the parent's path",
+                    a = if is_strict_ancestor(a, b) { a } else { b },
+                    b = if is_strict_ancestor(a, b) { b } else { a },
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_strict_ancestor(parent: &str, child: &str) -> bool {
+    let parent = parent.trim_end_matches('/');
+    let child = child.trim_end_matches('/');
+    if parent == child {
+        return false;
+    }
+    let prefix = format!("{parent}/");
+    child.starts_with(&prefix)
+}
+
 pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> anyhow::Result<()> {
     if workspace.workdir.is_empty() {
         anyhow::bail!("workspace {name:?} must define workdir");
@@ -88,6 +127,7 @@ pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> any
     }
 
     validate_mount_specs(&workspace.mounts)?;
+    validate_isolation_layout(&workspace.mounts)?;
 
     let covers_workdir = workspace.mounts.iter().any(|mount| {
         let dst = mount.dst.trim_end_matches('/');
@@ -283,5 +323,84 @@ isolation = "worktree"
         };
         let serialized = toml::to_string(&mount).unwrap();
         assert!(serialized.contains(r#"isolation = "worktree""#));
+    }
+
+    fn worktree_mount(src: &str, dst: &str) -> MountConfig {
+        MountConfig {
+            src: src.into(),
+            dst: dst.into(),
+            readonly: false,
+            isolation: MountIsolation::Worktree,
+        }
+    }
+
+    fn shared_mount(src: &str, dst: &str) -> MountConfig {
+        MountConfig {
+            src: src.into(),
+            dst: dst.into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        }
+    }
+
+    #[test]
+    fn isolation_layout_allows_one_worktree_plus_n_shared() {
+        let mounts = vec![
+            worktree_mount("/tmp/a", "/workspace/a"),
+            shared_mount("/tmp/cache", "/workspace/cache"),
+        ];
+        validate_isolation_layout(&mounts).unwrap();
+    }
+
+    #[test]
+    fn isolation_layout_allows_sibling_worktrees() {
+        let mounts = vec![
+            worktree_mount("/tmp/a", "/workspace/a"),
+            worktree_mount("/tmp/b", "/workspace/b"),
+        ];
+        validate_isolation_layout(&mounts).unwrap();
+    }
+
+    #[test]
+    fn isolation_layout_allows_isolated_parent_with_shared_child() {
+        let mounts = vec![
+            worktree_mount("/tmp/proj", "/workspace/proj"),
+            shared_mount("/tmp/proj-target", "/workspace/proj/target"),
+        ];
+        validate_isolation_layout(&mounts).unwrap();
+    }
+
+    #[test]
+    fn isolation_layout_rejects_nested_worktrees_parent_child() {
+        let mounts = vec![
+            worktree_mount("/tmp/proj", "/workspace/proj"),
+            worktree_mount("/tmp/sub", "/workspace/proj/sub"),
+        ];
+        let err = validate_isolation_layout(&mounts).unwrap_err().to_string();
+        assert!(err.contains("/workspace/proj"), "missing parent dst: {err}");
+        assert!(
+            err.contains("/workspace/proj/sub"),
+            "missing child dst: {err}"
+        );
+    }
+
+    #[test]
+    fn isolation_layout_rejects_nested_worktrees_grandparent() {
+        let mounts = vec![
+            worktree_mount("/tmp/a", "/workspace"),
+            worktree_mount("/tmp/b", "/workspace/proj/sub"),
+        ];
+        let err = validate_isolation_layout(&mounts).unwrap_err().to_string();
+        assert!(err.contains("/workspace") && err.contains("/workspace/proj/sub"));
+    }
+
+    #[test]
+    fn isolation_layout_ignores_trailing_slashes() {
+        let mounts = vec![
+            worktree_mount("/tmp/a", "/workspace/proj/"),
+            worktree_mount("/tmp/b", "/workspace/proj/sub/"),
+        ];
+        let err = validate_isolation_layout(&mounts).unwrap_err().to_string();
+        assert!(err.contains("/workspace/proj"));
     }
 }
