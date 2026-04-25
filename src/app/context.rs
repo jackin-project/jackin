@@ -123,7 +123,7 @@ pub(crate) fn resolve_target_name(
 /// Deepest mount-root match wins; ties go to iteration order (`BTreeMap`
 /// alphabetical by workspace name). Shared by both the non-interactive
 /// CLI resolvers (`jackin load`, `jackin hardline`) and the interactive
-/// TUI workspace preselection in `launch.rs`.
+/// TUI workspace preselection in `console/`.
 pub(crate) fn find_saved_workspace_for_cwd<'a>(
     config: &'a AppConfig,
     cwd: &Path,
@@ -142,7 +142,7 @@ pub(crate) fn find_saved_workspace_for_cwd<'a>(
 ///
 /// An empty `allowed_agents` list means "any configured agent" — that is
 /// the historical TUI and CLI contract, pinned by Phase 0 characterization
-/// tests in `launch.rs`. Agents named in `allowed_agents` but absent from
+/// tests in `console/`. Agents named in `allowed_agents` but absent from
 /// `config.agents` are silently dropped (no fabricated selectors).
 pub(crate) fn eligible_agents_for_workspace(
     config: &AppConfig,
@@ -234,8 +234,8 @@ pub(crate) fn resolve_agent_from_context(
 
     anyhow::bail!(
         "no saved workspace matches the current directory.\n\
-         Run jackin load <agent> to use the current directory, or\n\
-         run jackin launch for the interactive launcher."
+         Run `jackin load <agent>` to use the current directory, or\n\
+         run `jackin console` for the interactive operator console."
     );
 }
 

@@ -26,8 +26,8 @@ Or [build from source](https://jackin.tailrocks.com/getting-started/installation
 # Load an agent into your current project directory
 jackin load agent-smith
 
-# Or use the interactive TUI launcher
-jackin launch
+# Or open the interactive operator console
+jackin
 ```
 
 That's it. jackin' pulls the base image, builds the agent container, mounts your project, and drops you into Claude Code — fully autonomous inside an isolated environment.

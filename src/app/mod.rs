@@ -4,13 +4,13 @@ use anyhow::Result;
 use std::io::ErrorKind;
 use std::path::Path;
 
-use crate::cli::agent::{HardlineArgs, LaunchArgs, LoadArgs};
+use crate::cli::agent::{ConsoleArgs, HardlineArgs, LoadArgs};
 use crate::cli::cleanup::{EjectArgs, PurgeArgs};
 use crate::cli::{self, Cli, Command, WorkspaceCommand};
 use crate::config::{self, AppConfig};
+use crate::console;
 use crate::docker::ShellRunner;
 use crate::instance;
-use crate::launch;
 use crate::paths::JackinPaths;
 use crate::runtime;
 use crate::selector::{ClassSelector, Selector};
@@ -42,7 +42,15 @@ pub fn run(cli: Cli) -> Result<()> {
     let mut config = AppConfig::load_or_init(&paths)?;
     let mut runner = ShellRunner::default();
 
-    match cli.command {
+    // Resolve the subcommand. Bare `jackin` currently routes to the same
+    // console handler as `jackin console`; the TTY-capability fallback and
+    // the deprecation warning for `launch` land in a follow-up commit.
+    let command = match cli.command {
+        Some(cmd) => cmd,
+        None => Command::Console(cli.console_args),
+    };
+
+    match command {
         Command::Load(LoadArgs {
             selector,
             target,
@@ -113,13 +121,17 @@ pub fn run(cli: Cli) -> Result<()> {
             );
             result
         }
-        Command::Launch(LaunchArgs { debug }) => {
+        Command::Console(ConsoleArgs { debug }) | Command::Launch(ConsoleArgs { debug }) => {
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
-            let Some((class, workspace)) = launch::run_launch(&config, &cwd)? else {
+            let Some((class, workspace)) = console::run_console(config, &paths, &cwd)? else {
                 return Ok(());
             };
+
+            // config was consumed by run_console (the manager may have written to
+            // disk). Reload so the post-console path sees the latest state.
+            let mut config = AppConfig::load_or_init(&paths)?;
 
             let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
             if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {

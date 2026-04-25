@@ -1,12 +1,12 @@
 pub mod app;
 pub mod cli;
 pub mod config;
+pub mod console;
 pub mod derived_image;
 pub mod docker;
 pub mod env_model;
 pub mod env_resolver;
 pub mod instance;
-pub mod launch;
 pub mod manifest;
 pub mod operator_env;
 pub mod paths;

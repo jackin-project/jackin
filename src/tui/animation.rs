@@ -30,14 +30,65 @@ fn skippable_sleep(duration: std::time::Duration) -> bool {
 
 // ── Digital rain ─────────────────────────────────────────────────────────
 
-struct RainCell {
-    ch: char,
-    age: u16,
+pub(crate) struct RainCell {
+    pub(crate) ch: char,
+    pub(crate) age: u16,
     /// How many age units to add per frame (1 = long trail, 3 = short trail).
-    fade: u16,
+    pub(crate) fade: u16,
 }
 
-const fn age_to_color(age: u16) -> Option<(u8, u8, u8)> {
+pub(crate) struct RainColumn {
+    pub(crate) head: i32,
+    pub(crate) speed: u32,
+    /// Fade rate for cells deposited by this column (1 = long, 3 = short).
+    pub(crate) fade: u16,
+    pub(crate) active: bool,
+    pub(crate) cooldown: u32,
+}
+
+pub(crate) struct RainState {
+    pub(crate) grid: Vec<Vec<Option<RainCell>>>,
+    pub(crate) columns: Vec<RainColumn>,
+    pub(crate) cols: usize,
+    pub(crate) rows: usize,
+    pub(crate) seed: u64,
+    pub(crate) frame: u64,
+}
+
+impl RainState {
+    pub(crate) fn new(cols: usize, rows: usize) -> Self {
+        let mut seed: u64 = 0xDEAD_BEEF_CAFE_1337;
+
+        let columns: Vec<RainColumn> = (0..cols)
+            .map(|_| {
+                let s = xorshift(&mut seed);
+                let s2 = xorshift(&mut seed);
+                RainColumn {
+                    head: -((s % (rows as u64 + 6)) as i32),
+                    speed: 1 + (s % 4) as u32,
+                    fade: 1 + (s2 % 3) as u16,
+                    active: !s.is_multiple_of(3),
+                    cooldown: 0,
+                }
+            })
+            .collect();
+
+        let grid: Vec<Vec<Option<RainCell>>> = (0..rows)
+            .map(|_| (0..cols).map(|_| None).collect())
+            .collect();
+
+        Self {
+            grid,
+            columns,
+            cols,
+            rows,
+            seed,
+            frame: 0,
+        }
+    }
+}
+
+pub(crate) const fn age_to_color(age: u16) -> Option<(u8, u8, u8)> {
     match age {
         0 => Some(WHITE),
         1..=2 => Some((180, 255, 180)),
@@ -61,7 +112,7 @@ const fn should_mutate(age: u16, seed: &mut u64) -> bool {
 const RAIN_CHARS: &[u8] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*<>{}[]|/\\~";
 
-const fn xorshift(seed: &mut u64) -> u64 {
+pub(crate) const fn xorshift(seed: &mut u64) -> u64 {
     if *seed == 0 {
         *seed = 0xDEAD_BEEF_CAFE_1337;
     }
@@ -71,7 +122,7 @@ const fn xorshift(seed: &mut u64) -> u64 {
     *seed
 }
 
-fn random_char(seed: &mut u64) -> char {
+pub(crate) fn random_char(seed: &mut u64) -> char {
     RAIN_CHARS[(xorshift(seed) as usize) % RAIN_CHARS.len()] as char
 }
 
@@ -103,17 +154,96 @@ fn banner_grid(banner: &[&str], cols: usize, rows: usize) -> Vec<Vec<Option<char
     grid
 }
 
-#[allow(clippy::too_many_lines)]
-fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
-    struct Column {
-        head: i32,
-        speed: u32,
-        /// Fade rate for cells deposited by this column (1 = long, 3 = short).
-        fade: u16,
-        active: bool,
-        cooldown: u32,
+/// Advance the rain state by one tick: age existing cells and move column
+/// heads forward. This is the simulation step; call `render_rain_frame`
+/// afterward to draw the result.
+pub(crate) fn tick_rain(state: &mut RainState) {
+    let RainState {
+        grid,
+        columns,
+        rows,
+        seed,
+        frame,
+        ..
+    } = state;
+
+    // Age all existing cells (each cell fades at its own rate)
+    for row in &mut *grid {
+        for cell in &mut *row {
+            if let Some(c) = cell {
+                c.age += c.fade;
+                if age_to_color(c.age).is_none() {
+                    *cell = None;
+                } else if should_mutate(c.age, seed) {
+                    c.ch = random_char(seed);
+                }
+            }
+        }
     }
 
+    // Advance columns
+    for (col, column) in columns.iter_mut().enumerate() {
+        if !column.active {
+            if column.cooldown > 0 {
+                column.cooldown -= 1;
+            } else {
+                column.active = true;
+                column.head = -((xorshift(seed) % 6) as i32);
+                column.speed = 1 + (xorshift(seed) % 4) as u32;
+                column.fade = 1 + (xorshift(seed) % 3) as u16;
+            }
+            continue;
+        }
+
+        if *frame % u64::from(column.speed) == 0 {
+            column.head += 1;
+        }
+
+        let head = column.head;
+        if head >= 0 && (head as usize) < *rows {
+            grid[head as usize][col] = Some(RainCell {
+                ch: random_char(seed),
+                age: 0,
+                fade: column.fade,
+            });
+        }
+
+        if head > (*rows as i32) + 5 {
+            column.active = false;
+            column.cooldown = 2 + (xorshift(seed) % 18) as u32;
+        }
+    }
+
+    *frame += 1;
+}
+
+/// Render a single frame of digital rain into a bounded area.
+/// Used by `digital_rain` (fullscreen) and by the panel-rain widget
+/// (area-bounded). Does not clear the background — callers that need
+/// a clear should emit it before calling this.
+pub(crate) fn render_rain_frame(state: &RainState, area: (u16, u16, u16, u16)) {
+    let (col_start, row_start, width, height) = area;
+
+    for r in 0..height as usize {
+        eprint!("\x1b[{};{}H", row_start as usize + r + 1, col_start + 1);
+        for c in 0..width as usize {
+            match state.grid.get(r).and_then(|row| row.get(c)) {
+                None | Some(None) => eprint!(" "),
+                Some(Some(cell)) => match age_to_color(cell.age) {
+                    None => eprint!(" "),
+                    Some((red, g, b)) => {
+                        eprint!("{}", cell.ch.color(owo_colors::Rgb(red, g, b)));
+                    }
+                },
+            }
+        }
+    }
+
+    let _ = io::stderr().flush();
+}
+
+#[allow(clippy::too_many_lines)]
+pub(crate) fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
     let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let cols = term_cols as usize;
     // Reserve last row to avoid scroll when writing to it
@@ -123,11 +253,11 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
 
     let mut seed: u64 = 0xDEAD_BEEF_CAFE_1337;
 
-    let mut columns: Vec<Column> = (0..cols)
+    let columns: Vec<RainColumn> = (0..cols)
         .map(|_| {
             let s = xorshift(&mut seed);
             let s2 = xorshift(&mut seed);
-            Column {
+            RainColumn {
                 head: -((s % (rows as u64 + 6)) as i32),
                 speed: 1 + (s % 4) as u32,
                 fade: 1 + (s2 % 3) as u16,
@@ -137,83 +267,33 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
         })
         .collect();
 
-    let mut grid: Vec<Vec<Option<RainCell>>> = (0..rows)
+    let grid: Vec<Vec<Option<RainCell>>> = (0..rows)
         .map(|_| (0..cols).map(|_| None).collect())
         .collect();
+
+    let mut state = RainState {
+        grid,
+        columns,
+        cols,
+        rows,
+        seed,
+        frame: 0,
+    };
 
     eprint!("\x1b[?25l"); // hide cursor
 
     // ── Phase 1: Pure rain ──────────────────────────────────────────────
     let mut skipped = false;
-    for frame in 0..total_frames {
+    for _ in 0..total_frames {
         if skipped {
             break;
         }
-        // Age all existing cells (each cell fades at its own rate)
-        for row in &mut grid {
-            for cell in &mut *row {
-                if let Some(c) = cell {
-                    c.age += c.fade;
-                    if age_to_color(c.age).is_none() {
-                        *cell = None;
-                    } else if should_mutate(c.age, &mut seed) {
-                        c.ch = random_char(&mut seed);
-                    }
-                }
-            }
-        }
-
-        // Advance columns
-        for (col, column) in columns.iter_mut().enumerate() {
-            if !column.active {
-                if column.cooldown > 0 {
-                    column.cooldown -= 1;
-                } else {
-                    column.active = true;
-                    column.head = -((xorshift(&mut seed) % 6) as i32);
-                    column.speed = 1 + (xorshift(&mut seed) % 4) as u32;
-                    column.fade = 1 + (xorshift(&mut seed) % 3) as u16;
-                }
-                continue;
-            }
-
-            if frame % u64::from(column.speed) == 0 {
-                column.head += 1;
-            }
-
-            let head = column.head;
-            if head >= 0 && (head as usize) < rows {
-                grid[head as usize][col] = Some(RainCell {
-                    ch: random_char(&mut seed),
-                    age: 0,
-                    fade: column.fade,
-                });
-            }
-
-            if head > (rows as i32) + 5 {
-                column.active = false;
-                column.cooldown = 2 + (xorshift(&mut seed) % 18) as u32;
-            }
-        }
-
-        // Render
-        for (ri, row) in grid.iter().enumerate() {
-            eprint!("\x1b[{};1H", ri + 1);
-            for cell in row {
-                match cell {
-                    None => eprint!(" "),
-                    Some(c) => {
-                        let (r, g, b) = age_to_color(c.age).unwrap_or(PHOSPHOR_DARK);
-                        eprint!("{}", c.ch.color(owo_colors::Rgb(r, g, b)));
-                    }
-                }
-            }
-        }
-
-        let _ = io::stderr().flush();
+        tick_rain(&mut state);
+        render_rain_frame(&state, (0, 0, cols as u16, rows as u16));
         skipped = skippable_sleep(std::time::Duration::from_millis(frame_ms));
     }
 
+    // Sync seed back for reveal phase (seed was updated inside state)
     // ── Phase 2 & 3: Reveal + Hold (only if reveal banner provided) ─────
     if let Some(banner) = reveal {
         let target = banner_grid(banner, cols, rows);
@@ -227,13 +307,13 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
         for (r, row) in target.iter().enumerate() {
             for (c, cell) in row.iter().enumerate() {
                 if cell.is_some() {
-                    flip_at[r][c] = xorshift(&mut seed) % reveal_frames;
+                    flip_at[r][c] = xorshift(&mut state.seed) % reveal_frames;
                 }
             }
         }
 
         // Stop spawning new heads — deactivate all columns permanently
-        for column in &mut columns {
+        for column in &mut state.columns {
             column.active = false;
             column.cooldown = u32::MAX;
         }
@@ -244,7 +324,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                 break;
             }
             // Age existing non-locked cells
-            for (r, row) in grid.iter_mut().enumerate() {
+            for (r, row) in state.grid.iter_mut().enumerate() {
                 for (c, cell) in row.iter_mut().enumerate() {
                     if locked[r][c] {
                         continue;
@@ -253,8 +333,8 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                         rc.age += 3;
                         if age_to_color(rc.age).is_none() {
                             *cell = None;
-                        } else if should_mutate(rc.age, &mut seed) {
-                            rc.ch = random_char(&mut seed);
+                        } else if should_mutate(rc.age, &mut state.seed) {
+                            rc.ch = random_char(&mut state.seed);
                         }
                     }
                 }
@@ -269,9 +349,9 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
                     {
                         locked[r][c] = true;
                         if *ch == ' ' {
-                            grid[r][c] = None;
+                            state.grid[r][c] = None;
                         } else {
-                            grid[r][c] = Some(RainCell {
+                            state.grid[r][c] = Some(RainCell {
                                 ch: *ch,
                                 age: 0,
                                 fade: 1,
@@ -282,7 +362,7 @@ fn digital_rain(duration_ms: u64, reveal: Option<&[&str]>) {
             }
 
             // Render
-            for (r, row) in grid.iter().enumerate() {
+            for (r, row) in state.grid.iter().enumerate() {
                 eprint!("\x1b[{};1H", r + 1);
                 for (c, cell) in row.iter().enumerate() {
                     if locked[r][c] {

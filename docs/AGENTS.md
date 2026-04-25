@@ -80,6 +80,30 @@ rm -rf node_modules
 bun install --frozen-lockfile
 ```
 
+## Naming conventions
+
+### Operator console
+
+- **`jackin console` is the canonical name for the TUI.** Use it
+  everywhere in prose, comparisons, examples, and screenshots —
+  including the second and subsequent mentions on the same page.
+- **The bare `jackin` shortcut is explained exactly once**, in the
+  console command page (`docs/src/content/docs/commands/console.mdx`),
+  as syntactic sugar that opens the console on an interactive terminal.
+  No other doc page should explain the shortcut, mention it inline,
+  or use the dual-form `(\`jackin\` or \`jackin console\`)` /
+  `\`jackin\` / \`jackin console\``. Both forms confuse readers and
+  imply they're separate commands.
+- **`jackin console` is deliberately less featured than `jackin load`**
+  (and the other CLI subcommands). The console is the simplified,
+  intuitive front for common day-to-day flows. New niche flags and
+  detail-level options land on the CLI first, and often exclusively.
+  When comparing the two, make that relationship explicit — do not
+  imply they are feature-equivalent front-ends.
+- **`jackin launch`** is the deprecated pre-console spelling. Mention it
+  only in a deprecation context; never recommend it for new users or
+  use it in new examples.
+
 ## Content Notes
 
 - Docs content lives under `src/content/docs/` as MDX files.

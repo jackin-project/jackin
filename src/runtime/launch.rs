@@ -49,7 +49,8 @@ impl LoadOptions {
         }
     }
 
-    /// Build options for `jackin launch`. Debug mode implies `no_intro`.
+    /// Build options for the operator console (`jackin console`).
+    /// Debug mode implies `no_intro`.
     pub fn for_launch(debug: bool) -> Self {
         Self {
             no_intro: debug,

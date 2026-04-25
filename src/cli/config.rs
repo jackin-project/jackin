@@ -195,7 +195,9 @@ mod tests {
         .unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config(ConfigCommand::Mount(MountCommand::Add { .. }))
+            Some(Command::Config(ConfigCommand::Mount(
+                MountCommand::Add { .. }
+            )))
         ));
     }
 
@@ -205,7 +207,9 @@ mod tests {
             Cli::try_parse_from(["jackin", "config", "mount", "remove", "gradle-cache"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config(ConfigCommand::Mount(MountCommand::Remove { .. }))
+            Some(Command::Config(ConfigCommand::Mount(
+                MountCommand::Remove { .. }
+            )))
         ));
     }
 
@@ -214,7 +218,7 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "mount", "list"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config(ConfigCommand::Mount(MountCommand::List))
+            Some(Command::Config(ConfigCommand::Mount(MountCommand::List)))
         ));
     }
 
@@ -230,7 +234,9 @@ mod tests {
         .unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config(ConfigCommand::Trust(TrustCommand::Grant { .. }))
+            Some(Command::Config(ConfigCommand::Trust(
+                TrustCommand::Grant { .. }
+            )))
         ));
     }
 
@@ -246,7 +252,9 @@ mod tests {
         .unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config(ConfigCommand::Trust(TrustCommand::Revoke { .. }))
+            Some(Command::Config(ConfigCommand::Trust(
+                TrustCommand::Revoke { .. }
+            )))
         ));
     }
 
@@ -255,7 +263,7 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "trust", "list"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config(ConfigCommand::Trust(TrustCommand::List))
+            Some(Command::Config(ConfigCommand::Trust(TrustCommand::List)))
         ));
     }
 
@@ -312,10 +320,10 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "sync"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config(ConfigCommand::Auth(AuthCommand::Set {
+            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
                         agent: None,
-                    })) if mode == "sync"
+                    }))) if mode == "sync"
         ));
     }
 
@@ -324,10 +332,10 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "token"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config(ConfigCommand::Auth(AuthCommand::Set {
+            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
                         agent: None,
-                    })) if mode == "token"
+                    }))) if mode == "token"
         ));
     }
 
@@ -345,10 +353,10 @@ mod tests {
         .unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config(ConfigCommand::Auth(AuthCommand::Set {
+            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
                         agent: Some(ref agent),
-                    })) if mode == "sync" && agent == "agent-smith"
+                    }))) if mode == "sync" && agent == "agent-smith"
         ));
     }
 
@@ -357,7 +365,9 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "auth", "show"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Config(ConfigCommand::Auth(AuthCommand::Show { agent: None }))
+            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Show {
+                agent: None
+            })))
         ));
     }
 }

@@ -53,7 +53,7 @@ pub(super) fn build_agent_detail_lines(
                 .collect::<std::collections::HashSet<_>>();
 
             detail_lines.push(Line::from(vec![
-                Span::styled("workdir  ", Style::default().fg(colors::BRIGHT_BLUE)),
+                Span::styled("work dir ", Style::default().fg(colors::BRIGHT_BLUE)),
                 Span::styled(
                     tui::shorten_home(&workspace.workdir),
                     Style::default().fg(colors::WHITE),
