@@ -15,6 +15,10 @@ env:
   DOCS_SITE_URL: https://jackin.tailrocks.com
   JACKIN_REPO_BLOB_URL: https://github.com/jackin-project/jackin/blob/main
   JACKIN_REPO_EDIT_URL: https://github.com/jackin-project/jackin/edit/main
+  # TODO(lychee-action-sha-pin): swap the lycheeverse/lychee-action SHA back
+  # to a tagged release SHA once a tag at or after faea714 ships — see
+  # TODO.md "Follow-ups" → "lychee-action-sha-pin".
+  #
   # Pinned past lychee-action's v0.23.0 default because v0.24.x is the first
   # release that extracts <loc> URLs from XML sitemaps (lycheeverse/lychee#2071,
   # released 2026-04-24). The deploy and check-deployed jobs need that to feed
