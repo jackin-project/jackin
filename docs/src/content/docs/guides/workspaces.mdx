@@ -40,7 +40,7 @@ They let you:
 - name a project boundary once and launch it from anywhere
 - keep extra mounts consistent across sessions
 - reuse the same project boundary with different specialized agent classes
-- let `jackin launch` auto-detect and preselect the project
+- let the operator console (`jackin console`) auto-detect and preselect the project
 - set a default agent or restrict which agent classes may use the workspace
 
 If you regularly work on the same project, a saved workspace turns your mount layout into durable operator configuration instead of something you rebuild from memory each time.
@@ -146,7 +146,7 @@ jackin workspace create secure-api \
 ```
 
 - `--allowed-agent` — only these agents can load this workspace (repeatable)
-- `--default-agent` — auto-selected agent class when you use `jackin launch` with this workspace
+- `--default-agent` — auto-selected agent class when you open this workspace in the operator console
 
 This is especially useful when one workspace should only be used with a very specific tool profile, such as a production-infra agent or a security-review agent.
 
@@ -168,7 +168,7 @@ jackin workspace edit secure-api --clear-default-agent
 
 ## Workspace auto-detection
 
-When you run `jackin launch`, the TUI launcher checks whether your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths. If it does, that workspace is preselected — saving you a selection step and reinforcing the value of naming project boundaries once. Container-only `workdir` values like `/workspace` can still be auto-detected as long as one of the workspace's mounted host paths contains your current directory. You can always override the preselection by choosing a different workspace or "Current directory."
+When you open the operator console (`jackin console`), it checks whether your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths. If it does, that workspace is preselected — saving you a selection step and reinforcing the value of naming project boundaries once. Container-only `workdir` values like `/workspace` can still be auto-detected as long as one of the workspace's mounted host paths contains your current directory. You can always override the preselection by choosing a different workspace or "Current directory."
 
 ## Storage
 

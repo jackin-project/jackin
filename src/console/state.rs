@@ -3,9 +3,10 @@ use crate::config::{AppConfig, MountEntry};
 use crate::selector::ClassSelector;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LaunchStage {
-    Workspace,
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+pub enum ConsoleStage {
+    Manager(crate::console::manager::ManagerState<'static>),
     Agent,
 }
 
@@ -20,16 +21,16 @@ pub struct WorkspaceChoice {
     pub input: LoadWorkspaceInput,
 }
 
-#[derive(Debug, Clone)]
-pub struct LaunchState {
-    pub stage: LaunchStage,
+#[derive(Debug)]
+pub struct ConsoleState {
+    pub stage: ConsoleStage,
     pub selected_workspace: usize,
     pub selected_agent: usize,
     pub agent_query: String,
     pub workspaces: Vec<WorkspaceChoice>,
 }
 
-impl LaunchState {
+impl ConsoleState {
     pub fn new(config: &AppConfig, cwd: &std::path::Path) -> anyhow::Result<Self> {
         let current = current_dir_workspace(cwd)?;
         let global_mounts = global_mounts(config)?;
@@ -75,7 +76,9 @@ impl LaunchState {
             .unwrap_or(0);
 
         Ok(Self {
-            stage: LaunchStage::Workspace,
+            stage: ConsoleStage::Manager(crate::console::manager::ManagerState::from_config(
+                config, cwd,
+            )),
             selected_workspace,
             selected_agent: 0,
             agent_query: String::new(),
@@ -159,7 +162,7 @@ mod tests {
             },
         );
 
-        let state = LaunchState::new(&config, &project_dir).unwrap();
+        let state = ConsoleState::new(&config, &project_dir).unwrap();
         assert_eq!(state.selected_workspace_name(), Some("big-monorepo"));
     }
 
@@ -198,7 +201,7 @@ mod tests {
             },
         );
 
-        let state = LaunchState::new(&config, &nested_dir).unwrap();
+        let state = ConsoleState::new(&config, &nested_dir).unwrap();
         assert_eq!(state.selected_workspace_name(), Some("big-monorepo"));
     }
 
@@ -237,14 +240,14 @@ mod tests {
             },
         );
 
-        let state = LaunchState::new(&config, &workspace_root).unwrap();
+        let state = ConsoleState::new(&config, &workspace_root).unwrap();
         assert_eq!(state.selected_workspace_name(), Some("big-monorepo"));
     }
 
     #[test]
     fn filters_agents_by_query() {
-        let state = LaunchState {
-            stage: LaunchStage::Agent,
+        let state = ConsoleState {
+            stage: ConsoleStage::Agent,
             selected_workspace: 0,
             selected_agent: 0,
             agent_query: "chainargos".to_string(),
@@ -378,8 +381,8 @@ mod tests {
 
     #[test]
     fn empty_query_returns_full_post_eligibility_set() {
-        let state = LaunchState {
-            stage: LaunchStage::Agent,
+        let state = ConsoleState {
+            stage: ConsoleStage::Agent,
             selected_workspace: 0,
             selected_agent: 0,
             agent_query: String::new(),
@@ -410,8 +413,8 @@ mod tests {
         // `state.workspaces[_].allowed_agents` already reflects the
         // eligibility filter. An agent absent here cannot be resurrected
         // by *any* query string — the query only narrows, never widens.
-        let state = LaunchState {
-            stage: LaunchStage::Agent,
+        let state = ConsoleState {
+            stage: ConsoleStage::Agent,
             selected_workspace: 0,
             selected_agent: 0,
             agent_query: "bob".to_string(),
@@ -440,8 +443,8 @@ mod tests {
     fn query_narrows_within_allowed_set_without_dropping_matches() {
         // Multiple eligible agents; query matches a subset. Every matching
         // agent must still appear; no non-matching agent may sneak through.
-        let state = LaunchState {
-            stage: LaunchStage::Agent,
+        let state = ConsoleState {
+            stage: ConsoleStage::Agent,
             selected_workspace: 0,
             selected_agent: 0,
             agent_query: "smith".to_string(),
