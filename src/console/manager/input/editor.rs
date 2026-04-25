@@ -369,7 +369,7 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
                 target: TextInputTarget::EnvKey {
                     scope: SecretsScopeTag::Workspace,
                 },
-                state: TextInputState::new("New workspace env key", String::new()),
+                state: TextInputState::new("New workspace environment key", String::new()),
             });
         }
         SecretsRow::AgentHeader { agent, expanded } => {
@@ -396,7 +396,7 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
             });
         }
         SecretsRow::AgentAddSentinel(agent) => {
-            let label = format!("New {agent} env key");
+            let label = format!("New {agent} environment key");
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvKey {
                     scope: SecretsScopeTag::Agent(agent),
@@ -421,7 +421,7 @@ fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
         SecretsRow::AgentKeyRow { agent, key } => (SecretsScopeTag::Agent(agent), key),
         _ => return,
     };
-    let prompt = format!("Delete env var {key}?");
+    let prompt = format!("Delete environment variable {key}?");
     editor.modal = Some(Modal::Confirm {
         target: ConfirmTarget::DeleteEnvVar { scope, key },
         state: ConfirmState::new(prompt),
@@ -443,13 +443,13 @@ fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
     let (scope, label) = match row {
         SecretsRow::WorkspaceKeyRow(_) | SecretsRow::WorkspaceAddSentinel => (
             SecretsScopeTag::Workspace,
-            "New workspace env key".to_string(),
+            "New workspace environment key".to_string(),
         ),
         SecretsRow::AgentHeader { agent, .. }
         | SecretsRow::AgentKeyRow { agent, .. }
         | SecretsRow::AgentAddSentinel(agent) => (
             SecretsScopeTag::Agent(agent.clone()),
-            format!("New {agent} env key"),
+            format!("New {agent} environment key"),
         ),
     };
     editor.modal = Some(Modal::TextInput {
@@ -783,7 +783,7 @@ pub(super) fn handle_editor_modal(
                         }
                         Some((scope, None)) => {
                             editor.pending_picker_value = Some(path);
-                            let label = format!("New env key for {}", scope_label(&scope));
+                            let label = format!("New environment key for {}", scope_label(&scope));
                             editor.modal = Some(Modal::TextInput {
                                 target: TextInputTarget::EnvKey { scope },
                                 state: TextInputState::new(label, ""),
@@ -852,7 +852,7 @@ fn open_secrets_picker_modal(
 }
 
 /// Human-readable label for a `SecretsScopeTag` — used in the
-/// "New env key for ..." prompt of the sentinel-add picker flow.
+/// "New environment key for ..." prompt of the sentinel-add picker flow.
 fn scope_label(scope: &SecretsScopeTag) -> String {
     match scope {
         SecretsScopeTag::Workspace => "workspace".to_string(),

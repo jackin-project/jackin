@@ -118,11 +118,11 @@ General tab; it is now editable here. The General tab now shows only
 
 ## Workspace editor — Secrets tab
 
-The Secrets tab in the `jackin console` workspace editor manages env vars at
-two scopes:
+The Secrets tab in the `jackin console` workspace editor manages
+environment variables at two scopes:
 
-- **Workspace env** — applies to every agent launch in this workspace,
-  stored under `[workspaces.<name>.env]`.
+- **Workspace environment** — applies to every agent launch in this
+  workspace, stored under `[workspaces.<name>.env]`.
 - **Per-agent overrides** — applies only when a specific agent is launched in
   this workspace, stored under `[workspaces.<name>.agents.<agent>.env]`.
 
@@ -142,7 +142,7 @@ jackin' resolves them at launch via `operator_env`.
 | `→` or `Enter` on section header | Expand an agent override section |
 | `←` on section header | Collapse an agent override section |
 
-### Adding a new env var
+### Adding a new environment variable
 
 Pressing `Enter` on a `+ Add` row (workspace or per-agent) walks you
 through the entry in two steps. First, a modal asks for the key name.

@@ -238,8 +238,8 @@ fn secrets_tab_shows_existing_env() -> Result<()> {
 
 /// Edit an existing env value via the TextInput modal, save, and verify
 /// the on-disk TOML reflects the new value. The cursor opens directly on
-/// the key row (the "Workspace env" label is now a non-focusable section
-/// title rendered above the list, not a navigable row).
+/// the key row (the Secrets tab no longer renders a preamble label —
+/// row 0 is the first navigable row).
 #[test]
 fn secrets_edit_value_saves_to_disk() -> Result<()> {
     let temp = tempdir()?;
@@ -440,8 +440,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     editor_mut(&mut state).secrets_masked = false;
 
     // Secrets flat rows on this fixture (no workspace-level keys, one
-    // collapsed agent section; the "Workspace env" label is non-focusable
-    // chrome rendered above the list):
+    // collapsed agent section; no preamble rows are rendered):
     //   0 WorkspaceAddSentinel
     //   1 AgentHeader { agent: "agent-smith", expanded: false }
     // Navigate to row 1.
@@ -747,8 +746,8 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
     Ok(())
 }
 
-/// `P` on the `+ Add workspace env var` sentinel: the picker commits a
-/// path before the operator has named the key. The `EnvKey` modal opens
+/// `P` on the `+ Add environment variable` sentinel: the picker commits
+/// a path before the operator has named the key. The `EnvKey` modal opens
 /// next, the path is held on `pending_picker_value`, and committing the
 /// key name writes both into pending.env at once.
 #[test]
@@ -759,7 +758,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     // Empty env so the only navigable row is WorkspaceAddSentinel at
-    // index 0 (the "Workspace env" label is non-focusable chrome).
+    // index 0 (no preamble label is rendered).
     let mut config = seed_config(&paths, temp.path())?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
