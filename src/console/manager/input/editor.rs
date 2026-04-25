@@ -1,14 +1,16 @@
 //! Editor-stage dispatch: tab navigation, field focus, per-tab key
 //! handling, and the editor-level modal dispatcher.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::super::widgets::{
     ModalOutcome, file_browser::FileBrowserState, workdir_pick::WorkdirPickState,
 };
+use super::super::render::editor::{SecretsRow, secrets_flat_row_count, secrets_flat_rows};
 use super::super::state::{
-    EditorMode, EditorSaveFlow, EditorState, ExitIntent, FieldFocus, FileBrowserTarget,
-    ManagerStage, ManagerState, Modal, Toast, ToastKind,
+    ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
+    FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget, Toast,
+    ToastKind,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -77,22 +79,61 @@ pub(super) fn handle_editor_key(
 
     match key.code {
         KeyCode::Tab | KeyCode::Right => {
+            // Left on an expanded agent-override header collapses the
+            // section instead of rewinding the tab. Implemented on the
+            // Left arm below; the Right arm always advances.
+            let was_secrets = editor.active_tab == EditorTab::Secrets;
             editor.active_tab = match editor.active_tab {
-                super::super::state::EditorTab::General => super::super::state::EditorTab::Mounts,
-                super::super::state::EditorTab::Mounts => super::super::state::EditorTab::Agents,
-                super::super::state::EditorTab::Agents => super::super::state::EditorTab::Secrets,
-                super::super::state::EditorTab::Secrets => super::super::state::EditorTab::General,
+                EditorTab::General => EditorTab::Mounts,
+                EditorTab::Mounts => EditorTab::Agents,
+                EditorTab::Agents => EditorTab::Secrets,
+                EditorTab::Secrets => EditorTab::General,
             };
             editor.active_field = FieldFocus::Row(0);
+            if was_secrets {
+                reset_secrets_view(editor);
+            }
         }
-        KeyCode::BackTab | KeyCode::Left => {
+        KeyCode::BackTab => {
+            let was_secrets = editor.active_tab == EditorTab::Secrets;
             editor.active_tab = match editor.active_tab {
-                super::super::state::EditorTab::General => super::super::state::EditorTab::Secrets,
-                super::super::state::EditorTab::Mounts => super::super::state::EditorTab::General,
-                super::super::state::EditorTab::Agents => super::super::state::EditorTab::Mounts,
-                super::super::state::EditorTab::Secrets => super::super::state::EditorTab::Agents,
+                EditorTab::General => EditorTab::Secrets,
+                EditorTab::Mounts => EditorTab::General,
+                EditorTab::Agents => EditorTab::Mounts,
+                EditorTab::Secrets => EditorTab::Agents,
             };
             editor.active_field = FieldFocus::Row(0);
+            if was_secrets {
+                reset_secrets_view(editor);
+            }
+        }
+        KeyCode::Left => {
+            // On the Secrets tab, Left on an expanded agent header collapses
+            // that section instead of moving to the previous tab. Any other
+            // row falls through to the standard previous-tab behavior.
+            if editor.active_tab == EditorTab::Secrets {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = secrets_flat_rows(editor);
+                if let Some(SecretsRow::AgentHeader {
+                    agent,
+                    expanded: true,
+                }) = rows.get(n).cloned()
+                {
+                    editor.secrets_expanded.remove(&agent);
+                    return Ok(InputOutcome::Continue);
+                }
+            }
+            let was_secrets = editor.active_tab == EditorTab::Secrets;
+            editor.active_tab = match editor.active_tab {
+                EditorTab::General => EditorTab::Secrets,
+                EditorTab::Mounts => EditorTab::General,
+                EditorTab::Agents => EditorTab::Mounts,
+                EditorTab::Secrets => EditorTab::Agents,
+            };
+            editor.active_field = FieldFocus::Row(0);
+            if was_secrets {
+                reset_secrets_view(editor);
+            }
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             let FieldFocus::Row(n) = editor.active_field;
@@ -105,8 +146,8 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Enter => {
             match editor.active_tab {
-                super::super::state::EditorTab::General => open_editor_field_modal(editor),
-                super::super::state::EditorTab::Mounts => {
+                EditorTab::General => open_editor_field_modal(editor),
+                EditorTab::Mounts => {
                     // Enter on the "+ Add mount" sentinel row triggers add flow.
                     let FieldFocus::Row(n) = editor.active_field;
                     if n == editor.pending.mounts.len() {
@@ -117,23 +158,49 @@ pub(super) fn handle_editor_key(
                     }
                     // Enter on an existing mount row: no-op for now.
                 }
-                _ => {}
+                EditorTab::Secrets => {
+                    open_secrets_enter_modal(editor);
+                }
+                EditorTab::Agents => {}
             }
         }
-        KeyCode::Char(' ') if editor.active_tab == super::super::state::EditorTab::Agents => {
+        KeyCode::Char(' ') if editor.active_tab == EditorTab::Agents => {
             toggle_agent_allowed_at_cursor(editor, config);
         }
-        KeyCode::Char('D' | 'd') if editor.active_tab == super::super::state::EditorTab::Agents => {
+        KeyCode::Char('D' | 'd') if editor.active_tab == EditorTab::Agents => {
             set_default_agent_at_cursor(editor, config);
         }
-        KeyCode::Char('a' | 'A') if editor.active_tab == super::super::state::EditorTab::Mounts => {
+        KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
             editor.modal = Some(Modal::FileBrowser {
                 target: FileBrowserTarget::EditAddMountSrc,
                 state: FileBrowserState::new_from_home()?,
             });
         }
-        KeyCode::Char('d' | 'D') if editor.active_tab == super::super::state::EditorTab::Mounts => {
+        KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
+        }
+        // Ctrl+M toggles secret masking on the Secrets tab. The
+        // text-input widget already swallows Ctrl+M in-modal (see
+        // text_input::handle_key), so this binding only fires when no
+        // modal is open — which is the state where a mask toggle is
+        // meaningful.
+        KeyCode::Char('m')
+            if editor.active_tab == EditorTab::Secrets
+                && key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
+            editor.secrets_masked = !editor.secrets_masked;
+        }
+        KeyCode::Char('d' | 'D')
+            if editor.active_tab == EditorTab::Secrets
+                && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
+            open_secrets_delete_confirm(editor);
+        }
+        KeyCode::Char('a' | 'A')
+            if editor.active_tab == EditorTab::Secrets
+                && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
+            open_secrets_add_modal(editor);
         }
         KeyCode::Char('r' | 'R') if editor.active_tab == super::super::state::EditorTab::Mounts => {
             // Flip the `readonly` flag on the highlighted mount row. Silent
@@ -191,7 +258,6 @@ pub(super) fn handle_editor_key(
 
 /// Returns the highest valid `FieldFocus::Row` index for the current tab.
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
-    use super::super::state::EditorTab;
     match editor.active_tab {
         EditorTab::General => match editor.mode {
             // Edit: name (0), workdir (1), default_agent (2), last_used (3)
@@ -201,13 +267,19 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         },
         EditorTab::Mounts => editor.pending.mounts.len(), // mounts fill 0..N-1, sentinel at N
         EditorTab::Agents => config.agents.len().saturating_sub(1), // 0-based into agents
-        EditorTab::Secrets => 0,
+        EditorTab::Secrets => secrets_flat_row_count(editor).saturating_sub(1),
     }
+}
+
+/// Reset per-tab ephemeral state when the operator leaves the Secrets tab.
+/// Masking snaps back to on and every expanded section collapses.
+fn reset_secrets_view(editor: &mut EditorState<'_>) {
+    editor.secrets_masked = true;
+    editor.secrets_expanded.clear();
 }
 
 fn open_editor_field_modal(editor: &mut EditorState<'_>) {
     use super::super::super::widgets::text_input::TextInputState;
-    use super::super::state::EditorTab;
     if editor.active_tab == EditorTab::General {
         let FieldFocus::Row(n) = editor.active_field;
         match n {
@@ -225,7 +297,7 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
                     EditorMode::Create => editor.pending_name.clone().unwrap_or_default(),
                 };
                 editor.modal = Some(Modal::TextInput {
-                    target: super::super::state::TextInputTarget::Name,
+                    target: TextInputTarget::Name,
                     state: TextInputState::new("Rename workspace", current),
                 });
             }
@@ -238,6 +310,127 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
             _ => {}
         }
     }
+}
+
+/// Dispatch the Secrets-tab Enter on the focused row. Key rows open the
+/// value-edit modal, header rows expand collapsed sections (expanded
+/// headers are a no-op per the plan), and `+ Add` sentinels jump into
+/// the two-step key+value add flow.
+fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
+    use super::super::super::widgets::text_input::TextInputState;
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = secrets_flat_rows(editor);
+    let Some(row) = rows.get(n).cloned() else {
+        return;
+    };
+    match row {
+        SecretsRow::WorkspaceHeader => {
+            // Workspace env is always expanded — no-op.
+        }
+        SecretsRow::WorkspaceKeyRow(key) => {
+            let current = editor.pending.env.get(&key).cloned().unwrap_or_default();
+            editor.modal = Some(Modal::TextInput {
+                target: TextInputTarget::EnvValue {
+                    scope: SecretsScopeTag::Workspace,
+                    key: key.clone(),
+                },
+                state: TextInputState::new(format!("Edit {key}"), current),
+            });
+        }
+        SecretsRow::WorkspaceAddSentinel => {
+            editor.modal = Some(Modal::TextInput {
+                target: TextInputTarget::EnvKey {
+                    scope: SecretsScopeTag::Workspace,
+                },
+                state: TextInputState::new("New workspace env key", String::new()),
+            });
+        }
+        SecretsRow::AgentHeader { agent, expanded } => {
+            if !expanded {
+                editor.secrets_expanded.insert(agent);
+            }
+            // Expanded header: Enter is a no-op per the plan.
+        }
+        SecretsRow::AgentKeyRow { agent, key } => {
+            let current = editor
+                .pending
+                .agents
+                .get(&agent)
+                .and_then(|o| o.env.get(&key))
+                .cloned()
+                .unwrap_or_default();
+            let label = format!("Edit {key}");
+            editor.modal = Some(Modal::TextInput {
+                target: TextInputTarget::EnvValue {
+                    scope: SecretsScopeTag::Agent(agent),
+                    key,
+                },
+                state: TextInputState::new(label, current),
+            });
+        }
+        SecretsRow::AgentAddSentinel(agent) => {
+            let label = format!("New {agent} env key");
+            editor.modal = Some(Modal::TextInput {
+                target: TextInputTarget::EnvKey {
+                    scope: SecretsScopeTag::Agent(agent),
+                },
+                state: TextInputState::new(label, String::new()),
+            });
+        }
+    }
+}
+
+/// Open the `Confirm(DeleteEnvVar)` modal when the operator presses `D`
+/// on a key row. Silent no-op on non-key rows.
+fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
+    use crate::console::widgets::confirm::ConfirmState;
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = secrets_flat_rows(editor);
+    let Some(row) = rows.get(n).cloned() else {
+        return;
+    };
+    let (scope, key) = match row {
+        SecretsRow::WorkspaceKeyRow(key) => (SecretsScopeTag::Workspace, key),
+        SecretsRow::AgentKeyRow { agent, key } => (SecretsScopeTag::Agent(agent), key),
+        _ => return,
+    };
+    let prompt = format!("Delete env var {key}?");
+    editor.modal = Some(Modal::Confirm {
+        target: ConfirmTarget::DeleteEnvVar { scope, key },
+        state: ConfirmState::new(prompt),
+    });
+}
+
+/// Open the `TextInput(EnvKey)` modal when the operator presses `A` on
+/// any Secrets-tab row. The target scope is derived from whichever
+/// section the focused row lives in; on the workspace header / workspace
+/// key rows / workspace sentinel the scope is `Workspace`, and on
+/// agent-section rows it's `Agent(name)`.
+fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
+    use super::super::super::widgets::text_input::TextInputState;
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = secrets_flat_rows(editor);
+    let Some(row) = rows.get(n).cloned() else {
+        return;
+    };
+    let (scope, label) = match row {
+        SecretsRow::WorkspaceHeader
+        | SecretsRow::WorkspaceKeyRow(_)
+        | SecretsRow::WorkspaceAddSentinel => (
+            SecretsScopeTag::Workspace,
+            "New workspace env key".to_string(),
+        ),
+        SecretsRow::AgentHeader { agent, .. }
+        | SecretsRow::AgentKeyRow { agent, .. }
+        | SecretsRow::AgentAddSentinel(agent) => (
+            SecretsScopeTag::Agent(agent.clone()),
+            format!("New {agent} env key"),
+        ),
+    };
+    editor.modal = Some(Modal::TextInput {
+        target: TextInputTarget::EnvKey { scope },
+        state: TextInputState::new(label, String::new()),
+    });
 }
 
 /// Space on an agent row toggles its **effective** allow-state.
@@ -340,6 +533,12 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
                 apply_text_input_to_pending(&target, editor, &value);
             }
             ModalOutcome::Cancel => {
+                // Secrets-tab Add flow state hygiene: if the operator
+                // cancels the second (value) step, drop the stashed key
+                // so a later re-entry starts fresh.
+                if let TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } = target {
+                    editor.pending_env_key = None;
+                }
                 editor.modal = None;
             }
             ModalOutcome::Continue => {}
@@ -365,11 +564,15 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             }
             ModalOutcome::Continue => {}
         },
-        Modal::Confirm { target: _, state } => match state.handle_key(key) {
-            // Editor-side Confirm only reaches here for non-destructive
-            // variants now that SaveCollapse folds into ConfirmSave.
-            // Treat Commit/Cancel identically — close the modal.
-            ModalOutcome::Commit(_) | ModalOutcome::Cancel => {
+        Modal::Confirm { target, state } => match state.handle_key(key) {
+            ModalOutcome::Commit(yes) => {
+                let target = target.clone();
+                editor.modal = None;
+                if yes {
+                    apply_editor_confirm(editor, &target);
+                }
+            }
+            ModalOutcome::Cancel => {
                 editor.modal = None;
             }
             ModalOutcome::Continue => {}
@@ -448,11 +651,11 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
 }
 
 pub(super) fn apply_text_input_to_pending(
-    target: &super::super::state::TextInputTarget,
+    target: &TextInputTarget,
     editor: &mut EditorState<'_>,
     value: &str,
 ) {
-    use super::super::state::TextInputTarget;
+    use super::super::super::widgets::text_input::TextInputState;
     match target {
         TextInputTarget::Name => {
             // Both Edit and Create modes stash the pending name on the editor.
@@ -470,11 +673,81 @@ pub(super) fn apply_text_input_to_pending(
                 last.dst = value.to_string();
             }
         }
-        TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } => {
-            // Secrets-tab text-input handlers land in commit 2. No code
-            // path in commit 1 opens these modals, so this arm is
-            // unreachable for now.
-            unreachable!("Secrets text-input handlers land in commit 2")
+        TextInputTarget::EnvKey { scope } => {
+            // First step of the two-step Add flow. Commit stashes the
+            // trimmed key on `pending_env_key` and immediately opens the
+            // follow-up EnvValue modal. An empty key re-opens the same
+            // EnvKey modal with an inline "cannot be empty" label instead
+            // of committing.
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                editor.pending_env_key = None;
+                editor.modal = Some(Modal::TextInput {
+                    target: TextInputTarget::EnvKey {
+                        scope: scope.clone(),
+                    },
+                    state: TextInputState::new("Key cannot be empty", String::new()),
+                });
+                return;
+            }
+            let key = trimmed.to_string();
+            editor.pending_env_key = Some((scope.clone(), key.clone()));
+            editor.modal = Some(Modal::TextInput {
+                target: TextInputTarget::EnvValue {
+                    scope: scope.clone(),
+                    key: key.clone(),
+                },
+                state: TextInputState::new(format!("Value for {key}"), String::new()),
+            });
+        }
+        TextInputTarget::EnvValue { scope, key } => {
+            // Write the committed value into the appropriate scope on
+            // `pending`. Agent scope auto-creates the override entry if
+            // the agent wasn't in `pending.agents` yet — matches the
+            // `ConfigEditor::set_env_var` semantics the save path uses.
+            match scope {
+                SecretsScopeTag::Workspace => {
+                    editor.pending.env.insert(key.clone(), value.to_string());
+                }
+                SecretsScopeTag::Agent(agent) => {
+                    let entry = editor.pending.agents.entry(agent.clone()).or_default();
+                    entry.env.insert(key.clone(), value.to_string());
+                }
+            }
+            editor.pending_env_key = None;
+        }
+    }
+}
+
+/// Apply a committed editor-side `Confirm` outcome. Only Secrets-tab
+/// `DeleteEnvVar` is destructive today; `DeleteWorkspace` is handled on
+/// the list side and never reaches this editor modal.
+fn apply_editor_confirm(editor: &mut EditorState<'_>, target: &ConfirmTarget) {
+    match target {
+        ConfirmTarget::DeleteEnvVar { scope, key } => match scope {
+            SecretsScopeTag::Workspace => {
+                editor.pending.env.remove(key);
+            }
+            SecretsScopeTag::Agent(agent) => {
+                let mut drop_agent = false;
+                if let Some(ov) = editor.pending.agents.get_mut(agent) {
+                    ov.env.remove(key);
+                    // Removing the last env key leaves an empty
+                    // `WorkspaceAgentOverride` — drop the whole entry so
+                    // the diff-based change_count reports a clean state
+                    // when the operator re-adds the same agent's overrides
+                    // later.
+                    if ov.env.is_empty() {
+                        drop_agent = true;
+                    }
+                }
+                if drop_agent {
+                    editor.pending.agents.remove(agent);
+                }
+            }
+        },
+        ConfirmTarget::DeleteWorkspace => {
+            // List-side target; never dispatched from the editor modal.
         }
     }
 }

@@ -43,7 +43,7 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
         EditorTab::General => render_general_tab(frame, chunks[2], state),
         EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state),
         EditorTab::Agents => render_agents_tab(frame, chunks[2], state, config),
-        EditorTab::Secrets => render_secrets_stub(frame, chunks[2]),
+        EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config),
     }
 
     // Contextual footer: row-specific hints + base stage hints.
@@ -173,7 +173,47 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
             FooterItem::Key("D"),
             FooterItem::Text("default"),
         ],
-        EditorTab::Secrets => Vec::new(),
+        EditorTab::Secrets => {
+            // Row-specific hints depend on which SecretsRow kind the cursor
+            // is sitting on. `Ctrl+M` is universal across the tab.
+            let rows = secrets_flat_rows(state);
+            match rows.get(cursor) {
+                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::AgentKeyRow { .. }) => vec![
+                    FooterItem::Key("Enter"),
+                    FooterItem::Text("edit"),
+                    FooterItem::Sep,
+                    FooterItem::Key("D"),
+                    FooterItem::Text("delete"),
+                    FooterItem::Sep,
+                    FooterItem::Key("A"),
+                    FooterItem::Text("add"),
+                    FooterItem::Sep,
+                    FooterItem::Key("Ctrl+M"),
+                    FooterItem::Text("mask/unmask"),
+                ],
+                Some(SecretsRow::WorkspaceHeader | SecretsRow::AgentHeader { .. }) => vec![
+                    FooterItem::Key("Enter"),
+                    FooterItem::Text("expand"),
+                    FooterItem::Sep,
+                    FooterItem::Key("←/→"),
+                    FooterItem::Text("collapse/expand"),
+                    FooterItem::Sep,
+                    FooterItem::Key("A"),
+                    FooterItem::Text("add"),
+                    FooterItem::Sep,
+                    FooterItem::Key("Ctrl+M"),
+                    FooterItem::Text("mask/unmask"),
+                ],
+                Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::AgentAddSentinel(_)) => vec![
+                    FooterItem::Key("Enter"),
+                    FooterItem::Text("add"),
+                    FooterItem::Sep,
+                    FooterItem::Key("Ctrl+M"),
+                    FooterItem::Text("mask/unmask"),
+                ],
+                None => vec![FooterItem::Key("Ctrl+M"), FooterItem::Text("mask/unmask")],
+            }
+        }
     }
 }
 
@@ -182,7 +222,7 @@ fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
         (EditorTab::General, "General"),
         (EditorTab::Mounts, "Mounts"),
         (EditorTab::Agents, "Agents"),
-        (EditorTab::Secrets, "Secrets ⏳"),
+        (EditorTab::Secrets, "Secrets"),
     ];
     let mut spans = Vec::new();
     for (tab, label) in labels {
@@ -191,10 +231,6 @@ fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
                 .bg(PHOSPHOR_GREEN)
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD)
-        } else if tab == EditorTab::Secrets {
-            Style::default()
-                .fg(Color::Rgb(90, 90, 90))
-                .add_modifier(Modifier::ITALIC)
         } else {
             Style::default().fg(PHOSPHOR_DIM)
         };
@@ -464,20 +500,259 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-fn render_secrets_stub(frame: &mut Frame, area: Rect) {
+/// Flat-row model for the Secrets tab. The cursor is a single index into
+/// this list; render walks it to draw each row, and input handlers walk
+/// it to decide what `Enter` / `D` / `A` / `←` do on the focused row.
+#[derive(Debug, Clone)]
+pub(in crate::console::manager) enum SecretsRow {
+    /// "Workspace env" section header — always present, not expandable
+    /// (workspace scope is always visible).
+    WorkspaceHeader,
+    /// A single workspace-level env key row.
+    WorkspaceKeyRow(String),
+    /// "+ Add workspace env var" sentinel — always present.
+    WorkspaceAddSentinel,
+    /// "Agent: NAME" section header. `expanded` mirrors membership in
+    /// `editor.secrets_expanded` at the moment the rows were enumerated.
+    AgentHeader { agent: String, expanded: bool },
+    /// An agent-override env key row — only emitted when the section is
+    /// expanded.
+    AgentKeyRow { agent: String, key: String },
+    /// "+ Add agent-NAME env var" sentinel — only emitted when expanded.
+    AgentAddSentinel(String),
+}
+
+/// Build the flat row list used by both `render_secrets_tab` (to draw the
+/// rows) and the input handlers (to map cursor index → row kind).
+///
+/// Agent sections render in `BTreeMap` iteration order. Collapsed sections
+/// show only the header; expanded sections show header + key rows + add
+/// sentinel.
+pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
+    let mut rows = vec![SecretsRow::WorkspaceHeader];
+    for key in editor.pending.env.keys() {
+        rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
+    }
+    rows.push(SecretsRow::WorkspaceAddSentinel);
+    for agent in editor.pending.agents.keys() {
+        let expanded = editor.secrets_expanded.contains(agent);
+        rows.push(SecretsRow::AgentHeader {
+            agent: agent.clone(),
+            expanded,
+        });
+        if expanded {
+            if let Some(ov) = editor.pending.agents.get(agent) {
+                for key in ov.env.keys() {
+                    rows.push(SecretsRow::AgentKeyRow {
+                        agent: agent.clone(),
+                        key: key.clone(),
+                    });
+                }
+            }
+            rows.push(SecretsRow::AgentAddSentinel(agent.clone()));
+        }
+    }
+    rows
+}
+
+/// Number of navigable rows on the Secrets tab. Used by the input
+/// handlers' `max_row_for_tab` to clamp the cursor.
+#[must_use]
+pub(in crate::console::manager) fn secrets_flat_row_count(editor: &EditorState<'_>) -> usize {
+    secrets_flat_rows(editor).len()
+}
+
+/// Full Secrets-tab render. Reads the flat-row list and walks it once,
+/// emitting a `Line` per row. `config` is consumed only for the
+/// `(not in registry)` annotation on agent headers.
+//
+// Match arms per row kind makes the body naturally linear — splitting it
+// into per-arm helpers would scatter the table-like structure without
+// clarity win. Accept the length for readability.
+#[allow(clippy::too_many_lines)]
+fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
-    let body = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "  Secrets management lands in PR 3 of this series.",
-            Style::default()
-                .fg(PHOSPHOR_DIM)
-                .add_modifier(Modifier::ITALIC),
-        )),
-    ];
-    frame.render_widget(Paragraph::new(body).block(block), area);
+    let FieldFocus::Row(cursor) = state.active_field;
+
+    let rows = secrets_flat_rows(state);
+    let mut lines: Vec<Line> = Vec::with_capacity(rows.len());
+
+    // Label column width — keep identical to General tab so the Secrets
+    // tab's visual rhythm matches the rest of the editor.
+    let label_width: usize = 22;
+
+    // Workspace env is considered "empty" when no workspace-level keys AND
+    // no agent overrides exist. In that case we render a "(no env vars)"
+    // dim notice under the header row for the operator's clarity.
+    let workspace_empty = state.pending.env.is_empty() && state.pending.agents.is_empty();
+
+    for (i, row) in rows.iter().enumerate() {
+        let selected = i == cursor;
+        let prefix = if selected { "▸ " } else { "  " };
+        match row {
+            SecretsRow::WorkspaceHeader => {
+                lines.push(Line::from(Span::styled(
+                    format!("{prefix}Workspace env"),
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                )));
+                if workspace_empty {
+                    lines.push(Line::from(Span::styled(
+                        "    (no env vars)",
+                        Style::default()
+                            .fg(PHOSPHOR_DIM)
+                            .add_modifier(Modifier::ITALIC),
+                    )));
+                }
+            }
+            SecretsRow::WorkspaceKeyRow(key) => {
+                let value = state.pending.env.get(key).cloned().unwrap_or_default();
+                let dirty =
+                    env_key_is_dirty(state.original.env.get(key), state.pending.env.get(key));
+                lines.push(render_secrets_key_line(
+                    selected,
+                    prefix,
+                    key,
+                    &value,
+                    dirty,
+                    state.secrets_masked,
+                    area.width,
+                    label_width,
+                ));
+            }
+            SecretsRow::WorkspaceAddSentinel => {
+                let style = if selected {
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(WHITE)
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("{prefix}+ Add workspace env var"),
+                    style,
+                )));
+            }
+            SecretsRow::AgentHeader { agent, expanded } => {
+                let arrow = if *expanded { "▼" } else { "▶" };
+                let in_registry = config.agents.contains_key(agent);
+                let count = state.pending.agents.get(agent).map_or(0, |o| o.env.len());
+                let mut spans = vec![Span::styled(
+                    format!("{prefix}{arrow} Agent: {agent}  ({count} vars)"),
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                )];
+                if !in_registry {
+                    spans.push(Span::styled(
+                        "  (not in registry)",
+                        Style::default()
+                            .fg(PHOSPHOR_DIM)
+                            .add_modifier(Modifier::ITALIC),
+                    ));
+                }
+                lines.push(Line::from(spans));
+            }
+            SecretsRow::AgentKeyRow { agent, key } => {
+                let empty = std::collections::BTreeMap::<String, String>::new();
+                let pend_env = state.pending.agents.get(agent).map_or(&empty, |o| &o.env);
+                let orig_env = state.original.agents.get(agent).map_or(&empty, |o| &o.env);
+                let value = pend_env.get(key).cloned().unwrap_or_default();
+                let dirty = env_key_is_dirty(orig_env.get(key), pend_env.get(key));
+                lines.push(render_secrets_key_line(
+                    selected,
+                    prefix,
+                    key,
+                    &value,
+                    dirty,
+                    state.secrets_masked,
+                    area.width,
+                    label_width,
+                ));
+            }
+            SecretsRow::AgentAddSentinel(agent) => {
+                let style = if selected {
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(WHITE)
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("{prefix}+ Add {agent} env var"),
+                    style,
+                )));
+            }
+        }
+    }
+
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+/// Diff predicate for a single env key between two maps. Returns `true`
+/// when the key was added, removed, or changed.
+fn env_key_is_dirty(orig: Option<&String>, pend: Option<&String>) -> bool {
+    match (orig, pend) {
+        (Some(a), Some(b)) => a != b,
+        (None, Some(_)) | (Some(_), None) => true,
+        (None, None) => false,
+    }
+}
+
+/// Render one "KEY  value" row for the Secrets tab with the conventional
+/// focus prefix, masking, truncation, and dirty-marker semantics.
+#[allow(clippy::too_many_arguments)]
+fn render_secrets_key_line(
+    selected: bool,
+    prefix: &str,
+    key: &str,
+    value: &str,
+    dirty: bool,
+    masked: bool,
+    area_width: u16,
+    label_width: usize,
+) -> Line<'static> {
+    const MASK: &str = "●●●●●●●●●●●";
+    let label_style = if selected {
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(WHITE)
+    };
+    let value_style = if masked {
+        Style::default().fg(PHOSPHOR_DIM)
+    } else if selected {
+        Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(PHOSPHOR_GREEN)
+    };
+
+    let mut spans = vec![Span::styled(
+        format!("{prefix}{key:label_width$}"),
+        label_style,
+    )];
+    let rendered_value: String = if masked {
+        MASK.to_string()
+    } else {
+        // Truncate with `…` when the value exceeds the remaining width.
+        // Gap budget: prefix(2) + label_width + some breathing room + dirty
+        // marker. Approximate with `area_width - label_width - 8`.
+        let budget = (area_width as usize)
+            .saturating_sub(label_width)
+            .saturating_sub(8)
+            .max(1);
+        if value.chars().count() > budget {
+            let mut s: String = value.chars().take(budget.saturating_sub(1)).collect();
+            s.push('…');
+            s
+        } else {
+            value.to_string()
+        }
+    };
+    spans.push(Span::styled(rendered_value, value_style));
+    if dirty {
+        spans.push(Span::styled(
+            "    ● unsaved",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    }
+    Line::from(spans)
 }
 
 #[cfg(test)]
