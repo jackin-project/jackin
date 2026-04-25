@@ -146,6 +146,7 @@ pub fn run(cli: Cli) -> Result<()> {
             remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
             result
         }
+        Command::Cd(args) => handle_cd(&args, &paths),
         Command::Hardline(HardlineArgs { selector }) => {
             let container = if let Some(sel) = selector {
                 match Selector::parse(&sel)? {
@@ -908,6 +909,33 @@ pub fn run(cli: Cli) -> Result<()> {
             }
         },
     }
+}
+
+fn handle_cd(args: &crate::cli::cd::CdArgs, paths: &JackinPaths) -> Result<()> {
+    let short = args.container.trim_start_matches("jackin-");
+    let container = format!("jackin-{short}");
+    let container_dir = paths.data_dir.join(&container);
+
+    let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
+    let chosen = crate::cli::cd::select_record(
+        &container_dir,
+        args.dst.as_deref(),
+        interactive,
+        |labels| crate::tui::prompt_choice("Multiple isolated mounts; pick one:", labels),
+    )?;
+
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+    let status = std::process::Command::new(shell)
+        .current_dir(&chosen.worktree_path)
+        .env("JACKIN_CONTAINER", &container)
+        .env("JACKIN_MOUNT_DST", &chosen.mount_dst)
+        .env("JACKIN_ORIGINAL_SRC", &chosen.original_src)
+        .env("JACKIN_WORKTREE", &chosen.worktree_path)
+        .status()?;
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
 }
 
 fn workspace_env_scope(workspace: String, agent: Option<String>) -> config::EnvScope {
