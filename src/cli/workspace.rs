@@ -142,6 +142,11 @@ Examples:
             action = clap::ArgAction::Append
         )]
         mount_isolation: Vec<(String, MountIsolation)>,
+        /// Allow this edit to delete preserved isolated worktree state.
+        /// Required when --mount source changes for a mount whose dst has
+        /// active isolation records on a stopped container.
+        #[arg(long)]
+        delete_isolated_state: bool,
     },
     /// Remove redundant mounts (rule-C violations) from a saved workspace
     #[command(

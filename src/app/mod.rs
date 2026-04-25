@@ -556,6 +556,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 assume_yes,
                 prune,
                 mount_isolation,
+                delete_isolated_state,
             } => {
                 let upsert_mounts = mounts
                     .iter()
@@ -676,6 +677,64 @@ pub fn run(cli: Cli) -> Result<()> {
                     changes.push("cleared default agent".to_string());
                 } else if let Some(ref agent) = default_agent {
                     changes.push(format!("default agent → {agent}"));
+                }
+
+                // Build the prospective mount list (mirrors edit_workspace's
+                // merge order) so we can check for source drift on any mount
+                // that has preserved isolated state on disk.
+                let mut prospective_mounts: Vec<workspace::MountConfig> = current_ws
+                    .mounts
+                    .iter()
+                    .filter(|m| !plan.effective_removals.iter().any(|d| d == &m.dst))
+                    .cloned()
+                    .collect();
+                if no_workdir_mount {
+                    let workdir = &current_ws.workdir;
+                    prospective_mounts.retain(|m| !(m.src == *workdir && m.dst == *workdir));
+                }
+                for upsert in &upsert_mounts {
+                    if let Some(existing) = prospective_mounts
+                        .iter_mut()
+                        .find(|existing| existing.dst == upsert.dst)
+                    {
+                        *existing = upsert.clone();
+                    } else {
+                        prospective_mounts.push(upsert.clone());
+                    }
+                }
+                let detection = crate::config::detect_workspace_edit_drift(
+                    &paths,
+                    &name,
+                    &prospective_mounts,
+                    &mut runner,
+                )?;
+                if !detection.running_containers.is_empty() {
+                    anyhow::bail!(
+                        "cannot edit workspace `{name}` while these containers are running with isolated state: {}; eject them first",
+                        detection.running_containers.join(", ")
+                    );
+                }
+                if !detection.stopped_records.is_empty() {
+                    if !delete_isolated_state {
+                        let names: Vec<String> = detection
+                            .stopped_records
+                            .iter()
+                            .map(|r| r.container_name.clone())
+                            .collect();
+                        anyhow::bail!(
+                            "edit affects preserved isolated state for {} container(s): {}; pass --delete-isolated-state to remove and apply, or restore the previous src",
+                            detection.stopped_records.len(),
+                            names.join(", ")
+                        );
+                    }
+                    for rec in &detection.stopped_records {
+                        let container_dir = paths.data_dir.join(&rec.container_name);
+                        crate::isolation::cleanup::force_cleanup_isolated(
+                            rec,
+                            &container_dir,
+                            &mut runner,
+                        )?;
+                    }
                 }
 
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
