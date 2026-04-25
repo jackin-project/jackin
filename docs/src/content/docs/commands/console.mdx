@@ -103,5 +103,27 @@ jackin' resolves them at launch via `operator_env`.
 | `D` on key row | Delete the key (single confirmation) |
 | `A` | Add a new key/value pair to the focused section |
 | `Ctrl+M` | Toggle value masking (masked by default; resets on tab exit) |
+| `Ctrl+O` in value modal | Open 1Password picker (Vault → Item → Field) |
 | `→` or `Enter` on section header | Expand an agent override section |
 | `←` on section header | Collapse an agent override section |
+
+### 1Password picker
+
+Pressing `Ctrl+O` while editing an env value opens a three-pane picker that
+browses your 1Password vaults and items. Navigate with `↑`/`↓`, type to
+filter, `Enter` to drill down, `Esc` to go back. Selecting a field closes the
+picker and pre-fills the value with an `op://Vault/Item/field` reference —
+edit it if needed, then press `Enter` to commit.
+
+The picker shows what is available to reference, never what's stored. Field
+values are never read or displayed.
+
+**Requirements:** 1Password CLI (`op`) must be installed and signed in.
+
+- Not installed: `brew install 1password-cli` (macOS) or visit
+  `1password.com/downloads/command-line/`, then run `op signin`.
+- Not signed in: run `op signin` in your shell, then retry.
+- No vaults visible: check Settings → Developer → CLI integration in the
+  1Password app.
+
+jackin' uses your existing `op` session — there is no separate jackin' auth.

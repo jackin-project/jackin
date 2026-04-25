@@ -8,7 +8,7 @@ use jackin::{
     config::{AppConfig, ConfigEditor},
     console::manager::{
         ManagerStage, ManagerState, handle_key,
-        state::{EditorState, EditorTab, FieldFocus},
+        state::{EditorState, EditorTab, FieldFocus, Modal, TextInputTarget},
     },
     paths::JackinPaths,
     workspace::{MountConfig, WorkspaceAgentOverride, WorkspaceConfig},
@@ -573,5 +573,120 @@ fn secrets_add_new_key_flow() -> Result<()> {
         Some("s3cret"),
         "pending.env must contain the new key after the two-step add"
     );
+    Ok(())
+}
+
+// ── 1Password picker integration tests ────────────────────────────
+
+/// `Ctrl+O` while the EnvValue `TextInput` modal is open replaces it
+/// with the `OpPicker` modal. The picker may load successfully or land
+/// in a fatal state depending on whether `op` is on `$PATH` in the test
+/// environment — either way the modal variant must be `OpPicker`.
+#[test]
+fn op_picker_opens_on_ctrl_o_from_env_value_modal() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "postgres")])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Cursor → row 1 (the WorkspaceKeyRow for DB_URL).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    assert!(matches!(editor(&state).active_field, FieldFocus::Row(1)));
+
+    // Enter opens the EnvValue TextInput modal.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(
+            editor(&state).modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::EnvValue { .. },
+                ..
+            })
+        ),
+        "Enter on the key row must open the EnvValue TextInput modal"
+    );
+
+    // Ctrl+O swaps it for Modal::OpPicker.
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        ctrl_key(KeyCode::Char('o')),
+    )?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::OpPicker { .. })),
+        "Ctrl+O must replace the EnvValue modal with OpPicker"
+    );
+    Ok(())
+}
+
+/// Esc from the OpPicker (vault pane / fatal state / loading) cancels
+/// and reconstructs the EnvValue TextInput modal pre-filled with the
+/// text the operator had typed before pressing Ctrl+O.
+#[test]
+fn op_picker_cancel_restores_env_value_modal_with_original_text() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "old")])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Navigate to the key row and open the EnvValue modal.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // Clear the pre-filled "old" (3 chars) and type "MARKER" so we can
+    // verify the cancel path restores exactly this string.
+    for _ in 0..3 {
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            key(KeyCode::Backspace),
+        )?;
+    }
+    for ch in "MARKER".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    // Sanity: the textarea reads back what we typed.
+    match &editor(&state).modal {
+        Some(Modal::TextInput { state: ts, .. }) => {
+            assert_eq!(ts.value(), "MARKER", "textarea must contain MARKER");
+        }
+        other => panic!("expected EnvValue TextInput modal, got {other:?}"),
+    }
+
+    // Ctrl+O switches to OpPicker.
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        ctrl_key(KeyCode::Char('o')),
+    )?;
+    assert!(matches!(editor(&state).modal, Some(Modal::OpPicker { .. })));
+
+    // Esc on the OpPicker — works regardless of whether the picker is
+    // Loading, Ready on the Vault pane, or in a fatal state (see
+    // OpPickerState::handle_key short-circuits). Cancel reconstructs
+    // the EnvValue TextInput modal seeded with `original_value`.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    match &editor(&state).modal {
+        Some(Modal::TextInput { target, state: ts }) => {
+            assert!(
+                matches!(target, TextInputTarget::EnvValue { .. }),
+                "restored modal must be the EnvValue variant; got {target:?}"
+            );
+            assert_eq!(
+                ts.value(),
+                "MARKER",
+                "Esc-cancel must restore the original textarea contents"
+            );
+        }
+        other => panic!("expected restored TextInput modal, got {other:?}"),
+    }
     Ok(())
 }
