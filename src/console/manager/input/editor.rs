@@ -413,16 +413,17 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
             });
         }
         SecretsRow::WorkspaceAddSentinel => {
-            let scope = SecretsScopeTag::Workspace;
-            let state = env_key_input_state(
-                editor,
-                &scope,
-                "New workspace environment key",
-                String::new(),
-            );
-            editor.modal = Some(Modal::TextInput {
-                target: TextInputTarget::EnvKey { scope },
-                state,
+            // Workspace-level sentinel asks the scope question first
+            // ("All agents" vs "Specific agent") rather than dropping
+            // straight into the EnvKey modal. The ScopePicker's commit
+            // handler (in `handle_editor_modal`) opens either the
+            // workspace-scoped EnvKey modal or the agent-override
+            // picker depending on which choice the operator commits.
+            // Per-agent fast-path stays direct: see `AgentAddSentinel`
+            // below.
+            use crate::console::widgets::scope_picker::ScopePickerState;
+            editor.modal = Some(Modal::ScopePicker {
+                state: ScopePickerState::new(),
             });
         }
         SecretsRow::AgentHeader { agent, expanded } => {
@@ -453,6 +454,8 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
             });
         }
         SecretsRow::AgentAddSentinel(agent) => {
+            // In-section fast-path — the operator is already viewing the
+            // agent's section, so don't ask the scope question again.
             let label = format!("New {agent} environment key");
             let scope = SecretsScopeTag::Agent(agent);
             let state = env_key_input_state(editor, &scope, label, String::new());
@@ -461,21 +464,28 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
                 state,
             });
         }
-        SecretsRow::AddAgentOverrideSentinel => {
-            open_agent_override_picker(editor, config);
-        }
     }
 }
 
-/// Open the editor-stage agent picker that adds a fresh per-agent
-/// override section. Filtered to allowed agents that don't yet have an
-/// entry in `pending.agents`. If the eligible set is empty (which the
-/// sentinel-render path already guards against) this is a silent no-op.
+/// Open the editor-stage agent picker that scopes a new env var to a
+/// specific agent. Reachable from the `ScopePicker`'s `SpecificAgent`
+/// branch (the only caller today). Listing rules:
+///
+/// - When the workspace's `allowed_agents` list is non-empty, the
+///   picker shows every entry on it.
+/// - When it's empty (the launch-time "all agents allowed" shorthand),
+///   the picker shows every agent registered in `config.agents`.
+///
+/// Agents that already have an override section are NOT filtered out —
+/// the operator may legitimately want to add additional keys to an
+/// agent that already carries some. If the eligible set is empty
+/// (workspace has no allowed agents AND `config.agents` is empty) the
+/// call is a silent no-op.
 fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
     use super::super::super::widgets::agent_picker::AgentPickerState;
     use crate::selector::ClassSelector;
     let eligible: Vec<ClassSelector> =
-        super::super::render::editor::eligible_agents_without_override(editor, config)
+        super::super::render::editor::eligible_agents_for_override(editor, config)
             .into_iter()
             .filter_map(|name| ClassSelector::parse(&name).ok())
             .collect();
@@ -510,14 +520,15 @@ fn open_secrets_delete_confirm(editor: &mut EditorState<'_>, config: &AppConfig)
 
 /// Open the `TextInput(EnvKey)` modal when the operator presses `A` on
 /// any Secrets-tab row. The target scope is derived from whichever
-/// section the focused row lives in; on the workspace header / workspace
-/// key rows / workspace sentinel the scope is `Workspace`, and on
-/// agent-section rows it's `Agent(name)`.
+/// section the focused row lives in; on the workspace key rows or
+/// workspace sentinel the scope is `Workspace`, and on agent-section
+/// rows it's `Agent(name)`.
 ///
-/// `A` on the bottom-of-tab `AddAgentOverrideSentinel` doesn't open an
-/// `EnvKey` modal — it opens the override-add agent picker, mirroring
-/// the dual-binding pattern (`Enter`/`A`) that the workspace and
-/// per-agent `+ Add environment variable` sentinels already use.
+/// Unlike the workspace-sentinel `Enter` path (which routes through the
+/// scope-first `ScopePicker`), `A` always commits to the row's
+/// contextual scope without asking — the operator has already chosen a
+/// row whose scope is unambiguous, so the extra prompt would be a
+/// regression.
 fn open_secrets_add_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor, config);
@@ -535,10 +546,6 @@ fn open_secrets_add_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
             SecretsScopeTag::Agent(agent.clone()),
             format!("New {agent} environment key"),
         ),
-        SecretsRow::AddAgentOverrideSentinel => {
-            open_agent_override_picker(editor, config);
-            return;
-        }
     };
     let state = env_key_input_state(editor, &scope, label, String::new());
     editor.modal = Some(Modal::TextInput {
@@ -657,7 +664,7 @@ pub(super) fn handle_editor_modal(
     key: KeyEvent,
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
-    _config: &AppConfig,
+    config: &AppConfig,
 ) {
     let Some(modal) = editor.modal.as_mut() else {
         return;
@@ -819,6 +826,47 @@ pub(super) fn handle_editor_modal(
             }
             ModalOutcome::Continue => {}
         },
+        Modal::ScopePicker { state: scope_state } => {
+            use crate::console::widgets::scope_picker::ScopeChoice;
+            match scope_state.handle_key(key) {
+                ModalOutcome::Commit(ScopeChoice::AllAgents) => {
+                    // All-agents path: drop straight into the standard
+                    // workspace-scoped add flow. This is the same
+                    // EnvKey modal the workspace-level sentinel used to
+                    // open directly before the scope-first flow landed.
+                    let scope = SecretsScopeTag::Workspace;
+                    let state = env_key_input_state(
+                        editor,
+                        &scope,
+                        "New workspace environment key",
+                        String::new(),
+                    );
+                    editor.modal = Some(Modal::TextInput {
+                        target: TextInputTarget::EnvKey { scope },
+                        state,
+                    });
+                }
+                ModalOutcome::Commit(ScopeChoice::SpecificAgent) => {
+                    // Specific-agent path: open the agent-override
+                    // picker. The picker's commit handler (just below)
+                    // opens the EnvKey modal with `Agent(<name>)` scope
+                    // and the rest of the unified add flow falls through
+                    // unchanged. If the eligible set is empty (no
+                    // allowed agents AND no globally-registered agents),
+                    // `open_agent_override_picker` is a silent no-op and
+                    // the modal closes — symmetric with the previous
+                    // sentinel render-time guard.
+                    open_agent_override_picker(editor, config);
+                    if !matches!(editor.modal, Some(Modal::AgentOverridePicker { .. })) {
+                        editor.modal = None;
+                    }
+                }
+                ModalOutcome::Cancel => {
+                    editor.modal = None;
+                }
+                ModalOutcome::Continue => {}
+            }
+        }
         Modal::SourcePicker { state: source } => {
             use crate::console::widgets::source_picker::SourceChoice;
             use crate::console::widgets::text_input::TextInputState;
@@ -958,7 +1006,7 @@ fn open_secrets_picker_modal(
         SecretsRow::AgentKeyRow { agent, key } => Some((SecretsScopeTag::Agent(agent), Some(key))),
         SecretsRow::WorkspaceAddSentinel => Some((SecretsScopeTag::Workspace, None)),
         SecretsRow::AgentAddSentinel(agent) => Some((SecretsScopeTag::Agent(agent), None)),
-        SecretsRow::AgentHeader { .. } | SecretsRow::AddAgentOverrideSentinel => None,
+        SecretsRow::AgentHeader { .. } => None,
     };
     let Some(target) = target else {
         return;

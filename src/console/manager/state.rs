@@ -13,7 +13,8 @@ use crate::console::widgets::{
     agent_picker::AgentPickerState, confirm::ConfirmState, confirm_save::ConfirmSaveState,
     error_popup::ErrorPopupState, file_browser::FileBrowserState, github_picker::GithubPickerState,
     mount_dst_choice::MountDstChoiceState, op_picker::OpPickerState,
-    source_picker::SourcePickerState, text_input::TextInputState, workdir_pick::WorkdirPickState,
+    scope_picker::ScopePickerState, source_picker::SourcePickerState, text_input::TextInputState,
+    workdir_pick::WorkdirPickState,
 };
 
 /// Logical identity of a row in the workspace-manager list.
@@ -380,6 +381,17 @@ pub enum Modal<'a> {
     /// (probed once at startup — see `ConsoleState::op_available`).
     SourcePicker {
         state: SourcePickerState,
+    },
+    /// Two-button "All agents / Specific agent" prompt opened at the
+    /// very start of the Secrets-tab Add flow when the operator presses
+    /// `Enter` on the workspace-level `+ Add environment variable`
+    /// sentinel. `All agents` drops into the standard `EnvKey` modal
+    /// with `Workspace` scope; `Specific agent` opens the
+    /// [`Modal::AgentOverridePicker`] so the operator chooses which
+    /// agent's overrides to extend before falling into the `EnvKey`
+    /// modal with `Agent(<name>)` scope.
+    ScopePicker {
+        state: ScopePickerState,
     },
 }
 

@@ -6,7 +6,8 @@ use ratatui::{Frame, layout::Rect};
 
 use super::super::super::widgets::{
     agent_picker, confirm, confirm_save, error_popup, file_browser, github_picker,
-    mount_dst_choice, op_picker, save_discard, source_picker, text_input, workdir_pick,
+    mount_dst_choice, op_picker, save_discard, scope_picker, source_picker, text_input,
+    workdir_pick,
 };
 use super::super::state::Modal;
 use super::centered_rect_fixed;
@@ -73,7 +74,12 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
         // both buttons; 7 rows give border + top pad + buttons +
         // explainer (always reserved, blank when op is available) +
         // spacer + hint + border.
-        Modal::SourcePicker { .. } => (50, 7),
+        //
+        // ScopePicker shares the same geometry — same two-button shape,
+        // same visual rhythm — so the operator's eye doesn't have to
+        // re-anchor when the second modal opens after committing the
+        // first.
+        Modal::SourcePicker { .. } | Modal::ScopePicker { .. } => (50, 7),
     };
     centered_rect_fixed(outer, pct_w, height_rows)
 }
@@ -103,5 +109,6 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
             agent_picker::render(frame, modal_area, state);
         }
         Modal::SourcePicker { state } => source_picker::render(frame, modal_area, state),
+        Modal::ScopePicker { state } => scope_picker::render(frame, modal_area, state),
     }
 }

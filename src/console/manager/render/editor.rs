@@ -260,16 +260,6 @@ fn contextual_row_items(state: &EditorState<'_>, config: &AppConfig) -> Vec<Foot
                     FooterItem::Key("P"),
                     FooterItem::Text("1Password"),
                 ],
-                Some(SecretsRow::AddAgentOverrideSentinel) => vec![
-                    FooterItem::Key("Enter"),
-                    FooterItem::Text("pick agent"),
-                    FooterItem::Sep,
-                    FooterItem::Key("A"),
-                    FooterItem::Text("pick agent"),
-                    FooterItem::Sep,
-                    FooterItem::Key("Q"),
-                    FooterItem::Text("exit"),
-                ],
                 None => vec![FooterItem::Key("M"), FooterItem::Text("mask/unmask")],
             }
         }
@@ -514,13 +504,6 @@ pub(in crate::console::manager) enum SecretsRow {
     /// "+ Add agent-NAME environment variable" sentinel — only emitted
     /// when the agent section is expanded.
     AgentAddSentinel(String),
-    /// "+ Add per-agent override for ..." sentinel — appended at the
-    /// absolute bottom of the Secrets tab when at least one allowed
-    /// agent does not yet have an override section. Pressing Enter (or
-    /// `A`) opens an agent picker filtered to the eligible set; on
-    /// commit a new `pending.agents.<agent>` entry is created and the
-    /// section auto-expands.
-    AddAgentOverrideSentinel,
 }
 
 /// Build the flat row list used by both `render_secrets_tab` (to draw the
@@ -532,15 +515,14 @@ pub(in crate::console::manager) enum SecretsRow {
 /// keys — the empty state is just the `+ Add environment variable`
 /// sentinel.
 ///
-/// `config` is consulted to decide whether to append the
-/// `AddAgentOverrideSentinel` row at the bottom — it is emitted iff at
-/// least one allowed agent (per `eligible_agents_for_workspace`) does not
-/// yet have an entry in `pending.agents`. When every eligible agent is
-/// already covered (or there are no eligible agents at all) the sentinel
-/// is omitted so the operator never sees an action that can't proceed.
+/// `config` is unused today but retained on the signature so the input
+/// handlers (which already pass it through for parallel reasons) don't
+/// need a separate path. The bottom-of-tab "+ Add per-agent override"
+/// sentinel was removed in favour of the scope-first `ScopePicker`
+/// modal opened from the workspace-level sentinel.
 pub(in crate::console::manager) fn secrets_flat_rows(
     editor: &EditorState<'_>,
-    config: &AppConfig,
+    _config: &AppConfig,
 ) -> Vec<SecretsRow> {
     let mut rows = Vec::new();
     for key in editor.pending.env.keys() {
@@ -565,9 +547,6 @@ pub(in crate::console::manager) fn secrets_flat_rows(
             rows.push(SecretsRow::AgentAddSentinel(agent.clone()));
         }
     }
-    if !eligible_agents_without_override(editor, config).is_empty() {
-        rows.push(SecretsRow::AddAgentOverrideSentinel);
-    }
     rows
 }
 
@@ -582,36 +561,32 @@ pub(in crate::console::manager) fn secrets_flat_row_count(
 }
 
 /// Compute the list of agents (by class-key string) that are eligible
-/// for a per-agent override on this workspace but don't yet have one.
+/// for a per-agent override on this workspace.
 ///
-/// "Eligible" mirrors the launch-time semantics from
+/// Mirrors the launch-time semantics from
 /// [`crate::app::context::eligible_agents_for_workspace`]: when the
-/// workspace's `allowed_agents` list is empty we return every globally
-/// registered agent in `config.agents`; otherwise we narrow to that
-/// list. Either way, agents already present in `editor.pending.agents`
-/// are filtered out — they already have a section and don't need to
-/// appear in the picker.
+/// workspace's `allowed_agents` list is non-empty we return only those
+/// names; when it's empty (the launch-time "all agents allowed"
+/// shorthand), we return every agent registered in `config.agents`.
+///
+/// Unlike the previous `eligible_agents_without_override`, this does
+/// NOT filter out agents that already have an override section —
+/// operators may legitimately want to add additional keys to an agent
+/// that already has some, and the new `ScopePicker` → `AgentPicker`
+/// flow is the only entry point for picking an agent (no longer a
+/// bottom-of-tab sentinel that gets greyed out per-agent).
 ///
 /// Returned strings match the keying scheme of
 /// `WorkspaceConfig.agents` (the `BTreeMap<String, WorkspaceAgentOverride>`).
-pub(in crate::console::manager) fn eligible_agents_without_override(
+pub(in crate::console::manager) fn eligible_agents_for_override(
     editor: &EditorState<'_>,
     config: &AppConfig,
 ) -> Vec<String> {
-    config
-        .agents
-        .keys()
-        .filter(|name| {
-            editor.pending.allowed_agents.is_empty()
-                || editor
-                    .pending
-                    .allowed_agents
-                    .iter()
-                    .any(|allowed| allowed == name.as_str())
-        })
-        .filter(|name| !editor.pending.agents.contains_key(name.as_str()))
-        .cloned()
-        .collect()
+    if editor.pending.allowed_agents.is_empty() {
+        config.agents.keys().cloned().collect()
+    } else {
+        editor.pending.allowed_agents.clone()
+    }
 }
 
 /// Full Secrets-tab render. Walks the flat-row list once emitting a
@@ -728,17 +703,6 @@ fn render_secrets_tab(
                 };
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}  + Add {agent} environment variable"),
-                    style,
-                )));
-            }
-            SecretsRow::AddAgentOverrideSentinel => {
-                let style = if selected {
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(WHITE)
-                };
-                lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}  + Add per-agent override for ..."),
                     style,
                 )));
             }
@@ -1640,13 +1604,14 @@ mod secrets_tab_render_tests {
 }
 
 #[cfg(test)]
-mod add_agent_override_sentinel_tests {
-    //! Pins the conditional rendering of the bottom-of-tab
-    //! `+ Add per-agent override for ...` sentinel: emitted iff at
-    //! least one workspace-allowed agent has no entry in
-    //! `pending.agents`, suppressed otherwise so the operator never
-    //! sees an action that can't proceed.
-    use super::{SecretsRow, secrets_flat_rows};
+mod eligible_agents_for_override_tests {
+    //! Pins the eligible-agent computation that feeds the
+    //! ScopePicker → AgentPicker flow. Unlike the previous
+    //! `eligible_agents_without_override`, this list is NOT filtered
+    //! by "doesn't yet have an override" — operators may legitimately
+    //! want to add additional keys to an agent that already carries
+    //! some.
+    use super::eligible_agents_for_override;
     use crate::config::{AgentSource, AppConfig};
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{WorkspaceAgentOverride, WorkspaceConfig};
@@ -1685,64 +1650,57 @@ mod add_agent_override_sentinel_tests {
     }
 
     #[test]
-    fn secrets_flat_rows_includes_add_agent_override_sentinel_when_eligible_agents_exist() {
-        // One allowed agent, no overrides yet → the sentinel must be the
-        // last row in the flat-row list so the operator can reach it.
-        let cfg = config_with_agents(&["agent-smith"]);
+    fn eligible_agents_returns_allowed_when_list_non_empty() {
+        // Non-empty `allowed_agents` is taken at face value — the
+        // result matches the workspace's allowed list verbatim.
+        let cfg = config_with_agents(&["agent-smith", "agent-brown", "agent-architect"]);
         let editor = editor_for(ws_with_overrides(&["agent-smith"], &[]));
-        let rows = secrets_flat_rows(&editor, &cfg);
-        assert!(
-            matches!(rows.last(), Some(SecretsRow::AddAgentOverrideSentinel)),
-            "rows must end with AddAgentOverrideSentinel; got {rows:?}"
+        let eligible = eligible_agents_for_override(&editor, &cfg);
+        assert_eq!(eligible, vec!["agent-smith".to_string()]);
+    }
+
+    #[test]
+    fn eligible_agents_returns_all_registered_when_allowed_empty() {
+        // Empty `allowed_agents` is the "all agents allowed" shorthand —
+        // every globally-registered agent is eligible.
+        let cfg = config_with_agents(&["agent-smith", "agent-brown"]);
+        let editor = editor_for(ws_with_overrides(&[], &[]));
+        let mut eligible = eligible_agents_for_override(&editor, &cfg);
+        eligible.sort();
+        assert_eq!(
+            eligible,
+            vec!["agent-brown".to_string(), "agent-smith".to_string()]
         );
     }
 
     #[test]
-    fn secrets_flat_rows_omits_sentinel_when_all_agents_have_overrides() {
-        // Two allowed agents, both already have overrides → no eligible
-        // candidates remain, so the sentinel is suppressed.
+    fn eligible_agents_does_not_filter_by_existing_overrides() {
+        // Operators may want to add additional keys to an agent that
+        // already carries some — the picker must therefore include
+        // every allowed agent regardless of whether `pending.agents`
+        // already lists them.
         let cfg = config_with_agents(&["agent-smith", "agent-brown"]);
         let editor = editor_for(ws_with_overrides(
             &["agent-smith", "agent-brown"],
-            &["agent-smith", "agent-brown"],
+            &["agent-smith"],
         ));
-        let rows = secrets_flat_rows(&editor, &cfg);
-        assert!(
-            !rows
-                .iter()
-                .any(|r| matches!(r, SecretsRow::AddAgentOverrideSentinel)),
-            "sentinel must be omitted when every allowed agent already has an override; got {rows:?}"
+        let mut eligible = eligible_agents_for_override(&editor, &cfg);
+        eligible.sort();
+        assert_eq!(
+            eligible,
+            vec!["agent-brown".to_string(), "agent-smith".to_string()],
+            "agent-smith already has overrides but must still appear so the operator can add another key to it"
         );
     }
 
     #[test]
-    fn secrets_flat_rows_omits_sentinel_when_no_allowed_agents() {
-        // Empty `allowed_agents` is the "all agents allowed" shorthand,
-        // but there are zero registered agents in the config — so the
-        // eligible set is empty and the sentinel is suppressed.
+    fn eligible_agents_returns_empty_when_no_allowed_and_no_registered() {
+        // Empty `allowed_agents` shorthand AND no registered agents:
+        // the picker would be empty, so the caller is expected to
+        // short-circuit and not open the modal.
         let cfg = config_with_agents(&[]);
         let editor = editor_for(ws_with_overrides(&[], &[]));
-        let rows = secrets_flat_rows(&editor, &cfg);
-        assert!(
-            !rows
-                .iter()
-                .any(|r| matches!(r, SecretsRow::AddAgentOverrideSentinel)),
-            "sentinel must be omitted when no agents are registered; got {rows:?}"
-        );
-    }
-
-    #[test]
-    fn secrets_flat_rows_includes_sentinel_under_all_shorthand_when_global_agent_lacks_override() {
-        // `allowed_agents = []` is the "all" shorthand. With one
-        // globally-registered agent and no overrides yet, that agent is
-        // eligible and the sentinel must render.
-        let cfg = config_with_agents(&["agent-smith"]);
-        let editor = editor_for(ws_with_overrides(&[], &[]));
-        let rows = secrets_flat_rows(&editor, &cfg);
-        assert!(
-            rows.iter()
-                .any(|r| matches!(r, SecretsRow::AddAgentOverrideSentinel)),
-            "sentinel must render under the all-allowed shorthand when a globally-registered agent has no override; got {rows:?}"
-        );
+        let eligible = eligible_agents_for_override(&editor, &cfg);
+        assert!(eligible.is_empty());
     }
 }

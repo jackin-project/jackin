@@ -876,10 +876,11 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
 
 // ── SourcePicker integration tests ────────────────────────────────
 
-/// Helper: enter the SourcePicker by way of Enter-on-sentinel + EnvKey
-/// commit. Returns the state mid-flow with the SourcePicker modal open.
-/// Works against the default `op_available = false` ManagerState so the
-/// 1Password choice is rendered disabled.
+/// Helper: enter the SourcePicker by way of Enter-on-sentinel →
+/// ScopePicker(All agents) → EnvKey commit. Returns the state mid-flow
+/// with the SourcePicker modal open. Works against the default
+/// `op_available = false` ManagerState so the 1Password choice is
+/// rendered disabled.
 fn drive_to_source_picker<'a>(
     config: &mut AppConfig,
     paths: &JackinPaths,
@@ -889,7 +890,10 @@ fn drive_to_source_picker<'a>(
     // Build a manager state on the Secrets tab with op_available
     // baked in via the test-only constructor (false by default).
     let mut state = manager_on_secrets_tab(config, cwd);
-    // Enter on the sentinel opens the EnvKey modal.
+    // Enter on the workspace sentinel opens the ScopePicker modal —
+    // default focus is `AllAgents`, so a second Enter commits the
+    // workspace path and opens the EnvKey modal.
+    handle_key(&mut state, config, paths, cwd, key(KeyCode::Enter))?;
     handle_key(&mut state, config, paths, cwd, key(KeyCode::Enter))?;
     // Type the key.
     for ch in key_name.chars() {
@@ -1473,8 +1477,10 @@ fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {
     let mut state = manager_on_secrets_tab(&config, cwd);
 
     // Rows: 0 WorkspaceKeyRow("EXISTING"), 1 WorkspaceAddSentinel.
-    // Navigate to the sentinel and Enter to open the EnvKey modal.
+    // Navigate to the sentinel; Enter opens the ScopePicker, then a
+    // second Enter (default focus = AllAgents) opens the EnvKey modal.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
         matches!(
@@ -1484,7 +1490,7 @@ fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {
                 ..
             })
         ),
-        "Enter on the WorkspaceAddSentinel must open the EnvKey modal; got {:?}",
+        "ScopePicker(AllAgents) commit must open the EnvKey modal; got {:?}",
         editor(&state).modal
     );
 
@@ -1631,8 +1637,11 @@ fn env_key_modal_allows_unique_name() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Sentinel is row 1 here (row 0 is the existing key row).
+    // Sentinel is row 1 here (row 0 is the existing key row). The
+    // first Enter opens the ScopePicker; the second commits AllAgents
+    // and opens the EnvKey modal.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     for ch in "NEW_KEY".chars() {
@@ -1649,7 +1658,7 @@ fn env_key_modal_allows_unique_name() -> Result<()> {
     Ok(())
 }
 
-// ── AddAgentOverrideSentinel + AgentOverridePicker integration tests ─
+// ── ScopePicker + AgentOverridePicker integration tests ──────────────
 
 /// Seed the on-disk config + workspace for the override-picker tests.
 /// Adds a workspace with the given `allowed_agents` (each also
@@ -1703,43 +1712,32 @@ fn seed_override_picker_workspace(
     ce.save()
 }
 
-/// Press `Enter` on the `+ Add per-agent override for ...` sentinel:
-/// the `Modal::AgentOverridePicker` opens on the editor stage with the
-/// eligible-set populated.
+/// Press `Enter` on the workspace-level `+ Add environment variable`
+/// sentinel: the `Modal::ScopePicker` opens on the editor stage so the
+/// operator can pick "All agents" or "Specific agent" before falling
+/// into the rest of the add flow.
 #[test]
-fn enter_on_add_agent_override_sentinel_opens_agent_picker() -> Result<()> {
+fn sentinel_enter_opens_scope_picker() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Rows: [WorkspaceAddSentinel, AddAgentOverrideSentinel].
-    // Cursor opens on row 0; Down moves to the override sentinel.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Rows: [WorkspaceAddSentinel]. Cursor opens on row 0.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
-    match &editor(&state).modal {
-        Some(Modal::AgentOverridePicker { state: picker }) => {
-            assert_eq!(
-                picker.agents.len(),
-                1,
-                "picker must list every eligible agent"
-            );
-            assert_eq!(picker.agents[0].key(), "agent-smith");
-        }
-        other => panic!("expected Modal::AgentOverridePicker; got {other:?}"),
-    }
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::ScopePicker { .. })),
+        "Enter on the workspace sentinel must open the ScopePicker; got {:?}",
+        editor(&state).modal
+    );
     Ok(())
 }
 
-/// Picker commit on a fresh agent: drops straight into the normal Add
-/// flow with `Agent(<name>)` scope. `pending.agents` is NOT mutated —
-/// the section materialises organically once the first key/value
-/// commits in the EnvValue / OpPicker commit paths. This avoids the
-/// empty `(0 vars)` placeholder section that an early-commit would
-/// leave behind if the operator cancelled out partway through.
+/// ScopePicker → AllAgents path: pick the default-focused choice and
+/// confirm the EnvKey modal opens with `Workspace` scope.
 #[test]
-fn picking_an_agent_opens_envkey_modal_for_agent_scope() -> Result<()> {
+fn scope_picker_all_path_to_workspace_envkey() -> Result<()> {
     use jackin::console::manager::state::SecretsScopeTag;
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -1747,30 +1745,66 @@ fn picking_an_agent_opens_envkey_modal_for_agent_scope() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Drive Enter on the override sentinel to open the picker.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Open the ScopePicker; default focus is AllAgents — Enter commits.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
-    assert!(matches!(
-        editor(&state).modal,
-        Some(Modal::AgentOverridePicker { .. })
-    ));
-
-    // Commit the picker selection (defaults to the only eligible agent).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
-    // `pending.agents` must NOT have been mutated: the section only
-    // materialises when the first key/value commits.
+    match &editor(&state).modal {
+        Some(Modal::TextInput { target, .. }) => match target {
+            TextInputTarget::EnvKey { scope } => {
+                assert_eq!(
+                    scope,
+                    &SecretsScopeTag::Workspace,
+                    "AllAgents commit must open the EnvKey modal with Workspace scope"
+                );
+            }
+            other => panic!("expected TextInputTarget::EnvKey; got {other:?}"),
+        },
+        other => panic!("expected Modal::TextInput; got {other:?}"),
+    }
+    Ok(())
+}
+
+/// ScopePicker → SpecificAgent → AgentPicker → EnvKey path. Verifies
+/// each transition: ScopePicker right-arrow → SpecificAgent focus,
+/// Enter → AgentOverridePicker; picker Enter → EnvKey with `Agent`
+/// scope. `pending.agents` is NOT mutated — the section materialises
+/// organically once the first key/value commits.
+#[test]
+fn scope_picker_specific_path_to_agent_picker_then_envkey() -> Result<()> {
+    use jackin::console::manager::state::SecretsScopeTag;
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Open the ScopePicker, advance focus to SpecificAgent, commit.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // The agent-override picker is now open with the eligible set.
+    match &editor(&state).modal {
+        Some(Modal::AgentOverridePicker { state: picker }) => {
+            assert_eq!(picker.agents.len(), 1);
+            assert_eq!(picker.agents[0].key(), "agent-smith");
+        }
+        other => panic!("expected Modal::AgentOverridePicker; got {other:?}"),
+    }
+
+    // Commit the only eligible agent — the EnvKey modal opens with
+    // `Agent(<name>)` scope and `pending.agents` stays empty.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
         editor(&state).pending.agents.is_empty(),
         "picker commit must not create an override entry; got pending.agents keys={:?}",
         editor(&state).pending.agents.keys().collect::<Vec<_>>()
     );
-    // `secrets_expanded` must NOT have been touched.
     assert!(
         editor(&state).secrets_expanded.is_empty(),
         "picker commit must not pre-expand any section"
     );
-    // The EnvKey modal must now be open with Agent(<name>) scope.
     match &editor(&state).modal {
         Some(Modal::TextInput { target, .. }) => match target {
             TextInputTarget::EnvKey { scope } => {
@@ -1787,6 +1821,78 @@ fn picking_an_agent_opens_envkey_modal_for_agent_scope() -> Result<()> {
     Ok(())
 }
 
+/// The agent picker reachable from the SpecificAgent path lists every
+/// allowed agent — including agents that already have override sections.
+/// This is the behavioural change vs commit 34: operators may want to
+/// add additional keys to an agent that already has some, so the
+/// picker must include them.
+#[test]
+fn agent_picker_lists_all_allowed_agents_not_filtered_by_existing_overrides() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_override_picker_workspace(
+        &paths,
+        temp.path(),
+        &["agent-smith", "agent-brown"],
+        &["agent-smith"],
+    )?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Workspace sentinel → ScopePicker → SpecificAgent → AgentPicker.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    match &editor(&state).modal {
+        Some(Modal::AgentOverridePicker { state: picker }) => {
+            let mut keys: Vec<String> = picker.agents.iter().map(|a| a.key()).collect();
+            keys.sort();
+            assert_eq!(
+                keys,
+                vec!["agent-brown".to_string(), "agent-smith".to_string()],
+                "agent-smith already has an override section but must still appear so the operator can add another key"
+            );
+        }
+        other => panic!("expected Modal::AgentOverridePicker; got {other:?}"),
+    }
+    Ok(())
+}
+
+/// Esc on the ScopePicker closes the modal and leaves
+/// `pending.agents` and `pending.env` untouched — backing out is a
+/// pure no-op.
+#[test]
+fn cancel_from_scope_picker_returns_to_secrets_tab() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::ScopePicker { .. })
+    ));
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "Esc on the ScopePicker must close the modal; got {:?}",
+        editor(&state).modal
+    );
+    assert!(
+        editor(&state).pending.agents.is_empty(),
+        "Esc must not create an override entry"
+    );
+    assert!(
+        editor(&state).pending.env.is_empty(),
+        "Esc must not write any env entry"
+    );
+    Ok(())
+}
+
 /// Esc on the EnvKey modal that opens after the picker commit must
 /// leave `pending.agents` untouched — no orphan empty section.
 #[test]
@@ -1797,8 +1903,10 @@ fn cancel_from_envkey_after_agent_pick_does_not_create_section() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Picker → commit → EnvKey modal opens.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Workspace sentinel → ScopePicker → SpecificAgent → AgentPicker
+    // → commit → EnvKey modal opens.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(matches!(
@@ -1839,8 +1947,10 @@ fn cancel_from_sourcepicker_after_agent_pick_does_not_create_section() -> Result
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Picker → commit → EnvKey modal.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Workspace sentinel → ScopePicker → SpecificAgent → AgentPicker
+    // → commit → EnvKey modal.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
@@ -1874,9 +1984,10 @@ fn cancel_from_sourcepicker_after_agent_pick_does_not_create_section() -> Result
     Ok(())
 }
 
-/// Drive the full chain — picker → EnvKey → SourcePicker(Plain) →
-/// EnvValue → commit. The override section materialises only on this
-/// final commit, with the key/value present and the section expanded.
+/// Drive the full chain — workspace sentinel → ScopePicker(Specific) →
+/// AgentPicker → EnvKey → SourcePicker(Plain) → EnvValue → commit. The
+/// override section materialises only on this final commit, with the
+/// key/value present and the section expanded.
 #[test]
 fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()> {
     let temp = tempdir()?;
@@ -1885,8 +1996,10 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Picker → commit → EnvKey modal.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Workspace sentinel → ScopePicker → SpecificAgent → AgentPicker
+    // → commit → EnvKey modal.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
@@ -1946,60 +2059,21 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
     Ok(())
 }
 
-/// Open the override picker on a workspace with two allowed agents
-/// where one already has an override section: the picker's eligible
-/// set must contain only the agent that doesn't yet have overrides.
+/// Esc on the override picker (reachable through the ScopePicker's
+/// SpecificAgent path) closes the modal and leaves `pending.agents`
+/// untouched — symmetric with the ScopePicker-cancel test, one step
+/// deeper.
 #[test]
-fn agent_override_picker_excludes_agents_with_existing_overrides() -> Result<()> {
-    let temp = tempdir()?;
-    let paths = JackinPaths::for_tests(temp.path());
-    let mut config = seed_override_picker_workspace(
-        &paths,
-        temp.path(),
-        &["agent-smith", "agent-brown"],
-        &["agent-smith"],
-    )?;
-    let cwd = temp.path();
-    let mut state = manager_on_secrets_tab(&config, cwd);
-
-    // Rows: [WorkspaceAddSentinel, AgentHeader(agent-smith collapsed),
-    //        AddAgentOverrideSentinel] — last row is the sentinel.
-    // Navigate down twice to land on it.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
-
-    match &editor(&state).modal {
-        Some(Modal::AgentOverridePicker { state: picker }) => {
-            assert_eq!(
-                picker.agents.len(),
-                1,
-                "picker eligible set must exclude agent-smith (already has override)"
-            );
-            assert_eq!(
-                picker.agents[0].key(),
-                "agent-brown",
-                "only agent-brown should remain eligible"
-            );
-        }
-        other => panic!("expected Modal::AgentOverridePicker; got {other:?}"),
-    }
-    Ok(())
-}
-
-/// Esc on the override picker closes the modal and leaves
-/// `pending.agents` untouched — the operator can back out without
-/// committing.
-#[test]
-fn cancel_from_agent_override_picker_does_not_create_section() -> Result<()> {
+fn cancel_from_agent_override_picker_after_scope_pick_does_not_create_section() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Open the picker.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Open the picker via ScopePicker → SpecificAgent.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(matches!(
         editor(&state).modal,
@@ -2022,5 +2096,51 @@ fn cancel_from_agent_override_picker_does_not_create_section() -> Result<()> {
         editor(&state).secrets_expanded.is_empty(),
         "Esc must not expand any section"
     );
+    Ok(())
+}
+
+/// Once a key has landed in an agent's section, the in-section
+/// `+ Add <agent> environment variable` sentinel must remain a direct
+/// fast-path to the EnvKey modal — the ScopePicker only intercedes at
+/// the workspace-level sentinel.
+#[test]
+fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
+    use jackin::console::manager::state::SecretsScopeTag;
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config =
+        seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &["agent-smith"])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+    // Pre-expand the agent so its in-section sentinel is reachable.
+    editor_mut(&mut state)
+        .secrets_expanded
+        .insert("agent-smith".into());
+
+    // Rows now: [WorkspaceAddSentinel, AgentHeader(expanded),
+    //            AgentKeyRow(LOG_LEVEL), AgentAddSentinel].
+    // Navigate to the in-section sentinel (index 3 → 3 Down presses).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+
+    // Enter — the EnvKey modal opens directly with `Agent` scope. No
+    // ScopePicker intercedes here.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    match &editor(&state).modal {
+        Some(Modal::TextInput { target, .. }) => match target {
+            TextInputTarget::EnvKey { scope } => {
+                assert_eq!(
+                    scope,
+                    &SecretsScopeTag::Agent("agent-smith".into()),
+                    "in-section sentinel must open EnvKey with the contextual Agent scope"
+                );
+            }
+            other => panic!("expected TextInputTarget::EnvKey; got {other:?}"),
+        },
+        other => panic!(
+            "expected Modal::TextInput on in-section sentinel; got {other:?} (ScopePicker must not intercede)"
+        ),
+    }
     Ok(())
 }
