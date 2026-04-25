@@ -16,10 +16,16 @@ use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
 };
 use crate::config::AppConfig;
+use crate::operator_env::{OpAccount, is_op_reference, parse_op_reference};
 
 // ── Editor stage ────────────────────────────────────────────────────
 
-pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppConfig) {
+pub fn render_editor(
+    frame: &mut Frame,
+    state: &EditorState<'_>,
+    config: &AppConfig,
+    op_accounts: &[OpAccount],
+) {
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -43,7 +49,7 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
         EditorTab::General => render_general_tab(frame, chunks[2], state),
         EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state),
         EditorTab::Agents => render_agents_tab(frame, chunks[2], state, config),
-        EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config),
+        EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config, op_accounts),
     }
 
     // Contextual footer: row-specific hints + base stage hints.
@@ -106,6 +112,7 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
 
 /// Compute a row-specific hint fragment based on the active tab and cursor.
 /// Returns an empty vec when the current position has no action.
+#[allow(clippy::too_many_lines)]
 fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
@@ -176,9 +183,44 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
         ],
         EditorTab::Secrets => {
             // Row-specific hints depend on which SecretsRow kind the cursor
-            // is sitting on. `M` is universal across the tab.
+            // is sitting on. Op:// rows are read-only at the value level —
+            // the operator deletes and re-adds via the source picker — so
+            // we drop `Enter edit` and `M mask/unmask` on those rows.
             let rows = secrets_flat_rows(state);
+            // Determine if the focused key row carries an op:// reference.
+            let focused_value_is_op_ref = match rows.get(cursor) {
+                Some(SecretsRow::WorkspaceKeyRow(key)) => state
+                    .pending
+                    .env
+                    .get(key)
+                    .is_some_and(|v| is_op_reference(v)),
+                Some(SecretsRow::AgentKeyRow { agent, key }) => state
+                    .pending
+                    .agents
+                    .get(agent)
+                    .and_then(|ov| ov.env.get(key))
+                    .is_some_and(|v| is_op_reference(v)),
+                _ => false,
+            };
             match rows.get(cursor) {
+                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::AgentKeyRow { .. })
+                    if focused_value_is_op_ref =>
+                {
+                    // Op:// rows: only D delete · A add · Q exit.
+                    // Per operator preference, mask/unmask and Enter edit
+                    // are suppressed because the breadcrumb isn't a
+                    // credential and isn't text-editable.
+                    vec![
+                        FooterItem::Key("D"),
+                        FooterItem::Text("delete"),
+                        FooterItem::Sep,
+                        FooterItem::Key("A"),
+                        FooterItem::Text("add"),
+                        FooterItem::Sep,
+                        FooterItem::Key("Q"),
+                        FooterItem::Text("exit"),
+                    ]
+                }
                 Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::AgentKeyRow { .. }) => vec![
                     FooterItem::Key("Enter"),
                     FooterItem::Text("edit"),
@@ -518,7 +560,13 @@ pub(in crate::console::manager) fn secrets_flat_row_count(editor: &EditorState<'
 // into per-arm helpers would scatter the table-like structure without
 // clarity win. Accept the length for readability.
 #[allow(clippy::too_many_lines)]
-fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
+fn render_secrets_tab(
+    frame: &mut Frame,
+    area: Rect,
+    state: &EditorState<'_>,
+    config: &AppConfig,
+    op_accounts: &[OpAccount],
+) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
@@ -545,6 +593,7 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                     state.secrets_masked,
                     area.width,
                     label_width,
+                    op_accounts,
                 ));
             }
             SecretsRow::WorkspaceAddSentinel => {
@@ -588,6 +637,7 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                     state.secrets_masked,
                     area.width,
                     label_width,
+                    op_accounts,
                 ));
             }
             SecretsRow::AgentAddSentinel(agent) => {
@@ -611,6 +661,15 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
 /// focus prefix, masking, and truncation. Per-row dirty markers were
 /// removed for consistency with the other editor tabs; the footer's
 /// `S save workspace (N changes)` is the canonical unsaved-state signal.
+///
+/// `op://` references skip masking entirely and render as a styled
+/// breadcrumb (`<email>/<vault>/<item> → <field>` or, for 3-segment paths,
+/// `<vault>/<item> → <field>`). The breadcrumb isn't a secret — it's a
+/// navigable path to one — so masking would be misleading. `op_accounts`
+/// is consulted to translate an account UUID/URL segment into an email
+/// address; if the lookup misses (cache cold, account no longer signed
+/// in), the raw account string is rendered.
+#[allow(clippy::too_many_arguments)]
 fn render_secrets_key_line(
     selected: bool,
     prefix: &str,
@@ -619,6 +678,7 @@ fn render_secrets_key_line(
     masked: bool,
     area_width: u16,
     label_width: usize,
+    op_accounts: &[OpAccount],
 ) -> Line<'static> {
     const MASK: &str = "●●●●●●●●●●●";
     let label_style = if selected {
@@ -626,6 +686,35 @@ fn render_secrets_key_line(
     } else {
         Style::default().fg(WHITE)
     };
+    let mut spans = vec![Span::styled(
+        format!("{prefix}{key:label_width$}"),
+        label_style,
+    )];
+
+    // Op:// references render as a breadcrumb regardless of `masked` —
+    // the path is not the credential, so masking it makes the row a
+    // less informative version of itself.
+    if let Some(parts) = parse_op_reference(value) {
+        let dim = Style::default().fg(PHOSPHOR_DIM);
+        let white_style = Style::default().fg(WHITE);
+        let green = Style::default().fg(PHOSPHOR_GREEN);
+        let green_bold = Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD);
+        if let Some(account_seg) = parts.account.as_ref() {
+            let display = lookup_account_email(op_accounts, account_seg)
+                .unwrap_or_else(|| account_seg.clone());
+            spans.push(Span::styled(display, dim));
+            spans.push(Span::styled(" / ", dim));
+        }
+        spans.push(Span::styled(parts.vault, white_style));
+        spans.push(Span::styled(" / ", dim));
+        spans.push(Span::styled(parts.item, green));
+        spans.push(Span::styled(" \u{2192} ", dim));
+        spans.push(Span::styled(parts.field, green_bold));
+        return Line::from(spans);
+    }
+
     let value_style = if masked {
         Style::default().fg(PHOSPHOR_DIM)
     } else if selected {
@@ -636,10 +725,6 @@ fn render_secrets_key_line(
         Style::default().fg(PHOSPHOR_GREEN)
     };
 
-    let mut spans = vec![Span::styled(
-        format!("{prefix}{key:label_width$}"),
-        label_style,
-    )];
     let rendered_value: String = if masked {
         MASK.to_string()
     } else {
@@ -660,6 +745,18 @@ fn render_secrets_key_line(
     };
     spans.push(Span::styled(rendered_value, value_style));
     Line::from(spans)
+}
+
+/// Translate an `op://` account segment into an email for breadcrumb
+/// display. The picker stores either the sign-in URL (e.g.
+/// `my.1password.com`) or the account UUID; we match URL first, then
+/// `id`. Returns `None` on a miss so the caller can fall back to the
+/// raw segment.
+fn lookup_account_email(accounts: &[OpAccount], segment: &str) -> Option<String> {
+    accounts
+        .iter()
+        .find(|a| a.url == segment || a.id == segment)
+        .map(|a| a.email.clone())
 }
 
 #[cfg(test)]
@@ -1057,7 +1154,7 @@ mod secrets_tab_render_tests {
         let backend = TestBackend::new(80, 15);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_secrets_tab(f, Rect::new(0, 0, 80, 15), editor, &config);
+            render_secrets_tab(f, Rect::new(0, 0, 80, 15), editor, &config, &[]);
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -1208,6 +1305,143 @@ mod secrets_tab_render_tests {
         assert!(
             !dump.contains("env var"),
             "TUI text must say `environment variable`, not `env var`; dump:\n{dump}"
+        );
+    }
+
+    /// Op:// rows render as a breadcrumb: `<vault> / <item> → <field>`
+    /// for 3-segment paths. Masking is irrelevant — the path isn't a
+    /// credential — so the literal segments must appear regardless of
+    /// `secrets_masked`. The arrow glyph must appear too (no `op://`
+    /// scheme prefix in the rendered output).
+    #[test]
+    fn op_row_breadcrumb_render_three_segment() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "op://Work/db/password".into());
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env,
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("Work"),
+            "breadcrumb must render vault segment; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("db"),
+            "breadcrumb must render item segment; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("password"),
+            "breadcrumb must render field segment; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("\u{2192}"),
+            "breadcrumb must include the → glyph between item and field; dump:\n{dump}"
+        );
+        assert!(
+            !dump.contains("op://"),
+            "op:// scheme prefix must not appear in the breadcrumb; dump:\n{dump}"
+        );
+        // Crucially: the mask glyph must NOT appear on an op:// row even
+        // though the editor defaults to masked.
+        assert!(
+            editor.secrets_masked,
+            "default state is masked; op:// rows must still bypass masking"
+        );
+        assert!(
+            !dump.contains("●●●"),
+            "op:// rows must never render the mask glyph; dump:\n{dump}"
+        );
+    }
+
+    /// Four-segment op:// reference with an account prefix renders the
+    /// account email when the cache contains a matching `OpAccount`.
+    /// Falls back to the raw segment when the cache is cold.
+    #[test]
+    fn op_row_breadcrumb_render_four_segment_with_account_lookup() {
+        use crate::operator_env::OpAccount;
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "DB_URL".into(),
+            "op://my.1password.com/Work/db/password".into(),
+        );
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env,
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let accounts = vec![OpAccount {
+            id: "ACCT-UUID".into(),
+            email: "alexey@example.com".into(),
+            url: "my.1password.com".into(),
+        }];
+        let config = AppConfig::default();
+        let backend = TestBackend::new(80, 15);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_secrets_tab(f, Rect::new(0, 0, 80, 15), &editor, &config, &accounts);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let mut dump = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                dump.push_str(buf[(x, y)].symbol());
+            }
+            dump.push('\n');
+        }
+        assert!(
+            dump.contains("alexey@example.com"),
+            "account URL must resolve to email via account list; dump:\n{dump}"
+        );
+        assert!(
+            !dump.contains("my.1password.com"),
+            "raw account URL must not appear when lookup succeeded; dump:\n{dump}"
+        );
+    }
+
+    /// Cold cache: the raw account segment is rendered as a fallback.
+    #[test]
+    fn op_row_breadcrumb_falls_back_to_raw_account_segment() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "DB_URL".into(),
+            "op://unknown.1password.com/Work/db/password".into(),
+        );
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env,
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("unknown.1password.com"),
+            "cold cache → raw segment fallback; dump:\n{dump}"
         );
     }
 }

@@ -92,6 +92,7 @@ pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[FooterItem])
     frame.render_widget(p, area);
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn render(
     frame: &mut Frame,
     state: &mut ManagerState<'_>,
@@ -100,7 +101,8 @@ pub fn render(
 ) {
     // Phase 1: render the base stage (Editor full-screen OR List chrome).
     if let ManagerStage::Editor(editor) = &state.stage {
-        editor::render_editor(frame, editor, config);
+        let accounts = state.op_cache.borrow().get_accounts().unwrap_or_default();
+        editor::render_editor(frame, editor, config, &accounts);
     } else {
         // List / CreatePrelude / ConfirmDelete share the list-like chrome.
         let area = frame.area();

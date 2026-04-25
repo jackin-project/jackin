@@ -40,7 +40,7 @@ pub fn dispatch_value<R>(
 where
     R: OpRunner + ?Sized,
 {
-    if value.starts_with("op://") {
+    if is_op_reference(value) {
         return op_runner.read(value).map_err(|e| {
             anyhow::anyhow!(
                 "{layer_label} env var {var_name:?}: 1Password reference {value:?} failed: {e}"
@@ -79,6 +79,61 @@ fn parse_host_ref(value: &str) -> Option<&str> {
     }
 
     None
+}
+
+/// True when `value` is an `op://` 1Password reference.
+///
+/// Single source of truth for the prefix check used by `dispatch_value`
+/// (resolution), the workspace-editor render path (breadcrumb display),
+/// and the editor input handler (Enter-on-row no-op).
+#[must_use]
+pub fn is_op_reference(value: &str) -> bool {
+    value.starts_with("op://")
+}
+
+/// Structured parts of an `op://...` reference.
+///
+/// The 1Password picker writes references in two shapes today:
+///
+/// - 4 segments: `op://<account>/<vault>/<item>/<field>` — multi-account
+///   storage (account-prefixed).
+/// - 3 segments: `op://<vault>/<item>/<field>` — legacy / single-account
+///   storage (no `--account` flag).
+///
+/// The render path uses the parsed parts to draw a breadcrumb so the
+/// path reads as a navigable trail rather than a dense URI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpReferenceParts {
+    /// Account segment when the reference is 4-segment, else `None`.
+    /// Holds whatever the picker stored — typically the sign-in URL or
+    /// account UUID. Render lookups translate it to an email address.
+    pub account: Option<String>,
+    pub vault: String,
+    pub item: String,
+    pub field: String,
+}
+
+/// Parse an `op://` reference into structured parts. Returns `None`
+/// when the prefix is missing or the segment count is not 3 or 4.
+#[must_use]
+pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
+    let path = value.strip_prefix("op://")?;
+    let parts: Vec<&str> = path.split('/').collect();
+    match parts.as_slice() {
+        [vault, item, field] => Some(OpReferenceParts {
+            account: None,
+            vault: (*vault).to_string(),
+            item: (*item).to_string(),
+            field: (*field).to_string(),
+        }),
+        [account, vault, item, field] => Some(OpReferenceParts {
+            account: Some((*account).to_string()),
+            vault: (*vault).to_string(),
+            item: (*item).to_string(),
+            field: (*field).to_string(),
+        }),
+        _ => None,
+    }
 }
 
 /// A valid POSIX-ish env name: ASCII letter or `_`, followed by ASCII
@@ -897,7 +952,7 @@ where
     // front. This turns "op is not installed" from an N-failures
     // aggregate into a single clear install-link error, which is the
     // failure mode documented in the spec.
-    let uses_op = attributed.values().any(|(_, v)| v.starts_with("op://"));
+    let uses_op = attributed.values().any(|(_, v)| is_op_reference(v));
     if uses_op && let Err(e) = op_runner.probe() {
         anyhow::bail!("operator env resolution aborted: {e}");
     }
@@ -1098,7 +1153,7 @@ enum ValueKind {
 
 impl ValueKind {
     fn of(raw: &str) -> Self {
-        if raw.starts_with("op://") {
+        if is_op_reference(raw) {
             Self::Op
         } else if parse_host_ref(raw).is_some() {
             Self::Host
@@ -1123,6 +1178,44 @@ fn classify_value(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_op_reference_recognizes_prefix() {
+        assert!(is_op_reference("op://Personal/api/token"));
+        assert!(is_op_reference("op://acct/Personal/api/token"));
+        assert!(!is_op_reference("plain-literal"));
+        assert!(!is_op_reference("$HOST"));
+        assert!(!is_op_reference("${HOST}"));
+        assert!(!is_op_reference(""));
+        assert!(!is_op_reference("op:/missing"));
+    }
+
+    #[test]
+    fn parse_op_reference_three_segments() {
+        let parts = parse_op_reference("op://Vault/Item/field").unwrap();
+        assert_eq!(parts.account, None);
+        assert_eq!(parts.vault, "Vault");
+        assert_eq!(parts.item, "Item");
+        assert_eq!(parts.field, "field");
+    }
+
+    #[test]
+    fn parse_op_reference_four_segments() {
+        let parts = parse_op_reference("op://acct/Vault/Item/field").unwrap();
+        assert_eq!(parts.account, Some("acct".to_string()));
+        assert_eq!(parts.vault, "Vault");
+        assert_eq!(parts.item, "Item");
+        assert_eq!(parts.field, "field");
+    }
+
+    #[test]
+    fn parse_op_reference_invalid() {
+        assert!(parse_op_reference("plain").is_none());
+        assert!(parse_op_reference("op://only/two").is_none());
+        assert!(parse_op_reference("op://a/b/c/d/e").is_none());
+        // Empty path after the prefix → splits into a single empty segment.
+        assert!(parse_op_reference("op://").is_none());
+    }
 
     #[test]
     fn dispatch_literal_value_returns_literal() {

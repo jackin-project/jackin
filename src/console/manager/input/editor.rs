@@ -356,6 +356,13 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     match row {
         SecretsRow::WorkspaceKeyRow(key) => {
             let current = editor.pending.env.get(&key).cloned().unwrap_or_default();
+            // Op:// rows are not text-editable — the breadcrumb is a path
+            // to a credential, not a credential, and hand-editing the
+            // path is error-prone. Operator deletes via D and re-adds
+            // via the source picker.
+            if crate::operator_env::is_op_reference(&current) {
+                return;
+            }
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
                     scope: SecretsScopeTag::Workspace,
@@ -391,6 +398,10 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
                 .and_then(|o| o.env.get(&key))
                 .cloned()
                 .unwrap_or_default();
+            // Op:// rows are not text-editable — see WorkspaceKeyRow above.
+            if crate::operator_env::is_op_reference(&current) {
+                return;
+            }
             let label = format!("Edit {key}");
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
@@ -1902,7 +1913,7 @@ mod tests {
         let backend = TestBackend::new(80, 10);
         let mut term = ratatui::Terminal::new(backend).unwrap();
         term.draw(|f| {
-            crate::console::manager::render::render_editor(f, editor, &config);
+            crate::console::manager::render::render_editor(f, editor, &config, &[]);
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -1936,6 +1947,89 @@ mod tests {
         editor.secrets_masked = true;
         state.stage = ManagerStage::Editor(editor);
         state
+    }
+
+    /// Enter on an op:// key row must NOT open the EnvValue text-edit
+    /// modal. The breadcrumb is a path, not a credential, and hand-
+    /// editing the path is error-prone — the operator deletes via D
+    /// and re-adds via the source picker (`P`).
+    #[test]
+    fn enter_on_op_workspace_key_row_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env
+            .insert("DB_URL".into(), "op://Work/db/password".into());
+
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0); // the only key row
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Enter),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.modal.is_none(),
+            "Enter on an op:// row must not open any modal; got {:?}",
+            e.modal
+        );
+    }
+
+    /// Same guard for an agent-override row: Enter on an op:// value in
+    /// an expanded agent section is also a no-op.
+    #[test]
+    fn enter_on_op_agent_key_row_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        let mut ag_env = std::collections::BTreeMap::new();
+        ag_env.insert("API_TOKEN".into(), "op://acct/Personal/api/token".into());
+        ws.agents.insert(
+            "smith".into(),
+            crate::workspace::WorkspaceAgentOverride { env: ag_env },
+        );
+
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.secrets_expanded.insert("smith".into());
+        // Rows: WorkspaceAddSentinel(0), AgentHeader(1), AgentKeyRow(2),
+        //       AgentAddSentinel(3). Focus the key row.
+        editor.active_field = FieldFocus::Row(2);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Enter),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.modal.is_none(),
+            "Enter on an agent op:// row must not open any modal; got {:?}",
+            e.modal
+        );
     }
 
     /// Caps Lock causes terminals to send letter keys with the SHIFT
