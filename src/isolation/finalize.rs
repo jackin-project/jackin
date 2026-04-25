@@ -1,4 +1,6 @@
 use crate::docker::CommandRunner;
+use crate::isolation::cleanup::force_cleanup_isolated;
+use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,16 +83,113 @@ pub fn finalize_foreground_session(
     )
 }
 
-#[allow(clippy::missing_const_for_fn, clippy::unnecessary_wraps)]
 fn finalize_clean_exit(
-    _container_name: &str,
-    _container_state_dir: &Path,
-    _is_interactive: bool,
-    _prompt: &mut impl FinalizerPrompt,
-    _runner: &mut impl CommandRunner,
+    container_name: &str,
+    container_state_dir: &Path,
+    is_interactive: bool,
+    prompt: &mut impl FinalizerPrompt,
+    runner: &mut impl CommandRunner,
 ) -> anyhow::Result<FinalizeDecision> {
-    // Implemented in 7.2-7.4
-    Ok(FinalizeDecision::Cleaned)
+    let records = read_records(container_state_dir)?;
+    let mut all_cleaned = true;
+    let mut needs_prompt: Option<IsolationRecord> = None;
+
+    for record in records {
+        match assess_cleanup(&record, runner)? {
+            CleanupAssessment::SafeToDelete => {
+                force_cleanup_isolated(&record, container_state_dir, runner)?;
+            }
+            CleanupAssessment::PreservedDirty => {
+                mark_preserved(container_state_dir, &record, CleanupStatus::PreservedDirty)?;
+                all_cleaned = false;
+                needs_prompt.get_or_insert(record);
+            }
+            CleanupAssessment::PreservedUnpushed => {
+                mark_preserved(
+                    container_state_dir,
+                    &record,
+                    CleanupStatus::PreservedUnpushed,
+                )?;
+                all_cleaned = false;
+                needs_prompt.get_or_insert(record);
+            }
+        }
+    }
+
+    if all_cleaned {
+        return Ok(FinalizeDecision::Cleaned);
+    }
+
+    let Some(rec) = needs_prompt else {
+        return Ok(FinalizeDecision::Preserved);
+    };
+
+    if !is_interactive {
+        eprintln!(
+            "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: see cleanup status\n         run `jackin hardline {short}` to return, `jackin cd {short}` to inspect, or `jackin purge {short}` to discard",
+            wt = rec.worktree_path,
+            short = container_name.trim_start_matches("jackin-"),
+        );
+        return Ok(FinalizeDecision::Preserved);
+    }
+
+    match prompt.ask_unsafe_cleanup(container_name, &rec.worktree_path)? {
+        0 => Ok(FinalizeDecision::ReturnToAgent),
+        1 => Ok(FinalizeDecision::Preserved),
+        2 => {
+            force_cleanup_isolated(&rec, container_state_dir, runner)?;
+            Ok(FinalizeDecision::Cleaned)
+        }
+        other => anyhow::bail!("unexpected prompt choice {other}"),
+    }
+}
+
+#[derive(Debug)]
+enum CleanupAssessment {
+    SafeToDelete,
+    PreservedDirty,
+    PreservedUnpushed,
+}
+
+#[allow(clippy::unnecessary_wraps)] // 7.3 adds capture-fail propagation
+fn assess_cleanup(
+    record: &IsolationRecord,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<CleanupAssessment> {
+    let porcelain = runner
+        .capture(
+            "git",
+            &["-C", &record.worktree_path, "status", "--porcelain"],
+            None,
+        )
+        .unwrap_or_default();
+    if !porcelain.trim().is_empty() {
+        return Ok(CleanupAssessment::PreservedDirty);
+    }
+    let head = runner
+        .capture(
+            "git",
+            &["-C", &record.worktree_path, "rev-parse", "HEAD"],
+            None,
+        )
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if head == record.base_commit {
+        return Ok(CleanupAssessment::SafeToDelete);
+    }
+    // 7.3 fills in the upstream-reachability path. For 7.2, default to PreservedUnpushed.
+    Ok(CleanupAssessment::PreservedUnpushed)
+}
+
+fn mark_preserved(
+    container_state_dir: &Path,
+    record: &IsolationRecord,
+    status: CleanupStatus,
+) -> anyhow::Result<()> {
+    let mut updated = record.clone();
+    updated.cleanup_status = status;
+    upsert_record(container_state_dir, updated)
 }
 
 #[cfg(test)]
@@ -156,5 +255,65 @@ mod tests {
         )
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
+    }
+
+    use crate::isolation::MountIsolation;
+    use crate::isolation::state::write_records;
+    use std::collections::VecDeque;
+
+    fn fake_with_outputs(outputs: &[&str]) -> FakeRunner {
+        FakeRunner {
+            capture_queue: VecDeque::from(
+                outputs.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            ),
+            ..FakeRunner::default()
+        }
+    }
+
+    fn rec(container_dir: &Path) -> IsolationRecord {
+        let wt = container_dir.join("isolated/workspace/jackin");
+        std::fs::create_dir_all(&wt).unwrap();
+        IsolationRecord {
+            workspace: "jackin".into(),
+            mount_dst: "/workspace/jackin".into(),
+            original_src: container_dir.join("repo").to_string_lossy().into(),
+            isolation: MountIsolation::Worktree,
+            worktree_path: wt.to_string_lossy().into(),
+            scratch_branch: "jackin/scratch/x".into(),
+            base_commit: "abc".into(),
+            selector_key: "x".into(),
+            container_name: "jackin-x".into(),
+            cleanup_status: CleanupStatus::Active,
+        }
+    }
+
+    #[test]
+    fn clean_worktree_with_head_equal_base_deletes_record() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+
+        // Capture queue: status --porcelain (clean), rev-parse HEAD (== base)
+        let mut runner = fake_with_outputs(&["", "abc\n"]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert!(read_records(dir.path()).unwrap().is_empty());
+        assert!(
+            runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree remove --force"))
+        );
+        assert!(runner.run_recorded.iter().any(|c| c.contains("branch -D")));
     }
 }
