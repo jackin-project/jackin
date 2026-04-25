@@ -73,6 +73,11 @@ pub(super) fn build_agent_detail_lines(
                     let src_short = tui::shorten_home(&mount.src);
                     let dst_short = tui::shorten_home(&mount.dst);
                     let ro = if mount.readonly { " (read-only)" } else { "" };
+                    // Per per-mount-isolation spec, render the canonical
+                    // spelling ("shared" / "worktree" / "clone") for every
+                    // mount — including `shared` — so operators always see
+                    // which strategy applies.
+                    let iso = format!(" [{}]", mount.isolation.as_str());
                     let global_tag = if workspace_destinations.contains(mount.dst.as_str()) {
                         ""
                     } else {
@@ -93,12 +98,10 @@ pub(super) fn build_agent_detail_lines(
                             Style::default().fg(colors::PATH_DST),
                         ));
                     }
-                    if !ro.is_empty() || !global_tag.is_empty() {
-                        spans.push(Span::styled(
-                            format!("{ro}{global_tag}"),
-                            Style::default().fg(colors::DIM_WHITE),
-                        ));
-                    }
+                    spans.push(Span::styled(
+                        format!("{iso}{ro}{global_tag}"),
+                        Style::default().fg(colors::DIM_WHITE),
+                    ));
                     detail_lines.push(Line::from(spans));
                 }
             }

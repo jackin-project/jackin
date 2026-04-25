@@ -11,7 +11,10 @@ use ratatui::{
 };
 
 use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus};
-use super::list::{MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width, render_mount_header};
+use super::list::{
+    MOUNT_ISO_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
+    render_mount_header,
+};
 use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
 };
@@ -353,7 +356,7 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     // with data rows regardless of path width.
     let mut lines: Vec<Line> = vec![render_mount_header(path_w)];
 
-    lines.extend(rows.iter().enumerate().map(|(i, (path, mode, kind))| {
+    lines.extend(rows.iter().enumerate().map(|(i, (path, mode, iso, kind))| {
         let selected = i == cursor;
         let prefix = if selected { "▸ " } else { "  " };
         let base_style = if selected {
@@ -370,6 +373,12 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
             Span::styled(
                 format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            // Two-space gap before the iso column — matches the header.
+            Span::raw("  "),
+            Span::styled(
+                format!("{iso:<MOUNT_ISO_COL_WIDTH$}"),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             // Two-space gap before the type column — matches the header.
