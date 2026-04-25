@@ -269,11 +269,11 @@ impl OpPickerState {
             Ok(accounts) if accounts.len() == 1 => {
                 // Single-account setup: skip the Account pane, auto-
                 // select the only account, and kick off the vault load
-                // scoped to it.
+                // scoped to it. `start_vault_load` advances the stage to
+                // `Vault` itself.
                 let account = accounts.into_iter().next().expect("len == 1");
                 let account_id = account.id.clone();
                 self.selected_account = Some(account);
-                self.stage = OpPickerStage::Vault;
                 self.start_vault_load(Some(account_id));
             }
             Ok(accounts) => {
@@ -292,9 +292,18 @@ impl OpPickerState {
     /// Spawn the vault-load worker, optionally scoped to `account_id`.
     /// Cache hits short-circuit the spawn and route the cached result
     /// directly into [`OpPickerState::poll_load`] via the in-memory
-    /// channel — keeps a single completion path so `poll_load`'s "stage
-    /// transition + select" logic stays canonical.
+    /// channel — keeps a single completion path so `poll_load`'s
+    /// "select" logic stays canonical.
+    ///
+    /// Stage is advanced to `Vault` at request time (not result time) so
+    /// the loading-panel title can show the correct breadcrumb for the
+    /// in-flight load. Without this, the title was stuck on the previous
+    /// stage during the 1-3s `op` subprocess and the operator lost
+    /// context for what was loading. The per-pane filter is cleared too
+    /// so the new pane opens fresh.
     fn start_vault_load(&mut self, account_id: Option<String>) {
+        self.stage = OpPickerStage::Vault;
+        self.filter_buf.clear();
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
@@ -312,7 +321,14 @@ impl OpPickerState {
 
     /// Spawn the item-list worker for the currently-selected vault,
     /// optionally scoped to `account_id`. Cache hits short-circuit.
+    ///
+    /// Stage advances to `Item` at request time so the loading-panel
+    /// breadcrumb reflects the in-flight load's destination (see the
+    /// rationale on `start_vault_load`). The per-pane filter is cleared
+    /// for the same reason it is on every other pane transition.
     fn start_item_load(&mut self, vault_id: String, account_id: Option<String>) {
+        self.stage = OpPickerStage::Item;
+        self.filter_buf.clear();
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
@@ -335,7 +351,14 @@ impl OpPickerState {
     /// Spawn the field-list worker for the currently-selected item /
     /// vault pair, optionally scoped to `account_id`. Cache hits
     /// short-circuit.
+    ///
+    /// Stage advances to `Field` at request time so the loading-panel
+    /// breadcrumb reflects the in-flight load's destination (see the
+    /// rationale on `start_vault_load`). The per-pane filter is cleared
+    /// for the same reason it is on every other pane transition.
     fn start_field_load(&mut self, item_id: String, vault_id: String, account_id: Option<String>) {
+        self.stage = OpPickerStage::Field;
+        self.filter_buf.clear();
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
@@ -425,8 +448,10 @@ impl OpPickerState {
                 self.items = items;
                 self.item_list_state
                     .select(if self.items.is_empty() { None } else { Some(0) });
-                self.stage = OpPickerStage::Item;
-                self.filter_buf.clear();
+                // Stage already set to `Item` at request time
+                // (`start_item_load`) so the loading-panel breadcrumb is
+                // correct; nothing to do here beyond filling the list and
+                // flipping load_state to `Ready`.
                 self.load_state = OpLoadState::Ready;
             }
             Ok(LoadResult::Items(Err(e)) | LoadResult::Fields(Err(e))) => {
@@ -466,8 +491,9 @@ impl OpPickerState {
                 } else {
                     Some(0)
                 });
-                self.stage = OpPickerStage::Field;
-                self.filter_buf.clear();
+                // Stage already set to `Field` at request time
+                // (`start_field_load`); see the matching comment on the
+                // `Items` arm above.
                 self.load_state = OpLoadState::Ready;
             }
             Err(mpsc::TryRecvError::Empty) => {
@@ -624,8 +650,8 @@ impl OpPickerState {
                     let a = (*a).clone();
                     let id = a.id.clone();
                     self.selected_account = Some(a);
-                    self.stage = OpPickerStage::Vault;
-                    self.filter_buf.clear();
+                    // `start_vault_load` advances the stage and clears
+                    // the per-pane filter at request time.
                     self.start_vault_load(Some(id));
                 }
                 ModalOutcome::Continue
@@ -730,8 +756,9 @@ impl OpPickerState {
                 self.items.clear();
                 self.item_list_state = ListState::default();
                 self.start_item_load(vault_id, account_id);
-                // start_item_load sets stage = Loading; poll_load will
-                // route back to Item once the new result arrives.
+                // start_item_load sets load_state = Loading; poll_load
+                // flips back to Ready once the new result arrives. Stage
+                // stays on `Item` throughout (refresh-in-place).
                 ModalOutcome::Continue
             }
             KeyCode::Esc => {

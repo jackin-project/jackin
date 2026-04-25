@@ -449,7 +449,24 @@ fn display_label(f: &OpField) -> String {
 }
 
 fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8) {
-    let block = modal_block("1Password");
+    // The loading panel borrows the same breadcrumb that the Ready pane
+    // would render, so the operator sees the full Account → Vault → Item
+    // path during the 1-3s op subprocess instead of a bare "1Password"
+    // title with no context. `state.stage` is set at request time
+    // (`start_*_load`) rather than result time, so the breadcrumb here
+    // already reflects the destination of the in-flight load.
+    let multi_account = state.accounts.len() > 1;
+    let account_email = state
+        .selected_account
+        .as_ref()
+        .map_or("", |a| a.email.as_str());
+    let v_name = state
+        .selected_vault
+        .as_ref()
+        .map_or("", |v| v.name.as_str());
+    let i_name = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
+    let title = breadcrumb_title(state.stage, multi_account, account_email, v_name, i_name);
+    let block = modal_block(title);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -459,17 +476,23 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
         // `account_list` is synchronous in the constructor — but render
         // a sensible string for completeness.
         OpPickerStage::Account => "loading accounts\u{2026}".to_string(),
-        OpPickerStage::Vault => "loading vaults\u{2026}".to_string(),
+        OpPickerStage::Vault => {
+            // For multi-account setups the title bar already shows the
+            // selected account, so the body reads "loading vaults from
+            // <email>" to mirror the Item/Field message format. Single-
+            // account setups have no parent context worth surfacing —
+            // fall back to the bare "loading vaults".
+            if multi_account && !account_email.is_empty() {
+                format!("loading vaults from {account_email}\u{2026}")
+            } else {
+                "loading vaults\u{2026}".to_string()
+            }
+        }
         OpPickerStage::Item => {
-            let v = state
-                .selected_vault
-                .as_ref()
-                .map_or("", |v| v.name.as_str());
-            format!("loading items from {v}\u{2026}")
+            format!("loading items from {v_name}\u{2026}")
         }
         OpPickerStage::Field => {
-            let i = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
-            format!("loading fields for {i}\u{2026}")
+            format!("loading fields from {i_name}\u{2026}")
         }
     };
 
@@ -690,5 +713,77 @@ mod tests {
         // modal is squeezed down to a single border row. Treat that
         // as "no viewport" and return 0.
         assert_eq!(viewport_offset(7, 0, 20), 0);
+    }
+
+    // ── Loading-panel breadcrumb ──────────────────────────────────────
+
+    /// During the 1-3s `op` subprocess that loads items, the loading
+    /// panel must render the full Account → Vault breadcrumb in its title
+    /// — not the bare brand `1Password`. This was the operator complaint
+    /// that motivated the request-time stage advance: previously the
+    /// title only showed the breadcrumb after the load completed.
+    #[test]
+    fn loading_panel_title_during_item_load_shows_breadcrumb() {
+        use super::super::{OpAccount, OpLoadState, OpPickerState, OpVault};
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let mut state = OpPickerState::default();
+        state.accounts = vec![
+            OpAccount {
+                id: "a1".into(),
+                email: "alice@example.com".into(),
+                url: "alice.1password.com".into(),
+            },
+            OpAccount {
+                id: "a2".into(),
+                email: "bob@example.com".into(),
+                url: "bob.1password.com".into(),
+            },
+        ];
+        state.selected_account = Some(state.accounts[0].clone());
+        state.selected_vault = Some(OpVault {
+            id: "v-personal".into(),
+            name: "Personal".into(),
+        });
+        state.stage = OpPickerStage::Item;
+        state.load_state = OpLoadState::Loading { spinner_tick: 0 };
+
+        let backend = TestBackend::new(80, 12);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            let area = f.area();
+            super::render(f, area, &state);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let mut dump = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                dump.push_str(buf[(x, y)].symbol());
+            }
+            dump.push('\n');
+        }
+
+        // Title bar carries the full Account → Vault breadcrumb.
+        assert!(
+            dump.contains("alice@example.com"),
+            "loading panel title must show the account email; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("Personal"),
+            "loading panel title must show the vault name; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains('\u{2192}'),
+            "loading panel title must include the breadcrumb arrow `→`; dump:\n{dump}"
+        );
+
+        // Loading body message is pane-specific: "loading items from
+        // <vault>". The previous "loading items from IT…" wording is
+        // preserved.
+        assert!(
+            dump.contains("loading items from Personal"),
+            "loading body must read `loading items from <vault>`; dump:\n{dump}"
+        );
     }
 }
