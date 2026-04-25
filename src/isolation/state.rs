@@ -149,7 +149,7 @@ mod tests {
     fn write_then_read_roundtrip_preserves_record() {
         let dir = TempDir::new().unwrap();
         let rec = sample_record();
-        write_records(dir.path(), &[rec.clone()]).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&rec)).unwrap();
         let read = read_records(dir.path()).unwrap();
         assert_eq!(read, vec![rec]);
     }
@@ -182,9 +182,9 @@ mod tests {
     fn upsert_replaces_existing_by_dst() {
         let dir = TempDir::new().unwrap();
         let mut rec = sample_record();
-        write_records(dir.path(), &[rec.clone()]).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&rec)).unwrap();
         rec.base_commit = "cafe".into();
-        upsert_record(dir.path(), rec.clone()).unwrap();
+        upsert_record(dir.path(), rec).unwrap();
         let all = read_records(dir.path()).unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].base_commit, "cafe");
