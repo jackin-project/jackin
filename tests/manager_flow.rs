@@ -467,15 +467,15 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
         "collapsed section must not render agent keys; got:\n{dump_collapsed}"
     );
 
-    // Enter on the agent header expands the section. The plan's key-map
-    // lists `→` as an alias for expand here, but Commit 2 only wired
-    // Enter (Right-arrow is eaten by the tab-advance handler before the
-    // header arm can see it). Verify via Enter, which is the canonical
-    // binding that landed.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    // `→` on a collapsed agent header expands the section, symmetric with
+    // `←` collapsing an expanded header (verified below). Enter on the
+    // header also expands; Right is exercised here because it's the binding
+    // most likely to be eaten by the tab-advance handler if the guard ever
+    // regresses.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
     assert!(
         editor(&state).secrets_expanded.contains("agent-smith"),
-        "Enter on header must expand the agent-smith section"
+        "→ on collapsed header must expand the agent-smith section"
     );
     let dump_expanded = render_to_dump(&state, &config, cwd);
     assert!(

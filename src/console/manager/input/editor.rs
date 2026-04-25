@@ -79,9 +79,22 @@ pub(super) fn handle_editor_key(
 
     match key.code {
         KeyCode::Tab | KeyCode::Right => {
-            // Left on an expanded agent-override header collapses the
-            // section instead of rewinding the tab. Implemented on the
-            // Left arm below; the Right arm always advances.
+            // On the Secrets tab, Right on a collapsed agent header expands
+            // that section instead of advancing the tab — symmetric with
+            // Left's collapse behavior on the same row. Any other row (and
+            // Tab regardless of context) falls through to tab advance.
+            if key.code == KeyCode::Right && editor.active_tab == EditorTab::Secrets {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = secrets_flat_rows(editor);
+                if let Some(SecretsRow::AgentHeader {
+                    agent,
+                    expanded: false,
+                }) = rows.get(n).cloned()
+                {
+                    editor.secrets_expanded.insert(agent);
+                    return Ok(InputOutcome::Continue);
+                }
+            }
             let was_secrets = editor.active_tab == EditorTab::Secrets;
             editor.active_tab = match editor.active_tab {
                 EditorTab::General => EditorTab::Mounts,
