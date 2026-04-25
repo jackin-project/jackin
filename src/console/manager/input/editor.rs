@@ -147,6 +147,13 @@ pub(super) fn handle_editor_key(
                 m.readonly = !m.readonly;
             }
         }
+        KeyCode::Char('i' | 'I') if editor.active_tab == super::super::state::EditorTab::Mounts => {
+            // Cycle the per-mount isolation strategy on the highlighted row.
+            // Mirrors the R (readonly) toggle but threads through the
+            // dedicated state helper so the cycling rule lives in one place.
+            // Silent no-op on the `+ Add mount` sentinel.
+            editor.cycle_isolation_for_selected_mount();
+        }
         KeyCode::Char('o' | 'O') if editor.active_tab == super::super::state::EditorTab::Mounts => {
             // Open the highlighted mount's GitHub URL in the system browser.
             // Silent no-op when the cursor is on the `+ Add mount` sentinel,
@@ -1261,6 +1268,49 @@ mod tests {
         assert_eq!(
             e.pending.mounts, before,
             "R on non-Mounts tab must leave mounts untouched"
+        );
+    }
+
+    // ── Mounts tab: I cycles isolation (shared ↔ worktree) ────────────
+
+    #[test]
+    fn i_key_cycles_isolation_on_current_mount_row() {
+        // Start Shared → one I press should flip to Worktree and register
+        // as a change. Mirrors `r_key_toggles_readonly_on_current_mount_row`.
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('I')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Worktree,
+            "I on a Shared mount must cycle to Worktree",
+        );
+        assert!(
+            e.change_count() > 0,
+            "cycling isolation must surface as a change; got change_count={}",
+            e.change_count(),
+        );
+    }
+
+    #[test]
+    fn i_key_lowercase_also_cycles_isolation() {
+        // Operators often hit `i` without holding shift; both cases must work.
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('i')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Worktree,
         );
     }
 

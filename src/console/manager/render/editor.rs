@@ -162,6 +162,12 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
                 items.push(FooterItem::Sep);
                 items.push(FooterItem::Key("R"));
                 items.push(FooterItem::Text("toggle ro/rw"));
+                // `I` cycles the per-mount isolation strategy on the
+                // highlighted row (shared ↔ worktree; clone reserved for V2).
+                // Same gating as R: hidden on the `+ Add mount` sentinel.
+                items.push(FooterItem::Sep);
+                items.push(FooterItem::Key("I"));
+                items.push(FooterItem::Text("cycle isolation"));
                 items
             } else {
                 // Sentinel "+ Add mount" row — both Enter and A invoke the

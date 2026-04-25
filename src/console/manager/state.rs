@@ -549,6 +549,23 @@ impl EditorState<'_> {
         n += added + removed;
         n
     }
+
+    /// Cycle the per-mount isolation strategy on the highlighted mount row.
+    /// Sequence: `Shared → Worktree → Shared`. `Clone` is reserved-but-rejected
+    /// in V1 of the per-mount-isolation feature, so the hotkey never enters
+    /// that variant — but if a saved workspace already uses `Clone`, the cycle
+    /// snaps back to `Shared` rather than getting stuck. Silent no-op when the
+    /// cursor is on the `+ Add mount` sentinel (i.e. past the last data row).
+    pub fn cycle_isolation_for_selected_mount(&mut self) {
+        use crate::isolation::MountIsolation::{Clone, Shared, Worktree};
+        let FieldFocus::Row(n) = self.active_field;
+        if let Some(m) = self.pending.mounts.get_mut(n) {
+            m.isolation = match m.isolation {
+                Shared => Worktree,
+                Worktree | Clone => Shared,
+            };
+        }
+    }
 }
 
 impl Default for CreatePreludeState<'_> {
@@ -865,5 +882,75 @@ mod tests {
         state.selected = ManagerListRow::NewWorkspace.to_screen_index(1);
         assert!(state.selected_workspace_summary().is_none());
         assert!(state.is_new_workspace_selected());
+    }
+
+    // ── cycle_isolation_for_selected_mount ─────────────────────────────
+
+    /// Build an editor sitting on the Mounts tab with a single Shared mount,
+    /// cursor on row 0. Mirrors the readonly toggle test fixtures so the new
+    /// I-hotkey tests share the same shape as the R-hotkey ones.
+    fn editor_with_one_shared_mount() -> EditorState<'static> {
+        use std::collections::BTreeMap;
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![MountConfig {
+                src: "/host/a".into(),
+                dst: "/host/a".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: BTreeMap::default(),
+            agents: BTreeMap::default(),
+        };
+        let mut e = EditorState::new_edit("ws".into(), ws);
+        e.active_tab = EditorTab::Mounts;
+        e.active_field = FieldFocus::Row(0);
+        e
+    }
+
+    #[test]
+    fn cycle_isolation_shared_to_worktree() {
+        let mut e = editor_with_one_shared_mount();
+        e.cycle_isolation_for_selected_mount();
+        assert_eq!(
+            e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Worktree,
+            "Shared must cycle to Worktree on first I press"
+        );
+    }
+
+    #[test]
+    fn cycle_isolation_worktree_back_to_shared() {
+        let mut e = editor_with_one_shared_mount();
+        e.cycle_isolation_for_selected_mount();
+        e.cycle_isolation_for_selected_mount();
+        assert_eq!(
+            e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Shared,
+            "two I presses must net back to Shared (Clone is reserved-but-rejected in V1)"
+        );
+        assert_eq!(
+            e.change_count(),
+            0,
+            "a full cycle Shared → Worktree → Shared must net zero changes",
+        );
+    }
+
+    #[test]
+    fn cycle_isolation_on_sentinel_is_noop() {
+        // Cursor on the `+ Add mount` sentinel (row == mounts.len()) — I must
+        // not mutate mounts or trigger a change.
+        let mut e = editor_with_one_shared_mount();
+        e.active_field = FieldFocus::Row(e.pending.mounts.len());
+        let before = e.pending.mounts.clone();
+        e.cycle_isolation_for_selected_mount();
+        assert_eq!(
+            e.pending.mounts, before,
+            "I on sentinel row must leave mounts untouched"
+        );
+        assert_eq!(e.change_count(), 0);
     }
 }
