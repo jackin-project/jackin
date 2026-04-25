@@ -192,21 +192,20 @@ pub(super) fn handle_editor_key(
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
         }
-        // M toggles secret masking on the Secrets tab. Per RULES.md
-        // § TUI Keybindings, in-tab actions are bound to plain letters;
-        // this binding fires only when no modal is open (text-input
-        // modals handle their own keys).
+        // M toggles per-row masking on the focused Secrets-tab key row.
+        // Operator feedback (commit 32): the global mask flag was too
+        // blunt — it revealed every value at once when an operator just
+        // wanted to peek at one. Now M flips membership of `(scope, key)`
+        // in `editor.unmasked_rows`. Header / sentinel / op:// rows are
+        // no-ops (op:// rows render as breadcrumbs, not masked values).
         //
-        // The modifier guard tolerates `KeyModifiers::SHIFT` because
-        // terminals send letter keys with SHIFT set when Caps Lock is
-        // engaged. Stripping SHIFT from the modifier set and checking for
-        // empty matches both the lowercase (`m`) and uppercase (`M`,
-        // SHIFT-bearing or not) cases; Ctrl/Alt/Cmd still bypass the arm.
+        // SHIFT modifier tolerated for Caps-Lock parity (see prior
+        // commits); Ctrl/Alt/Cmd still bypass the arm.
         KeyCode::Char('m' | 'M')
             if editor.active_tab == EditorTab::Secrets
                 && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
-            editor.secrets_masked = !editor.secrets_masked;
+            toggle_focused_row_mask(editor);
         }
         // P opens the 1Password picker as a row-level Secrets-tab action.
         // Per RULES.md § TUI Keybindings, this binding fires only without
@@ -302,10 +301,52 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
 }
 
 /// Reset per-tab ephemeral state when the operator leaves the Secrets tab.
-/// Masking snaps back to on and every expanded section collapses.
+/// Every unmasked row snaps back to masked and every expanded section
+/// collapses, so re-entering the tab returns to the all-masked baseline.
 fn reset_secrets_view(editor: &mut EditorState<'_>) {
-    editor.secrets_masked = true;
+    editor.unmasked_rows.clear();
     editor.secrets_expanded.clear();
+}
+
+/// Toggle the per-row mask state for the row the operator is currently
+/// focused on. Header rows, sentinels, and op:// rows are no-ops — only
+/// plain-text key rows participate in masking.
+fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = secrets_flat_rows(editor);
+    let Some(row) = rows.get(n).cloned() else {
+        return;
+    };
+    let key = match row {
+        SecretsRow::WorkspaceKeyRow(key) => {
+            // Op:// rows render as breadcrumbs and ignore the mask state
+            // entirely; flipping membership for them would be invisible
+            // to the operator and is silently dropped.
+            let value = editor.pending.env.get(&key).cloned().unwrap_or_default();
+            if crate::operator_env::is_op_reference(&value) {
+                return;
+            }
+            (SecretsScopeTag::Workspace, key)
+        }
+        SecretsRow::AgentKeyRow { agent, key } => {
+            let value = editor
+                .pending
+                .agents
+                .get(&agent)
+                .and_then(|o| o.env.get(&key))
+                .cloned()
+                .unwrap_or_default();
+            if crate::operator_env::is_op_reference(&value) {
+                return;
+            }
+            (SecretsScopeTag::Agent(agent), key)
+        }
+        // Headers and sentinels have no value to mask.
+        _ => return,
+    };
+    if !editor.unmasked_rows.remove(&key) {
+        editor.unmasked_rows.insert(key);
+    }
 }
 
 fn open_editor_field_modal(editor: &mut EditorState<'_>) {
@@ -1154,7 +1195,7 @@ mod tests {
     //! bindings, and mount-row readonly toggle.
     use super::super::super::state::{
         EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal,
-        TextInputTarget,
+        SecretsScopeTag, TextInputTarget,
     };
     use super::super::test_support::{key, mount};
     use super::{apply_file_browser_to_editor, apply_text_input_to_pending, handle_editor_modal};
@@ -1937,18 +1978,6 @@ mod tests {
 
     // ── Caps-Lock parity: SHIFT-modified letter shortcuts ──────────────
 
-    /// Build an editor parked on the Secrets tab, masking ON, no rows.
-    /// Used by the Caps-Lock-parity tests below.
-    fn editor_on_secrets_tab<'a>() -> ManagerState<'a> {
-        let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
-        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
-        editor.active_tab = EditorTab::Secrets;
-        editor.active_field = FieldFocus::Row(0);
-        editor.secrets_masked = true;
-        state.stage = ManagerStage::Editor(editor);
-        state
-    }
-
     /// Enter on an op:// key row must NOT open the EnvValue text-edit
     /// modal. The breadcrumb is a path, not a credential, and hand-
     /// editing the path is error-prone — the operator deletes via D
@@ -2044,7 +2073,13 @@ mod tests {
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
-        let mut state = editor_on_secrets_tab();
+        let mut ws = empty_ws();
+        ws.env.insert("DB_URL".into(), "literal-value".into());
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0); // the only key row
+        state.stage = ManagerStage::Editor(editor);
 
         let shift_m = KeyEvent {
             code: KeyCode::Char('M'),
@@ -2058,9 +2093,257 @@ mod tests {
             panic!("editor stage expected");
         };
         assert!(
-            !e.secrets_masked,
-            "M with SHIFT modifier (Caps Lock parity) must toggle masking; \
-             secrets_masked should now be false"
+            e.unmasked_rows
+                .contains(&(SecretsScopeTag::Workspace, "DB_URL".into())),
+            "M with SHIFT modifier (Caps Lock parity) must add the focused \
+             row to unmasked_rows; got {:?}",
+            e.unmasked_rows
+        );
+    }
+
+    /// `M` on a focused workspace key row toggles only that row's mask
+    /// state — sibling rows stay masked. This is the operator's core
+    /// commit-32 ask: never reveal an unintended row.
+    #[test]
+    fn m_on_focused_workspace_key_unmasks_only_that_row() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env.insert("ALPHA".into(), "first-value".into());
+        ws.env.insert("BETA".into(), "second-value".into());
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        // Rows are alphabetically ordered: ALPHA(0), BETA(1), Sentinel(2).
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.unmasked_rows
+                .contains(&(SecretsScopeTag::Workspace, "ALPHA".into())),
+            "ALPHA must be unmasked"
+        );
+        assert!(
+            !e.unmasked_rows
+                .contains(&(SecretsScopeTag::Workspace, "BETA".into())),
+            "BETA must remain masked"
+        );
+    }
+
+    /// Pressing M twice on the same row toggles the mask back on —
+    /// the per-row state is a flip, not a one-way reveal.
+    #[test]
+    fn m_on_already_unmasked_row_re_masks_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env.insert("ALPHA".into(), "first".into());
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        assert!(
+            e.unmasked_rows.is_empty(),
+            "second M must remove the row from unmasked_rows; got {:?}",
+            e.unmasked_rows
+        );
+    }
+
+    /// M on an op:// row is a no-op — those rows render as breadcrumbs
+    /// regardless of the mask state, so adding them to `unmasked_rows`
+    /// would be visually inert and confuse the operator.
+    #[test]
+    fn m_on_op_reference_row_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env
+            .insert("DB_URL".into(), "op://Work/db/password".into());
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        assert!(
+            e.unmasked_rows.is_empty(),
+            "M on an op:// row must not modify unmasked_rows; got {:?}",
+            e.unmasked_rows
+        );
+    }
+
+    /// Leaving and re-entering the Secrets tab clears `unmasked_rows`
+    /// — the all-masked baseline is restored each visit.
+    #[test]
+    fn tab_leave_resets_unmasked_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env.insert("ALPHA".into(), "first".into());
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        // Unmask ALPHA.
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+        // Tab to General → leaves Secrets.
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Tab),
+        )
+        .unwrap();
+        // Tab around the wheel back to Secrets (General → Mounts → Agents
+        // → Secrets is 3 more presses).
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Tab),
+        )
+        .unwrap();
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Tab),
+        )
+        .unwrap();
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Tab),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        assert_eq!(e.active_tab, EditorTab::Secrets);
+        assert!(
+            e.unmasked_rows.is_empty(),
+            "tab-leave must clear unmasked_rows; got {:?}",
+            e.unmasked_rows
+        );
+    }
+
+    /// Workspace and agent scopes have separate mask state. M on an
+    /// agent row unmasks only the agent row even when a workspace row
+    /// shares the same key name.
+    #[test]
+    fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        // Same key name in both scopes.
+        ws.env.insert("API_TOKEN".into(), "ws-value".into());
+        let mut ag_env = std::collections::BTreeMap::new();
+        ag_env.insert("API_TOKEN".into(), "agent-value".into());
+        ws.agents.insert(
+            "smith".into(),
+            crate::workspace::WorkspaceAgentOverride { env: ag_env },
+        );
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.secrets_expanded.insert("smith".into());
+        // Rows: WorkspaceKeyRow(0), WorkspaceAddSentinel(1),
+        // AgentHeader(2), AgentKeyRow(3), AgentAddSentinel(4).
+        editor.active_field = FieldFocus::Row(3);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        assert!(
+            e.unmasked_rows
+                .contains(&(SecretsScopeTag::Agent("smith".into()), "API_TOKEN".into())),
+            "agent-scope API_TOKEN must be unmasked"
+        );
+        assert!(
+            !e.unmasked_rows
+                .contains(&(SecretsScopeTag::Workspace, "API_TOKEN".into())),
+            "workspace-scope API_TOKEN with same key name must remain masked"
         );
     }
 }

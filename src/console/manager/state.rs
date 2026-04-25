@@ -163,10 +163,17 @@ pub struct EditorState<'a> {
     /// Replaces the sibling `error_banner`, `exit_on_save_success`, and
     /// `pending_save_commit` flags that used to live on this struct.
     pub save_flow: EditorSaveFlow,
-    /// Secrets tab: whether values are rendered masked (default `true`).
-    /// Toggled via `M` while on the Secrets tab. Resets to `true`
-    /// each time the operator leaves and re-enters the tab.
-    pub secrets_masked: bool,
+    /// Secrets tab: per-row mask state. A `(scope, key)` pair is in this
+    /// set iff that row's value is rendered unmasked. Default state is
+    /// empty — every plain-text value is masked. `M` while on a key row
+    /// toggles membership for the focused row only (operator feedback:
+    /// the mask toggle should never reveal values they didn't mean to
+    /// reveal). Cleared on tab leave so re-entering the tab returns to
+    /// the all-masked baseline.
+    ///
+    /// Op:// rows ignore this set entirely — they render as a breadcrumb
+    /// (commit 31), not a masked value.
+    pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
     /// Secrets tab: which per-agent override sections are currently
     /// expanded. Keyed by agent name. Empty on tab entry; populated as
     /// the operator presses `→` / `Enter` on an agent header.
@@ -410,7 +417,7 @@ pub enum ConfirmTarget {
 /// always have handy at modal-commit time (Create mode captures the name
 /// on `pending_name`). We derive the full `EnvScope` at save time inside
 /// `commit_editor_save`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SecretsScopeTag {
     Workspace,
     Agent(String),
@@ -652,7 +659,7 @@ impl EditorState<'_> {
             pending_name: None,
             exit_after_save: None,
             save_flow: EditorSaveFlow::Idle,
-            secrets_masked: true,
+            unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
             pending_env_key: None,
             pending_picker_target: None,
@@ -680,7 +687,7 @@ impl EditorState<'_> {
             pending_name: None,
             exit_after_save: None,
             save_flow: EditorSaveFlow::Idle,
-            secrets_masked: true,
+            unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
             pending_env_key: None,
             pending_picker_target: None,

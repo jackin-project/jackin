@@ -10,7 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus};
+use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::list::{MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width, render_mount_header};
 use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
@@ -585,12 +585,15 @@ fn render_secrets_tab(
         match row {
             SecretsRow::WorkspaceKeyRow(key) => {
                 let value = state.pending.env.get(key).cloned().unwrap_or_default();
+                let masked = !state
+                    .unmasked_rows
+                    .contains(&(SecretsScopeTag::Workspace, key.clone()));
                 lines.push(render_secrets_key_line(
                     selected,
                     prefix,
                     key,
                     &value,
-                    state.secrets_masked,
+                    masked,
                     area.width,
                     label_width,
                     op_accounts,
@@ -629,12 +632,15 @@ fn render_secrets_tab(
                 let empty = std::collections::BTreeMap::<String, String>::new();
                 let pend_env = state.pending.agents.get(agent).map_or(&empty, |o| &o.env);
                 let value = pend_env.get(key).cloned().unwrap_or_default();
+                let masked = !state
+                    .unmasked_rows
+                    .contains(&(SecretsScopeTag::Agent(agent.clone()), key.clone()));
                 lines.push(render_secrets_key_line(
                     selected,
                     prefix,
                     key,
                     &value,
-                    state.secrets_masked,
+                    masked,
                     area.width,
                     label_width,
                     op_accounts,
@@ -1096,7 +1102,7 @@ mod secrets_tab_render_tests {
     //! builder honours `secrets_expanded` for per-agent override sections.
     use super::render_secrets_tab;
     use crate::config::AppConfig;
-    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus, SecretsScopeTag};
     use crate::workspace::{WorkspaceAgentOverride, WorkspaceConfig};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -1170,12 +1176,12 @@ mod secrets_tab_render_tests {
 
     #[test]
     fn secrets_tab_defaults_to_masked() {
-        // `new_edit` sets `secrets_masked = true` by default; assert the
-        // mask glyph appears and the literal secret value does not.
+        // `new_edit` leaves `unmasked_rows` empty, so every plain-text
+        // value renders masked by default.
         let editor = editor_with_workspace_env();
         assert!(
-            editor.secrets_masked,
-            "new_edit must default secrets_masked to true"
+            editor.unmasked_rows.is_empty(),
+            "new_edit must leave unmasked_rows empty (default = all masked)"
         );
         let dump = render_to_dump(&editor);
         assert!(
@@ -1191,7 +1197,9 @@ mod secrets_tab_render_tests {
     #[test]
     fn secrets_tab_unmasked_shows_literal_value() {
         let mut editor = editor_with_workspace_env();
-        editor.secrets_masked = false;
+        editor
+            .unmasked_rows
+            .insert((SecretsScopeTag::Workspace, "DB_URL".into()));
         let dump = render_to_dump(&editor);
         assert!(
             dump.contains("postgres://localhost/db"),
@@ -1311,7 +1319,7 @@ mod secrets_tab_render_tests {
     /// Op:// rows render as a breadcrumb: `<vault> / <item> → <field>`
     /// for 3-segment paths. Masking is irrelevant — the path isn't a
     /// credential — so the literal segments must appear regardless of
-    /// `secrets_masked`. The arrow glyph must appear too (no `op://`
+    /// `unmasked_rows`. The arrow glyph must appear too (no `op://`
     /// scheme prefix in the rendered output).
     #[test]
     fn op_row_breadcrumb_render_three_segment() {
@@ -1352,10 +1360,10 @@ mod secrets_tab_render_tests {
             "op:// scheme prefix must not appear in the breadcrumb; dump:\n{dump}"
         );
         // Crucially: the mask glyph must NOT appear on an op:// row even
-        // though the editor defaults to masked.
+        // though the editor defaults to all-masked.
         assert!(
-            editor.secrets_masked,
-            "default state is masked; op:// rows must still bypass masking"
+            editor.unmasked_rows.is_empty(),
+            "default state is all-masked; op:// rows must still bypass masking"
         );
         assert!(
             !dump.contains("●●●"),

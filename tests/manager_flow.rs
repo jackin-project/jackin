@@ -203,10 +203,10 @@ fn delete_workspace_via_manager() -> Result<()> {
 // ── Secrets tab integration tests ─────────────────────────────────
 
 /// Seed a workspace with a `DB_URL` env key, open the Secrets tab, and
-/// assert the key is visible in the rendered buffer. Toggles
-/// `secrets_masked = false` first so the literal key label shows up
-/// cleanly (the label is independent of masking, but we also want the
-/// value confirmed visible to pin the render path).
+/// assert the key is visible in the rendered buffer. Inserts the row
+/// into `unmasked_rows` first so the literal value shows up cleanly
+/// (the label is independent of masking, but we also want the value
+/// confirmed visible to pin the render path).
 #[test]
 fn secrets_tab_shows_existing_env() -> Result<()> {
     let temp = tempdir()?;
@@ -222,7 +222,10 @@ fn secrets_tab_shows_existing_env() -> Result<()> {
     // Unmask so both the key label and literal value are visible in the
     // dump (the masked default would still show `DB_URL` but would hide
     // the value; unmasking makes the assertion more specific).
-    editor_mut(&mut state).secrets_masked = false;
+    editor_mut(&mut state).unmasked_rows.insert((
+        jackin::console::manager::state::SecretsScopeTag::Workspace,
+        "DB_URL".into(),
+    ));
 
     let dump = render_to_dump(&mut state, &config, cwd);
     assert!(
@@ -360,28 +363,21 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
     Ok(())
 }
 
-/// `M` flips `secrets_masked` on the editor state. Verifies the
-/// default (true), the first toggle (false), and the second toggle
-/// (back to true).
+/// `M` toggles per-row mask state. The cursor opens on the first key
+/// row (`DB_URL`) — pressing M adds it to `unmasked_rows`; pressing M
+/// again removes it.
 #[test]
 fn secrets_masking_m_toggle() -> Result<()> {
+    use jackin::console::manager::state::SecretsScopeTag;
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "v")])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    assert!(editor(&state).secrets_masked, "default must be masked=true");
-    handle_key(
-        &mut state,
-        &mut config,
-        &paths,
-        cwd,
-        key(KeyCode::Char('m')),
-    )?;
     assert!(
-        !editor(&state).secrets_masked,
-        "M must flip masked to false"
+        editor(&state).unmasked_rows.is_empty(),
+        "default must have unmasked_rows empty"
     );
     handle_key(
         &mut state,
@@ -391,8 +387,21 @@ fn secrets_masking_m_toggle() -> Result<()> {
         key(KeyCode::Char('m')),
     )?;
     assert!(
-        editor(&state).secrets_masked,
-        "second M must flip masked back to true"
+        editor(&state)
+            .unmasked_rows
+            .contains(&(SecretsScopeTag::Workspace, "DB_URL".into())),
+        "M must insert focused row into unmasked_rows"
+    );
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('m')),
+    )?;
+    assert!(
+        editor(&state).unmasked_rows.is_empty(),
+        "second M must remove the focused row from unmasked_rows"
     );
     Ok(())
 }
@@ -437,7 +446,10 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     let mut state = manager_on_secrets_tab(&config, cwd);
     // Unmask so the key value (`debug`) would show up in the dump if
     // the section were expanded.
-    editor_mut(&mut state).secrets_masked = false;
+    editor_mut(&mut state).unmasked_rows.insert((
+        jackin::console::manager::state::SecretsScopeTag::Agent("agent-smith".into()),
+        "LOG_LEVEL".into(),
+    ));
 
     // Secrets flat rows on this fixture (no workspace-level keys, one
     // collapsed agent section; no preamble rows are rendered):
