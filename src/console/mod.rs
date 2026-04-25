@@ -98,7 +98,9 @@ impl ConsoleState {
                 // Branch 3: multiple eligible — open the picker overlay.
                 if let ConsoleStage::Manager(ms) = &mut self.stage {
                     ms.list_modal = Some(crate::console::manager::state::Modal::AgentPicker {
-                        state: crate::console::widgets::agent_picker::AgentPickerState::new(agents),
+                        state: crate::console::widgets::agent_picker::AgentPickerState::with_confirm_label(
+                            agents, "launch",
+                        ),
                     });
                 }
                 Ok(None)

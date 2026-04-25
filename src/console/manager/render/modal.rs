@@ -62,12 +62,13 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
         // the breadcrumb header, filter row, ~16 list rows, and chrome.
         Modal::OpPicker { .. } => (80, 22),
         // AgentPicker / AgentOverridePicker: 50% width, height scales
-        // with the filtered count (top pad + spacer + hint + 2 borders
-        // = 5 chrome rows) capped at 15 so a sprawling agent roster
-        // can't blot out the manager. Both variants reuse the same
-        // widget — they differ only in host slot and commit handler.
+        // with the filtered count (filter row + 2 spacers + footer +
+        // 2 borders = 6 chrome rows) capped at 15 so a sprawling agent
+        // roster can't blot out the manager. Both variants reuse the
+        // same widget — they differ only in host slot and commit
+        // handler.
         Modal::AgentPicker { state } | Modal::AgentOverridePicker { state } => {
-            let rows = (state.filtered.len() as u16).saturating_add(5).min(15);
+            let rows = (state.filtered.len() as u16).saturating_add(6).min(15);
             (50, rows)
         }
         // SourcePicker: 50% width is enough for "Source for KEY" plus

@@ -493,7 +493,7 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
         return;
     }
     editor.modal = Some(Modal::AgentOverridePicker {
-        state: AgentPickerState::new(eligible),
+        state: AgentPickerState::with_confirm_label(eligible, "select"),
     });
 }
 
