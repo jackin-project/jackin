@@ -6,9 +6,12 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{
     config::{AppConfig, ConfigEditor},
-    console::manager::{
-        ManagerStage, ManagerState, handle_key,
-        state::{EditorState, EditorTab, FieldFocus, Modal, TextInputTarget},
+    console::{
+        ConsoleStage, ConsoleState,
+        manager::{
+            ManagerStage, ManagerState, handle_key,
+            state::{EditorState, EditorTab, FieldFocus, Modal, TextInputTarget},
+        },
     },
     paths::JackinPaths,
     workspace::{MountConfig, WorkspaceAgentOverride, WorkspaceConfig},
@@ -850,6 +853,231 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
         editor(&state).modal.is_none(),
         "EnvKey commit on the picker fast-path must close the modal; got {:?}",
         editor(&state).modal
+    );
+    Ok(())
+}
+
+// ── Modal::AgentPicker dispatch tests ─────────────────────────────
+
+/// Seed a config with a workspace that has `agent_keys.len()` allowed
+/// agents (each registered as `config.agents`), optionally a named
+/// `default_agent`. Returns the saved `AppConfig`.
+fn seed_config_with_agents(
+    paths: &JackinPaths,
+    temp_dir: &std::path::Path,
+    agent_keys: &[&str],
+    default_agent: Option<&str>,
+) -> Result<AppConfig> {
+    paths.ensure_base_dirs()?;
+    let host_path = temp_dir.display().to_string();
+    let mut config = AppConfig::default();
+    for key in agent_keys {
+        config.agents.insert(
+            (*key).to_string(),
+            jackin::config::AgentSource {
+                git: format!("https://example.invalid/jackin-{key}.git"),
+                trusted: true,
+                claude: None,
+                env: std::collections::BTreeMap::new(),
+            },
+        );
+    }
+    let toml = toml::to_string(&config)?;
+    std::fs::write(&paths.config_file, toml)?;
+
+    let ws = WorkspaceConfig {
+        workdir: host_path.clone(),
+        mounts: vec![MountConfig {
+            src: host_path.clone(),
+            dst: host_path,
+            readonly: false,
+        }],
+        allowed_agents: agent_keys.iter().map(|s| (*s).to_string()).collect(),
+        default_agent: default_agent.map(String::from),
+        last_agent: None,
+        env: std::collections::BTreeMap::new(),
+        agents: std::collections::BTreeMap::new(),
+    };
+    let mut ce = ConfigEditor::open(paths)?;
+    ce.create_workspace("multi-agent-ws", ws)?;
+    ce.save()
+}
+
+/// `Enter` on a workspace row with two eligible agents and no default
+/// must open `Modal::AgentPicker` overlaid on the manager list — not
+/// short-circuit to a launch outcome.
+#[test]
+fn agent_picker_opens_when_multiple_agents_available() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let config = seed_config_with_agents(
+        &paths,
+        temp.path(),
+        &["chainargos/agent-smith", "chainargos/agent-brown"],
+        None,
+    )?;
+    let cwd = temp.path();
+    let mut state = ConsoleState::new(&config, cwd)?;
+    let idx = state
+        .workspaces
+        .iter()
+        .position(|c| c.name == "multi-agent-ws")
+        .expect("seeded workspace must be in ConsoleState.workspaces");
+
+    let outcome = state.dispatch_launch_for_workspace(&config, cwd, idx)?;
+    assert!(
+        outcome.is_none(),
+        "multi-agent dispatch must stay in the run-loop (Ok(None)); got {outcome:?}"
+    );
+    let ConsoleStage::Manager(ms) = &state.stage;
+    match &ms.list_modal {
+        Some(Modal::AgentPicker { state: picker }) => {
+            assert_eq!(picker.agents.len(), 2);
+            assert_eq!(picker.filtered.len(), 2);
+        }
+        other => panic!("expected Modal::AgentPicker on list_modal; got {other:?}"),
+    }
+    Ok(())
+}
+
+/// `default_agent` set on the workspace must short-circuit the picker
+/// and produce an `Ok(Some(_))` direct launch outcome — no modal opens.
+#[test]
+fn agent_picker_skipped_when_default_agent_set() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let config = seed_config_with_agents(
+        &paths,
+        temp.path(),
+        &["chainargos/agent-smith", "chainargos/agent-brown"],
+        Some("chainargos/agent-smith"),
+    )?;
+    let cwd = temp.path();
+    let mut state = ConsoleState::new(&config, cwd)?;
+    let idx = state
+        .workspaces
+        .iter()
+        .position(|c| c.name == "multi-agent-ws")
+        .unwrap();
+
+    let outcome = state.dispatch_launch_for_workspace(&config, cwd, idx)?;
+    let (agent, _ws) = outcome.expect("default_agent must short-circuit to a direct launch");
+    assert_eq!(agent.key(), "chainargos/agent-smith");
+    let ConsoleStage::Manager(ms) = &state.stage;
+    assert!(
+        ms.list_modal.is_none(),
+        "default_agent dispatch must NOT open the picker; got {:?}",
+        ms.list_modal
+    );
+    Ok(())
+}
+
+/// Exactly one eligible agent must short-circuit the picker — same
+/// direct-launch outcome as the default-agent path.
+#[test]
+fn agent_picker_skipped_when_single_eligible_agent() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let config = seed_config_with_agents(&paths, temp.path(), &["chainargos/agent-smith"], None)?;
+    let cwd = temp.path();
+    let mut state = ConsoleState::new(&config, cwd)?;
+    let idx = state
+        .workspaces
+        .iter()
+        .position(|c| c.name == "multi-agent-ws")
+        .unwrap();
+
+    let outcome = state.dispatch_launch_for_workspace(&config, cwd, idx)?;
+    let (agent, _ws) =
+        outcome.expect("single eligible agent must short-circuit to a direct launch");
+    assert_eq!(agent.key(), "chainargos/agent-smith");
+    let ConsoleStage::Manager(ms) = &state.stage;
+    assert!(ms.list_modal.is_none());
+    Ok(())
+}
+
+/// `Enter` on the picker commits the selected agent — `manager::handle_key`
+/// returns `InputOutcome::LaunchWithAgent(agent)` so `run_console` can
+/// resolve the workspace and break the event loop.
+#[test]
+fn agent_picker_enter_commits_launch() -> Result<()> {
+    use jackin::console::manager::InputOutcome;
+
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config_with_agents(
+        &paths,
+        temp.path(),
+        &["chainargos/agent-smith", "chainargos/agent-brown"],
+        None,
+    )?;
+    let cwd = temp.path();
+    let mut state = ConsoleState::new(&config, cwd)?;
+    let idx = state
+        .workspaces
+        .iter()
+        .position(|c| c.name == "multi-agent-ws")
+        .unwrap();
+
+    state.dispatch_launch_for_workspace(&config, cwd, idx)?;
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    assert!(matches!(ms.list_modal, Some(Modal::AgentPicker { .. })));
+
+    // Enter on the picker — selection defaults to index 0
+    // (BTreeMap ordering of agent keys).
+    let outcome = handle_key(ms, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    match outcome {
+        InputOutcome::LaunchWithAgent(agent) => {
+            assert!(
+                agent.key() == "chainargos/agent-brown" || agent.key() == "chainargos/agent-smith",
+                "picker commit must surface one of the two seeded agents; got {}",
+                agent.key()
+            );
+        }
+        other => panic!("expected LaunchWithAgent outcome; got {other:?}"),
+    }
+    assert!(
+        ms.list_modal.is_none(),
+        "picker commit must close the modal"
+    );
+    Ok(())
+}
+
+/// `Esc` on the picker closes the modal and returns `Continue` — the
+/// operator stays on the manager list with an unchanged selection.
+#[test]
+fn agent_picker_esc_closes_modal() -> Result<()> {
+    use jackin::console::manager::InputOutcome;
+
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config_with_agents(
+        &paths,
+        temp.path(),
+        &["chainargos/agent-smith", "chainargos/agent-brown"],
+        None,
+    )?;
+    let cwd = temp.path();
+    let mut state = ConsoleState::new(&config, cwd)?;
+    let idx = state
+        .workspaces
+        .iter()
+        .position(|c| c.name == "multi-agent-ws")
+        .unwrap();
+
+    state.dispatch_launch_for_workspace(&config, cwd, idx)?;
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    assert!(matches!(ms.list_modal, Some(Modal::AgentPicker { .. })));
+
+    let outcome = handle_key(ms, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    assert!(
+        matches!(outcome, InputOutcome::Continue),
+        "Esc on the picker must produce Continue; got {outcome:?}"
+    );
+    assert!(
+        ms.list_modal.is_none(),
+        "Esc must close the picker modal; got {:?}",
+        ms.list_modal
     );
     Ok(())
 }

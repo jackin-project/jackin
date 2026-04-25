@@ -32,6 +32,12 @@ pub enum InputOutcome {
     /// `LaunchNamed`, using `ConsoleState::workspaces[0]` which is built
     /// in `ConsoleState::new` from the current cwd.
     LaunchCurrentDir,
+    /// Operator just committed a choice in `Modal::AgentPicker`. The
+    /// outer `run_console` loop resolves the selected workspace
+    /// (already pinned on `ConsoleState.selected_workspace` when the
+    /// picker opened) against this agent and breaks with
+    /// `Ok(Some((agent, ws)))`.
+    LaunchWithAgent(crate::selector::ClassSelector),
 }
 
 #[allow(clippy::too_many_lines)]
@@ -43,11 +49,13 @@ pub fn handle_key(
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     // List-level modal precedence (e.g. GithubPicker opened from `o` on a
-    // workspace row). Handled before stage-specific modals so the dispatch
-    // stays uniform whatever stage the state thinks it's in.
+    // workspace row, or AgentPicker opened from Enter when the highlighted
+    // workspace has multiple eligible agents). Handled before stage-specific
+    // modals so the dispatch stays uniform whatever stage the state thinks
+    // it's in. Returns the modal's outcome directly — most arms produce
+    // `Continue`, but `AgentPicker` commit produces `LaunchWithAgent`.
     if state.list_modal.is_some() {
-        list::handle_list_modal(state, key);
-        return Ok(InputOutcome::Continue);
+        return Ok(list::handle_list_modal(state, key));
     }
     // Modal precedence: if a modal is open, it gets the event.
     // Use a discriminant check so we can take &mut without keeping an

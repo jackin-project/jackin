@@ -7,8 +7,8 @@ use crate::config::AppConfig;
 use crate::workspace::WorkspaceConfig;
 
 use crate::console::widgets::{
-    confirm::ConfirmState, confirm_save::ConfirmSaveState, error_popup::ErrorPopupState,
-    file_browser::FileBrowserState, github_picker::GithubPickerState,
+    agent_picker::AgentPickerState, confirm::ConfirmState, confirm_save::ConfirmSaveState,
+    error_popup::ErrorPopupState, file_browser::FileBrowserState, github_picker::GithubPickerState,
     mount_dst_choice::MountDstChoiceState, op_picker::OpPickerState, text_input::TextInputState,
     workdir_pick::WorkdirPickState,
 };
@@ -325,6 +325,14 @@ pub enum Modal<'a> {
     /// substantially larger than the existing variants.
     OpPicker {
         state: Box<OpPickerState>,
+    },
+    /// Agent disambiguation picker — opened from the manager list view
+    /// when the highlighted workspace has ≥2 eligible agents and the
+    /// operator presses `Enter`. Anchored on `ManagerState.list_modal`
+    /// (the same slot as `GithubPicker`); committing returns the chosen
+    /// `ClassSelector` which the caller resolves to a launch outcome.
+    AgentPicker {
+        state: AgentPickerState,
     },
 }
 

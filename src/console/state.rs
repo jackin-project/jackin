@@ -3,11 +3,16 @@ use crate::config::{AppConfig, MountEntry};
 use crate::selector::ClassSelector;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 
+/// Top-level stage of the operator console.
+///
+/// Single-variant today — the legacy full-screen `Agent` picker was
+/// replaced by `Modal::AgentPicker` overlaid on the manager list. Kept
+/// as an `enum` so future stages (e.g. running-sessions cluster) can
+/// land without rewriting every `ConsoleStage::Manager(_)` match site.
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ConsoleStage {
     Manager(crate::console::manager::ManagerState<'static>),
-    Agent,
 }
 
 #[derive(Debug, Clone)]
@@ -24,9 +29,11 @@ pub struct WorkspaceChoice {
 #[derive(Debug)]
 pub struct ConsoleState {
     pub stage: ConsoleStage,
+    /// Which entry in `workspaces` the operator is launching against.
+    /// Pinned by the launch dispatcher when the operator presses Enter
+    /// on a manager row, then read back by the `AgentPicker` commit
+    /// path to resolve the chosen agent against the right workspace.
     pub selected_workspace: usize,
-    pub selected_agent: usize,
-    pub agent_query: String,
     pub workspaces: Vec<WorkspaceChoice>,
 }
 
@@ -80,8 +87,6 @@ impl ConsoleState {
                 config, cwd,
             )),
             selected_workspace,
-            selected_agent: 0,
-            agent_query: String::new(),
             workspaces,
         })
     }
@@ -90,16 +95,6 @@ impl ConsoleState {
         self.workspaces
             .get(self.selected_workspace)
             .map(|choice| choice.name.as_str())
-    }
-
-    pub fn filtered_agents(&self) -> Vec<ClassSelector> {
-        let query = self.agent_query.to_ascii_lowercase();
-        self.workspaces[self.selected_workspace]
-            .allowed_agents
-            .iter()
-            .filter(|agent| query.is_empty() || agent.key().to_ascii_lowercase().contains(&query))
-            .cloned()
-            .collect()
     }
 }
 
@@ -244,57 +239,24 @@ mod tests {
         assert_eq!(state.selected_workspace_name(), Some("big-monorepo"));
     }
 
-    #[test]
-    fn filters_agents_by_query() {
-        let state = ConsoleState {
-            stage: ConsoleStage::Agent,
-            selected_workspace: 0,
-            selected_agent: 0,
-            agent_query: "chainargos".to_string(),
-            workspaces: vec![WorkspaceChoice {
-                name: "Current directory".to_string(),
-                workspace: crate::workspace::ResolvedWorkspace {
-                    label: "/tmp/project".to_string(),
-                    workdir: "/tmp/project".to_string(),
-                    mounts: vec![],
-                },
-                allowed_agents: vec![
-                    crate::selector::ClassSelector::new(None, "agent-smith"),
-                    crate::selector::ClassSelector::new(Some("chainargos"), "the-architect"),
-                ],
-                default_agent: None,
-                last_agent: None,
-                global_mounts: vec![],
-                input: LoadWorkspaceInput::CurrentDir,
-            }],
-        };
-
-        let filtered = state.filtered_agents();
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].key(), "chainargos/the-architect");
-    }
-
-    // ── Phase 0 gap-fill: agent-filter composition ─────────────────────────
+    // ── Phase 0 gap-fill: agent-eligibility composition ────────────────────
     //
     // These tests pin the composition the TUI relies on:
     //
     //   configured_agents  →  eligible_agents_for_workspace
     //                     (allowed_agents filter)  →
     //                     workspace.allowed_agents  →
-    //                     filtered_agents          (agent_query filter)  →
     //                     on-screen result
     //
-    // Invariants the plan's Phase 0 calls out for the Phase 6 unification:
+    // Invariants:
     //
     //   1. An empty `allowed_agents` list means "any configured agent."
     //   2. A non-empty `allowed_agents` list strictly narrows to the named
     //      set, and never resurrects an unconfigured ("ghost") name.
-    //   3. The query filter composes with — never widens — the post-eligibility
-    //      set. A key not in `workspace.allowed_agents` cannot be recovered
-    //      by any query string.
-    //   4. An empty query returns the full post-eligibility set.
-    //   5. A query that matches a subset of the eligible set returns exactly
-    //      that subset (does not drop matches, does not add non-matches).
+    //
+    // Filter-time narrowing now lives on `AgentPickerState` (see
+    // `widgets/agent_picker.rs`) — the legacy `ConsoleState::filtered_agents`
+    // path was deleted alongside the full-screen `ConsoleStage::Agent`.
 
     fn agent_source_stub() -> crate::config::AgentSource {
         crate::config::AgentSource {
@@ -377,109 +339,5 @@ mod tests {
             eligible.is_empty(),
             "eligibility must not resurrect a name absent from config.agents"
         );
-    }
-
-    #[test]
-    fn empty_query_returns_full_post_eligibility_set() {
-        let state = ConsoleState {
-            stage: ConsoleStage::Agent,
-            selected_workspace: 0,
-            selected_agent: 0,
-            agent_query: String::new(),
-            workspaces: vec![WorkspaceChoice {
-                name: "Current directory".to_string(),
-                workspace: crate::workspace::ResolvedWorkspace {
-                    label: "/tmp/project".to_string(),
-                    workdir: "/tmp/project".to_string(),
-                    mounts: vec![],
-                },
-                allowed_agents: vec![
-                    crate::selector::ClassSelector::new(None, "alice"),
-                    crate::selector::ClassSelector::new(None, "bob"),
-                ],
-                default_agent: None,
-                last_agent: None,
-                global_mounts: vec![],
-                input: LoadWorkspaceInput::CurrentDir,
-            }],
-        };
-
-        let filtered = state.filtered_agents();
-        assert_eq!(filtered.len(), 2);
-    }
-
-    #[test]
-    fn query_cannot_reintroduce_agent_excluded_by_allowed_list() {
-        // `state.workspaces[_].allowed_agents` already reflects the
-        // eligibility filter. An agent absent here cannot be resurrected
-        // by *any* query string — the query only narrows, never widens.
-        let state = ConsoleState {
-            stage: ConsoleStage::Agent,
-            selected_workspace: 0,
-            selected_agent: 0,
-            agent_query: "bob".to_string(),
-            workspaces: vec![WorkspaceChoice {
-                name: "Current directory".to_string(),
-                workspace: crate::workspace::ResolvedWorkspace {
-                    label: "/tmp/project".to_string(),
-                    workdir: "/tmp/project".to_string(),
-                    mounts: vec![],
-                },
-                allowed_agents: vec![crate::selector::ClassSelector::new(None, "alice")],
-                default_agent: None,
-                last_agent: None,
-                global_mounts: vec![],
-                input: LoadWorkspaceInput::CurrentDir,
-            }],
-        };
-
-        assert!(
-            state.filtered_agents().is_empty(),
-            "query must not resurrect an excluded agent"
-        );
-    }
-
-    #[test]
-    fn query_narrows_within_allowed_set_without_dropping_matches() {
-        // Multiple eligible agents; query matches a subset. Every matching
-        // agent must still appear; no non-matching agent may sneak through.
-        let state = ConsoleState {
-            stage: ConsoleStage::Agent,
-            selected_workspace: 0,
-            selected_agent: 0,
-            agent_query: "smith".to_string(),
-            workspaces: vec![WorkspaceChoice {
-                name: "Current directory".to_string(),
-                workspace: crate::workspace::ResolvedWorkspace {
-                    label: "/tmp/project".to_string(),
-                    workdir: "/tmp/project".to_string(),
-                    mounts: vec![],
-                },
-                allowed_agents: vec![
-                    crate::selector::ClassSelector::new(None, "agent-smith"),
-                    crate::selector::ClassSelector::new(None, "agent-brown"),
-                    crate::selector::ClassSelector::new(None, "smithy"),
-                ],
-                default_agent: None,
-                last_agent: None,
-                global_mounts: vec![],
-                input: LoadWorkspaceInput::CurrentDir,
-            }],
-        };
-
-        let filtered = state.filtered_agents();
-        let keys: Vec<String> = filtered
-            .iter()
-            .map(crate::selector::ClassSelector::key)
-            .collect();
-
-        assert_eq!(
-            filtered.len(),
-            2,
-            "query 'smith' should match exactly 2 of 3 allowed agents"
-        );
-        assert!(keys.contains(&"agent-smith".to_string()));
-        assert!(keys.contains(&"smithy".to_string()));
-        assert!(!keys.contains(&"agent-brown".to_string()));
     }
 }

@@ -5,8 +5,8 @@
 use ratatui::{Frame, layout::Rect};
 
 use super::super::super::widgets::{
-    confirm, confirm_save, error_popup, file_browser, github_picker, mount_dst_choice, op_picker,
-    save_discard, text_input, workdir_pick,
+    agent_picker, confirm, confirm_save, error_popup, file_browser, github_picker,
+    mount_dst_choice, op_picker, save_discard, text_input, workdir_pick,
 };
 use super::super::state::Modal;
 use super::centered_rect_fixed;
@@ -60,6 +60,13 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
         // OpPicker: 80% width, 22 rows — leaves comfortable space for
         // the breadcrumb header, filter row, ~16 list rows, and chrome.
         Modal::OpPicker { .. } => (80, 22),
+        // AgentPicker: 50% width, height scales with the filtered count
+        // (top pad + spacer + hint + 2 borders = 5 chrome rows) capped at
+        // 15 so a sprawling agent roster can't blot out the manager.
+        Modal::AgentPicker { state } => {
+            let rows = (state.filtered.len() as u16).saturating_add(5).min(15);
+            (50, rows)
+        }
     };
     centered_rect_fixed(outer, pct_w, height_rows)
 }
@@ -85,5 +92,6 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
             state.tick();
             op_picker::render::render(frame, modal_area, state);
         }
+        Modal::AgentPicker { state } => agent_picker::render(frame, modal_area, state),
     }
 }

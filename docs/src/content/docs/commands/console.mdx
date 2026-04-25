@@ -29,31 +29,37 @@ The important distinction is:
 
 ## How it works
 
-The console presents a two-step selection flow:
+`jackin console` opens directly to the workspace manager list. Select a
+workspace with `↑`/`↓` and press `Enter` to launch. The manager list
+**is** the opening view — there is no separate workspace-picker stage.
 
-1. **Pick a workspace** — choose from saved workspaces or "Current directory"
-2. **Pick an agent** — choose which agent class to load
-
-The TUI shows a preview of the working directory and mounts before you
-confirm. Once you move to the agent step, that preview updates to the
-final resolved mount set for the highlighted agent, including
-selector-scoped global mounts.
+If agent disambiguation is needed, a compact picker appears as an
+overlay on the manager list. There is no separate full-screen
+agent-selection screen.
 
 ## Workspace selection
 
-The console shows two kinds of choices:
+The manager list shows two kinds of rows:
 
-- **Current directory** — a synthetic workspace that mounts your `cwd` at the same path inside the container
+- **Current directory** — a synthetic row that mounts your `cwd` at the same path inside the container
 - **Saved workspaces** — named definitions from `~/.config/jackin/config.toml`
 
 If your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace is preselected.
 
-## Agent selection
+## Agent disambiguation
 
-If the selected workspace has:
-- **A default agent** — it's preselected
-- **Allowed agents** — only those are shown
-- **No restrictions** — all known agents are listed
+Pressing `Enter` on a workspace row routes by eligible-agent count:
+
+- **`default_agent` set** on the workspace → launch immediately with that
+  agent. No picker.
+- **Exactly one eligible agent** (after the workspace's `allowed_agents`
+  filter) → launch immediately with it. No picker.
+- **Multiple eligible agents and no default** → an inline `Select Agent`
+  picker overlays the manager list. Type to filter, `↑`/`↓` to navigate,
+  `Enter` to commit, `Esc` to cancel.
+
+The picker is anchored on the manager list — cancelling drops you back
+on the same workspace row with the launch unchanged.
 
 ## When to use the console vs `load`
 

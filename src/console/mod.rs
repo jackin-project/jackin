@@ -1,7 +1,12 @@
-mod input;
+// `ConsoleStage` collapsed to a single variant in PR #171's Modal::AgentPicker
+// cleanup. The module is kept as-is (with `if let ConsoleStage::Manager(_)`
+// patterns) so a future stage can be added without rewriting every match
+// site. The irrefutable-pattern lint is allowed at the module level rather
+// than peppering individual sites.
+#![allow(irrefutable_let_patterns)]
+
 pub mod manager;
 mod preview;
-mod render;
 pub mod state;
 pub mod widgets;
 
@@ -14,48 +19,90 @@ use crate::paths::JackinPaths;
 use crate::selector::ClassSelector;
 use crate::workspace::ResolvedWorkspace;
 
-/// Shared `LaunchNamed` / `LaunchCurrentDir` transition: preselect the workspace
-/// at `idx` in `ConsoleState::workspaces`, compute filtered agents, and either
-/// short-circuit (single agent → immediate launch outcome) or stage the
-/// agent-picker. Returns `Ok(Some(_))` if the caller should break with that
-/// outcome, `Ok(None)` to stay in the run-loop.
-fn transition_to_agent_stage(
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    state: &mut ConsoleState,
-    idx: usize,
-) -> anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>> {
-    state.selected_workspace = idx;
-    state.agent_query.clear();
+impl ConsoleState {
+    /// Shared `LaunchNamed` / `LaunchCurrentDir` transition: preselect
+    /// the workspace at `idx` in `ConsoleState::workspaces`, then route
+    /// by agent count.
+    ///
+    /// Three branches:
+    /// 1. `default_agent` set on the workspace → launch immediately with
+    ///    that agent.
+    /// 2. Exactly one eligible agent (after the
+    ///    `eligible_agents_for_workspace` filtering already baked into
+    ///    `WorkspaceChoice.allowed_agents`) → launch immediately with it.
+    /// 3. Multiple eligible agents and no default → open
+    ///    `Modal::AgentPicker` on the manager list and stay in the
+    ///    run-loop until the operator commits a choice.
+    ///
+    /// Returns `Ok(Some(_))` if the caller should break with that
+    /// outcome, `Ok(None)` to stay in the run-loop (modal opened, or
+    /// there are no eligible agents and we surface a toast). Errors only
+    /// when workspace resolution itself fails.
+    pub fn dispatch_launch_for_workspace(
+        &mut self,
+        config: &AppConfig,
+        cwd: &std::path::Path,
+        idx: usize,
+    ) -> anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>> {
+        self.selected_workspace = idx;
 
-    let agents = state.filtered_agents();
-    if agents.is_empty() {
-        let name = state
-            .workspaces
-            .get(idx)
-            .map_or("<unknown>", |choice| choice.name.as_str());
-        anyhow::bail!("no eligible agents for workspace {name}");
-    }
-    if agents.len() == 1 {
-        let agent = agents[0].clone();
-        let workspace = preview::resolve_selected_workspace(
-            config,
-            cwd,
-            &state.workspaces[state.selected_workspace],
-            &agent,
-        )?;
-        return Ok(Some((agent, workspace)));
-    }
+        let Some(choice) = self.workspaces.get(idx) else {
+            return Ok(None);
+        };
+        let agents = choice.allowed_agents.clone();
+        let default_agent = choice.default_agent.clone();
 
-    let choice = &state.workspaces[state.selected_workspace];
-    state.selected_agent = crate::app::context::preferred_agent_index(
-        &agents,
-        choice.last_agent.as_deref(),
-        choice.default_agent.as_deref(),
-    )
-    .unwrap_or(0);
-    state.stage = ConsoleStage::Agent;
-    Ok(None)
+        // Branch 1: default agent set + present in the eligible set → direct launch.
+        if let Some(default_key) = default_agent.as_deref()
+            && let Some(agent) = agents.iter().find(|a| a.key() == default_key).cloned()
+        {
+            let workspace =
+                preview::resolve_selected_workspace(config, cwd, &self.workspaces[idx], &agent)?;
+            return Ok(Some((agent, workspace)));
+        }
+
+        // Branch 2: zero or one eligible agent.
+        match agents.len() {
+            0 => {
+                // No eligible agents — toast and stay in the manager list so
+                // the operator can edit the workspace's `allowed_agents` or
+                // register an agent. Avoids a hard error that would terminate
+                // the TUI from a single Enter press.
+                let name = self
+                    .workspaces
+                    .get(idx)
+                    .map_or("<unknown>", |choice| choice.name.as_str())
+                    .to_string();
+                if let ConsoleStage::Manager(ms) = &mut self.stage {
+                    ms.toast = Some(crate::console::manager::state::Toast {
+                        message: format!("no eligible agents for workspace \"{name}\""),
+                        kind: crate::console::manager::state::ToastKind::Error,
+                        shown_at: std::time::Instant::now(),
+                    });
+                }
+                Ok(None)
+            }
+            1 => {
+                let agent = agents.into_iter().next().unwrap();
+                let workspace = preview::resolve_selected_workspace(
+                    config,
+                    cwd,
+                    &self.workspaces[idx],
+                    &agent,
+                )?;
+                Ok(Some((agent, workspace)))
+            }
+            _ => {
+                // Branch 3: multiple eligible — open the picker overlay.
+                if let ConsoleStage::Manager(ms) = &mut self.stage {
+                    ms.list_modal = Some(crate::console::manager::state::Modal::AgentPicker {
+                        state: crate::console::widgets::agent_picker::AgentPickerState::new(agents),
+                    });
+                }
+                Ok(None)
+            }
+        }
+    }
 }
 
 pub fn run_console(
@@ -104,14 +151,11 @@ pub fn run_console(
             ms.toast = None;
         }
 
-        // Manager render takes `&mut ManagerState` so the picker modal
-        // can advance its spinner and drain background-load receivers
-        // during `terminal.draw`. Branch on the stage variant first so
-        // the closure either borrows `&state` (agent) or `&mut state.stage`
-        // (manager) — never both simultaneously.
-        if matches!(state.stage, ConsoleStage::Agent) {
-            terminal.draw(|frame| render::draw_agent_screen(frame, &state, &config, cwd))?;
-        } else if let ConsoleStage::Manager(ms) = &mut state.stage {
+        // Render the manager. `ConsoleStage` is single-variant today —
+        // the legacy full-screen agent picker was replaced by a
+        // `Modal::AgentPicker` overlay that the manager render already
+        // handles via the list_modal slot.
+        if let ConsoleStage::Manager(ms) = &mut state.stage {
             terminal.draw(|frame| manager::render(frame, ms, &config, cwd))?;
         }
         // Capture terminal size before the blocking read so the mouse
@@ -123,51 +167,64 @@ pub fn run_console(
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
-                if matches!(state.stage, ConsoleStage::Manager(_)) {
-                    if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        match manager::handle_key(ms, &mut config, paths, cwd, key)? {
-                            manager::InputOutcome::Continue => {}
-                            manager::InputOutcome::ExitJackin => {
-                                break Ok(None);
-                            }
-                            manager::InputOutcome::LaunchNamed(name) => {
-                                // Find the workspace by name in ConsoleState.workspaces.
-                                if let Some(idx) = state
-                                    .workspaces
-                                    .iter()
-                                    .position(|choice| choice.name == name)
-                                {
-                                    match transition_to_agent_stage(&config, cwd, &mut state, idx) {
-                                        Ok(Some(outcome)) => break Ok(Some(outcome)),
-                                        Ok(None) => {}
-                                        Err(e) => break Err(e),
-                                    }
-                                }
-                            }
-                            manager::InputOutcome::LaunchCurrentDir => {
-                                // Index 0 of ConsoleState.workspaces is the synthetic
-                                // "Current directory" choice (built in
-                                // ConsoleState::new). Route it through the same
-                                // agent-picker path as a saved workspace.
-                                match transition_to_agent_stage(&config, cwd, &mut state, 0) {
-                                    Ok(Some(outcome)) => break Ok(Some(outcome)),
-                                    Ok(None) => {}
-                                    Err(e) => break Err(e),
-                                }
+                let outcome = if let ConsoleStage::Manager(ms) = &mut state.stage {
+                    manager::handle_key(ms, &mut config, paths, cwd, key)?
+                } else {
+                    manager::InputOutcome::Continue
+                };
+                match outcome {
+                    manager::InputOutcome::Continue => {}
+                    manager::InputOutcome::ExitJackin => {
+                        break Ok(None);
+                    }
+                    manager::InputOutcome::LaunchNamed(name) => {
+                        // Find the workspace by name in ConsoleState.workspaces.
+                        if let Some(idx) = state
+                            .workspaces
+                            .iter()
+                            .position(|choice| choice.name == name)
+                        {
+                            match state.dispatch_launch_for_workspace(&config, cwd, idx) {
+                                Ok(Some(outcome)) => break Ok(Some(outcome)),
+                                Ok(None) => {}
+                                Err(e) => break Err(e),
                             }
                         }
                     }
-                } else {
-                    match input::handle_event(&mut state, key.code, &config, cwd) {
-                        input::EventOutcome::Continue => {}
-                        input::EventOutcome::Exit(outcome) => break outcome,
+                    manager::InputOutcome::LaunchCurrentDir => {
+                        // Index 0 of ConsoleState.workspaces is the synthetic
+                        // "Current directory" choice (built in
+                        // ConsoleState::new). Route it through the same
+                        // dispatcher as a saved workspace.
+                        match state.dispatch_launch_for_workspace(&config, cwd, 0) {
+                            Ok(Some(outcome)) => break Ok(Some(outcome)),
+                            Ok(None) => {}
+                            Err(e) => break Err(e),
+                        }
+                    }
+                    manager::InputOutcome::LaunchWithAgent(agent) => {
+                        // The `AgentPicker` modal just committed. The
+                        // dispatcher pinned `selected_workspace` when it
+                        // opened the picker, so resolve against that.
+                        // Should be unreachable when the index is missing
+                        // — the dispatcher validated it on open — but fall
+                        // back to staying in the run-loop rather than
+                        // panicking on a state-machine inconsistency.
+                        let idx = state.selected_workspace;
+                        if let Some(choice) = state.workspaces.get(idx) {
+                            match preview::resolve_selected_workspace(&config, cwd, choice, &agent)
+                            {
+                                Ok(workspace) => break Ok(Some((agent, workspace))),
+                                Err(e) => break Err(e),
+                            }
+                        }
                     }
                 }
             }
             Event::Mouse(mouse) => {
                 // Only the Manager/List stage consumes mouse events today
-                // (list/details seam drag). Agent-stage + modals on other
-                // stages fall through as silent no-ops.
+                // (list/details seam drag). Modals on other stages fall
+                // through as silent no-ops.
                 if let ConsoleStage::Manager(ms) = &mut state.stage {
                     manager::input::handle_mouse(ms, mouse, term_size);
                 }

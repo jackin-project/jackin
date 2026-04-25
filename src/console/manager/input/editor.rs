@@ -620,10 +620,10 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
                 ModalOutcome::Continue => {}
             }
         }
-        // GithubPicker is a list-view modal — the editor never opens it.
-        // If one somehow ends up here, treat any key as cancel so the
-        // operator isn't stuck.
-        Modal::GithubPicker { .. } => {
+        // GithubPicker and AgentPicker are list-view modals — the editor
+        // never opens them. If one somehow ends up here, treat any key as
+        // cancel so the operator isn't stuck.
+        Modal::GithubPicker { .. } | Modal::AgentPicker { .. } => {
             editor.modal = None;
         }
         Modal::ConfirmSave { state: modal_state } => {

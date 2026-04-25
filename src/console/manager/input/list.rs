@@ -162,11 +162,16 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
 }
 
 /// Dispatch a key into whatever modal currently sits on `state.list_modal`.
-/// Only `Modal::GithubPicker` is expected here today; any other variant that
-/// sneaks in is treated as cancel so the operator isn't stuck.
-pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) {
+/// Today the slot can hold either `Modal::GithubPicker` (opened by `o` on
+/// a workspace row) or `Modal::AgentPicker` (opened by Enter when the
+/// highlighted workspace has multiple eligible agents). Any other variant
+/// that sneaks in is treated as cancel so the operator isn't stuck.
+///
+/// Returns the resulting `InputOutcome` so the `AgentPicker` commit path
+/// can surface the chosen agent up to `run_console` for launch.
+pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some(modal) = state.list_modal.as_mut() else {
-        return;
+        return InputOutcome::Continue;
     };
     match modal {
         Modal::GithubPicker { state: picker } => match picker.handle_key(key) {
@@ -179,16 +184,30 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) {
                         shown_at: std::time::Instant::now(),
                     });
                 }
+                InputOutcome::Continue
             }
             ModalOutcome::Cancel => {
                 state.list_modal = None;
+                InputOutcome::Continue
             }
-            ModalOutcome::Continue => {}
+            ModalOutcome::Continue => InputOutcome::Continue,
+        },
+        Modal::AgentPicker { state: picker } => match picker.handle_key(key) {
+            ModalOutcome::Commit(agent) => {
+                state.list_modal = None;
+                InputOutcome::LaunchWithAgent(agent)
+            }
+            ModalOutcome::Cancel => {
+                state.list_modal = None;
+                InputOutcome::Continue
+            }
+            ModalOutcome::Continue => InputOutcome::Continue,
         },
         // Defensive catch-all — no other Modal variants are placed on the
         // list_modal slot today.
         _ => {
             state.list_modal = None;
+            InputOutcome::Continue
         }
     }
 }
