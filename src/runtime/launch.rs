@@ -2253,7 +2253,7 @@ plugins = []
         // `op read op://...`. The fake must handle both.
         std::fs::write(
             &bin_path,
-            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://Personal/api/token\" ]; then echo -n 'resolved-op-token'; exit 0; fi\nexit 99\n",
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://Personal/api/token\" ]; then printf %s 'resolved-op-token'; exit 0; fi\nexit 99\n",
         )
         .unwrap();
         let mut perms = std::fs::metadata(&bin_path).unwrap().permissions();
