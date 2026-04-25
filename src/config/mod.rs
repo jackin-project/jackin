@@ -12,7 +12,8 @@ mod persist;
 mod workspaces;
 
 pub use editor::{ConfigEditor, EnvScope};
-pub use mounts::{DockerMounts, MountEntry};
+pub use mounts::DockerMounts;
+pub(crate) use mounts::MountEntry;
 
 /// Serde helper: `skip_serializing_if` requires `fn(&T) -> bool`.
 #[allow(clippy::trivially_copy_pass_by_ref)]

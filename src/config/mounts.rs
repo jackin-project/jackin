@@ -5,41 +5,82 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
+/// Wire format for global mounts (top-level `[[mounts]]` and scoped
+/// `[mounts.<scope>]` entries). Mirrors `MountConfig` minus the
+/// `isolation` field, which is a workspace-mount concept only.
+/// Rejects unknown fields so an operator who tries to set `isolation`
+/// on a global mount gets a clear parse error rather than a silent
+/// no-op.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct GlobalMountConfig {
+    pub src: String,
+    pub dst: String,
+    #[serde(default)]
+    pub readonly: bool,
+}
+
+impl From<GlobalMountConfig> for MountConfig {
+    fn from(g: GlobalMountConfig) -> Self {
+        Self {
+            src: g.src,
+            dst: g.dst,
+            readonly: g.readonly,
+            isolation: crate::isolation::MountIsolation::Shared,
+        }
+    }
+}
+
+impl From<MountConfig> for GlobalMountConfig {
+    fn from(m: MountConfig) -> Self {
+        // Discards isolation by design; only used when reading existing
+        // MountConfig back into the global wire format. If you need to
+        // preserve isolation, you're using the wrong struct.
+        Self {
+            src: m.src,
+            dst: m.dst,
+            readonly: m.readonly,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MountEntry {
-    Mount(MountConfig),
-    Scoped(BTreeMap<String, MountConfig>),
+    Mount(GlobalMountConfig),
+    Scoped(BTreeMap<String, GlobalMountConfig>),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DockerMounts(BTreeMap<String, MountEntry>);
 
 impl DockerMounts {
-    pub fn get(&self, key: &str) -> Option<&MountEntry> {
+    pub(crate) fn get(&self, key: &str) -> Option<&MountEntry> {
         self.0.get(key)
     }
 
-    pub fn get_mut(&mut self, key: &str) -> Option<&mut MountEntry> {
+    #[allow(dead_code)]
+    pub(crate) fn get_mut(&mut self, key: &str) -> Option<&mut MountEntry> {
         self.0.get_mut(key)
     }
 
-    pub fn insert(&mut self, key: String, value: MountEntry) -> Option<MountEntry> {
+    pub(crate) fn insert(&mut self, key: String, value: MountEntry) -> Option<MountEntry> {
         self.0.insert(key, value)
     }
 
-    pub fn remove(&mut self, key: &str) -> Option<MountEntry> {
+    #[allow(dead_code)]
+    pub(crate) fn remove(&mut self, key: &str) -> Option<MountEntry> {
         self.0.remove(key)
     }
 
-    pub fn entry(
+    pub(crate) fn entry(
         &mut self,
         key: String,
     ) -> std::collections::btree_map::Entry<'_, String, MountEntry> {
         self.0.entry(key)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &MountEntry)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&String, &MountEntry)> {
         self.0.iter()
     }
 }
@@ -56,18 +97,21 @@ impl AppConfig {
         ];
 
         for scope in &scopes {
-            let entries = match scope {
+            let entries: BTreeMap<String, MountConfig> = match scope {
                 None => {
                     let mut map = BTreeMap::new();
                     for (name, entry) in self.docker.mounts.iter() {
                         if let MountEntry::Mount(m) = entry {
-                            map.insert(name.clone(), m.clone());
+                            map.insert(name.clone(), MountConfig::from(m.clone()));
                         }
                     }
                     map
                 }
                 Some(scope_key) => match self.docker.mounts.get(scope_key) {
-                    Some(MountEntry::Scoped(scope_map)) => scope_map.clone(),
+                    Some(MountEntry::Scoped(scope_map)) => scope_map
+                        .iter()
+                        .map(|(name, m)| (name.clone(), MountConfig::from(m.clone())))
+                        .collect(),
                     _ => continue,
                 },
             };
@@ -104,33 +148,37 @@ impl AppConfig {
         if scope_key.is_empty() {
             self.docker
                 .mounts
-                .insert(name.to_string(), MountEntry::Mount(mount));
+                .insert(name.to_string(), MountEntry::Mount(mount.into()));
         } else {
             match self.docker.mounts.entry(scope_key.to_string()) {
                 Entry::Occupied(mut entry) => {
                     if let MountEntry::Scoped(map) = entry.get_mut() {
-                        map.insert(name.to_string(), mount);
+                        map.insert(name.to_string(), mount.into());
                     }
                 }
                 Entry::Vacant(entry) => {
                     let mut map = BTreeMap::new();
-                    map.insert(name.to_string(), mount);
+                    map.insert(name.to_string(), mount.into());
                     entry.insert(MountEntry::Scoped(map));
                 }
             }
         }
     }
 
-    pub fn list_mounts(&self) -> Vec<(String, String, &MountConfig)> {
+    pub fn list_mounts(&self) -> Vec<(String, String, MountConfig)> {
         let mut result = Vec::new();
         for (key, entry) in self.docker.mounts.iter() {
             match entry {
                 MountEntry::Mount(m) => {
-                    result.push(("(global)".to_string(), key.clone(), m));
+                    result.push((
+                        "(global)".to_string(),
+                        key.clone(),
+                        MountConfig::from(m.clone()),
+                    ));
                 }
                 MountEntry::Scoped(map) => {
                     for (name, m) in map {
-                        result.push((key.clone(), name.clone(), m));
+                        result.push((key.clone(), name.clone(), MountConfig::from(m.clone())));
                     }
                 }
             }
@@ -143,7 +191,7 @@ impl AppConfig {
             .mounts
             .iter()
             .filter_map(|(_, entry)| match entry {
-                MountEntry::Mount(m) => Some(m.clone()),
+                MountEntry::Mount(m) => Some(MountConfig::from(m.clone())),
                 MountEntry::Scoped(_) => None,
             })
             .collect()
@@ -360,5 +408,39 @@ smith-data = { src = "/tmp/smith", dst = "/smith" }
         assert_eq!(resolved.len(), 2);
         assert!(resolved.iter().any(|(_, m)| m.dst == "/global"));
         assert!(resolved.iter().any(|(_, m)| m.dst == "/smith"));
+    }
+
+    #[test]
+    fn global_mount_rejects_isolation_field() {
+        let toml = r#"src = "/tmp/x"
+dst = "/workspace/x"
+isolation = "worktree"
+"#;
+        let err = toml::from_str::<GlobalMountConfig>(toml).unwrap_err();
+        assert!(
+            err.to_string().contains("isolation") || err.to_string().contains("unknown field"),
+            "expected unknown-field error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn global_mount_accepts_minimal_fields() {
+        let toml = r#"src = "/tmp/x"
+dst = "/workspace/x"
+"#;
+        let m: GlobalMountConfig = toml::from_str(toml).unwrap();
+        assert_eq!(m.src, "/tmp/x");
+        assert_eq!(m.dst, "/workspace/x");
+        assert!(!m.readonly);
+    }
+
+    #[test]
+    fn global_mount_accepts_readonly() {
+        let toml = r#"src = "/tmp/x"
+dst = "/workspace/x"
+readonly = true
+"#;
+        let m: GlobalMountConfig = toml::from_str(toml).unwrap();
+        assert!(m.readonly);
     }
 }

@@ -117,7 +117,7 @@ fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
         .mounts
         .iter()
         .filter_map(|(name, entry)| match entry {
-            MountEntry::Mount(mount) => Some((name.clone(), mount.clone())),
+            MountEntry::Mount(mount) => Some((name.clone(), MountConfig::from(mount.clone()))),
             MountEntry::Scoped(_) => None,
         })
         .collect::<Vec<_>>();
