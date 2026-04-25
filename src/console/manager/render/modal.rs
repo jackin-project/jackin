@@ -5,7 +5,7 @@
 use ratatui::{Frame, layout::Rect};
 
 use super::super::super::widgets::{
-    confirm, confirm_save, error_popup, file_browser, github_picker, mount_dst_choice,
+    confirm, confirm_save, error_popup, file_browser, github_picker, mount_dst_choice, op_picker,
     save_discard, text_input, workdir_pick,
 };
 use super::super::state::Modal;
@@ -57,11 +57,14 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
             let inner_width = (outer.width * 60 / 100).saturating_sub(4);
             (60, error_popup::required_height(state, inner_width))
         }
+        // OpPicker: 80% width, 22 rows — leaves comfortable space for
+        // the breadcrumb header, filter row, ~16 list rows, and chrome.
+        Modal::OpPicker { .. } => (80, 22),
     };
     centered_rect_fixed(outer, pct_w, height_rows)
 }
 
-pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
+pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
     let area = frame.area();
     let modal_area = modal_outer_rect(modal, area);
     match modal {
@@ -76,5 +79,11 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &Modal<'_>) {
         Modal::GithubPicker { state } => github_picker::render(frame, modal_area, state),
         Modal::ConfirmSave { state } => confirm_save::render(frame, modal_area, state),
         Modal::ErrorPopup { state } => error_popup::render(frame, modal_area, state),
+        Modal::OpPicker { state } => {
+            // Advance the spinner glyph and drain any pending background
+            // load result before drawing — the picker has no other clock.
+            state.tick();
+            op_picker::render::render(frame, modal_area, state);
+        }
     }
 }

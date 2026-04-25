@@ -94,7 +94,7 @@ pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[FooterItem])
 
 pub fn render(
     frame: &mut Frame,
-    state: &ManagerState<'_>,
+    state: &mut ManagerState<'_>,
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
@@ -184,33 +184,40 @@ pub fn render(
     }
 
     // Phase 2: overlay any active modal.
-    match &state.stage {
-        ManagerStage::Editor(editor) => {
-            if let Some(modal) = &editor.modal {
-                modal::render_modal(frame, modal);
+    //
+    // The list-anchored modal lives on `ManagerState` itself rather
+    // than on a stage variant, so its borrow has to be split off
+    // separately from the stage-anchored modals to keep the borrow
+    // checker happy with the shared `state` argument.
+    let is_list_stage = matches!(state.stage, ManagerStage::List);
+    if is_list_stage {
+        if let Some(modal) = &mut state.list_modal {
+            modal::render_modal(frame, modal);
+        }
+    } else {
+        match &mut state.stage {
+            ManagerStage::Editor(editor) => {
+                if let Some(modal) = &mut editor.modal {
+                    modal::render_modal(frame, modal);
+                }
             }
-        }
-        ManagerStage::CreatePrelude(prelude) => {
-            if let Some(modal) = &prelude.modal {
-                modal::render_modal(frame, modal);
+            ManagerStage::CreatePrelude(prelude) => {
+                if let Some(modal) = &mut prelude.modal {
+                    modal::render_modal(frame, modal);
+                }
             }
-        }
-        ManagerStage::ConfirmDelete {
-            state: confirm_state,
-            ..
-        } => {
-            // ConfirmState is a top-level field on the variant, not wrapped
-            // in Modal::Confirm, so render it directly.
-            let area = frame.area();
-            let modal_area = centered_rect_fixed(area, 60, 7);
-            super::super::widgets::confirm::render(frame, modal_area, confirm_state);
-        }
-        ManagerStage::List => {
-            // List-level modals (e.g. Modal::GithubPicker opened via `o`
-            // on a workspace row) are anchored on ManagerState, not on a
-            // stage variant. Render them last so they overlay the list.
-            if let Some(modal) = &state.list_modal {
-                modal::render_modal(frame, modal);
+            ManagerStage::ConfirmDelete {
+                state: confirm_state,
+                ..
+            } => {
+                // ConfirmState is a top-level field on the variant, not wrapped
+                // in Modal::Confirm, so render it directly.
+                let area = frame.area();
+                let modal_area = centered_rect_fixed(area, 60, 7);
+                super::super::widgets::confirm::render(frame, modal_area, confirm_state);
+            }
+            ManagerStage::List => {
+                // Handled above via the `is_list_stage` early branch.
             }
         }
     }

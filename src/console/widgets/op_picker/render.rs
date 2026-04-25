@@ -1,0 +1,423 @@
+//! Render path for [`super::OpPickerState`].
+//!
+//! Single entry point: [`render`] dispatches on `state.load_state` and
+//! `state.stage` to draw one of:
+//!   - a fatal-state instructional panel (`NotInstalled` /
+//!     `NotSignedIn` / `NoVaults` / `GenericFatal`),
+//!   - a Braille-spinner loading panel (`Loading`),
+//!   - a pane (`Vault` / `Item` / `Field`) when `Ready` (or when the
+//!     load finished with a recoverable error — the banner shows above
+//!     the list).
+
+use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
+};
+
+use crate::operator_env::OpField;
+
+use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
+
+const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
+const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
+const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
+const WHITE: Color = Color::Rgb(255, 255, 255);
+
+/// Braille spinner glyphs cycled by the `spinner_tick` field on
+/// `OpLoadState::Loading`. Ten frames; advance one per render.
+const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
+    frame.render_widget(ratatui::widgets::Clear, area);
+    match &state.load_state {
+        OpLoadState::Error(OpPickerError::Fatal(fatal)) => render_fatal(frame, area, fatal),
+        OpLoadState::Loading { spinner_tick } => render_loading(frame, area, state, *spinner_tick),
+        OpLoadState::Idle
+        | OpLoadState::Ready
+        | OpLoadState::Error(OpPickerError::Recoverable { .. }) => {
+            render_pane(frame, area, state);
+        }
+    }
+}
+
+fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
+    let title_text: String = title.into();
+    let title_span = Span::styled(
+        format!(" {title_text} "),
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    );
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(title_span)
+}
+
+/// Footer line — canonical key/text/sep styling from the rest of the
+/// modal palette. `pairs` is a sequence of `(key, label)` chunks; the
+/// renderer interleaves `·` separators between them.
+fn footer_line(pairs: &[(&str, &str)]) -> Line<'static> {
+    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let text_style = Style::default().fg(PHOSPHOR_GREEN);
+    let sep_style = Style::default().fg(PHOSPHOR_DARK);
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for (i, (k, t)) in pairs.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" \u{b7} ", sep_style));
+        }
+        spans.push(Span::styled((*k).to_string(), key_style));
+        spans.push(Span::styled(format!(" {t}"), text_style));
+    }
+    Line::from(spans)
+}
+
+/// Render the active drill-down pane (and any recoverable error
+/// banner). Title carries the breadcrumb.
+#[allow(clippy::too_many_lines)]
+fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
+    let title = match state.stage {
+        OpPickerStage::Vault => "1Password".to_string(),
+        OpPickerStage::Item => {
+            let v = state
+                .selected_vault
+                .as_ref()
+                .map_or("", |v| v.name.as_str());
+            format!("{v} \u{2192} Items")
+        }
+        OpPickerStage::Field => {
+            let v = state
+                .selected_vault
+                .as_ref()
+                .map_or("", |v| v.name.as_str());
+            let i = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
+            format!("{v} \u{2192} {i} \u{2192} Fields")
+        }
+    };
+    let block = modal_block(title);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Reserve a row for the recoverable banner when present; otherwise
+    // the layout is the canonical "filter / spacer / list / spacer /
+    // hint" stack.
+    let banner_height: u16 = match &state.load_state {
+        OpLoadState::Error(OpPickerError::Recoverable { .. }) => 2,
+        _ => 0,
+    };
+
+    let constraints = vec![
+        Constraint::Length(banner_height), // optional banner
+        Constraint::Length(1),             // filter row
+        Constraint::Length(1),             // spacer
+        Constraint::Min(1),                // list
+        Constraint::Length(1),             // spacer
+        Constraint::Length(1),             // footer
+    ];
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(inner);
+
+    if banner_height > 0
+        && let OpLoadState::Error(OpPickerError::Recoverable { message }) = &state.load_state
+    {
+        let truncated: String = message.chars().take(120).collect();
+        let line = Line::from(vec![
+            Span::styled(
+                "Error: ",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(truncated, Style::default().fg(PHOSPHOR_DIM)),
+        ]);
+        frame.render_widget(Paragraph::new(line), rows[0]);
+    }
+
+    // Filter row: `Filter: <buf>█` — placeholder dotted underline when
+    // empty, cursor block at the end when populated.
+    let filter_line = if state.filter_buf.is_empty() {
+        Line::from(vec![
+            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled("\u{2591}".repeat(20), Style::default().fg(PHOSPHOR_DARK)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled(state.filter_buf.clone(), Style::default().fg(WHITE)),
+            Span::styled(
+                "\u{2588}",
+                Style::default()
+                    .fg(WHITE)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ),
+        ])
+    };
+    frame.render_widget(Paragraph::new(filter_line), rows[1]);
+
+    // List rows.
+    let list_lines: Vec<Line<'static>> = match state.stage {
+        OpPickerStage::Vault => render_vault_lines(state),
+        OpPickerStage::Item => render_item_lines(state),
+        OpPickerStage::Field => render_field_lines(state),
+    };
+    let list_para = if list_lines.is_empty() {
+        Paragraph::new(Line::from(Span::styled(
+            "(no matches)",
+            Style::default().fg(PHOSPHOR_DIM),
+        )))
+        .alignment(Alignment::Center)
+    } else {
+        Paragraph::new(list_lines)
+    };
+    frame.render_widget(list_para, rows[3]);
+
+    // Footer hint per pane.
+    let pairs: Vec<(&str, &str)> = match state.stage {
+        OpPickerStage::Vault => vec![
+            ("\u{2191}\u{2193}", "navigate"),
+            ("type", "filter"),
+            ("Enter", "select"),
+            ("Esc", "cancel"),
+        ],
+        OpPickerStage::Item => vec![
+            ("\u{2191}\u{2193}", "navigate"),
+            ("Backspace", "clear filter"),
+            ("Enter", "select"),
+            ("Esc", "back to vaults"),
+        ],
+        OpPickerStage::Field => vec![
+            ("\u{2191}\u{2193}", "navigate"),
+            ("type", "filter"),
+            ("Enter", "select"),
+            ("Esc", "back"),
+        ],
+    };
+    frame.render_widget(
+        Paragraph::new(footer_line(&pairs)).alignment(Alignment::Center),
+        rows[5],
+    );
+}
+
+fn render_vault_lines(state: &OpPickerState) -> Vec<Line<'static>> {
+    let visible = state.filtered_vaults();
+    let selected = state.vault_list_state.selected;
+    visible
+        .into_iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let style = if is_selected {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            Line::from(Span::styled(format!("{prefix}{}", v.name), style))
+        })
+        .collect()
+}
+
+fn render_item_lines(state: &OpPickerState) -> Vec<Line<'static>> {
+    let visible = state.filtered_items();
+    let selected = state.item_list_state.selected;
+    visible
+        .into_iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let style = if is_selected {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            Line::from(Span::styled(format!("{prefix}{}", item.name), style))
+        })
+        .collect()
+}
+
+fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
+    let visible: Vec<&OpField> = state.filtered_fields();
+    let selected = state.field_list_state.selected;
+    // Pad labels to a consistent width so the type annotation aligns.
+    let label_w = visible
+        .iter()
+        .map(|f| display_label(f).chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(8);
+    visible
+        .into_iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let label = display_label(f);
+            let pad = label_w.saturating_sub(label.chars().count());
+            let label_style = if is_selected {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            let annotation = format!(
+                "({})",
+                if f.concealed {
+                    "concealed".to_string()
+                } else {
+                    f.field_type.to_lowercase()
+                }
+            );
+            Line::from(vec![
+                Span::styled(format!("{prefix}{label}"), label_style),
+                Span::raw(format!("{}  ", " ".repeat(pad))),
+                Span::styled(annotation, Style::default().fg(PHOSPHOR_DIM)),
+            ])
+        })
+        .collect()
+}
+
+fn display_label(f: &OpField) -> String {
+    if f.label.is_empty() {
+        f.id.clone()
+    } else {
+        f.label.clone()
+    }
+}
+
+fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8) {
+    let block = modal_block("1Password");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
+    let descriptor = match state.stage {
+        OpPickerStage::Vault => "loading vaults\u{2026}".to_string(),
+        OpPickerStage::Item => {
+            let v = state
+                .selected_vault
+                .as_ref()
+                .map_or("", |v| v.name.as_str());
+            format!("loading items from {v}\u{2026}")
+        }
+        OpPickerStage::Field => {
+            let i = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
+            format!("loading fields for {i}\u{2026}")
+        }
+    };
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let body = Line::from(vec![
+        Span::styled(glyph.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
+        Span::raw("  "),
+        Span::styled(descriptor, Style::default().fg(PHOSPHOR_DIM)),
+    ]);
+    frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
+
+    let footer = footer_line(&[("running op", "subcommand"), ("Esc", "cancel")]);
+    frame.render_widget(Paragraph::new(footer).alignment(Alignment::Center), rows[3]);
+}
+
+fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
+    let block = modal_block("1Password");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let body_lines = match fatal {
+        OpPickerFatalState::NotInstalled => vec![
+            Line::from(Span::styled(
+                "1Password CLI not found.",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Install: brew install 1password-cli (macOS)",
+                Style::default().fg(PHOSPHOR_GREEN),
+            )),
+            Line::from(Span::styled(
+                "or visit 1password.com/downloads/command-line/",
+                Style::default().fg(PHOSPHOR_GREEN),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "After install, run `op signin`, then press Ctrl+O to retry.",
+                Style::default().fg(PHOSPHOR_DIM),
+            )),
+        ],
+        OpPickerFatalState::NotSignedIn => vec![
+            Line::from(Span::styled(
+                "1Password CLI is not signed in.",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Run `op signin` in your shell, then retry.",
+                Style::default().fg(PHOSPHOR_GREEN),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "jackin' uses your existing op session — there is no separate jackin' auth.",
+                Style::default().fg(PHOSPHOR_DIM),
+            )),
+        ],
+        OpPickerFatalState::NoVaults => vec![
+            Line::from(Span::styled(
+                "No vaults available.",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Check 1Password's app integration settings:",
+                Style::default().fg(PHOSPHOR_GREEN),
+            )),
+            Line::from(Span::styled(
+                "Settings \u{2192} Developer \u{2192} CLI integration.",
+                Style::default().fg(PHOSPHOR_GREEN),
+            )),
+        ],
+        OpPickerFatalState::GenericFatal { message } => {
+            let truncated: String = message.chars().take(120).collect();
+            vec![
+                Line::from(Span::styled(
+                    "1Password CLI error.",
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(truncated, Style::default().fg(PHOSPHOR_DIM))),
+            ]
+        }
+    };
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    frame.render_widget(
+        Paragraph::new(body_lines).alignment(Alignment::Center),
+        rows[1],
+    );
+
+    let footer = footer_line(&[("Esc", "close")]);
+    frame.render_widget(Paragraph::new(footer).alignment(Alignment::Center), rows[3]);
+}

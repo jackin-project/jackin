@@ -131,7 +131,11 @@ fn editor<'s, 'a>(state: &'s ManagerState<'a>) -> &'s EditorState<'a> {
 /// Render the manager state to a 100x30 `TestBackend` and return the raw
 /// buffer as newline-delimited rows. Used to assert that a given glyph
 /// appears on screen.
-fn render_to_dump(state: &ManagerState<'_>, config: &AppConfig, cwd: &std::path::Path) -> String {
+fn render_to_dump(
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) -> String {
     let backend = TestBackend::new(100, 30);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
@@ -228,7 +232,7 @@ fn secrets_tab_shows_existing_env() -> Result<()> {
     // the value; unmasking makes the assertion more specific).
     editor_mut(&mut state).secrets_masked = false;
 
-    let dump = render_to_dump(&state, &config, cwd);
+    let dump = render_to_dump(&mut state, &config, cwd);
     assert!(
         dump.contains("DB_URL"),
         "existing env key must be visible on Secrets tab; got:\n{dump}"
@@ -461,7 +465,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     );
 
     // Before expansion: LOG_LEVEL must not appear in the render.
-    let dump_collapsed = render_to_dump(&state, &config, cwd);
+    let dump_collapsed = render_to_dump(&mut state, &config, cwd);
     assert!(
         !dump_collapsed.contains("LOG_LEVEL"),
         "collapsed section must not render agent keys; got:\n{dump_collapsed}"
@@ -477,7 +481,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
         editor(&state).secrets_expanded.contains("agent-smith"),
         "→ on collapsed header must expand the agent-smith section"
     );
-    let dump_expanded = render_to_dump(&state, &config, cwd);
+    let dump_expanded = render_to_dump(&mut state, &config, cwd);
     assert!(
         dump_expanded.contains("LOG_LEVEL"),
         "expanded section must render agent keys; got:\n{dump_expanded}"
@@ -489,7 +493,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
         !editor(&state).secrets_expanded.contains("agent-smith"),
         "← on expanded header must collapse the section"
     );
-    let dump_recollapsed = render_to_dump(&state, &config, cwd);
+    let dump_recollapsed = render_to_dump(&mut state, &config, cwd);
     assert!(
         !dump_recollapsed.contains("LOG_LEVEL"),
         "recollapsed section must hide agent keys; got:\n{dump_recollapsed}"

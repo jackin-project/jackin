@@ -4,7 +4,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::super::widgets::{
-    ModalOutcome, file_browser::FileBrowserState, workdir_pick::WorkdirPickState,
+    ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
+    workdir_pick::WorkdirPickState,
 };
 use super::super::render::editor::{SecretsRow, secrets_flat_row_count, secrets_flat_rows};
 use super::super::state::{
@@ -539,23 +540,45 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
         return;
     };
     match modal {
-        Modal::TextInput { target, state } => match state.handle_key(key) {
-            ModalOutcome::Commit(value) => {
-                let target = target.clone();
-                editor.modal = None;
-                apply_text_input_to_pending(&target, editor, &value);
+        Modal::TextInput { target, state } => {
+            // Intercept Ctrl+O on the EnvValue arm before delegating to
+            // the textarea — the picker is a Secrets-tab-only escape
+            // hatch from value entry into a `op://...` reference. The
+            // interception lives here (not in `TextInputState`) because
+            // the picker needs the surrounding scope/key context to
+            // reconstruct the EnvValue modal on commit/cancel.
+            if matches!(target, TextInputTarget::EnvValue { .. })
+                && key.code == KeyCode::Char('o')
+                && key.modifiers.contains(KeyModifiers::CONTROL)
+            {
+                let original = state.value();
+                let target_clone = target.clone();
+                let label_clone = state.label.clone();
+                editor.modal = Some(Modal::OpPicker {
+                    state: Box::new(OpPickerState::new(original, target_clone, label_clone)),
+                });
+                return;
             }
-            ModalOutcome::Cancel => {
-                // Secrets-tab Add flow state hygiene: if the operator
-                // cancels the second (value) step, drop the stashed key
-                // so a later re-entry starts fresh.
-                if let TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } = target {
-                    editor.pending_env_key = None;
+            match state.handle_key(key) {
+                ModalOutcome::Commit(value) => {
+                    let target = target.clone();
+                    editor.modal = None;
+                    apply_text_input_to_pending(&target, editor, &value);
                 }
-                editor.modal = None;
+                ModalOutcome::Cancel => {
+                    // Secrets-tab Add flow state hygiene: if the operator
+                    // cancels the second (value) step, drop the stashed key
+                    // so a later re-entry starts fresh.
+                    if let TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } =
+                        target
+                    {
+                        editor.pending_env_key = None;
+                    }
+                    editor.modal = None;
+                }
+                ModalOutcome::Continue => {}
             }
-            ModalOutcome::Continue => {}
-        },
+        }
         Modal::FileBrowser { target, state } => match state.handle_key(key) {
             ModalOutcome::Commit(path) => {
                 let target = *target;
@@ -660,6 +683,37 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             }
             ModalOutcome::Continue => {}
         },
+        Modal::OpPicker { state: picker } => {
+            use crate::console::widgets::text_input::TextInputState;
+            match picker.handle_key(key) {
+                ModalOutcome::Commit(path) => {
+                    // Operator picked a Vault → Item → Field path.
+                    // Reconstruct the EnvValue TextInput modal pre-filled
+                    // with the chosen `op://...` reference so the
+                    // operator can edit before pressing Enter.
+                    let target = picker.saved_target.clone();
+                    let label = picker.saved_label.clone();
+                    editor.modal = Some(Modal::TextInput {
+                        target,
+                        state: TextInputState::new(label, path),
+                    });
+                }
+                ModalOutcome::Cancel => {
+                    // Esc from the vault pane (or any fatal-state
+                    // panel). Restore the EnvValue modal exactly as it
+                    // was before Ctrl+O — original textarea contents
+                    // intact.
+                    let target = picker.saved_target.clone();
+                    let label = picker.saved_label.clone();
+                    let original = picker.original_value.clone();
+                    editor.modal = Some(Modal::TextInput {
+                        target,
+                        state: TextInputState::new(label, original),
+                    });
+                }
+                ModalOutcome::Continue => {}
+            }
+        }
     }
 }
 

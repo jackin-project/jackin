@@ -9,7 +9,7 @@ use crate::workspace::WorkspaceConfig;
 use crate::console::widgets::{
     confirm::ConfirmState, confirm_save::ConfirmSaveState, error_popup::ErrorPopupState,
     file_browser::FileBrowserState, github_picker::GithubPickerState,
-    mount_dst_choice::MountDstChoiceState, text_input::TextInputState,
+    mount_dst_choice::MountDstChoiceState, op_picker::OpPickerState, text_input::TextInputState,
     workdir_pick::WorkdirPickState,
 };
 
@@ -294,6 +294,14 @@ pub enum Modal<'a> {
     /// Dismiss returns the operator to the editor with changes intact.
     ErrorPopup {
         state: ErrorPopupState,
+    },
+    /// 1Password vault/item/field picker — opened from the `EnvValue`
+    /// `TextInput` arm of `handle_editor_modal` when the operator
+    /// presses `Ctrl+O`. Boxed because the picker's three result
+    /// `Vec`s, runner trait object, and load-channel receiver make it
+    /// substantially larger than the existing variants.
+    OpPicker {
+        state: Box<OpPickerState>,
     },
 }
 

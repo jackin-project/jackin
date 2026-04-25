@@ -104,10 +104,16 @@ pub fn run_console(
             ms.toast = None;
         }
 
-        terminal.draw(|frame| match &state.stage {
-            ConsoleStage::Agent => render::draw_agent_screen(frame, &state, &config, cwd),
-            ConsoleStage::Manager(ms) => manager::render(frame, ms, &config, cwd),
-        })?;
+        // Manager render takes `&mut ManagerState` so the picker modal
+        // can advance its spinner and drain background-load receivers
+        // during `terminal.draw`. Branch on the stage variant first so
+        // the closure either borrows `&state` (agent) or `&mut state.stage`
+        // (manager) — never both simultaneously.
+        if matches!(state.stage, ConsoleStage::Agent) {
+            terminal.draw(|frame| render::draw_agent_screen(frame, &state, &config, cwd))?;
+        } else if let ConsoleStage::Manager(ms) = &mut state.stage {
+            terminal.draw(|frame| manager::render(frame, ms, &config, cwd))?;
+        }
         // Capture terminal size before the blocking read so the mouse
         // handler can hit-test against the current seam position. Harmless
         // to call every loop turn — it's a cheap syscall and the render

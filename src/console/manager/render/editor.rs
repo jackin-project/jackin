@@ -190,6 +190,9 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
                     FooterItem::Sep,
                     FooterItem::Key("Ctrl+M"),
                     FooterItem::Text("mask/unmask"),
+                    FooterItem::Sep,
+                    FooterItem::Key("Ctrl+O"),
+                    FooterItem::Text("1Password"),
                 ],
                 Some(SecretsRow::WorkspaceHeader | SecretsRow::AgentHeader { .. }) => vec![
                     FooterItem::Key("Enter"),
