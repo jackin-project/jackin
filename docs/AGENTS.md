@@ -84,13 +84,16 @@ bun install --frozen-lockfile
 
 ### Operator console
 
-- **`jackin console`** is the canonical name for the TUI. Use it in prose,
-  comparisons, and examples.
-- **`jackin`** (no subcommand) is a convenience shortcut that opens the
-  console on an interactive terminal. Mention the shortcut **once per
-  page** — ideally in the synopsis or first-run walkthrough — then use
-  `jackin console` everywhere else. **Do not write `jackin / jackin console`
-  inline**; it reads as two separate commands and confuses readers.
+- **`jackin console` is the canonical name for the TUI.** Use it
+  everywhere in prose, comparisons, examples, and screenshots —
+  including the second and subsequent mentions on the same page.
+- **The bare `jackin` shortcut is explained exactly once**, in the
+  console command page (`docs/src/content/docs/commands/console.mdx`),
+  as syntactic sugar that opens the console on an interactive terminal.
+  No other doc page should explain the shortcut, mention it inline,
+  or use the dual-form `(\`jackin\` or \`jackin console\`)` /
+  `\`jackin\` / \`jackin console\``. Both forms confuse readers and
+  imply they're separate commands.
 - **`jackin console` is deliberately less featured than `jackin load`**
   (and the other CLI subcommands). The console is the simplified,
   intuitive front for common day-to-day flows. New niche flags and
