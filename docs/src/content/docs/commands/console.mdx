@@ -89,6 +89,33 @@ emits a warning. It delegates to the same console handler as
 `jackin console`.
 </Aside>
 
+## Workspace editor — Agents tab
+
+The Agents tab controls which agents may launch in this workspace and
+which one (if any) is the default.
+
+- **Allow / disallow** — `Space` on an agent row toggles whether the
+  agent is allowed in this workspace. The `[x]` / `[ ]` glyph reflects
+  the *effective* allow-state: an empty `allowed_agents` list is the
+  shorthand for "all agents allowed", and every row reads `[x]` in that
+  mode.
+- **Default agent** — `*` on an allowed agent row pins it as the
+  workspace default; pressing `*` again on the same row clears the
+  default. The default agent carries a `★` marker in the rendered list.
+- **Disallowing the current default** clears the default automatically
+  — defaults are only meaningful on allowed agents.
+- `*` on an unallowed agent is a no-op; press `Space` to allow the
+  agent first.
+
+| Key | Action |
+|---|---|
+| `Space` on agent row | Toggle allow / disallow |
+| `*` on allowed agent | Set as default (or clear if already default) |
+
+The default-agent assignment used to live as a read-only row on the
+General tab; it is now editable here. The General tab now shows only
+`Name` and `Working dir`.
+
 ## Workspace editor — Secrets tab
 
 The Secrets tab in the `jackin console` workspace editor manages env vars at

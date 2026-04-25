@@ -168,8 +168,8 @@ pub(super) fn handle_editor_key(
         KeyCode::Char(' ') if editor.active_tab == EditorTab::Agents => {
             toggle_agent_allowed_at_cursor(editor, config);
         }
-        KeyCode::Char('D' | 'd') if editor.active_tab == EditorTab::Agents => {
-            set_default_agent_at_cursor(editor, config);
+        KeyCode::Char('*') if editor.active_tab == EditorTab::Agents => {
+            toggle_default_agent_at_cursor(editor, config);
         }
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
             editor.modal = Some(Modal::FileBrowser {
@@ -268,12 +268,11 @@ pub(super) fn handle_editor_key(
 /// Returns the highest valid `FieldFocus::Row` index for the current tab.
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
     match editor.active_tab {
-        EditorTab::General => match editor.mode {
-            // Edit: name (0), workdir (1), default_agent (2), last_used (3)
-            EditorMode::Edit { .. } => 3,
-            // Create: name read-only (0), workdir (1)
-            EditorMode::Create => 1,
-        },
+        // General has two editable rows in both modes:
+        //   0 = Name, 1 = Working dir.
+        // The former read-only `Default agent` and `Last used` rows were
+        // removed — default_agent moved to the Agents tab via `*`.
+        EditorTab::General => 1,
         EditorTab::Mounts => editor.pending.mounts.len(), // mounts fill 0..N-1, sentinel at N
         EditorTab::Agents => config.agents.len().saturating_sub(1), // 0-based into agents
         EditorTab::Secrets => secrets_flat_row_count(editor).saturating_sub(1),
@@ -499,22 +498,39 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
     }
 }
 
-fn set_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
+/// `*` on an Agents-tab row toggles the default-agent assignment for the
+/// row's agent. Semantics:
+///
+/// - **Cursor on the current default** → clear the default (set to `None`).
+/// - **Cursor on an allowed agent (not the current default)** → set as
+///   default. Agents that are effectively allowed under the "all" shorthand
+///   (empty `allowed_agents`) qualify; the shorthand is preserved.
+/// - **Cursor on an unallowed agent** → silent no-op. The operator must
+///   `Space` to allow the agent first.
+fn toggle_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
     let agent_names: Vec<String> = config.agents.keys().cloned().collect();
-    if let Some(agent) = agent_names.get(n) {
-        // In "all agents allowed" shorthand (empty list) the agent is
-        // already effectively allowed — don't collapse the shorthand into
-        // a single-agent allow list just because the operator picked a
-        // default. Only append when we're already in "custom" mode and
-        // the new default isn't in the list yet.
-        if !super::super::agent_allow::allows_all_agents(&editor.pending)
-            && !editor.pending.allowed_agents.contains(agent)
-        {
-            editor.pending.allowed_agents.push(agent.clone());
-        }
-        editor.pending.default_agent = Some(agent.clone());
+    let Some(agent) = agent_names.get(n) else {
+        return;
+    };
+
+    // Clear-current-default branch: pressing `*` on the agent that's
+    // already the default unsets it. Symmetric with the "press again to
+    // toggle off" model the operator sees on Space.
+    if editor.pending.default_agent.as_deref() == Some(agent.as_str()) {
+        editor.pending.default_agent = None;
+        return;
     }
+
+    // Set-default branch: only valid on agents that are *effectively
+    // allowed* — defaults are meaningless on disallowed agents and the
+    // launch-time resolver would fail. Silent no-op on disallowed rows
+    // (the operator must `Space` to allow the agent first).
+    if !super::super::agent_allow::agent_is_effectively_allowed(&editor.pending, agent) {
+        return;
+    }
+
+    editor.pending.default_agent = Some(agent.clone());
 }
 
 fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
@@ -1360,18 +1376,18 @@ mod tests {
         assert_eq!(e.active_tab, EditorTab::General);
     }
 
-    // ── Agents tab: D-key default binding ──────────────────────────────
+    // ── Agents tab: `*` default-toggle binding ───────────────────────
 
     #[test]
-    fn d_key_sets_default_agent_on_current_row() {
+    fn agents_tab_star_sets_default_on_allowed_agent() {
+        // Cursor on row 1 (agent "beta"), no default set yet. Workspace
+        // starts in "all agents allowed" shorthand, so beta is
+        // effectively allowed. Pressing `*` pins it as default while
+        // preserving the shorthand (empty allow list).
         let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
-        // Cursor on row 1 (agent "beta"), no default set yet. The
-        // workspace starts in the "all agents allowed" shorthand (empty
-        // `allowed_agents`), so picking a default must NOT collapse the
-        // shorthand into a single-agent allow list — see finding #1.
         let mut state = editor_on_agents_tab(empty_ws(), 1);
 
-        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
+        press(&mut state, &mut config, KeyCode::Char('*')).unwrap();
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
@@ -1379,92 +1395,25 @@ mod tests {
         assert_eq!(
             e.pending.default_agent.as_deref(),
             Some("beta"),
-            "D on row 1 should pin agent `beta` as default",
+            "`*` on row 1 should pin agent `beta` as default",
         );
         assert!(
             e.pending.allowed_agents.is_empty(),
-            "default-agent pick must preserve the all-agents shorthand \
-             (empty allowed_agents); got {:?}",
+            "default-agent pick must preserve the all-agents shorthand; \
+             got {:?}",
             e.pending.allowed_agents,
         );
     }
 
     #[test]
-    fn d_key_preserves_all_agents_shorthand() {
-        // Explicit guard on the shorthand-preservation behavior: setting
-        // a default on a workspace in "all agents" mode must leave the
-        // allow list empty, not switch it to a one-agent custom list.
-        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
-        let mut state = editor_on_agents_tab(empty_ws(), 2);
-        {
-            let ManagerStage::Editor(e) = &state.stage else {
-                panic!("editor stage expected");
-            };
-            assert!(
-                e.pending.allowed_agents.is_empty(),
-                "precondition: workspace should start in all-agents mode",
-            );
-        }
-
-        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
-
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("editor stage expected");
-        };
-        assert!(
-            e.pending.allowed_agents.is_empty(),
-            "all-agents shorthand must survive D; got {:?}",
-            e.pending.allowed_agents,
-        );
-        assert_eq!(e.pending.default_agent.as_deref(), Some("gamma"));
-    }
-
-    #[test]
-    fn d_key_appends_to_custom_allow_list_when_missing() {
-        // Complementary case: when the workspace is already in "custom"
-        // mode (non-empty allow list) and the chosen default is NOT in
-        // the list, pressing D must append it — otherwise the config
-        // would reference a forbidden default.
-        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+    fn agents_tab_star_on_current_default_clears_it() {
+        // With default = "alpha" (effectively allowed under shorthand),
+        // pressing `*` on the same row clears the default. Toggle-off is
+        // symmetric with the Space allow/disallow toggle.
+        let mut config = config_with_agents(&["alpha", "beta"]);
         let mut ws = empty_ws();
-        ws.allowed_agents = vec!["alpha".into()];
-        // Cursor on row 1 (agent "beta"), which is NOT in the allow list.
-        let mut state = editor_on_agents_tab(ws, 1);
-
-        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
-
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("editor stage expected");
-        };
-        assert_eq!(e.pending.default_agent.as_deref(), Some("beta"));
-        assert_eq!(
-            e.pending.allowed_agents,
-            vec!["alpha".to_string(), "beta".to_string()],
-            "custom allow list must pick up the new default when missing",
-        );
-    }
-
-    #[test]
-    fn lowercase_d_key_sets_default_agent_on_current_row() {
-        // Operators often hit `d` without holding shift; the binding
-        // must accept both cases.
-        let mut config = config_with_agents(&["alpha", "beta"]);
-        let mut state = editor_on_agents_tab(empty_ws(), 0);
-
-        press(&mut state, &mut config, KeyCode::Char('d')).unwrap();
-
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("editor stage expected");
-        };
-        assert_eq!(e.pending.default_agent.as_deref(), Some("alpha"));
-    }
-
-    #[test]
-    fn star_key_no_longer_sets_default_agent() {
-        // Regression guard: the legacy `*` binding was removed in favour
-        // of `D`. Pressing `*` on an agent row must now be a no-op.
-        let mut config = config_with_agents(&["alpha", "beta"]);
-        let mut state = editor_on_agents_tab(empty_ws(), 1);
+        ws.default_agent = Some("alpha".into());
+        let mut state = editor_on_agents_tab(ws, 0);
 
         press(&mut state, &mut config, KeyCode::Char('*')).unwrap();
 
@@ -1473,7 +1422,84 @@ mod tests {
         };
         assert!(
             e.pending.default_agent.is_none(),
-            "`*` must no longer set the default agent",
+            "`*` on the current default must clear it; got {:?}",
+            e.pending.default_agent,
+        );
+    }
+
+    #[test]
+    fn agents_tab_star_on_unallowed_agent_is_noop() {
+        // Workspace in "custom" mode with only `alpha` allowed; cursor
+        // on row 1 (`beta`, NOT in the allow list). `*` must not set
+        // beta as default — defaults are meaningless on disallowed
+        // agents and the operator should `Space` to allow first.
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into()];
+        let mut state = editor_on_agents_tab(ws, 1);
+
+        press(&mut state, &mut config, KeyCode::Char('*')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.pending.default_agent.is_none(),
+            "`*` on a disallowed agent must be a no-op; got {:?}",
+            e.pending.default_agent,
+        );
+        assert_eq!(
+            e.pending.allowed_agents,
+            vec!["alpha".to_string()],
+            "`*` must not silently extend the allow list; got {:?}",
+            e.pending.allowed_agents,
+        );
+    }
+
+    #[test]
+    fn agents_tab_disallow_default_clears_default() {
+        // With "alpha" pinned as default (custom allow list = [alpha]),
+        // pressing Space on alpha to disallow it must also clear the
+        // default — defaults are only meaningful on allowed agents.
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into()];
+        ws.default_agent = Some("alpha".into());
+        let mut state = editor_on_agents_tab(ws, 0);
+
+        press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            !e.pending.allowed_agents.contains(&"alpha".to_string()),
+            "alpha must be removed from allowed_agents after Space; got {:?}",
+            e.pending.allowed_agents,
+        );
+        assert!(
+            e.pending.default_agent.is_none(),
+            "disallowing the current default must clear default_agent; got {:?}",
+            e.pending.default_agent,
+        );
+    }
+
+    #[test]
+    fn d_key_no_longer_sets_default_agent_on_agents_tab() {
+        // Regression guard: the `D` binding was removed in favour of `*`.
+        // Pressing `D` on an agent row must now be a no-op (no other
+        // Agents-tab binding listens for `D`).
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut state = editor_on_agents_tab(empty_ws(), 1);
+
+        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.pending.default_agent.is_none(),
+            "`D` must no longer set the default agent on the Agents tab",
         );
     }
 

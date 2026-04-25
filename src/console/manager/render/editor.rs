@@ -110,11 +110,12 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
-            // Row indices are uniform across both modes for Enter-affordance
-            // purposes. Create mode has rows 0-1; Edit mode also has 2-3
-            // (default agent, last used) which are read-only and surface no
-            // Enter action either way.
-            //   row 0 = Name        (editable in both modes — Enter opens rename)
+            // The General tab now has only two editable rows in both
+            // Edit and Create modes. The former read-only rows
+            // (`Default agent`, `Last used`) were removed — `Default
+            // agent` moved to the Agents tab, `Last used` was deleted as
+            // informational clutter.
+            //   row 0 = Name        (editable — Enter opens rename)
             //   row 1 = Working dir (editable — Enter opens workdir picker)
             match cursor {
                 0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
@@ -168,10 +169,10 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
         }
         EditorTab::Agents => vec![
             FooterItem::Key("Space"),
-            FooterItem::Text("toggle"),
+            FooterItem::Text("allow/disallow"),
             FooterItem::Sep,
-            FooterItem::Key("D"),
-            FooterItem::Text("default"),
+            FooterItem::Key("*"),
+            FooterItem::Text("set/unset default"),
         ],
         EditorTab::Secrets => {
             // Row-specific hints depend on which SecretsRow kind the cursor
@@ -264,15 +265,20 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
     };
 
-    // In Create mode the row numbering is:
-    //   0 = name (editable — Enter opens rename TextInput, pre-filled from prelude)
-    //   1 = workdir
-    // In Edit mode:
-    //   0 = name (editable), 1 = workdir, 2 = default agent (ro), 3 = last used (ro)
+    // Both Edit and Create modes show the same two rows:
+    //   0 = Name        (editable; Enter opens rename TextInput)
+    //   1 = Working dir (editable; Enter opens workdir picker)
+    //
+    // The former `Default agent` (ro) and `Last used` (ro) rows have been
+    // removed from the General tab. `Default agent` is now editable on the
+    // Agents tab (see `*` keybinding); `Last used` was informational
+    // clutter and has no place here. The underlying schema fields
+    // (`default_agent`, `last_agent`) still live on `WorkspaceConfig` —
+    // we just don't surface them on the General tab anymore.
     let mut rows: Vec<Line> = Vec::new();
 
     if is_edit {
-        // Edit mode: name is an editable row at index 0.
+        // Edit mode: dirty markers diff against the original workspace.
         rows.push(render_editor_row(0, cursor, "Name", name_value, name_dirty));
         let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
         rows.push(render_editor_row(
@@ -282,25 +288,9 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             &workdir_display,
             state.pending.workdir != state.original.workdir,
         ));
-        // Default agent — read-only here; set via Agents tab.
-        rows.push(render_editor_readonly_row(
-            2,
-            cursor,
-            "Default agent",
-            state.pending.default_agent.as_deref().unwrap_or("(none)"),
-        ));
-        // Last used — read-only.
-        rows.push(render_editor_readonly_row(
-            3,
-            cursor,
-            "Last used",
-            state.original.last_agent.as_deref().unwrap_or("(none)"),
-        ));
     } else {
-        // Create mode: name is editable (Enter opens the rename TextInput)
-        // but we don't show an `● unsaved` marker because there's no
-        // "original" workspace to diff against — the save_count already
-        // tracks field-level changes.
+        // Create mode: no dirty markers — there's no "original" workspace
+        // to diff against; the save_count tracks field-level changes.
         rows.push(render_editor_row(0, cursor, "Name", name_value, false));
         let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
         rows.push(render_editor_row(
@@ -310,7 +300,6 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             &workdir_display,
             false,
         ));
-        // Hide "Default agent" and "Last used" in Create mode — they have no meaning yet.
     }
 
     frame.render_widget(Paragraph::new(rows).block(block), area);
@@ -349,34 +338,6 @@ fn render_editor_row(
         ));
     }
     Line::from(spans)
-}
-
-fn render_editor_readonly_row(
-    row: usize,
-    cursor: usize,
-    label: &str,
-    value: &str,
-) -> Line<'static> {
-    let selected = row == cursor;
-    let prefix = if selected { "▸ " } else { "  " };
-    // Read-only rows: label stays white (bold when focused) like editable
-    // rows; value + `(read-only)` suffix render in dim phosphor so the
-    // operator can visually skim editable vs fixed fields.
-    let label_style = if selected {
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(WHITE)
-    };
-    Line::from(vec![
-        Span::styled(format!("{prefix}{label:15}"), label_style),
-        Span::styled(value.to_string(), Style::default().fg(PHOSPHOR_DIM)),
-        Span::styled(
-            " (read-only)",
-            Style::default()
-                .fg(PHOSPHOR_DIM)
-                .add_modifier(Modifier::ITALIC),
-        ),
-    ])
 }
 
 fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
@@ -1040,6 +1001,35 @@ mod agents_tab_render_tests {
                 "in 'all' mode agent `{name}` must not render `[ ]`; got `{line}`"
             );
         }
+    }
+
+    /// The default-agent row carries the `★` marker; non-default rows
+    /// render a plain space in the marker column. Pins the glyph that
+    /// the `*` keybinding produces in the rendered list.
+    #[test]
+    fn default_agent_row_carries_star_marker() {
+        let cfg = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut ws = ws_with_allowed(&[]);
+        ws.default_agent = Some("beta".into());
+        let dump = render_to_dump(ws, &cfg);
+
+        let beta_line = dump
+            .lines()
+            .find(|l| l.contains("beta"))
+            .expect("beta must render");
+        assert!(
+            beta_line.contains('\u{2605}'),
+            "default agent row must carry the `★` marker; got `{beta_line}`"
+        );
+
+        let alpha_line = dump
+            .lines()
+            .find(|l| l.contains("alpha"))
+            .expect("alpha must render");
+        assert!(
+            !alpha_line.contains('\u{2605}'),
+            "non-default rows must not carry `★`; got `{alpha_line}`"
+        );
     }
 
     #[test]
