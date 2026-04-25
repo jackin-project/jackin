@@ -541,6 +541,47 @@ fn launch_agent_runtime(
     Ok(())
 }
 
+/// Query a container's post-attach state for use by `finalize_foreground_session`.
+///
+/// Returns `AttachOutcome::still_running` when the container is still running
+/// (terminal closed / detach), `AttachOutcome::oom_killed` when the kernel
+/// killed the container OOM, otherwise `AttachOutcome::stopped(exit_code)`.
+/// Capture failures are treated as `stopped(0)` (the safe default that lets
+/// the finalizer assess records but never erroneously mark a crash as clean).
+// The `Result` return is intentional: it gives us room to surface errors
+// once we tighten up the capture-failure handling (today we swallow them
+// with `unwrap_or_default`, but call sites already use `?`).
+#[allow(clippy::unnecessary_wraps)]
+pub fn inspect_attach_outcome(
+    runner: &mut impl crate::docker::CommandRunner,
+    container: &str,
+) -> anyhow::Result<crate::isolation::finalize::AttachOutcome> {
+    use crate::isolation::finalize::AttachOutcome;
+    let state = runner
+        .capture(
+            "docker",
+            &[
+                "inspect",
+                "-f",
+                "{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}",
+                container,
+            ],
+            None,
+        )
+        .unwrap_or_default();
+    let parts: Vec<&str> = state.trim().split('|').collect();
+    let status = parts.first().copied().unwrap_or("");
+    let exit_code = parts.get(1).and_then(|s| s.parse::<i32>().ok());
+    let oom = parts.get(2).copied().unwrap_or("") == "true";
+    if status == "running" {
+        Ok(AttachOutcome::still_running())
+    } else if oom {
+        Ok(AttachOutcome::oom_killed())
+    } else {
+        Ok(AttachOutcome::stopped(exit_code.unwrap_or(0)))
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn load_agent(
     paths: &JackinPaths,
@@ -888,6 +929,48 @@ fn load_agent_with(
             cleanup.run(runner);
         }
         launch_result?;
+
+        // Finalize per-mount isolation worktrees BEFORE the container teardown
+        // decision below: clean exits without dirty/unpushed state get their
+        // worktrees swept; dirty state is preserved (with an interactive prompt
+        // when stdin is a TTY). A `ReturnToAgent` choice restarts + re-attaches
+        // the container exactly once so the operator can address the dirty
+        // state inside the agent, then the safe cleanup is retried.
+        let interactive_finalize = std::io::stdin().is_terminal();
+        let mut prompt = crate::isolation::finalize::StdinPrompt;
+        let outcome = inspect_attach_outcome(runner, &container_name)?;
+        let decision = crate::isolation::finalize::finalize_foreground_session(
+            &container_name,
+            &paths.data_dir.join(&container_name),
+            outcome,
+            interactive_finalize,
+            &mut prompt,
+            runner,
+        )?;
+        if matches!(
+            decision,
+            crate::isolation::finalize::FinalizeDecision::ReturnToAgent
+        ) {
+            // Restart and re-attach the container in one command, then retry
+            // the safe cleanup pass once. We do not loop further: if the
+            // operator still leaves dirty state, the second pass will fall
+            // back to Preserved and exit normally.
+            runner.run(
+                "docker",
+                &["start", "-ai", &container_name],
+                None,
+                &RunOptions::default(),
+            )?;
+            let outcome2 = inspect_attach_outcome(runner, &container_name)?;
+            let _ = crate::isolation::finalize::finalize_foreground_session(
+                &container_name,
+                &paths.data_dir.join(&container_name),
+                outcome2,
+                interactive_finalize,
+                &mut prompt,
+                runner,
+            )?;
+        }
 
         // Classify how the interactive session ended so we know whether to
         // tear the container down or preserve it for `jackin hardline` to

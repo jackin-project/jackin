@@ -154,7 +154,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 let cwd = std::env::current_dir()?;
                 resolve_running_container_from_context(&config, &cwd, &mut runner)?
             };
-            runtime::hardline_agent(&container, &mut runner)
+            runtime::hardline_agent(&paths, &container, &mut runner)
         }
         Command::Eject(EjectArgs {
             selector,
