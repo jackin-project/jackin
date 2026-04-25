@@ -3,6 +3,11 @@ import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// Lychee checks links after the docs are rendered, but it cannot see plain
+// MDX code spans like `src/runtime/launch.rs` because those are just text.
+// This script makes repo-file references explicit by requiring <RepoFile />.
+// Then Astro renders a real GitHub link and lychee can verify it.
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const docsRoot = resolve(__dirname, '..')
 const repoRoot = resolve(docsRoot, '..')

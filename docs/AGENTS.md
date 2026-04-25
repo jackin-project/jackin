@@ -126,6 +126,10 @@ bun install --frozen-lockfile
 - Plain inline-code references to existing repo files under `src/`, `docs/`,
   `docker/`, or `.github/` fail `bun run check:repo-links`; link them instead.
   Proposed future files that do not exist yet may stay as code spans.
+- `check:repo-links` exists because lychee only checks real links in rendered
+  HTML. Plain code spans like `src/runtime/launch.rs` are not links, so lychee
+  cannot detect when those files are renamed or deleted. The source check makes
+  those references use `<RepoFile />`, then lychee verifies the generated URL.
 - `mailto:` links are included in lychee checks, so use real, intentional email
   addresses rather than placeholders.
 - Sidebar and top-nav are configured in `astro.config.ts`.
