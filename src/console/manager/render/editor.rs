@@ -260,7 +260,13 @@ fn contextual_row_items(state: &EditorState<'_>, config: &AppConfig) -> Vec<Foot
                     FooterItem::Key("P"),
                     FooterItem::Text("1Password"),
                 ],
-                None => vec![FooterItem::Key("M"), FooterItem::Text("mask/unmask")],
+                // Cursor never lands on `SectionSpacer` (skipped by the
+                // `↑`/`↓` handlers), but if anything ever queries the
+                // hint for that index we degrade to the same minimal
+                // hint as the `None` fallback.
+                Some(SecretsRow::SectionSpacer) | None => {
+                    vec![FooterItem::Key("M"), FooterItem::Text("mask/unmask")]
+                }
             }
         }
     }
@@ -504,6 +510,12 @@ pub(in crate::console::manager) enum SecretsRow {
     /// "+ Add agent-NAME environment variable" sentinel — only emitted
     /// when the agent section is expanded.
     AgentAddSentinel(String),
+    /// Visual blank-line separator between sections (workspace section ↔
+    /// first agent section, and between consecutive agent sections).
+    /// **Not focusable** — the cursor `↑`/`↓` handlers skip over this
+    /// variant so navigation reads as section-to-section without the
+    /// operator stepping onto an empty line.
+    SectionSpacer,
 }
 
 /// Build the flat row list used by both `render_secrets_tab` (to draw the
@@ -529,7 +541,15 @@ pub(in crate::console::manager) fn secrets_flat_rows(
         rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
     }
     rows.push(SecretsRow::WorkspaceAddSentinel);
+    // Emit a blank-line spacer above each agent section so the
+    // workspace block and each agent override section read as visually
+    // distinct units — dense back-to-back rows were hard to scan at a
+    // glance. The spacer is non-focusable; the cursor `↑`/`↓` handlers
+    // skip over it. The first iteration's spacer separates the
+    // workspace section from the first agent section; subsequent
+    // iterations' spacers separate consecutive agent sections.
     for agent in editor.pending.agents.keys() {
+        rows.push(SecretsRow::SectionSpacer);
         let expanded = editor.secrets_expanded.contains(agent);
         rows.push(SecretsRow::AgentHeader {
             agent: agent.clone(),
@@ -622,12 +642,13 @@ fn render_secrets_tab(
 
     for (i, row) in rows.iter().enumerate() {
         let selected = i == cursor;
-        // Two-column prefix: cursor (`▸ ` / `  `) followed by the
-        // op-marker column (`⚿ ` / `  `). The marker is only filled
-        // for op:// key rows; every other row leaves the column blank
-        // so column alignment is preserved across the tab — the
-        // operator's eye scans the marker column at a glance to see
-        // which keys are 1Password-backed.
+        // Two-column prefix: cursor (`▸ ` / `  `, 2 cells) followed by
+        // the op-marker column (`[op] ` / `     `, 5 chars). The marker
+        // is only filled for op:// key rows; every other row leaves the
+        // column blank so column alignment is preserved across the tab —
+        // the operator's eye scans the marker column at a glance to see
+        // which keys are 1Password-backed. Total prefix width before the
+        // key column is always 7 chars (2 + 5), regardless of row kind.
         let cursor_col = if selected { "▸ " } else { "  " };
         match row {
             SecretsRow::WorkspaceKeyRow(key) => {
@@ -652,10 +673,10 @@ fn render_secrets_tab(
                 } else {
                     Style::default().fg(WHITE)
                 };
-                // `  ` after the cursor column keeps alignment with
-                // op:// rows that fill the marker column with `⚿ `.
+                // 5-space marker column keeps alignment with op:// rows
+                // that fill the marker column with `[op] `.
                 lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}  + Add environment variable"),
+                    format!("{cursor_col}     + Add environment variable"),
                     style,
                 )));
             }
@@ -664,7 +685,7 @@ fn render_secrets_tab(
                 let in_registry = config.agents.contains_key(agent);
                 let count = state.pending.agents.get(agent).map_or(0, |o| o.env.len());
                 let mut spans = vec![Span::styled(
-                    format!("{cursor_col}  {arrow} Agent: {agent}  ({count} vars)"),
+                    format!("{cursor_col}     {arrow} Agent: {agent}  ({count} vars)"),
                     Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
                 )];
                 if !in_registry {
@@ -702,9 +723,15 @@ fn render_secrets_tab(
                     Style::default().fg(WHITE)
                 };
                 lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}  + Add {agent} environment variable"),
+                    format!("{cursor_col}     + Add {agent} environment variable"),
                     style,
                 )));
+            }
+            SecretsRow::SectionSpacer => {
+                // Render as a literal blank line. The cursor never lands
+                // on this row — `↑`/`↓` skip over it — so we don't even
+                // bother with the cursor-column prefix.
+                lines.push(Line::from(""));
             }
         }
     }
@@ -735,11 +762,14 @@ fn render_secrets_key_line(
     label_width: usize,
     op_accounts: &[OpAccount],
 ) -> Line<'static> {
-    /// Lock-and-key glyph that marks `op://` rows in the marker column.
-    /// Plain rows render two blank spaces in the same column to keep
-    /// the label/value alignment consistent across the tab.
-    const OP_MARKER: &str = "\u{26BF} ";
-    const NO_MARKER: &str = "  ";
+    /// Plain-text marker that flags `op://` rows in the marker column.
+    /// Renders as `[op] ` (5 chars) — earlier iterations used the `⚿`
+    /// glyph but it was hard to read across terminals and didn't carry
+    /// any "1Password" association at a glance. Plain rows render five
+    /// blank spaces in the same column to keep label/value alignment
+    /// consistent across the tab.
+    const OP_MARKER: &str = "[op] ";
+    const NO_MARKER: &str = "     ";
     const MASK: &str = "●●●●●●●●●●●";
 
     let label_style = if selected {
@@ -1513,10 +1543,13 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Op:// rows render with the lock-and-key (`⚿`) glyph in the
-    /// left-edge marker column. Plain rows do not.
+    /// Op:// rows render with the `[op]` text marker in the left-edge
+    /// marker column. Plain rows do not. The marker is text rather than
+    /// a single glyph because terminals render `⚿` (the previous marker)
+    /// inconsistently in width and the bracketed text immediately reads
+    /// as "1Password" without the operator having to learn a glyph.
     #[test]
-    fn op_row_renders_with_lock_marker() {
+    fn op_row_renders_with_op_text_marker() {
         let mut env = std::collections::BTreeMap::new();
         env.insert("DB_URL".into(), "op://Work/db/password".into());
         let ws = WorkspaceConfig {
@@ -1534,16 +1567,22 @@ mod secrets_tab_render_tests {
 
         let dump = render_to_dump(&editor);
         assert!(
-            dump.contains("\u{26BF}"),
-            "op:// row must render the ⚿ marker glyph; dump:\n{dump}"
+            dump.contains("[op]"),
+            "op:// row must render the `[op]` text marker; dump:\n{dump}"
+        );
+        // Belt-and-suspenders: the previous `⚿` glyph must NOT appear
+        // in the rendered output.
+        assert!(
+            !dump.contains("\u{26BF}"),
+            "the legacy `⚿` glyph must not appear after the marker swap; dump:\n{dump}"
         );
     }
 
-    /// Plain-text rows must NOT render the lock marker — that glyph is
+    /// Plain-text rows must NOT render the `[op]` marker — that text is
     /// reserved for op:// rows so the operator can scan the marker
     /// column to see which keys are 1Password-backed.
     #[test]
-    fn plain_row_renders_without_lock_marker() {
+    fn plain_row_renders_without_op_marker() {
         let mut env = std::collections::BTreeMap::new();
         env.insert("DEBUG".into(), "1".into());
         let ws = WorkspaceConfig {
@@ -1561,8 +1600,85 @@ mod secrets_tab_render_tests {
 
         let dump = render_to_dump(&editor);
         assert!(
-            !dump.contains("\u{26BF}"),
-            "plain-text row must not render the ⚿ marker; dump:\n{dump}"
+            !dump.contains("[op]"),
+            "plain-text row must not render the `[op]` marker; dump:\n{dump}"
+        );
+    }
+
+    /// The `[op]` marker is exactly 5 chars wide (`[`, `o`, `p`, `]`,
+    /// space) so it lines up with the 5-blank-space padding plain rows
+    /// render in the same column. Pinning the width here guards against
+    /// future tweaks that would re-break the alignment audit.
+    #[test]
+    fn op_row_marker_column_is_5_chars_wide_with_brackets() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "op://Work/db/password".into());
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env,
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("[op] "),
+            "op:// row must render the marker as exactly `[op] ` (5 chars \
+             including trailing space); dump:\n{dump}"
+        );
+    }
+
+    /// Plain rows render five blank chars in the marker column so the
+    /// key text starts at the same screen column as it does on op://
+    /// rows. Together with the `[op] ` width assertion above, this
+    /// guarantees the operator sees the key column line up across the
+    /// tab.
+    #[test]
+    fn plain_row_marker_column_is_5_blank_chars_for_alignment() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DEBUG".into(), "1".into());
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env,
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        // Render directly to an 80x15 buffer and pull out the row 1 line
+        // (row 0 is the top border). Examine the cells at columns 1..7,
+        // which is the 7-char prefix region (cursor column 1..3 +
+        // marker column 3..8). Cells 3..8 must all be blank spaces on a
+        // plain row.
+        let backend = TestBackend::new(80, 15);
+        let mut term = Terminal::new(backend).unwrap();
+        let config = AppConfig::default();
+        let accounts: Vec<crate::operator_env::OpAccount> = Vec::new();
+        term.draw(|f| {
+            render_secrets_tab(f, Rect::new(0, 0, 80, 15), &editor, &config, &accounts);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        // Line 1 is the first content row inside the bordered block.
+        let mut cells = String::new();
+        for x in 3..8 {
+            cells.push_str(buf[(x, 1)].symbol());
+        }
+        assert_eq!(
+            cells, "     ",
+            "plain row marker column (cells 3..8 of row 1) must be 5 \
+             blank spaces for alignment; got {cells:?}"
         );
     }
 
@@ -1599,6 +1715,96 @@ mod secrets_tab_render_tests {
         assert!(
             alpha < mike && mike < zulu,
             "keys must render alphabetically (ALPHA < MIKE < ZULU); offsets {alpha}/{mike}/{zulu}\n{dump}"
+        );
+    }
+
+    /// Section spacer is emitted between the workspace section and the
+    /// first agent section so the rows read as visually distinct units
+    /// rather than one dense block. The spacer slot lives between the
+    /// `WorkspaceAddSentinel` and the first `AgentHeader`.
+    #[test]
+    fn section_spacer_appears_between_workspace_and_first_agent_section() {
+        // Workspace with one env key + one agent override → flat rows
+        // are: WorkspaceKeyRow(0), WorkspaceAddSentinel(1),
+        //      SectionSpacer(2), AgentHeader(3).
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "postgres://localhost/db".into());
+        let mut agent_env = std::collections::BTreeMap::new();
+        agent_env.insert("LOG_LEVEL".into(), "debug".into());
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert(
+            "agent-smith".into(),
+            WorkspaceAgentOverride { env: agent_env },
+        );
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env,
+            agents,
+        };
+        let editor = EditorState::new_edit("ws".into(), ws);
+        let rows = super::secrets_flat_rows(&editor, &AppConfig::default());
+        assert!(
+            matches!(rows.get(2), Some(super::SecretsRow::SectionSpacer)),
+            "row 2 must be a SectionSpacer between workspace section \
+             and first agent header; got {:?}",
+            rows.get(2)
+        );
+        assert!(
+            matches!(rows.get(3), Some(super::SecretsRow::AgentHeader { .. })),
+            "row 3 must be the agent header right after the spacer; \
+             got {:?}",
+            rows.get(3)
+        );
+    }
+
+    /// Section spacer also appears between two consecutive agent
+    /// override sections — every transition into an agent block carries
+    /// a one-row blank gap above it.
+    #[test]
+    fn section_spacer_appears_between_consecutive_agent_sections() {
+        let mut a_env = std::collections::BTreeMap::new();
+        a_env.insert("LEVEL_A".into(), "1".into());
+        let mut b_env = std::collections::BTreeMap::new();
+        b_env.insert("LEVEL_B".into(), "2".into());
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert(
+            "agent-architect".into(),
+            WorkspaceAgentOverride { env: a_env },
+        );
+        agents.insert("agent-smith".into(), WorkspaceAgentOverride { env: b_env });
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents,
+        };
+        let editor = EditorState::new_edit("ws".into(), ws);
+        let rows = super::secrets_flat_rows(&editor, &AppConfig::default());
+        // Expected rows (no workspace keys; both agents collapsed):
+        //   0 WorkspaceAddSentinel
+        //   1 SectionSpacer
+        //   2 AgentHeader { agent-architect }
+        //   3 SectionSpacer
+        //   4 AgentHeader { agent-smith }
+        assert!(
+            matches!(rows.get(1), Some(super::SecretsRow::SectionSpacer)),
+            "spacer expected before the first agent header; rows={rows:?}"
+        );
+        assert!(
+            matches!(rows.get(3), Some(super::SecretsRow::SectionSpacer)),
+            "spacer expected between consecutive agent sections; rows={rows:?}"
+        );
+        // No trailing spacer after the last section.
+        assert!(
+            !matches!(rows.last(), Some(super::SecretsRow::SectionSpacer)),
+            "no trailing spacer after the final section; rows={rows:?}"
         );
     }
 }

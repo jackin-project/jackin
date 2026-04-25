@@ -454,12 +454,16 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     // Secrets flat rows on this fixture (no workspace-level keys, one
     // collapsed agent section; no preamble rows are rendered):
     //   0 WorkspaceAddSentinel
-    //   1 AgentHeader { agent: "agent-smith", expanded: false }
-    // Navigate to row 1.
+    //   1 SectionSpacer
+    //   2 AgentHeader { agent: "agent-smith", expanded: false }
+    // Pressing `↓` once skips the SectionSpacer at row 1 and lands on
+    // the agent header at row 2.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     assert!(
-        matches!(editor(&state).active_field, FieldFocus::Row(1)),
-        "cursor must land on the agent header row"
+        matches!(editor(&state).active_field, FieldFocus::Row(2)),
+        "cursor must skip SectionSpacer and land on the agent header row; \
+         got {:?}",
+        editor(&state).active_field
     );
 
     // Before expansion: LOG_LEVEL must not appear in the render.
@@ -1569,7 +1573,8 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
 
     // Rows on this fixture (no workspace keys, one collapsed agent section):
     //   0 WorkspaceAddSentinel
-    //   1 AgentHeader { agent: "agent-smith", expanded: false }
+    //   1 SectionSpacer  (skipped by ↑/↓)
+    //   2 AgentHeader { agent: "agent-smith", expanded: false }
     // Expand the agent section so the AgentAddSentinel row exists.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
@@ -1577,10 +1582,11 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
 
     // After expansion:
     //   0 WorkspaceAddSentinel
-    //   1 AgentHeader (expanded)
-    //   2 AgentKeyRow { agent: "agent-smith", key: "LOG_LEVEL" }
-    //   3 AgentAddSentinel("agent-smith")
-    // Navigate to row 3.
+    //   1 SectionSpacer
+    //   2 AgentHeader (expanded)
+    //   3 AgentKeyRow { agent: "agent-smith", key: "LOG_LEVEL" }
+    //   4 AgentAddSentinel("agent-smith")
+    // Navigate to row 4.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
 
@@ -2117,9 +2123,12 @@ fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
         .secrets_expanded
         .insert("agent-smith".into());
 
-    // Rows now: [WorkspaceAddSentinel, AgentHeader(expanded),
-    //            AgentKeyRow(LOG_LEVEL), AgentAddSentinel].
-    // Navigate to the in-section sentinel (index 3 → 3 Down presses).
+    // Rows now: [WorkspaceAddSentinel, SectionSpacer,
+    //            AgentHeader(expanded), AgentKeyRow(LOG_LEVEL),
+    //            AgentAddSentinel]. The first `↓` skips the
+    //            non-focusable SectionSpacer at row 1 and lands on the
+    //            AgentHeader at row 2; subsequent `↓` presses walk to
+    //            the AgentAddSentinel at row 4.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;

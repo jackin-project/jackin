@@ -150,12 +150,28 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             let FieldFocus::Row(n) = editor.active_field;
-            editor.active_field = FieldFocus::Row(n.saturating_sub(1));
+            let candidate = n.saturating_sub(1);
+            // On the Secrets tab, skip over non-focusable section
+            // spacers so the cursor never lands on a blank line.
+            let next = if editor.active_tab == EditorTab::Secrets {
+                step_secrets_cursor_up(editor, config, candidate)
+            } else {
+                candidate
+            };
+            editor.active_field = FieldFocus::Row(next);
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             let FieldFocus::Row(n) = editor.active_field;
             let max = max_row_for_tab(editor, config);
-            editor.active_field = FieldFocus::Row((n + 1).min(max));
+            let candidate = (n + 1).min(max);
+            // On the Secrets tab, skip over non-focusable section
+            // spacers so the cursor never lands on a blank line.
+            let next = if editor.active_tab == EditorTab::Secrets {
+                step_secrets_cursor_down(editor, config, candidate, max)
+            } else {
+                candidate
+            };
+            editor.active_field = FieldFocus::Row(next);
         }
         KeyCode::Enter => {
             match editor.active_tab {
@@ -297,6 +313,52 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         EditorTab::Mounts => editor.pending.mounts.len(), // mounts fill 0..N-1, sentinel at N
         EditorTab::Agents => config.agents.len().saturating_sub(1), // 0-based into agents
         EditorTab::Secrets => secrets_flat_row_count(editor, config).saturating_sub(1),
+    }
+}
+
+/// `↓`-direction cursor step on the Secrets tab. Starts at `candidate`
+/// and advances forward until landing on a focusable row (i.e. anything
+/// other than [`SecretsRow::SectionSpacer`]). If every row from
+/// `candidate` through `max` is a spacer (impossible given how spacers
+/// are emitted today, but defended for robustness), returns `candidate`
+/// unchanged so the cursor at least doesn't wrap silently.
+fn step_secrets_cursor_down(
+    editor: &EditorState<'_>,
+    config: &AppConfig,
+    candidate: usize,
+    max: usize,
+) -> usize {
+    use super::super::render::editor::SecretsRow;
+    let rows = secrets_flat_rows(editor, config);
+    let mut idx = candidate;
+    while idx <= max {
+        match rows.get(idx) {
+            Some(SecretsRow::SectionSpacer) => idx += 1,
+            _ => return idx,
+        }
+    }
+    candidate
+}
+
+/// `↑`-direction cursor step on the Secrets tab. Starts at `candidate`
+/// and walks backward until landing on a focusable row. Mirrors
+/// [`step_secrets_cursor_down`] in spirit; a successful step never
+/// crosses index 0 (the workspace row stack always starts on a
+/// focusable row, so 0 is always safe).
+fn step_secrets_cursor_up(editor: &EditorState<'_>, config: &AppConfig, candidate: usize) -> usize {
+    use super::super::render::editor::SecretsRow;
+    let rows = secrets_flat_rows(editor, config);
+    let mut idx = candidate;
+    loop {
+        match rows.get(idx) {
+            Some(SecretsRow::SectionSpacer) => {
+                if idx == 0 {
+                    return 0;
+                }
+                idx -= 1;
+            }
+            _ => return idx,
+        }
     }
 }
 
@@ -464,6 +526,10 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
                 state,
             });
         }
+        // Cursor never lands on `SectionSpacer` (skipped on `↑`/`↓`),
+        // but keep the match exhaustive — silently no-op on the
+        // pathological case where some future code path lands here.
+        SecretsRow::SectionSpacer => {}
     }
 }
 
@@ -546,6 +612,10 @@ fn open_secrets_add_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
             SecretsScopeTag::Agent(agent.clone()),
             format!("New {agent} environment key"),
         ),
+        // Cursor never lands on `SectionSpacer` (skipped on `↑`/`↓`),
+        // but keep the match exhaustive — silently no-op on the
+        // pathological case.
+        SecretsRow::SectionSpacer => return,
     };
     let state = env_key_input_state(editor, &scope, label, String::new());
     editor.modal = Some(Modal::TextInput {
@@ -1006,7 +1076,9 @@ fn open_secrets_picker_modal(
         SecretsRow::AgentKeyRow { agent, key } => Some((SecretsScopeTag::Agent(agent), Some(key))),
         SecretsRow::WorkspaceAddSentinel => Some((SecretsScopeTag::Workspace, None)),
         SecretsRow::AgentAddSentinel(agent) => Some((SecretsScopeTag::Agent(agent), None)),
-        SecretsRow::AgentHeader { .. } => None,
+        // Header rows and section spacers don't have an associated
+        // (scope, key) — neither opens the picker.
+        SecretsRow::AgentHeader { .. } | SecretsRow::SectionSpacer => None,
     };
     let Some(target) = target else {
         return;
@@ -2153,9 +2225,9 @@ mod tests {
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
         editor.secrets_expanded.insert("smith".into());
-        // Rows: WorkspaceAddSentinel(0), AgentHeader(1), AgentKeyRow(2),
-        //       AgentAddSentinel(3). Focus the key row.
-        editor.active_field = FieldFocus::Row(2);
+        // Rows: WorkspaceAddSentinel(0), SectionSpacer(1), AgentHeader(2),
+        //       AgentKeyRow(3), AgentAddSentinel(4). Focus the key row.
+        editor.active_field = FieldFocus::Row(3);
         state.stage = ManagerStage::Editor(editor);
 
         handle_key(
@@ -2435,8 +2507,9 @@ mod tests {
         editor.active_tab = EditorTab::Secrets;
         editor.secrets_expanded.insert("smith".into());
         // Rows: WorkspaceKeyRow(0), WorkspaceAddSentinel(1),
-        // AgentHeader(2), AgentKeyRow(3), AgentAddSentinel(4).
-        editor.active_field = FieldFocus::Row(3);
+        // SectionSpacer(2), AgentHeader(3), AgentKeyRow(4),
+        // AgentAddSentinel(5). Focus the agent key row.
+        editor.active_field = FieldFocus::Row(4);
         state.stage = ManagerStage::Editor(editor);
 
         handle_key(
@@ -2460,6 +2533,88 @@ mod tests {
             !e.unmasked_rows
                 .contains(&(SecretsScopeTag::Workspace, "API_TOKEN".into())),
             "workspace-scope API_TOKEN with same key name must remain masked"
+        );
+    }
+
+    /// Pressing `↓` from the workspace `+ Add` sentinel must skip past
+    /// the `SectionSpacer` and land directly on the first focusable row
+    /// of the agent section (the `AgentHeader`). Same in reverse with
+    /// `↑`. Regression guard for the cursor-skip logic added with the
+    /// blank-line-between-sections layout polish.
+    #[test]
+    fn cursor_skips_section_spacer_on_down_arrow() {
+        use super::super::super::render::editor::{SecretsRow, secrets_flat_rows};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        let mut ag_env = std::collections::BTreeMap::new();
+        ag_env.insert("LOG_LEVEL".into(), "debug".into());
+        ws.agents.insert(
+            "agent-smith".into(),
+            crate::workspace::WorkspaceAgentOverride { env: ag_env },
+        );
+
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        // Rows with no workspace env keys + one collapsed agent section:
+        //   0 WorkspaceAddSentinel
+        //   1 SectionSpacer
+        //   2 AgentHeader
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        // Sanity-check the row layout matches the comment above before
+        // exercising the navigation.
+        if let ManagerStage::Editor(e) = &state.stage {
+            let rows = secrets_flat_rows(e, &config);
+            assert!(matches!(
+                rows.first(),
+                Some(SecretsRow::WorkspaceAddSentinel)
+            ));
+            assert!(matches!(rows.get(1), Some(SecretsRow::SectionSpacer)));
+            assert!(matches!(rows.get(2), Some(SecretsRow::AgentHeader { .. })));
+        }
+
+        // ↓ from row 0 must land on row 2, skipping the spacer at row 1.
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Down),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            matches!(e.active_field, FieldFocus::Row(2)),
+            "↓ from sentinel(0) must skip spacer(1) and land on header(2); \
+             got {:?}",
+            e.active_field
+        );
+
+        // ↑ from row 2 must land back on row 0, skipping the spacer.
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Up),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            matches!(e.active_field, FieldFocus::Row(0)),
+            "↑ from header(2) must skip spacer(1) and land on sentinel(0); \
+             got {:?}",
+            e.active_field
         );
     }
 }
