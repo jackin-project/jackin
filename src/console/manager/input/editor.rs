@@ -335,9 +335,9 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
     match modal {
         Modal::TextInput { target, state } => match state.handle_key(key) {
             ModalOutcome::Commit(value) => {
-                let target = *target;
+                let target = target.clone();
                 editor.modal = None;
-                apply_text_input_to_pending(target, editor, &value);
+                apply_text_input_to_pending(&target, editor, &value);
             }
             ModalOutcome::Cancel => {
                 editor.modal = None;
@@ -448,7 +448,7 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
 }
 
 pub(super) fn apply_text_input_to_pending(
-    target: super::super::state::TextInputTarget,
+    target: &super::super::state::TextInputTarget,
     editor: &mut EditorState<'_>,
     value: &str,
 ) {
@@ -469,6 +469,12 @@ pub(super) fn apply_text_input_to_pending(
             if let Some(last) = editor.pending.mounts.last_mut() {
                 last.dst = value.to_string();
             }
+        }
+        TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } => {
+            // Secrets-tab text-input handlers land in commit 2. No code
+            // path in commit 1 opens these modals, so this arm is
+            // unreachable for now.
+            unreachable!("Secrets text-input handlers land in commit 2")
         }
     }
 }
@@ -726,7 +732,7 @@ mod tests {
         };
         match &e.modal {
             Some(Modal::TextInput { target, state }) => {
-                assert_eq!(*target, TextInputTarget::Name);
+                assert_eq!(target, &TextInputTarget::Name);
                 assert_eq!(
                     state.value(),
                     "typo-name",
@@ -745,7 +751,7 @@ mod tests {
         let mut editor = EditorState::new_create();
         editor.pending_name = Some("old-name".into());
 
-        apply_text_input_to_pending(TextInputTarget::Name, &mut editor, "new-name");
+        apply_text_input_to_pending(&TextInputTarget::Name, &mut editor, "new-name");
 
         assert_eq!(editor.pending_name.as_deref(), Some("new-name"));
     }
@@ -785,7 +791,7 @@ mod tests {
         };
         match &e.modal {
             Some(Modal::TextInput { target, state }) => {
-                assert_eq!(*target, TextInputTarget::Name);
+                assert_eq!(target, &TextInputTarget::Name);
                 assert_eq!(state.value(), "keep-me");
             }
             other => panic!("expected TextInput(Name); got {other:?}"),
@@ -839,7 +845,7 @@ mod tests {
         handle_editor_modal(&mut editor, key(KeyCode::Char('e')));
         match &editor.modal {
             Some(Modal::TextInput { target, .. }) => {
-                assert_eq!(*target, TextInputTarget::MountDst);
+                assert_eq!(target, &TextInputTarget::MountDst);
             }
             other => panic!("expected TextInput(MountDst); got {other:?}"),
         }

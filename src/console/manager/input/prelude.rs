@@ -347,8 +347,8 @@ mod tests {
         match &prelude.modal {
             Some(Modal::TextInput { target, .. }) => {
                 assert_eq!(
-                    *target,
-                    super::super::super::state::TextInputTarget::MountDst
+                    target,
+                    &super::super::super::state::TextInputTarget::MountDst
                 );
             }
             other => panic!("expected TextInput(MountDst); got {other:?}"),
@@ -475,8 +475,8 @@ mod tests {
         match &prelude.modal {
             Some(Modal::TextInput { target, .. }) => {
                 assert_eq!(
-                    *target,
-                    super::super::super::state::TextInputTarget::MountDst
+                    target,
+                    &super::super::super::state::TextInputTarget::MountDst
                 );
             }
             other => panic!("expected TextInput(MountDst); got {other:?}"),

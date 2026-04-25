@@ -1,5 +1,6 @@
 //! Manager state machine. See docs/superpowers/specs/2026-04-23-workspace-manager-tui-design.md § 3.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use crate::config::AppConfig;
@@ -142,6 +143,18 @@ pub struct EditorState<'a> {
     /// Replaces the sibling `error_banner`, `exit_on_save_success`, and
     /// `pending_save_commit` flags that used to live on this struct.
     pub save_flow: EditorSaveFlow,
+    /// Secrets tab: whether values are rendered masked (default `true`).
+    /// Toggled via `Ctrl+M` while on the Secrets tab. Resets to `true`
+    /// each time the operator leaves and re-enters the tab.
+    pub secrets_masked: bool,
+    /// Secrets tab: which per-agent override sections are currently
+    /// expanded. Keyed by agent name. Empty on tab entry; populated as
+    /// the operator presses `→` / `Enter` on an agent header.
+    pub secrets_expanded: BTreeSet<String>,
+    /// Secrets tab: scratch field for the two-step "add" flow. Set when
+    /// the first `TextInput(EnvKey)` modal commits; cleared when the
+    /// follow-up `TextInput(EnvValue)` modal commits or cancels.
+    pub pending_env_key: Option<(SecretsScopeTag, String)>,
 }
 
 /// Explicit state-machine for the workspace editor's save cycle.
@@ -284,11 +297,24 @@ pub enum Modal<'a> {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TextInputTarget {
     Name,
     Workdir,
     MountDst,
+    /// Secrets tab — entering the key half of the two-step add flow.
+    /// Commit of this modal stashes the key on `pending_env_key` and
+    /// opens a follow-up `EnvValue` modal.
+    EnvKey {
+        scope: SecretsScopeTag,
+    },
+    /// Secrets tab — entering the value, either editing an existing
+    /// key (`scope` resolved from the focused row) or completing the
+    /// second half of the two-step add flow.
+    EnvValue {
+        scope: SecretsScopeTag,
+        key: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -297,9 +323,29 @@ pub enum FileBrowserTarget {
     EditAddMountSrc,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmTarget {
     DeleteWorkspace,
+    /// Secrets tab — confirming deletion of an env var. Carries the
+    /// scope (workspace-level or agent override) and the key to remove.
+    DeleteEnvVar {
+        scope: SecretsScopeTag,
+        key: String,
+    },
+}
+
+/// Identifies a Secrets-tab scope when stashed in `TextInputTarget` /
+/// `ConfirmTarget`.
+///
+/// Intentionally separate from [`crate::config::editor::EnvScope`] —
+/// that type requires the workspace name, which `EditorState` doesn't
+/// always have handy at modal-commit time (Create mode captures the name
+/// on `pending_name`). We derive the full `EnvScope` at save time inside
+/// `commit_editor_save`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecretsScopeTag {
+    Workspace,
+    Agent(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -475,6 +521,9 @@ impl EditorState<'_> {
             pending_name: None,
             exit_after_save: None,
             save_flow: EditorSaveFlow::Idle,
+            secrets_masked: true,
+            secrets_expanded: BTreeSet::default(),
+            pending_env_key: None,
         }
     }
 
@@ -498,6 +547,9 @@ impl EditorState<'_> {
             pending_name: None,
             exit_after_save: None,
             save_flow: EditorSaveFlow::Idle,
+            secrets_masked: true,
+            secrets_expanded: BTreeSet::default(),
+            pending_env_key: None,
         }
     }
 
@@ -547,8 +599,50 @@ impl EditorState<'_> {
             .filter(|m| !self.pending.mounts.contains(m))
             .count();
         n += added + removed;
+        // Env vars: count workspace-level adds, removes, and value changes.
+        n += env_change_count(&self.original.env, &self.pending.env);
+        // Per-agent env overrides: union of agent keys across original
+        // and pending. For each agent, count env deltas; if an agent
+        // exists in one side but not the other, its whole env map is
+        // counted as added/removed.
+        let agent_keys: std::collections::BTreeSet<&String> = self
+            .original
+            .agents
+            .keys()
+            .chain(self.pending.agents.keys())
+            .collect();
+        for agent in agent_keys {
+            let orig = self.original.agents.get(agent).map(|o| &o.env);
+            let pend = self.pending.agents.get(agent).map(|p| &p.env);
+            let empty = std::collections::BTreeMap::<String, String>::new();
+            let orig_env = orig.unwrap_or(&empty);
+            let pend_env = pend.unwrap_or(&empty);
+            n += env_change_count(orig_env, pend_env);
+        }
         n
     }
+}
+
+/// Count add/remove/change deltas between two env maps. Added keys,
+/// removed keys, and value-changed keys each contribute +1.
+fn env_change_count(
+    original: &std::collections::BTreeMap<String, String>,
+    pending: &std::collections::BTreeMap<String, String>,
+) -> usize {
+    let mut n = 0;
+    for (k, v) in pending {
+        match original.get(k) {
+            None => n += 1,                // added
+            Some(ov) if ov != v => n += 1, // changed
+            _ => {}
+        }
+    }
+    for k in original.keys() {
+        if !pending.contains_key(k) {
+            n += 1; // removed
+        }
+    }
+    n
 }
 
 impl Default for CreatePreludeState<'_> {

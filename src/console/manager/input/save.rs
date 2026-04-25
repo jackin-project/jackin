@@ -5,6 +5,7 @@ use super::super::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, Toast, ToastKind,
 };
 use crate::config::AppConfig;
+use crate::config::editor::EnvScope;
 use crate::paths::JackinPaths;
 
 /// Phase 1 of the save flow: run pre-save validation, compute the
@@ -197,7 +198,12 @@ pub(super) fn commit_editor_save(
     // until after `ce.save()` succeeds — otherwise a later
     // `ce.edit_workspace` or `ce.save` failure would leave the editor UI
     // advertising the new name while nothing has reached disk.
-    let pending_rename: Option<String> = match save_mode {
+    //
+    // The save-time workspace name (after any rename) is returned via
+    // `current_name` so the subsequent env-diff step can target the
+    // right `[workspaces.<name>.env]` / `[workspaces.<name>.agents.<agent>.env]`
+    // tables.
+    let (pending_rename, current_name): (Option<String>, String) = match save_mode {
         SaveMode::Edit { original_name } => {
             let mut current_name = original_name.clone();
             let mut rename_to: Option<String> = None;
@@ -223,7 +229,7 @@ pub(super) fn commit_editor_save(
 
             // Defer `editor.mode` mutation — only commit it in the
             // `ce.save()` success arm below.
-            rename_to
+            (rename_to, current_name)
         }
         SaveMode::Create => {
             let Some(name) = editor.pending_name.clone() else {
@@ -234,9 +240,19 @@ pub(super) fn commit_editor_save(
                 open_save_error_popup(editor, &e.to_string());
                 return Ok(());
             }
-            None
+            (None, name)
         }
     };
+
+    // Env diff: walk workspace-level and per-agent env maps and apply
+    // adds / changes / removes via ConfigEditor. `create_workspace` /
+    // `edit_workspace` do NOT write env (env lives outside
+    // `WorkspaceEdit`) — the TUI manages env changes exclusively
+    // through this diff loop calling `set_env_var` / `remove_env_var`.
+    //
+    // In Create mode `editor.original.env` is empty, so every entry in
+    // `editor.pending.env` falls through the "added" branch.
+    apply_env_diff(&mut ce, &current_name, &editor.original, &editor.pending);
 
     match ce.save() {
         Ok(fresh) => {
@@ -474,6 +490,28 @@ fn build_confirm_save_lines(
                     out.push(Line::from(Span::styled("  + (none)", value)));
                 }
             }
+
+            // Env vars — same diff layout as mounts / allowed agents.
+            // Covers workspace-level env plus per-agent overrides; each
+            // per-agent section is prefixed with the agent name so a
+            // single heading can host them all.
+            let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
+            if !env_lines.is_empty() {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Env vars:", heading)));
+                out.extend(env_lines);
+            }
+        }
+    }
+
+    // Create mode — include an "Env vars:" section listing every
+    // pending entry as added. Skip entirely when the map is empty.
+    if matches!(editor.mode, EditorMode::Create) {
+        let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
+        if !env_lines.is_empty() {
+            out.push(Line::raw(""));
+            out.push(Line::from(Span::styled("Env vars:", heading)));
+            out.extend(env_lines);
         }
     }
 
@@ -508,6 +546,73 @@ fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> Strin
     editor.pending.allowed_agents.join(", ")
 }
 
+/// Produce `+ KEY = VALUE` / `- KEY` env-var diff lines covering both
+/// workspace-level env and every per-agent override. Per-agent sections
+/// are prefixed with a `  <agent>:` header line so a single "Env vars:"
+/// heading can host the lot. Returns an empty vec when there are no
+/// changes.
+fn env_diff_lines(
+    original: &crate::workspace::WorkspaceConfig,
+    pending: &crate::workspace::WorkspaceConfig,
+    value: ratatui::style::Style,
+    dim: ratatui::style::Style,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    let mut out: Vec<Line<'static>> = Vec::new();
+
+    append_env_map_diff_lines(&mut out, None, &original.env, &pending.env, value, dim);
+
+    let agent_keys: std::collections::BTreeSet<&String> = original
+        .agents
+        .keys()
+        .chain(pending.agents.keys())
+        .collect();
+    let empty = std::collections::BTreeMap::<String, String>::new();
+    for agent in agent_keys {
+        let orig_env = original.agents.get(agent).map_or(&empty, |o| &o.env);
+        let pend_env = pending.agents.get(agent).map_or(&empty, |p| &p.env);
+        // Pre-check if there are any deltas for this agent; only emit
+        // the agent header when there are.
+        let mut probe: Vec<Line<'static>> = Vec::new();
+        append_env_map_diff_lines(&mut probe, None, orig_env, pend_env, value, dim);
+        if !probe.is_empty() {
+            out.push(Line::from(Span::styled(format!("  agent {agent}:"), value)));
+            append_env_map_diff_lines(&mut out, Some("  "), orig_env, pend_env, value, dim);
+        }
+    }
+    out
+}
+
+/// Append `+ KEY = VALUE` / `- KEY` lines to `out` for the diff between
+/// two env maps. `indent` (`None` or `Some("  ")`) controls per-agent
+/// sub-indent — workspace-level lines use two spaces to match existing
+/// diff styling; per-agent lines nest one extra level.
+fn append_env_map_diff_lines(
+    out: &mut Vec<ratatui::text::Line<'static>>,
+    indent: Option<&str>,
+    original: &std::collections::BTreeMap<String, String>,
+    pending: &std::collections::BTreeMap<String, String>,
+    value: ratatui::style::Style,
+    dim: ratatui::style::Style,
+) {
+    use ratatui::text::{Line, Span};
+    let prefix = indent.unwrap_or("");
+    for (k, v) in pending {
+        match original.get(k) {
+            Some(ov) if ov == v => {}
+            _ => out.push(Line::from(Span::styled(
+                format!("{prefix}  + {k} = {v}"),
+                value,
+            ))),
+        }
+    }
+    for k in original.keys() {
+        if !pending.contains_key(k) {
+            out.push(Line::from(Span::styled(format!("{prefix}  - {k}"), dim)));
+        }
+    }
+}
+
 /// Render each mount-collapse entry as `  <child> → <parent>`, to be
 /// appended to the `ConfirmSave` lines under a "Mount collapse required:"
 /// heading.
@@ -529,6 +634,63 @@ fn collapse_section_lines(
             ))
         })
         .collect()
+}
+
+/// Apply the full env diff between `original` and `pending` to `ce` —
+/// both the workspace-level `env` table and each per-agent override's
+/// `env` table. Calls `set_env_var` for added / value-changed keys and
+/// `remove_env_var` for absent keys. Agents that exist only in
+/// `original.agents` have every one of their env keys removed.
+fn apply_env_diff(
+    ce: &mut crate::config::ConfigEditor,
+    workspace_name: &str,
+    original: &crate::workspace::WorkspaceConfig,
+    pending: &crate::workspace::WorkspaceConfig,
+) {
+    // Workspace-level env.
+    let ws_scope = EnvScope::Workspace(workspace_name.to_string());
+    apply_env_map_diff(ce, &ws_scope, &original.env, &pending.env);
+
+    // Per-agent overrides. Union of agent keys so we catch agents that
+    // exist only on one side.
+    let agent_keys: std::collections::BTreeSet<&String> = original
+        .agents
+        .keys()
+        .chain(pending.agents.keys())
+        .collect();
+    let empty = std::collections::BTreeMap::<String, String>::new();
+    for agent in agent_keys {
+        let orig_env = original.agents.get(agent).map_or(&empty, |o| &o.env);
+        let pend_env = pending.agents.get(agent).map_or(&empty, |p| &p.env);
+        let scope = EnvScope::WorkspaceAgent {
+            workspace: workspace_name.to_string(),
+            agent: agent.clone(),
+        };
+        apply_env_map_diff(ce, &scope, orig_env, pend_env);
+    }
+}
+
+fn apply_env_map_diff(
+    ce: &mut crate::config::ConfigEditor,
+    scope: &EnvScope,
+    original: &std::collections::BTreeMap<String, String>,
+    pending: &std::collections::BTreeMap<String, String>,
+) {
+    for (k, v) in pending {
+        match original.get(k) {
+            Some(ov) if ov == v => {}
+            _ => ce.set_env_var(scope, k, v),
+        }
+    }
+    for k in original.keys() {
+        if !pending.contains_key(k) {
+            // `remove_env_var` returns false when the TOML path is
+            // missing (e.g. a sibling process already removed the
+            // section). Treat that as a no-op success — the key isn't
+            // there, goal achieved.
+            let _ = ce.remove_env_var(scope, k);
+        }
+    }
 }
 
 pub(super) fn build_workspace_edit(
@@ -1305,7 +1467,7 @@ mod tests {
 
         // Operator renames mid-edit.
         super::super::editor::apply_text_input_to_pending(
-            super::super::super::state::TextInputTarget::Name,
+            &super::super::super::state::TextInputTarget::Name,
             match &mut state.stage {
                 ManagerStage::Editor(e) => e,
                 _ => unreachable!(),
