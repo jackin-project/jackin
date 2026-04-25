@@ -826,4 +826,79 @@ mod tests {
         assert!(msg.contains("/different/src"));
         assert!(runner.run_recorded.is_empty(), "no git ops on drift error");
     }
+
+    #[test]
+    fn two_isolated_mounts_same_repo_get_dst_suffixed_branches() {
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        let resolved = ResolvedWorkspace {
+            label: "jackin".into(),
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![
+                MountConfig {
+                    src: repo.path().to_string_lossy().into(),
+                    dst: "/workspace/jackin".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Worktree,
+                },
+                MountConfig {
+                    src: repo.path().to_string_lossy().into(),
+                    dst: "/workspace/jackin-v2".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Worktree,
+                },
+            ],
+        };
+
+        // Capture order per mount (each mount goes through preflight + ensure):
+        // Mount 1 (shorter dst materialized first): rev-parse --show-toplevel,
+        //   status --porcelain, ext.worktreeConfig --get, format --get,
+        //   rev-parse HEAD
+        // Mount 2: same sequence (worktreeConfig will read "true" now)
+        let mut runner = fake_with_outputs(&[
+            // mount 1
+            &repo.path().to_string_lossy(),
+            "",
+            "",
+            "0",
+            "abc\n",
+            // mount 2 (worktree config now enabled)
+            &repo.path().to_string_lossy(),
+            "",
+            "true\n",
+            "abc\n",
+        ]);
+
+        let mat = materialize_workspace(
+            &resolved,
+            &container_dir,
+            "the-architect",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+
+        // Inspect persisted records for branch names.
+        let recs = read_records(&container_dir).unwrap();
+        let mut branches: Vec<String> = recs.iter().map(|r| r.scratch_branch.clone()).collect();
+        branches.sort();
+        assert_eq!(
+            branches,
+            vec![
+                "jackin/scratch/the-architect-workspace-jackin",
+                "jackin/scratch/the-architect-workspace-jackin-v2",
+            ]
+        );
+
+        let _ = mat;
+    }
 }
