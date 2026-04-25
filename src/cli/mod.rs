@@ -35,8 +35,8 @@ pub mod config;
 pub mod dispatch;
 pub mod workspace;
 
-pub use config::{AuthCommand, ConfigCommand, MountCommand, TrustCommand};
-pub use workspace::WorkspaceCommand;
+pub use config::{AuthCommand, ConfigCommand, EnvCommand, MountCommand, TrustCommand};
+pub use workspace::{WorkspaceCommand, WorkspaceEnvCommand};
 
 /// Operator's CLI for orchestrating AI coding agents in isolated containers
 ///
