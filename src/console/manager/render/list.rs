@@ -209,21 +209,42 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
     let agent_count = agents_block_agent_count(ws_config, config);
+    let show_envs = ws_config.is_some_and(workspace_has_any_env);
+
+    let mut constraints = vec![
+        Constraint::Length(3), // General: workdir + 2 borders (Last used moved to Agents)
+        Constraint::Length(mount_block_height(mounts)), // Mounts: header + N rows + 2 borders
+    ];
+    if show_envs {
+        constraints.push(Constraint::Length(env_block_height(ws_config))); // Environments
+    }
+    constraints.push(Constraint::Length(agents_block_height(agent_count))); // Agents: default + blank + names + 2 borders
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // General: workdir + 2 borders (Last used moved to Agents)
-            Constraint::Length(mount_block_height(mounts)), // Mounts: header + N rows + 2 borders
-            Constraint::Length(env_block_height(ws_config)), // Environments
-            Constraint::Length(agents_block_height(agent_count)), // Agents: default + blank + names + 2 borders
-        ])
+        .constraints(constraints)
         .split(area);
 
-    render_general_subpanel(frame, rows[0], ws);
-    render_mounts_subpanel(frame, rows[1], mounts);
-    render_environments_subpanel(frame, rows[2], ws_config);
-    render_agents_subpanel(frame, rows[3], ws_config, config);
+    let mut idx = 0;
+    render_general_subpanel(frame, rows[idx], ws);
+    idx += 1;
+    render_mounts_subpanel(frame, rows[idx], mounts);
+    idx += 1;
+    if show_envs {
+        render_environments_subpanel(frame, rows[idx], ws_config);
+        idx += 1;
+    }
+    render_agents_subpanel(frame, rows[idx], ws_config, config);
+}
+
+/// `true` when the workspace has any env entry — workspace-level
+/// (`WorkspaceConfig.env`) or any per-agent override
+/// (`WorkspaceAgentOverride.env`). Drives whether the right-pane
+/// Environments preview block is rendered at all; when the total
+/// count is zero, the block (header + body + border) is omitted and
+/// the Agents block fills the freed vertical space.
+fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
+    !ws.env.is_empty() || ws.agents.values().any(|o| !o.env.is_empty())
 }
 
 /// Exact row count a Mounts sub-panel needs to render `mounts` without
@@ -241,25 +262,24 @@ fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
 
 /// Exact row count the Environments sub-panel needs given the workspace
 /// config. Layout: 2 borders + one row per (env name, scope) entry —
-/// workspace-level keys plus each per-agent override key. When both the
-/// workspace and all agent overrides are empty, falls back to a single
-/// "(no environment variables)" placeholder row. Clamped to a
+/// workspace-level keys plus each per-agent override key. Clamped to a
 /// reasonable maximum so a workspace with many env vars and override
 /// rows can't eat the full right pane.
+///
+/// Caller is expected to have already verified the workspace has at
+/// least one env entry via `workspace_has_any_env` — the empty case
+/// is handled by omitting the block entirely from the layout, not by
+/// rendering a placeholder here.
 fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u16 {
     let Some(ws) = ws_config else {
-        // No workspace config — placeholder branch (used by the cwd pane).
-        return 3; // 1 placeholder + 2 borders
+        // No workspace config — degenerate case; reserve a minimal
+        // border-only block. Practically unreachable because callers
+        // gate on `workspace_has_any_env(ws_config)`.
+        return 2;
     };
 
     let workspace_keys = ws.env.len();
     let agent_keys: usize = ws.agents.values().map(|o| o.env.len()).sum();
-
-    if workspace_keys == 0 && agent_keys == 0 {
-        // Nothing to show — single placeholder line.
-        return 3; // 1 placeholder + 2 borders
-    }
-
     let total_rows = workspace_keys + agent_keys;
     (total_rows + 2).min(20) as u16 // +2 borders, clamped
 }
@@ -316,7 +336,6 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
         .constraints([
             Constraint::Length(3),                           // General: workdir + 2 borders
             Constraint::Length(mount_block_height(&mounts)), // Mounts: header + N rows + 2 borders
-            Constraint::Length(env_block_height(None)),      // Environments: empty placeholder
             Constraint::Length(agents_block_height(agents_block_agent_count(
                 None,
                 &AppConfig::default(),
@@ -324,11 +343,14 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
         ])
         .split(area);
 
-    // General — titled the same as the saved-workspace pane so the four
-    // sub-panel titles (General / Mounts / Environments / Agents) match
-    // across both panes. The "Current directory" signpost is already
-    // visible as the left-list row label, so repeating it here was
-    // redundant.
+    // General — titled the same as the saved-workspace pane so the
+    // sub-panel titles (General / Mounts / Agents) match across both
+    // panes. The "Current directory" signpost is already visible as
+    // the left-list row label, so repeating it here was redundant.
+    //
+    // The Environments block is omitted entirely here: the synthetic
+    // cwd workspace has no env vars, and the saved-workspace pane
+    // applies the same omit-when-empty rule, so behaviour is uniform.
     let general_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
@@ -351,15 +373,11 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
     );
 
     render_mounts_subpanel(frame, rows[1], &mounts);
-    // Environments block — synthetic cwd workspace has no env vars,
-    // so this always renders the empty-state placeholder. Kept for
-    // structural parity with the saved-workspace pane.
-    render_environments_subpanel(frame, rows[2], None);
 
     // Agents block — reuse the no-`ws_config` branch of the shared renderer,
     // which lists every globally-configured agent (without per-agent
     // overrides since the cwd workspace has none).
-    render_agents_subpanel(frame, rows[3], None, &AppConfig::default());
+    render_agents_subpanel(frame, rows[2], None, &AppConfig::default());
 }
 
 /// Right-pane description shown when the cursor is on the "+ New workspace"
@@ -536,9 +554,10 @@ struct EnvRow {
 /// agent name on the right (workspace rows leave the right column
 /// blank). Values themselves never appear — only key names.
 ///
-/// When both the workspace env map AND every agent override map are
-/// empty, the block falls back to a single `(no environment variables)`
-/// placeholder.
+/// Caller is expected to have already verified at least one env entry
+/// exists at any scope (via `workspace_has_any_env`) before calling —
+/// the layout omits this block entirely when the workspace has no env
+/// vars, so the renderer no longer falls back to a placeholder line.
 fn render_environments_subpanel(
     frame: &mut Frame,
     area: Rect,
@@ -586,22 +605,14 @@ fn render_environments_subpanel(
             })
     });
 
-    let lines: Vec<Line> = if rows.is_empty() {
-        vec![Line::from(Span::styled(
-            "  (no environment variables)",
-            Style::default()
-                .fg(PHOSPHOR_DIM)
-                .add_modifier(Modifier::ITALIC),
-        ))]
-    } else {
-        // Inner content width = panel width - 2 borders. Right edge of
-        // the agent label is anchored to that width; padding is filled
-        // with spaces between the key name and the agent name.
-        let inner_width = area.width.saturating_sub(2) as usize;
-        rows.iter()
-            .map(|row| env_row_line(row, inner_width))
-            .collect()
-    };
+    // Inner content width = panel width - 2 borders. Right edge of
+    // the agent label is anchored to that width; padding is filled
+    // with spaces between the key name and the agent name.
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let lines: Vec<Line> = rows
+        .iter()
+        .map(|row| env_row_line(row, inner_width))
+        .collect();
 
     let p = Paragraph::new(lines)
         .block(block)
@@ -1779,16 +1790,34 @@ mod subpanel_padding_tests {
         );
     }
 
-    /// Empty workspace env renders an italic-dim placeholder, so the
-    /// block is still visibly demarcated even with no data.
+    /// When the workspace has zero env entries at every scope
+    /// (workspace-level AND per-agent overrides), the right-pane
+    /// Environments preview block is omitted entirely — no header, no
+    /// body, no border. The Agents block fills the freed space.
     #[test]
-    fn preview_environments_block_empty_renders_placeholder() {
-        let ws = ws_config_with_allowed(&[], None);
+    fn preview_omits_environments_block_when_workspace_has_no_env_vars() {
+        // Empty workspace env, no agent overrides.
+        let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
 
-        let backend = TestBackend::new(60, 4);
+        let mut cfg = AppConfig::default();
+        cfg.workspaces.insert("demo".into(), ws);
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+
+        let summary = WorkspaceSummary {
+            name: "demo".into(),
+            workdir: "/workspace/demo".into(),
+            mount_count: 0,
+            readonly_mount_count: 0,
+            allowed_agent_count: 1,
+            default_agent: Some("alpha".into()),
+            last_agent: None,
+        };
+
+        let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_environments_subpanel(f, Rect::new(0, 0, 60, 4), Some(&ws));
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
         })
         .unwrap();
 
@@ -1802,8 +1831,112 @@ mod subpanel_padding_tests {
             joined.push('\n');
         }
         assert!(
-            joined.contains("(no environment variables)"),
-            "empty workspace env must render the placeholder; got {joined}"
+            !joined.contains("Environments"),
+            "Environments block must NOT render when the workspace has no env vars; got {joined}"
+        );
+        assert!(
+            !joined.contains("(no environment variables)"),
+            "the placeholder line must NOT appear (block is omitted entirely); got {joined}"
+        );
+    }
+
+    /// The Environments block appears as soon as ANY env entry exists
+    /// at the workspace level, even if no per-agent override is set.
+    #[test]
+    fn preview_includes_environments_block_when_only_workspace_env_set() {
+        let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        ws.env.insert("API_KEY".into(), "literal".into());
+
+        let mut cfg = AppConfig::default();
+        cfg.workspaces.insert("demo".into(), ws);
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+
+        let summary = WorkspaceSummary {
+            name: "demo".into(),
+            workdir: "/workspace/demo".into(),
+            mount_count: 0,
+            readonly_mount_count: 0,
+            allowed_agent_count: 1,
+            default_agent: Some("alpha".into()),
+            last_agent: None,
+        };
+
+        let backend = TestBackend::new(60, 24);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
+        }
+        assert!(
+            joined.contains("Environments"),
+            "Environments block header must appear when the workspace env is non-empty; got {joined}"
+        );
+        assert!(
+            joined.contains("API_KEY"),
+            "the workspace env key must render; got {joined}"
+        );
+    }
+
+    /// The Environments block appears when at least one per-agent
+    /// override is set, even if the workspace-level env map is empty.
+    #[test]
+    fn preview_includes_environments_block_when_only_per_agent_overrides_set() {
+        let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        let mut alpha_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        alpha_overrides
+            .env
+            .insert("LOG_LEVEL".into(), "debug".into());
+        ws.agents.insert("alpha".into(), alpha_overrides);
+
+        let mut cfg = AppConfig::default();
+        cfg.workspaces.insert("demo".into(), ws);
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+
+        let summary = WorkspaceSummary {
+            name: "demo".into(),
+            workdir: "/workspace/demo".into(),
+            mount_count: 0,
+            readonly_mount_count: 0,
+            allowed_agent_count: 1,
+            default_agent: Some("alpha".into()),
+            last_agent: None,
+        };
+
+        let backend = TestBackend::new(60, 24);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
+        }
+        assert!(
+            joined.contains("Environments"),
+            "Environments block header must appear when only per-agent overrides exist; got {joined}"
+        );
+        assert!(
+            joined.contains("LOG_LEVEL"),
+            "the per-agent override key must render; got {joined}"
         );
     }
 
