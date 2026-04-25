@@ -135,6 +135,78 @@ Examples:
         /// Name of the workspace to delete
         name: String,
     },
+    /// Manage operator env vars at workspace and workspace-agent scope
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    Env(WorkspaceEnvCommand),
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum WorkspaceEnvCommand {
+    /// Set an env var at workspace or workspace-agent scope
+    ///
+    /// Without `--agent`, writes to `[workspaces.<workspace>.env]`. With
+    /// `--agent <SELECTOR>`, writes to `[workspaces.<workspace>.agents.<selector>.env]`.
+    /// The agent selector is not pre-validated.
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace env set prod DB_URL \"op://Work/Prod/db-url\"
+  jackin workspace env set prod OPENAI_KEY \"op://Work/OpenAI/key\" --agent agent-smith
+  jackin workspace env set prod DEBUG \"1\" --comment \"temporary; remove after Q2\""
+    )]
+    Set {
+        /// Workspace name
+        workspace: String,
+        /// Env var name (stored verbatim; no POSIX validation)
+        key: String,
+        /// Env var value (use `op://...`, `$VAR`, `${VAR}`, or literal)
+        value: String,
+        /// Apply to a specific agent inside this workspace
+        #[arg(long)]
+        agent: Option<String>,
+        /// Write a TOML comment line above the key
+        #[arg(long)]
+        comment: Option<String>,
+    },
+    /// Unset an env var at workspace or workspace-agent scope
+    ///
+    /// Idempotent: if the key is not present, prints "KEY not set." and
+    /// exits 0 without saving the config.
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace env unset prod DB_URL
+  jackin workspace env unset prod OPENAI_KEY --agent agent-smith"
+    )]
+    Unset {
+        /// Workspace name
+        workspace: String,
+        /// Env var name to remove
+        key: String,
+        /// Unset from a specific agent inside this workspace
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// List env vars at workspace or workspace-agent scope
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace env list prod
+  jackin workspace env list prod --agent agent-smith"
+    )]
+    List {
+        /// Workspace name
+        workspace: String,
+        /// List vars for a specific agent inside this workspace
+        #[arg(long)]
+        agent: Option<String>,
+    },
 }
 
 #[cfg(test)]
