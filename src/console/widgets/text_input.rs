@@ -153,6 +153,12 @@ const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 const DANGER_RED: Color = Color::Rgb(255, 94, 122);
+/// Subtle dim background for the input field, slightly brighter than
+/// the modal panel so the input region is visually distinct even when
+/// empty — hinting "this is where you type". Stays in the dark
+/// green-tinged neutral family the rest of the TUI uses; deliberately
+/// "almost invisible" per operator guidance.
+const INPUT_BG_DIM: Color = Color::Rgb(20, 24, 22);
 
 pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
     use ratatui::{
@@ -201,6 +207,22 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
         ])
         .split(inner);
 
+    // Inset the input field by 1 cell on each side so text doesn't sit
+    // flush against the modal border, and paint a very subtle dim
+    // background across the whole input row so the input region is
+    // visible even when empty. Bg covers the full row width (including
+    // the 1-cell pads on each side) so the operator sees a clean
+    // 1-row band hinting "this is where you type".
+    let input_row = rows[1];
+    let bg_block = Block::default().style(Style::default().bg(INPUT_BG_DIM));
+    frame.render_widget(bg_block, input_row);
+
+    let textarea_area = Rect {
+        x: input_row.x.saturating_add(1),
+        y: input_row.y,
+        width: input_row.width.saturating_sub(2),
+        height: input_row.height,
+    };
     let mut ta = state.textarea.clone();
     ta.set_cursor_line_style(Style::default());
     ta.set_cursor_style(
@@ -209,7 +231,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
             .fg(Color::Black)
             .add_modifier(Modifier::SLOW_BLINK),
     );
-    frame.render_widget(&ta, rows[1]);
+    // Match the textarea's own style background to the dim band so the
+    // textarea's body (where the cursor lives) blends with the band
+    // rather than punching a hole back to the panel color.
+    ta.set_style(Style::default().fg(PHOSPHOR_GREEN).bg(INPUT_BG_DIM));
+    frame.render_widget(&ta, textarea_area);
 
     // Inline duplicate warning — DANGER_RED, italic + bold. Only drawn
     // when the trimmed value collides with a forbidden entry. The
@@ -432,6 +458,76 @@ mod tests {
     fn text_input_border_style_default_for_valid() {
         let s = TextInputState::new_with_forbidden("Key", "API_KEY", vec!["DB_URL".into()]);
         assert_eq!(s.border_style(), BorderStyle::Default);
+    }
+
+    /// The input field is rendered with a 1-cell left pad — the first
+    /// inner column (just inside the left border) is a space, and the
+    /// typed value starts in the next column. Mirrors the operator's
+    /// "input shouldn't sit flush with the border" feedback.
+    #[test]
+    fn text_input_renders_with_one_cell_left_padding() {
+        use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+        let area = Rect::new(0, 0, 60, 6);
+        let backend = TestBackend::new(area.width, area.height);
+        let mut term = Terminal::new(backend).unwrap();
+        let state = TextInputState::new("Value for TEST", "abc");
+        term.draw(|f| render(f, area, &state)).unwrap();
+        let buf = term.backend().buffer();
+
+        // The input field row sits at y=2 (top border y=0, top pad y=1,
+        // input y=2). Left border is at x=0.
+        // With 1-cell pad, x=1 should be space and x=2 should be 'a'.
+        let row_y: u16 = 2;
+        let cell_pad = buf[(1, row_y)].symbol();
+        let cell_first_char = buf[(2, row_y)].symbol();
+        assert_eq!(
+            cell_pad, " ",
+            "x=1 (just inside left border) must be the 1-cell left pad; got {cell_pad:?}",
+        );
+        assert_eq!(
+            cell_first_char, "a",
+            "x=2 (after the left pad) must hold the first input char 'a'; \
+             got {cell_first_char:?}",
+        );
+    }
+
+    /// The input row is painted with the dim INPUT_BG_DIM background
+    /// across the full row, so the input region reads as a visible
+    /// "this is where you type" band even when empty.
+    #[test]
+    fn text_input_input_row_has_dim_background() {
+        use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+        let area = Rect::new(0, 0, 60, 6);
+        let backend = TestBackend::new(area.width, area.height);
+        let mut term = Terminal::new(backend).unwrap();
+        // Empty value — verifies the band is visible even with no chars.
+        let state = TextInputState::new("Value for TEST", "");
+        term.draw(|f| render(f, area, &state)).unwrap();
+        let buf = term.backend().buffer();
+
+        // Row y=2 is the input field row. The whole row (excluding the
+        // left/right borders at x=0 and x=width-1, and the single
+        // cursor cell which carries the WHITE-bg cursor highlight)
+        // must carry the dim background. Sample a few representative
+        // cells: the left-pad cell, the right-pad cell, and an
+        // interior cell well away from the cursor.
+        let row_y: u16 = 2;
+        let left_pad = &buf[(1, row_y)];
+        let right_pad = &buf[(area.width - 2, row_y)];
+        let interior = &buf[(area.width / 2, row_y)];
+        for (label, cell) in [
+            ("left pad", left_pad),
+            ("right pad", right_pad),
+            ("interior (mid-row)", interior),
+        ] {
+            assert_eq!(
+                cell.bg, INPUT_BG_DIM,
+                "input row {label} bg={:?}, expected INPUT_BG_DIM (subtle dim band)",
+                cell.bg,
+            );
+        }
     }
 
     #[test]
