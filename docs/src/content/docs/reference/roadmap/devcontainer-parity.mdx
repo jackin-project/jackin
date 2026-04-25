@@ -1,6 +1,7 @@
 ---
 title: "Devcontainer Parity: Lessons from anthropics/claude-code"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 
 **Status**: Proposed — research captured, no implementation committed
@@ -54,7 +55,9 @@ This page captures the comparison so those lessons aren't lost.
 
 ## Current State
 
-### jackin construct (`docker/construct/Dockerfile`)
+### jackin construct
+
+Source: <RepoFile path="docker/construct/Dockerfile" />
 
 - `FROM debian:trixie-20260421@sha256:...` — pinned by digest
 - Installs: `bash`, `ca-certificates`, `curl`, `fd-find`, `fzf`, `git`,
@@ -65,7 +68,9 @@ This page captures the comparison so those lessons aren't lost.
 - oh-my-zsh + zsh-autosuggestions + starship
 - Zshrc enables `tirith` and `shellfirm` shell hooks
 
-### jackin runtime (`docker/runtime/entrypoint.sh`)
+### jackin runtime
+
+Source: <RepoFile path="docker/runtime/entrypoint.sh" />
 
 - Git identity from env, `gh auth setup-git`
 - Runs `install-plugins.sh` against `~/.jackin/plugins.json`
@@ -214,7 +219,7 @@ specific command rather than globally.
 
 **Recommendation**: Defer until Finding 1 is implemented. Revisit as part of
 a broader hardening pass and document the tradeoff in
-`docs/src/content/docs/guides/security-model.mdx`.
+<RepoFile path="docs/src/content/docs/guides/security-model.mdx" />.
 
 ### Finding 4 — Persist shell history
 
@@ -226,7 +231,7 @@ when the agent is recreated. Upstream mounts a named volume at
 
 1. **Bind mount `~/.jackin/data/{name}/.zsh_history` to `/home/claude/.zsh_history`.**
    Consistent with how other state is persisted. Single line in
-   `src/runtime/launch.rs`.
+   <RepoFile path="src/runtime/launch.rs" />.
 2. **Set `HISTFILE` inside the container to a subdir of `/home/claude/.jackin`**
    (already bind-mounted) and let the existing persistence carry it.
 
@@ -271,11 +276,11 @@ extensions list becomes an obvious payload for it.
 
 ## Related Files
 
-- [`docker/construct/Dockerfile`](https://github.com/jackin-project/jackin/blob/main/docker/construct/Dockerfile) — base image, user creation, shell setup
-- [`docker/construct/install-plugins.sh`](https://github.com/jackin-project/jackin/blob/main/docker/construct/install-plugins.sh) — plugin bootstrap (touched by Finding 1 if egress list needs to reach plugin sources)
-- [`docker/construct/zshrc`](https://github.com/jackin-project/jackin/blob/main/docker/construct/zshrc) — shell hooks (touched by Finding 4)
-- [`docker/runtime/entrypoint.sh`](https://github.com/jackin-project/jackin/blob/main/docker/runtime/entrypoint.sh) — runtime orchestration (touched by Finding 1)
-- [`src/runtime/launch.rs`](https://github.com/jackin-project/jackin/blob/main/src/runtime/launch.rs) — mount and capability wiring (touched by Findings 1 and 4)
-- [`src/derived_image.rs`](https://github.com/jackin-project/jackin/blob/main/src/derived_image.rs) — derived Dockerfile generation (touched by Finding 2)
-- [`docs/src/content/docs/guides/security-model.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/guides/security-model.mdx) — security posture (touched by Findings 1 and 3)
+- <RepoFile path="docker/construct/Dockerfile" /> — base image, user creation, shell setup
+- <RepoFile path="docker/construct/install-plugins.sh" /> — plugin bootstrap (touched by Finding 1 if egress list needs to reach plugin sources)
+- <RepoFile path="docker/construct/zshrc" /> — shell hooks (touched by Finding 4)
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — runtime orchestration (touched by Finding 1)
+- <RepoFile path="src/runtime/launch.rs" /> — mount and capability wiring (touched by Findings 1 and 4)
+- <RepoFile path="src/derived_image.rs" /> — derived Dockerfile generation (touched by Finding 2)
+- <RepoFile path="docs/src/content/docs/guides/security-model.mdx" /> — security posture (touched by Findings 1 and 3)
 - Upstream reference: [`anthropics/claude-code/.devcontainer`](https://github.com/anthropics/claude-code/tree/main/.devcontainer)

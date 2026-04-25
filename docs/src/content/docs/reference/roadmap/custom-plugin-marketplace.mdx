@@ -1,6 +1,7 @@
 ---
 title: "Custom Plugin Marketplace Support in Agent Config"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 
 **Status**: Resolved
@@ -15,9 +16,9 @@ Agent repos need reproducible startup. Without manifest-declared marketplaces, t
 
 ## Related Files
 
-- [`src/manifest/mod.rs`](https://github.com/jackin-project/jackin/blob/main/src/manifest/mod.rs) — manifest schema (marketplace + plugin fields)
-- [`src/manifest/validate.rs`](https://github.com/jackin-project/jackin/blob/main/src/manifest/validate.rs) — marketplace validation
-- [`src/instance/plugins.rs`](https://github.com/jackin-project/jackin/blob/main/src/instance/plugins.rs) — plugin-state preparation and marketplace serialization
-- [`docker/construct/install-plugins.sh`](https://github.com/jackin-project/jackin/blob/main/docker/construct/install-plugins.sh)
-- [`docs/src/content/docs/developing/agent-manifest.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/developing/agent-manifest.mdx)
-- [`docs/src/content/docs/developing/creating-agents.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/developing/creating-agents.mdx)
+- <RepoFile path="src/manifest/mod.rs" /> — manifest schema (marketplace + plugin fields)
+- <RepoFile path="src/manifest/validate.rs" /> — marketplace validation
+- <RepoFile path="src/instance/plugins.rs" /> — plugin-state preparation and marketplace serialization
+- <RepoFile path="docker/construct/install-plugins.sh" />
+- <RepoFile path="docs/src/content/docs/developing/agent-manifest.mdx" />
+- <RepoFile path="docs/src/content/docs/developing/creating-agents.mdx" />

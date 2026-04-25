@@ -1,6 +1,7 @@
 ---
 title: "DinD Running Without TLS Authentication"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 
 **Status**: Resolved — option 1 (TLS with auto-generated certs) implemented
@@ -27,6 +28,6 @@ The Docker-in-Docker sidecar runs with `DOCKER_TLS_CERTDIR=` (empty, disabling T
 
 ## Related Files
 
-- [`src/runtime/launch.rs`](https://github.com/jackin-project/jackin/blob/main/src/runtime/launch.rs) — `launch_agent_runtime` DinD startup
-- [`docs/src/content/docs/guides/security-model.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/guides/security-model.mdx)
-- [`docs/src/content/docs/reference/architecture.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/reference/architecture.mdx)
+- <RepoFile path="src/runtime/launch.rs" /> — `launch_agent_runtime` DinD startup
+- <RepoFile path="docs/src/content/docs/guides/security-model.mdx" />
+- <RepoFile path="docs/src/content/docs/reference/architecture.mdx" />

@@ -37,6 +37,10 @@ jobs:
         working-directory: docs
         run: mise exec -- bun install --frozen-lockfile
 
+      - name: Check source repository links
+        working-directory: docs
+        run: mise exec -- bun run check:repo-links
+
       - name: Build site
         working-directory: docs
         run: mise exec -- bun run build
