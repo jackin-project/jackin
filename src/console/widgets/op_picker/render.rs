@@ -450,11 +450,17 @@ fn display_label(f: &OpField) -> String {
 
 fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8) {
     // The loading panel borrows the same breadcrumb that the Ready pane
-    // would render, so the operator sees the full Account → Vault → Item
-    // path during the 1-3s op subprocess instead of a bare "1Password"
-    // title with no context. `state.stage` is set at request time
-    // (`start_*_load`) rather than result time, so the breadcrumb here
-    // already reflects the destination of the in-flight load.
+    // would render, so the operator sees the full path during the 1-3s
+    // op subprocess instead of a bare "1Password" title with no context.
+    // `state.stage` is set at request time (`start_*_load`) rather than
+    // result time, so the breadcrumb here already reflects the
+    // destination of the in-flight load.
+    //
+    // Field-stage loading is the one exception: the title shows the
+    // PARENT context (account → vault) rather than the full path,
+    // because the item name belongs in the body (`loading <item>…`)
+    // where it can carry the disambiguating subtitle. Principle: title
+    // = where you are, body = what you're descending into.
     let multi_account = state.accounts.len() > 1;
     let account_email = state
         .selected_account
@@ -465,7 +471,16 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
         .as_ref()
         .map_or("", |v| v.name.as_str());
     let i_name = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
-    let title = breadcrumb_title(state.stage, multi_account, account_email, v_name, i_name);
+    let i_subtitle = state
+        .selected_item
+        .as_ref()
+        .map_or("", |i| i.subtitle.as_str());
+    let title_stage = if matches!(state.stage, OpPickerStage::Field) {
+        OpPickerStage::Item
+    } else {
+        state.stage
+    };
+    let title = breadcrumb_title(title_stage, multi_account, account_email, v_name, i_name);
     let block = modal_block(title);
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -492,7 +507,15 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
             format!("loading items from {v_name}\u{2026}")
         }
         OpPickerStage::Field => {
-            format!("loading fields from {i_name}\u{2026}")
+            // Body names the item being descended into; subtitle (when
+            // present) disambiguates same-named items the way the item
+            // list does. Title carries only the parent context, so this
+            // is the one place the operator sees the in-flight item.
+            if i_subtitle.is_empty() {
+                format!("loading {i_name}\u{2026}")
+            } else {
+                format!("loading {i_name} ({i_subtitle})\u{2026}")
+            }
         }
     };
 
@@ -784,6 +807,145 @@ mod tests {
         assert!(
             dump.contains("loading items from Personal"),
             "loading body must read `loading items from <vault>`; dump:\n{dump}"
+        );
+    }
+
+    /// Field-load is the one stage where the title shows the PARENT
+    /// context rather than the full path: the item being descended into
+    /// belongs in the body (where it can carry its disambiguating
+    /// subtitle). Principle: title = where you are, body = what you're
+    /// descending into.
+    #[test]
+    fn picker_field_load_title_shows_parent_and_body_includes_subtitle() {
+        use super::super::{OpAccount, OpLoadState, OpPickerState, OpVault};
+        use crate::operator_env::OpItem;
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let mut state = OpPickerState::default();
+        state.accounts = vec![
+            OpAccount {
+                id: "a1".into(),
+                email: "alexey@zhokhov.com".into(),
+                url: "z.1password.com".into(),
+            },
+            OpAccount {
+                id: "a2".into(),
+                email: "alexey@chainargos.com".into(),
+                url: "c.1password.com".into(),
+            },
+        ];
+        state.selected_account = Some(state.accounts[1].clone());
+        state.selected_vault = Some(OpVault {
+            id: "v-chainargos".into(),
+            name: "ChainArgos".into(),
+        });
+        state.selected_item = Some(OpItem {
+            id: "i-redshift".into(),
+            name: "ChainArgos Redshift".into(),
+            subtitle: "donbeave".into(),
+        });
+        state.stage = OpPickerStage::Field;
+        state.load_state = OpLoadState::Loading { spinner_tick: 0 };
+
+        let backend = TestBackend::new(80, 12);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            let area = f.area();
+            super::render(f, area, &state);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let mut dump = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                dump.push_str(buf[(x, y)].symbol());
+            }
+            dump.push('\n');
+        }
+
+        // Title bar shows the parent context ONLY (account → vault).
+        // Pull out just the top border row to check title content
+        // without false matches against the body line.
+        let top_row: String = (0..buf.area.width)
+            .map(|x| buf[(x, 0)].symbol())
+            .collect::<String>();
+        assert!(
+            top_row.contains("alexey@chainargos.com"),
+            "field-load title must show the account email; top row:\n{top_row}"
+        );
+        assert!(
+            top_row.contains("ChainArgos"),
+            "field-load title must show the vault name; top row:\n{top_row}"
+        );
+        assert!(
+            !top_row.contains("Redshift"),
+            "field-load title must NOT include the item name (it belongs in the body); \
+             top row:\n{top_row}"
+        );
+
+        // Body names the item being descended into, with subtitle.
+        assert!(
+            dump.contains("loading ChainArgos Redshift (donbeave)"),
+            "field-load body must read `loading <item> (<subtitle>)…`; dump:\n{dump}"
+        );
+        // The old "loading fields from <item>…" wording must be gone.
+        assert!(
+            !dump.contains("loading fields from"),
+            "field-load body must drop the redundant `fields from` prefix; dump:\n{dump}"
+        );
+    }
+
+    /// Field-load body without a subtitle: just `loading <item>…`,
+    /// no parens.
+    #[test]
+    fn picker_field_load_body_no_subtitle() {
+        use super::super::{OpAccount, OpLoadState, OpPickerState, OpVault};
+        use crate::operator_env::OpItem;
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let mut state = OpPickerState::default();
+        state.accounts = vec![OpAccount {
+            id: "a1".into(),
+            email: "single@example.com".into(),
+            url: "x.1password.com".into(),
+        }];
+        state.selected_account = Some(state.accounts[0].clone());
+        state.selected_vault = Some(OpVault {
+            id: "v".into(),
+            name: "Personal".into(),
+        });
+        state.selected_item = Some(OpItem {
+            id: "i-note".into(),
+            name: "Standalone Note".into(),
+            subtitle: String::new(),
+        });
+        state.stage = OpPickerStage::Field;
+        state.load_state = OpLoadState::Loading { spinner_tick: 0 };
+
+        let backend = TestBackend::new(80, 12);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            let area = f.area();
+            super::render(f, area, &state);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let mut dump = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                dump.push_str(buf[(x, y)].symbol());
+            }
+            dump.push('\n');
+        }
+
+        assert!(
+            dump.contains("loading Standalone Note"),
+            "no-subtitle field-load body must read `loading <item>…`; dump:\n{dump}"
+        );
+        assert!(
+            !dump.contains("loading Standalone Note ("),
+            "no-subtitle field-load must not render an empty `()` segment; \
+             dump:\n{dump}"
         );
     }
 }
