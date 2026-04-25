@@ -22,6 +22,14 @@ TUI keybindings must use plain letters, numbers, `Enter`, `Esc`, `Tab`, or arrow
 
 Where a command would otherwise collide with text input (a key inside a textarea would be typed as text), move the command to a parent context where it does not conflict — typically as a sibling row action rather than a sub-mode of the text editor.
 
+### Contextual key absorption
+
+When a focused row in a TUI list semantically owns a key (an arrow, `Enter`, etc.), that row absorbs the keypress — even when the row's sub-state would make the action a no-op. The keypress must NOT fall through to a sibling handler that would do something visually unrelated.
+
+Concrete example: collapsible section headers (`▼` expanded / `▶` collapsed) own `←` and `→`. `←` collapses if expanded; if already collapsed, it's a no-op — but it never falls through to "previous tab". Same for `→`. The operator pressing arrows on a row that visually suggests directional navigation should never cause an unrelated tab change.
+
+When designing a new TUI row type that responds to arrow keys, decide explicitly whether arrows are absorbed or fall through, and add a test for both states (active sub-state AND inactive sub-state). The default is **absorbed**.
+
 ## TUI List Modals
 
 List-modal widgets (pickers — agent picker, 1Password picker, source

@@ -2153,3 +2153,162 @@ fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
     }
     Ok(())
 }
+
+// ── Agent-section header absorbs ←/→ regardless of expanded state ──
+//
+// Bug: pressing → on an *already-expanded* header (or ← on a *collapsed*
+// one) used to fall through to the tab-cycle handler — operators saw the
+// active editor tab change unexpectedly when arrowing on
+// `▼ Agent: <name>` / `▶ Agent: <name>`. The header now absorbs ←/→ in
+// both states; semantics codified in RULES.md
+// § "TUI Keybindings → Contextual key absorption".
+
+/// `→` on a collapsed agent header expands the section AND leaves the
+/// active tab on Secrets. Already covered by
+/// `secrets_agent_section_expand_collapse`, but pinned here as a focused
+/// regression guard for the contextual-absorption rule.
+#[test]
+fn right_on_collapsed_agent_header_expands_does_not_change_tab() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config =
+        seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &["agent-smith"])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+    // ↓ from row 0 (WorkspaceAddSentinel) skips the SectionSpacer and
+    // lands on the AgentHeader at row 2.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    assert!(matches!(editor(&state).active_field, FieldFocus::Row(2)));
+    assert!(
+        !editor(&state).secrets_expanded.contains("agent-smith"),
+        "section must start collapsed"
+    );
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
+
+    assert!(
+        editor(&state).secrets_expanded.contains("agent-smith"),
+        "→ on collapsed header must expand the section"
+    );
+    assert_eq!(
+        editor(&state).active_tab,
+        EditorTab::Secrets,
+        "→ on header must NOT advance the active tab"
+    );
+    Ok(())
+}
+
+/// `→` on an *already-expanded* agent header is a no-op — but it must
+/// still be absorbed. The active tab must not change. This is the exact
+/// regression the operator reported.
+#[test]
+fn right_on_expanded_agent_header_does_nothing_does_not_change_tab() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config =
+        seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &["agent-smith"])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Pre-expand the section so we exercise the "already expanded" path.
+    editor_mut(&mut state)
+        .secrets_expanded
+        .insert("agent-smith".into());
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
+
+    assert!(
+        editor(&state).secrets_expanded.contains("agent-smith"),
+        "→ on expanded header must leave the section expanded (no-op on the section)"
+    );
+    assert_eq!(
+        editor(&state).active_tab,
+        EditorTab::Secrets,
+        "→ on expanded header must NOT advance the active tab"
+    );
+    Ok(())
+}
+
+/// `←` on an expanded agent header collapses the section. Active tab
+/// stays put.
+#[test]
+fn left_on_expanded_agent_header_collapses_does_not_change_tab() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config =
+        seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &["agent-smith"])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    editor_mut(&mut state)
+        .secrets_expanded
+        .insert("agent-smith".into());
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Left))?;
+
+    assert!(
+        !editor(&state).secrets_expanded.contains("agent-smith"),
+        "← on expanded header must collapse the section"
+    );
+    assert_eq!(
+        editor(&state).active_tab,
+        EditorTab::Secrets,
+        "← on header must NOT rewind the active tab"
+    );
+    Ok(())
+}
+
+/// `←` on an *already-collapsed* agent header is a no-op — but it must
+/// still be absorbed. The active tab must not change. Mirror of the
+/// `→`-on-expanded case.
+#[test]
+fn left_on_collapsed_agent_header_does_nothing_does_not_change_tab() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config =
+        seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &["agent-smith"])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Section starts collapsed; don't expand it.
+    assert!(!editor(&state).secrets_expanded.contains("agent-smith"));
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Left))?;
+
+    assert!(
+        !editor(&state).secrets_expanded.contains("agent-smith"),
+        "← on collapsed header must leave the section collapsed"
+    );
+    assert_eq!(
+        editor(&state).active_tab,
+        EditorTab::Secrets,
+        "← on collapsed header must NOT rewind the active tab"
+    );
+    Ok(())
+}
+
+/// Regression: `Tab` is intentionally *not* absorbed. Even when focused
+/// on an `AgentHeader`, pressing `Tab` advances to the next editor tab.
+/// Only `←` and `→` are owned by the header — `Tab` is the canonical
+/// tab-cycle key and never participates in contextual absorption.
+#[test]
+fn tab_on_agent_header_advances_tab_normally() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config =
+        seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &["agent-smith"])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+    // Cursor on AgentHeader (row 2 — ↓ from row 0 skips the spacer).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    assert!(matches!(editor(&state).active_field, FieldFocus::Row(2)));
+
+    // `Tab` from Secrets must wrap to General regardless of focus.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
+    assert_eq!(
+        editor(&state).active_tab,
+        EditorTab::General,
+        "Tab on a header must still advance the active tab"
+    );
+    Ok(())
+}

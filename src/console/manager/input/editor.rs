@@ -92,19 +92,23 @@ pub(super) fn handle_editor_key(
 
     match key.code {
         KeyCode::Tab | KeyCode::Right => {
-            // On the Secrets tab, Right on a collapsed agent header expands
-            // that section instead of advancing the tab — symmetric with
-            // Left's collapse behavior on the same row. Any other row (and
-            // Tab regardless of context) falls through to tab advance.
+            // On the Secrets tab, an `AgentHeader` row owns `→`
+            // semantically: collapsed → expand, expanded → no-op. The
+            // keypress is **absorbed in both states** — falling through
+            // to tab-advance on an expanded header would surprise the
+            // operator with an unrelated tab change while the cursor
+            // still points at a row that visually suggests directional
+            // navigation. See RULES.md
+            // § "TUI Keybindings → Contextual key absorption". `Tab`
+            // never absorbs — it always cycles tabs regardless of the
+            // focused row.
             if key.code == KeyCode::Right && editor.active_tab == EditorTab::Secrets {
                 let FieldFocus::Row(n) = editor.active_field;
                 let rows = secrets_flat_rows(editor, config);
-                if let Some(SecretsRow::AgentHeader {
-                    agent,
-                    expanded: false,
-                }) = rows.get(n).cloned()
-                {
-                    editor.secrets_expanded.insert(agent);
+                if let Some(SecretsRow::AgentHeader { agent, expanded }) = rows.get(n).cloned() {
+                    if !expanded {
+                        editor.secrets_expanded.insert(agent);
+                    }
                     return Ok(InputOutcome::Continue);
                 }
             }
@@ -121,18 +125,21 @@ pub(super) fn handle_editor_key(
             }
         }
         KeyCode::Left => {
-            // On the Secrets tab, Left on an expanded agent header collapses
-            // that section instead of moving to the previous tab. Any other
-            // row falls through to the standard previous-tab behavior.
+            // On the Secrets tab, an `AgentHeader` row owns `←`
+            // semantically: expanded → collapse, collapsed → no-op. As
+            // with `→` on the same row the keypress is **absorbed in
+            // both states** to preserve the contextual-absorption rule
+            // documented in RULES.md § "TUI Keybindings →
+            // Contextual key absorption". Letting `←` fall through on a
+            // collapsed header would silently rewind the active tab and
+            // confuse the operator.
             if editor.active_tab == EditorTab::Secrets {
                 let FieldFocus::Row(n) = editor.active_field;
                 let rows = secrets_flat_rows(editor, config);
-                if let Some(SecretsRow::AgentHeader {
-                    agent,
-                    expanded: true,
-                }) = rows.get(n).cloned()
-                {
-                    editor.secrets_expanded.remove(&agent);
+                if let Some(SecretsRow::AgentHeader { agent, expanded }) = rows.get(n).cloned() {
+                    if expanded {
+                        editor.secrets_expanded.remove(&agent);
+                    }
                     return Ok(InputOutcome::Continue);
                 }
             }
