@@ -97,7 +97,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .lycheecache
-          key: lychee-deployed-${{ runner.os }}-${{ github.sha }}-${{ hashFiles('docs/lychee.toml') }}
+          key: lychee-deployed-${{ runner.os }}-${{ hashFiles('docs/lychee.toml') }}
           restore-keys: |
             lychee-deployed-${{ runner.os }}-
             lychee-${{ runner.os }}-${{ github.workflow }}-
@@ -134,7 +134,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
   check-deployed:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
