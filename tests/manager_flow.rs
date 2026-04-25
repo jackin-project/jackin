@@ -857,6 +857,127 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
     Ok(())
 }
 
+/// Multi-account 1Password setup: drive the picker through the full
+/// Account → Vault → Item → Field commit chain. Mirrors the Option-Z
+/// direct-field-seeding pattern used by the single-account picker
+/// integration tests above. Verifies that:
+///   - `selected_account` is captured at the Account stage,
+///   - the breadcrumb / pane sequence honors the account scope,
+///   - the committed `op://` reference is the simple `op://Vault/Item/
+///     Field` form (account-prefixed paths are out of scope until the
+///     launch-time resolver gains explicit per-reference account
+///     handling).
+#[test]
+fn op_picker_multi_account_flow() -> Result<()> {
+    use jackin::console::widgets::op_picker::{OpLoadState, OpPickerStage};
+    use jackin::operator_env::{OpAccount, OpField, OpItem, OpVault};
+
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "old")])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Cursor → row 1 (DB_URL key row), then P opens the picker.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('p')),
+    )?;
+
+    // Seed the picker as if the constructor's probe had returned two
+    // accounts: stage = Account, accounts populated, none selected yet.
+    {
+        let editor_state = editor_mut(&mut state);
+        match &mut editor_state.modal {
+            Some(Modal::OpPicker { state: picker }) => {
+                picker.accounts = vec![
+                    OpAccount {
+                        id: "ACCT_A".into(),
+                        email: "alice@example.com".into(),
+                        url: "alpha.1password.com".into(),
+                    },
+                    OpAccount {
+                        id: "ACCT_B".into(),
+                        email: "bob@example.com".into(),
+                        url: "beta.1password.com".into(),
+                    },
+                ];
+                picker.account_list_state.select(Some(1)); // Bob
+                picker.selected_account = None;
+                picker.stage = OpPickerStage::Account;
+                picker.load_state = OpLoadState::Ready;
+            }
+            other => panic!("expected OpPicker modal; got {other:?}"),
+        }
+    }
+
+    // Enter on the Account pane — selects Bob, advances to Vault.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    match &editor(&state).modal {
+        Some(Modal::OpPicker { state: picker }) => {
+            assert_eq!(picker.stage, OpPickerStage::Vault);
+            assert_eq!(
+                picker.selected_account.as_ref().map(|a| a.id.as_str()),
+                Some("ACCT_B"),
+                "Enter on Account must capture the selection"
+            );
+        }
+        other => panic!("expected OpPicker modal; got {other:?}"),
+    }
+
+    // Seed Vault → Item → Field straight to the commit point.
+    {
+        let editor_state = editor_mut(&mut state);
+        match &mut editor_state.modal {
+            Some(Modal::OpPicker { state: picker }) => {
+                picker.vaults = vec![OpVault {
+                    id: "v1".into(),
+                    name: "Shared".into(),
+                }];
+                picker.selected_vault = Some(OpVault {
+                    id: "v1".into(),
+                    name: "Shared".into(),
+                });
+                picker.items = vec![OpItem {
+                    id: "i1".into(),
+                    name: "Database".into(),
+                }];
+                picker.selected_item = Some(OpItem {
+                    id: "i1".into(),
+                    name: "Database".into(),
+                });
+                picker.fields = vec![OpField {
+                    id: "password".into(),
+                    label: "password".into(),
+                    field_type: "concealed".into(),
+                    concealed: true,
+                }];
+                picker.field_list_state.select(Some(0));
+                picker.stage = OpPickerStage::Field;
+                picker.load_state = OpLoadState::Ready;
+            }
+            other => panic!("expected OpPicker modal; got {other:?}"),
+        }
+    }
+
+    // Enter on the Field pane commits the path. The committed reference
+    // is the simple `op://Vault/Item/Field` form — account scoping is
+    // not (yet) embedded in the URL; the launch-time resolver uses the
+    // operator's default `op` account context.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert_eq!(
+        editor(&state).pending.env.get("DB_URL").map(String::as_str),
+        Some("op://Shared/Database/password"),
+        "multi-account picker commit must produce a Vault/Item/Field path"
+    );
+    assert!(editor(&state).modal.is_none());
+    Ok(())
+}
+
 // ── Modal::AgentPicker dispatch tests ─────────────────────────────
 
 /// Seed a config with a workspace that has `agent_keys.len()` allowed

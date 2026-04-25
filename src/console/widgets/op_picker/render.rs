@@ -77,14 +77,34 @@ fn footer_line(pairs: &[(&str, &str)]) -> Line<'static> {
 /// banner). Title carries the breadcrumb.
 #[allow(clippy::too_many_lines)]
 fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
+    // Multi-account: prepend the chosen account's email to vault/item/
+    // field breadcrumbs so the operator can always see which account
+    // they're drilling into. Single-account: same compact title as
+    // before (no per-pane account context to surface).
+    let multi_account = state.accounts.len() > 1;
+    let account_email = state
+        .selected_account
+        .as_ref()
+        .map_or("", |a| a.email.as_str());
     let title = match state.stage {
-        OpPickerStage::Vault => "1Password".to_string(),
+        OpPickerStage::Account => "1Password \u{2014} Accounts".to_string(),
+        OpPickerStage::Vault => {
+            if multi_account {
+                format!("{account_email} \u{2192} Vaults")
+            } else {
+                "1Password".to_string()
+            }
+        }
         OpPickerStage::Item => {
             let v = state
                 .selected_vault
                 .as_ref()
                 .map_or("", |v| v.name.as_str());
-            format!("{v} \u{2192} Items")
+            if multi_account {
+                format!("{account_email} \u{2192} {v} \u{2192} Items")
+            } else {
+                format!("{v} \u{2192} Items")
+            }
         }
         OpPickerStage::Field => {
             let v = state
@@ -92,7 +112,11 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
                 .as_ref()
                 .map_or("", |v| v.name.as_str());
             let i = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
-            format!("{v} \u{2192} {i} \u{2192} Fields")
+            if multi_account {
+                format!("{account_email} \u{2192} {v} \u{2192} {i} \u{2192} Fields")
+            } else {
+                format!("{v} \u{2192} {i} \u{2192} Fields")
+            }
         }
     };
     let block = modal_block(title);
@@ -157,6 +181,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
 
     // List rows.
     let list_lines: Vec<Line<'static>> = match state.stage {
+        OpPickerStage::Account => render_account_lines(state),
         OpPickerStage::Vault => render_vault_lines(state),
         OpPickerStage::Item => render_item_lines(state),
         OpPickerStage::Field => render_field_lines(state),
@@ -172,14 +197,29 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     };
     frame.render_widget(list_para, rows[3]);
 
-    // Footer hint per pane.
+    // Footer hint per pane. The Vault pane's Esc semantics depend on
+    // whether an Account pane is in play: with ≥2 accounts, Esc returns
+    // to that pane; otherwise it cancels the picker as before.
     let pairs: Vec<(&str, &str)> = match state.stage {
-        OpPickerStage::Vault => vec![
+        OpPickerStage::Account => vec![
             ("\u{2191}\u{2193}", "navigate"),
             ("type", "filter"),
             ("Enter", "select"),
             ("Esc", "cancel"),
         ],
+        OpPickerStage::Vault => {
+            let esc_label = if multi_account {
+                "back to accounts"
+            } else {
+                "cancel"
+            };
+            vec![
+                ("\u{2191}\u{2193}", "navigate"),
+                ("type", "filter"),
+                ("Enter", "select"),
+                ("Esc", esc_label),
+            ]
+        }
         OpPickerStage::Item => vec![
             ("\u{2191}\u{2193}", "navigate"),
             ("Backspace", "clear filter"),
@@ -197,6 +237,37 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         Paragraph::new(footer_line(&pairs)).alignment(Alignment::Center),
         rows[5],
     );
+}
+
+fn render_account_lines(state: &OpPickerState) -> Vec<Line<'static>> {
+    // Server order — do not alphabetize. `op` returns accounts in the
+    // order the operator signed them in; preserve that visible ordering
+    // so the picker doesn't surprise long-time multi-account users.
+    let visible = state.filtered_accounts();
+    let selected = state.account_list_state.selected;
+    visible
+        .into_iter()
+        .enumerate()
+        .map(|(i, a)| {
+            let is_selected = Some(i) == selected;
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let label_style = if is_selected {
+                Style::default()
+                    .fg(PHOSPHOR_GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            // Display: `<email>  (<url>)`. Empty values render as empty
+            // strings rather than panicking — `op` versions older than
+            // the v2 schema may not include `email`/`url`.
+            Line::from(vec![
+                Span::styled(format!("{prefix}{}", a.email), label_style),
+                Span::raw("  "),
+                Span::styled(format!("({})", a.url), Style::default().fg(PHOSPHOR_DIM)),
+            ])
+        })
+        .collect()
 }
 
 fn render_vault_lines(state: &OpPickerState) -> Vec<Line<'static>> {
@@ -298,6 +369,10 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
 
     let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
     let descriptor = match state.stage {
+        // Account-stage loading shouldn't normally be visible —
+        // `account_list` is synchronous in the constructor — but render
+        // a sensible string for completeness.
+        OpPickerStage::Account => "loading accounts\u{2026}".to_string(),
         OpPickerStage::Vault => "loading vaults\u{2026}".to_string(),
         OpPickerStage::Item => {
             let v = state

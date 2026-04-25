@@ -132,6 +132,11 @@ The picker is a row-level action, not a sub-mode of the value editor:
 The picker shows what is available to reference, never what's stored. Field
 values are never read or displayed.
 
+If you have multiple 1Password accounts signed in, the picker opens with an
+Account pane first (`Enter` to drill into that account's vaults; `Esc` to
+choose a different account). Single-account setups skip straight to the
+vault list.
+
 **Requirements:** 1Password CLI (`op`) must be installed and signed in.
 
 - Not installed: `brew install 1password-cli` (macOS) or visit
