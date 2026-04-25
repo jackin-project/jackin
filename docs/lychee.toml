@@ -1,0 +1,26 @@
+# Shared lychee configuration for generated docs link checks.
+#
+# Local PR check:
+#   cd docs
+#   bun run check:links
+
+accept = ["100..=103", "200..=299", "429"]
+exclude_all_private = true
+exclude_path = ["(^|/)404\\.html$"]
+format = "compact"
+include_fragments = "anchor-only"
+index_files = ["index.html"]
+max_concurrency = 32
+max_redirects = 10
+max_retries = 2
+mode = "plain"
+no_progress = true
+retry_wait_time = 2
+timeout = 20
+user_agent = "jackin-docs-link-checker"
+
+scheme = ["https", "http", "file"]
+
+[hosts."github.com"]
+concurrency = 4
+request_interval = "250ms"

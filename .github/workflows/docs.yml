@@ -40,6 +40,21 @@ jobs:
         working-directory: docs
         run: mise exec -- bun run build
 
+      - name: Check generated edit links
+        working-directory: docs
+        run: mise exec -- bun run check:edit-links
+
+      - name: Check built site links
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
+        with:
+          args: >-
+            --config docs/lychee.toml
+            --root-dir ${{ github.workspace }}/docs/dist
+            docs/dist/**/*.html
+          fail: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
       - name: Upload artifact
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
@@ -51,12 +66,38 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+
+      - name: Prepare deployed link check
+        run: mkdir -p lychee
+
+      - name: Collect deployed docs URLs
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
+        with:
+          args: >-
+            --dump
+            --output lychee/deployed-pages.txt
+            ${{ steps.deployment.outputs.page_url }}sitemap-0.xml
+          fail: true
+
+      - name: Check deployed docs links
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
+        with:
+          args: >-
+            --config docs/lychee.toml
+            --files-from lychee/deployed-pages.txt
+          fail: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

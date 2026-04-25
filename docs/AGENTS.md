@@ -71,7 +71,10 @@ This populates `node_modules/` with the platform-specific optional native binari
 - Start dev server: `bun run dev`
 - Build docs: `bun run build`
 - Preview production build: `bun run preview`
+- Check generated edit links and page links: `bun run check:links`
 - Run tests: `bun test`
+
+`bun run check:links` requires the `lychee` CLI (for example, `brew install lychee` on macOS).
 
 **If `node_modules` was last installed on a different OS** (e.g. an agent built from a Linux container shared the working tree with a macOS host), Bun won't always re-resolve optional native binaries on its own. Reset with:
 
@@ -133,4 +136,3 @@ bun install --frozen-lockfile
   right-rail TOC, pagination hover.
 - Code blocks always use a dark surface (`--jk-code-bg`) regardless of
   page theme. Shiki theme: github-dark in dark mode, one-dark-pro in light.
-
