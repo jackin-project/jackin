@@ -659,12 +659,13 @@ fn env_row_line(row: &EnvRow, inner_width: usize) -> Line<'static> {
     ));
 
     if let Some(agent) = &row.scope {
-        // Right-pad with spaces so the agent label ends at `inner_width`,
-        // leaving a single space before the right border. When the panel
-        // is too narrow to fit both, fall back to a single-space gap and
-        // let the Paragraph clip — the key name takes priority.
-        let pad_count = if left_visible_width + 1 + agent.len() < inner_width {
-            inner_width - left_visible_width - agent.len()
+        // Right-pad with spaces so the agent label ends one cell before
+        // `inner_width`, leaving a 1-cell gap to the right border so the
+        // label doesn't sit flush against it. When the panel is too
+        // narrow to fit both, fall back to a single-space gap and let
+        // the Paragraph clip — the key name takes priority.
+        let pad_count = if left_visible_width + 1 + agent.len() + 1 < inner_width {
+            inner_width - left_visible_width - agent.len() - 1
         } else {
             1
         };
@@ -1681,6 +1682,66 @@ mod subpanel_padding_tests {
         assert!(
             agent_pos > key_pos,
             "agent label must come AFTER the key name on the row; got key@{key_pos}, agent@{agent_pos}"
+        );
+    }
+
+    /// Per-agent rows show the agent label one cell before the right
+    /// border, not flush against it. The cell at `inner_width - 1`
+    /// (i.e. the column just inside the right border) must be a space.
+    #[test]
+    fn preview_environments_agent_label_has_one_cell_right_padding() {
+        let mut ws = ws_config_with_allowed(&["agent-brown"], Some("agent-brown"));
+        let mut brown = crate::workspace::WorkspaceAgentOverride::default();
+        brown.env.insert("TEST5".into(), "v".into());
+        ws.agents.insert("agent-brown".into(), brown);
+
+        let width: u16 = 60;
+        let backend = TestBackend::new(width, 4);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_environments_subpanel(f, Rect::new(0, 0, width, 4), Some(&ws));
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+
+        // Find the row containing TEST5; agent label `agent-brown`
+        // must end one cell before the right border so the cell at
+        // x = width - 2 (i.e. the one just inside the right border
+        // at x = width - 1) is a space, and the label's last char
+        // sits at x = width - 3.
+        let mut found_row: Option<u16> = None;
+        for y in 0..buf.area.height {
+            let row: String = (0..width).map(|x| buf[(x, y)].symbol()).collect();
+            if row.contains("TEST5") {
+                found_row = Some(y);
+                break;
+            }
+        }
+        let y = found_row.expect("TEST5 row must render");
+
+        // Right border is at x = width - 1 (the `│` glyph).
+        // The cell immediately inside (x = width - 2) must be blank
+        // — that's the 1-cell padding the operator asked for.
+        let cell_inside_border = buf[(width - 2, y)].symbol();
+        assert_eq!(
+            cell_inside_border,
+            " ",
+            "cell at x={} (one inside right border) must be a space — \
+             agent label should have 1-cell right padding; got {:?}",
+            width - 2,
+            cell_inside_border
+        );
+
+        // And the agent label's last char (`n` of `agent-brown`)
+        // must sit at x = width - 3 — the cell just before the pad.
+        let label_last = buf[(width - 3, y)].symbol();
+        assert_eq!(
+            label_last,
+            "n",
+            "last char of `agent-brown` must sit at x={} (one cell \
+             before the right border); got {:?}",
+            width - 3,
+            label_last
         );
     }
 
