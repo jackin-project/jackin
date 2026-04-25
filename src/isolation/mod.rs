@@ -3,6 +3,7 @@ use std::fmt;
 use std::str::FromStr;
 
 pub mod branch;
+pub mod cleanup;
 pub mod materialize;
 pub mod state;
 
