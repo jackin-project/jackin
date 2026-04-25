@@ -1,6 +1,7 @@
 ---
 title: "Sensitive Mount Path Warnings"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 
 **Status**: Resolved
@@ -25,6 +26,6 @@ Warning-and-confirm model:
 
 ## Related Files
 
-- `src/workspace/sensitive.rs` — sensitive-mount detection (`find_sensitive_mounts`, `confirm_sensitive_mounts`)
-- `src/workspace/mounts.rs` — mount validation
-- `src/tui/prompt.rs` — `prompt_choice`, `require_interactive_stdin` helpers
+- <RepoFile path="src/workspace/sensitive.rs" /> — sensitive-mount detection (`find_sensitive_mounts`, `confirm_sensitive_mounts`)
+- <RepoFile path="src/workspace/mounts.rs" /> — mount validation
+- <RepoFile path="src/tui/prompt.rs" /> — `prompt_choice`, `require_interactive_stdin` helpers

@@ -2,6 +2,7 @@
 title: The Construct Image
 description: What's inside the shared base image that every agent starts from
 ---
+import RepoFile from '../../../components/RepoFile.astro'
 import { Aside } from '@astrojs/starlight/components'
 
 
@@ -61,9 +62,9 @@ The construct creates a `claude` user with:
 
 ## How it's built
 
-The construct source code lives at [`docker/construct/`](https://github.com/jackin-project/jackin/tree/main/docker/construct) in the jackin' repository. The declarative build definition lives in the repo-root `docker-bake.hcl`, and the supported command wrapper is the repo-root `Justfile`.
+The construct source starts at <RepoFile path="docker/construct/Dockerfile" /> in the jackin' repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl" /> at the repo root, and the supported command wrapper is <RepoFile path="Justfile" /> at the repo root.
 
-`docker/construct/versions.env` remains the source of truth for the pinned `tirith` and `shellfirm` build args used by `docker/construct/Dockerfile`.
+<RepoFile path="docker/construct/versions.env" /> remains the source of truth for the pinned `tirith` and `shellfirm` build args used by <RepoFile path="docker/construct/Dockerfile" />.
 
 ## Build workflow
 
@@ -112,7 +113,7 @@ REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER just construct-publish-manifest
 </Aside>
 ### CI behavior
 
-GitHub Actions reuses the same `just` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI triggers when changes touch `docker/construct/**`, `docker-bake.hcl`, `Justfile`, or `.github/workflows/construct.yml`.
+GitHub Actions reuses the same `just` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI triggers when changes touch `docker/construct/**`, <RepoFile path="docker-bake.hcl" />, <RepoFile path="Justfile" />, or <RepoFile path=".github/workflows/construct.yml" />.
 
 Pull requests, plus manual workflow runs against non-`main` branches, build both architectures natively without pushing images. Those validation jobs use the GitHub Actions cache backend so cache state stays inside Actions instead of being published to Docker Hub.
 

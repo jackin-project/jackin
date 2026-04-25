@@ -1,6 +1,7 @@
 ---
 title: "Expose DinD Hostname as `JACKIN_DIND_HOSTNAME`"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 
 **Status**: Resolved
@@ -55,6 +56,6 @@ export POSTGRESQL_DB_HOST="$JACKIN_DIND_HOSTNAME"
 
 ## Related Files
 
-- `src/runtime/launch.rs` — where `DOCKER_HOST` is constructed and passed to the container
-- `docker/runtime/entrypoint.sh` — runtime setup (no changes needed)
-- `src/env_model.rs` — reserved-runtime-env list including `JACKIN_CLAUDE_ENV` (and precedent for additional `JACKIN_*` reservations)
+- <RepoFile path="src/runtime/launch.rs" /> — where `DOCKER_HOST` is constructed and passed to the container
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — runtime setup (no changes needed)
+- <RepoFile path="src/env_model.rs" /> — reserved-runtime-env list including `JACKIN_CLAUDE_ENV` (and precedent for additional `JACKIN_*` reservations)

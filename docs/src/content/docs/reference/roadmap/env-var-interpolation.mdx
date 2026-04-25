@@ -1,6 +1,7 @@
 ---
 title: "Interactive Env Vars and Resolution"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 
 **Status**: Resolved — `${env.VAR}` interpolation implemented; operator-side resolution and secret backends remain future work
@@ -81,13 +82,13 @@ The resolution layer should eventually support pluggable backends beyond literal
 - 1Password (`op read op://vault/item/field`)
 - Other secret managers (Vault, AWS SSM, etc.)
 
-This needs its own design pass — see [1Password Integration](onepassword-integration.md) for initial thinking.
+This needs its own design pass — see [1Password Integration](/reference/roadmap/onepassword-integration/) for initial thinking.
 
 ## Related Files
 
-- `src/manifest/mod.rs` — `EnvVarDecl` schema
-- `src/manifest/validate.rs` — env var declaration parsing and interpolation validation
-- `src/env_model.rs` — `extract_interpolation_refs`, `topological_env_order`, reserved-env list
-- `src/env_resolver.rs` — launch-time env var resolution with `${env.VAR}` interpolation
-- `src/config/mod.rs` — operator config types (`AppConfig`, `AgentSource`)
-- `src/workspace/mod.rs` — workspace-level overrides (`WorkspaceConfig`)
+- <RepoFile path="src/manifest/mod.rs" /> — `EnvVarDecl` schema
+- <RepoFile path="src/manifest/validate.rs" /> — env var declaration parsing and interpolation validation
+- <RepoFile path="src/env_model.rs" /> — `extract_interpolation_refs`, `topological_env_order`, reserved-env list
+- <RepoFile path="src/env_resolver.rs" /> — launch-time env var resolution with `${env.VAR}` interpolation
+- <RepoFile path="src/config/mod.rs" /> — operator config types (`AppConfig`, `AgentSource`)
+- <RepoFile path="src/workspace/mod.rs" /> — workspace-level overrides (`WorkspaceConfig`)

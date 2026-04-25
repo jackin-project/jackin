@@ -1,6 +1,7 @@
 ---
 title: "Migrate Docker CLI to Bollard API Client"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 
 **Status**: Deferred — incremental migration is the pragmatic path
@@ -29,8 +30,8 @@ Docker error messages. This migration would resolve that finding.
 
 ## Related Files
 
-- `src/docker.rs` — `ShellRunner`, command execution
-- `src/runtime/cleanup.rs` — `is_missing_cleanup_error()`, orphan GC Docker calls
-- `src/runtime/launch.rs` — `launch_agent_runtime()` Docker run invocation
-- `src/runtime/attach.rs` — `attach_running()`, `inspect_container_state()`
-- `src/runtime/image.rs` — `build_agent_image()` Docker build invocation
+- <RepoFile path="src/docker.rs" /> — `ShellRunner`, command execution
+- <RepoFile path="src/runtime/cleanup.rs" /> — `is_missing_cleanup_error()`, orphan GC Docker calls
+- <RepoFile path="src/runtime/launch.rs" /> — `launch_agent_runtime()` Docker run invocation
+- <RepoFile path="src/runtime/attach.rs" /> — `attach_running()`, `inspect_container_state()`
+- <RepoFile path="src/runtime/image.rs" /> — `build_agent_image()` Docker build invocation

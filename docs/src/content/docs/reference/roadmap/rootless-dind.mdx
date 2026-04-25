@@ -1,6 +1,7 @@
 ---
 title: "Rootless DinD Research"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 
 **Status**: Deferred — needs hands-on testing
@@ -26,6 +27,6 @@ The current design uses a privileged `docker:dind` sidecar container, which gran
 
 ## Related Files
 
-- `src/runtime/launch.rs` — DinD container startup
-- `docker/construct/Dockerfile` — base image that runs inside DinD
-- `docs/src/content/docs/guides/security-model.mdx`
+- <RepoFile path="src/runtime/launch.rs" /> — DinD container startup
+- <RepoFile path="docker/construct/Dockerfile" /> — base image that runs inside DinD
+- <RepoFile path="docs/src/content/docs/guides/security-model.mdx" />
