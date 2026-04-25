@@ -64,14 +64,25 @@ pub struct HardlineArgs {
     pub selector: Option<String>,
 }
 
-/// Open the interactive TUI launcher to pick a workspace and agent
-#[derive(Debug, Args, PartialEq, Eq)]
+/// Open the operator console to manage workspaces, launch agents, and more
+///
+/// Running `jackin` with no subcommand on an interactive terminal opens the
+/// same console. This struct also flattens into the top-level `Cli` so
+/// `jackin --debug` is equivalent to `jackin console --debug`.
+#[derive(Debug, Args, PartialEq, Eq, Default, Clone)]
 #[command(before_help = BANNER, styles = HELP_STYLES)]
-pub struct LaunchArgs {
+pub struct ConsoleArgs {
     /// Print raw container output for troubleshooting
     #[arg(long, default_value_t = false)]
     pub debug: bool,
 }
+
+/// Backwards-compat alias for `ConsoleArgs`.
+///
+/// `jackin launch` is the pre-rename spelling of `jackin console`. The
+/// struct is identical; the type alias keeps older module imports working
+/// without a big-bang rename.
+pub type LaunchArgs = ConsoleArgs;
 
 #[cfg(test)]
 mod tests {
@@ -107,13 +118,13 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Load(super::LoadArgs {
+            Some(Command::Load(super::LoadArgs {
                 selector: Some(ref s),
                 target: None,
                 no_intro: false,
                 debug: false,
                 ..
-            }) if s == "agent-smith"
+            })) if s == "agent-smith"
         ));
     }
 
@@ -122,11 +133,11 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "load"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Load(super::LoadArgs {
+            Some(Command::Load(super::LoadArgs {
                 selector: None,
                 target: None,
                 ..
-            })
+            }))
         ));
     }
 
@@ -135,11 +146,11 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "load", "--rebuild"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Load(super::LoadArgs {
+            Some(Command::Load(super::LoadArgs {
                 selector: None,
                 rebuild: true,
                 ..
-            })
+            }))
         ));
     }
 
@@ -149,10 +160,10 @@ mod tests {
             Cli::try_parse_from(["jackin", "load", "agent-smith", "~/Projects/my-app"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Load(super::LoadArgs {
+            Some(Command::Load(super::LoadArgs {
                 target: Some(ref t),
                 ..
-            }) if t == "~/Projects/my-app"
+            })) if t == "~/Projects/my-app"
         ));
     }
 
@@ -170,11 +181,11 @@ mod tests {
 
         assert!(matches!(
             cli.command,
-            Command::Load(super::LoadArgs {
+            Some(Command::Load(super::LoadArgs {
                 target: Some(ref t),
                 ref mounts,
                 ..
-            }) if t == "big-monorepo" && mounts.len() == 1
+            })) if t == "big-monorepo" && mounts.len() == 1
         ));
     }
 
@@ -193,11 +204,11 @@ mod tests {
 
         assert!(matches!(
             cli.command,
-            Command::Load(super::LoadArgs {
+            Some(Command::Load(super::LoadArgs {
                 target: None,
                 ref mounts,
                 ..
-            }) if mounts.len() == 2
+            })) if mounts.len() == 2
         ));
     }
 
@@ -206,8 +217,40 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "launch"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Launch(super::LaunchArgs { debug: false })
+            Some(Command::Launch(super::LaunchArgs { debug: false }))
         ));
+    }
+
+    #[test]
+    fn parses_console_command() {
+        let cli = Cli::try_parse_from(["jackin", "console"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Console(super::ConsoleArgs { debug: false }))
+        ));
+    }
+
+    #[test]
+    fn parses_console_with_debug() {
+        let cli = Cli::try_parse_from(["jackin", "console", "--debug"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Console(super::ConsoleArgs { debug: true }))
+        ));
+    }
+
+    #[test]
+    fn parses_bare_jackin_as_no_subcommand() {
+        let cli = Cli::try_parse_from(["jackin"]).unwrap();
+        assert!(cli.command.is_none());
+        assert!(!cli.console_args.debug);
+    }
+
+    #[test]
+    fn parses_bare_jackin_with_top_level_debug() {
+        let cli = Cli::try_parse_from(["jackin", "--debug"]).unwrap();
+        assert!(cli.command.is_none());
+        assert!(cli.console_args.debug);
     }
 
     // ── Load help ───────────────────────────────────────────────────────
@@ -248,7 +291,7 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "hardline"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Hardline(super::HardlineArgs { selector: None })
+            Some(Command::Hardline(super::HardlineArgs { selector: None }))
         ));
     }
 
@@ -257,7 +300,7 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "hardline", "agent-smith"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Hardline(super::HardlineArgs { selector: Some(ref s) }) if s == "agent-smith"
+            Some(Command::Hardline(super::HardlineArgs { selector: Some(ref s) })) if s == "agent-smith"
         ));
     }
 }

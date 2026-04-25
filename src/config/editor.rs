@@ -351,6 +351,39 @@ impl ConfigEditor {
         table.insert("last_agent", toml_edit::value(agent_key));
     }
 
+    /// Rename a workspace key in the `[workspaces]` table.
+    ///
+    /// Preserves all nested fields (mounts, env, agents overrides, etc.)
+    /// because `toml_edit` renames the key in place. Fails if:
+    ///   - new name is empty
+    ///   - old name does not exist
+    ///   - new name already exists
+    pub fn rename_workspace(&mut self, old: &str, new: &str) -> anyhow::Result<()> {
+        if new.is_empty() {
+            anyhow::bail!("workspace name cannot be empty");
+        }
+        if old == new {
+            return Ok(());
+        }
+        let workspaces = self
+            .doc
+            .get_mut("workspaces")
+            .and_then(|i| i.as_table_mut())
+            .ok_or_else(|| anyhow::anyhow!("no workspaces table"))?;
+
+        if !workspaces.contains_key(old) {
+            anyhow::bail!("workspace {old:?} not found");
+        }
+        if workspaces.contains_key(new) {
+            anyhow::bail!("workspace {new:?} already exists");
+        }
+
+        // Extract, remove under old name, re-insert under new name.
+        let value = workspaces.remove(old).expect("checked above");
+        workspaces.insert(new, value);
+        Ok(())
+    }
+
     pub fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
         let Some(workspaces) = self
             .doc
@@ -1247,5 +1280,71 @@ workdir = "/b"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(!out.contains("[workspaces.a]"), "{out}");
         assert!(out.contains("[workspaces.b]"), "{out}");
+    }
+
+    #[test]
+    fn rename_workspace_preserves_nested_fields() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.old-name]
+workdir = "/a"
+
+[[workspaces.old-name.mounts]]
+src = "/s"
+dst = "/a"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.rename_workspace("old-name", "new-name").unwrap();
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[workspaces.new-name]"), "{out}");
+        assert!(
+            out.contains(r#"workdir = "/a""#),
+            "nested field preserved: {out}"
+        );
+        assert!(
+            out.contains("[[workspaces.new-name.mounts]]"),
+            "array table preserved: {out}"
+        );
+        assert!(!out.contains("old-name"), "{out}");
+    }
+
+    #[test]
+    fn rename_workspace_rejects_collision() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.a]
+workdir = "/a"
+
+[workspaces.b]
+workdir = "/b"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let err = editor.rename_workspace("a", "b").unwrap_err();
+        assert!(err.to_string().contains("already exists"), "{err}");
+    }
+
+    #[test]
+    fn rename_workspace_rejects_empty_new_name() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "[workspaces.a]\nworkdir = \"/a\"\n").unwrap();
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let err = editor.rename_workspace("a", "").unwrap_err();
+        assert!(err.to_string().contains("empty"), "{err}");
     }
 }
