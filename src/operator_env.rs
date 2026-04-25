@@ -366,7 +366,19 @@ impl OpRunner for OpCli {
         let stderr_bytes = stderr_handle.join().unwrap_or_default();
 
         if status.success() {
-            let stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
+            // `op read` appends a trailing newline as CLI convention.
+            // Strip exactly one — preserving any legitimate final newline
+            // that's actually part of the secret. Without this trim, the
+            // newline lands in the resolved env value and shows as a
+            // blank line after the var when the container shell exports
+            // it (visible in `env` output).
+            let mut stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
+            if stdout.ends_with('\n') {
+                stdout.pop();
+                if stdout.ends_with('\r') {
+                    stdout.pop();
+                }
+            }
             return Ok(stdout);
         }
 
@@ -1371,6 +1383,43 @@ mod tests {
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let out = runner.read("op://Personal/api/token").unwrap();
         assert_eq!(out, "tok-123");
+    }
+
+    #[test]
+    fn op_cli_strips_trailing_newline_from_op_read_output() {
+        // `op read` appends a trailing newline as CLI convention. The
+        // resolved env value must NOT include it — otherwise the shell
+        // exports the value-with-newline and `env` shows a blank line
+        // after the var.
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-newline");
+        std::fs::write(&bin_path, "#!/bin/sh\nprintf 'tok-123\\n'\nexit 0\n").unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let out = runner.read("op://Personal/api/token").unwrap();
+        assert_eq!(
+            out, "tok-123",
+            "trailing \\n from op read must be stripped; got {out:?}"
+        );
+    }
+
+    #[test]
+    fn op_cli_strips_only_one_trailing_newline_preserves_value_newline() {
+        // A secret that legitimately ends with a newline (e.g. a PEM
+        // block) is sent by `op read` as value+\n. We must strip exactly
+        // one trailing \n so the inner newline survives.
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-double-newline");
+        std::fs::write(&bin_path, "#!/bin/sh\nprintf 'line1\\nline2\\n'\nexit 0\n").unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let out = runner.read("op://Personal/api/multi").unwrap();
+        assert_eq!(
+            out, "line1\nline2",
+            "internal newline must survive while final trailing \\n is stripped"
+        );
     }
 
     #[test]
