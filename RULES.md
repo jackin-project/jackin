@@ -18,6 +18,6 @@ See `DEPRECATED.md` itself for the entry format.
 
 ## TUI Keybindings
 
-TUI keybindings must use plain letters, numbers, `Enter`, `Esc`, `Tab`, `Shift+Tab`, or arrow keys. Avoid `Ctrl`/`Alt`/`Cmd` modifiers — they are harder to press, conflict with terminal and multiplexer chords (tmux, iTerm2, Ghostty), and are not discoverable in footer hints.
+TUI keybindings must use plain letters, numbers, `Enter`, `Esc`, `Tab`, or arrow keys. Avoid `Ctrl`/`Alt`/`Cmd`/`Shift` modifiers — they add friction, conflict with terminal and multiplexer chords (tmux, iTerm2, Ghostty), and are not discoverable in footer hints.
 
 Where a command would otherwise collide with text input (a key inside a textarea would be typed as text), move the command to a parent context where it does not conflict — typically as a sibling row action rather than a sub-mode of the text editor.

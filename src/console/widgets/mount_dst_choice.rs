@@ -57,7 +57,7 @@ impl MountDstChoiceState {
                 };
                 ModalOutcome::Continue
             }
-            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            KeyCode::Left | KeyCode::Char('h' | 'H') => {
                 self.focus = match self.focus {
                     MountDstFocus::Ok => MountDstFocus::Cancel,
                     MountDstFocus::Edit => MountDstFocus::Ok,
@@ -221,14 +221,14 @@ mod tests {
     }
 
     #[test]
-    fn backtab_reverse_cycles() {
+    fn left_reverse_cycles() {
         let mut s = MountDstChoiceState::new("/h");
         assert_eq!(s.focus, MountDstFocus::Ok);
-        s.handle_key(key(KeyCode::BackTab));
+        s.handle_key(key(KeyCode::Left));
         assert_eq!(s.focus, MountDstFocus::Cancel);
-        s.handle_key(key(KeyCode::BackTab));
+        s.handle_key(key(KeyCode::Left));
         assert_eq!(s.focus, MountDstFocus::Edit);
-        s.handle_key(key(KeyCode::BackTab));
+        s.handle_key(key(KeyCode::Left));
         assert_eq!(s.focus, MountDstFocus::Ok);
     }
 

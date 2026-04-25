@@ -72,11 +72,10 @@ impl ConfirmSaveState {
         match key.code {
             KeyCode::Char('s' | 'S') => ModalOutcome::Commit(SaveChoice::Save),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
-            // Tab / Right / l-h / BackTab / Left — only two buttons, so
-            // every "move focus" key just toggles between them.
+            // Tab / Right / l-h / Left — only two buttons, so every
+            // "move focus" key just toggles between them.
             KeyCode::Tab
             | KeyCode::Right
-            | KeyCode::BackTab
             | KeyCode::Left
             | KeyCode::Char('l' | 'L' | 'h' | 'H') => {
                 self.focus = match self.focus {
@@ -233,11 +232,11 @@ mod tests {
     }
 
     #[test]
-    fn confirm_save_backtab_cycles_reverse() {
+    fn confirm_save_left_cycles_reverse() {
         let mut s = sample_state();
-        s.handle_key(key(KeyCode::BackTab));
+        s.handle_key(key(KeyCode::Left));
         assert_eq!(s.focus, ConfirmSaveFocus::Cancel);
-        s.handle_key(key(KeyCode::BackTab));
+        s.handle_key(key(KeyCode::Left));
         assert_eq!(s.focus, ConfirmSaveFocus::Save);
     }
 

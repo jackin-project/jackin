@@ -108,19 +108,6 @@ pub(super) fn handle_editor_key(
                 reset_secrets_view(editor);
             }
         }
-        KeyCode::BackTab => {
-            let was_secrets = editor.active_tab == EditorTab::Secrets;
-            editor.active_tab = match editor.active_tab {
-                EditorTab::General => EditorTab::Secrets,
-                EditorTab::Mounts => EditorTab::General,
-                EditorTab::Agents => EditorTab::Mounts,
-                EditorTab::Secrets => EditorTab::Agents,
-            };
-            editor.active_field = FieldFocus::Row(0);
-            if was_secrets {
-                reset_secrets_view(editor);
-            }
-        }
         KeyCode::Left => {
             // On the Secrets tab, Left on an expanded agent header collapses
             // that section instead of moving to the previous tab. Any other
@@ -1237,7 +1224,7 @@ mod tests {
 
     #[test]
     fn editor_left_arrow_rewinds_tab() {
-        // Left should match BackTab's reverse cycle: Mounts → General.
+        // Left implements the reverse tab cycle: Mounts → General.
         let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Mounts);
         handle_key(
             &mut state,

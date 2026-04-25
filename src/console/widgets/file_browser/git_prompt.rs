@@ -102,7 +102,7 @@ impl FileBrowserState {
                 };
                 ModalOutcome::Continue
             }
-            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            KeyCode::Left | KeyCode::Char('h' | 'H') => {
                 self.pending_git_focus = match self.pending_git_focus {
                     GitPromptFocus::MountHere => GitPromptFocus::Cancel,
                     GitPromptFocus::EnterIn => GitPromptFocus::MountHere,
