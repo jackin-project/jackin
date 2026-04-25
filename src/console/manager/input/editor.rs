@@ -67,7 +67,13 @@ pub(super) fn handle_editor_key(
                     }
                 } else {
                     let cache = state.op_cache.clone();
-                    *state = ManagerState::from_config_with_cache(config, cwd, cache);
+                    let op_available = state.op_available;
+                    *state = ManagerState::from_config_with_cache_and_op(
+                        config,
+                        cwd,
+                        cache,
+                        op_available,
+                    );
                 }
             }
             return Ok(InputOutcome::Continue);
@@ -546,8 +552,13 @@ fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
     }
 }
 
-#[allow(clippy::too_many_lines)]
-pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
+#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
+pub(super) fn handle_editor_modal(
+    editor: &mut EditorState<'_>,
+    key: KeyEvent,
+    op_available: bool,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+) {
     let Some(modal) = editor.modal.as_mut() else {
         return;
     };
@@ -557,7 +568,7 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
                 ModalOutcome::Commit(value) => {
                     let target = target.clone();
                     editor.modal = None;
-                    apply_text_input_to_pending(&target, editor, &value);
+                    apply_text_input_to_pending(&target, editor, &value, op_available);
                 }
                 ModalOutcome::Cancel => {
                     // Secrets-tab Add flow state hygiene: if the operator
@@ -681,6 +692,71 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             }
             ModalOutcome::Continue => {}
         },
+        Modal::SourcePicker { state: source } => {
+            use crate::console::widgets::source_picker::SourceChoice;
+            use crate::console::widgets::text_input::TextInputState;
+            match source.handle_key(key) {
+                ModalOutcome::Commit(SourceChoice::Plain) => {
+                    // Plain text path: open the EnvValue text modal so
+                    // the operator types the value verbatim. The
+                    // (scope, key) pair was stashed on
+                    // `pending_env_key` during the EnvKey commit; reuse
+                    // it to label the modal and route the eventual
+                    // value commit.
+                    let Some((scope, key)) = editor.pending_env_key.clone() else {
+                        // Defensive: if pending_env_key was somehow
+                        // cleared (shouldn't happen), close the modal
+                        // and bail rather than crash.
+                        editor.modal = None;
+                        return;
+                    };
+                    editor.modal = Some(Modal::TextInput {
+                        target: TextInputTarget::EnvValue {
+                            scope,
+                            key: key.clone(),
+                        },
+                        state: TextInputState::new(format!("Value for {key}"), String::new()),
+                    });
+                }
+                ModalOutcome::Commit(SourceChoice::Op) => {
+                    // 1Password path: open the existing OpPicker modal
+                    // and record `pending_picker_target = (scope,
+                    // Some(key))` so the picker's commit handler
+                    // writes the op:// reference straight into
+                    // `pending.env[key]` (same code path as P-on-key-
+                    // row). The EnvKey is already known — we don't
+                    // need the sentinel-add `(scope, None)` shape.
+                    let Some((scope, key)) = editor.pending_env_key.clone() else {
+                        editor.modal = None;
+                        return;
+                    };
+                    editor.pending_picker_target = Some((scope, Some(key)));
+                    // pending_env_key is no longer load-bearing once
+                    // the OpPicker takes ownership of the (scope, key)
+                    // via pending_picker_target. Clear it so a future
+                    // sentinel-add doesn't confuse the EnvKey commit
+                    // helper.
+                    editor.pending_env_key = None;
+                    // Use the session-scoped cache so the picker
+                    // re-uses any structural metadata fetched earlier
+                    // in this `jackin console` run (mirrors the
+                    // P-on-key-row construction in
+                    // `open_secrets_picker_modal`).
+                    editor.modal = Some(Modal::OpPicker {
+                        state: Box::new(OpPickerState::new_with_cache(op_cache)),
+                    });
+                }
+                ModalOutcome::Cancel => {
+                    // Cancel: drop the in-flight key name and close
+                    // the modal. Operator returns to the Secrets tab
+                    // with no env entry added.
+                    editor.modal = None;
+                    editor.pending_env_key = None;
+                    editor.pending_picker_value = None;
+                }
+                ModalOutcome::Continue => {}
+            }
+        }
         Modal::OpPicker { state: picker } => {
             use crate::console::widgets::text_input::TextInputState;
             match picker.handle_key(key) {
@@ -803,6 +879,7 @@ pub(super) fn apply_text_input_to_pending(
     target: &TextInputTarget,
     editor: &mut EditorState<'_>,
     value: &str,
+    op_available: bool,
 ) {
     use super::super::super::widgets::text_input::TextInputState;
     match target {
@@ -823,7 +900,7 @@ pub(super) fn apply_text_input_to_pending(
             }
         }
         TextInputTarget::EnvKey { scope } => {
-            // First step of the two-step Add flow — or, when the picker's
+            // First step of the unified Add flow — or, when the picker's
             // sentinel path stashed a value first, the *only* step. An
             // empty key re-opens the same EnvKey modal with an inline
             // "cannot be empty" label instead of committing.
@@ -840,10 +917,10 @@ pub(super) fn apply_text_input_to_pending(
             }
             let key = trimmed.to_string();
             // Sentinel-picker fast path: if the picker pre-stashed an
-            // `op://...` value on `pending_picker_value`, write both the
-            // key and value into pending env now and skip the follow-up
-            // EnvValue modal. Otherwise fall back to the standard
-            // two-step flow that opens an EnvValue modal next.
+            // `op://...` value on `pending_picker_value` (i.e. the
+            // operator pressed `P` on a sentinel and committed a path),
+            // write both the key and value into pending env now and
+            // skip everything else.
             if let Some(stashed) = editor.pending_picker_value.take() {
                 match scope {
                     SecretsScopeTag::Workspace => {
@@ -857,13 +934,18 @@ pub(super) fn apply_text_input_to_pending(
                 editor.pending_env_key = None;
                 return;
             }
+            // Standard add flow: stash the key on `pending_env_key`
+            // (used by the SourcePicker / EnvValue / OpPicker branches
+            // to remember the in-flight name) and open the SourcePicker
+            // modal so the operator picks Plain text vs. 1Password.
+            // The SourcePicker commit handler (in `handle_editor_modal`)
+            // opens the appropriate follow-up modal.
             editor.pending_env_key = Some((scope.clone(), key.clone()));
-            editor.modal = Some(Modal::TextInput {
-                target: TextInputTarget::EnvValue {
-                    scope: scope.clone(),
-                    key: key.clone(),
-                },
-                state: TextInputState::new(format!("Value for {key}"), String::new()),
+            editor.modal = Some(Modal::SourcePicker {
+                state: crate::console::widgets::source_picker::SourcePickerState::new(
+                    key,
+                    op_available,
+                ),
             });
         }
         TextInputTarget::EnvValue { scope, key } => {
@@ -1003,10 +1085,31 @@ mod tests {
     use super::{apply_file_browser_to_editor, apply_text_input_to_pending, handle_editor_modal};
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
+    use crate::console::op_cache::OpCache;
     use crate::paths::JackinPaths;
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::KeyCode;
     use tempfile::TempDir;
+
+    /// Test helper: invoke `handle_editor_modal` with default plumbing
+    /// for the new `op_available` / `op_cache` parameters. Existing
+    /// editor-modal tests don't exercise the `SourcePicker` /
+    /// `OpPicker` branches that need real wiring; defaults are fine.
+    fn handle_modal(editor: &mut EditorState<'_>, k: crossterm::event::KeyEvent) {
+        handle_editor_modal(
+            editor,
+            k,
+            false,
+            std::rc::Rc::new(std::cell::RefCell::new(OpCache::default())),
+        );
+    }
+
+    /// Test helper: invoke `apply_text_input_to_pending` with
+    /// `op_available = false`. Tests that don't open the `SourcePicker`
+    /// don't care about the flag.
+    fn apply_text_input(target: &TextInputTarget, editor: &mut EditorState<'_>, value: &str) {
+        apply_text_input_to_pending(target, editor, value, false);
+    }
 
     fn empty_ws() -> WorkspaceConfig {
         WorkspaceConfig {
@@ -1190,7 +1293,7 @@ mod tests {
         let mut editor = EditorState::new_create();
         editor.pending_name = Some("old-name".into());
 
-        apply_text_input_to_pending(&TextInputTarget::Name, &mut editor, "new-name");
+        apply_text_input(&TextInputTarget::Name, &mut editor, "new-name");
 
         assert_eq!(editor.pending_name.as_deref(), Some("new-name"));
     }
@@ -1262,7 +1365,7 @@ mod tests {
         // OK shortcut on the choice modal → push MountConfig with dst = src
         // and close the modal. No TextInput should appear.
         let mut editor = editor_with_browser_committed("/host/path");
-        handle_editor_modal(&mut editor, key(KeyCode::Char('o')));
+        handle_modal(&mut editor, key(KeyCode::Char('o')));
         assert!(
             editor.modal.is_none(),
             "OK must close the modal; got {:?}",
@@ -1281,7 +1384,7 @@ mod tests {
         // the TextInput pre-filled with src. Mirrors today's flow so the
         // operator can edit dst in place.
         let mut editor = editor_with_browser_committed("/host/path");
-        handle_editor_modal(&mut editor, key(KeyCode::Char('e')));
+        handle_modal(&mut editor, key(KeyCode::Char('e')));
         match &editor.modal {
             Some(Modal::TextInput { target, .. }) => {
                 assert_eq!(target, &TextInputTarget::MountDst);
@@ -1302,7 +1405,7 @@ mod tests {
     fn editor_cancel_does_not_push_mount() {
         // C / Esc dismisses the choice modal without touching pending.mounts.
         let mut editor = editor_with_browser_committed("/host/path");
-        handle_editor_modal(&mut editor, key(KeyCode::Esc));
+        handle_modal(&mut editor, key(KeyCode::Esc));
         assert!(editor.modal.is_none(), "Esc closes the modal");
         assert_eq!(
             editor.pending.mounts.len(),
@@ -1311,7 +1414,7 @@ mod tests {
         );
 
         let mut editor = editor_with_browser_committed("/host/path");
-        handle_editor_modal(&mut editor, key(KeyCode::Char('c')));
+        handle_modal(&mut editor, key(KeyCode::Char('c')));
         assert!(editor.modal.is_none(), "`c` closes the modal");
         assert_eq!(editor.pending.mounts.len(), 0, "`c` must not push a mount");
     }

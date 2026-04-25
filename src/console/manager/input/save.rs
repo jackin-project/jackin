@@ -302,7 +302,9 @@ pub(super) fn commit_editor_save(
                 // editor) keep theirs. Carry the toast across the reset.
                 let carry_toast = state.toast.take();
                 let cache = state.op_cache.clone();
-                *state = ManagerState::from_config_with_cache(config, cwd, cache);
+                let op_available = state.op_available;
+                *state =
+                    ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
                 state.toast = carry_toast;
             }
         }
@@ -1474,6 +1476,7 @@ mod tests {
                 _ => unreachable!(),
             },
             "edited-in-place",
+            false,
         );
 
         press_s(&mut state, &mut config, &paths, cwd);

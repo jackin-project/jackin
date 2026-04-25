@@ -17,6 +17,7 @@ pub mod mount_dst_choice;
 pub mod op_picker;
 pub mod panel_rain;
 pub mod save_discard;
+pub mod source_picker;
 pub mod text_input;
 pub mod workdir_pick;
 

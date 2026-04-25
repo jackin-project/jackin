@@ -60,10 +60,17 @@ pub fn handle_key(
     // Modal precedence: if a modal is open, it gets the event.
     // Use a discriminant check so we can take &mut without keeping an
     // immutable borrow alive across the call.
+    // Capture `op_available` and the session-scoped op_cache from
+    // the manager state before the editor borrow so the EnvKey commit
+    // path can build a SourcePicker (knows if 1Password is selectable)
+    // and the SourcePicker → OpPicker transition can construct a
+    // cache-sharing picker.
+    let op_available = state.op_available;
+    let op_cache = state.op_cache.clone();
     if let ManagerStage::Editor(editor) = &mut state.stage
         && editor.modal.is_some()
     {
-        editor::handle_editor_modal(editor, key);
+        editor::handle_editor_modal(editor, key, op_available, op_cache);
 
         // Drain the ConfirmSave → commit signal FIRST. The modal handler
         // only closes the modal and stashes the plan; this outer layer
@@ -110,7 +117,13 @@ pub fn handle_key(
                 }
                 ExitIntent::Discard => {
                     let cache = state.op_cache.clone();
-                    *state = ManagerState::from_config_with_cache(config, cwd, cache);
+                    let op_available = state.op_available;
+                    *state = ManagerState::from_config_with_cache_and_op(
+                        config,
+                        cwd,
+                        cache,
+                        op_available,
+                    );
                 }
             }
             return Ok(InputOutcome::Continue);
@@ -163,7 +176,13 @@ pub fn handle_key(
                 }
                 PreludeStatus::Cancelled => {
                     let cache = state.op_cache.clone();
-                    *state = ManagerState::from_config_with_cache(config, cwd, cache);
+                    let op_available = state.op_available;
+                    *state = ManagerState::from_config_with_cache_and_op(
+                        config,
+                        cwd,
+                        cache,
+                        op_available,
+                    );
                 }
                 PreludeStatus::InProgress => {}
             }
@@ -218,7 +237,8 @@ fn handle_confirm_delete_key(
             editor.remove_workspace(&ws_name)?;
             *config = editor.save()?;
             let cache = state.op_cache.clone();
-            *state = ManagerState::from_config_with_cache(config, cwd, cache);
+            let op_available = state.op_available;
+            *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
             state.toast = Some(Toast {
                 message: format!("deleted \"{ws_name}\""),
                 kind: ToastKind::Success,

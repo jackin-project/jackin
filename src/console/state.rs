@@ -48,6 +48,19 @@ pub struct ConsoleState {
     /// while the modal is open. The TUI event loop is single-threaded;
     /// `RefCell` is sufficient — no `Mutex` needed.
     pub op_cache: Rc<RefCell<OpCache>>,
+    /// Whether the 1Password CLI (`op`) was reachable on PATH at console
+    /// startup. Probed exactly once via [`OpCli::probe`] in
+    /// [`ConsoleState::new`]; the result is read by the Secrets-tab
+    /// source-picker modal to decide whether the `1Password` button is
+    /// available or rendered dim.
+    ///
+    /// **Mid-session installs are not picked up.** If the operator
+    /// installs `op` after `jackin console` has started, they must
+    /// restart the console for the source-picker to enable the
+    /// 1Password choice. The probe is a synchronous subprocess spawn;
+    /// running it on every modal open would add a perceptible UI hitch
+    /// for negligible benefit.
+    pub op_available: bool,
 }
 
 impl ConsoleState {
@@ -96,17 +109,28 @@ impl ConsoleState {
             .unwrap_or(0);
 
         let op_cache = Rc::new(RefCell::new(OpCache::default()));
+        // One-shot `op --version` probe — same code path the launch-time
+        // resolver uses. Failure is fine: it just means the source
+        // picker's 1Password choice will render disabled. Probe runs
+        // exactly once per console invocation; mid-session installs
+        // require a restart (see `op_available` doc).
+        let op_available = {
+            use crate::operator_env::OpRunner as _;
+            crate::operator_env::OpCli::new().probe().is_ok()
+        };
         Ok(Self {
             stage: ConsoleStage::Manager(
-                crate::console::manager::ManagerState::from_config_with_cache(
+                crate::console::manager::ManagerState::from_config_with_cache_and_op(
                     config,
                     cwd,
                     op_cache.clone(),
+                    op_available,
                 ),
             ),
             selected_workspace,
             workspaces,
             op_cache,
+            op_available,
         })
     }
 

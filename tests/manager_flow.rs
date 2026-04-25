@@ -516,8 +516,9 @@ fn secrets_dirty_detection_and_change_count() -> Result<()> {
     Ok(())
 }
 
-/// Two-step Add flow: `A` opens the EnvKey modal, typing + Enter stashes
-/// the key and opens the EnvValue modal; typing + Enter commits the
+/// Three-step Add flow: `A` opens the EnvKey modal, typing + Enter
+/// stashes the key and opens the SourcePicker; Enter on the (default)
+/// Plain choice opens the EnvValue modal; typing + Enter commits the
 /// value into `pending.env`.
 #[test]
 fn secrets_add_new_key_flow() -> Result<()> {
@@ -542,7 +543,14 @@ fn secrets_add_new_key_flow() -> Result<()> {
     for ch in "API_KEY".chars() {
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
     }
-    // Commit — stashes the key and opens the EnvValue modal.
+    // Commit — stashes the key and opens the SourcePicker.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::SourcePicker { .. })),
+        "EnvKey commit must open SourcePicker; got {:?}",
+        editor(&state).modal
+    );
+    // Default focus is Plain — Enter commits Plain and opens EnvValue.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     // Type "s3cret" into the EnvValue TextInput and commit.
@@ -558,7 +566,7 @@ fn secrets_add_new_key_flow() -> Result<()> {
             .get("API_KEY")
             .map(String::as_str),
         Some("s3cret"),
-        "pending.env must contain the new key after the two-step add"
+        "pending.env must contain the new key after the three-step add"
     );
     Ok(())
 }
@@ -851,6 +859,243 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
         editor(&state).modal.is_none(),
         "EnvKey commit on the picker fast-path must close the modal; got {:?}",
         editor(&state).modal
+    );
+    Ok(())
+}
+
+// ── SourcePicker integration tests ────────────────────────────────
+
+/// Helper: enter the SourcePicker by way of Enter-on-sentinel + EnvKey
+/// commit. Returns the state mid-flow with the SourcePicker modal open.
+/// Works against the default `op_available = false` ManagerState so the
+/// 1Password choice is rendered disabled.
+fn drive_to_source_picker<'a>(
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+    key_name: &str,
+) -> Result<ManagerState<'a>> {
+    // Build a manager state on the Secrets tab with op_available
+    // baked in via the test-only constructor (false by default).
+    let mut state = manager_on_secrets_tab(config, cwd);
+    // Enter on the sentinel opens the EnvKey modal.
+    handle_key(&mut state, config, paths, cwd, key(KeyCode::Enter))?;
+    // Type the key.
+    for ch in key_name.chars() {
+        handle_key(&mut state, config, paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    // Commit the EnvKey — opens SourcePicker.
+    handle_key(&mut state, config, paths, cwd, key(KeyCode::Enter))?;
+    Ok(state)
+}
+
+/// `Enter` on `+ Add` walks: EnvKey → SourcePicker → EnvValue → commit.
+/// The SourcePicker is the new step between the existing two text
+/// modals. Verifies the `Plain` branch lands the typed value in
+/// `pending.env`.
+#[test]
+fn enter_on_sentinel_opens_envkey_then_sourcepicker_then_value_modal() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = drive_to_source_picker(&mut config, &paths, cwd, "API_KEY")?;
+    // SourcePicker is the active modal.
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::SourcePicker { .. })),
+        "EnvKey commit on a sentinel must open SourcePicker; got {:?}",
+        editor(&state).modal
+    );
+
+    // Default focus is Plain — Enter opens the EnvValue text modal.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    match &editor(&state).modal {
+        Some(Modal::TextInput {
+            target: TextInputTarget::EnvValue { key, .. },
+            ..
+        }) => {
+            assert_eq!(key, "API_KEY", "EnvValue modal must carry the typed key");
+        }
+        other => panic!("expected TextInput(EnvValue); got {other:?}"),
+    }
+
+    // Type the value and commit.
+    for ch in "s3cret".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    assert_eq!(
+        editor(&state)
+            .pending
+            .env
+            .get("API_KEY")
+            .map(String::as_str),
+        Some("s3cret"),
+        "Plain-text source path must land the typed value in pending.env"
+    );
+    Ok(())
+}
+
+/// SourcePicker → 1Password branch: when op is available and the
+/// operator picks the Op choice, the OpPicker modal opens with
+/// `pending_picker_target = (scope, Some(key))` so its commit handler
+/// can write the `op://...` reference straight into the named key.
+#[test]
+fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
+    use jackin::console::widgets::source_picker::SourcePickerState;
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    // Build the state and force `op_available = true` on the
+    // SourcePicker so the Op branch is selectable. (The default
+    // `from_config` constructor used by `manager_on_secrets_tab` gives
+    // op_available=false; this test fakes the available state by
+    // injecting the modal directly with op_available=true.)
+    let mut state = manager_on_secrets_tab(&config, cwd);
+    // Pretend the operator already typed "API_KEY" and committed via
+    // the sentinel-add path: stash pending_env_key + open SourcePicker
+    // with op_available = true.
+    {
+        let editor_state = editor_mut(&mut state);
+        editor_state.pending_env_key = Some((
+            jackin::console::manager::state::SecretsScopeTag::Workspace,
+            "API_KEY".into(),
+        ));
+        editor_state.modal = Some(Modal::SourcePicker {
+            state: SourcePickerState::new("API_KEY".into(), true),
+        });
+    }
+
+    // Right arrow → focus moves to Op. Enter commits Op and opens the
+    // OpPicker modal.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::OpPicker { .. })),
+        "Op branch on SourcePicker must open the OpPicker; got {:?}",
+        editor(&state).modal
+    );
+    match &editor(&state).pending_picker_target {
+        Some((_, Some(name))) => {
+            assert_eq!(name, "API_KEY", "OpPicker target must carry the typed key");
+        }
+        other => {
+            panic!("expected pending_picker_target = (scope, Some(\"API_KEY\")); got {other:?}")
+        }
+    }
+    // pending_env_key is consumed once OpPicker takes ownership of the
+    // (scope, key) pair via pending_picker_target.
+    assert!(
+        editor(&state).pending_env_key.is_none(),
+        "Op branch must consume pending_env_key into pending_picker_target"
+    );
+    Ok(())
+}
+
+/// When `op_available = false`, the Op button on the SourcePicker is
+/// disabled: `→`/`Tab` cycling skips it, focus stays on Plain, and the
+/// `O` direct hotkey is inert. The picker commits Plain regardless of
+/// key flailing.
+#[test]
+fn source_picker_op_disabled_when_op_missing() -> Result<()> {
+    use jackin::console::widgets::source_picker::{SourceChoice, SourcePickerState};
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = manager_on_secrets_tab(&config, cwd);
+    {
+        let editor_state = editor_mut(&mut state);
+        editor_state.pending_env_key = Some((
+            jackin::console::manager::state::SecretsScopeTag::Workspace,
+            "API_KEY".into(),
+        ));
+        editor_state.modal = Some(Modal::SourcePicker {
+            state: SourcePickerState::new("API_KEY".into(), false),
+        });
+    }
+
+    // Press Right arrow + Tab — neither must advance focus to Op.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('O')),
+    )?;
+    match &editor(&state).modal {
+        Some(Modal::SourcePicker { state }) => {
+            assert_eq!(
+                state.focused,
+                SourceChoice::Plain,
+                "focus must stay on Plain when op_available is false"
+            );
+        }
+        other => panic!("expected SourcePicker still active; got {other:?}"),
+    }
+    // Enter on the still-Plain focus commits Plain and opens EnvValue.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(
+            editor(&state).modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::EnvValue { .. },
+                ..
+            })
+        ),
+        "Enter on Plain (only available choice) must commit and open EnvValue; got {:?}",
+        editor(&state).modal
+    );
+    Ok(())
+}
+
+/// `Esc` on the `SourcePicker` closes the modal and clears
+/// `pending_env_key`, `pending_picker_value`. Operator returns to the
+/// Secrets tab with no entry added.
+#[test]
+fn source_picker_esc_clears_pending_state() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = drive_to_source_picker(&mut config, &paths, cwd, "API_KEY")?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::SourcePicker { .. })
+    ));
+    assert!(
+        editor(&state).pending_env_key.is_some(),
+        "EnvKey commit must stash (scope, key)"
+    );
+
+    // Esc cancels.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "Esc on SourcePicker must close the modal; got {:?}",
+        editor(&state).modal
+    );
+    assert!(
+        editor(&state).pending_env_key.is_none(),
+        "Esc on SourcePicker must clear pending_env_key"
+    );
+    assert!(
+        editor(&state).pending_picker_value.is_none(),
+        "Esc on SourcePicker must clear pending_picker_value"
+    );
+    assert!(
+        !editor(&state).pending.env.contains_key("API_KEY"),
+        "Esc on SourcePicker must not write any env entry; got {:?}",
+        editor(&state).pending.env
     );
     Ok(())
 }

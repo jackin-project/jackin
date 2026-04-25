@@ -133,13 +133,29 @@ jackin' resolves them at launch via `operator_env`.
 | Key | Action |
 |---|---|
 | `Enter` on key row | Edit the value in a modal text input |
+| `Enter` on `+ Add` row | Add a new key — opens the key-name modal, then a source picker (Plain text / 1Password) |
 | `D` on key row | Delete the key (single confirmation) |
-| `A` | Add a new key/value pair to the focused section |
+| `A` | Add a new key/value pair to the focused section (same flow as `Enter` on `+ Add`) |
 | `M` | Toggle value masking (masked by default; resets on tab exit) |
 | `P` on key row | Open 1Password picker; commits `op://...` directly to the key |
 | `P` on `+ Add` row | Open 1Password picker; on commit, prompt for key name |
 | `→` or `Enter` on section header | Expand an agent override section |
 | `←` on section header | Collapse an agent override section |
+
+### Adding a new env var
+
+Pressing `Enter` on a `+ Add` row (workspace or per-agent) walks you
+through the entry in two steps. First, a modal asks for the key name.
+After you commit the name, a small source picker opens with two
+buttons: **Plain text** and **1Password**. Pick Plain text to type
+the value verbatim in a follow-up text modal, or pick 1Password to
+drill the picker (Account → Vault → Item → Field) and store an
+`op://...` reference. The 1Password button is disabled if the `op`
+CLI isn't on `PATH` at console startup; install `op` and restart
+`jackin console` to enable it.
+
+`Esc` on the source picker (or any earlier step) cancels the entry —
+no key is added.
 
 ### 1Password picker
 

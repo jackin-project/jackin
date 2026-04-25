@@ -12,8 +12,8 @@ use crate::workspace::WorkspaceConfig;
 use crate::console::widgets::{
     agent_picker::AgentPickerState, confirm::ConfirmState, confirm_save::ConfirmSaveState,
     error_popup::ErrorPopupState, file_browser::FileBrowserState, github_picker::GithubPickerState,
-    mount_dst_choice::MountDstChoiceState, op_picker::OpPickerState, text_input::TextInputState,
-    workdir_pick::WorkdirPickState,
+    mount_dst_choice::MountDstChoiceState, op_picker::OpPickerState,
+    source_picker::SourcePickerState, text_input::TextInputState, workdir_pick::WorkdirPickState,
 };
 
 /// Logical identity of a row in the workspace-manager list.
@@ -75,6 +75,13 @@ pub struct ManagerState<'a> {
     /// [`ManagerState::from_config`], which allocates a fresh empty
     /// cache; it never carries credentials so re-allocation is harmless.
     pub op_cache: Rc<RefCell<OpCache>>,
+    /// Whether the 1Password CLI was reachable on PATH at console
+    /// startup. Mirrored from `ConsoleState::op_available` on
+    /// construction so the Secrets-tab editor (which only sees
+    /// `ManagerState`) can decide whether the source-picker's
+    /// 1Password choice is enabled. Read-only here — the source-of-
+    /// truth probe lives in `ConsoleState::new`.
+    pub op_available: bool,
 }
 
 /// Anchors a mouse-drag resize of the list/details seam.
@@ -347,6 +354,15 @@ pub enum Modal<'a> {
     AgentPicker {
         state: AgentPickerState,
     },
+    /// Two-button "Source for KEY" prompt opened between the `EnvKey`
+    /// modal and the value-entry path on the Secrets-tab Enter-on-
+    /// sentinel flow. Plain commits a follow-up `EnvValue` text modal;
+    /// 1Password commits a follow-up `OpPicker` modal. The 1Password
+    /// option renders disabled when the host has no `op` CLI on PATH
+    /// (probed once at startup — see `ConsoleState::op_available`).
+    SourcePicker {
+        state: SourcePickerState,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -474,10 +490,11 @@ impl ManagerState<'_> {
     /// Otherwise land on the current-directory row so Enter launches against
     /// the current directory without saving.
     ///
-    /// Allocates a fresh empty [`OpCache`] — call
-    /// [`ManagerState::from_config_with_cache`] from production reset
-    /// paths to preserve the `ConsoleState`-owned cache across resets.
-    /// Tests don't care about the cache and use this entry point.
+    /// Allocates a fresh empty [`OpCache`] and assumes `op` is **not**
+    /// available — call [`ManagerState::from_config_with_cache`] from
+    /// production reset paths to preserve the `ConsoleState`-owned
+    /// cache and probe result across resets. Tests that don't exercise
+    /// the source picker can use this entry point unchanged.
     pub fn from_config(config: &AppConfig, cwd: &std::path::Path) -> Self {
         Self::from_config_with_cache(config, cwd, Rc::new(RefCell::new(OpCache::default())))
     }
@@ -486,10 +503,27 @@ impl ManagerState<'_> {
     /// `op_cache`. Used by `ConsoleState::new` and by the production
     /// reset paths (Esc-back-to-list, post-save reset) so the cache
     /// outlives a single editor session.
+    ///
+    /// `op_available` defaults to `false`; production callers thread
+    /// the probe result via [`ManagerState::from_config_with_cache_and_op`].
     pub fn from_config_with_cache(
         config: &AppConfig,
         cwd: &std::path::Path,
         op_cache: Rc<RefCell<OpCache>>,
+    ) -> Self {
+        Self::from_config_with_cache_and_op(config, cwd, op_cache, false)
+    }
+
+    /// Full-fidelity constructor used by production code paths in
+    /// `ConsoleState::new` and the editor reset arms. Threads both the
+    /// session-scoped `op_cache` and the startup `op_available` probe
+    /// result so the embedded editor can decide whether the source-
+    /// picker's 1Password choice should be enabled.
+    pub fn from_config_with_cache_and_op(
+        config: &AppConfig,
+        cwd: &std::path::Path,
+        op_cache: Rc<RefCell<OpCache>>,
+        op_available: bool,
     ) -> Self {
         let workspaces: Vec<WorkspaceSummary> = config
             .workspaces
@@ -515,6 +549,7 @@ impl ManagerState<'_> {
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
             op_cache,
+            op_available,
         }
     }
 
