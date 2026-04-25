@@ -43,6 +43,77 @@ pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     }
 }
 
+/// Compute the modal-block title for the current pane.
+///
+/// Breadcrumbs deliberately omit a trailing `Vaults` / `Items` /
+/// `Fields` suffix — the pane content makes the type self-evident so
+/// the suffix would just add noise.
+///
+/// - Single-account setups don't have an `<email>` prefix to surface
+///   (the operator only ever sees one account), so the Vault pane
+///   shows the bare brand `1Password` and the deeper panes show the
+///   vault/item context without a leading email.
+/// - Multi-account setups always lead with the chosen account's email
+///   so the operator can tell at a glance which account they're
+///   drilling into.
+fn breadcrumb_title(
+    stage: OpPickerStage,
+    multi_account: bool,
+    account_email: &str,
+    vault_name: &str,
+    item_name: &str,
+) -> String {
+    match stage {
+        OpPickerStage::Account => "1Password".to_string(),
+        OpPickerStage::Vault => {
+            if multi_account {
+                account_email.to_string()
+            } else {
+                "1Password".to_string()
+            }
+        }
+        OpPickerStage::Item => {
+            if multi_account {
+                format!("{account_email} \u{2192} {vault_name}")
+            } else {
+                vault_name.to_string()
+            }
+        }
+        OpPickerStage::Field => {
+            if multi_account {
+                format!("{account_email} \u{2192} {vault_name} \u{2192} {item_name}")
+            } else {
+                format!("{vault_name} \u{2192} {item_name}")
+            }
+        }
+    }
+}
+
+/// Compute the scroll offset for the list viewport so the selected
+/// row stays visible.
+///
+/// - If the entire list fits in `height`, the offset is `0` (no scroll).
+/// - If `selected < height`, the offset is `0` so the head of the list
+///   stays anchored at the top until the cursor moves below the window.
+/// - Otherwise, anchor the selected row at the bottom of the visible
+///   window (`offset = selected - height + 1`), clamped to
+///   `total - height` so we don't scroll past the end.
+///
+/// Stateless — recomputed every frame. The earlier picker had no
+/// viewport math at all, so vaults / items beyond the modal's height
+/// were unreachable; this gives the operator predictable
+/// "cursor-follows" scrolling without a separate `offset` field on
+/// each pane's `ListState`.
+fn viewport_offset(selected: usize, height: usize, total: usize) -> usize {
+    if height == 0 || total <= height {
+        return 0;
+    }
+    if selected < height {
+        return 0;
+    }
+    selected.saturating_sub(height - 1).min(total - height)
+}
+
 fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
     let title_text: String = title.into();
     let title_span = Span::styled(
@@ -86,39 +157,12 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         .selected_account
         .as_ref()
         .map_or("", |a| a.email.as_str());
-    let title = match state.stage {
-        OpPickerStage::Account => "1Password \u{2014} Accounts".to_string(),
-        OpPickerStage::Vault => {
-            if multi_account {
-                format!("{account_email} \u{2192} Vaults")
-            } else {
-                "1Password".to_string()
-            }
-        }
-        OpPickerStage::Item => {
-            let v = state
-                .selected_vault
-                .as_ref()
-                .map_or("", |v| v.name.as_str());
-            if multi_account {
-                format!("{account_email} \u{2192} {v} \u{2192} Items")
-            } else {
-                format!("{v} \u{2192} Items")
-            }
-        }
-        OpPickerStage::Field => {
-            let v = state
-                .selected_vault
-                .as_ref()
-                .map_or("", |v| v.name.as_str());
-            let i = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
-            if multi_account {
-                format!("{account_email} \u{2192} {v} \u{2192} {i} \u{2192} Fields")
-            } else {
-                format!("{v} \u{2192} {i} \u{2192} Fields")
-            }
-        }
-    };
+    let v_name = state
+        .selected_vault
+        .as_ref()
+        .map_or("", |v| v.name.as_str());
+    let i_name = state.selected_item.as_ref().map_or("", |i| i.name.as_str());
+    let title = breadcrumb_title(state.stage, multi_account, account_email, v_name, i_name);
     let block = modal_block(title);
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -193,7 +237,29 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         )))
         .alignment(Alignment::Center)
     } else {
-        Paragraph::new(list_lines)
+        // Cursor-tracking viewport: each render re-computes the offset
+        // from the selected index so the cursor stays visible whatever
+        // the operator's last navigation was. The earlier picker
+        // rendered the full `list_lines` as a `Paragraph` with no
+        // viewport math at all — pressing `↓` past the visible window
+        // moved `*_list_state.selected` but the rendered area didn't
+        // scroll, so vaults / items below the modal's height became
+        // unreachable. The viewport math here mirrors the canonical
+        // pattern: anchor the cursor at the bottom of the window once
+        // the selected row falls below the initial viewport, clamped
+        // so the last row sits on the bottom edge.
+        let selected = match state.stage {
+            OpPickerStage::Account => state.account_list_state.selected,
+            OpPickerStage::Vault => state.vault_list_state.selected,
+            OpPickerStage::Item => state.item_list_state.selected,
+            OpPickerStage::Field => state.field_list_state.selected,
+        };
+        let height = rows[3].height as usize;
+        let total = list_lines.len();
+        let offset = viewport_offset(selected.unwrap_or(0), height, total);
+        let take = height.min(total.saturating_sub(offset));
+        let visible: Vec<Line<'static>> = list_lines.into_iter().skip(offset).take(take).collect();
+        Paragraph::new(visible)
     };
     frame.render_widget(list_para, rows[3]);
 
@@ -499,4 +565,114 @@ fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
 
     let footer = footer_line(&[("Esc", "close")]);
     frame.render_widget(Paragraph::new(footer).alignment(Alignment::Center), rows[3]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OpPickerStage, breadcrumb_title, viewport_offset};
+
+    // ── Breadcrumb formatting ─────────────────────────────────────────
+
+    #[test]
+    fn breadcrumb_omits_pane_type_suffix_multi_account() {
+        // Multi-account: <email> for vault, <email> → <vault> for items,
+        // <email> → <vault> → <item> for fields. No trailing pane type.
+        let title = breadcrumb_title(
+            OpPickerStage::Vault,
+            true,
+            "alice@example.com",
+            "ignored",
+            "ignored",
+        );
+        assert_eq!(title, "alice@example.com");
+        assert!(!title.contains("Vaults"), "no `Vaults` suffix: {title}");
+
+        let title = breadcrumb_title(
+            OpPickerStage::Item,
+            true,
+            "alice@example.com",
+            "Personal",
+            "",
+        );
+        assert_eq!(title, "alice@example.com \u{2192} Personal");
+        assert!(!title.contains("Items"));
+
+        let title = breadcrumb_title(
+            OpPickerStage::Field,
+            true,
+            "alice@example.com",
+            "Personal",
+            "API Keys",
+        );
+        assert_eq!(
+            title,
+            "alice@example.com \u{2192} Personal \u{2192} API Keys"
+        );
+        assert!(!title.contains("Fields"));
+    }
+
+    #[test]
+    fn breadcrumb_single_account_uses_brand_or_bare_context() {
+        // Single-account: Vault pane shows the bare brand; Item/Field
+        // show the vault/item context without a leading email.
+        let v = breadcrumb_title(OpPickerStage::Vault, false, "", "Personal", "");
+        assert_eq!(v, "1Password");
+
+        let i = breadcrumb_title(OpPickerStage::Item, false, "", "Personal", "API Keys");
+        assert_eq!(i, "Personal");
+
+        let f = breadcrumb_title(OpPickerStage::Field, false, "", "Personal", "API Keys");
+        assert_eq!(f, "Personal \u{2192} API Keys");
+    }
+
+    #[test]
+    fn breadcrumb_account_pane_is_bare_brand() {
+        // Account pane never has an email prefix (it lists accounts).
+        let title = breadcrumb_title(OpPickerStage::Account, true, "ignored", "", "");
+        assert_eq!(title, "1Password");
+    }
+
+    // ── Viewport scrolling ────────────────────────────────────────────
+
+    #[test]
+    fn viewport_offset_returns_zero_when_list_fits() {
+        // 5 items, 10-row viewport — no scroll regardless of selection.
+        assert_eq!(viewport_offset(0, 10, 5), 0);
+        assert_eq!(viewport_offset(4, 10, 5), 0);
+    }
+
+    #[test]
+    fn viewport_offset_anchors_top_until_cursor_falls_below_window() {
+        // 20 items, 5-row viewport. Cursor in rows 0..5 → no scroll.
+        assert_eq!(viewport_offset(0, 5, 20), 0);
+        assert_eq!(viewport_offset(4, 5, 20), 0);
+    }
+
+    #[test]
+    fn viewport_offset_pins_cursor_to_bottom_when_below_initial_window() {
+        // 20 items, 5-row viewport. Cursor at row 5 → offset 1 (cursor
+        // sits on the last visible row, rows[1..6] → 1,2,3,4,5).
+        assert_eq!(viewport_offset(5, 5, 20), 1);
+        // Cursor at row 10 → offset 6 (rows 6..11; cursor at end).
+        assert_eq!(viewport_offset(10, 5, 20), 6);
+    }
+
+    #[test]
+    fn viewport_offset_clamps_at_end() {
+        // Cursor at the last row of a 20-item list with a 5-row
+        // viewport must produce offset 15 — the last visible window
+        // shows rows 15..20.
+        assert_eq!(viewport_offset(19, 5, 20), 15);
+        // Even past the end (defensive), we don't scroll past
+        // total - height.
+        assert_eq!(viewport_offset(99, 5, 20), 15);
+    }
+
+    #[test]
+    fn viewport_offset_is_zero_when_height_is_zero() {
+        // Defensive: `Constraint::Min(1)` could collapse to 0 if the
+        // modal is squeezed down to a single border row. Treat that
+        // as "no viewport" and return 0.
+        assert_eq!(viewport_offset(7, 0, 20), 0);
+    }
 }
