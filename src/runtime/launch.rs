@@ -20,10 +20,19 @@ use super::naming::{
 };
 use super::repo_cache::resolve_agent_repo;
 
+// Four launch-time toggles (no_intro / debug / rebuild / force) all map
+// directly to CLI flags; bundling them into nested structs would obscure
+// rather than clarify the call sites.
+#[allow(clippy::struct_excessive_bools)]
 pub struct LoadOptions {
     pub no_intro: bool,
     pub debug: bool,
     pub rebuild: bool,
+
+    /// Bypass interactive preflight gates (e.g. dirty host repo).
+    /// Wired through to `PreflightContext.force` during workspace
+    /// materialization.
+    pub force: bool,
 
     /// Optional test seam: inject a custom `OpRunner` for `op://`
     /// resolution. `None` (the production default) means
@@ -44,6 +53,7 @@ impl LoadOptions {
             no_intro: no_intro || debug,
             debug,
             rebuild,
+            force: false,
             op_runner: None,
             host_env: None,
         }
@@ -56,6 +66,7 @@ impl LoadOptions {
             no_intro: debug,
             debug,
             rebuild: false,
+            force: false,
             op_runner: None,
             host_env: None,
         }
@@ -68,6 +79,7 @@ impl Default for LoadOptions {
             no_intro: true,
             debug: false,
             rebuild: false,
+            force: false,
             op_runner: None,
             host_env: None,
         }
@@ -276,7 +288,7 @@ struct LaunchContext<'a> {
     dind: &'a str,
     selector: &'a ClassSelector,
     agent_display_name: &'a str,
-    workspace: &'a crate::workspace::ResolvedWorkspace,
+    workspace: &'a crate::isolation::materialize::MaterializedWorkspace,
     state: &'a AgentState,
     git: &'a GitIdentity,
     debug: bool,
@@ -496,9 +508,9 @@ fn launch_agent_runtime(
     }
 
     let mut mount_strings: Vec<String> = Vec::new();
-    for mount in &workspace.mounts {
+    for mount in crate::isolation::materialize::mount_order_for_docker(workspace) {
         let suffix = if mount.readonly { ":ro" } else { "" };
-        mount_strings.push(format!("{}:{}{}", mount.src, mount.dst, suffix));
+        mount_strings.push(format!("{}:{}{}", mount.bind_src, mount.dst, suffix));
     }
     for ms in &mount_strings {
         run_args.push("-v");
@@ -821,6 +833,29 @@ fn load_agent_with(
             crate::instance::AuthProvisionOutcome::Skipped => {}
         }
 
+        // Materialize workspace mounts: shared mounts pass through;
+        // worktree-isolated mounts get a per-container `git worktree`
+        // staged on the host. Must run AFTER `AgentState::prepare` (so the
+        // per-container state directory exists) and BEFORE the docker run
+        // command is assembled (so the docker `-v` flags reflect the
+        // per-mount bind sources).
+        let interactive = std::io::stdin().is_terminal();
+        let workspace_label = workspace.label.as_str();
+        let container_state = paths.data_dir.join(&container_name);
+        let materialized = crate::isolation::materialize::materialize_workspace(
+            workspace,
+            &container_state,
+            &selector.key(),
+            &container_name,
+            workspace_label,
+            &crate::isolation::materialize::PreflightContext {
+                workspace_name: workspace_label.to_string(),
+                force: opts.force,
+                interactive,
+            },
+            runner,
+        )?;
+
         let network = format!("{container_name}-net");
         let dind = format!("{container_name}-dind");
 
@@ -834,7 +869,7 @@ fn load_agent_with(
             dind: &dind,
             selector,
             agent_display_name: &agent_display_name,
-            workspace,
+            workspace: &materialized,
             state: &state,
             git: &git,
             debug: opts.debug,
