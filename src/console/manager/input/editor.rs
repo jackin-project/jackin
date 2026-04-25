@@ -333,9 +333,6 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
         return;
     };
     match row {
-        SecretsRow::WorkspaceHeader => {
-            // Workspace env is always expanded — no-op.
-        }
         SecretsRow::WorkspaceKeyRow(key) => {
             let current = editor.pending.env.get(&key).cloned().unwrap_or_default();
             editor.modal = Some(Modal::TextInput {
@@ -423,9 +420,7 @@ fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
         return;
     };
     let (scope, label) = match row {
-        SecretsRow::WorkspaceHeader
-        | SecretsRow::WorkspaceKeyRow(_)
-        | SecretsRow::WorkspaceAddSentinel => (
+        SecretsRow::WorkspaceKeyRow(_) | SecretsRow::WorkspaceAddSentinel => (
             SecretsScopeTag::Workspace,
             "New workspace env key".to_string(),
         ),
@@ -729,7 +724,7 @@ fn open_secrets_picker_modal(editor: &mut EditorState<'_>) {
         SecretsRow::AgentKeyRow { agent, key } => Some((SecretsScopeTag::Agent(agent), Some(key))),
         SecretsRow::WorkspaceAddSentinel => Some((SecretsScopeTag::Workspace, None)),
         SecretsRow::AgentAddSentinel(agent) => Some((SecretsScopeTag::Agent(agent), None)),
-        SecretsRow::WorkspaceHeader | SecretsRow::AgentHeader { .. } => None,
+        SecretsRow::AgentHeader { .. } => None,
     };
     let Some(target) = target else {
         return;

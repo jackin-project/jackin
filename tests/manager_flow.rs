@@ -237,9 +237,9 @@ fn secrets_tab_shows_existing_env() -> Result<()> {
 }
 
 /// Edit an existing env value via the TextInput modal, save, and verify
-/// the on-disk TOML reflects the new value. The test navigates from the
-/// Workspace-env header (row 0) down to the key row (row 1), commits an
-/// edit, then drives the `S` → `Enter` save-confirm sequence.
+/// the on-disk TOML reflects the new value. The cursor opens directly on
+/// the key row (the "Workspace env" label is now a non-focusable section
+/// title rendered above the list, not a navigable row).
 #[test]
 fn secrets_edit_value_saves_to_disk() -> Result<()> {
     let temp = tempdir()?;
@@ -248,15 +248,13 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Secrets flat rows on this fixture:
-    //   0 WorkspaceHeader
-    //   1 WorkspaceKeyRow("DB_URL")
-    //   2 WorkspaceAddSentinel
-    // Navigate to row 1.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Secrets flat rows on this fixture (no focusable header):
+    //   0 WorkspaceKeyRow("DB_URL")
+    //   1 WorkspaceAddSentinel
+    // Cursor is already on row 0 — no nav needed.
     assert!(
-        matches!(editor(&state).active_field, FieldFocus::Row(1)),
-        "cursor must land on the key row after one Down"
+        matches!(editor(&state).active_field, FieldFocus::Row(0)),
+        "cursor must open on the first key row"
     );
 
     // Enter opens the EnvValue modal pre-filled with the old value.
@@ -317,8 +315,7 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Cursor → row 1 (key row).
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Cursor opens on row 0 (the key row — no focusable header above it).
     // `D` opens the DeleteEnvVar Confirm modal.
     handle_key(
         &mut state,
@@ -443,16 +440,14 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     editor_mut(&mut state).secrets_masked = false;
 
     // Secrets flat rows on this fixture (no workspace-level keys, one
-    // collapsed agent section):
-    //   0 WorkspaceHeader
-    //   1 WorkspaceAddSentinel
-    //   2 AgentHeader { agent: "agent-smith", expanded: false }
-    // Navigate to row 2.
-    for _ in 0..2 {
-        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
-    }
+    // collapsed agent section; the "Workspace env" label is non-focusable
+    // chrome rendered above the list):
+    //   0 WorkspaceAddSentinel
+    //   1 AgentHeader { agent: "agent-smith", expanded: false }
+    // Navigate to row 1.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     assert!(
-        matches!(editor(&state).active_field, FieldFocus::Row(2)),
+        matches!(editor(&state).active_field, FieldFocus::Row(1)),
         "cursor must land on the agent header row"
     );
 
@@ -533,7 +528,7 @@ fn secrets_add_new_key_flow() -> Result<()> {
     let mut state = manager_on_secrets_tab(&config, cwd);
 
     // `A` opens the EnvKey modal. The default cursor is on row 0
-    // (WorkspaceHeader) which is a Workspace-scope row — exactly the
+    // (the WorkspaceAddSentinel — a Workspace-scope row), exactly the
     // scope we want for this assertion.
     handle_key(
         &mut state,
@@ -584,9 +579,9 @@ fn op_picker_opens_on_p_from_secrets_key_row() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Cursor → row 1 (the WorkspaceKeyRow for DB_URL).
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
-    assert!(matches!(editor(&state).active_field, FieldFocus::Row(1)));
+    // Cursor opens directly on row 0 (the WorkspaceKeyRow for DB_URL —
+    // no focusable header above it).
+    assert!(matches!(editor(&state).active_field, FieldFocus::Row(0)));
 
     // Press P directly on the key row — no Enter into the text modal first.
     handle_key(
@@ -625,8 +620,8 @@ fn op_picker_cancel_closes_modal() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Navigate to the key row and press P to open the picker.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Cursor opens on the key row (row 0, no focusable header above);
+    // press P to open the picker.
     handle_key(
         &mut state,
         &mut config,
@@ -674,8 +669,8 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Cursor → row 1 (DB_URL key row), then P opens the picker.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Cursor opens on row 0 (DB_URL key row — no focusable header above);
+    // P opens the picker.
     handle_key(
         &mut state,
         &mut config,
@@ -753,15 +748,14 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
-    // Empty env so the only navigable rows are WorkspaceHeader (0) +
-    // WorkspaceAddSentinel (1).
+    // Empty env so the only navigable row is WorkspaceAddSentinel at
+    // index 0 (the "Workspace env" label is non-focusable chrome).
     let mut config = seed_config(&paths, temp.path())?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Cursor → row 1 (WorkspaceAddSentinel).
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
-    assert!(matches!(editor(&state).active_field, FieldFocus::Row(1)));
+    // Cursor opens on row 0 (WorkspaceAddSentinel).
+    assert!(matches!(editor(&state).active_field, FieldFocus::Row(0)));
 
     // P on the sentinel opens the picker with `pending_picker_target =
     // Some((Workspace, None))`.
@@ -878,8 +872,7 @@ fn op_picker_multi_account_flow() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Cursor → row 1 (DB_URL key row), then P opens the picker.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    // Cursor opens on row 0 (DB_URL key row); P opens the picker.
     handle_key(
         &mut state,
         &mut config,

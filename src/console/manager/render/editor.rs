@@ -194,7 +194,7 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
                     FooterItem::Key("P"),
                     FooterItem::Text("1Password"),
                 ],
-                Some(SecretsRow::WorkspaceHeader | SecretsRow::AgentHeader { .. }) => vec![
+                Some(SecretsRow::AgentHeader { .. }) => vec![
                     FooterItem::Key("Enter"),
                     FooterItem::Text("expand"),
                     FooterItem::Sep,
@@ -509,17 +509,19 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
 /// Flat-row model for the Secrets tab. The cursor is a single index into
 /// this list; render walks it to draw each row, and input handlers walk
 /// it to decide what `Enter` / `D` / `A` / `←` do on the focused row.
+///
+/// Note: the "Workspace env" section title is rendered as a non-focusable
+/// fixed line above the list — it is **not** a `SecretsRow` variant and
+/// the cursor never lands on it.
 #[derive(Debug, Clone)]
 pub(in crate::console::manager) enum SecretsRow {
-    /// "Workspace env" section header — always present, not expandable
-    /// (workspace scope is always visible).
-    WorkspaceHeader,
     /// A single workspace-level env key row.
     WorkspaceKeyRow(String),
     /// "+ Add workspace env var" sentinel — always present.
     WorkspaceAddSentinel,
     /// "Agent: NAME" section header. `expanded` mirrors membership in
     /// `editor.secrets_expanded` at the moment the rows were enumerated.
+    /// Focusable: pressing Enter / Right / Left expands or collapses.
     AgentHeader { agent: String, expanded: bool },
     /// An agent-override env key row — only emitted when the section is
     /// expanded.
@@ -531,11 +533,13 @@ pub(in crate::console::manager) enum SecretsRow {
 /// Build the flat row list used by both `render_secrets_tab` (to draw the
 /// rows) and the input handlers (to map cursor index → row kind).
 ///
-/// Agent sections render in `BTreeMap` iteration order. Collapsed sections
-/// show only the header; expanded sections show header + key rows + add
-/// sentinel.
+/// The "Workspace env" section title is rendered separately (above the
+/// list) and is **not** included here — the cursor must never land on
+/// it. Agent sections render in `BTreeMap` iteration order. Collapsed
+/// sections show only the (focusable) header; expanded sections show
+/// header + key rows + add sentinel.
 pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
-    let mut rows = vec![SecretsRow::WorkspaceHeader];
+    let mut rows = Vec::new();
     for key in editor.pending.env.keys() {
         rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
     }
@@ -568,7 +572,8 @@ pub(in crate::console::manager) fn secrets_flat_row_count(editor: &EditorState<'
     secrets_flat_rows(editor).len()
 }
 
-/// Full Secrets-tab render. Reads the flat-row list and walks it once,
+/// Full Secrets-tab render. Renders a fixed (non-focusable) "Workspace
+/// env" section title above the list, then walks the flat-row list once
 /// emitting a `Line` per row. `config` is consumed only for the
 /// `(not in registry)` annotation on agent headers.
 //
@@ -583,35 +588,39 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
     let FieldFocus::Row(cursor) = state.active_field;
 
     let rows = secrets_flat_rows(state);
-    let mut lines: Vec<Line> = Vec::with_capacity(rows.len());
+    let mut lines: Vec<Line> = Vec::with_capacity(rows.len() + 2);
 
     // Label column width — keep identical to General tab so the Secrets
     // tab's visual rhythm matches the rest of the editor.
     let label_width: usize = 22;
 
+    // Fixed (non-focusable) "Workspace env" section title rendered above
+    // the navigable rows. The cursor never lands on this line — operators
+    // see it as orientation only. Indent matches the navigable rows
+    // (column 2, after the two-space cursor-prefix gutter).
+    lines.push(Line::from(Span::styled(
+        "  Workspace env",
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    )));
+
     // Workspace env is considered "empty" when no workspace-level keys AND
     // no agent overrides exist. In that case we render a "(no env vars)"
-    // dim notice under the header row for the operator's clarity.
+    // dim notice under the title for the operator's clarity. Indent is
+    // identical to the navigable rows so the visual rhythm doesn't jog.
     let workspace_empty = state.pending.env.is_empty() && state.pending.agents.is_empty();
+    if workspace_empty {
+        lines.push(Line::from(Span::styled(
+            "  (no env vars)",
+            Style::default()
+                .fg(PHOSPHOR_DIM)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
 
     for (i, row) in rows.iter().enumerate() {
         let selected = i == cursor;
         let prefix = if selected { "▸ " } else { "  " };
         match row {
-            SecretsRow::WorkspaceHeader => {
-                lines.push(Line::from(Span::styled(
-                    format!("{prefix}Workspace env"),
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                )));
-                if workspace_empty {
-                    lines.push(Line::from(Span::styled(
-                        "    (no env vars)",
-                        Style::default()
-                            .fg(PHOSPHOR_DIM)
-                            .add_modifier(Modifier::ITALIC),
-                    )));
-                }
-            }
             SecretsRow::WorkspaceKeyRow(key) => {
                 let value = state.pending.env.get(key).cloned().unwrap_or_default();
                 let dirty =
@@ -1206,6 +1215,100 @@ mod secrets_tab_render_tests {
         assert!(
             dump.contains("LOG_LEVEL"),
             "expanded agent section must show its key rows; got:\n{dump}"
+        );
+    }
+
+    /// Empty workspace: opening the Secrets tab must place the cursor on
+    /// the first focusable row — the `+ Add workspace env var` sentinel —
+    /// not on a "Workspace env" header. The header is now a fixed,
+    /// non-focusable section title rendered above the navigable rows.
+    #[test]
+    fn secrets_tab_cursor_skips_workspace_header_label() {
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let editor = EditorState::new_edit("ws".into(), ws);
+        let rows = super::secrets_flat_rows(&editor);
+        assert!(
+            !rows.is_empty(),
+            "secrets_flat_rows must always include at least the WorkspaceAddSentinel"
+        );
+        assert!(
+            matches!(rows.first(), Some(super::SecretsRow::WorkspaceAddSentinel)),
+            "row 0 must be the focusable `+ Add` sentinel, not a header; got {:?}",
+            rows.first()
+        );
+        assert!(
+            matches!(editor.active_field, FieldFocus::Row(0)),
+            "editor must open on row 0 = sentinel"
+        );
+    }
+
+    /// Indent alignment: the cursor `▸` glyph on the focused sentinel row
+    /// and the `+` sentinel glyph share the same character column as the
+    /// `Workspace env` label rendered above. All actionable rows align at
+    /// column 2 (after the cursor-prefix gutter).
+    #[test]
+    fn secrets_tab_indentation_aligned() {
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let editor = EditorState::new_edit("ws".into(), ws);
+        let dump = render_to_dump(&editor);
+
+        // Walk lines as char-indexed sequences; using `find()` would
+        // return byte offsets and the multi-byte border (`│`) and cursor
+        // (`▸`) glyphs would skew the comparison. The TestBackend writes
+        // exactly one cell per character, so char-index = column index.
+        let char_col_of = |line: &str, ch: char| line.chars().position(|c| c == ch);
+
+        let label_line = dump
+            .lines()
+            .find(|l| l.contains("Workspace env"))
+            .unwrap_or_else(|| panic!("Workspace env label must be rendered; dump:\n{dump}"));
+        let sentinel_line = dump
+            .lines()
+            .find(|l| l.contains("+ Add workspace env var"))
+            .unwrap_or_else(|| panic!("+ Add sentinel must be rendered; dump:\n{dump}"));
+
+        // The cursor `▸` glyph must be on the focused sentinel row.
+        assert!(
+            sentinel_line.contains('\u{25b8}'),
+            "focused sentinel must carry the `▸` cursor glyph; got `{sentinel_line}`"
+        );
+
+        let label_col = char_col_of(label_line, 'W')
+            .unwrap_or_else(|| panic!("`Workspace env` must contain `W`; got `{label_line}`"));
+        let sentinel_col = char_col_of(sentinel_line, '+')
+            .unwrap_or_else(|| panic!("sentinel must contain `+`; got `{sentinel_line}`"));
+        assert_eq!(
+            label_col, sentinel_col,
+            "label `W` column ({label_col}) must equal sentinel `+` column ({sentinel_col}); \
+             label=`{label_line}` sentinel=`{sentinel_line}`",
+        );
+
+        // The empty-state notice must also align at the same column.
+        let empty_line = dump
+            .lines()
+            .find(|l| l.contains("(no env vars)"))
+            .unwrap_or_else(|| panic!("(no env vars) hint must be rendered; dump:\n{dump}"));
+        let empty_col = char_col_of(empty_line, '(')
+            .unwrap_or_else(|| panic!("(no env vars) line must contain `(`; got `{empty_line}`"));
+        assert_eq!(
+            empty_col, label_col,
+            "empty-state hint must align with label/sentinel column; got `{empty_line}`",
         );
     }
 }
