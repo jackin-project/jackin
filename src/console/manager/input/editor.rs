@@ -365,11 +365,16 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
             });
         }
         SecretsRow::WorkspaceAddSentinel => {
+            let scope = SecretsScopeTag::Workspace;
+            let state = env_key_input_state(
+                editor,
+                &scope,
+                "New workspace environment key",
+                String::new(),
+            );
             editor.modal = Some(Modal::TextInput {
-                target: TextInputTarget::EnvKey {
-                    scope: SecretsScopeTag::Workspace,
-                },
-                state: TextInputState::new("New workspace environment key", String::new()),
+                target: TextInputTarget::EnvKey { scope },
+                state,
             });
         }
         SecretsRow::AgentHeader { agent, expanded } => {
@@ -397,11 +402,11 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
         }
         SecretsRow::AgentAddSentinel(agent) => {
             let label = format!("New {agent} environment key");
+            let scope = SecretsScopeTag::Agent(agent);
+            let state = env_key_input_state(editor, &scope, label, String::new());
             editor.modal = Some(Modal::TextInput {
-                target: TextInputTarget::EnvKey {
-                    scope: SecretsScopeTag::Agent(agent),
-                },
-                state: TextInputState::new(label, String::new()),
+                target: TextInputTarget::EnvKey { scope },
+                state,
             });
         }
     }
@@ -434,7 +439,6 @@ fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
 /// key rows / workspace sentinel the scope is `Workspace`, and on
 /// agent-section rows it's `Agent(name)`.
 fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
-    use super::super::super::widgets::text_input::TextInputState;
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
     let Some(row) = rows.get(n).cloned() else {
@@ -452,9 +456,10 @@ fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
             format!("New {agent} environment key"),
         ),
     };
+    let state = env_key_input_state(editor, &scope, label, String::new());
     editor.modal = Some(Modal::TextInput {
         target: TextInputTarget::EnvKey { scope },
-        state: TextInputState::new(label, String::new()),
+        state,
     });
 }
 
@@ -768,7 +773,6 @@ pub(super) fn handle_editor_modal(
             }
         }
         Modal::OpPicker { state: picker } => {
-            use crate::console::widgets::text_input::TextInputState;
             match picker.handle_key(key) {
                 ModalOutcome::Commit(path) => {
                     // Operator picked a Vault → Item → Field path. The
@@ -784,9 +788,10 @@ pub(super) fn handle_editor_modal(
                         Some((scope, None)) => {
                             editor.pending_picker_value = Some(path);
                             let label = format!("New environment key for {}", scope_label(&scope));
+                            let state = env_key_input_state(editor, &scope, label, "");
                             editor.modal = Some(Modal::TextInput {
                                 target: TextInputTarget::EnvKey { scope },
-                                state: TextInputState::new(label, ""),
+                                state,
                             });
                         }
                         None => {
@@ -860,6 +865,54 @@ fn scope_label(scope: &SecretsScopeTag) -> String {
     }
 }
 
+/// Existing env keys for `scope`, drawn from `editor.pending` (not from
+/// the on-disk config) so a key that the operator has already added in
+/// the same editor session — but not yet saved — also blocks a
+/// follow-up duplicate. Used to populate the `EnvKey` `TextInput` modal's
+/// forbidden list so duplicates are flagged live as the operator types.
+fn forbidden_keys_for_scope(editor: &EditorState<'_>, scope: &SecretsScopeTag) -> Vec<String> {
+    match scope {
+        SecretsScopeTag::Workspace => editor.pending.env.keys().cloned().collect(),
+        SecretsScopeTag::Agent(agent) => editor
+            .pending
+            .agents
+            .get(agent)
+            .map(|o| o.env.keys().cloned().collect())
+            .unwrap_or_default(),
+    }
+}
+
+/// Human-readable forbidden-list label for a `SecretsScopeTag` —
+/// rendered as `"<KEY>" already exists in <label>` in the `EnvKey` modal
+/// when the typed name collides with an existing key. Two scopes today:
+///   - `Workspace` → `"workspace env"`
+///   - `Agent(name)` → `"agent <name>"`
+fn forbidden_label_for_scope(scope: &SecretsScopeTag) -> String {
+    match scope {
+        SecretsScopeTag::Workspace => "workspace env".to_string(),
+        SecretsScopeTag::Agent(agent) => format!("agent {agent}"),
+    }
+}
+
+/// Build a duplicate-aware `EnvKey` `TextInput` state with the modal label,
+/// initial value, and the scope's existing keys + scope label
+/// pre-populated. Centralising the construction here keeps every `EnvKey`
+/// opener (Enter on sentinel, A on any Secrets row, P-on-sentinel
+/// fast-path, empty-key re-open) consistent — a future scope or label
+/// change touches one site.
+fn env_key_input_state<'a>(
+    editor: &EditorState<'_>,
+    scope: &SecretsScopeTag,
+    label: impl Into<String>,
+    initial: impl Into<String>,
+) -> super::super::super::widgets::text_input::TextInputState<'a> {
+    use super::super::super::widgets::text_input::TextInputState;
+    let mut state =
+        TextInputState::new_with_forbidden(label, initial, forbidden_keys_for_scope(editor, scope));
+    state.forbidden_label = forbidden_label_for_scope(scope);
+    state
+}
+
 /// Write `value` into `editor.pending` at the given scope + key. Used by
 /// both the picker's key-row commit path and (in the future) any other
 /// caller that wants to set a single env value without going through a
@@ -891,7 +944,6 @@ pub(super) fn apply_text_input_to_pending(
     value: &str,
     op_available: bool,
 ) {
-    use super::super::super::widgets::text_input::TextInputState;
     match target {
         TextInputTarget::Name => {
             // Both Edit and Create modes stash the pending name on the editor.
@@ -917,11 +969,13 @@ pub(super) fn apply_text_input_to_pending(
             let trimmed = value.trim();
             if trimmed.is_empty() {
                 editor.pending_env_key = None;
+                let state =
+                    env_key_input_state(editor, scope, "Key cannot be empty", String::new());
                 editor.modal = Some(Modal::TextInput {
                     target: TextInputTarget::EnvKey {
                         scope: scope.clone(),
                     },
-                    state: TextInputState::new("Key cannot be empty", String::new()),
+                    state,
                 });
                 return;
             }

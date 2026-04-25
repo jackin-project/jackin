@@ -157,6 +157,10 @@ CLI isn't on `PATH` at console startup; install `op` and restart
 `Esc` on the source picker (or any earlier step) cancels the entry —
 no key is added.
 
+If you type a name that's already used in the same scope (workspace
+env, or an agent's overrides), the modal flags it inline and won't
+accept Enter until you change it.
+
 ### 1Password picker
 
 Pressing `P` on a Secrets-tab row opens a three-pane picker that browses

@@ -1445,3 +1445,194 @@ fn agent_picker_esc_closes_modal() -> Result<()> {
     );
     Ok(())
 }
+
+// ── Duplicate-env-key live-validation tests ──────────────────────────
+
+/// Operator opens the `EnvKey` modal on a workspace where `EXISTING`
+/// already lives in `pending.env` and types the same name. Enter must
+/// be swallowed (modal stays open, `EnvKey` target intact) and the
+/// pre-existing value in `pending.env["EXISTING"]` must be unchanged.
+#[test]
+fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config_with_env(&paths, temp.path(), vec![("EXISTING", "kept-value")])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Rows: 0 WorkspaceKeyRow("EXISTING"), 1 WorkspaceAddSentinel.
+    // Navigate to the sentinel and Enter to open the EnvKey modal.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(
+            editor(&state).modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::EnvKey { .. },
+                ..
+            })
+        ),
+        "Enter on the WorkspaceAddSentinel must open the EnvKey modal; got {:?}",
+        editor(&state).modal
+    );
+
+    // Type the colliding key.
+    for ch in "EXISTING".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    let env_size_before = editor(&state).pending.env.len();
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // Modal must still be the EnvKey TextInput (Enter was swallowed).
+    assert!(
+        matches!(
+            editor(&state).modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::EnvKey { .. },
+                ..
+            })
+        ),
+        "Enter on a duplicate key must leave the EnvKey modal open; got {:?}",
+        editor(&state).modal
+    );
+    assert_eq!(
+        editor(&state).pending.env.len(),
+        env_size_before,
+        "duplicate Enter must not add an env entry"
+    );
+    assert_eq!(
+        editor(&state)
+            .pending
+            .env
+            .get("EXISTING")
+            .map(String::as_str),
+        Some("kept-value"),
+        "the pre-existing value must remain untouched"
+    );
+    Ok(())
+}
+
+/// Same guard, agent-override scope. Seed a workspace with one agent
+/// override `LOG_LEVEL`, expand the section, navigate to its `+ Add`
+/// sentinel, and type the colliding key.
+#[test]
+fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs()?;
+    let host_path = temp.path().display().to_string();
+
+    let mut agent_env = std::collections::BTreeMap::new();
+    agent_env.insert("LOG_LEVEL".into(), "debug".into());
+    let mut agents = std::collections::BTreeMap::new();
+    agents.insert(
+        "agent-smith".into(),
+        WorkspaceAgentOverride { env: agent_env },
+    );
+    let ws = WorkspaceConfig {
+        workdir: host_path.clone(),
+        mounts: vec![MountConfig {
+            src: host_path.clone(),
+            dst: host_path,
+            readonly: false,
+        }],
+        allowed_agents: vec![],
+        default_agent: None,
+        last_agent: None,
+        env: std::collections::BTreeMap::new(),
+        agents,
+    };
+    let mut ce = ConfigEditor::open(&paths)?;
+    ce.create_workspace("big-monorepo", ws)?;
+    let mut config = ce.save()?;
+
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Rows on this fixture (no workspace keys, one collapsed agent section):
+    //   0 WorkspaceAddSentinel
+    //   1 AgentHeader { agent: "agent-smith", expanded: false }
+    // Expand the agent section so the AgentAddSentinel row exists.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
+    assert!(editor(&state).secrets_expanded.contains("agent-smith"));
+
+    // After expansion:
+    //   0 WorkspaceAddSentinel
+    //   1 AgentHeader (expanded)
+    //   2 AgentKeyRow { agent: "agent-smith", key: "LOG_LEVEL" }
+    //   3 AgentAddSentinel("agent-smith")
+    // Navigate to row 3.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+
+    // Enter to open the EnvKey modal for the agent scope.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::TextInput {
+            target: TextInputTarget::EnvKey { .. },
+            ..
+        })
+    ));
+
+    for ch in "LOG_LEVEL".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // The modal must still be open, and the agent's env unchanged.
+    assert!(
+        matches!(
+            editor(&state).modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::EnvKey { .. },
+                ..
+            })
+        ),
+        "Enter on a duplicate agent key must leave the EnvKey modal open; got {:?}",
+        editor(&state).modal
+    );
+    let agent_entry = editor(&state)
+        .pending
+        .agents
+        .get("agent-smith")
+        .expect("agent override must survive");
+    assert_eq!(agent_entry.env.len(), 1);
+    assert_eq!(
+        agent_entry.env.get("LOG_LEVEL").map(String::as_str),
+        Some("debug"),
+        "pre-existing agent value must remain untouched"
+    );
+    Ok(())
+}
+
+/// Regression: the duplicate guard does not block a unique name. Type
+/// `NEW_KEY` at a workspace whose `pending.env` already contains
+/// `EXISTING` and confirm the `EnvKey` modal commits (transitions to
+/// `SourcePicker`, the next stage in the unified add flow).
+#[test]
+fn env_key_modal_allows_unique_name() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config_with_env(&paths, temp.path(), vec![("EXISTING", "kept-value")])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Sentinel is row 1 here (row 0 is the existing key row).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    for ch in "NEW_KEY".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // Unique name commits — flow advances to the SourcePicker.
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::SourcePicker { .. })),
+        "unique key must commit and open the SourcePicker; got {:?}",
+        editor(&state).modal
+    );
+    Ok(())
+}
