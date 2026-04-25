@@ -229,7 +229,7 @@ fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
         (EditorTab::General, "General"),
         (EditorTab::Mounts, "Mounts"),
         (EditorTab::Agents, "Agents"),
-        (EditorTab::Secrets, "Secrets"),
+        (EditorTab::Secrets, "Environments"),
     ];
     let mut spans = Vec::new();
     for (tab, label) in labels {
