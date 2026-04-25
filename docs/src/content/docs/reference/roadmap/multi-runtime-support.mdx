@@ -63,7 +63,7 @@ That argues for keeping one shared agent repo per role, not creating separate `*
 The public Codex and Amp CLIs point toward a pragmatic first implementation shape:
 
 - [Codex CLI](https://github.com/openai/codex) supports a native Linux binary, env-based API-key auth, explicit sandbox/approval modes, and non-interactive execution. For jackin', the important part is that it can run fully from container-local config plus env vars; it does not need host keychain forwarding.
-- [Amp CLI](https://github.com/sourcegraph/amp) supports env-based API-key auth, server-side thread persistence, and a `settings.json` file with command allowlisting and MCP configuration. For jackin', the key constraint is that unattended shell execution requires either a comprehensive allowlist or an explicit "allow all" posture inside the already-isolated container.
+- [Amp CLI](https://ampcode.com) supports env-based API-key auth, server-side thread persistence, and a `settings.json` file with command allowlisting and MCP configuration. For jackin', the key constraint is that unattended shell execution requires either a comprehensive allowlist or an explicit "allow all" posture inside the already-isolated container.
 
 ## Goal
 
