@@ -165,9 +165,11 @@ accept Enter until you change it.
 
 The `+ Add per-agent override for ...` sentinel at the bottom of the
 Environments tab opens an agent picker showing allowed agents that
-don't yet have overrides. Picking an agent creates a new collapsible
-override section, auto-expands it, and drops your cursor on its `+ Add`
-sentinel so you can add the first override key right away.
+don't yet have overrides. Picking an agent drops you straight into the
+normal add flow (key name → source → value). The agent's override
+section appears once the first key/value commits — no empty
+placeholders. Cancelling at any modal step leaves the workspace
+unchanged.
 
 The sentinel hides itself when every workspace-allowed agent already
 has an override section — there's no action left to take.

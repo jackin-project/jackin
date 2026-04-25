@@ -1732,12 +1732,15 @@ fn enter_on_add_agent_override_sentinel_opens_agent_picker() -> Result<()> {
     Ok(())
 }
 
-/// Picker commit on a fresh agent: a new override entry is created in
-/// `pending.agents`, the section auto-expands, and the cursor lands on
-/// the new section's `+ Add <agent> environment variable` sentinel so
-/// the operator can immediately start adding keys.
+/// Picker commit on a fresh agent: drops straight into the normal Add
+/// flow with `Agent(<name>)` scope. `pending.agents` is NOT mutated —
+/// the section materialises organically once the first key/value
+/// commits in the EnvValue / OpPicker commit paths. This avoids the
+/// empty `(0 vars)` placeholder section that an early-commit would
+/// leave behind if the operator cancelled out partway through.
 #[test]
-fn picking_an_agent_creates_override_section_auto_expanded() -> Result<()> {
+fn picking_an_agent_opens_envkey_modal_for_agent_scope() -> Result<()> {
+    use jackin::console::manager::state::SecretsScopeTag;
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
@@ -1755,48 +1758,190 @@ fn picking_an_agent_creates_override_section_auto_expanded() -> Result<()> {
     // Commit the picker selection (defaults to the only eligible agent).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
-    // Override entry must exist with an empty env map.
+    // `pending.agents` must NOT have been mutated: the section only
+    // materialises when the first key/value commits.
+    assert!(
+        editor(&state).pending.agents.is_empty(),
+        "picker commit must not create an override entry; got pending.agents keys={:?}",
+        editor(&state).pending.agents.keys().collect::<Vec<_>>()
+    );
+    // `secrets_expanded` must NOT have been touched.
+    assert!(
+        editor(&state).secrets_expanded.is_empty(),
+        "picker commit must not pre-expand any section"
+    );
+    // The EnvKey modal must now be open with Agent(<name>) scope.
+    match &editor(&state).modal {
+        Some(Modal::TextInput { target, .. }) => match target {
+            TextInputTarget::EnvKey { scope } => {
+                assert_eq!(
+                    scope,
+                    &SecretsScopeTag::Agent("agent-smith".into()),
+                    "EnvKey modal must scope to the picked agent"
+                );
+            }
+            other => panic!("expected TextInputTarget::EnvKey; got {other:?}"),
+        },
+        other => panic!("expected Modal::TextInput; got {other:?}"),
+    }
+    Ok(())
+}
+
+/// Esc on the EnvKey modal that opens after the picker commit must
+/// leave `pending.agents` untouched — no orphan empty section.
+#[test]
+fn cancel_from_envkey_after_agent_pick_does_not_create_section() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Picker → commit → EnvKey modal opens.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::TextInput {
+            target: TextInputTarget::EnvKey { .. },
+            ..
+        })
+    ));
+
+    // Esc on the EnvKey modal.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "Esc must close the EnvKey modal; got {:?}",
+        editor(&state).modal
+    );
+    assert!(
+        editor(&state).pending.agents.is_empty(),
+        "Esc on EnvKey must not have created an override entry; got keys={:?}",
+        editor(&state).pending.agents.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        editor(&state).secrets_expanded.is_empty(),
+        "Esc on EnvKey must not have expanded any section"
+    );
+    Ok(())
+}
+
+/// Esc on the SourcePicker modal that opens after a valid EnvKey commit
+/// must also leave `pending.agents` untouched. Mirrors the EnvKey
+/// cancel test one step deeper in the chain.
+#[test]
+fn cancel_from_sourcepicker_after_agent_pick_does_not_create_section() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Picker → commit → EnvKey modal.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // Type a valid key name and commit → SourcePicker modal opens.
+    for ch in "API_TOKEN".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::SourcePicker { .. })),
+        "EnvKey commit must open SourcePicker; got {:?}",
+        editor(&state).modal
+    );
+
+    // Esc on the SourcePicker.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "Esc must close the SourcePicker; got {:?}",
+        editor(&state).modal
+    );
+    assert!(
+        editor(&state).pending.agents.is_empty(),
+        "Esc on SourcePicker must not have created an override entry; got keys={:?}",
+        editor(&state).pending.agents.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        editor(&state).secrets_expanded.is_empty(),
+        "Esc on SourcePicker must not have expanded any section"
+    );
+    Ok(())
+}
+
+/// Drive the full chain — picker → EnvKey → SourcePicker(Plain) →
+/// EnvValue → commit. The override section materialises only on this
+/// final commit, with the key/value present and the section expanded.
+#[test]
+fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Picker → commit → EnvKey modal.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // Type the key, commit → SourcePicker.
+    for ch in "API_TOKEN".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::SourcePicker { .. })
+    ));
+
+    // SourcePicker default selection is Plain — Enter commits → EnvValue.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(
+            editor(&state).modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::EnvValue { .. },
+                ..
+            })
+        ),
+        "SourcePicker(Plain) commit must open EnvValue; got {:?}",
+        editor(&state).modal
+    );
+
+    // Type the value and commit.
+    for ch in "secret".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // The override section now exists with the single key/value.
     let agents = &editor(&state).pending.agents;
     assert!(
         agents.contains_key("agent-smith"),
         "pending.agents must contain the chosen agent; got keys={:?}",
         agents.keys().collect::<Vec<_>>()
     );
-    assert!(
-        agents.get("agent-smith").unwrap().env.is_empty(),
-        "new override entry must start empty"
+    assert_eq!(
+        agents.get("agent-smith").unwrap().env.get("API_TOKEN"),
+        Some(&"secret".to_string()),
+        "the committed key/value must land in the agent's env map"
     );
-    // Section must be auto-expanded.
+    // The section must be auto-expanded.
     assert!(
         editor(&state).secrets_expanded.contains("agent-smith"),
-        "new override section must auto-expand"
+        "value commit must auto-expand the agent's section"
     );
-    // Modal must be closed.
+    // All modals closed.
     assert!(
         editor(&state).modal.is_none(),
-        "picker commit must close the modal; got {:?}",
+        "value commit must close every modal; got {:?}",
         editor(&state).modal
-    );
-    // Cursor must land on the new section's
-    // `+ Add agent-smith environment variable` sentinel. Post-commit
-    // row layout (the only allowed agent now has an override, so the
-    // bottom override sentinel disappears):
-    //   0 WorkspaceAddSentinel
-    //   1 AgentHeader (expanded)
-    //   2 AgentAddSentinel("agent-smith")  ← cursor
-    assert!(
-        matches!(editor(&state).active_field, FieldFocus::Row(2)),
-        "cursor must land on the new section's AgentAddSentinel (row 2); got {:?}",
-        editor(&state).active_field
-    );
-    // Verify by render dump that the focus prefix `▸` precedes the
-    // `+ Add agent-smith environment variable` sentinel.
-    let dump = render_to_dump(&mut state, &config, cwd);
-    assert!(
-        dump.lines().any(|l| {
-            l.contains('\u{25B8}') && l.contains("+ Add agent-smith environment variable")
-        }),
-        "focused row must be the new agent's `+ Add` sentinel; dump:\n{dump}"
     );
     Ok(())
 }

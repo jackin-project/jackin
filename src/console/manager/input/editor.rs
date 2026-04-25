@@ -657,7 +657,7 @@ pub(super) fn handle_editor_modal(
     key: KeyEvent,
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
-    config: &AppConfig,
+    _config: &AppConfig,
 ) {
     let Some(modal) = editor.modal.as_mut() else {
         return;
@@ -757,24 +757,23 @@ pub(super) fn handle_editor_modal(
         Modal::AgentOverridePicker { state: picker } => {
             match picker.handle_key(key) {
                 ModalOutcome::Commit(agent) => {
+                    // Drop straight into the normal Add flow with the
+                    // chosen agent baked into the scope. We do NOT touch
+                    // `pending.agents` or `secrets_expanded` here — the
+                    // override section materialises organically once the
+                    // first key/value commits (in the EnvValue / OpPicker
+                    // commit paths). If the operator cancels at any
+                    // modal step (EnvKey, SourcePicker, EnvValue,
+                    // OpPicker), `pending.agents` stays untouched and no
+                    // empty placeholder section is left behind.
                     let agent_name = agent.key();
-                    // Create the override entry if it didn't already exist
-                    // (eligibility filter should guarantee this — defensive
-                    // `entry().or_default()` mirrors the `Agent` scope env-
-                    // write helpers and stays correct if the picker is ever
-                    // opened with a relaxed filter).
-                    editor.pending.agents.entry(agent_name.clone()).or_default();
-                    editor.secrets_expanded.insert(agent_name.clone());
-                    editor.modal = None;
-                    // Land the cursor on the new section's
-                    // `+ Add <agent> environment variable` sentinel so the
-                    // operator can immediately add the first override key.
-                    let rows = super::super::render::editor::secrets_flat_rows(editor, config);
-                    if let Some(idx) = rows.iter().position(|row| {
-                        matches!(row, super::super::render::editor::SecretsRow::AgentAddSentinel(a) if a == &agent_name)
-                    }) {
-                        editor.active_field = FieldFocus::Row(idx);
-                    }
+                    let scope = SecretsScopeTag::Agent(agent_name.clone());
+                    let label = format!("New {agent_name} environment key");
+                    let state = env_key_input_state(editor, &scope, label, "");
+                    editor.modal = Some(Modal::TextInput {
+                        target: TextInputTarget::EnvKey { scope },
+                        state,
+                    });
                 }
                 ModalOutcome::Cancel => {
                     editor.modal = None;
@@ -1030,8 +1029,9 @@ fn env_key_input_state<'a>(
 /// Write `value` into `editor.pending` at the given scope + key. Used by
 /// both the picker's key-row commit path and (in the future) any other
 /// caller that wants to set a single env value without going through a
-/// text modal. Agent scope auto-creates the override entry — same
-/// semantics as the `EnvValue` text-input commit handler.
+/// text modal. Agent scope auto-creates the override entry and auto-
+/// expands the section — same semantics as the `EnvValue` text-input
+/// commit handler.
 fn apply_picker_value_to_pending(
     editor: &mut EditorState<'_>,
     scope: &SecretsScopeTag,
@@ -1048,6 +1048,7 @@ fn apply_picker_value_to_pending(
         SecretsScopeTag::Agent(agent) => {
             let entry = editor.pending.agents.entry(agent.clone()).or_default();
             entry.env.insert(key.to_string(), value.to_string());
+            editor.secrets_expanded.insert(agent.clone());
         }
     }
 }
@@ -1107,6 +1108,7 @@ pub(super) fn apply_text_input_to_pending(
                     SecretsScopeTag::Agent(agent) => {
                         let entry = editor.pending.agents.entry(agent.clone()).or_default();
                         entry.env.insert(key, stashed);
+                        editor.secrets_expanded.insert(agent.clone());
                     }
                 }
                 editor.pending_env_key = None;
@@ -1131,6 +1133,8 @@ pub(super) fn apply_text_input_to_pending(
             // `pending`. Agent scope auto-creates the override entry if
             // the agent wasn't in `pending.agents` yet — matches the
             // `ConfigEditor::set_env_var` semantics the save path uses.
+            // Auto-expand the agent's section so the operator sees the
+            // value they just landed (no-op if it was already expanded).
             match scope {
                 SecretsScopeTag::Workspace => {
                     editor.pending.env.insert(key.clone(), value.to_string());
@@ -1138,6 +1142,7 @@ pub(super) fn apply_text_input_to_pending(
                 SecretsScopeTag::Agent(agent) => {
                     let entry = editor.pending.agents.entry(agent.clone()).or_default();
                     entry.env.insert(key.clone(), value.to_string());
+                    editor.secrets_expanded.insert(agent.clone());
                 }
             }
             editor.pending_env_key = None;
