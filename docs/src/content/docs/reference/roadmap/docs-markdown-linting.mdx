@@ -68,7 +68,7 @@ A single follow-up PR introducing the linter, the config, the CI step, and the c
    - `MD013` (line length) — relax to 120 with `code-blocks = false` and `tables = false`, since prose wraps unhelpfully at narrower widths.
    - Audit `MD033` (no inline HTML), `MD025` (single H1), and `MD026` (trailing punctuation in headings) once a dry run produces a real violation list.
 3. **Cleanup pass.** Run `rumdl check --fix` against `docs/src/content/docs/`. Audit the diff. Hand-fix anything `--fix` cannot resolve. Land the cleanup, the config, and the CI step in the same PR.
-4. **Branch protection.** Add `Docs / build` (which now includes the rumdl step) to the required checks list on `main`. Without this, the gate is advisory.
+4. **Branch protection.** Add `docs-link-check` (which now includes the rumdl step) to the required checks list on `main`. Without this, the gate is advisory.
 5. **Renovate.** Confirm the workflow's Renovate rules cover the new `rvben/rumdl@<sha>` pin so version bumps land as PRs rather than stale.
 
 The cleanup pass is the only step with non-trivial diff size. After landing, ongoing cost is whatever rumdl flags on new MDX — typically zero, since contributors fix violations locally before pushing.
