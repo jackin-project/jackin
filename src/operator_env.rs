@@ -407,8 +407,12 @@ pub struct OpField {
     pub concealed: bool,
 }
 
+// `op account list --format json` reports accounts with an `account_uuid`
+// key, not `id`. We accept either via serde alias so the picker probe
+// works against current op CLI versions and any older shape.
 #[derive(serde::Deserialize)]
 struct RawOpAccount {
+    #[serde(alias = "account_uuid")]
     id: String,
 }
 
@@ -1942,6 +1946,28 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_account_list_parses_real_op_output() {
+        // Captured from `op account list --format json` against op CLI v2.x.
+        // The actual key is `account_uuid`, not `id` — verify our serde
+        // alias makes both shapes parse.
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-accounts");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\ncat <<'EOF'\n[\n  {\n    \"url\": \"example.1password.com\",\n    \"email\": \"someone@example.com\",\n    \"user_uuid\": \"USERUUIDXXXX\",\n    \"account_uuid\": \"ACCTUUIDYYYY\"\n  }\n]\nEOF\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let accounts = runner
+            .account_list()
+            .expect("real op account list output must parse");
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].id, "ACCTUUIDYYYY");
+    }
+
     #[test]
     fn op_struct_runner_signed_out_detection() {
         let dir = tempfile::tempdir().unwrap();
