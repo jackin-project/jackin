@@ -71,7 +71,11 @@ This populates `node_modules/` with the platform-specific optional native binari
 - Start dev server: `bun run dev`
 - Build docs: `bun run build`
 - Preview production build: `bun run preview`
+- Check links in the existing production build: `bun run check:links`
+- Rebuild and then check links: `bun run check:links:fresh`
 - Run tests: `bun test`
+
+`bun run check:links` and `bun run check:links:fresh` require the `lychee` CLI (for example, `brew install lychee` on macOS).
 
 **If `node_modules` was last installed on a different OS** (e.g. an agent built from a Linux container shared the working tree with a macOS host), Bun won't always re-resolve optional native binaries on its own. Reset with:
 
@@ -109,6 +113,25 @@ bun install --frozen-lockfile
 - Docs content lives under `src/content/docs/` as MDX files.
 - Content collection defined in `src/content.config.ts` using the Starlight `docsLoader()` (Astro 6 Content Layer API).
 - File-based routing: `src/content/docs/foo/bar.mdx` → `/foo/bar`.
+- Link to docs pages with site-absolute routes such as `/guides/mounts/`.
+  The generated-site lychee check is the authoritative guard for these links,
+  including fragments.
+- Link to repository files with `<RepoFile path="src/runtime/image.rs" />`
+  rather than plain code spans when the reader should be able to open the file.
+  Import it from `src/components/RepoFile.astro` with the appropriate relative
+  path for the MDX file. The component renders a GitHub `blob/main` URL, and the
+  CI link check remaps that URL to the PR checkout, so file renames and deletions
+  fail before merge. Avoid `tree/main` directory links unless there is a specific
+  reason they cannot point at a concrete file.
+- Plain inline-code references to existing repo files under `src/`, `docs/`,
+  `docker/`, or `.github/` fail `bun run check:repo-links`; link them instead.
+  Proposed future files that do not exist yet may stay as code spans.
+- `check:repo-links` exists because lychee only checks real links in rendered
+  HTML. Plain code spans like `src/runtime/launch.rs` are not links, so lychee
+  cannot detect when those files are renamed or deleted. The source check makes
+  those references use `<RepoFile />`, then lychee verifies the generated URL.
+- `mailto:` links are included in lychee checks, so use real, intentional email
+  addresses rather than placeholders.
 - Sidebar and top-nav are configured in `astro.config.ts`.
 - Use Starlight components for callouts (`<Aside type="note|tip|caution">`),
   steps (`<Steps>` around an `<ol>`), and tabs (`<Tabs><TabItem>`). Import from
@@ -133,4 +156,3 @@ bun install --frozen-lockfile
   right-rail TOC, pagination hover.
 - Code blocks always use a dark surface (`--jk-code-bg`) regardless of
   page theme. Shiki theme: github-dark in dark mode, one-dark-pro in light.
-

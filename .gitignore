@@ -11,6 +11,8 @@
 
 # Temporary files
 /tmp/
+.lycheecache
+docs/.lycheecache
 
 # Superpowers implementation plans — local engineering artefacts only,
 # not part of the public docs surface. Specs under docs/superpowers/specs/

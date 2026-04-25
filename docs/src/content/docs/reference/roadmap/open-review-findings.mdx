@@ -1,6 +1,7 @@
 ---
 title: "Open review findings"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 **Status**: Open — catalog maintained as a living backlog
 
@@ -144,7 +145,7 @@ record of what was reviewed and when.
 
 ### Unpinned remote install script in derived Dockerfile
 
-Location: `src/derived_image.rs`
+Location: <RepoFile path="src/derived_image.rs" />
 
 ```dockerfile
 RUN curl -fsSL https://claude.ai/install.sh | bash
