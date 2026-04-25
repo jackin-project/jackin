@@ -103,17 +103,25 @@ jackin' resolves them at launch via `operator_env`.
 | `D` on key row | Delete the key (single confirmation) |
 | `A` | Add a new key/value pair to the focused section |
 | `M` | Toggle value masking (masked by default; resets on tab exit) |
-| `Ctrl+O` in value modal | Open 1Password picker (Vault → Item → Field) |
+| `P` on key row | Open 1Password picker; commits `op://...` directly to the key |
+| `P` on `+ Add` row | Open 1Password picker; on commit, prompt for key name |
 | `→` or `Enter` on section header | Expand an agent override section |
 | `←` on section header | Collapse an agent override section |
 
 ### 1Password picker
 
-Pressing `Ctrl+O` while editing an env value opens a three-pane picker that
-browses your 1Password vaults and items. Navigate with `↑`/`↓`, type to
-filter, `Enter` to drill down, `Esc` to go back. Selecting a field closes the
-picker and pre-fills the value with an `op://Vault/Item/field` reference —
-edit it if needed, then press `Enter` to commit.
+Pressing `P` on a Secrets-tab row opens a three-pane picker that browses
+your 1Password vaults and items. Navigate with `↑`/`↓`, type to filter,
+`Enter` to drill down, `Esc` to go back.
+
+The picker is a row-level action, not a sub-mode of the value editor:
+
+- **`P` on an existing key row** — selecting a field commits an
+  `op://Vault/Item/field` reference straight into that key's pending
+  value. No intermediate text modal.
+- **`P` on a `+ Add` sentinel row** — selecting a field stashes the
+  reference, then opens an `EnvKey` modal so you can name the new key.
+  Pressing `Enter` on the key name writes both at once.
 
 The picker shows what is available to reference, never what's stored. Field
 values are never read or displayed.

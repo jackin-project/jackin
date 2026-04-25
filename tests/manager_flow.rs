@@ -26,17 +26,6 @@ const fn key(code: KeyCode) -> KeyEvent {
     }
 }
 
-/// Ctrl-modified key event — still used by the Secrets-tab 1Password
-/// picker (`Ctrl+O`) tests.
-const fn ctrl_key(code: KeyCode) -> KeyEvent {
-    KeyEvent {
-        code,
-        modifiers: KeyModifiers::CONTROL,
-        kind: KeyEventKind::Press,
-        state: KeyEventState::NONE,
-    }
-}
-
 fn seed_config(paths: &JackinPaths, temp_dir: &std::path::Path) -> Result<AppConfig> {
     paths.ensure_base_dirs()?;
 
@@ -578,12 +567,14 @@ fn secrets_add_new_key_flow() -> Result<()> {
 
 // ── 1Password picker integration tests ────────────────────────────
 
-/// `Ctrl+O` while the EnvValue `TextInput` modal is open replaces it
-/// with the `OpPicker` modal. The picker may load successfully or land
-/// in a fatal state depending on whether `op` is on `$PATH` in the test
-/// environment — either way the modal variant must be `OpPicker`.
+/// `P` on a Secrets-tab key row opens the `OpPicker` modal directly
+/// (no intermediate text modal). The picker may load successfully or
+/// land in a fatal state depending on whether `op` is on `$PATH` in
+/// the test environment — either way the modal variant must be
+/// `OpPicker` and `pending_picker_target` must record the row's scope
+/// + key.
 #[test]
-fn op_picker_opens_on_ctrl_o_from_env_value_modal() -> Result<()> {
+fn op_picker_opens_on_p_from_secrets_key_row() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "postgres")])?;
@@ -594,99 +585,271 @@ fn op_picker_opens_on_ctrl_o_from_env_value_modal() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     assert!(matches!(editor(&state).active_field, FieldFocus::Row(1)));
 
-    // Enter opens the EnvValue TextInput modal.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
-    assert!(
-        matches!(
-            editor(&state).modal,
-            Some(Modal::TextInput {
-                target: TextInputTarget::EnvValue { .. },
-                ..
-            })
-        ),
-        "Enter on the key row must open the EnvValue TextInput modal"
-    );
-
-    // Ctrl+O swaps it for Modal::OpPicker.
+    // Press P directly on the key row — no Enter into the text modal first.
     handle_key(
         &mut state,
         &mut config,
         &paths,
         cwd,
-        ctrl_key(KeyCode::Char('o')),
+        key(KeyCode::Char('p')),
     )?;
     assert!(
         matches!(editor(&state).modal, Some(Modal::OpPicker { .. })),
-        "Ctrl+O must replace the EnvValue modal with OpPicker"
+        "P on a key row must open the OpPicker modal directly"
+    );
+    // `pending_picker_target` records the focused key so the commit
+    // handler can write straight into pending.env.
+    match &editor(&state).pending_picker_target {
+        Some((_, Some(key))) => {
+            assert_eq!(key, "DB_URL", "key-row P must stash the focused key");
+        }
+        other => panic!(
+            "expected pending_picker_target = Some((scope, Some(\"DB_URL\"))), got {other:?}"
+        ),
+    }
+    Ok(())
+}
+
+/// Esc on the `OpPicker` (vault pane / fatal state / loading) closes
+/// the modal entirely — the picker is no longer a sub-mode of the
+/// EnvValue text modal, so cancel returns the operator to the editor
+/// list view with `pending.env` unchanged.
+#[test]
+fn op_picker_cancel_closes_modal() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "untouched")])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Navigate to the key row and press P to open the picker.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('p')),
+    )?;
+    assert!(matches!(editor(&state).modal, Some(Modal::OpPicker { .. })));
+
+    // Esc on the OpPicker closes the modal and clears the picker target.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "Esc-cancel must close the picker entirely; got {:?}",
+        editor(&state).modal
+    );
+    assert!(
+        editor(&state).pending_picker_target.is_none(),
+        "Esc-cancel must clear pending_picker_target"
+    );
+    assert!(
+        editor(&state).pending_picker_value.is_none(),
+        "Esc-cancel must clear pending_picker_value"
+    );
+    // Cancel is a pure UI action — the on-pending env value is unchanged.
+    assert_eq!(
+        editor(&state).pending.env.get("DB_URL").map(String::as_str),
+        Some("untouched"),
+        "Esc-cancel must not mutate pending.env"
     );
     Ok(())
 }
 
-/// Esc from the OpPicker (vault pane / fatal state / loading) cancels
-/// and reconstructs the EnvValue TextInput modal pre-filled with the
-/// text the operator had typed before pressing Ctrl+O.
+/// `P` on an existing key row, picker drives to a Field commit — the
+/// `op://Vault/Item/Field` reference must land directly in
+/// `pending.env[key]` and the modal must close. No follow-up text modal.
 #[test]
-fn op_picker_cancel_restores_env_value_modal_with_original_text() -> Result<()> {
+fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
+    use jackin::console::widgets::op_picker::{OpLoadState, OpPickerStage};
+    use jackin::operator_env::{OpField, OpItem, OpVault};
+
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
-    let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "old")])?;
+    let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "old-value")])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Navigate to the key row and open the EnvValue modal.
+    // Cursor → row 1 (DB_URL key row), then P opens the picker.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
-
-    // Clear the pre-filled "old" (3 chars) and type "MARKER" so we can
-    // verify the cancel path restores exactly this string.
-    for _ in 0..3 {
-        handle_key(
-            &mut state,
-            &mut config,
-            &paths,
-            cwd,
-            key(KeyCode::Backspace),
-        )?;
-    }
-    for ch in "MARKER".chars() {
-        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
-    }
-    // Sanity: the textarea reads back what we typed.
-    match &editor(&state).modal {
-        Some(Modal::TextInput { state: ts, .. }) => {
-            assert_eq!(ts.value(), "MARKER", "textarea must contain MARKER");
-        }
-        other => panic!("expected EnvValue TextInput modal, got {other:?}"),
-    }
-
-    // Ctrl+O switches to OpPicker.
     handle_key(
         &mut state,
         &mut config,
         &paths,
         cwd,
-        ctrl_key(KeyCode::Char('o')),
+        key(KeyCode::Char('p')),
+    )?;
+
+    // Drive the picker straight to the Field stage with seeded vault +
+    // item + fields, mirroring what `poll_load` would do after the
+    // background loads complete. Same Option-Z direct-field approach
+    // the prior commit-7 picker tests use.
+    {
+        let editor_state = editor_mut(&mut state);
+        match &mut editor_state.modal {
+            Some(Modal::OpPicker { state: picker }) => {
+                picker.vaults = vec![OpVault {
+                    id: "v1".into(),
+                    name: "Personal".into(),
+                }];
+                picker.selected_vault = Some(OpVault {
+                    id: "v1".into(),
+                    name: "Personal".into(),
+                });
+                picker.items = vec![OpItem {
+                    id: "i1".into(),
+                    name: "Database".into(),
+                }];
+                picker.selected_item = Some(OpItem {
+                    id: "i1".into(),
+                    name: "Database".into(),
+                });
+                picker.fields = vec![OpField {
+                    id: "password".into(),
+                    label: "password".into(),
+                    field_type: "concealed".into(),
+                    concealed: true,
+                }];
+                picker.field_list_state.select(Some(0));
+                picker.stage = OpPickerStage::Field;
+                picker.load_state = OpLoadState::Ready;
+            }
+            other => panic!("expected OpPicker modal; got {other:?}"),
+        }
+    }
+
+    // Enter on the Field pane commits the `op://...` reference.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // The reference must land directly in pending.env (no text modal
+    // intermediate).
+    assert_eq!(
+        editor(&state).pending.env.get("DB_URL").map(String::as_str),
+        Some("op://Personal/Database/password"),
+        "picker commit must write the op:// reference straight into pending.env[key]"
+    );
+    assert!(
+        editor(&state).modal.is_none(),
+        "modal must close after key-row picker commit; got {:?}",
+        editor(&state).modal
+    );
+    assert!(editor(&state).pending_picker_target.is_none());
+    assert!(editor(&state).pending_picker_value.is_none());
+    Ok(())
+}
+
+/// `P` on the `+ Add workspace env var` sentinel: the picker commits a
+/// path before the operator has named the key. The `EnvKey` modal opens
+/// next, the path is held on `pending_picker_value`, and committing the
+/// key name writes both into pending.env at once.
+#[test]
+fn op_picker_sentinel_p_flow() -> Result<()> {
+    use jackin::console::widgets::op_picker::{OpLoadState, OpPickerStage};
+    use jackin::operator_env::{OpField, OpItem, OpVault};
+
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    // Empty env so the only navigable rows are WorkspaceHeader (0) +
+    // WorkspaceAddSentinel (1).
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Cursor → row 1 (WorkspaceAddSentinel).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    assert!(matches!(editor(&state).active_field, FieldFocus::Row(1)));
+
+    // P on the sentinel opens the picker with `pending_picker_target =
+    // Some((Workspace, None))`.
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('p')),
     )?;
     assert!(matches!(editor(&state).modal, Some(Modal::OpPicker { .. })));
-
-    // Esc on the OpPicker — works regardless of whether the picker is
-    // Loading, Ready on the Vault pane, or in a fatal state (see
-    // OpPickerState::handle_key short-circuits). Cancel reconstructs
-    // the EnvValue TextInput modal seeded with `original_value`.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
-    match &editor(&state).modal {
-        Some(Modal::TextInput { target, state: ts }) => {
-            assert!(
-                matches!(target, TextInputTarget::EnvValue { .. }),
-                "restored modal must be the EnvValue variant; got {target:?}"
-            );
-            assert_eq!(
-                ts.value(),
-                "MARKER",
-                "Esc-cancel must restore the original textarea contents"
-            );
-        }
-        other => panic!("expected restored TextInput modal, got {other:?}"),
+    match &editor(&state).pending_picker_target {
+        Some((_, None)) => {}
+        other => panic!("sentinel P must stash (scope, None); got pending_picker_target={other:?}"),
     }
+
+    // Drive the picker to a Field commit.
+    {
+        let editor_state = editor_mut(&mut state);
+        match &mut editor_state.modal {
+            Some(Modal::OpPicker { state: picker }) => {
+                picker.vaults = vec![OpVault {
+                    id: "v1".into(),
+                    name: "Personal".into(),
+                }];
+                picker.selected_vault = Some(OpVault {
+                    id: "v1".into(),
+                    name: "Personal".into(),
+                });
+                picker.items = vec![OpItem {
+                    id: "i1".into(),
+                    name: "API Keys".into(),
+                }];
+                picker.selected_item = Some(OpItem {
+                    id: "i1".into(),
+                    name: "API Keys".into(),
+                });
+                picker.fields = vec![OpField {
+                    id: "credential".into(),
+                    label: "credential".into(),
+                    field_type: "concealed".into(),
+                    concealed: true,
+                }];
+                picker.field_list_state.select(Some(0));
+                picker.stage = OpPickerStage::Field;
+                picker.load_state = OpLoadState::Ready;
+            }
+            other => panic!("expected OpPicker modal; got {other:?}"),
+        }
+    }
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // After the picker commits: EnvKey modal is open and the path is
+    // stashed on pending_picker_value.
+    match &editor(&state).modal {
+        Some(Modal::TextInput {
+            target: TextInputTarget::EnvKey { .. },
+            ..
+        }) => {}
+        other => panic!("expected TextInput(EnvKey) modal; got {other:?}"),
+    }
+    assert_eq!(
+        editor(&state).pending_picker_value.as_deref(),
+        Some("op://Personal/API Keys/credential"),
+        "picker commit must stash the op:// reference for the EnvKey commit"
+    );
+
+    // Type the new key name and Enter — the EnvKey commit handler must
+    // consume `pending_picker_value` and write the pair into pending.env.
+    for ch in "API_KEY".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    assert_eq!(
+        editor(&state)
+            .pending
+            .env
+            .get("API_KEY")
+            .map(String::as_str),
+        Some("op://Personal/API Keys/credential"),
+        "EnvKey commit must write the stashed picker value into pending.env"
+    );
+    assert!(
+        editor(&state).pending_picker_value.is_none(),
+        "EnvKey commit must clear pending_picker_value"
+    );
+    assert!(
+        editor(&state).modal.is_none(),
+        "EnvKey commit on the picker fast-path must close the modal; got {:?}",
+        editor(&state).modal
+    );
     Ok(())
 }

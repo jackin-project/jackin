@@ -355,7 +355,7 @@ fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "After install, run `op signin`, then press Ctrl+O to retry.",
+                "After install, run `op signin`, then press P to retry.",
                 Style::default().fg(PHOSPHOR_DIM),
             )),
         ],

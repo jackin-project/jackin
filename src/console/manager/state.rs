@@ -155,6 +155,26 @@ pub struct EditorState<'a> {
     /// the first `TextInput(EnvKey)` modal commits; cleared when the
     /// follow-up `TextInput(EnvValue)` modal commits or cancels.
     pub pending_env_key: Option<(SecretsScopeTag, String)>,
+    /// When the operator presses `P` on a Secrets row, the focused row's
+    /// scope (and key, if a key row) is stashed here. The `OpPicker`
+    /// reads it on commit to know where to write the chosen `op://` path.
+    /// Cleared on every modal-reset path that doesn't represent a direct
+    /// picker step.
+    ///
+    /// Variants:
+    /// - `Some((scope, Some(key)))` — `P` pressed on a key row; replace
+    ///   that key's value on commit.
+    /// - `Some((scope, None))` — `P` pressed on the `+ Add` sentinel; on
+    ///   commit, open the `EnvKey` modal for the key name (with value
+    ///   pre-stashed in `pending_picker_value`).
+    /// - `None` — no in-flight picker invocation.
+    pub pending_picker_target: Option<(SecretsScopeTag, Option<String>)>,
+    /// In the sentinel-add flow, the picker commits a path before the
+    /// operator has named the key. The path is held here until the
+    /// `EnvKey` modal commits and writes both fields to pending env at
+    /// once. Cleared on every modal-reset path that doesn't represent a
+    /// direct picker step.
+    pub pending_picker_value: Option<String>,
 }
 
 /// Explicit state-machine for the workspace editor's save cycle.
@@ -295,9 +315,12 @@ pub enum Modal<'a> {
     ErrorPopup {
         state: ErrorPopupState,
     },
-    /// 1Password vault/item/field picker — opened from the `EnvValue`
-    /// `TextInput` arm of `handle_editor_modal` when the operator
-    /// presses `Ctrl+O`. Boxed because the picker's three result
+    /// 1Password vault/item/field picker — opened as a row-level action
+    /// from the Secrets tab when the operator presses `P`. The picker
+    /// commits an `op://...` reference directly into the focused row's
+    /// pending value (key row) or stashes it on
+    /// `EditorState::pending_picker_value` for the follow-up `EnvKey`
+    /// modal (sentinel row). Boxed because the picker's three result
     /// `Vec`s, runner trait object, and load-channel receiver make it
     /// substantially larger than the existing variants.
     OpPicker {
@@ -532,6 +555,8 @@ impl EditorState<'_> {
             secrets_masked: true,
             secrets_expanded: BTreeSet::default(),
             pending_env_key: None,
+            pending_picker_target: None,
+            pending_picker_value: None,
         }
     }
 
@@ -558,6 +583,8 @@ impl EditorState<'_> {
             secrets_masked: true,
             secrets_expanded: BTreeSet::default(),
             pending_env_key: None,
+            pending_picker_target: None,
+            pending_picker_value: None,
         }
     }
 

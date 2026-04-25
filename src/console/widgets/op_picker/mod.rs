@@ -1,12 +1,14 @@
 //! 1Password vault/item/field picker modal.
 //!
-//! Three-pane drill-down (`Vault → Item → Field`) reachable via `Ctrl+O`
-//! from the `EnvValue` `TextInput` modal in the Secrets tab. Each pane
-//! lists structural metadata returned by `op` — vault names, item names,
-//! and field labels/types — and lets the operator filter-as-they-type.
-//! Selecting a field commits an `op://Vault/Item/field` reference back
-//! to the `EnvValue` textarea; the picker never resolves or stores secret
-//! values.
+//! Three-pane drill-down (`Vault → Item → Field`) reachable via `P`
+//! from a Secrets-tab row in the workspace editor. Each pane lists
+//! structural metadata returned by `op` — vault names, item names, and
+//! field labels/types — and lets the operator filter-as-they-type.
+//! Selecting a field commits an `op://Vault/Item/field` reference; the
+//! editor's modal handler then writes that reference directly into the
+//! focused row's pending value (key row) or stashes it on
+//! `EditorState::pending_picker_value` for the follow-up `EnvKey` modal
+//! (sentinel row). The picker never resolves or stores secret values.
 //!
 //! The runner ([`OpStructRunner`] from `crate::operator_env`) is invoked
 //! on a background thread; the picker stages the load via an `mpsc`
@@ -19,7 +21,6 @@ use std::sync::mpsc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_widget_list::ListState;
 
-use crate::console::manager::state::TextInputTarget;
 use crate::operator_env::{OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
 use super::ModalOutcome;
@@ -107,18 +108,6 @@ pub struct OpPickerState {
 
     pub load_state: OpLoadState,
 
-    /// `EnvValue` textarea contents at the moment `Ctrl+O` was pressed.
-    /// Restored verbatim on `Esc`-from-vault-pane so cancellation feels
-    /// transparent.
-    pub original_value: String,
-    /// Stashed `TextInputTarget` so the cancel / commit paths can
-    /// reconstruct the original `Modal::TextInput` without re-deriving
-    /// the scope/key.
-    pub saved_target: TextInputTarget,
-    /// Stashed label so the reconstructed `TextInput` shows the same
-    /// prompt the operator was just looking at.
-    pub saved_label: String,
-
     /// Production runner — boxed so tests can inject a fake via
     /// [`OpPickerState::new_with_runner`].
     runner: Box<dyn OpStructRunner + Send>,
@@ -144,10 +133,13 @@ impl std::fmt::Debug for OpPickerState {
             .field("selected_item", &self.selected_item)
             .field("fields", &self.fields)
             .field("load_state", &self.load_state)
-            .field("original_value", &self.original_value)
-            .field("saved_target", &self.saved_target)
-            .field("saved_label", &self.saved_label)
             .finish_non_exhaustive()
+    }
+}
+
+impl Default for OpPickerState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -155,23 +147,13 @@ impl OpPickerState {
     /// Production constructor. Boxes a fresh [`OpCli`] runner internally
     /// and kicks off the probe + vault-list load on the spot so the
     /// picker is responsive on first frame.
-    pub fn new(original_value: String, saved_target: TextInputTarget, saved_label: String) -> Self {
-        Self::new_with_runner(
-            original_value,
-            saved_target,
-            saved_label,
-            Box::new(OpCli::new()),
-        )
+    pub fn new() -> Self {
+        Self::new_with_runner(Box::new(OpCli::new()))
     }
 
     /// Test seam — accepts an injected runner so unit / integration
     /// tests can drive the state machine without an `op` binary.
-    pub fn new_with_runner(
-        original_value: String,
-        saved_target: TextInputTarget,
-        saved_label: String,
-        runner: Box<dyn OpStructRunner + Send>,
-    ) -> Self {
+    pub fn new_with_runner(runner: Box<dyn OpStructRunner + Send>) -> Self {
         let mut s = Self {
             stage: OpPickerStage::Vault,
             filter_buf: String::new(),
@@ -184,9 +166,6 @@ impl OpPickerState {
             fields: Vec::new(),
             field_list_state: ListState::default(),
             load_state: OpLoadState::Idle,
-            original_value,
-            saved_target,
-            saved_label,
             runner,
             rx: None,
         };
@@ -617,7 +596,6 @@ mod tests {
     //! env, so the worker errors out fast and is harmless once we've
     //! re-set `load_state = Ready` before each key event.
     use super::*;
-    use crate::console::manager::state::{SecretsScopeTag, TextInputTarget};
     use crate::operator_env::{OpAccount, OpField, OpItem, OpVault};
     use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use std::sync::Mutex;
@@ -656,13 +634,6 @@ mod tests {
         }
     }
 
-    fn make_target() -> TextInputTarget {
-        TextInputTarget::EnvValue {
-            scope: SecretsScopeTag::Workspace,
-            key: "DB_URL".into(),
-        }
-    }
-
     /// Build a picker, drop the in-flight receiver from the constructor's
     /// background thread (so `poll_load` won't overwrite our seeded
     /// state), and seed it `Ready` so key handling proceeds normally.
@@ -670,12 +641,7 @@ mod tests {
         let runner = Box::new(StubRunner {
             accounts: Mutex::new(vec![OpAccount { id: "acct1".into() }]),
         });
-        let mut s = OpPickerState::new_with_runner(
-            String::new(),
-            make_target(),
-            "label".to_string(),
-            runner,
-        );
+        let mut s = OpPickerState::new_with_runner(runner);
         // Discard the worker's channel so a delayed result (e.g. from
         // the production `runner_clone_for_thread` builder running on a
         // background thread) cannot stomp on the vectors the test seeds
@@ -875,8 +841,7 @@ mod tests {
         let runner = Box::new(StubRunner {
             accounts: Mutex::new(vec![OpAccount { id: "a".into() }]),
         });
-        let s =
-            OpPickerState::new_with_runner(String::new(), make_target(), "label".into(), runner);
+        let s = OpPickerState::new_with_runner(runner);
         assert!(
             !matches!(s.load_state, OpLoadState::Error(OpPickerError::Fatal(_))),
             "stub runner returning Ok must not produce a fatal state; got {:?}",

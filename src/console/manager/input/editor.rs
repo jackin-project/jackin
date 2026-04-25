@@ -189,6 +189,16 @@ pub(super) fn handle_editor_key(
         {
             editor.secrets_masked = !editor.secrets_masked;
         }
+        // P opens the 1Password picker as a row-level Secrets-tab action.
+        // Per RULES.md § TUI Keybindings, this binding fires only with no
+        // modifier — the picker would otherwise collide with text input
+        // inside the EnvValue modal, which is why it sits at the row
+        // level, not inside the text modal.
+        KeyCode::Char('p' | 'P')
+            if editor.active_tab == EditorTab::Secrets && key.modifiers == KeyModifiers::NONE =>
+        {
+            open_secrets_picker_modal(editor);
+        }
         KeyCode::Char('d' | 'D')
             if editor.active_tab == EditorTab::Secrets
                 && !key.modifiers.contains(KeyModifiers::CONTROL) =>
@@ -526,24 +536,6 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
     };
     match modal {
         Modal::TextInput { target, state } => {
-            // Intercept Ctrl+O on the EnvValue arm before delegating to
-            // the textarea — the picker is a Secrets-tab-only escape
-            // hatch from value entry into a `op://...` reference. The
-            // interception lives here (not in `TextInputState`) because
-            // the picker needs the surrounding scope/key context to
-            // reconstruct the EnvValue modal on commit/cancel.
-            if matches!(target, TextInputTarget::EnvValue { .. })
-                && key.code == KeyCode::Char('o')
-                && key.modifiers.contains(KeyModifiers::CONTROL)
-            {
-                let original = state.value();
-                let target_clone = target.clone();
-                let label_clone = state.label.clone();
-                editor.modal = Some(Modal::OpPicker {
-                    state: Box::new(OpPickerState::new(original, target_clone, label_clone)),
-                });
-                return;
-            }
             match state.handle_key(key) {
                 ModalOutcome::Commit(value) => {
                     let target = target.clone();
@@ -553,11 +545,15 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
                 ModalOutcome::Cancel => {
                     // Secrets-tab Add flow state hygiene: if the operator
                     // cancels the second (value) step, drop the stashed key
-                    // so a later re-entry starts fresh.
+                    // so a later re-entry starts fresh. Also clear any
+                    // pending picker value — a cancelled `EnvKey` after a
+                    // sentinel-picker commit must not silently apply the
+                    // op:// path to a future, unrelated key.
                     if let TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } =
                         target
                     {
                         editor.pending_env_key = None;
+                        editor.pending_picker_value = None;
                     }
                     editor.modal = None;
                 }
@@ -672,32 +668,108 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             use crate::console::widgets::text_input::TextInputState;
             match picker.handle_key(key) {
                 ModalOutcome::Commit(path) => {
-                    // Operator picked a Vault → Item → Field path.
-                    // Reconstruct the EnvValue TextInput modal pre-filled
-                    // with the chosen `op://...` reference so the
-                    // operator can edit before pressing Enter.
-                    let target = picker.saved_target.clone();
-                    let label = picker.saved_label.clone();
-                    editor.modal = Some(Modal::TextInput {
-                        target,
-                        state: TextInputState::new(label, path),
-                    });
+                    // Operator picked a Vault → Item → Field path. The
+                    // dispatch depends on whether `P` was pressed on a
+                    // key row (write directly) or on an `+ Add` sentinel
+                    // (stash the path, ask for the key name first).
+                    let target = editor.pending_picker_target.take();
+                    match target {
+                        Some((scope, Some(key))) => {
+                            apply_picker_value_to_pending(editor, &scope, &key, &path);
+                            editor.modal = None;
+                        }
+                        Some((scope, None)) => {
+                            editor.pending_picker_value = Some(path);
+                            let label = format!("New env key for {}", scope_label(&scope));
+                            editor.modal = Some(Modal::TextInput {
+                                target: TextInputTarget::EnvKey { scope },
+                                state: TextInputState::new(label, ""),
+                            });
+                        }
+                        None => {
+                            // Defensive: shouldn't happen — but don't
+                            // crash. Just close the picker.
+                            editor.modal = None;
+                        }
+                    }
                 }
                 ModalOutcome::Cancel => {
-                    // Esc from the vault pane (or any fatal-state
-                    // panel). Restore the EnvValue modal exactly as it
-                    // was before Ctrl+O — original textarea contents
-                    // intact.
-                    let target = picker.saved_target.clone();
-                    let label = picker.saved_label.clone();
-                    let original = picker.original_value.clone();
-                    editor.modal = Some(Modal::TextInput {
-                        target,
-                        state: TextInputState::new(label, original),
-                    });
+                    // Esc from the vault pane (or any fatal-state panel)
+                    // closes the picker entirely. Both scratch fields
+                    // are cleared so a stale path/target can't carry
+                    // into a later interaction.
+                    editor.modal = None;
+                    editor.pending_picker_target = None;
+                    editor.pending_picker_value = None;
                 }
                 ModalOutcome::Continue => {}
             }
+        }
+    }
+}
+
+/// Open the `Modal::OpPicker` for the focused Secrets-tab row. The row
+/// kind decides what `pending_picker_target` records:
+///
+/// - Key rows (workspace or agent) record `(scope, Some(key))` — the
+///   commit handler writes the chosen `op://...` directly into that
+///   key's pending value.
+/// - `+ Add` sentinels record `(scope, None)` — the commit handler
+///   stashes the path on `pending_picker_value` and opens an `EnvKey`
+///   modal so the operator can name the new key.
+/// - Headers and any out-of-range row are silent no-ops.
+fn open_secrets_picker_modal(editor: &mut EditorState<'_>) {
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = secrets_flat_rows(editor);
+    let Some(row) = rows.get(n).cloned() else {
+        return;
+    };
+    let target = match row {
+        SecretsRow::WorkspaceKeyRow(key) => Some((SecretsScopeTag::Workspace, Some(key))),
+        SecretsRow::AgentKeyRow { agent, key } => Some((SecretsScopeTag::Agent(agent), Some(key))),
+        SecretsRow::WorkspaceAddSentinel => Some((SecretsScopeTag::Workspace, None)),
+        SecretsRow::AgentAddSentinel(agent) => Some((SecretsScopeTag::Agent(agent), None)),
+        SecretsRow::WorkspaceHeader | SecretsRow::AgentHeader { .. } => None,
+    };
+    let Some(target) = target else {
+        return;
+    };
+    editor.pending_picker_target = Some(target);
+    editor.modal = Some(Modal::OpPicker {
+        state: Box::new(OpPickerState::new()),
+    });
+}
+
+/// Human-readable label for a `SecretsScopeTag` — used in the
+/// "New env key for ..." prompt of the sentinel-add picker flow.
+fn scope_label(scope: &SecretsScopeTag) -> String {
+    match scope {
+        SecretsScopeTag::Workspace => "workspace".to_string(),
+        SecretsScopeTag::Agent(agent) => agent.clone(),
+    }
+}
+
+/// Write `value` into `editor.pending` at the given scope + key. Used by
+/// both the picker's key-row commit path and (in the future) any other
+/// caller that wants to set a single env value without going through a
+/// text modal. Agent scope auto-creates the override entry — same
+/// semantics as the `EnvValue` text-input commit handler.
+fn apply_picker_value_to_pending(
+    editor: &mut EditorState<'_>,
+    scope: &SecretsScopeTag,
+    key: &str,
+    value: &str,
+) {
+    match scope {
+        SecretsScopeTag::Workspace => {
+            editor
+                .pending
+                .env
+                .insert(key.to_string(), value.to_string());
+        }
+        SecretsScopeTag::Agent(agent) => {
+            let entry = editor.pending.agents.entry(agent.clone()).or_default();
+            entry.env.insert(key.to_string(), value.to_string());
         }
     }
 }
@@ -726,11 +798,10 @@ pub(super) fn apply_text_input_to_pending(
             }
         }
         TextInputTarget::EnvKey { scope } => {
-            // First step of the two-step Add flow. Commit stashes the
-            // trimmed key on `pending_env_key` and immediately opens the
-            // follow-up EnvValue modal. An empty key re-opens the same
-            // EnvKey modal with an inline "cannot be empty" label instead
-            // of committing.
+            // First step of the two-step Add flow — or, when the picker's
+            // sentinel path stashed a value first, the *only* step. An
+            // empty key re-opens the same EnvKey modal with an inline
+            // "cannot be empty" label instead of committing.
             let trimmed = value.trim();
             if trimmed.is_empty() {
                 editor.pending_env_key = None;
@@ -743,6 +814,24 @@ pub(super) fn apply_text_input_to_pending(
                 return;
             }
             let key = trimmed.to_string();
+            // Sentinel-picker fast path: if the picker pre-stashed an
+            // `op://...` value on `pending_picker_value`, write both the
+            // key and value into pending env now and skip the follow-up
+            // EnvValue modal. Otherwise fall back to the standard
+            // two-step flow that opens an EnvValue modal next.
+            if let Some(stashed) = editor.pending_picker_value.take() {
+                match scope {
+                    SecretsScopeTag::Workspace => {
+                        editor.pending.env.insert(key, stashed);
+                    }
+                    SecretsScopeTag::Agent(agent) => {
+                        let entry = editor.pending.agents.entry(agent.clone()).or_default();
+                        entry.env.insert(key, stashed);
+                    }
+                }
+                editor.pending_env_key = None;
+                return;
+            }
             editor.pending_env_key = Some((scope.clone(), key.clone()));
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
