@@ -119,6 +119,44 @@ pub fn remove_record(container_state_dir: &Path, mount_dst: &str) -> anyhow::Res
     Ok(())
 }
 
+const CONTAINER_DIR_PREFIX: &str = "jackin-";
+
+/// Walk every `<data_dir>/jackin-*/` directory and collect records whose
+/// `workspace` matches the given name. Missing data dir → empty result.
+/// Per-container parse failures bubble up.
+pub fn list_records_for_workspace(
+    data_dir: &Path,
+    workspace: &str,
+) -> anyhow::Result<Vec<IsolationRecord>> {
+    if !data_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut all = Vec::new();
+    for entry in std::fs::read_dir(data_dir)
+        .with_context(|| format!("read data dir {}", data_dir.display()))?
+    {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if !file_type.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        if !name_str.starts_with(CONTAINER_DIR_PREFIX) {
+            continue;
+        }
+        let records = read_records(&entry.path())?;
+        for rec in records {
+            if rec.workspace == workspace {
+                all.push(rec);
+            }
+        }
+    }
+    Ok(all)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,5 +268,56 @@ mod tests {
             err.to_string()
                 .contains("unsupported isolation.json version 99")
         );
+    }
+
+    #[test]
+    fn list_records_for_workspace_walks_all_container_dirs() {
+        let data = TempDir::new().unwrap();
+        // Container A: workspace=jackin
+        let a = data.path().join("jackin-the-architect");
+        std::fs::create_dir_all(&a).unwrap();
+        let mut rec_a = sample_record();
+        rec_a.container_name = "jackin-the-architect".into();
+        write_records(&a, std::slice::from_ref(&rec_a)).unwrap();
+        // Container B: workspace=jackin
+        let b = data.path().join("jackin-the-builder");
+        std::fs::create_dir_all(&b).unwrap();
+        let mut rec_b = sample_record();
+        rec_b.container_name = "jackin-the-builder".into();
+        rec_b.scratch_branch = "jackin/scratch/the-builder".into();
+        write_records(&b, std::slice::from_ref(&rec_b)).unwrap();
+        // Container C: workspace=docs (must be skipped when filtering by jackin)
+        let c = data.path().join("jackin-doc-writer");
+        std::fs::create_dir_all(&c).unwrap();
+        let mut rec_c = sample_record();
+        rec_c.workspace = "docs".into();
+        rec_c.container_name = "jackin-doc-writer".into();
+        write_records(&c, &[rec_c]).unwrap();
+
+        let mut found = list_records_for_workspace(data.path(), "jackin").unwrap();
+        found.sort_by(|x, y| x.container_name.cmp(&y.container_name));
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0], rec_a);
+        assert_eq!(found[1], rec_b);
+    }
+
+    #[test]
+    fn list_records_for_workspace_returns_empty_when_data_dir_missing() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("nope");
+        let result = list_records_for_workspace(&missing, "jackin").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn list_records_for_workspace_ignores_non_jackin_dirs() {
+        let data = TempDir::new().unwrap();
+        let other = data.path().join("not-a-jackin-container");
+        std::fs::create_dir_all(&other).unwrap();
+        let mut rec = sample_record();
+        rec.container_name = "not-a-jackin-container".into();
+        write_records(&other, &[rec]).unwrap();
+        let result = list_records_for_workspace(data.path(), "jackin").unwrap();
+        assert!(result.is_empty());
     }
 }
