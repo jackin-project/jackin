@@ -581,7 +581,13 @@ fn render_secrets_tab(
 
     for (i, row) in rows.iter().enumerate() {
         let selected = i == cursor;
-        let prefix = if selected { "▸ " } else { "  " };
+        // Two-column prefix: cursor (`▸ ` / `  `) followed by the
+        // op-marker column (`⚿ ` / `  `). The marker is only filled
+        // for op:// key rows; every other row leaves the column blank
+        // so column alignment is preserved across the tab — the
+        // operator's eye scans the marker column at a glance to see
+        // which keys are 1Password-backed.
+        let cursor_col = if selected { "▸ " } else { "  " };
         match row {
             SecretsRow::WorkspaceKeyRow(key) => {
                 let value = state.pending.env.get(key).cloned().unwrap_or_default();
@@ -590,7 +596,7 @@ fn render_secrets_tab(
                     .contains(&(SecretsScopeTag::Workspace, key.clone()));
                 lines.push(render_secrets_key_line(
                     selected,
-                    prefix,
+                    cursor_col,
                     key,
                     &value,
                     masked,
@@ -605,8 +611,10 @@ fn render_secrets_tab(
                 } else {
                     Style::default().fg(WHITE)
                 };
+                // `  ` after the cursor column keeps alignment with
+                // op:// rows that fill the marker column with `⚿ `.
                 lines.push(Line::from(Span::styled(
-                    format!("{prefix}+ Add environment variable"),
+                    format!("{cursor_col}  + Add environment variable"),
                     style,
                 )));
             }
@@ -615,7 +623,7 @@ fn render_secrets_tab(
                 let in_registry = config.agents.contains_key(agent);
                 let count = state.pending.agents.get(agent).map_or(0, |o| o.env.len());
                 let mut spans = vec![Span::styled(
-                    format!("{prefix}{arrow} Agent: {agent}  ({count} vars)"),
+                    format!("{cursor_col}  {arrow} Agent: {agent}  ({count} vars)"),
                     Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
                 )];
                 if !in_registry {
@@ -637,7 +645,7 @@ fn render_secrets_tab(
                     .contains(&(SecretsScopeTag::Agent(agent.clone()), key.clone()));
                 lines.push(render_secrets_key_line(
                     selected,
-                    prefix,
+                    cursor_col,
                     key,
                     &value,
                     masked,
@@ -653,7 +661,7 @@ fn render_secrets_tab(
                     Style::default().fg(WHITE)
                 };
                 lines.push(Line::from(Span::styled(
-                    format!("{prefix}+ Add {agent} environment variable"),
+                    format!("{cursor_col}  + Add {agent} environment variable"),
                     style,
                 )));
             }
@@ -678,7 +686,7 @@ fn render_secrets_tab(
 #[allow(clippy::too_many_arguments)]
 fn render_secrets_key_line(
     selected: bool,
-    prefix: &str,
+    cursor_col: &str,
     key: &str,
     value: &str,
     masked: bool,
@@ -686,22 +694,32 @@ fn render_secrets_key_line(
     label_width: usize,
     op_accounts: &[OpAccount],
 ) -> Line<'static> {
+    /// Lock-and-key glyph that marks `op://` rows in the marker column.
+    /// Plain rows render two blank spaces in the same column to keep
+    /// the label/value alignment consistent across the tab.
+    const OP_MARKER: &str = "\u{26BF} ";
+    const NO_MARKER: &str = "  ";
     const MASK: &str = "●●●●●●●●●●●";
+
     let label_style = if selected {
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(WHITE)
     };
-    let mut spans = vec![Span::styled(
-        format!("{prefix}{key:label_width$}"),
-        label_style,
-    )];
+    let dim = Style::default().fg(PHOSPHOR_DIM);
+
+    let is_op = is_op_reference(value);
+    let marker = if is_op { OP_MARKER } else { NO_MARKER };
+    let mut spans = vec![
+        Span::raw(cursor_col.to_string()),
+        Span::styled(marker.to_string(), dim),
+        Span::styled(format!("{key:label_width$}"), label_style),
+    ];
 
     // Op:// references render as a breadcrumb regardless of `masked` —
     // the path is not the credential, so masking it makes the row a
     // less informative version of itself.
     if let Some(parts) = parse_op_reference(value) {
-        let dim = Style::default().fg(PHOSPHOR_DIM);
         let white_style = Style::default().fg(WHITE);
         let green = Style::default().fg(PHOSPHOR_GREEN);
         let green_bold = Style::default()
@@ -1450,6 +1468,95 @@ mod secrets_tab_render_tests {
         assert!(
             dump.contains("unknown.1password.com"),
             "cold cache → raw segment fallback; dump:\n{dump}"
+        );
+    }
+
+    /// Op:// rows render with the lock-and-key (`⚿`) glyph in the
+    /// left-edge marker column. Plain rows do not.
+    #[test]
+    fn op_row_renders_with_lock_marker() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "op://Work/db/password".into());
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env,
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("\u{26BF}"),
+            "op:// row must render the ⚿ marker glyph; dump:\n{dump}"
+        );
+    }
+
+    /// Plain-text rows must NOT render the lock marker — that glyph is
+    /// reserved for op:// rows so the operator can scan the marker
+    /// column to see which keys are 1Password-backed.
+    #[test]
+    fn plain_row_renders_without_lock_marker() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DEBUG".into(), "1".into());
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env,
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        assert!(
+            !dump.contains("\u{26BF}"),
+            "plain-text row must not render the ⚿ marker; dump:\n{dump}"
+        );
+    }
+
+    /// Workspace env keys render in alphabetical order — `BTreeMap`
+    /// already iterates sorted, but we pin the ordering invariant
+    /// here so future refactors that swap the storage type can't
+    /// silently regress the operator's scanning experience.
+    #[test]
+    fn secrets_tab_renders_keys_in_alphabetical_order() {
+        let mut env = std::collections::BTreeMap::new();
+        // Insertion order is intentionally not alphabetical.
+        env.insert("ZULU".into(), "z".into());
+        env.insert("ALPHA".into(), "a".into());
+        env.insert("MIKE".into(), "m".into());
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env,
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        // Locate the byte offsets of each key in the dump and assert
+        // they appear in ascending order.
+        let alpha = dump.find("ALPHA").expect("ALPHA must appear");
+        let mike = dump.find("MIKE").expect("MIKE must appear");
+        let zulu = dump.find("ZULU").expect("ZULU must appear");
+        assert!(
+            alpha < mike && mike < zulu,
+            "keys must render alphabetically (ALPHA < MIKE < ZULU); offsets {alpha}/{mike}/{zulu}\n{dump}"
         );
     }
 }
