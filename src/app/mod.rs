@@ -180,6 +180,10 @@ pub fn run(cli: Cli) -> Result<()> {
                 for container in &containers {
                     runtime::eject_agent(container, &mut runner)?;
                     if purge {
+                        crate::isolation::cleanup::purge_isolated_for_container(
+                            &paths.data_dir.join(container),
+                            &mut runner,
+                        )?;
                         remove_data_dir_if_exists(&paths.data_dir.join(container))?;
                         println!("Ejected and purged {container}.");
                     } else {
@@ -865,6 +869,10 @@ pub fn run(cli: Cli) -> Result<()> {
             Selector::Container(container) => {
                 let short_name = container.trim_start_matches("jackin-");
                 runtime::ensure_agent_not_running(&mut runner, short_name)?;
+                crate::isolation::cleanup::purge_isolated_for_container(
+                    &paths.data_dir.join(&container),
+                    &mut runner,
+                )?;
                 remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                 println!("Purged state for {container}.");
                 Ok(())
@@ -877,6 +885,10 @@ pub fn run(cli: Cli) -> Result<()> {
                     let container = instance::primary_container_name(&class);
                     let short_name = container.trim_start_matches("jackin-");
                     runtime::ensure_agent_not_running(&mut runner, short_name)?;
+                    crate::isolation::cleanup::purge_isolated_for_container(
+                        &paths.data_dir.join(&container),
+                        &mut runner,
+                    )?;
                     remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                     println!("Purged state for {container}.");
                 }

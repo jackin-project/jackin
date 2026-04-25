@@ -56,6 +56,23 @@ pub fn force_cleanup_isolated(
     Ok(())
 }
 
+/// Force-cleanup every record in a container's isolation.json. Used by purge.
+pub fn purge_isolated_for_container(
+    container_state_dir: &Path,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    let records = crate::isolation::state::read_records(container_state_dir)?;
+    for rec in records {
+        if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner) {
+            eprintln!(
+                "[jackin] warning: failed to clean up isolated mount `{}`: {e}",
+                rec.mount_dst
+            );
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,5 +154,45 @@ mod tests {
         let mut runner = FakeRunner::default();
         force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap();
         assert!(read_records(container_dir.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn purge_isolated_for_container_runs_force_cleanup_for_each_record() {
+        let repo_dir = TempDir::new().unwrap();
+        let container_dir = TempDir::new().unwrap();
+        let r1 = rec_for(repo_dir.path(), container_dir.path());
+        let mut r2 = rec_for(repo_dir.path(), container_dir.path());
+        r2.mount_dst = "/workspace/docs".into();
+        let wt2 = container_dir.path().join("isolated/workspace/docs");
+        std::fs::create_dir_all(&wt2).unwrap();
+        r2.worktree_path = wt2.to_string_lossy().into();
+        r2.scratch_branch = "jackin/scratch/x-2".into();
+        let records = vec![r1.clone(), r2.clone()];
+        write_records(container_dir.path(), &records).unwrap();
+
+        let mut runner = FakeRunner::default();
+        purge_isolated_for_container(container_dir.path(), &mut runner).unwrap();
+
+        let removes = runner
+            .run_recorded
+            .iter()
+            .filter(|c| c.contains("worktree remove --force"))
+            .count();
+        let branches = runner
+            .run_recorded
+            .iter()
+            .filter(|c| c.contains("branch -D"))
+            .count();
+        assert_eq!(removes, 2);
+        assert_eq!(branches, 2);
+        assert!(read_records(container_dir.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn purge_isolated_is_noop_when_no_records() {
+        let container_dir = TempDir::new().unwrap();
+        let mut runner = FakeRunner::default();
+        purge_isolated_for_container(container_dir.path(), &mut runner).unwrap();
+        assert!(runner.run_recorded.is_empty());
     }
 }
