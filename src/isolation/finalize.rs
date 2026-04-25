@@ -430,4 +430,104 @@ mod tests {
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
+
+    struct ScriptedPrompt(VecDeque<usize>);
+    impl FinalizerPrompt for ScriptedPrompt {
+        fn ask_unsafe_cleanup(&mut self, _c: &str, _w: &str) -> anyhow::Result<usize> {
+            Ok(self.0.pop_front().expect("scripted prompt exhausted"))
+        }
+    }
+
+    #[test]
+    fn dirty_worktree_interactive_preserve_choice_keeps_state() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let mut runner = fake_with_outputs(&[" M file\n"]);
+        let mut p = ScriptedPrompt(VecDeque::from([1]));
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
+    }
+
+    #[test]
+    fn dirty_worktree_interactive_force_delete_runs_cleanup() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let mut runner = fake_with_outputs(&[" M file\n"]);
+        let mut p = ScriptedPrompt(VecDeque::from([2]));
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert!(read_records(dir.path()).unwrap().is_empty());
+        assert!(
+            runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree remove --force"))
+        );
+    }
+
+    #[test]
+    fn dirty_worktree_interactive_return_to_agent_signals_caller() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let mut runner = fake_with_outputs(&[" M file\n"]);
+        let mut p = ScriptedPrompt(VecDeque::from([0]));
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::ReturnToAgent);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
+    }
+
+    #[test]
+    fn dirty_worktree_non_interactive_prints_warning_and_preserves() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let mut runner = fake_with_outputs(&[" M file\n"]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
+    }
 }
