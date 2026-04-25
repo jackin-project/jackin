@@ -14,6 +14,16 @@ const repoRoot = resolve(docsRoot, '..')
 const contentRoot = resolve(docsRoot, 'src', 'content', 'docs')
 
 const repoPathPrefixes = ['src/', 'docs/', 'docker/', '.github/']
+const repoTopLevelFiles = new Set([
+  'Cargo.lock',
+  'Cargo.toml',
+  'Justfile',
+  'build.rs',
+  'docker-bake.hcl',
+  'mise.toml',
+  'release.toml',
+  'renovate.json',
+])
 const internalBlobUrl = /https:\/\/github\.com\/jackin-project\/jackin\/blob\/main\/([^\s)>"']+)/g
 const internalTreeUrl = /https:\/\/github\.com\/jackin-project\/jackin\/tree\/main\/[^\s)>"']+/g
 const inlineCode = /`([^`\n]+)`/g
@@ -33,7 +43,8 @@ async function mdxFiles(dir: string): Promise<string[]> {
 }
 
 function existingRepoFile(path: string): boolean {
-  const absolute = resolve(repoRoot, path)
+  const normalized = path.replace(/^\/+/, '')
+  const absolute = resolve(repoRoot, normalized)
   const relativePath = relative(repoRoot, absolute)
   if (relativePath === '..' || relativePath.startsWith(`..${sep}`)) return false
 
@@ -46,9 +57,10 @@ function existingRepoFile(path: string): boolean {
 
 function repoPathCandidate(value: string): string | undefined {
   const path = value.trim()
-  if (!repoPathPrefixes.some((prefix) => path.startsWith(prefix))) return undefined
   if (/[\s,*]/.test(path)) return undefined
-  return path
+  if (repoPathPrefixes.some((prefix) => path.startsWith(prefix))) return path
+  if (repoTopLevelFiles.has(path)) return path
+  return undefined
 }
 
 function isMarkdownLinkText(line: string, matchStart: number, matchLength: number): boolean {

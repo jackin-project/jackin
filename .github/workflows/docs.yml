@@ -17,8 +17,8 @@ env:
   JACKIN_REPO_EDIT_URL: https://github.com/jackin-project/jackin/edit/main
 
 concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  group: pages-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -134,7 +134,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
   check-deployed:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Schedule fires daily; workflow_dispatch from non-main branches lets a
+    # maintainer verify the live site without redeploying. Manual dispatch
+    # from main is excluded because the deploy job already verifies the
+    # just-deployed site, and running both in parallel would race against
+    # the publish window.
+    if: |
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -149,6 +156,7 @@ jobs:
           key: lychee-deployed-${{ runner.os }}-${{ hashFiles('docs/lychee.toml') }}
           restore-keys: |
             lychee-deployed-${{ runner.os }}-
+            lychee-${{ runner.os }}-${{ github.workflow }}-
 
       - name: Prepare deployed link check
         run: mkdir -p lychee
