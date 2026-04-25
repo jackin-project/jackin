@@ -152,6 +152,7 @@ mod tests {
                 src: shared_dir.canonicalize().unwrap().display().to_string(),
                 dst: "/cache".to_string(),
                 readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
             },
             Some("chainargos/*"),
         );
@@ -166,6 +167,7 @@ mod tests {
                     src: project_dir.display().to_string(),
                     dst: project_dir.display().to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 }],
             },
             allowed_agents: vec![selector.clone()],

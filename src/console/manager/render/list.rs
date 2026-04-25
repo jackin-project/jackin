@@ -255,6 +255,7 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
         src: cwd_str.clone(),
         dst: cwd_str,
         readonly: false,
+        isolation: crate::isolation::MountIsolation::Shared,
     }];
 
     let rows = Layout::default()
@@ -676,6 +677,7 @@ mod mount_block_height_tests {
             src: path.into(),
             dst: path.into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         }
     }
 

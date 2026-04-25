@@ -24,6 +24,11 @@ pub struct MountConfig {
     pub dst: String,
     #[serde(default)]
     pub readonly: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "crate::isolation::MountIsolation::is_shared"
+    )]
+    pub isolation: crate::isolation::MountIsolation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -123,6 +128,7 @@ mod tests {
                 src: "/tmp/src".to_string(),
                 dst: dst.to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             allowed_agents: vec![],
             default_agent: None,
@@ -216,11 +222,13 @@ mod tests {
                     src: "/tmp/a".to_string(),
                     dst: "/other/path".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
                 MountConfig {
                     src: "/tmp/b".to_string(),
                     dst: "/workspace/project".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
             allowed_agents: vec![],
@@ -230,5 +238,50 @@ mod tests {
             agents: std::collections::BTreeMap::new(),
         };
         validate_workspace_config("test", &ws).unwrap();
+    }
+
+    use crate::isolation::MountIsolation;
+
+    #[test]
+    fn mount_config_defaults_isolation_to_shared() {
+        let toml = r#"src = "/tmp/src"
+dst = "/workspace/x"
+"#;
+        let mount: MountConfig = toml::from_str(toml).unwrap();
+        assert_eq!(mount.isolation, MountIsolation::Shared);
+    }
+
+    #[test]
+    fn mount_config_parses_worktree_isolation() {
+        let toml = r#"src = "/tmp/src"
+dst = "/workspace/x"
+isolation = "worktree"
+"#;
+        let mount: MountConfig = toml::from_str(toml).unwrap();
+        assert_eq!(mount.isolation, MountIsolation::Worktree);
+    }
+
+    #[test]
+    fn mount_config_omits_isolation_field_when_shared_on_serialize() {
+        let mount = MountConfig {
+            src: "/tmp/src".into(),
+            dst: "/workspace/x".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        };
+        let serialized = toml::to_string(&mount).unwrap();
+        assert!(!serialized.contains("isolation"));
+    }
+
+    #[test]
+    fn mount_config_emits_isolation_field_when_non_shared_on_serialize() {
+        let mount = MountConfig {
+            src: "/tmp/src".into(),
+            dst: "/workspace/x".into(),
+            readonly: false,
+            isolation: MountIsolation::Worktree,
+        };
+        let serialized = toml::to_string(&mount).unwrap();
+        assert!(serialized.contains(r#"isolation = "worktree""#));
     }
 }

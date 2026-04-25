@@ -957,6 +957,7 @@ API_TOKEN = "op://Personal/api/token"
                 src: "/home/user".to_string(),
                 dst: "/workspace/home".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             },
             None,
         );
@@ -984,6 +985,7 @@ API_TOKEN = "op://Personal/api/token"
                 src: "/run/secrets/x".to_string(),
                 dst: "/secrets/x".to_string(),
                 readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
             },
             Some("agent-smith"),
         );
@@ -1240,6 +1242,7 @@ auth_forward = "token"
                 src: mount_src.display().to_string(),
                 dst: "/workspace/new".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             allowed_agents: vec![],
             default_agent: None,
@@ -1275,6 +1278,7 @@ auth_forward = "token"
                 src: mount_src.display().to_string(),
                 dst: "/workspace/unrelated".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             allowed_agents: vec![],
             default_agent: None,

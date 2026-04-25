@@ -89,6 +89,7 @@ impl AppConfig {
                 src: expand_tilde(&mount.src),
                 dst: mount.dst.clone(),
                 readonly: mount.readonly,
+                isolation: mount.isolation,
             })
             .collect();
         crate::workspace::validate_mounts(&expanded)?;
@@ -254,6 +255,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
                 src: "/nonexistent/path/that/does/not/exist".to_string(),
                 dst: "/data".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             },
         )];
         let err = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap_err();
@@ -271,6 +273,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
                 src: ".".to_string(),
                 dst: "/data".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             },
         )];
 
@@ -288,6 +291,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
                 src: temp.path().display().to_string(),
                 dst: "relative/path".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             },
         )];
         let err = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap_err();
@@ -305,6 +309,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
                     src: src.clone(),
                     dst: "/data".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             ),
             (
@@ -313,6 +318,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
                     src,
                     dst: "/data".to_string(),
                     readonly: true,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             ),
         ];
@@ -329,6 +335,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
                 src: "~".to_string(),
                 dst: "/home-mount".to_string(),
                 readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
             },
         )];
         let validated = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap();

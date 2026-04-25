@@ -34,6 +34,7 @@ fn seed_config(paths: &JackinPaths, temp_dir: &std::path::Path) -> Result<AppCon
             src: host_path.clone(),
             dst: host_path,
             readonly: false,
+            isolation: jackin::isolation::MountIsolation::Shared,
         }],
         allowed_agents: vec![],
         default_agent: None,

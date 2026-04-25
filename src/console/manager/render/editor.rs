@@ -526,6 +526,7 @@ mod contextual_row_items_tests {
                 src: src.to_string(),
                 dst: src.to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             allowed_agents: vec![],
             default_agent: None,

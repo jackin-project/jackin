@@ -217,6 +217,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         src: resolved_src,
                         dst: dst.clone(),
                         readonly,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     };
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.add_mount(&name, mount, scope.as_deref());

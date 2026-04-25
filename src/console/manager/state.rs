@@ -601,11 +601,13 @@ mod tests {
                     src: "/s1".into(),
                     dst: "/a".into(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
                 MountConfig {
                     src: "/s2".into(),
                     dst: "/b".into(),
                     readonly: true,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
             allowed_agents: vec!["agent-smith".into()],
@@ -649,6 +651,7 @@ mod tests {
                     src: workdir.clone(),
                     dst: workdir,
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 }],
                 allowed_agents: vec![],
                 default_agent: None,
@@ -743,6 +746,7 @@ mod tests {
             src: "/s".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         });
         assert_eq!(e.change_count(), 1);
     }

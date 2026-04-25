@@ -59,6 +59,7 @@ pub fn plan_create(
                     src: workdir.to_string(),
                     dst: workdir.to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             );
         }
@@ -242,6 +243,7 @@ mod tests {
             src: src.to_string(),
             dst: dst.to_string(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         }
     }
 
@@ -394,6 +396,7 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let b = a.clone();
         assert!(!covers(&a, &b));
@@ -405,11 +408,13 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/a/b".into(),
             dst: "/a/b".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(covers(&parent, &child));
     }
@@ -420,11 +425,13 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/a/b/c/d".into(),
             dst: "/a/b/c/d".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(covers(&parent, &child));
     }
@@ -435,11 +442,13 @@ mod tests {
             src: "/host/root".into(),
             dst: "/container/root".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/host/root/sub".into(),
             dst: "/container/root/sub".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(covers(&parent, &child));
     }
@@ -450,11 +459,13 @@ mod tests {
             src: "/host/root".into(),
             dst: "/container/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/host/root/sub".into(),
             dst: "/container/b/sub".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(!covers(&parent, &child));
     }
@@ -465,11 +476,13 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let b = MountConfig {
             src: "/b".into(),
             dst: "/b".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(!covers(&a, &b));
     }
@@ -481,11 +494,13 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/a-x".into(),
             dst: "/a-x".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(!covers(&parent, &child));
     }
@@ -496,11 +511,13 @@ mod tests {
             src: "/a/".into(),
             dst: "/a/".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/a/b".into(),
             dst: "/a/b".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(covers(&parent, &child));
     }
@@ -512,11 +529,13 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/a/b".into(),
             dst: "/a/b".into(),
             readonly: true,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(covers(&parent, &child));
     }
@@ -526,6 +545,7 @@ mod tests {
             src: src.into(),
             dst: dst.into(),
             readonly: ro,
+            isolation: crate::isolation::MountIsolation::Shared,
         }
     }
 

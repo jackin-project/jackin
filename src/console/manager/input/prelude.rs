@@ -43,6 +43,7 @@ fn prelude_advance_to_workdir_pick(prelude: &mut super::super::state::CreatePrel
             .clone()
             .expect("mount dst must be set before advancing to workdir pick"),
         readonly: prelude.pending_readonly,
+        isolation: crate::isolation::MountIsolation::Shared,
     };
     prelude.modal = Some(Modal::WorkdirPick {
         state: WorkdirPickState::from_mounts(&[mount]),
@@ -467,6 +468,7 @@ mod tests {
                     src: "/home/user/project".into(),
                     dst: "/home/user/project".into(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             ]),
         });

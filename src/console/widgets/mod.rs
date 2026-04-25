@@ -207,6 +207,7 @@ mod consistency_tests {
             src: "/home/user/app".into(),
             dst: "/home/user/app".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         }];
         let state = WorkdirPickState::from_mounts(&mounts);
         let buf = draw(area.width, area.height, |f| render(f, area, &state));

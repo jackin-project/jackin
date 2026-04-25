@@ -491,6 +491,7 @@ fn dispatch_editor_mount_dst_choice(
                     src: src.to_string(),
                     dst: src.to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 });
             }
             editor.modal = None;
@@ -501,6 +502,7 @@ fn dispatch_editor_mount_dst_choice(
                     src: src.to_string(),
                     dst: src.to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 });
                 editor.modal = Some(Modal::TextInput {
                     target: super::super::state::TextInputTarget::MountDst,
@@ -615,6 +617,7 @@ mod tests {
                 src: "/host/a".into(),
                 dst: "/host/a".into(),
                 readonly,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             allowed_agents: vec![],
             default_agent: None,

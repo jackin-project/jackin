@@ -1093,6 +1093,7 @@ mod tests {
                 src: repo_dir.display().to_string(),
                 dst: "/workspace".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
         }
     }
@@ -1321,11 +1322,13 @@ trusted = true
                     src: repo_dir.display().to_string(),
                     dst: "/workspace".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
                 crate::workspace::MountConfig {
                     src: mount_src.display().to_string(),
                     dst: "/test-data".to_string(),
                     readonly: true,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
         };
@@ -1460,6 +1463,7 @@ plugins = []
                 src: workspace_dir.display().to_string(),
                 dst: workspace_dir.display().to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
         };
 
@@ -1528,6 +1532,7 @@ plugins = []
                 src: workspace_dir.display().to_string(),
                 dst: workspace_dir.display().to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
         };
 
