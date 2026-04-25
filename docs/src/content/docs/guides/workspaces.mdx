@@ -101,6 +101,59 @@ jackin workspace create monorepo \
 
 Here, `--no-workdir-mount` disables the automatic workdir mount, and you provide all mounts explicitly.
 
+## Per-mount isolation
+
+By default, every workspace mount is `shared` — the host directory is bind-mounted as-is, and any agent that loads the workspace edits the same files you do on the host. That is the right default for most workflows, but it stops working as soon as you want two agents to work on the same project at the same time without stepping on each other.
+
+Setting `isolation = "worktree"` on a source mount tells jackin' to materialize a per-container `git worktree add` of the host repo and bind-mount that worktree into the container instead of the original `src`. Each container gets its own checkout, its own scratch branch (`jackin/scratch/<branch-instance>`), and its own working tree — so concurrent agents no longer share a `.git` directory.
+
+### Modes
+
+| Mode | Status | Behavior |
+|---|---|---|
+| `shared` | Default | Host path bind-mounted as-is. Today's behavior. |
+| `worktree` | V1 | Materialize a `git worktree` per container; bind-mount the worktree path. Branch defaults to `jackin/scratch/<selector>`, base is host `HEAD`. |
+| `clone` | Reserved | Recognized in the enum vocabulary but rejected with a "planned but not implemented yet" error. |
+
+### Validation
+
+`worktree` mounts have a few preconditions enforced before materialization:
+
+- `src` must be a git repository **root** (not a subdirectory).
+- The host repo must not be mid-rebase, mid-merge, or mid-cherry-pick.
+- `readonly` is not allowed — a forked working copy must be writable.
+- Sensitive mount paths (`~/.ssh`, `~/.aws`, etc.) are rejected.
+- Two isolated mounts whose `dst` paths nest (one inside the other) are rejected — the inner worktree's `.git` would land inside the outer worktree's tree, which is unsafe regardless of mode.
+
+<Aside type="caution">
+The worktree branches from your host repo's current `HEAD`. If your host tree has uncommitted changes, those edits stay on the host — they do not travel into the agent's worktree. Pass `jackin load --force` (non-interactive) or confirm in the TUI to acknowledge that WIP stays behind.
+</Aside>
+
+### Isolated source with a shared cache
+
+The recommended pattern for expensive build artifacts: keep source isolated and mount cache directories back in as explicit `shared` children.
+
+```toml
+[workspaces.jackin]
+workdir = "/workspace/jackin"
+
+[[workspaces.jackin.mounts]]
+src = "~/projects/jackin"
+dst = "/workspace/jackin"
+isolation = "worktree"
+
+[[workspaces.jackin.mounts]]
+src = "~/.cache/jackin/target"
+dst = "/workspace/jackin/target"
+isolation = "shared"
+```
+
+The agent sees an isolated checkout at `/workspace/jackin` while `target/` is backed by a shared host cache. jackin' emits parent mounts before children so the cache mount overlays the corresponding path inside the isolated worktree.
+
+### Setting isolation from the CLI
+
+You don't need to hand-edit TOML to opt in. The `--mount-isolation <dst>=<type>` flag (repeatable) on `jackin workspace create` and `jackin workspace edit` sets isolation per mount destination — see the [`workspace`](../commands/workspace.mdx) command reference. To inspect what's been materialized for a container, use [`jackin cd <container> [dst]`](../commands/cd.mdx) to open a child shell in the worktree path.
+
 ## Managing workspaces
 
 ### List all workspaces
