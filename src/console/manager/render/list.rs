@@ -208,16 +208,15 @@ pub(super) fn render_mount_lines(
 fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, config: &AppConfig) {
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
-    let env_keys: Vec<&String> =
-        ws_config.map_or_else(Vec::new, |w| w.env.keys().collect::<Vec<_>>());
+    let agent_count = agents_block_agent_count(ws_config, config);
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // General: workdir + 2 borders (Last used moved to Agents)
             Constraint::Length(mount_block_height(mounts)), // Mounts: header + N rows + 2 borders
-            Constraint::Length(env_block_height(env_keys.len())), // Environments
-            Constraint::Min(5),    // Agents: last_used + blank + per-agent rows + 2 borders
+            Constraint::Length(env_block_height(ws_config)), // Environments
+            Constraint::Length(agents_block_height(agent_count)), // Agents: default + blank + names + 2 borders
         ])
         .split(area);
 
@@ -240,13 +239,81 @@ fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
     (data_rows + 2 + 1).min(12) as u16 // +1 header, +2 borders
 }
 
-/// Exact row count the Environments sub-panel needs. Layout: 2 borders +
-/// N data rows (minimum 1 for the "(no environment variables)"
-/// placeholder when the workspace env map is empty). Clamped so a
-/// workspace with many env vars can't crowd out the Agents block below.
-fn env_block_height(env_count: usize) -> u16 {
-    let data_rows = if env_count == 0 { 1 } else { env_count };
-    (data_rows + 2).min(10) as u16 // +2 borders
+/// Exact row count the Environments sub-panel needs given the workspace
+/// config. Layout: 2 borders + workspace section (sub-header + N keys) +
+/// per-agent sections (blank spacer + sub-header + M keys per agent
+/// with overrides). When the workspace and all agent overrides are
+/// empty, falls back to a single "(no environment variables)"
+/// placeholder row. Clamped to a reasonable maximum so a workspace with
+/// many env vars and override sections can't eat the full right pane.
+fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u16 {
+    let Some(ws) = ws_config else {
+        // No workspace config — placeholder branch (used by the cwd pane).
+        return 3; // 1 placeholder + 2 borders
+    };
+
+    let workspace_keys = ws.env.len();
+    let agents_with_overrides: Vec<usize> = ws
+        .agents
+        .values()
+        .filter_map(|o| {
+            if o.env.is_empty() {
+                None
+            } else {
+                Some(o.env.len())
+            }
+        })
+        .collect();
+
+    if workspace_keys == 0 && agents_with_overrides.is_empty() {
+        // Nothing to show — single placeholder line.
+        return 3; // 1 placeholder + 2 borders
+    }
+
+    // 1 row for the `All agents:` sub-header + N workspace keys.
+    let mut rows: usize = if workspace_keys == 0 {
+        // Workspace has no env keys but at least one agent has overrides;
+        // skip the `All agents:` section entirely and start with the
+        // per-agent sections.
+        0
+    } else {
+        1 + workspace_keys
+    };
+    // Each per-agent override section: blank spacer + sub-header + N keys.
+    // The first agent section needs no leading blank if the workspace
+    // section was skipped.
+    for (i, n) in agents_with_overrides.iter().enumerate() {
+        let leading_blank = usize::from(!(i == 0 && workspace_keys == 0));
+        rows += leading_blank + 1 + n;
+    }
+
+    (rows + 2).min(20) as u16 // +2 borders, clamped
+}
+
+/// Number of agent rows the Agents block will render. Mirrors the
+/// agent-listing rule in `render_agents_subpanel` so the block height
+/// can be sized exactly.
+fn agents_block_agent_count(
+    ws_config: Option<&crate::workspace::WorkspaceConfig>,
+    config: &AppConfig,
+) -> usize {
+    let all_allowed = ws_config.is_none_or(super::super::agent_allow::allows_all_agents);
+    if all_allowed {
+        config.agents.len()
+    } else {
+        ws_config.map_or(0, |w| w.allowed_agents.len())
+    }
+}
+
+/// Exact row count the Agents sub-panel needs: 2 borders + 1 default
+/// row + 1 blank spacer + N agent rows. Clamped to a reasonable max so
+/// a globally-allowed workspace with many agents doesn't push the
+/// Environments block off-screen.
+fn agents_block_height(agent_count: usize) -> u16 {
+    // Always reserve at least one row for the agent list area, even
+    // when there are no agents — the block reads as broken otherwise.
+    let agent_rows = agent_count.max(1);
+    (2 + 1 + 1 + agent_rows).min(14) as u16
 }
 
 /// Right-pane details shown when the cursor is on the synthetic "Current
@@ -275,8 +342,11 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
         .constraints([
             Constraint::Length(3),                           // General: workdir + 2 borders
             Constraint::Length(mount_block_height(&mounts)), // Mounts: header + N rows + 2 borders
-            Constraint::Length(env_block_height(0)),         // Environments: empty placeholder
-            Constraint::Min(5), // Agents: last_used + blank + per-agent rows + 2 borders
+            Constraint::Length(env_block_height(None)),      // Environments: empty placeholder
+            Constraint::Length(agents_block_height(agents_block_agent_count(
+                None,
+                &AppConfig::default(),
+            ))), // Agents: default + blank + per-agent name rows + 2 borders
         ])
         .split(area);
 
@@ -490,10 +560,29 @@ fn env_key_lines(
         .collect()
 }
 
-/// Right-pane Environments block — read-only preview of the workspace's
-/// env-variable keys. Only key names are shown; values (plain or op://)
-/// never render. Op:// values get a leading `[op]` marker matching the
-/// editor's Environments tab convention.
+/// Right-pane Environments block — single block holding all env-related
+/// content for the workspace. Layout:
+///
+/// ```text
+///   All agents:
+///     KEY_A
+///     KEY_B
+///     [op] KEY_C
+///
+///   <agent>:
+///     KEY_D
+///     [op] KEY_E
+/// ```
+///
+/// Workspace-level keys (`WorkspaceConfig.env`) appear under the
+/// `All agents:` sub-header. Each agent with non-empty overrides
+/// (`WorkspaceAgentOverride.env`) gets its own sub-section, separated
+/// from neighbours by a blank spacer line. Agents without overrides
+/// are omitted entirely — their absence is the signal. When both the
+/// workspace env map AND every agent override map are empty, the
+/// block falls back to a single `(no environment variables)`
+/// placeholder. Op:// values render with a leading `[op] ` marker.
+/// Values themselves never appear — only key names.
 fn render_environments_subpanel(
     frame: &mut Frame,
     area: Rect,
@@ -507,16 +596,61 @@ fn render_environments_subpanel(
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
 
-    let env = ws_config.map(|w| &w.env);
-    let lines: Vec<Line> = match env {
-        Some(map) if !map.is_empty() => env_key_lines(map, 0),
-        _ => vec![Line::from(Span::styled(
+    let mut lines: Vec<Line> = Vec::new();
+
+    let workspace_env = ws_config.map(|w| &w.env);
+    // Collect (agent_name, env_map) pairs for agents with overrides,
+    // skipping empty ones. BTreeMap iteration is alphabetical.
+    let agent_sections: Vec<(&str, &std::collections::BTreeMap<String, String>)> = ws_config
+        .map(|w| {
+            w.agents
+                .iter()
+                .filter(|(_, o)| !o.env.is_empty())
+                .map(|(name, o)| (name.as_str(), &o.env))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let workspace_has_keys = workspace_env.is_some_and(|m| !m.is_empty());
+    let any_content = workspace_has_keys || !agent_sections.is_empty();
+
+    if any_content {
+        if workspace_has_keys {
+            // `All agents:` sub-header + workspace key list.
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    "All agents:",
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+            if let Some(map) = workspace_env {
+                lines.extend(env_key_lines(map, 2));
+            }
+        }
+        // Per-agent override sub-sections.
+        for (i, (agent, env)) in agent_sections.iter().enumerate() {
+            let leading_blank = workspace_has_keys || i > 0;
+            if leading_blank {
+                lines.push(Line::from(""));
+            }
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("{agent}:"),
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+            lines.extend(env_key_lines(env, 2));
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
             "  (no environment variables)",
             Style::default()
                 .fg(PHOSPHOR_DIM)
                 .add_modifier(Modifier::ITALIC),
-        ))],
-    };
+        )));
+    }
 
     let p = Paragraph::new(lines)
         .block(block)
@@ -547,10 +681,14 @@ fn render_agents_subpanel(
     let mut lines: Vec<Line> = Vec::new();
 
     // `Default: <agent>` — kept at the top of the Agents block so the
-    // operator sees the workspace-default before scanning the per-agent
-    // override list. `Last used` was removed from this preview to keep
-    // it config-shaped (matching the editor's General tab cleanup);
-    // launch-time history isn't part of the workspace's saved shape.
+    // operator sees the workspace-default before scanning the agent
+    // list. `Last used` is intentionally absent — that's launch-time
+    // history, not part of the workspace's saved shape, and the
+    // editor's General tab cleanup demoted it accordingly.
+    //
+    // Per-agent env detail moved to the consolidated Environments
+    // block above, so this list is just names — one per line, with a
+    // trailing star on the default-agent row.
     let default = ws_config.and_then(|w| w.default_agent.as_deref());
     let (value_text, value_style): (String, Style) = default.map_or_else(
         || ("(none)".to_string(), Style::default().fg(PHOSPHOR_DIM)),
@@ -566,12 +704,7 @@ fn render_agents_subpanel(
     // Agent listing. When `allowed_agents` is non-empty, that's the
     // operator's curated subset; when empty (the "all agents allowed"
     // shorthand) we list every globally-configured agent — same source
-    // the editor's Agents tab iterates over. Each agent name is
-    // followed by its workspace-scoped env overrides (key names only,
-    // alphabetical, with `[op]` markers for op:// values), or the
-    // `(no overrides)` placeholder when the agent has none. A blank
-    // spacer between agents keeps the per-agent groupings visually
-    // distinct.
+    // the editor's Agents tab iterates over.
     let agent_names: Vec<&str> = if all_allowed {
         config.agents.keys().map(String::as_str).collect()
     } else {
@@ -587,31 +720,13 @@ fn render_agents_subpanel(
     };
     let star_style = Style::default().fg(PHOSPHOR_DIM);
 
-    for (i, agent) in agent_names.iter().enumerate() {
-        if i > 0 {
-            lines.push(Line::from(""));
-        }
+    for agent in &agent_names {
         let is_default = Some(*agent) == default;
         let mut spans = vec![Span::styled(format!("  {agent}"), name_style(agent))];
         if is_default {
             spans.push(Span::styled(" \u{2605}", star_style));
         }
         lines.push(Line::from(spans));
-
-        let overrides = ws_config.and_then(|w| w.agents.get(*agent)).map(|o| &o.env);
-        match overrides {
-            Some(env) if !env.is_empty() => {
-                lines.extend(env_key_lines(env, 2));
-            }
-            _ => {
-                lines.push(Line::from(Span::styled(
-                    "    (no overrides)",
-                    Style::default()
-                        .fg(PHOSPHOR_DIM)
-                        .add_modifier(Modifier::ITALIC),
-                )));
-            }
-        }
     }
 
     let p = Paragraph::new(lines)
@@ -970,15 +1085,14 @@ mod subpanel_padding_tests {
     /// `SUBPANEL_CONTENT_INDENT` (col 2 from the border). With the
     /// trailing-star convention no glyph precedes the name.
     ///
-    /// After the per-agent override nesting, the Agents sub-panel lays
-    /// out for two allowed agents (alpha default, beta non-default):
+    /// With the lean Agents block (env detail moved to the
+    /// Environments block), the sub-panel lays out for two allowed
+    /// agents (alpha default, beta non-default):
     ///   y=0 top border
     ///   y=1 `  Default <name>`
     ///   y=2 blank spacer
     ///   y=3 alpha row (default)
-    ///   y=4 alpha (no overrides) placeholder
-    ///   y=5 blank spacer between agents
-    ///   y=6 beta row (non-default)
+    ///   y=4 beta row (non-default)
     #[test]
     fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
         let ws = ws_config_with_allowed(&["alpha", "beta"], Some("alpha"));
@@ -988,25 +1102,25 @@ mod subpanel_padding_tests {
         cfg.agents
             .insert("beta".into(), crate::config::AgentSource::default());
 
-        let backend = TestBackend::new(40, 9);
+        let backend = TestBackend::new(40, 7);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_agents_subpanel(f, Rect::new(0, 0, 40, 9), Some(&ws), &cfg);
+            render_agents_subpanel(f, Rect::new(0, 0, 40, 7), Some(&ws), &cfg);
         })
         .unwrap();
 
-        // Locate the first printable char on the beta row (y=6).
+        // Locate the first printable char on the beta row (y=4).
         let buf = term.backend().buffer();
         let area = buf.area;
         let border_x = (0..area.width)
             .find(|x| {
-                let sym = buf[(*x, 6)].symbol();
+                let sym = buf[(*x, 4)].symbol();
                 sym == "│" || sym == "║"
             })
             .expect("left border on beta row");
         let name_col = ((border_x + 1)..area.width)
             .find(|x| {
-                let sym = buf[(*x, 6)].symbol();
+                let sym = buf[(*x, 4)].symbol();
                 !sym.is_empty() && sym != " "
             })
             .map(|x| (x - border_x - 1) as usize)
@@ -1017,7 +1131,7 @@ mod subpanel_padding_tests {
         );
 
         // And there must be no trailing star on the non-default row.
-        let last_col = last_printable_indent(&term, 6).expect("beta row has content");
+        let last_col = last_printable_indent(&term, 4).expect("beta row has content");
         // `beta` is 4 chars starting at col 2 ⇒ last printable at col 5.
         // A trailing star would push last_col to col 7 (space + star).
         assert_eq!(
@@ -1225,12 +1339,13 @@ mod subpanel_padding_tests {
         }
     }
 
-    /// Each agent's env overrides are listed nested under the agent name
-    /// with the four-space `SUBPANEL_CONTENT_INDENT + 2` indent. Op://
-    /// values render with a leading `[op]` marker; plain values render
-    /// the key with no marker. Values themselves never appear.
+    /// The Agents block is now a lean default + name list; per-agent
+    /// env overrides moved to the consolidated Environments block.
+    /// This test pins that the Agents sub-panel does NOT mention any
+    /// override key names — the keys belong only in the Environments
+    /// block now.
     #[test]
-    fn preview_agents_block_lists_per_agent_overrides() {
+    fn preview_agents_block_no_longer_lists_overrides() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         let mut overrides = crate::workspace::WorkspaceAgentOverride::default();
         overrides.env.insert("API_KEY".into(), "literal".into());
@@ -1259,57 +1374,28 @@ mod subpanel_padding_tests {
             }
             joined.push('\n');
         }
+        // Per-agent override keys must NOT appear in the Agents block —
+        // they live in the Environments block now.
         assert!(
-            joined.contains("API_KEY"),
-            "override key API_KEY should render under alpha; got {joined}"
+            !joined.contains("API_KEY"),
+            "override key API_KEY must NOT appear in the Agents block; got {joined}"
         );
         assert!(
-            joined.contains("LOG_LEVEL"),
-            "override key LOG_LEVEL should render under alpha; got {joined}"
+            !joined.contains("LOG_LEVEL"),
+            "override key LOG_LEVEL must NOT appear in the Agents block; got {joined}"
         );
         assert!(
-            joined.contains("[op]"),
-            "op:// override should be tagged with `[op]` marker; got {joined}"
-        );
-        // Values must never appear in the preview — only key names.
-        assert!(
-            !joined.contains("literal"),
-            "override values must not be shown in the preview; got {joined}"
+            !joined.contains("[op]"),
+            "`[op]` marker must NOT appear in the Agents block; got {joined}"
         );
         assert!(
-            !joined.contains("op://"),
-            "raw op:// references must not be shown — only the `[op]` tag; got {joined}"
+            !joined.contains("(no overrides)"),
+            "`(no overrides)` placeholder must NOT appear in the Agents block; got {joined}"
         );
-    }
-
-    /// An agent without env overrides renders `(no overrides)` indented
-    /// under the agent name.
-    #[test]
-    fn preview_agents_block_marks_no_overrides_for_empty_agent() {
-        let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
-        let mut cfg = AppConfig::default();
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
-
-        let backend = TestBackend::new(60, 8);
-        let mut term = Terminal::new(backend).unwrap();
-        term.draw(|f| {
-            render_agents_subpanel(f, Rect::new(0, 0, 60, 8), Some(&ws), &cfg);
-        })
-        .unwrap();
-
-        let buf = term.backend().buffer();
-        let area = buf.area;
-        let mut joined = String::new();
-        for y in 0..area.height {
-            for x in 0..area.width {
-                joined.push_str(buf[(x, y)].symbol());
-            }
-            joined.push('\n');
-        }
+        // Default + agent name still render.
         assert!(
-            joined.contains("(no overrides)"),
-            "agent without env overrides should show `(no overrides)`; got {joined}"
+            joined.contains("Default") && joined.contains("alpha"),
+            "Agents block must still show default + agent name; got {joined}"
         );
     }
 
@@ -1359,19 +1445,20 @@ mod subpanel_padding_tests {
     // ── Environments sub-panel ─────────────────────────────────────────
 
     /// The Environments preview block lists workspace-level env keys in
-    /// alphabetical order (BTreeMap iteration order). Key names only —
-    /// plain or op:// values never render. Op:// values get a `[op]`
-    /// marker matching the editor convention.
+    /// alphabetical order (BTreeMap iteration order) under the
+    /// `All agents:` sub-header. Key names only — plain or op:// values
+    /// never render. Op:// values get a `[op]` marker matching the
+    /// editor convention.
     #[test]
     fn preview_includes_environments_block_with_workspace_env_keys() {
         let mut ws = ws_config_with_allowed(&[], None);
         ws.env.insert("DB_URL".into(), "postgres://...".into());
         ws.env.insert("API_KEY".into(), "literal-secret".into());
 
-        let backend = TestBackend::new(60, 5);
+        let backend = TestBackend::new(60, 6);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_environments_subpanel(f, Rect::new(0, 0, 60, 5), Some(&ws));
+            render_environments_subpanel(f, Rect::new(0, 0, 60, 6), Some(&ws));
         })
         .unwrap();
 
@@ -1389,6 +1476,10 @@ mod subpanel_padding_tests {
             "block title `Environments` must appear; got {joined}"
         );
         assert!(
+            joined.contains("All agents:"),
+            "`All agents:` sub-header must appear above the workspace keys; got {joined}"
+        );
+        assert!(
             joined.contains("API_KEY"),
             "API_KEY env key must appear; got {joined}"
         );
@@ -1404,6 +1495,105 @@ mod subpanel_padding_tests {
         assert!(
             !joined.contains("literal-secret"),
             "plain env values must not render; got {joined}"
+        );
+    }
+
+    /// The Environments preview lays out workspace env keys under
+    /// `All agents:` first, then per-agent override sub-sections in
+    /// alphabetical order. Each agent sub-section is headed by
+    /// `<agent>:` and contains the override keys nested under it.
+    #[test]
+    fn preview_environments_block_lists_all_agents_then_per_agent_subsections() {
+        let mut ws = ws_config_with_allowed(&["beta", "alpha"], Some("alpha"));
+        ws.env.insert("API_KEY".into(), "literal".into());
+        ws.env.insert("DB_URL".into(), "postgres://...".into());
+
+        let mut alpha_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        alpha_overrides
+            .env
+            .insert("LOG_LEVEL".into(), "debug".into());
+        ws.agents.insert("alpha".into(), alpha_overrides);
+
+        let mut beta_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        beta_overrides.env.insert("DEBUG".into(), "1".into());
+        ws.agents.insert("beta".into(), beta_overrides);
+
+        let backend = TestBackend::new(60, 14);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_environments_subpanel(f, Rect::new(0, 0, 60, 14), Some(&ws));
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        // Find the y-row of each sub-header so we can pin their order.
+        let mut all_y: Option<u16> = None;
+        let mut alpha_y: Option<u16> = None;
+        let mut beta_y: Option<u16> = None;
+        for y in 0..area.height {
+            let mut row = String::new();
+            for x in 0..area.width {
+                row.push_str(buf[(x, y)].symbol());
+            }
+            if all_y.is_none() && row.contains("All agents:") {
+                all_y = Some(y);
+            }
+            if alpha_y.is_none() && row.contains("alpha:") {
+                alpha_y = Some(y);
+            }
+            if beta_y.is_none() && row.contains("beta:") {
+                beta_y = Some(y);
+            }
+        }
+        let a = all_y.expect("`All agents:` sub-header must appear");
+        let al = alpha_y.expect("`alpha:` sub-header must appear");
+        let bt = beta_y.expect("`beta:` sub-header must appear");
+        assert!(
+            a < al && al < bt,
+            "Sub-section order must be All agents < alpha < beta; got y=({a},{al},{bt})"
+        );
+    }
+
+    /// Agents listed in `allowed_agents` but with no env overrides do
+    /// NOT appear in the Environments block — their absence is the
+    /// signal that they have no overrides. The Agents block still
+    /// lists them.
+    #[test]
+    fn preview_environments_block_omits_agents_without_overrides() {
+        let mut ws = ws_config_with_allowed(&["alpha", "beta"], Some("alpha"));
+        ws.env.insert("API_KEY".into(), "literal".into());
+        // Only alpha has overrides; beta is in the allowed list but
+        // has no overrides.
+        let mut alpha_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        alpha_overrides
+            .env
+            .insert("LOG_LEVEL".into(), "debug".into());
+        ws.agents.insert("alpha".into(), alpha_overrides);
+
+        let backend = TestBackend::new(60, 10);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_environments_subpanel(f, Rect::new(0, 0, 60, 10), Some(&ws));
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
+        }
+        assert!(
+            joined.contains("alpha:"),
+            "alpha has overrides — its sub-section must appear; got {joined}"
+        );
+        assert!(
+            !joined.contains("beta:"),
+            "beta has no overrides — its name must NOT appear in the Environments block; got {joined}"
         );
     }
 
