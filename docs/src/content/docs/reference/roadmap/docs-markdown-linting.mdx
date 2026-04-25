@@ -1,0 +1,102 @@
+---
+title: "Docs Markdown Linting (rumdl)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+
+**Status**: Proposed — design captured, no implementation committed
+
+## Problem
+
+The docs site is the operator-facing surface for jackin', and the volume of MDX content under `docs/src/content/docs/` is growing. Today the only automated gates on docs quality are:
+
+- the Astro build (catches structural breakage — missing imports, malformed frontmatter)
+- lychee (catches broken URLs and anchor fragments after build)
+- <RepoFile path="docs/scripts/check-repo-links.ts" /> (catches code-span references to existing repo files)
+
+There is no automated check on **mechanical markdown style**: heading hierarchy, code-fence languages, list-marker consistency, trailing whitespace, line-length policy, emphasis-marker mixing, footnote use, and the dozens of small choices that compound into a hand-rolled feel when each page was touched by a different contributor on a different day.
+
+This is a gap in the existing automation pattern. The Rust core has <RepoFile path="Cargo.toml" />-driven `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo nextest run`. The TypeScript side runs strict-mode type checking. The link layer runs lychee + the custom repo-link linter. The prose layer has nothing.
+
+## Why It Matters
+
+A markdown linter is not exciting. It does not catch deep bugs. It is worth adding for the same reason `cargo clippy` is — not because any one warning matters, but because the cumulative effect is one source of truth for style, deterministically enforced, freeing review attention for substance.
+
+- **Mechanical rendering bugs go unnoticed.** A code fence without a language tag renders without syntax highlighting. A skipped heading level (`##` → `####`) breaks Starlight's right-rail table of contents. A list with mixed `-` and `*` bullets renders, but the underlying file becomes harder to diff cleanly. None of these are blockers individually; together they erode trust in the docs surface.
+- **Style drift is invisible per-PR but loud across the corpus.** Each PR adds a few hundred lines of MDX. Each looks fine in isolation. Six months later the corpus has three list styles, two heading-capitalization conventions, and code blocks that may or may not declare a language. Linters prevent drift before it accumulates, instead of demanding a periodic cleanup pass.
+- **Review attention is the scarcest resource.** Burning cycles on "this list uses 4-space indent, the rest of the file uses 2" steals from substantive review. Mechanical rules belong in CI, not in human attention.
+- **Conventions only enforced by prose erode.** A style guide in <RepoFile path="docs/AGENTS.md" /> is a polite request. A rule in CI is a constraint. The project already learned this lesson with link checking — <RepoFile path="docs/scripts/check-repo-links.ts" /> exists because "use `<RepoFile>`" was a soft policy that contributors and agents inconsistently followed.
+
+## Why This Matters More for AI Agents
+
+The case for mechanical enforcement is sharper in a codebase where most edits are produced by AI agents:
+
+- **Agents have less context than the codebase.** A Claude / Codex / Amp session sees `CLAUDE.md`, `AGENTS.md`, and a handful of nearby files. It cannot internalize every existing style decision in `docs/src/content/docs/`. It samples local context and produces a reasonable extrapolation. Without rules, "reasonable extrapolation" diverges across agents and across sessions of the same agent.
+- **Different vendors optimize differently.** Codex tends toward compact lists; Claude tends toward spacious ones. Amp has its own defaults. Without a rule, output style is a function of which agent happened to be assigned the task. With a rule, all three produce the same MDX.
+- **Agents respond to deterministic feedback better than fuzzy feedback.** "MD040: code fence missing language at line 23" is actionable in one shot. "This looks slightly off compared to the rest of the file" requires the agent to reason about implicit conventions, often badly. Linters convert subjective review feedback into the kind of error message agents can act on without a second prompt.
+- **The cost of adopting a linter is paid once.** The cost of *not* adopting compounds with every doc, every new agent vendor, every new contributor session.
+
+This is the same argument as strict TypeScript on the docs side and `clippy -D warnings` on the Rust side. Adding rumdl extends the pattern to the prose layer.
+
+## Why rumdl
+
+The candidate is [rumdl](https://github.com/rvben/rumdl) — a Rust port of markdownlint with native MDX support and an [official GitHub Action](https://github.com/rvben/rumdl).
+
+Adoption rationale:
+
+- **Coverage.** Implements all 53 `MD001`–`MD059` markdownlint rules plus 18 rumdl-specific rules (relative-link existence, forbidden-term policy, ToC validation, footnote rules). Functionally on par with `markdownlint-cli2`.
+- **Native MDX support.** Treats capitalized JSX tags as components (not malformed HTML), recognizes top-of-file `import` statements, auto-relaxes `MD013` (line length), `MD033` (no inline HTML), and several emphasis-marker rules inside JSX expressions. Most general-purpose markdown linters either reject MDX outright or produce false positives on the self-closing component tags this codebase relies on.
+- **Single static Rust binary.** Aligns with the project's Rust core. CI does not need a Node runtime to run the lint step (in contrast to `markdownlint-cli2`, which requires Node + `npm`/`bun` even when only the lint binary is wanted).
+- **Pre-built GitHub Action.** `rvben/rumdl@v0` exposes `version`, `path`, `config`, and `report-type` (`logs` / `annotations`) inputs. Annotations integrate directly into the PR "Files changed" tab.
+- **Configuration is small.** A single `.rumdl.toml` covers rule enable/disable, per-file-ignores via globs, inline `<!-- rumdl-disable -->` directives, and `extends` for inheritance.
+
+Alternatives considered and rejected:
+
+- **`markdownlint-cli2` (Node).** Mature and well-known, but adds a Node dependency for the lint step, has weaker MDX support out of the box, and runs slower. No functional advantage at our scale.
+- **`remark-lint`.** AST-based and elegant but pulls in `unified` + `remark-parse` + `remark-mdx` + each rule plugin separately. More dependencies, similar LOC for the same coverage.
+- **`mado`.** Earlier-stage Rust port. Smaller rule set than rumdl, less active. Reassess in 6–12 months.
+- **No linter, rely on review.** The default today; the cost of doing nothing is described above.
+
+## Proposed Implementation
+
+A single follow-up PR introducing the linter, the config, the CI step, and the cleanup pass for existing files. Splitting these creates a half-adopted state where the linter exists but does not block anything.
+
+1. **Pin the binary.** Add a SHA-pinned `rvben/rumdl@<sha>` step to <RepoFile path=".github/workflows/docs.yml" />, scheduled between `Checkout repository` and `Check source repository links`. The local pre-commit equivalent is `bun run check:md` calling the same binary via `mise`.
+2. **Author a new `docs/.rumdl.toml`.** Start from the default rule set, then disable rules that conflict with Starlight conventions:
+   - `MD057` (relative-link existence) — fires on Starlight's site-absolute routes (`/guides/mounts/`) which are rendered URLs, not filesystem paths. lychee already covers this.
+   - `MD041` (first-line H1) — Starlight injects titles from frontmatter; the first heading in MDX is `##`.
+   - `MD013` (line length) — relax to 120 with `code-blocks = false` and `tables = false`, since prose wraps unhelpfully at narrower widths.
+   - Audit `MD033` (no inline HTML), `MD025` (single H1), and `MD026` (trailing punctuation in headings) once a dry run produces a real violation list.
+3. **Cleanup pass.** Run `rumdl check --fix` against `docs/src/content/docs/`. Audit the diff. Hand-fix anything `--fix` cannot resolve. Land the cleanup, the config, and the CI step in the same PR.
+4. **Branch protection.** Add `Docs / build` (which now includes the rumdl step) to the required checks list on `main`. Without this, the gate is advisory.
+5. **Renovate.** Confirm the workflow's Renovate rules cover the new `rvben/rumdl@<sha>` pin so version bumps land as PRs rather than stale.
+
+The cleanup pass is the only step with non-trivial diff size. After landing, ongoing cost is whatever rumdl flags on new MDX — typically zero, since contributors fix violations locally before pushing.
+
+## Trade-offs and Costs
+
+This is not free. Honest accounting:
+
+- **One-time cleanup tax.** ~45 existing MDX files. A dry run will surface dozens to hundreds of violations (some auto-fixable, some not). The adoption PR is a larger-than-usual diff.
+- **Rule churn.** rumdl ships frequent releases. Pin to a SHA, treat upgrades as routine Renovate PRs, expect occasional rule-tightening that requires a small followup. This is the same trade-off as pinning `clippy` to a Rust toolchain version.
+- **No custom-rule API.** rumdl has no plugin / Lua / wasm hook system. Project-specific rules — like the existing "code spans referencing real repo files must be `<RepoFile>` links" rule — still need bespoke tools. rumdl complements <RepoFile path="docs/scripts/check-repo-links.ts" />; it does not replace it.
+- **Disabled-rule creep.** Each disabled rule is a hole in the lint surface. The list must be small, justified inline in the config, and audited periodically. "Death of a thousand exceptions" is the failure mode.
+- **MDX parser limits.** rumdl's MDX support is good but not perfect — deeply nested JSX expressions can confuse it. Most cases that hit this should arguably be in `.astro` components, not inline in MDX.
+
+The trade-offs do not change the recommendation. They are real, manageable, and small relative to the cost of style drift across an indefinitely-growing docs corpus.
+
+## Open Questions
+
+1. **Initial strictness.** Start with default rule set (strict, then disable as needed) or minimal set (loose, then add rules as drift surfaces)? Default-strict is more honest about what mechanical rules buy you; minimal-then-grow is less work upfront but tends to stay minimal.
+2. **Auto-fix in CI.** Should CI ever run `rumdl check --fix` and commit back, or should `--fix` be local-only with CI strictly verifying? Local-only is the safer default; auto-fix in CI risks committing unreviewed changes from agents.
+3. **Scope.** Lint only `docs/src/content/docs/`, or also repo-root markdown (`README.md`, `CHANGELOG.md`, `AGENTS.md`, `RULES.md`, `BRANCHING.md`, `COMMITS.md`, `TESTING.md`, `PROJECT_STRUCTURE.md`, `DEPRECATED.md`, `CONTRIBUTING.md`)? The repo-root files are read by humans and agents from session start; their style consistency arguably matters more than the docs site.
+4. **Failure mode.** rumdl as a hard merge gate (required check) or as PR annotations only? Hard gate is consistent with `cargo fmt --check` and lychee. Annotations-only weakens the policy to the point where it adds noise without enforcement.
+
+## Related Files
+
+- <RepoFile path=".github/workflows/docs.yml" /> — CI integration point for the rumdl step
+- <RepoFile path="docs/scripts/check-repo-links.ts" /> — existing custom-rule precedent that rumdl complements
+- <RepoFile path="docs/lychee.toml" /> — companion gate; relationship documented above
+- <RepoFile path="docs/AGENTS.md" /> — would gain a "run `bun run check:md` locally" entry alongside the existing lychee guidance
+- <RepoFile path="docs/package.json" /> — new `check:md` script wired into `check:links:fresh`
+- New `docs/.rumdl.toml` — config introduced by the adoption PR
