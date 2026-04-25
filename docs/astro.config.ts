@@ -63,6 +63,7 @@ export default defineConfig({
           items: [
             { label: 'load', slug: 'commands/load' },
             { label: 'console', slug: 'commands/console' },
+            { label: 'cd', slug: 'commands/cd' },
             { label: 'launch (deprecated)', slug: 'commands/launch' },
             { label: 'hardline', slug: 'commands/hardline' },
             { label: 'eject', slug: 'commands/eject' },
