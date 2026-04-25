@@ -392,6 +392,15 @@ fn materialize_one(
     })
 }
 
+/// Order mounts so parents appear before children. Docker overlays later
+/// mounts on earlier ones, so this lets a shared cache child mount land
+/// inside an isolated worktree parent.
+pub fn mount_order_for_docker(mat: &MaterializedWorkspace) -> Vec<&MaterializedMount> {
+    let mut ordered: Vec<&MaterializedMount> = mat.mounts.iter().collect();
+    ordered.sort_by_key(|m| m.dst.trim_end_matches('/').len());
+    ordered
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -900,5 +909,53 @@ mod tests {
         );
 
         let _ = mat;
+    }
+
+    #[test]
+    fn docker_mount_order_is_length_ascending() {
+        let mat = MaterializedWorkspace {
+            workdir: "/workspace".into(),
+            mounts: vec![
+                MaterializedMount {
+                    bind_src: "/cache".into(),
+                    dst: "/workspace/proj/target".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Shared,
+                },
+                MaterializedMount {
+                    bind_src: "/wt".into(),
+                    dst: "/workspace/proj".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Worktree,
+                },
+            ],
+        };
+        let ordered = mount_order_for_docker(&mat);
+        assert_eq!(ordered[0].dst, "/workspace/proj");
+        assert_eq!(ordered[1].dst, "/workspace/proj/target");
+    }
+
+    #[test]
+    fn docker_mount_order_is_stable_for_same_length() {
+        let mat = MaterializedWorkspace {
+            workdir: "/workspace".into(),
+            mounts: vec![
+                MaterializedMount {
+                    bind_src: "/a".into(),
+                    dst: "/workspace/aa".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Shared,
+                },
+                MaterializedMount {
+                    bind_src: "/b".into(),
+                    dst: "/workspace/bb".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Shared,
+                },
+            ],
+        };
+        let ordered = mount_order_for_docker(&mat);
+        assert_eq!(ordered[0].dst, "/workspace/aa");
+        assert_eq!(ordered[1].dst, "/workspace/bb");
     }
 }
