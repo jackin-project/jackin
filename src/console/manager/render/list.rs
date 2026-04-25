@@ -208,19 +208,23 @@ pub(super) fn render_mount_lines(
 fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, config: &AppConfig) {
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
+    let env_keys: Vec<&String> =
+        ws_config.map_or_else(Vec::new, |w| w.env.keys().collect::<Vec<_>>());
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // General: workdir + 2 borders (Last used moved to Agents)
             Constraint::Length(mount_block_height(mounts)), // Mounts: header + N rows + 2 borders
-            Constraint::Min(5),    // Agents: last_used + blank + "any agent"/list + 2 borders
+            Constraint::Length(env_block_height(env_keys.len())), // Environments
+            Constraint::Min(5),    // Agents: last_used + blank + per-agent rows + 2 borders
         ])
         .split(area);
 
     render_general_subpanel(frame, rows[0], ws);
     render_mounts_subpanel(frame, rows[1], mounts);
-    render_agents_subpanel(frame, rows[2], ws_config, config);
+    render_environments_subpanel(frame, rows[2], ws_config);
+    render_agents_subpanel(frame, rows[3], ws_config, config);
 }
 
 /// Exact row count a Mounts sub-panel needs to render `mounts` without
@@ -234,6 +238,15 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
 fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
     let data_rows = if mounts.is_empty() { 1 } else { mounts.len() };
     (data_rows + 2 + 1).min(12) as u16 // +1 header, +2 borders
+}
+
+/// Exact row count the Environments sub-panel needs. Layout: 2 borders +
+/// N data rows (minimum 1 for the "(no environment variables)"
+/// placeholder when the workspace env map is empty). Clamped so a
+/// workspace with many env vars can't crowd out the Agents block below.
+fn env_block_height(env_count: usize) -> u16 {
+    let data_rows = if env_count == 0 { 1 } else { env_count };
+    (data_rows + 2).min(10) as u16 // +2 borders
 }
 
 /// Right-pane details shown when the cursor is on the synthetic "Current
@@ -262,14 +275,16 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
         .constraints([
             Constraint::Length(3),                           // General: workdir + 2 borders
             Constraint::Length(mount_block_height(&mounts)), // Mounts: header + N rows + 2 borders
-            Constraint::Min(5), // Agents: last_used + blank + "any agent" + 2 borders
+            Constraint::Length(env_block_height(0)),         // Environments: empty placeholder
+            Constraint::Min(5), // Agents: last_used + blank + per-agent rows + 2 borders
         ])
         .split(area);
 
-    // General — titled the same as the saved-workspace pane so the three
-    // sub-panel titles (General / Mounts / Agents) match across both panes.
-    // The "Current directory" signpost is already visible as the left-list
-    // row label, so repeating it here was redundant.
+    // General — titled the same as the saved-workspace pane so the four
+    // sub-panel titles (General / Mounts / Environments / Agents) match
+    // across both panes. The "Current directory" signpost is already
+    // visible as the left-list row label, so repeating it here was
+    // redundant.
     let general_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
@@ -292,11 +307,15 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
     );
 
     render_mounts_subpanel(frame, rows[1], &mounts);
+    // Environments block — synthetic cwd workspace has no env vars,
+    // so this always renders the empty-state placeholder. Kept for
+    // structural parity with the saved-workspace pane.
+    render_environments_subpanel(frame, rows[2], None);
 
-    // Agents block — reuse the empty-allowed-list branch of the shared
-    // renderer by passing `ws_config = None`, which falls through to the
-    // "any agent" italic-light-green path.
-    render_agents_subpanel(frame, rows[2], None, &AppConfig::default());
+    // Agents block — reuse the no-`ws_config` branch of the shared renderer,
+    // which lists every globally-configured agent (without per-agent
+    // overrides since the cwd workspace has none).
+    render_agents_subpanel(frame, rows[3], None, &AppConfig::default());
 }
 
 /// Right-pane description shown when the cursor is on the "+ New workspace"
@@ -439,6 +458,72 @@ fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::worksp
     frame.render_widget(p, area);
 }
 
+/// Render an env-key list inside an existing block. Each key gets a
+/// two-space indent (matching `SUBPANEL_CONTENT_INDENT`); op:// values
+/// are tagged with a leading `[op] ` marker — never values, plain or
+/// op://. Keys are taken in BTreeMap-iteration order (alphabetical).
+fn env_key_lines(
+    env: &std::collections::BTreeMap<String, String>,
+    extra_indent: usize,
+) -> Vec<Line<'static>> {
+    let pad = " ".repeat(2 + extra_indent);
+    env.iter()
+        .map(|(key, value)| {
+            if crate::operator_env::is_op_reference(value) {
+                Line::from(vec![
+                    Span::raw(pad.clone()),
+                    Span::styled(
+                        "[op] ",
+                        Style::default()
+                            .fg(PHOSPHOR_DIM)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                    Span::styled(key.clone(), Style::default().fg(PHOSPHOR_GREEN)),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::raw(pad.clone()),
+                    Span::styled(key.clone(), Style::default().fg(PHOSPHOR_GREEN)),
+                ])
+            }
+        })
+        .collect()
+}
+
+/// Right-pane Environments block — read-only preview of the workspace's
+/// env-variable keys. Only key names are shown; values (plain or op://)
+/// never render. Op:// values get a leading `[op]` marker matching the
+/// editor's Environments tab convention.
+fn render_environments_subpanel(
+    frame: &mut Frame,
+    area: Rect,
+    ws_config: Option<&crate::workspace::WorkspaceConfig>,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Environments ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+
+    let env = ws_config.map(|w| &w.env);
+    let lines: Vec<Line> = match env {
+        Some(map) if !map.is_empty() => env_key_lines(map, 0),
+        _ => vec![Line::from(Span::styled(
+            "  (no environment variables)",
+            Style::default()
+                .fg(PHOSPHOR_DIM)
+                .add_modifier(Modifier::ITALIC),
+        ))],
+    };
+
+    let p = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN));
+    frame.render_widget(p, area);
+}
+
 fn render_agents_subpanel(
     frame: &mut Frame,
     area: Rect,
@@ -461,54 +546,71 @@ fn render_agents_subpanel(
 
     let mut lines: Vec<Line> = Vec::new();
 
-    // `Last used` row — moved from the General sub-panel so the right pane's
-    // agent-identity data all lives under the Agents header. Always rendered
-    // at the top of the Agents block, whether the value is a real agent name
-    // (phosphor-green) or the `(none)` placeholder (phosphor-dim).
-    //
-    // A blank line follows so the value visually detaches from the allow list.
-    let last = ws_config.and_then(|w| w.last_agent.as_deref());
-    let (value_text, value_style): (String, Style) = last.map_or_else(
+    // `Default: <agent>` — kept at the top of the Agents block so the
+    // operator sees the workspace-default before scanning the per-agent
+    // override list. `Last used` was removed from this preview to keep
+    // it config-shaped (matching the editor's General tab cleanup);
+    // launch-time history isn't part of the workspace's saved shape.
+    let default = ws_config.and_then(|w| w.default_agent.as_deref());
+    let (value_text, value_style): (String, Style) = default.map_or_else(
         || ("(none)".to_string(), Style::default().fg(PHOSPHOR_DIM)),
         |name| (name.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
     );
     lines.push(Line::from(vec![
         Span::raw("  "),
-        Span::styled("Last used   ", Style::default().fg(WHITE)),
+        Span::styled("Default ", Style::default().fg(WHITE)),
         Span::styled(value_text, value_style),
     ]));
     lines.push(Line::from(""));
 
-    if all_allowed {
-        lines.push(Line::from(Span::styled(
-            "  any agent",
-            Style::default()
-                .fg(Color::Rgb(180, 255, 180))
-                .add_modifier(Modifier::ITALIC),
-        )));
+    // Agent listing. When `allowed_agents` is non-empty, that's the
+    // operator's curated subset; when empty (the "all agents allowed"
+    // shorthand) we list every globally-configured agent — same source
+    // the editor's Agents tab iterates over. Each agent name is
+    // followed by its workspace-scoped env overrides (key names only,
+    // alphabetical, with `[op]` markers for op:// values), or the
+    // `(no overrides)` placeholder when the agent has none. A blank
+    // spacer between agents keeps the per-agent groupings visually
+    // distinct.
+    let agent_names: Vec<&str> = if all_allowed {
+        config.agents.keys().map(String::as_str).collect()
     } else {
-        let default = ws_config.and_then(|w| w.default_agent.as_deref());
-        // Show only allowed agents that exist in the global config (consistent
-        // with the editor view). Fall back to listing all allowed names if the
-        // agent is no longer registered globally. Agent name always starts at
-        // `SUBPANEL_CONTENT_INDENT` (col 2 from border); default agents get a
-        // trailing star on their own span so the name keeps the phosphor-green
-        // base color and the star gets its own low-chrome style.
-        let name_style = |agent: &str| {
-            if config.agents.contains_key(agent) {
-                Style::default().fg(PHOSPHOR_GREEN)
-            } else {
-                Style::default().fg(PHOSPHOR_DIM)
+        allowed.iter().map(String::as_str).collect()
+    };
+
+    let name_style = |agent: &str| {
+        if config.agents.contains_key(agent) {
+            Style::default().fg(PHOSPHOR_GREEN)
+        } else {
+            Style::default().fg(PHOSPHOR_DIM)
+        }
+    };
+    let star_style = Style::default().fg(PHOSPHOR_DIM);
+
+    for (i, agent) in agent_names.iter().enumerate() {
+        if i > 0 {
+            lines.push(Line::from(""));
+        }
+        let is_default = Some(*agent) == default;
+        let mut spans = vec![Span::styled(format!("  {agent}"), name_style(agent))];
+        if is_default {
+            spans.push(Span::styled(" \u{2605}", star_style));
+        }
+        lines.push(Line::from(spans));
+
+        let overrides = ws_config.and_then(|w| w.agents.get(*agent)).map(|o| &o.env);
+        match overrides {
+            Some(env) if !env.is_empty() => {
+                lines.extend(env_key_lines(env, 2));
             }
-        };
-        let star_style = Style::default().fg(PHOSPHOR_DIM);
-        for agent in allowed {
-            let is_default = Some(agent.as_str()) == default;
-            let mut spans = vec![Span::styled(format!("  {agent}"), name_style(agent))];
-            if is_default {
-                spans.push(Span::styled(" \u{2605}", star_style));
+            _ => {
+                lines.push(Line::from(Span::styled(
+                    "    (no overrides)",
+                    Style::default()
+                        .fg(PHOSPHOR_DIM)
+                        .add_modifier(Modifier::ITALIC),
+                )));
             }
-            lines.push(Line::from(spans));
         }
     }
 
@@ -716,8 +818,8 @@ mod subpanel_padding_tests {
     //! rows starting at the same column so the first visible character of
     //! the three blocks, giving the right pane a tidy left edge.
     use super::{
-        SUBPANEL_CONTENT_INDENT, render_agents_subpanel, render_general_subpanel,
-        render_mounts_subpanel,
+        SUBPANEL_CONTENT_INDENT, render_agents_subpanel, render_environments_subpanel,
+        render_general_subpanel, render_mounts_subpanel,
     };
     use crate::config::AppConfig;
     use crate::console::manager::state::WorkspaceSummary;
@@ -868,12 +970,15 @@ mod subpanel_padding_tests {
     /// `SUBPANEL_CONTENT_INDENT` (col 2 from the border). With the
     /// trailing-star convention no glyph precedes the name.
     ///
-    /// After the "Last used" relocation, the Agents sub-panel lays out:
+    /// After the per-agent override nesting, the Agents sub-panel lays
+    /// out for two allowed agents (alpha default, beta non-default):
     ///   y=0 top border
-    ///   y=1 `  Last used   …`
+    ///   y=1 `  Default <name>`
     ///   y=2 blank spacer
-    ///   y=3 first agent row (here: alpha, the default)
-    ///   y=4 second agent row (here: beta, the non-default)
+    ///   y=3 alpha row (default)
+    ///   y=4 alpha (no overrides) placeholder
+    ///   y=5 blank spacer between agents
+    ///   y=6 beta row (non-default)
     #[test]
     fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
         let ws = ws_config_with_allowed(&["alpha", "beta"], Some("alpha"));
@@ -883,25 +988,25 @@ mod subpanel_padding_tests {
         cfg.agents
             .insert("beta".into(), crate::config::AgentSource::default());
 
-        let backend = TestBackend::new(40, 7);
+        let backend = TestBackend::new(40, 9);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_agents_subpanel(f, Rect::new(0, 0, 40, 7), Some(&ws), &cfg);
+            render_agents_subpanel(f, Rect::new(0, 0, 40, 9), Some(&ws), &cfg);
         })
         .unwrap();
 
-        // Locate the first printable char on the beta row (y=4).
+        // Locate the first printable char on the beta row (y=6).
         let buf = term.backend().buffer();
         let area = buf.area;
         let border_x = (0..area.width)
             .find(|x| {
-                let sym = buf[(*x, 4)].symbol();
+                let sym = buf[(*x, 6)].symbol();
                 sym == "│" || sym == "║"
             })
             .expect("left border on beta row");
         let name_col = ((border_x + 1)..area.width)
             .find(|x| {
-                let sym = buf[(*x, 4)].symbol();
+                let sym = buf[(*x, 6)].symbol();
                 !sym.is_empty() && sym != " "
             })
             .map(|x| (x - border_x - 1) as usize)
@@ -912,7 +1017,7 @@ mod subpanel_padding_tests {
         );
 
         // And there must be no trailing star on the non-default row.
-        let last_col = last_printable_indent(&term, 4).expect("beta row has content");
+        let last_col = last_printable_indent(&term, 6).expect("beta row has content");
         // `beta` is 4 chars starting at col 2 ⇒ last printable at col 5.
         // A trailing star would push last_col to col 7 (space + star).
         assert_eq!(
@@ -925,9 +1030,9 @@ mod subpanel_padding_tests {
     /// Default agent row carries a trailing star glyph positioned after
     /// the agent name (separated by a space), not a leading star.
     ///
-    /// Agents sub-panel layout after the `Last used` relocation: top
-    /// border at y=0, `Last used` at y=1, blank at y=2, first agent row
-    /// at y=3. For a single-allowed workspace that agent IS the default.
+    /// Agents sub-panel layout: top border at y=0, `Default <name>` at
+    /// y=1, blank at y=2, first agent row at y=3. For a single-allowed
+    /// workspace that agent IS the default.
     #[test]
     fn agents_subpanel_default_agent_has_trailing_star() {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
@@ -955,12 +1060,12 @@ mod subpanel_padding_tests {
     /// `SUBPANEL_CONTENT_INDENT` convention). The trailing star must not
     /// shift the name right.
     ///
-    /// `first_content_indent` scans y=1; that's now the `Last used` row,
-    /// whose label also starts at `SUBPANEL_CONTENT_INDENT`. The invariant
-    /// the test pins (every content row starts at col 2) still holds —
-    /// what we're confirming is that the block's leading indent is
-    /// consistent. We check the agent row explicitly to guard against the
-    /// trailing-star breaking the name-column alignment.
+    /// y=1 is the `Default <agent>` row, whose label also starts at
+    /// `SUBPANEL_CONTENT_INDENT`. The invariant the test pins (every
+    /// content row starts at col 2) still holds — what we're confirming
+    /// is that the block's leading indent is consistent. We check the
+    /// agent row explicitly to guard against the trailing-star breaking
+    /// the name-column alignment.
     #[test]
     fn agents_subpanel_default_agent_name_starts_at_col_2_regardless_of_star() {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
@@ -997,7 +1102,7 @@ mod subpanel_padding_tests {
         );
     }
 
-    // ── Last-used relocation: General → Agents sub-panel ───────────────
+    // ── General sub-panel: Last-used row was already removed ──────────
 
     /// The General sub-panel no longer shows `Last used` — it only renders
     /// `Working dir`. Guards against a regression that reintroduces the row
@@ -1028,95 +1133,420 @@ mod subpanel_padding_tests {
         }
     }
 
-    /// The Agents sub-panel renders `Last used   <agent>` at the top, above
-    /// the blank spacer and the allow list.
+    // ── Agents sub-panel: Default row + per-agent overrides ───────────
+
+    /// Render the Agents sub-panel into a `TestBackend` of the given size
+    /// and return one row of the buffer at `y` as a plain string. Used
+    /// throughout this section to scrape per-row text after layout shifts.
+    fn render_agents_row(
+        ws: Option<&crate::workspace::WorkspaceConfig>,
+        cfg: &AppConfig,
+        width: u16,
+        height: u16,
+        y: u16,
+    ) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_agents_subpanel(f, Rect::new(0, 0, width, height), ws, cfg);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut row = String::new();
+        for x in 0..area.width {
+            row.push_str(buf[(x, y)].symbol());
+        }
+        row
+    }
+
+    /// The Agents sub-panel renders `Default <agent>` at the top, above
+    /// the blank spacer and the per-agent rows.
     #[test]
-    fn agents_subpanel_shows_last_used_at_top() {
+    fn agents_subpanel_shows_default_at_top() {
+        let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        let mut cfg = AppConfig::default();
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+
+        let row = render_agents_row(Some(&ws), &cfg, 60, 6, 1);
+        assert!(
+            row.contains("Default"),
+            "Agents row 1 must hold `Default`; got {row:?}"
+        );
+        assert!(
+            row.contains("alpha"),
+            "Agents row 1 must hold the default agent name; got {row:?}"
+        );
+    }
+
+    /// When `default_agent` is `None`, the Default row shows `(none)`.
+    #[test]
+    fn agents_subpanel_default_none_renders_placeholder() {
+        let ws = ws_config_with_allowed(&[], None);
+        let cfg = AppConfig::default();
+
+        let row = render_agents_row(Some(&ws), &cfg, 60, 6, 1);
+        assert!(
+            row.contains("Default") && row.contains("(none)"),
+            "Default row should show `(none)` when no default agent is set; got {row:?}"
+        );
+    }
+
+    /// `Last used` must no longer appear anywhere in the Agents
+    /// sub-panel — it was demoted as part of the preview cleanup that
+    /// nested per-agent overrides under each agent name.
+    #[test]
+    fn agents_subpanel_no_longer_shows_last_used() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         ws.last_agent = Some("beta".into());
         let mut cfg = AppConfig::default();
         cfg.agents
             .insert("alpha".into(), crate::config::AgentSource::default());
 
-        let backend = TestBackend::new(60, 6);
+        let backend = TestBackend::new(60, 8);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_agents_subpanel(f, Rect::new(0, 0, 60, 6), Some(&ws), &cfg);
+            render_agents_subpanel(f, Rect::new(0, 0, 60, 8), Some(&ws), &cfg);
         })
         .unwrap();
 
-        // y=1 is the first content row — expect `Last used   beta`.
         let buf = term.backend().buffer();
         let area = buf.area;
-        let mut row = String::new();
-        for x in 0..area.width {
-            row.push_str(buf[(x, 1)].symbol());
+        for y in 0..area.height {
+            let mut row = String::new();
+            for x in 0..area.width {
+                row.push_str(buf[(x, y)].symbol());
+            }
+            assert!(
+                !row.contains("Last used"),
+                "Agents sub-panel must not render `Last used`; got row {y}: {row:?}"
+            );
+        }
+    }
+
+    /// Each agent's env overrides are listed nested under the agent name
+    /// with the four-space `SUBPANEL_CONTENT_INDENT + 2` indent. Op://
+    /// values render with a leading `[op]` marker; plain values render
+    /// the key with no marker. Values themselves never appear.
+    #[test]
+    fn preview_agents_block_lists_per_agent_overrides() {
+        let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        let mut overrides = crate::workspace::WorkspaceAgentOverride::default();
+        overrides.env.insert("API_KEY".into(), "literal".into());
+        overrides
+            .env
+            .insert("LOG_LEVEL".into(), "op://Vault/Item/field".into());
+        ws.agents.insert("alpha".into(), overrides);
+
+        let mut cfg = AppConfig::default();
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+
+        let backend = TestBackend::new(60, 8);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_agents_subpanel(f, Rect::new(0, 0, 60, 8), Some(&ws), &cfg);
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
         }
         assert!(
-            row.contains("Last used"),
-            "Agents row 1 must hold `Last used`; got {row:?}"
+            joined.contains("API_KEY"),
+            "override key API_KEY should render under alpha; got {joined}"
         );
         assert!(
-            row.contains("beta"),
-            "Agents row 1 must hold the last-used agent name; got {row:?}"
+            joined.contains("LOG_LEVEL"),
+            "override key LOG_LEVEL should render under alpha; got {joined}"
+        );
+        assert!(
+            joined.contains("[op]"),
+            "op:// override should be tagged with `[op]` marker; got {joined}"
+        );
+        // Values must never appear in the preview — only key names.
+        assert!(
+            !joined.contains("literal"),
+            "override values must not be shown in the preview; got {joined}"
+        );
+        assert!(
+            !joined.contains("op://"),
+            "raw op:// references must not be shown — only the `[op]` tag; got {joined}"
         );
     }
 
-    /// When `last_agent` is `None`, the Last-used row displays the
-    /// `(none)` placeholder. Pinned separately so the phrasing is stable.
+    /// An agent without env overrides renders `(no overrides)` indented
+    /// under the agent name.
     #[test]
-    fn last_used_none_renders_placeholder() {
-        let ws = ws_config_with_allowed(&[], None); // last_agent defaults to None
-        let cfg = AppConfig::default();
+    fn preview_agents_block_marks_no_overrides_for_empty_agent() {
+        let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        let mut cfg = AppConfig::default();
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
 
-        let backend = TestBackend::new(60, 6);
+        let backend = TestBackend::new(60, 8);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_agents_subpanel(f, Rect::new(0, 0, 60, 6), Some(&ws), &cfg);
+            render_agents_subpanel(f, Rect::new(0, 0, 60, 8), Some(&ws), &cfg);
         })
         .unwrap();
 
         let buf = term.backend().buffer();
         let area = buf.area;
-        let mut row = String::new();
-        for x in 0..area.width {
-            row.push_str(buf[(x, 1)].symbol());
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
         }
         assert!(
-            row.contains("Last used"),
-            "Agents row 1 must hold `Last used` even when the value is (none); got {row:?}"
-        );
-        assert!(
-            row.contains("(none)"),
-            "Last-used placeholder should be `(none)`; got {row:?}"
+            joined.contains("(no overrides)"),
+            "agent without env overrides should show `(no overrides)`; got {joined}"
         );
     }
 
-    /// Current-directory pane also shows the Last-used row in its Agents
-    /// block for structural consistency, even though the synthetic cwd
-    /// workspace always has `last_agent = None` → renders `(none)`.
-    /// Passing `ws_config = None` exercises the same code path the
-    /// current-dir pane uses.
+    /// When `allowed_agents` is empty (the "all agents allowed"
+    /// shorthand), the preview lists every globally-configured agent —
+    /// matching what the editor's Agents tab shows. No `any agent`
+    /// placeholder.
     #[test]
-    fn current_dir_agents_subpanel_shows_last_used_none() {
-        let cfg = AppConfig::default();
+    fn preview_agents_block_lists_all_global_agents_when_allowed_empty() {
+        let ws = ws_config_with_allowed(&[], None);
+        let mut cfg = AppConfig::default();
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.agents
+            .insert("beta".into(), crate::config::AgentSource::default());
 
-        let backend = TestBackend::new(60, 6);
+        let backend = TestBackend::new(60, 12);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_agents_subpanel(f, Rect::new(0, 0, 60, 6), None, &cfg);
+            render_agents_subpanel(f, Rect::new(0, 0, 60, 12), Some(&ws), &cfg);
         })
         .unwrap();
 
         let buf = term.backend().buffer();
         let area = buf.area;
-        let mut row = String::new();
-        for x in 0..area.width {
-            row.push_str(buf[(x, 1)].symbol());
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
         }
         assert!(
-            row.contains("Last used") && row.contains("(none)"),
-            "current-dir Agents block must still show `Last used   (none)`; got {row:?}"
+            joined.contains("alpha"),
+            "alpha should be listed under all-allowed shorthand; got {joined}"
+        );
+        assert!(
+            joined.contains("beta"),
+            "beta should be listed under all-allowed shorthand; got {joined}"
+        );
+        assert!(
+            !joined.contains("any agent"),
+            "old `any agent` placeholder should be gone; got {joined}"
+        );
+    }
+
+    // ── Environments sub-panel ─────────────────────────────────────────
+
+    /// The Environments preview block lists workspace-level env keys in
+    /// alphabetical order (BTreeMap iteration order). Key names only —
+    /// plain or op:// values never render. Op:// values get a `[op]`
+    /// marker matching the editor convention.
+    #[test]
+    fn preview_includes_environments_block_with_workspace_env_keys() {
+        let mut ws = ws_config_with_allowed(&[], None);
+        ws.env.insert("DB_URL".into(), "postgres://...".into());
+        ws.env.insert("API_KEY".into(), "literal-secret".into());
+
+        let backend = TestBackend::new(60, 5);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_environments_subpanel(f, Rect::new(0, 0, 60, 5), Some(&ws));
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
+        }
+        assert!(
+            joined.contains("Environments"),
+            "block title `Environments` must appear; got {joined}"
+        );
+        assert!(
+            joined.contains("API_KEY"),
+            "API_KEY env key must appear; got {joined}"
+        );
+        assert!(
+            joined.contains("DB_URL"),
+            "DB_URL env key must appear; got {joined}"
+        );
+        // Values must never appear in the preview.
+        assert!(
+            !joined.contains("postgres://"),
+            "plain env values must not render; got {joined}"
+        );
+        assert!(
+            !joined.contains("literal-secret"),
+            "plain env values must not render; got {joined}"
+        );
+    }
+
+    /// Op:// references in the workspace env get a leading `[op]` marker.
+    /// The bare reference itself (e.g. "op://Vault/Item/field") must
+    /// never appear — only the marker tag.
+    #[test]
+    fn preview_environments_marks_op_references_with_op_marker() {
+        let mut ws = ws_config_with_allowed(&[], None);
+        ws.env
+            .insert("STRIPE_KEY".into(), "op://Vault/Item/field".into());
+
+        let backend = TestBackend::new(60, 4);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_environments_subpanel(f, Rect::new(0, 0, 60, 4), Some(&ws));
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
+        }
+        assert!(
+            joined.contains("[op]"),
+            "op:// reference must be tagged with `[op]` marker; got {joined}"
+        );
+        assert!(
+            joined.contains("STRIPE_KEY"),
+            "key name must still appear next to `[op]`; got {joined}"
+        );
+        assert!(
+            !joined.contains("op://"),
+            "raw op:// reference must never render in the preview; got {joined}"
+        );
+    }
+
+    /// Empty workspace env renders an italic-dim placeholder, so the
+    /// block is still visibly demarcated even with no data.
+    #[test]
+    fn preview_environments_block_empty_renders_placeholder() {
+        let ws = ws_config_with_allowed(&[], None);
+
+        let backend = TestBackend::new(60, 4);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_environments_subpanel(f, Rect::new(0, 0, 60, 4), Some(&ws));
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
+        }
+        assert!(
+            joined.contains("(no environment variables)"),
+            "empty workspace env must render the placeholder; got {joined}"
+        );
+    }
+
+    /// The right-pane preview blocks render in the order
+    /// General → Mounts → Environments → Agents. Pinned by scraping the
+    /// block-title labels off a full-pane render and confirming their
+    /// y-order.
+    #[test]
+    fn preview_block_order_is_general_mounts_environments_agents() {
+        // Build a workspace with a mount, an env var, and an agent so
+        // every block has visible content.
+        let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        ws.workdir = "/workspace/demo".into();
+        ws.mounts.push(crate::workspace::MountConfig {
+            src: "/tmp/demo".into(),
+            dst: "/workspace/demo".into(),
+            readonly: false,
+        });
+        ws.env.insert("API_KEY".into(), "literal".into());
+
+        let mut cfg = AppConfig::default();
+        cfg.workspaces.insert("demo".into(), ws);
+        cfg.agents
+            .insert("alpha".into(), crate::config::AgentSource::default());
+
+        let summary = WorkspaceSummary {
+            name: "demo".into(),
+            workdir: "/workspace/demo".into(),
+            mount_count: 1,
+            readonly_mount_count: 0,
+            allowed_agent_count: 1,
+            default_agent: Some("alpha".into()),
+            last_agent: None,
+        };
+
+        let backend = TestBackend::new(60, 24);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+        })
+        .unwrap();
+
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        // For each block, find the y-row that holds its title (titles
+        // are unique strings so we can scrape by row content).
+        let mut general_y: Option<u16> = None;
+        let mut mounts_y: Option<u16> = None;
+        let mut envs_y: Option<u16> = None;
+        let mut agents_y: Option<u16> = None;
+        for y in 0..area.height {
+            let mut row = String::new();
+            for x in 0..area.width {
+                row.push_str(buf[(x, y)].symbol());
+            }
+            if general_y.is_none() && row.contains(" General ") {
+                general_y = Some(y);
+            }
+            if mounts_y.is_none() && row.contains(" Mounts ") {
+                mounts_y = Some(y);
+            }
+            if envs_y.is_none() && row.contains(" Environments ") {
+                envs_y = Some(y);
+            }
+            if agents_y.is_none() && row.contains(" Agents ") {
+                agents_y = Some(y);
+            }
+        }
+
+        let g = general_y.expect("General block title must appear");
+        let m = mounts_y.expect("Mounts block title must appear");
+        let e = envs_y.expect("Environments block title must appear");
+        let a = agents_y.expect("Agents block title must appear");
+        assert!(
+            g < m && m < e && e < a,
+            "block order must be General < Mounts < Environments < Agents; got y=({g},{m},{e},{a})"
         );
     }
 }
