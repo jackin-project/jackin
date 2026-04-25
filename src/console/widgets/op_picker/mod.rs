@@ -513,7 +513,11 @@ impl OpPickerState {
         let needle = self.filter_buf.to_lowercase();
         self.items
             .iter()
-            .filter(|i| needle.is_empty() || i.name.to_lowercase().contains(&needle))
+            .filter(|i| {
+                needle.is_empty()
+                    || i.name.to_lowercase().contains(&needle)
+                    || i.subtitle.to_lowercase().contains(&needle)
+            })
             .collect()
     }
 
@@ -1033,6 +1037,15 @@ mod tests {
         OpItem {
             id: format!("i-{name}"),
             name: name.to_string(),
+            subtitle: String::new(),
+        }
+    }
+
+    fn item_with_subtitle(name: &str, subtitle: &str) -> OpItem {
+        OpItem {
+            id: format!("i-{name}-{subtitle}"),
+            name: name.to_string(),
+            subtitle: subtitle.to_string(),
         }
     }
 
@@ -1043,6 +1056,29 @@ mod tests {
             field_type: ty.to_string(),
             concealed,
         }
+    }
+
+    #[test]
+    fn item_filter_matches_subtitle() {
+        // Two items share the title "Google" but have different
+        // subtitles (the `additional_information` field 1Password
+        // surfaces as the username). Filtering by a substring of the
+        // second item's subtitle must narrow the visible list to that
+        // item alone — proving that subtitle matching pulls its weight
+        // when titles collide. The filter is also exercised with mixed
+        // case to confirm the comparison is case-insensitive (the
+        // production code lowercases both sides before `contains`).
+        let mut s = picker_ready();
+        s.items = vec![
+            item_with_subtitle("Google", "alexey@zhokhov.com"),
+            item_with_subtitle("Google", "azhokhov@scentbird.com"),
+        ];
+        s.item_list_state.select(Some(0));
+        s.filter_buf = "AzhokhoV".to_string();
+
+        let visible = s.filtered_items();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].subtitle, "azhokhov@scentbird.com");
     }
 
     #[test]
@@ -1186,6 +1222,7 @@ mod tests {
         s.selected_item = Some(OpItem {
             id: "i-api".into(),
             name: "API Keys".into(),
+            subtitle: String::new(),
         });
         s.fields = vec![
             field("password", "concealed", true),

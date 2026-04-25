@@ -698,10 +698,12 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
                 picker.items = vec![OpItem {
                     id: "i1".into(),
                     name: "Database".into(),
+                    subtitle: String::new(),
                 }];
                 picker.selected_item = Some(OpItem {
                     id: "i1".into(),
                     name: "Database".into(),
+                    subtitle: String::new(),
                 });
                 picker.fields = vec![OpField {
                     id: "password".into(),
@@ -788,10 +790,12 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
                 picker.items = vec![OpItem {
                     id: "i1".into(),
                     name: "API Keys".into(),
+                    subtitle: String::new(),
                 }];
                 picker.selected_item = Some(OpItem {
                     id: "i1".into(),
                     name: "API Keys".into(),
+                    subtitle: String::new(),
                 });
                 picker.fields = vec![OpField {
                     id: "credential".into(),
@@ -938,10 +942,12 @@ fn op_picker_multi_account_flow() -> Result<()> {
                 picker.items = vec![OpItem {
                     id: "i1".into(),
                     name: "Database".into(),
+                    subtitle: String::new(),
                 }];
                 picker.selected_item = Some(OpItem {
                     id: "i1".into(),
                     name: "Database".into(),
+                    subtitle: String::new(),
                 });
                 picker.fields = vec![OpField {
                     id: "password".into(),

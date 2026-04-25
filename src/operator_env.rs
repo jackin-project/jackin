@@ -405,12 +405,20 @@ pub struct OpVault {
     pub name: String,
 }
 
-/// Item metadata as reported by `op item list`. The `name` field is
-/// mapped from the JSON `title` key.
+/// Item metadata as reported by `op item list`.
+///
+/// The `name` field is mapped from the JSON `title` key, and `subtitle`
+/// is mapped from `additional_information` — 1Password populates the
+/// latter with the item's username (or another login-like identifier)
+/// and the picker renders it inline next to the title to disambiguate
+/// items that share a title (e.g., two `Google` logins for different
+/// accounts). For items without that subtitle (such as secure notes),
+/// `subtitle` is the empty string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpItem {
     pub id: String,
     pub name: String,
+    pub subtitle: String,
 }
 
 /// Field metadata as reported by `op item get`. Notably absent: the
@@ -449,6 +457,12 @@ struct RawOpVault {
 struct RawOpItem {
     id: String,
     title: String,
+    // `additional_information` is the username/email subtitle 1Password
+    // surfaces for login items; it's missing on secure notes and other
+    // item types, so default to an empty string rather than failing the
+    // parse.
+    #[serde(default)]
+    additional_information: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -495,6 +509,7 @@ impl From<RawOpItem> for OpItem {
         Self {
             id: raw.id,
             name: raw.title,
+            subtitle: raw.additional_information,
         }
     }
 }
@@ -1923,12 +1938,18 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn op_struct_runner_item_list_parses_json() {
+        // Two items are returned: the first carries an
+        // `additional_information` subtitle (the username/email 1Password
+        // surfaces in its UI), the second omits it. Both must round-trip
+        // — the first into a populated `subtitle`, the second into an
+        // empty string via `#[serde(default)]`.
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-item-list");
         std::fs::write(
             &bin_path,
             "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"list\" ]; then \
-             printf '%s' '[{\"id\":\"i1\",\"title\":\"API Keys\"}]'; exit 0; fi\nexit 99\n",
+             printf '%s' '[{\"id\":\"i1\",\"title\":\"Google\",\"additional_information\":\"alexey@zhokhov.com\"},\
+{\"id\":\"i2\",\"title\":\"API Keys\"}]'; exit 0; fi\nexit 99\n",
         )
         .unwrap();
         make_executable(&bin_path);
@@ -1937,11 +1958,42 @@ mod tests {
         let items = runner.item_list("v1", None).unwrap();
         assert_eq!(
             items,
-            vec![OpItem {
-                id: "i1".to_string(),
-                name: "API Keys".to_string(),
-            }]
+            vec![
+                OpItem {
+                    id: "i1".to_string(),
+                    name: "Google".to_string(),
+                    subtitle: "alexey@zhokhov.com".to_string(),
+                },
+                OpItem {
+                    id: "i2".to_string(),
+                    name: "API Keys".to_string(),
+                    subtitle: String::new(),
+                },
+            ]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_item_list_handles_missing_additional_information() {
+        // Items without `additional_information` (e.g., secure notes)
+        // must deserialize cleanly with an empty `subtitle`. Regression
+        // coverage for the `#[serde(default)]` on `RawOpItem`.
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-item-list-no-subtitle");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"list\" ]; then \
+             printf '%s' '[{\"id\":\"i1\",\"title\":\"Recovery codes\"}]'; exit 0; fi\nexit 99\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let items = runner.item_list("v1", None).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "Recovery codes");
+        assert_eq!(items[0].subtitle, "");
     }
 
     #[cfg(unix)]

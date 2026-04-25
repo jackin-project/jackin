@@ -178,6 +178,7 @@ mod tests {
         OpItem {
             id: format!("i-{name}"),
             name: name.to_string(),
+            subtitle: String::new(),
         }
     }
 

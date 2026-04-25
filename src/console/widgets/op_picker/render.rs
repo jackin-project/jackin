@@ -370,14 +370,30 @@ fn render_item_lines(state: &OpPickerState) -> Vec<Line<'static>> {
         .map(|(i, item)| {
             let is_selected = Some(i) == selected;
             let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let style = if is_selected {
+            let title_style = if is_selected {
                 Style::default()
                     .fg(PHOSPHOR_GREEN)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(WHITE)
             };
-            Line::from(Span::styled(format!("{prefix}{}", item.name), style))
+            // Subtitle (1Password's `additional_information`, typically a
+            // username/email) renders in PHOSPHOR_DIM regardless of
+            // selection so the title remains the primary visual anchor
+            // even on the focused row. Items without a subtitle (e.g.,
+            // secure notes) render with just the title — no trailing
+            // parens, no wasted whitespace.
+            let mut spans = vec![
+                Span::styled(prefix.to_string(), title_style),
+                Span::styled(item.name.clone(), title_style),
+            ];
+            if !item.subtitle.is_empty() {
+                let dim = Style::default().fg(PHOSPHOR_DIM);
+                spans.push(Span::styled(" (".to_string(), dim));
+                spans.push(Span::styled(item.subtitle.clone(), dim));
+                spans.push(Span::styled(")".to_string(), dim));
+            }
+            Line::from(spans)
         })
         .collect()
 }
