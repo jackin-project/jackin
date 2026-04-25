@@ -240,12 +240,12 @@ fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
 }
 
 /// Exact row count the Environments sub-panel needs given the workspace
-/// config. Layout: 2 borders + workspace section (sub-header + N keys) +
-/// per-agent sections (blank spacer + sub-header + M keys per agent
-/// with overrides). When the workspace and all agent overrides are
-/// empty, falls back to a single "(no environment variables)"
-/// placeholder row. Clamped to a reasonable maximum so a workspace with
-/// many env vars and override sections can't eat the full right pane.
+/// config. Layout: 2 borders + one row per (env name, scope) entry —
+/// workspace-level keys plus each per-agent override key. When both the
+/// workspace and all agent overrides are empty, falls back to a single
+/// "(no environment variables)" placeholder row. Clamped to a
+/// reasonable maximum so a workspace with many env vars and override
+/// rows can't eat the full right pane.
 fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u16 {
     let Some(ws) = ws_config else {
         // No workspace config — placeholder branch (used by the cwd pane).
@@ -253,41 +253,15 @@ fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u1
     };
 
     let workspace_keys = ws.env.len();
-    let agents_with_overrides: Vec<usize> = ws
-        .agents
-        .values()
-        .filter_map(|o| {
-            if o.env.is_empty() {
-                None
-            } else {
-                Some(o.env.len())
-            }
-        })
-        .collect();
+    let agent_keys: usize = ws.agents.values().map(|o| o.env.len()).sum();
 
-    if workspace_keys == 0 && agents_with_overrides.is_empty() {
+    if workspace_keys == 0 && agent_keys == 0 {
         // Nothing to show — single placeholder line.
         return 3; // 1 placeholder + 2 borders
     }
 
-    // 1 row for the `All agents:` sub-header + N workspace keys.
-    let mut rows: usize = if workspace_keys == 0 {
-        // Workspace has no env keys but at least one agent has overrides;
-        // skip the `All agents:` section entirely and start with the
-        // per-agent sections.
-        0
-    } else {
-        1 + workspace_keys
-    };
-    // Each per-agent override section: blank spacer + sub-header + N keys.
-    // The first agent section needs no leading blank if the workspace
-    // section was skipped.
-    for (i, n) in agents_with_overrides.iter().enumerate() {
-        let leading_blank = usize::from(!(i == 0 && workspace_keys == 0));
-        rows += leading_blank + 1 + n;
-    }
-
-    (rows + 2).min(20) as u16 // +2 borders, clamped
+    let total_rows = workspace_keys + agent_keys;
+    (total_rows + 2).min(20) as u16 // +2 borders, clamped
 }
 
 /// Number of agent rows the Agents block will render. Mirrors the
@@ -487,11 +461,10 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
 }
 
 /// Number of leading spaces every content row in the General / Mounts /
-/// Agents sub-panels is prefixed with, so the first visible character lines
-/// up across all three blocks (at `border_col + SUBPANEL_CONTENT_INDENT`).
-/// Pinned by `subpanel_content_column_alignment` in the visual regression
-/// tests.
-#[cfg(test)]
+/// Environments / Agents sub-panels is prefixed with, so the first visible
+/// character lines up across all blocks (at
+/// `border_col + SUBPANEL_CONTENT_INDENT`). Pinned by
+/// `subpanel_content_column_alignment` in the visual regression tests.
 const SUBPANEL_CONTENT_INDENT: usize = 2;
 
 fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::workspace::MountConfig]) {
@@ -528,61 +501,44 @@ fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::worksp
     frame.render_widget(p, area);
 }
 
-/// Render an env-key list inside an existing block. Each key gets a
-/// two-space indent (matching `SUBPANEL_CONTENT_INDENT`); op:// values
-/// are tagged with a leading `[op] ` marker — never values, plain or
-/// op://. Keys are taken in BTreeMap-iteration order (alphabetical).
-fn env_key_lines(
-    env: &std::collections::BTreeMap<String, String>,
-    extra_indent: usize,
-) -> Vec<Line<'static>> {
-    let pad = " ".repeat(2 + extra_indent);
-    env.iter()
-        .map(|(key, value)| {
-            if crate::operator_env::is_op_reference(value) {
-                Line::from(vec![
-                    Span::raw(pad.clone()),
-                    Span::styled(
-                        "[op] ",
-                        Style::default()
-                            .fg(PHOSPHOR_DIM)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
-                    Span::styled(key.clone(), Style::default().fg(PHOSPHOR_GREEN)),
-                ])
-            } else {
-                Line::from(vec![
-                    Span::raw(pad.clone()),
-                    Span::styled(key.clone(), Style::default().fg(PHOSPHOR_GREEN)),
-                ])
-            }
-        })
-        .collect()
+/// One row in the flat Environments preview list.
+struct EnvRow {
+    /// The env-key name (left-aligned in the middle column).
+    name: String,
+    /// `None` for a workspace-level key, `Some(agent_name)` for a per-agent
+    /// override. Workspace-level rows render with an empty right column;
+    /// per-agent rows show the agent name on the right in `PHOSPHOR_DIM`.
+    scope: Option<String>,
+    /// `true` when the value is an `op://...` reference, so the row gets
+    /// a leading `[op] ` marker. The value itself never renders.
+    is_op: bool,
 }
 
-/// Right-pane Environments block — single block holding all env-related
-/// content for the workspace. Layout:
+/// Right-pane Environments block — flat alphabetical list, one row per
+/// (env name, scope) entry.
 ///
 /// ```text
-///   All agents:
-///     KEY_A
-///     KEY_B
-///     [op] KEY_C
-///
-///   <agent>:
-///     KEY_D
-///     [op] KEY_E
+///        API_KEY
+///        DB_URL
+///        DEBUG                   agent-smith
+///        LOG_LEVEL               agent-brown
+///  [op]  STRIPE_KEY
+///  [op]  TEST                    agent-smith
 /// ```
 ///
-/// Workspace-level keys (`WorkspaceConfig.env`) appear under the
-/// `All agents:` sub-header. Each agent with non-empty overrides
-/// (`WorkspaceAgentOverride.env`) gets its own sub-section, separated
-/// from neighbours by a blank spacer line. Agents without overrides
-/// are omitted entirely — their absence is the signal. When both the
-/// workspace env map AND every agent override map are empty, the
-/// block falls back to a single `(no environment variables)`
-/// placeholder. Op:// values render with a leading `[op] ` marker.
-/// Values themselves never appear — only key names.
+/// Workspace-level keys (`WorkspaceConfig.env`) and per-agent override
+/// keys (`WorkspaceAgentOverride.env`) are merged into a single list,
+/// sorted alphabetically by name. When the same name appears at both
+/// scopes, the workspace row comes first; agent rows for tied names
+/// then sort alphabetically by agent name. Each row has a fixed left
+/// marker column (`[op] ` / 5 spaces) matching the editor's
+/// Environments-tab alignment, the env key in the middle, and the
+/// agent name on the right (workspace rows leave the right column
+/// blank). Values themselves never appear — only key names.
+///
+/// When both the workspace env map AND every agent override map are
+/// empty, the block falls back to a single `(no environment variables)`
+/// placeholder.
 fn render_environments_subpanel(
     frame: &mut Frame,
     area: Rect,
@@ -596,66 +552,119 @@ fn render_environments_subpanel(
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
 
-    let mut lines: Vec<Line> = Vec::new();
-
-    let workspace_env = ws_config.map(|w| &w.env);
-    // Collect (agent_name, env_map) pairs for agents with overrides,
-    // skipping empty ones. BTreeMap iteration is alphabetical.
-    let agent_sections: Vec<(&str, &std::collections::BTreeMap<String, String>)> = ws_config
-        .map(|w| {
-            w.agents
-                .iter()
-                .filter(|(_, o)| !o.env.is_empty())
-                .map(|(name, o)| (name.as_str(), &o.env))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let workspace_has_keys = workspace_env.is_some_and(|m| !m.is_empty());
-    let any_content = workspace_has_keys || !agent_sections.is_empty();
-
-    if any_content {
-        if workspace_has_keys {
-            // `All agents:` sub-header + workspace key list.
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(
-                    "All agents:",
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                ),
-            ]));
-            if let Some(map) = workspace_env {
-                lines.extend(env_key_lines(map, 2));
+    // Flatten workspace + per-agent env maps into one list of rows.
+    let mut rows: Vec<EnvRow> = Vec::new();
+    if let Some(ws) = ws_config {
+        for (key, value) in &ws.env {
+            rows.push(EnvRow {
+                name: key.clone(),
+                scope: None,
+                is_op: crate::operator_env::is_op_reference(value),
+            });
+        }
+        for (agent, overrides) in &ws.agents {
+            for (key, value) in &overrides.env {
+                rows.push(EnvRow {
+                    name: key.clone(),
+                    scope: Some(agent.clone()),
+                    is_op: crate::operator_env::is_op_reference(value),
+                });
             }
         }
-        // Per-agent override sub-sections.
-        for (i, (agent, env)) in agent_sections.iter().enumerate() {
-            let leading_blank = workspace_has_keys || i > 0;
-            if leading_blank {
-                lines.push(Line::from(""));
-            }
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(
-                    format!("{agent}:"),
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                ),
-            ]));
-            lines.extend(env_key_lines(env, 2));
-        }
-    } else {
-        lines.push(Line::from(Span::styled(
+    }
+
+    // Alphabetical by name; on ties, workspace (None) before agent (Some);
+    // when both are agent rows, agent name decides.
+    rows.sort_by(|a, b| {
+        a.name
+            .cmp(&b.name)
+            .then_with(|| match (&a.scope, &b.scope) {
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (Some(x), Some(y)) => x.cmp(y),
+            })
+    });
+
+    let lines: Vec<Line> = if rows.is_empty() {
+        vec![Line::from(Span::styled(
             "  (no environment variables)",
             Style::default()
                 .fg(PHOSPHOR_DIM)
                 .add_modifier(Modifier::ITALIC),
-        )));
-    }
+        ))]
+    } else {
+        // Inner content width = panel width - 2 borders. Right edge of
+        // the agent label is anchored to that width; padding is filled
+        // with spaces between the key name and the agent name.
+        let inner_width = area.width.saturating_sub(2) as usize;
+        rows.iter()
+            .map(|row| env_row_line(row, inner_width))
+            .collect()
+    };
 
     let p = Paragraph::new(lines)
         .block(block)
         .style(Style::default().fg(PHOSPHOR_GREEN));
     frame.render_widget(p, area);
+}
+
+/// Render one `EnvRow` as a single `Line`. Layout:
+///
+/// ```text
+/// <SUBPANEL_CONTENT_INDENT spaces><[op] | 5 spaces><gap><name>...<padding>...<agent>
+/// ```
+///
+/// `inner_width` is the panel's interior width (excluding borders); the
+/// agent label is right-aligned to it. When the left content already
+/// fills or overflows the row, the agent label is dropped — the panel
+/// is too narrow to show both, so the key name takes priority.
+fn env_row_line(row: &EnvRow, inner_width: usize) -> Line<'static> {
+    // Outer indent matches the other sub-panels (General / Mounts / Agents).
+    let outer_indent = " ".repeat(SUBPANEL_CONTENT_INDENT);
+    // 5-char marker column: "[op] " or 5 spaces.
+    let marker_text: &'static str = if row.is_op { "[op] " } else { "     " };
+    // 1-space gap between marker column and key name, matching the
+    // editor's Environments-tab spacing.
+    let gap = " ";
+    let left_visible_width = outer_indent.len() + marker_text.len() + gap.len() + row.name.len();
+
+    let mut spans: Vec<Span<'static>> = Vec::with_capacity(5);
+    spans.push(Span::raw(outer_indent));
+    if row.is_op {
+        spans.push(Span::styled(
+            marker_text,
+            Style::default()
+                .fg(PHOSPHOR_DIM)
+                .add_modifier(Modifier::ITALIC),
+        ));
+    } else {
+        spans.push(Span::raw(marker_text));
+    }
+    spans.push(Span::raw(gap));
+    spans.push(Span::styled(
+        row.name.clone(),
+        Style::default().fg(PHOSPHOR_GREEN),
+    ));
+
+    if let Some(agent) = &row.scope {
+        // Right-pad with spaces so the agent label ends at `inner_width`,
+        // leaving a single space before the right border. When the panel
+        // is too narrow to fit both, fall back to a single-space gap and
+        // let the Paragraph clip — the key name takes priority.
+        let pad_count = if left_visible_width + 1 + agent.len() < inner_width {
+            inner_width - left_visible_width - agent.len()
+        } else {
+            1
+        };
+        spans.push(Span::raw(" ".repeat(pad_count)));
+        spans.push(Span::styled(
+            agent.clone(),
+            Style::default().fg(PHOSPHOR_DIM),
+        ));
+    }
+
+    Line::from(spans)
 }
 
 fn render_agents_subpanel(
@@ -1444,24 +1453,19 @@ mod subpanel_padding_tests {
 
     // ── Environments sub-panel ─────────────────────────────────────────
 
-    /// The Environments preview block lists workspace-level env keys in
-    /// alphabetical order (BTreeMap iteration order) under the
-    /// `All agents:` sub-header. Key names only — plain or op:// values
-    /// never render. Op:// values get a `[op]` marker matching the
-    /// editor convention.
-    #[test]
-    fn preview_includes_environments_block_with_workspace_env_keys() {
-        let mut ws = ws_config_with_allowed(&[], None);
-        ws.env.insert("DB_URL".into(), "postgres://...".into());
-        ws.env.insert("API_KEY".into(), "literal-secret".into());
-
-        let backend = TestBackend::new(60, 6);
+    /// Render the Environments sub-panel into a fresh `TestBackend` of
+    /// the given size and return the joined-with-newlines screen text.
+    fn render_env_to_string(
+        ws: &crate::workspace::WorkspaceConfig,
+        width: u16,
+        height: u16,
+    ) -> String {
+        let backend = TestBackend::new(width, height);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_environments_subpanel(f, Rect::new(0, 0, 60, 6), Some(&ws));
+            render_environments_subpanel(f, Rect::new(0, 0, width, height), Some(ws));
         })
         .unwrap();
-
         let buf = term.backend().buffer();
         let area = buf.area;
         let mut joined = String::new();
@@ -1471,13 +1475,23 @@ mod subpanel_padding_tests {
             }
             joined.push('\n');
         }
+        joined
+    }
+
+    /// The Environments preview block lists workspace-level env keys in
+    /// alphabetical order. Key names only — plain or op:// values never
+    /// render. Op:// values get a `[op]` marker matching the editor
+    /// convention.
+    #[test]
+    fn preview_includes_environments_block_with_workspace_env_keys() {
+        let mut ws = ws_config_with_allowed(&[], None);
+        ws.env.insert("DB_URL".into(), "postgres://...".into());
+        ws.env.insert("API_KEY".into(), "literal-secret".into());
+
+        let joined = render_env_to_string(&ws, 60, 6);
         assert!(
             joined.contains("Environments"),
             "block title `Environments` must appear; got {joined}"
-        );
-        assert!(
-            joined.contains("All agents:"),
-            "`All agents:` sub-header must appear above the workspace keys; got {joined}"
         );
         assert!(
             joined.contains("API_KEY"),
@@ -1486,6 +1500,12 @@ mod subpanel_padding_tests {
         assert!(
             joined.contains("DB_URL"),
             "DB_URL env key must appear; got {joined}"
+        );
+        // Sub-section header from the previous layout must NOT appear in
+        // the flat list.
+        assert!(
+            !joined.contains("All agents:"),
+            "flat layout must not render the `All agents:` sub-header; got {joined}"
         );
         // Values must never appear in the preview.
         assert!(
@@ -1498,12 +1518,11 @@ mod subpanel_padding_tests {
         );
     }
 
-    /// The Environments preview lays out workspace env keys under
-    /// `All agents:` first, then per-agent override sub-sections in
-    /// alphabetical order. Each agent sub-section is headed by
-    /// `<agent>:` and contains the override keys nested under it.
+    /// The Environments preview is one flat list sorted alphabetically
+    /// by env name. Workspace-level rows have an empty right column;
+    /// per-agent override rows show the agent name on the right.
     #[test]
-    fn preview_environments_block_lists_all_agents_then_per_agent_subsections() {
+    fn preview_environments_block_lists_envs_alphabetically_with_agent_on_right() {
         let mut ws = ws_config_with_allowed(&["beta", "alpha"], Some("alpha"));
         ws.env.insert("API_KEY".into(), "literal".into());
         ws.env.insert("DB_URL".into(), "postgres://...".into());
@@ -1518,46 +1537,70 @@ mod subpanel_padding_tests {
         beta_overrides.env.insert("DEBUG".into(), "1".into());
         ws.agents.insert("beta".into(), beta_overrides);
 
-        let backend = TestBackend::new(60, 14);
-        let mut term = Terminal::new(backend).unwrap();
-        term.draw(|f| {
-            render_environments_subpanel(f, Rect::new(0, 0, 60, 14), Some(&ws));
-        })
-        .unwrap();
+        let joined = render_env_to_string(&ws, 60, 14);
+        // No sub-headers in the flat layout.
+        assert!(
+            !joined.contains("All agents:"),
+            "flat layout must not render `All agents:`; got {joined}"
+        );
+        assert!(
+            !joined.contains("alpha:"),
+            "flat layout must not render `<agent>:` sub-headers; got {joined}"
+        );
+        assert!(
+            !joined.contains("beta:"),
+            "flat layout must not render `<agent>:` sub-headers; got {joined}"
+        );
 
-        let buf = term.backend().buffer();
-        let area = buf.area;
-        // Find the y-row of each sub-header so we can pin their order.
-        let mut all_y: Option<u16> = None;
-        let mut alpha_y: Option<u16> = None;
-        let mut beta_y: Option<u16> = None;
-        for y in 0..area.height {
-            let mut row = String::new();
-            for x in 0..area.width {
-                row.push_str(buf[(x, y)].symbol());
+        // Find each name's y-row to pin alphabetical ordering across scopes.
+        let mut api_y: Option<u16> = None;
+        let mut db_y: Option<u16> = None;
+        let mut debug_y: Option<u16> = None;
+        let mut log_y: Option<u16> = None;
+        for (y, row) in joined.lines().enumerate() {
+            if api_y.is_none() && row.contains("API_KEY") {
+                api_y = Some(y as u16);
             }
-            if all_y.is_none() && row.contains("All agents:") {
-                all_y = Some(y);
+            if db_y.is_none() && row.contains("DB_URL") {
+                db_y = Some(y as u16);
             }
-            if alpha_y.is_none() && row.contains("alpha:") {
-                alpha_y = Some(y);
+            if debug_y.is_none() && row.contains("DEBUG") {
+                debug_y = Some(y as u16);
             }
-            if beta_y.is_none() && row.contains("beta:") {
-                beta_y = Some(y);
+            if log_y.is_none() && row.contains("LOG_LEVEL") {
+                log_y = Some(y as u16);
             }
         }
-        let a = all_y.expect("`All agents:` sub-header must appear");
-        let al = alpha_y.expect("`alpha:` sub-header must appear");
-        let bt = beta_y.expect("`beta:` sub-header must appear");
+        let api = api_y.expect("API_KEY row must appear");
+        let db = db_y.expect("DB_URL row must appear");
+        let debug = debug_y.expect("DEBUG row must appear");
+        let log = log_y.expect("LOG_LEVEL row must appear");
         assert!(
-            a < al && al < bt,
-            "Sub-section order must be All agents < alpha < beta; got y=({a},{al},{bt})"
+            api < db && db < debug && debug < log,
+            "rows must be alphabetical: API_KEY < DB_URL < DEBUG < LOG_LEVEL; \
+             got y=({api},{db},{debug},{log})"
         );
+
+        // Agent labels live on the right edge of their row.
+        for row in joined.lines() {
+            if row.contains("DEBUG") {
+                assert!(
+                    row.contains("beta"),
+                    "DEBUG row must show `beta` on the right; got {row}"
+                );
+            }
+            if row.contains("LOG_LEVEL") {
+                assert!(
+                    row.contains("alpha"),
+                    "LOG_LEVEL row must show `alpha` on the right; got {row}"
+                );
+            }
+        }
     }
 
     /// Agents listed in `allowed_agents` but with no env overrides do
-    /// NOT appear in the Environments block — their absence is the
-    /// signal that they have no overrides. The Agents block still
+    /// NOT contribute rows to the Environments block — their absence is
+    /// the signal that they have no overrides. The Agents block still
     /// lists them.
     #[test]
     fn preview_environments_block_omits_agents_without_overrides() {
@@ -1571,29 +1614,129 @@ mod subpanel_padding_tests {
             .insert("LOG_LEVEL".into(), "debug".into());
         ws.agents.insert("alpha".into(), alpha_overrides);
 
-        let backend = TestBackend::new(60, 10);
-        let mut term = Terminal::new(backend).unwrap();
-        term.draw(|f| {
-            render_environments_subpanel(f, Rect::new(0, 0, 60, 10), Some(&ws));
-        })
-        .unwrap();
-
-        let buf = term.backend().buffer();
-        let area = buf.area;
-        let mut joined = String::new();
-        for y in 0..area.height {
-            for x in 0..area.width {
-                joined.push_str(buf[(x, y)].symbol());
-            }
-            joined.push('\n');
-        }
+        let joined = render_env_to_string(&ws, 60, 10);
         assert!(
-            joined.contains("alpha:"),
-            "alpha has overrides — its sub-section must appear; got {joined}"
+            joined.contains("alpha"),
+            "alpha has overrides — its name must appear on its row; got {joined}"
         );
         assert!(
-            !joined.contains("beta:"),
+            !joined.contains("beta"),
             "beta has no overrides — its name must NOT appear in the Environments block; got {joined}"
+        );
+    }
+
+    /// A workspace-level env key renders a row with the key name and an
+    /// empty right column (no agent label).
+    #[test]
+    fn preview_environments_flat_row_workspace_level_has_no_agent_label() {
+        let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        ws.env.insert("API_KEY".into(), "literal".into());
+
+        let joined = render_env_to_string(&ws, 60, 4);
+        // The row containing API_KEY must not also contain "alpha".
+        let api_row = joined
+            .lines()
+            .find(|r| r.contains("API_KEY"))
+            .expect("API_KEY row must appear");
+        assert!(
+            !api_row.contains("alpha"),
+            "workspace-level row must not show an agent label; got `{api_row}`"
+        );
+    }
+
+    /// A per-agent override env key renders a row with the key on the
+    /// left and the agent name on the right.
+    #[test]
+    fn preview_environments_flat_row_per_agent_has_agent_label_on_right() {
+        let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        let mut alpha_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        alpha_overrides
+            .env
+            .insert("LOG_LEVEL".into(), "debug".into());
+        ws.agents.insert("alpha".into(), alpha_overrides);
+
+        let joined = render_env_to_string(&ws, 60, 4);
+        let log_row = joined
+            .lines()
+            .find(|r| r.contains("LOG_LEVEL"))
+            .expect("LOG_LEVEL row must appear");
+        assert!(
+            log_row.contains("alpha"),
+            "per-agent row must show the agent name; got `{log_row}`"
+        );
+        // Agent name sits to the right of the key name on the same row.
+        let key_pos = log_row.find("LOG_LEVEL").unwrap();
+        let agent_pos = log_row.find("alpha").unwrap();
+        assert!(
+            agent_pos > key_pos,
+            "agent label must come AFTER the key name on the row; got key@{key_pos}, agent@{agent_pos}"
+        );
+    }
+
+    /// The same env name at workspace and agent scope renders TWO
+    /// distinct rows: workspace first (empty right column), agent
+    /// second (with agent label).
+    #[test]
+    fn preview_environments_same_key_in_workspace_and_agent_renders_two_rows() {
+        let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        ws.env.insert("API_KEY".into(), "workspace-value".into());
+        let mut alpha_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        alpha_overrides
+            .env
+            .insert("API_KEY".into(), "agent-value".into());
+        ws.agents.insert("alpha".into(), alpha_overrides);
+
+        let joined = render_env_to_string(&ws, 60, 6);
+        let api_rows: Vec<&str> = joined.lines().filter(|r| r.contains("API_KEY")).collect();
+        assert_eq!(
+            api_rows.len(),
+            2,
+            "API_KEY must appear in TWO rows (workspace + alpha); got rows={api_rows:?}"
+        );
+        // Workspace row first (no agent label), agent row second.
+        assert!(
+            !api_rows[0].contains("alpha"),
+            "first API_KEY row must be workspace-level (no agent label); got `{}`",
+            api_rows[0]
+        );
+        assert!(
+            api_rows[1].contains("alpha"),
+            "second API_KEY row must be the agent override (alpha label); got `{}`",
+            api_rows[1]
+        );
+    }
+
+    /// Rows sort alphabetically by name regardless of scope. Workspace
+    /// keys and per-agent keys interleave when their names interleave.
+    #[test]
+    fn preview_environments_sorts_alphabetically_across_scopes() {
+        let mut ws = ws_config_with_allowed(&["agent-smith", "agent-brown"], Some("agent-smith"));
+        ws.env.insert("DB_URL".into(), "postgres://...".into());
+        ws.env.insert("API_KEY".into(), "literal".into());
+
+        let mut smith = crate::workspace::WorkspaceAgentOverride::default();
+        smith.env.insert("DEBUG".into(), "1".into());
+        ws.agents.insert("agent-smith".into(), smith);
+
+        let mut brown = crate::workspace::WorkspaceAgentOverride::default();
+        brown.env.insert("LOG_LEVEL".into(), "debug".into());
+        ws.agents.insert("agent-brown".into(), brown);
+
+        let joined = render_env_to_string(&ws, 60, 8);
+        // Capture the y-row of each env-key name and assert ordering.
+        let mut order: Vec<(&str, usize)> = Vec::new();
+        for (y, row) in joined.lines().enumerate() {
+            for key in ["API_KEY", "DB_URL", "DEBUG", "LOG_LEVEL"] {
+                if row.contains(key) && !order.iter().any(|(k, _)| *k == key) {
+                    order.push((key, y));
+                }
+            }
+        }
+        let names: Vec<&str> = order.iter().map(|(k, _)| *k).collect();
+        assert_eq!(
+            names,
+            vec!["API_KEY", "DB_URL", "DEBUG", "LOG_LEVEL"],
+            "rows must be sorted alphabetically across workspace and agent scopes; got {order:?}"
         );
     }
 
