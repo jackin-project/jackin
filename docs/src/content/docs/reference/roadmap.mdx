@@ -38,10 +38,9 @@ jackin' is a functional proof of concept with Claude Code as its first supported
 ### Agent runtimes
 
 <Aside type="note">
-The current implementation is Claude-specific end-to-end (manifest schema, derived-image build, runtime entrypoint, and version probing all reference Claude Code directly). Adding a second agent runtime requires a coordinated pass through those layers — the items below are aspirational targets rather than a drop-in configuration switch.
+The current implementation is Claude-specific end-to-end (manifest schema, derived-image build, runtime entrypoint, persisted state, auth handling, and version probing all reference Claude Code directly). The linked roadmap item below tracks the concrete foundation work needed before Codex and Amp can be treated as first-class runtimes.
 </Aside>
-- **[Codex](https://github.com/openai/codex) runtime** — OpenAI's lightweight terminal-based coding agent. Codex stands out for its tiered autonomy model (suggest, auto-edit, and full-auto modes) and strong built-in sandboxing — in full-auto mode commands run network-disabled and confined to the working directory, with platform-specific hardening via Apple Seatbelt on macOS and Docker on Linux. It also supports multimodal input (screenshots and diagrams) and multiple LLM providers beyond OpenAI.
-- **[Amp Code](https://ampcode.com) runtime** — Sourcegraph's AI coding agent. Amp stands out for its polished CLI experience and thoughtful design — it is model-agnostic (supporting Claude, GPT, and Gemini), gives the operator fine-grained control over which model powers the agent, and provides one of the cleanest terminal-based agentic workflows available. Its emphasis on developer control and CLI-first design makes it a natural fit for jackin's operator model.
+- **[Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/)** — introduce a small built-in runtime abstraction so one agent class can launch under `claude`, `codex`, or `amp`, with runtime-specific auth, config, state, and entrypoint behavior. Phase 1 focuses on secure local usability, not full Claude-feature parity.
 
 ### Platform expansion
 

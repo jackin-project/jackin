@@ -1,0 +1,355 @@
+---
+title: "Multi-Runtime Support for Codex and Amp"
+---
+
+**Status**: Open — design proposal
+
+## Problem
+
+jackin' already solves several operator problems in a runtime-independent way: agent classes as Dockerfiles, named workspaces, scoped mounts, isolated container lifecycles, and per-agent persisted state. But the actual runtime contract is still Claude-specific end to end.
+
+Today the codebase assumes Claude in all of these places:
+
+- manifest schema (`[claude]` plugins and marketplaces)
+- derived image generation (install Claude during build)
+- runtime entrypoint (`exec claude --dangerously-skip-permissions --verbose`)
+- runtime user and home path conventions (`claude`, `/home/claude`)
+- persisted state layout (`.claude/`, `.claude.json`, `plugins.json`)
+- auth forwarding and token handling
+- version probing and cache busting
+- launch messaging and config tables
+
+That means the roadmap already names Codex and Amp as desirable runtimes, but there is no concrete plan for how jackin' gets from "Claude-only proof of concept" to "same operator model, different CLI inside the container".
+
+## Why It Matters
+
+- The main value of jackin' for local development is not Claude itself. It is the isolation, mount scoping, reusable agent classes, and multi-agent workflow.
+- Operators increasingly switch between Claude Code, Codex CLI, and Amp depending on the task, model quality, or workflow style.
+- The current implementation makes the project look more runtime-agnostic than it really is. The [open review findings](/reference/roadmap/open-review-findings/) already call this out explicitly.
+- Supporting Codex and Amp does not require full Claude parity on day one. A smaller "secure and usable inside jackin" baseline would already unlock real value.
+
+## Current State
+
+### Core repo
+
+The current implementation is Claude-shaped in concrete, not just in naming:
+
+- `src/manifest/mod.rs` requires a `[claude]` table.
+- `src/derived_image.rs` appends `curl -fsSL https://claude.ai/install.sh | bash` and bakes in a Claude entrypoint.
+- `docker/runtime/entrypoint.sh` installs Claude plugins, registers Claude MCP servers, then launches `claude`.
+- `src/instance/auth.rs` provisions only Claude auth state (`.claude.json`, `.claude/.credentials.json`).
+- `src/instance/plugins.rs` serializes only Claude marketplace/plugin data.
+- `src/runtime/launch.rs` mounts only Claude state files and prints Claude-specific auth diagnostics.
+- `src/runtime/image.rs` and `src/version_check.rs` only know how to detect and refresh Claude versions.
+
+### Existing org agent repos
+
+The two current first-party agents are useful signals for the migration plan:
+
+- [`jackin-agent-smith`](https://github.com/jackin-project/jackin-agent-smith) is intentionally minimal. Its runtime-specific behavior is mostly just official Claude plugins and one env default (`CLAUDE_CODE_NO_FLICKER=1`). It is the best first candidate for validating Codex and Amp support.
+- [`jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) shares the same Dockerfile contract but depends on a much richer Claude plugin story, including the custom [`jackin-marketplace`](https://github.com/jackin-project/jackin-marketplace). That makes it a good stress test for migration boundaries, but a bad reason to block initial Codex/Amp support on plugin parity.
+
+The important observation is that both agent repos already separate shared toolchain concerns from runtime concerns fairly well:
+
+- the Dockerfile defines the toolchain
+- identity and env prompts are generic
+- only the `[claude]` table is truly Claude-specific
+
+That argues for keeping one shared agent repo per role, not creating separate `*-codex` or `*-amp` repo forks.
+
+### External runtime realities
+
+The public Codex and Amp CLIs point toward a pragmatic first implementation shape:
+
+- [Codex CLI](https://github.com/openai/codex) supports a native Linux binary, env-based API-key auth, explicit sandbox/approval modes, and non-interactive execution. For jackin', the important part is that it can run fully from container-local config plus env vars; it does not need host keychain forwarding.
+- [Amp CLI](https://github.com/sourcegraph/amp) supports env-based API-key auth, server-side thread persistence, and a `settings.json` file with command allowlisting and MCP configuration. For jackin', the key constraint is that unattended shell execution requires either a comprehensive allowlist or an explicit "allow all" posture inside the already-isolated container.
+
+## Goal
+
+Add first-class built-in support for `claude`, `codex`, and `amp` as selectable runtimes while preserving the parts of jackin' that already work well:
+
+- one agent repo defines the environment layer
+- one workspace model defines file visibility
+- one runtime lifecycle manages isolated containers and DinD
+- one operator can run multiple agents in parallel
+
+The first successful version should let an operator do this with the same agent class:
+
+```sh
+jackin load agent-smith --runtime claude
+jackin load agent-smith --runtime codex
+jackin load agent-smith --runtime amp
+```
+
+## Non-Goals
+
+- Designing a third-party runtime plugin system in V1
+- Achieving feature parity between Claude plugins and Codex/Amp on day one
+- Translating Claude plugins automatically into Codex config, Amp skills, or MCP servers
+- Supporting browser-driven OAuth login forwarding for Codex or Amp in the first pass
+- Reworking the agent Dockerfile contract away from `projectjackin/construct:trixie`
+
+## Recommendation
+
+Introduce a **small built-in runtime abstraction**, not a marketplace for runtimes.
+
+The code should become runtime-agnostic internally, while the product surface stays intentionally small and explicit: `claude`, `codex`, and `amp` are built-in runtimes with different adapters.
+
+### 1. Add a runtime selector to the operator surface
+
+Phase-1 CLI shape:
+
+- `jackin load <agent> --runtime <claude|codex|amp>`
+- `jackin console` gains a runtime picker or remembers the last runtime per workspace/agent pair
+- runtime becomes part of the instance identity, not just a launch flag
+
+That last point is essential. Without it, `agent-smith` launched under Claude and `agent-smith` launched under Amp would collide on container names, labels, and state directories.
+
+### 2. Keep the manifest explicit, not overly abstract
+
+One reasonable manifest direction:
+
+```toml
+dockerfile = "Dockerfile"
+
+[runtime]
+default = "claude"
+supported = ["claude", "codex", "amp"]
+
+[identity]
+name = "Agent Smith"
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+
+[codex]
+# optional runtime-specific settings later
+
+[amp]
+# optional runtime-specific settings later
+```
+
+Important constraints:
+
+- keep the current `[claude]` table for backward-compatible Claude data
+- make `[codex]` and `[amp]` optional in V1
+- do not invent a generic cross-runtime `plugins = []` abstraction yet
+- keep shared env prompts, hooks, identity, and Dockerfile path runtime-neutral
+
+This is a better fit than a fully generic `[[runtimes]]` schema because the project only needs three built-in runtimes for now, and each one has genuinely different auth/config/state requirements.
+
+### 3. Put runtime-specific behavior behind one adapter seam
+
+Each runtime adapter should own these responsibilities:
+
+- how the runtime binary is installed during the derived build
+- which extra runtime assets are injected into the image
+- how persisted runtime state is prepared on the host
+- which files and directories are mounted into the container
+- which environment variables are required or reserved
+- which command actually launches the interactive runtime
+- how version probing and update checks work
+
+In practice that means the current Claude-specific logic in these files needs one shared seam rather than scattered `match runtime` branches everywhere:
+
+- `src/manifest/mod.rs`
+- `src/manifest/validate.rs`
+- `src/derived_image.rs`
+- `docker/runtime/entrypoint.sh`
+- `src/instance/mod.rs`
+- `src/instance/auth.rs`
+- `src/instance/plugins.rs`
+- `src/runtime/launch.rs`
+- `src/runtime/image.rs`
+- `src/version_check.rs`
+- `src/runtime/naming.rs`
+- `src/app/context.rs`
+- docs for manifest, auth, architecture, and creating agents
+
+### 4. Rename the runtime user from `claude` to `agent`
+
+This should be treated as an intentional **breaking change** in the multi-runtime foundation, not as follow-up cleanup.
+
+The current `claude` username and `/home/claude` path leak Claude-specific assumptions into too many places:
+
+- generated Dockerfiles in `src/derived_image.rs`
+- entrypoint and runtime helper scripts under `docker/runtime/`
+- mount destinations in `src/runtime/launch.rs`
+- docs examples and built-in mount defaults such as Gradle caches
+- first-party agent repos that occasionally reference `/home/claude`
+
+If jackin' is going to support multiple runtimes cleanly, the runtime account should become a neutral operator-facing concept such as `agent` with home directory `/home/agent`.
+
+Recommended migration posture:
+
+- make the rename part of Phase 1, before Codex and Amp ship
+- update the construct image and derived-image generator together
+- update mount destinations, entrypoint paths, and docs in the same release
+- treat old `/home/claude` assumptions as deprecated and remove them rather than preserving them forever
+
+This is a breaking change because existing agent Dockerfiles, operator muscle memory, and some workspace/global mount examples may still point at `/home/claude`. That is acceptable here: the current multi-runtime work is exactly the point where the project should pay down the Claude-shaped base contract instead of cementing it.
+
+### 5. Treat runtime state as per-runtime, not globally Claude-shaped
+
+The current persisted state layout is a strong clue that instance state must be refactored before more runtimes land cleanly.
+
+Recommended direction:
+
+- keep one per-instance root under `~/.jackin/data/<instance>/`
+- add runtime-owned subtrees beneath it instead of more top-level Claude-named files
+- let each runtime adapter map its subtree back to the paths it expects inside the container
+
+Example shape:
+
+```text
+~/.jackin/data/<instance>/
+  runtime/
+    claude/
+      .claude/
+      .claude.json
+      plugins.json
+    codex/
+      .codex/
+      config.toml
+    amp/
+      settings.json
+      skills/
+```
+
+After the user/home rename, runtime adapters can mount their state into neutral paths such as `/home/agent/.claude`, `/home/agent/.codex`, and `/home/agent/.config/amp/settings.json` while keeping the host-side layout cleaner.
+
+### 6. Use pragmatic runtime defaults instead of chasing parity
+
+#### Claude
+
+Keep current behavior as the reference implementation.
+
+#### Codex
+
+V1 should prefer:
+
+- env-based API-key auth (`OPENAI_API_KEY` or `CODEX_API_KEY`)
+- a generated container-local config file
+- approvals disabled inside the container, because jackin's container boundary is already the operator's trust boundary
+- no ChatGPT browser-login forwarding in the first pass
+
+Implementation note: prefer the official Linux binary distribution over requiring every agent image to carry a Node/npm runtime just to install Codex.
+
+#### Amp
+
+V1 should prefer:
+
+- env-based API-key auth (`AMP_API_KEY`)
+- a generated `settings.json`
+- an explicit unattended shell policy inside the container (`dangerouslyAllowAll = true` or a generated allowlist)
+- no attempt to mirror Claude plugin installation behavior
+
+Amp's thread sync is already cloud-backed, so jackin' does not need to recreate Claude-style conversation persistence locally.
+
+### 7. Be explicit about what is deferred
+
+The first Codex/Amp release does **not** need all of these:
+
+- Claude marketplace support equivalent for other runtimes
+- generic plugin or skill installation in `jackin.agent.toml`
+- runtime-native MCP management beyond simple config-file injection
+- automatic host-session auth forwarding like Claude `sync`
+- fully generalized runtime auto-update detection
+
+It is acceptable if the first implementation requires `--rebuild` for Codex/Amp runtime updates while Claude keeps the richer auto-refresh path.
+
+## First-Party Agent Repo Plan
+
+### `jackin-agent-smith`
+
+Use Agent Smith as the first migration target.
+
+Why:
+
+- minimal manifest
+- no custom marketplace dependency
+- simpler expectations around runtime-native extras
+- good default test bed for the operator UX
+
+Target outcome:
+
+- mark it as supporting `claude`, `codex`, and `amp`
+- keep its Dockerfile shared across all three
+- add runtime-specific tables only if one runtime needs non-default behavior
+
+### `jackin-the-architect`
+
+Do **not** block the whole runtime project on recreating The Architect's Claude plugin stack elsewhere.
+
+Target outcome:
+
+- keep the shared Rust/tooling Dockerfile usable across runtimes
+- allow Codex/Amp launches even if their runtime-specific sections remain minimal at first
+- treat the current Claude marketplace and plugin setup as a Claude-only enhancement, not the baseline contract for every runtime
+
+If a later pass proves that Amp skills or Codex-specific config deserve first-class manifest support, that can happen after basic runtime launch support exists.
+
+## Suggested Delivery Phases
+
+### Phase 1 — Runtime foundation
+
+- add runtime to the selector/instance identity
+- introduce the runtime adapter seam
+- rename the runtime user/home from `claude` and `/home/claude` to `agent` and `/home/agent`
+- make host-side state preparation runtime-aware
+- generalize launch flow so the adapter supplies mounts, env, and launch command
+- keep Claude behavior unchanged behind the new seam
+
+### Phase 2 — Codex baseline
+
+- install Codex in the derived build
+- generate runtime config and env wiring
+- support interactive `jackin load --runtime codex`
+- document the auth story as API-key-only for V1
+
+### Phase 3 — Amp baseline
+
+- install Amp in the derived build
+- generate `settings.json`
+- choose the default unattended command policy for the containerized environment
+- support interactive `jackin load --runtime amp`
+
+### Phase 4 — Operator UX and docs
+
+- console/runtime picker
+- workspace or last-used runtime memory
+- docs updates for manifest, auth, architecture, and first-party agents
+- refresh roadmap language so the rest of the docs stop implying runtime-agnostic behavior already exists
+
+### Phase 5 — Optional parity work
+
+- richer version probing for Codex and Amp
+- runtime-native extension surfaces (Codex config, Amp MCP/skills)
+- better operator config for runtime-specific defaults and secrets
+
+## Open Questions
+
+- Should runtime defaulting live in the manifest, operator config, workspace config, or all three with clear precedence?
+- Should the instance name encode runtime visibly (`jackin-agent-smith-codex`) or store it only in labels while keeping the display name cleaner?
+- Is Amp V1 better served by `dangerouslyAllowAll = true`, or by generating a jackin-managed allowlist that covers known safe shell commands?
+- Should Codex use `danger-full-access` inside the container by default, or keep its own internal sandbox enabled even though jackin already provides a container boundary?
+- Which existing Claude-only env names should be generalized immediately, especially `JACKIN_CLAUDE_ENV`?
+- Does `jackin hardline` need any runtime-specific reconnect logic for Codex or Amp, or is the current attach model sufficient once the entrypoint is runtime-driven?
+
+## Related Files
+
+- `docker/construct/Dockerfile`
+- `src/manifest/mod.rs`
+- `src/manifest/validate.rs`
+- `src/derived_image.rs`
+- `docker/runtime/entrypoint.sh`
+- `src/instance/mod.rs`
+- `src/instance/auth.rs`
+- `src/instance/plugins.rs`
+- `src/runtime/launch.rs`
+- `src/runtime/image.rs`
+- `src/version_check.rs`
+- `docs/src/content/docs/developing/agent-manifest.mdx`
+- `docs/src/content/docs/developing/creating-agents.mdx`
+- `docs/src/content/docs/guides/authentication.mdx`
+- `docs/src/content/docs/reference/architecture.mdx`
