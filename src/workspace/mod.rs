@@ -74,6 +74,7 @@ pub struct WorkspaceEdit {
     pub allowed_agents_to_add: Vec<String>,
     pub allowed_agents_to_remove: Vec<String>,
     pub default_agent: Option<Option<String>>,
+    pub mount_isolation_overrides: Vec<(String, crate::isolation::MountIsolation)>,
 }
 
 /// Reject two `Worktree` mounts where one's `dst` is a strict ancestor of

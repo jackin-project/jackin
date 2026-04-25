@@ -435,16 +435,21 @@ pub fn run(cli: Cli) -> Result<()> {
                 no_workdir_mount,
                 allowed_agents,
                 default_agent,
+                mount_isolation,
             } => {
                 let expanded_workdir = workspace::resolve_path(&workdir);
                 let parsed_mounts = mounts
                     .iter()
                     .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
-                let plan = workspace::planner::plan_create(
+                let mut plan = workspace::planner::plan_create(
                     &expanded_workdir,
                     parsed_mounts,
                     no_workdir_mount,
+                )?;
+                workspace::planner::apply_isolation_overrides(
+                    &mut plan.final_mounts,
+                    &mount_isolation,
                 )?;
                 if !plan.collapsed.is_empty() {
                     let removed_list: Vec<String> = plan
@@ -604,6 +609,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 clear_default_agent,
                 assume_yes,
                 prune,
+                mount_isolation,
             } => {
                 let upsert_mounts = mounts
                     .iter()
@@ -741,6 +747,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         } else {
                             default_agent.map(Some)
                         },
+                        mount_isolation_overrides: mount_isolation,
                     },
                 )?;
                 editor.save()?;

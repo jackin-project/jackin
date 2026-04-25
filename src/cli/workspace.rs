@@ -1,6 +1,24 @@
 use clap::Subcommand;
+use std::str::FromStr;
 
 use super::{BANNER, HELP_STYLES};
+use crate::isolation::MountIsolation;
+
+fn parse_mount_isolation(s: &str) -> anyhow::Result<(String, MountIsolation)> {
+    let (dst, ty) = s
+        .split_once('=')
+        .ok_or_else(|| anyhow::anyhow!("expected DST=TYPE, got `{s}`"))?;
+    if dst.is_empty() {
+        anyhow::bail!("mount destination cannot be empty in `{s}`");
+    }
+    let mode = MountIsolation::from_str(ty)?;
+    if matches!(mode, MountIsolation::Clone) {
+        anyhow::bail!(
+            "isolation mode `clone` is reserved for a future release but not implemented yet"
+        );
+    }
+    Ok((dst.into(), mode))
+}
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum WorkspaceCommand {
@@ -37,6 +55,15 @@ Examples:
         /// Agent to select by default when loading this workspace
         #[arg(long = "default-agent")]
         default_agent: Option<String>,
+        /// Set isolation mode for a mount destination. Repeatable.
+        /// Format: `<container-dst>=<shared|worktree>`.
+        #[arg(
+            long = "mount-isolation",
+            value_name = "DST=TYPE",
+            value_parser = parse_mount_isolation,
+            action = clap::ArgAction::Append
+        )]
+        mount_isolation: Vec<(String, MountIsolation)>,
     },
     /// List all saved workspaces
     #[command(before_help = BANNER, styles = HELP_STYLES)]
@@ -106,6 +133,15 @@ Examples:
         /// Also remove pre-existing redundant mounts (rule-C violations) as part of this edit
         #[arg(long, default_value_t = false)]
         prune: bool,
+        /// Set isolation mode for a mount destination. Repeatable.
+        /// Format: `<container-dst>=<shared|worktree>`.
+        #[arg(
+            long = "mount-isolation",
+            value_name = "DST=TYPE",
+            value_parser = parse_mount_isolation,
+            action = clap::ArgAction::Append
+        )]
+        mount_isolation: Vec<(String, MountIsolation)>,
     },
     /// Remove redundant mounts (rule-C violations) from a saved workspace
     #[command(
@@ -479,5 +515,30 @@ mod tests {
     fn workspace_remove_help_shows_examples() {
         let help = help_text(&["jackin", "workspace", "remove", "--help"]);
         assert!(help.contains("jackin workspace remove my-app"));
+    }
+
+    #[test]
+    fn parse_mount_isolation_accepts_worktree() {
+        let (dst, mode) = parse_mount_isolation("/workspace/jackin=worktree").unwrap();
+        assert_eq!(dst, "/workspace/jackin");
+        assert_eq!(mode, MountIsolation::Worktree);
+    }
+
+    #[test]
+    fn parse_mount_isolation_rejects_clone() {
+        let err = parse_mount_isolation("/workspace/jackin=clone").unwrap_err();
+        assert!(err.to_string().contains("not implemented yet"));
+    }
+
+    #[test]
+    fn parse_mount_isolation_rejects_missing_equals() {
+        let err = parse_mount_isolation("/workspace/jackin").unwrap_err();
+        assert!(err.to_string().contains("expected DST=TYPE"));
+    }
+
+    #[test]
+    fn parse_mount_isolation_rejects_empty_dst() {
+        let err = parse_mount_isolation("=worktree").unwrap_err();
+        assert!(err.to_string().contains("destination cannot be empty"));
     }
 }

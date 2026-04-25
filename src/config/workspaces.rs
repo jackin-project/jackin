@@ -95,6 +95,11 @@ impl AppConfig {
             }
         }
 
+        crate::workspace::planner::apply_isolation_overrides(
+            &mut workspace.mounts,
+            &edit.mount_isolation_overrides,
+        )?;
+
         for selector in edit.allowed_agents_to_add {
             if !workspace
                 .allowed_agents
