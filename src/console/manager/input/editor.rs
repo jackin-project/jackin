@@ -196,18 +196,28 @@ pub(super) fn handle_editor_key(
         // § TUI Keybindings, in-tab actions are bound to plain letters;
         // this binding fires only when no modal is open (text-input
         // modals handle their own keys).
+        //
+        // The modifier guard tolerates `KeyModifiers::SHIFT` because
+        // terminals send letter keys with SHIFT set when Caps Lock is
+        // engaged. Stripping SHIFT from the modifier set and checking for
+        // empty matches both the lowercase (`m`) and uppercase (`M`,
+        // SHIFT-bearing or not) cases; Ctrl/Alt/Cmd still bypass the arm.
         KeyCode::Char('m' | 'M')
-            if editor.active_tab == EditorTab::Secrets && key.modifiers == KeyModifiers::NONE =>
+            if editor.active_tab == EditorTab::Secrets
+                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
             editor.secrets_masked = !editor.secrets_masked;
         }
         // P opens the 1Password picker as a row-level Secrets-tab action.
-        // Per RULES.md § TUI Keybindings, this binding fires only with no
-        // modifier — the picker would otherwise collide with text input
-        // inside the EnvValue modal, which is why it sits at the row
-        // level, not inside the text modal.
+        // Per RULES.md § TUI Keybindings, this binding fires only without
+        // Ctrl/Alt/Cmd modifiers — SHIFT is tolerated for caps-lock parity
+        // (see the `m | M` arm above for rationale). The picker would
+        // otherwise collide with text input inside the EnvValue modal,
+        // which is why it sits at the row level, not inside the text
+        // modal.
         KeyCode::Char('p' | 'P')
-            if editor.active_tab == EditorTab::Secrets && key.modifiers == KeyModifiers::NONE =>
+            if editor.active_tab == EditorTab::Secrets
+                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
             open_secrets_picker_modal(editor, op_cache);
         }
@@ -1857,6 +1867,52 @@ mod tests {
         assert!(
             found,
             "post-toggle render must show `ro` in the mode column"
+        );
+    }
+
+    // ── Caps-Lock parity: SHIFT-modified letter shortcuts ──────────────
+
+    /// Build an editor parked on the Secrets tab, masking ON, no rows.
+    /// Used by the Caps-Lock-parity tests below.
+    fn editor_on_secrets_tab<'a>() -> ManagerState<'a> {
+        let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
+        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        editor.secrets_masked = true;
+        state.stage = ManagerStage::Editor(editor);
+        state
+    }
+
+    /// Caps Lock causes terminals to send letter keys with the SHIFT
+    /// modifier set. The Secrets-tab `M` (mask toggle) and `P` (1Password
+    /// picker) bindings must accept SHIFT just like NONE — otherwise an
+    /// operator with Caps Lock on sees a silent no-op.
+    #[test]
+    fn secrets_tab_m_accepts_shift_modifier_for_caps_lock_parity() {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut state = editor_on_secrets_tab();
+
+        let shift_m = KeyEvent {
+            code: KeyCode::Char('M'),
+            modifiers: KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        handle_key(&mut state, &mut config, &paths, tmp.path(), shift_m).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            !e.secrets_masked,
+            "M with SHIFT modifier (Caps Lock parity) must toggle masking; \
+             secrets_masked should now be false"
         );
     }
 }
