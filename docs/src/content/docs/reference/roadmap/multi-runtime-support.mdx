@@ -1,6 +1,7 @@
 ---
 title: "Multi-Runtime Support for Codex and Amp"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 **Status**: Open — design proposal
 
@@ -34,13 +35,13 @@ That means the roadmap already names Codex and Amp as desirable runtimes, but th
 
 The current implementation is Claude-shaped in concrete, not just in naming:
 
-- `src/manifest/mod.rs` requires a `[claude]` table.
-- `src/derived_image.rs` appends `curl -fsSL https://claude.ai/install.sh | bash` and bakes in a Claude entrypoint.
-- `docker/runtime/entrypoint.sh` installs Claude plugins, registers Claude MCP servers, then launches `claude`.
-- `src/instance/auth.rs` provisions only Claude auth state (`.claude.json`, `.claude/.credentials.json`).
-- `src/instance/plugins.rs` serializes only Claude marketplace/plugin data.
-- `src/runtime/launch.rs` mounts only Claude state files and prints Claude-specific auth diagnostics.
-- `src/runtime/image.rs` and `src/version_check.rs` only know how to detect and refresh Claude versions.
+- <RepoFile path="src/manifest/mod.rs" /> requires a `[claude]` table.
+- <RepoFile path="src/derived_image.rs" /> appends `curl -fsSL https://claude.ai/install.sh | bash` and bakes in a Claude entrypoint.
+- <RepoFile path="docker/runtime/entrypoint.sh" /> installs Claude plugins, registers Claude MCP servers, then launches `claude`.
+- <RepoFile path="src/instance/auth.rs" /> provisions only Claude auth state (`.claude.json`, `.claude/.credentials.json`).
+- <RepoFile path="src/instance/plugins.rs" /> serializes only Claude marketplace/plugin data.
+- <RepoFile path="src/runtime/launch.rs" /> mounts only Claude state files and prints Claude-specific auth diagnostics.
+- <RepoFile path="src/runtime/image.rs" /> and <RepoFile path="src/version_check.rs" /> only know how to detect and refresh Claude versions.
 
 ### Existing org agent repos
 
@@ -152,18 +153,18 @@ Each runtime adapter should own these responsibilities:
 
 In practice that means the current Claude-specific logic in these files needs one shared seam rather than scattered `match runtime` branches everywhere:
 
-- `src/manifest/mod.rs`
-- `src/manifest/validate.rs`
-- `src/derived_image.rs`
-- `docker/runtime/entrypoint.sh`
-- `src/instance/mod.rs`
-- `src/instance/auth.rs`
-- `src/instance/plugins.rs`
-- `src/runtime/launch.rs`
-- `src/runtime/image.rs`
-- `src/version_check.rs`
-- `src/runtime/naming.rs`
-- `src/app/context.rs`
+- <RepoFile path="src/manifest/mod.rs" />
+- <RepoFile path="src/manifest/validate.rs" />
+- <RepoFile path="src/derived_image.rs" />
+- <RepoFile path="docker/runtime/entrypoint.sh" />
+- <RepoFile path="src/instance/mod.rs" />
+- <RepoFile path="src/instance/auth.rs" />
+- <RepoFile path="src/instance/plugins.rs" />
+- <RepoFile path="src/runtime/launch.rs" />
+- <RepoFile path="src/runtime/image.rs" />
+- <RepoFile path="src/version_check.rs" />
+- <RepoFile path="src/runtime/naming.rs" />
+- <RepoFile path="src/app/context.rs" />
 - docs for manifest, auth, architecture, and creating agents
 
 ### 4. Rename the runtime user from `claude` to `agent`
@@ -172,9 +173,9 @@ This should be treated as an intentional **breaking change** in the multi-runtim
 
 The current `claude` username and `/home/claude` path leak Claude-specific assumptions into too many places:
 
-- generated Dockerfiles in `src/derived_image.rs`
+- generated Dockerfiles in <RepoFile path="src/derived_image.rs" />
 - entrypoint and runtime helper scripts under `docker/runtime/`
-- mount destinations in `src/runtime/launch.rs`
+- mount destinations in <RepoFile path="src/runtime/launch.rs" />
 - docs examples and built-in mount defaults such as Gradle caches
 - first-party agent repos that occasionally reference `/home/claude`
 
@@ -338,18 +339,18 @@ If a later pass proves that Amp skills or Codex-specific config deserve first-cl
 
 ## Related Files
 
-- `docker/construct/Dockerfile`
-- `src/manifest/mod.rs`
-- `src/manifest/validate.rs`
-- `src/derived_image.rs`
-- `docker/runtime/entrypoint.sh`
-- `src/instance/mod.rs`
-- `src/instance/auth.rs`
-- `src/instance/plugins.rs`
-- `src/runtime/launch.rs`
-- `src/runtime/image.rs`
-- `src/version_check.rs`
-- `docs/src/content/docs/developing/agent-manifest.mdx`
-- `docs/src/content/docs/developing/creating-agents.mdx`
-- `docs/src/content/docs/guides/authentication.mdx`
-- `docs/src/content/docs/reference/architecture.mdx`
+- <RepoFile path="docker/construct/Dockerfile" />
+- <RepoFile path="src/manifest/mod.rs" />
+- <RepoFile path="src/manifest/validate.rs" />
+- <RepoFile path="src/derived_image.rs" />
+- <RepoFile path="docker/runtime/entrypoint.sh" />
+- <RepoFile path="src/instance/mod.rs" />
+- <RepoFile path="src/instance/auth.rs" />
+- <RepoFile path="src/instance/plugins.rs" />
+- <RepoFile path="src/runtime/launch.rs" />
+- <RepoFile path="src/runtime/image.rs" />
+- <RepoFile path="src/version_check.rs" />
+- <RepoFile path="docs/src/content/docs/developing/agent-manifest.mdx" />
+- <RepoFile path="docs/src/content/docs/developing/creating-agents.mdx" />
+- <RepoFile path="docs/src/content/docs/guides/authentication.mdx" />
+- <RepoFile path="docs/src/content/docs/reference/architecture.mdx" />
