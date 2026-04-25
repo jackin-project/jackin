@@ -1,3 +1,13 @@
+// All git invocations from this module are local-only:
+//   git status --porcelain
+//   git rev-parse HEAD
+//   git for-each-ref --format=%(upstream:short) refs/heads/...
+//   git rev-list <upstream>..<branch>
+//   git worktree remove --force
+//   git branch -D
+// None require network access. The shared finalizer is safe to call
+// after a hardline-locked attach (offline lockdown).
+
 use crate::docker::CommandRunner;
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
