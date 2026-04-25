@@ -537,64 +537,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
             WorkspaceCommand::Show { name } => {
-                use tabled::settings::Style;
-                use tabled::{Table, Tabled};
-
-                #[derive(Tabled)]
-                struct MountRow {
-                    #[tabled(rename = "Source")]
-                    src: String,
-                    #[tabled(rename = "Destination")]
-                    dst: String,
-                    #[tabled(rename = "Mode")]
-                    mode: String,
-                }
-
                 let workspace = config.require_workspace(&name)?;
-
-                let allowed = if workspace.allowed_agents.is_empty() {
-                    "any agent".to_string()
-                } else {
-                    workspace.allowed_agents.join(", ")
-                };
-                let default_agent = workspace.default_agent.as_deref().unwrap_or("none");
-
-                let short_workdir = tui::shorten_home(&workspace.workdir);
-                let info = [
-                    ("Name", name.as_str()),
-                    ("Workdir", short_workdir.as_str()),
-                    ("Allowed Agents", &allowed),
-                    ("Default Agent", default_agent),
-                ];
-                let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
-                info_table
-                    .with(Style::modern_rounded())
-                    .with(tabled::settings::Remove::row(
-                        tabled::settings::object::Rows::first(),
-                    ));
-                println!("{info_table}");
-
-                if !workspace.mounts.is_empty() {
-                    println!();
-                    println!("Mounts:");
-                    let mount_rows: Vec<MountRow> = workspace
-                        .mounts
-                        .iter()
-                        .map(|m| MountRow {
-                            src: tui::shorten_home(&m.src),
-                            dst: tui::shorten_home(&m.dst),
-                            mode: if m.readonly {
-                                "read-only".to_string()
-                            } else {
-                                "read-write".to_string()
-                            },
-                        })
-                        .collect();
-                    let mut mount_table = Table::new(mount_rows);
-                    mount_table.with(Style::modern_rounded());
-                    println!("{mount_table}");
-                }
-
+                print!("{}", render_workspace_show(&name, workspace));
                 Ok(())
             }
             WorkspaceCommand::Edit {
@@ -950,6 +894,77 @@ fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
     }
 }
 
+/// Render the `workspace show <name>` output as a string. Includes the info
+/// table (name/workdir/allowed/default-agent), and, when there are mounts, a
+/// trailing mounts table with one row per mount. The mounts table renders the
+/// canonical lowercase isolation name (`shared`/`worktree`) so the output
+/// matches TOML/CLI input verbatim.
+fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
+    use std::fmt::Write as _;
+    use tabled::settings::Style;
+    use tabled::{Table, Tabled};
+
+    #[derive(Tabled)]
+    struct MountRow {
+        #[tabled(rename = "Source")]
+        src: String,
+        #[tabled(rename = "Destination")]
+        dst: String,
+        #[tabled(rename = "Mode")]
+        mode: String,
+        #[tabled(rename = "Isolation")]
+        isolation: String,
+    }
+
+    let allowed = if workspace.allowed_agents.is_empty() {
+        "any agent".to_string()
+    } else {
+        workspace.allowed_agents.join(", ")
+    };
+    let default_agent = workspace.default_agent.as_deref().unwrap_or("none");
+
+    let short_workdir = tui::shorten_home(&workspace.workdir);
+    let info = [
+        ("Name", name),
+        ("Workdir", short_workdir.as_str()),
+        ("Allowed Agents", allowed.as_str()),
+        ("Default Agent", default_agent),
+    ];
+    let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
+    info_table
+        .with(Style::modern_rounded())
+        .with(tabled::settings::Remove::row(
+            tabled::settings::object::Rows::first(),
+        ));
+
+    let mut out = String::new();
+    let _ = writeln!(out, "{info_table}");
+
+    if !workspace.mounts.is_empty() {
+        let mount_rows: Vec<MountRow> = workspace
+            .mounts
+            .iter()
+            .map(|m| MountRow {
+                src: tui::shorten_home(&m.src),
+                dst: tui::shorten_home(&m.dst),
+                mode: if m.readonly {
+                    "read-only".to_string()
+                } else {
+                    "read-write".to_string()
+                },
+                isolation: m.isolation.as_str().to_string(),
+            })
+            .collect();
+        let mut mount_table = Table::new(mount_rows);
+        mount_table.with(Style::modern_rounded());
+        let _ = writeln!(out);
+        let _ = writeln!(out, "Mounts:");
+        let _ = writeln!(out, "{mount_table}");
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod auth_set_tests {
     use super::*;
@@ -971,5 +986,35 @@ mod auth_set_tests {
     #[test]
     fn parse_auth_forward_mode_from_cli_rejects_bogus() {
         assert!(parse_auth_forward_mode_from_cli("bogus").is_err());
+    }
+
+    #[test]
+    fn workspace_show_includes_isolation_column() {
+        let ws = crate::workspace::WorkspaceConfig {
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![
+                crate::workspace::MountConfig {
+                    src: "/tmp/x".into(),
+                    dst: "/workspace/jackin".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Worktree,
+                },
+                crate::workspace::MountConfig {
+                    src: "/tmp/cache".into(),
+                    dst: "/workspace/cache".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            ],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let out = render_workspace_show("jackin", &ws);
+        assert!(out.contains("Isolation"));
+        assert!(out.contains("worktree"));
+        assert!(out.contains("shared"));
     }
 }
