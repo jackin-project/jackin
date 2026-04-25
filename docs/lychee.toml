@@ -2,11 +2,19 @@
 #
 # Local PR check:
 #   cd docs
-#   bun run check:links
+#   bun run check:links:fresh
 
+# Cache is enabled locally and in CI. The CI workflow restores `.lycheecache`
+# with actions/cache so broad PR coverage does not refetch every external URL.
+cache = true
+
+# 429 is accepted to keep CI useful under external rate limits. GitHub requests
+# are also throttled below to make a 429 less likely.
 accept = ["100..=103", "200..=299", "429"]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
+
+# `format` controls the final report shape. `mode` controls terminal display.
 format = "compact"
 index_files = ["index.html"]
 max_concurrency = 32
@@ -18,7 +26,8 @@ retry_wait_time = 2
 timeout = 20
 user_agent = "jackin-docs-link-checker"
 
-scheme = ["https", "http", "file"]
+include_mail = true
+scheme = ["https", "http", "file", "mailto"]
 
 [hosts."github.com"]
 concurrency = 4

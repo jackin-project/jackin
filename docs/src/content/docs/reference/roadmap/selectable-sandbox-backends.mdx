@@ -1134,17 +1134,17 @@ Both `microvm` provider paths close the two biggest DinD gaps (shared kernel, pr
 
 ## Related Files
 
-- `src/runtime/launch.rs` - current launch orchestration
-- `src/runtime/attach.rs` - attach and hardline behavior
-- `src/runtime/cleanup.rs` - eject, purge, orphan GC
-- `src/docker.rs` - Docker CLI execution model
-- `src/instance/naming.rs` - persisted state and Docker-style naming assumptions
-- `src/instance/auth.rs`, `src/instance/plugins.rs` - state preparation that assumes container semantics
-- `src/workspace/resolve.rs`, `src/workspace/mounts.rs` - workspace mount resolution
-- `src/config/mod.rs` - future config surface for sandbox mode
-- `src/derived_image.rs` - derived runtime layer generation
-- `docker/construct/Dockerfile` - current Docker-oriented construct contract
-- `docker/runtime/entrypoint.sh` - current runtime entrypoint behavior
-- `docs/src/content/docs/reference/architecture.mdx` - current architecture story
-- `docs/src/content/docs/guides/security-model.mdx` - current security boundary statement
-- `docs/src/content/docs/guides/comparison.mdx` - comparison with Docker Sandboxes
+- [`src/runtime/launch.rs`](https://github.com/jackin-project/jackin/blob/main/src/runtime/launch.rs) - current launch orchestration
+- [`src/runtime/attach.rs`](https://github.com/jackin-project/jackin/blob/main/src/runtime/attach.rs) - attach and hardline behavior
+- [`src/runtime/cleanup.rs`](https://github.com/jackin-project/jackin/blob/main/src/runtime/cleanup.rs) - eject, purge, orphan GC
+- [`src/docker.rs`](https://github.com/jackin-project/jackin/blob/main/src/docker.rs) - Docker CLI execution model
+- [`src/instance/naming.rs`](https://github.com/jackin-project/jackin/blob/main/src/instance/naming.rs) - persisted state and Docker-style naming assumptions
+- [`src/instance/auth.rs`](https://github.com/jackin-project/jackin/blob/main/src/instance/auth.rs), [`src/instance/plugins.rs`](https://github.com/jackin-project/jackin/blob/main/src/instance/plugins.rs) - state preparation that assumes container semantics
+- [`src/workspace/resolve.rs`](https://github.com/jackin-project/jackin/blob/main/src/workspace/resolve.rs), [`src/workspace/mounts.rs`](https://github.com/jackin-project/jackin/blob/main/src/workspace/mounts.rs) - workspace mount resolution
+- [`src/config/mod.rs`](https://github.com/jackin-project/jackin/blob/main/src/config/mod.rs) - future config surface for sandbox mode
+- [`src/derived_image.rs`](https://github.com/jackin-project/jackin/blob/main/src/derived_image.rs) - derived runtime layer generation
+- [`docker/construct/Dockerfile`](https://github.com/jackin-project/jackin/blob/main/docker/construct/Dockerfile) - current Docker-oriented construct contract
+- [`docker/runtime/entrypoint.sh`](https://github.com/jackin-project/jackin/blob/main/docker/runtime/entrypoint.sh) - current runtime entrypoint behavior
+- [`docs/src/content/docs/reference/architecture.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/reference/architecture.mdx) - current architecture story
+- [`docs/src/content/docs/guides/security-model.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/guides/security-model.mdx) - current security boundary statement
+- [`docs/src/content/docs/guides/comparison.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/guides/comparison.mdx) - comparison with Docker Sandboxes

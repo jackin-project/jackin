@@ -257,19 +257,19 @@ Defer:
 
 ## Related Files
 
-- `src/workspace/mod.rs` — `MountConfig`, `WorkspaceConfig` types
-- `src/workspace/mounts.rs` — mount parsing and validation entry points
-- `src/workspace/resolve.rs` — `resolve_load_workspace`
-- `src/instance/naming.rs` — per-container naming provides collision-free container names used by worktree paths and branch names
-- `src/runtime/launch.rs` — `load`/`launch` path where materialization hooks in and foreground finalization begins
-- `src/runtime/attach.rs` — `hardline` attach/restart path; should call the shared foreground finalizer after attach returns
-- `src/runtime/cleanup.rs` — `purge` path where teardown hooks in; `list_agent_names` is the primitive for the running-agent guard
-- `src/app/mod.rs` — `Command::Purge` dispatch; gains the running-agent guard
-- `src/config/mod.rs` — serialization of the new `isolation` field
-- `src/config/workspaces.rs` — `workspace show` output and edit flows
-- `src/cli/workspace.rs` — `--mount-isolation` create/edit flags and `workspace show` output
-- `src/cli/agent.rs` — `load --force` dirty-host acknowledgement
-- `src/cli/cleanup.rs` — `PurgeArgs`; error messaging when target is running
+- [`src/workspace/mod.rs`](https://github.com/jackin-project/jackin/blob/main/src/workspace/mod.rs) — `MountConfig`, `WorkspaceConfig` types
+- [`src/workspace/mounts.rs`](https://github.com/jackin-project/jackin/blob/main/src/workspace/mounts.rs) — mount parsing and validation entry points
+- [`src/workspace/resolve.rs`](https://github.com/jackin-project/jackin/blob/main/src/workspace/resolve.rs) — `resolve_load_workspace`
+- [`src/instance/naming.rs`](https://github.com/jackin-project/jackin/blob/main/src/instance/naming.rs) — per-container naming provides collision-free container names used by worktree paths and branch names
+- [`src/runtime/launch.rs`](https://github.com/jackin-project/jackin/blob/main/src/runtime/launch.rs) — `load`/`launch` path where materialization hooks in and foreground finalization begins
+- [`src/runtime/attach.rs`](https://github.com/jackin-project/jackin/blob/main/src/runtime/attach.rs) — `hardline` attach/restart path; should call the shared foreground finalizer after attach returns
+- [`src/runtime/cleanup.rs`](https://github.com/jackin-project/jackin/blob/main/src/runtime/cleanup.rs) — `purge` path where teardown hooks in; `list_agent_names` is the primitive for the running-agent guard
+- [`src/app/mod.rs`](https://github.com/jackin-project/jackin/blob/main/src/app/mod.rs) — `Command::Purge` dispatch; gains the running-agent guard
+- [`src/config/mod.rs`](https://github.com/jackin-project/jackin/blob/main/src/config/mod.rs) — serialization of the new `isolation` field
+- [`src/config/workspaces.rs`](https://github.com/jackin-project/jackin/blob/main/src/config/workspaces.rs) — `workspace show` output and edit flows
+- [`src/cli/workspace.rs`](https://github.com/jackin-project/jackin/blob/main/src/cli/workspace.rs) — `--mount-isolation` create/edit flags and `workspace show` output
+- [`src/cli/agent.rs`](https://github.com/jackin-project/jackin/blob/main/src/cli/agent.rs) — `load --force` dirty-host acknowledgement
+- [`src/cli/cleanup.rs`](https://github.com/jackin-project/jackin/blob/main/src/cli/cleanup.rs) — `PurgeArgs`; error messaging when target is running
 - New `src/cli/cd.rs` (or similar) — `jackin cd <container> [dst]` command
 - New module (e.g. `src/isolation.rs`) — materialization, `isolation.json`, mount-destination slugging, and host-side git shell-outs
-- `docs/src/content/docs/guides/workspaces.mdx`, `docs/src/content/docs/guides/mounts.mdx`, `docs/src/content/docs/reference/configuration.mdx`, `docs/src/content/docs/reference/architecture.mdx` — doc pages to update alongside the code change
+- [`docs/src/content/docs/guides/workspaces.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/guides/workspaces.mdx), [`docs/src/content/docs/guides/mounts.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/guides/mounts.mdx), [`docs/src/content/docs/reference/configuration.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/reference/configuration.mdx), [`docs/src/content/docs/reference/architecture.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/reference/architecture.mdx) — doc pages to update alongside the code change

@@ -55,6 +55,6 @@ export POSTGRESQL_DB_HOST="$JACKIN_DIND_HOSTNAME"
 
 ## Related Files
 
-- `src/runtime/launch.rs` — where `DOCKER_HOST` is constructed and passed to the container
-- `docker/runtime/entrypoint.sh` — runtime setup (no changes needed)
-- `src/env_model.rs` — reserved-runtime-env list including `JACKIN_CLAUDE_ENV` (and precedent for additional `JACKIN_*` reservations)
+- [`src/runtime/launch.rs`](https://github.com/jackin-project/jackin/blob/main/src/runtime/launch.rs) — where `DOCKER_HOST` is constructed and passed to the container
+- [`docker/runtime/entrypoint.sh`](https://github.com/jackin-project/jackin/blob/main/docker/runtime/entrypoint.sh) — runtime setup (no changes needed)
+- [`src/env_model.rs`](https://github.com/jackin-project/jackin/blob/main/src/env_model.rs) — reserved-runtime-env list including `JACKIN_CLAUDE_ENV` (and precedent for additional `JACKIN_*` reservations)

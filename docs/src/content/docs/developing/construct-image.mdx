@@ -61,7 +61,7 @@ The construct creates a `claude` user with:
 
 ## How it's built
 
-The construct source code lives at [`docker/construct/`](https://github.com/jackin-project/jackin/tree/main/docker/construct) in the jackin' repository. The declarative build definition lives in the repo-root `docker-bake.hcl`, and the supported command wrapper is the repo-root `Justfile`.
+The construct source starts at [`docker/construct/Dockerfile`](https://github.com/jackin-project/jackin/blob/main/docker/construct/Dockerfile) in the jackin' repository. The declarative build definition lives in the repo-root `docker-bake.hcl`, and the supported command wrapper is the repo-root `Justfile`.
 
 `docker/construct/versions.env` remains the source of truth for the pinned `tirith` and `shellfirm` build args used by `docker/construct/Dockerfile`.
 

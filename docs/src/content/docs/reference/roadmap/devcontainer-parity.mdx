@@ -271,11 +271,11 @@ extensions list becomes an obvious payload for it.
 
 ## Related Files
 
-- `docker/construct/Dockerfile` — base image, user creation, shell setup
-- `docker/construct/install-plugins.sh` — plugin bootstrap (touched by Finding 1 if egress list needs to reach plugin sources)
-- `docker/construct/zshrc` — shell hooks (touched by Finding 4)
-- `docker/runtime/entrypoint.sh` — runtime orchestration (touched by Finding 1)
-- `src/runtime/launch.rs` — mount and capability wiring (touched by Findings 1 and 4)
-- `src/derived_image.rs` — derived Dockerfile generation (touched by Finding 2)
-- `docs/src/content/docs/guides/security-model.mdx` — security posture (touched by Findings 1 and 3)
+- [`docker/construct/Dockerfile`](https://github.com/jackin-project/jackin/blob/main/docker/construct/Dockerfile) — base image, user creation, shell setup
+- [`docker/construct/install-plugins.sh`](https://github.com/jackin-project/jackin/blob/main/docker/construct/install-plugins.sh) — plugin bootstrap (touched by Finding 1 if egress list needs to reach plugin sources)
+- [`docker/construct/zshrc`](https://github.com/jackin-project/jackin/blob/main/docker/construct/zshrc) — shell hooks (touched by Finding 4)
+- [`docker/runtime/entrypoint.sh`](https://github.com/jackin-project/jackin/blob/main/docker/runtime/entrypoint.sh) — runtime orchestration (touched by Finding 1)
+- [`src/runtime/launch.rs`](https://github.com/jackin-project/jackin/blob/main/src/runtime/launch.rs) — mount and capability wiring (touched by Findings 1 and 4)
+- [`src/derived_image.rs`](https://github.com/jackin-project/jackin/blob/main/src/derived_image.rs) — derived Dockerfile generation (touched by Finding 2)
+- [`docs/src/content/docs/guides/security-model.mdx`](https://github.com/jackin-project/jackin/blob/main/docs/src/content/docs/guides/security-model.mdx) — security posture (touched by Findings 1 and 3)
 - Upstream reference: [`anthropics/claude-code/.devcontainer`](https://github.com/anthropics/claude-code/tree/main/.devcontainer)

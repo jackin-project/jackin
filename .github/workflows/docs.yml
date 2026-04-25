@@ -3,17 +3,18 @@ name: Docs
 on:
   push:
     branches: [main]
-    paths:
-      - 'docs/**'
-      - '.github/workflows/docs.yml'
   pull_request:
-    paths:
-      - 'docs/**'
-      - '.github/workflows/docs.yml'
   workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * *'
 
 permissions:
   contents: read
+
+env:
+  DOCS_SITE_URL: https://jackin.tailrocks.com
+  JACKIN_REPO_BLOB_URL: https://github.com/jackin-project/jackin/blob/main
+  JACKIN_REPO_EDIT_URL: https://github.com/jackin-project/jackin/edit/main
 
 concurrency:
   group: pages-${{ github.ref }}
@@ -40,6 +41,15 @@ jobs:
         working-directory: docs
         run: mise exec -- bun run build
 
+      - name: Restore lychee cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .lycheecache
+          key: lychee-${{ runner.os }}-${{ github.workflow }}-${{ github.ref_name }}-${{ hashFiles('docs/lychee.toml') }}
+          restore-keys: |
+            lychee-${{ runner.os }}-${{ github.workflow }}-${{ github.ref_name }}-
+            lychee-${{ runner.os }}-${{ github.workflow }}-
+
       - name: Check built site links
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
         with:
@@ -47,7 +57,11 @@ jobs:
             --config docs/lychee.toml
             --include-fragments
             --remap
-            "https://github.com/jackin-project/jackin/edit/main/(.*) file://${{ github.workspace }}/\$1"
+            "${{ env.DOCS_SITE_URL }}/(.*) file://${{ github.workspace }}/docs/dist/\$1"
+            --remap
+            "${{ env.JACKIN_REPO_EDIT_URL }}/(.*) file://${{ github.workspace }}/\$1"
+            --remap
+            "${{ env.JACKIN_REPO_BLOB_URL }}/(.*) file://${{ github.workspace }}/\$1"
             --root-dir ${{ github.workspace }}/docs/dist
             docs/dist/**/*.html
           fail: true
@@ -75,6 +89,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Restore lychee cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .lycheecache
+          key: lychee-deployed-${{ runner.os }}-${{ github.sha }}-${{ hashFiles('docs/lychee.toml') }}
+          restore-keys: |
+            lychee-deployed-${{ runner.os }}-
+            lychee-${{ runner.os }}-${{ github.workflow }}-
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
@@ -85,9 +108,9 @@ jobs:
       - name: Collect deployed docs URLs
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
         with:
+          output: lychee/deployed-pages.txt
           args: >-
             --dump
-            --output lychee/deployed-pages.txt
             ${{ steps.deployment.outputs.page_url }}sitemap-0.xml
           fail: true
 
@@ -98,7 +121,53 @@ jobs:
             --config docs/lychee.toml
             --include-fragments
             --remap
-            "https://github.com/jackin-project/jackin/edit/main/(.*) https://raw.githubusercontent.com/jackin-project/jackin/main/\$1"
+            "${{ env.JACKIN_REPO_EDIT_URL }}/(.*) file://${{ github.workspace }}/\$1"
+            --remap
+            "${{ env.JACKIN_REPO_BLOB_URL }}/(.*) file://${{ github.workspace }}/\$1"
+            --files-from lychee/deployed-pages.txt
+          fail: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  check-deployed:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Restore lychee cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .lycheecache
+          key: lychee-deployed-${{ runner.os }}-${{ hashFiles('docs/lychee.toml') }}
+          restore-keys: |
+            lychee-deployed-${{ runner.os }}-
+
+      - name: Prepare deployed link check
+        run: mkdir -p lychee
+
+      - name: Collect deployed docs URLs
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
+        with:
+          output: lychee/deployed-pages.txt
+          args: >-
+            --dump
+            ${{ env.DOCS_SITE_URL }}/sitemap-0.xml
+          fail: true
+
+      - name: Check deployed docs links
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
+        with:
+          args: >-
+            --config docs/lychee.toml
+            --include-fragments
+            --remap
+            "${{ env.JACKIN_REPO_EDIT_URL }}/(.*) file://${{ github.workspace }}/\$1"
+            --remap
+            "${{ env.JACKIN_REPO_BLOB_URL }}/(.*) file://${{ github.workspace }}/\$1"
             --files-from lychee/deployed-pages.txt
           fail: true
         env:
