@@ -151,7 +151,7 @@ enum CleanupAssessment {
     PreservedUnpushed,
 }
 
-#[allow(clippy::unnecessary_wraps)] // 7.3 adds capture-fail propagation
+#[allow(clippy::unnecessary_wraps)] // capture failures fall back to unpushed
 fn assess_cleanup(
     record: &IsolationRecord,
     runner: &mut impl CommandRunner,
@@ -178,8 +178,41 @@ fn assess_cleanup(
     if head == record.base_commit {
         return Ok(CleanupAssessment::SafeToDelete);
     }
-    // 7.3 fills in the upstream-reachability path. For 7.2, default to PreservedUnpushed.
-    Ok(CleanupAssessment::PreservedUnpushed)
+    let upstream = runner
+        .capture(
+            "git",
+            &[
+                "-C",
+                &record.worktree_path,
+                "for-each-ref",
+                "--format=%(upstream:short)",
+                &format!("refs/heads/{}", record.scratch_branch),
+            ],
+            None,
+        )
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if upstream.is_empty() {
+        return Ok(CleanupAssessment::PreservedUnpushed);
+    }
+    let branch_minus_upstream = runner
+        .capture(
+            "git",
+            &[
+                "-C",
+                &record.worktree_path,
+                "rev-list",
+                &format!("{upstream}..{}", record.scratch_branch),
+            ],
+            None,
+        )
+        .unwrap_or_default();
+    if branch_minus_upstream.trim().is_empty() {
+        Ok(CleanupAssessment::SafeToDelete)
+    } else {
+        Ok(CleanupAssessment::PreservedUnpushed)
+    }
 }
 
 fn mark_preserved(
@@ -315,5 +348,86 @@ mod tests {
                 .any(|c| c.contains("worktree remove --force"))
         );
         assert!(runner.run_recorded.iter().any(|c| c.contains("branch -D")));
+    }
+
+    #[test]
+    fn clean_worktree_with_pushed_commits_deletes_record() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // Capture queue:
+        //   status --porcelain (clean)
+        //   rev-parse HEAD (different from base)
+        //   for-each-ref upstream:short -> "origin/jackin/scratch/x"
+        //   rev-list <upstream>..<branch> -> "" (all reachable)
+        let mut runner = fake_with_outputs(&["", "newhead\n", "origin/jackin/scratch/x\n", ""]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert!(read_records(dir.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn clean_worktree_with_unpushed_commits_preserves() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // Capture queue:
+        //   status --porcelain (clean)
+        //   rev-parse HEAD (different)
+        //   for-each-ref upstream:short -> "origin/jackin/scratch/x"
+        //   rev-list <upstream>..<branch> -> "deadbeef" (one local commit not on upstream)
+        let mut runner =
+            fake_with_outputs(&["", "newhead\n", "origin/jackin/scratch/x\n", "deadbeef\n"]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    }
+
+    #[test]
+    fn clean_worktree_no_upstream_preserves_when_head_diverged() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // Capture queue:
+        //   status --porcelain (clean)
+        //   rev-parse HEAD (different)
+        //   for-each-ref upstream:short -> "" (no upstream)
+        let mut runner = fake_with_outputs(&["", "newhead\n", ""]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
 }
