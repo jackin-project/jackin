@@ -9,8 +9,15 @@ use std::collections::btree_map::Entry;
 /// `[mounts.<scope>]` entries). Mirrors `MountConfig` minus the
 /// `isolation` field, which is a workspace-mount concept only.
 /// Rejects unknown fields so an operator who tries to set `isolation`
-/// on a global mount gets a clear parse error rather than a silent
-/// no-op.
+/// directly on this struct gets a serde "unknown field" error.
+///
+/// Note: at the actual wire path (`AppConfig` → `DockerMounts` →
+/// `MountEntry`), `MountEntry` is `#[serde(untagged)]`, so the error
+/// surfaces as "data did not match any variant of untagged enum
+/// `MountEntry`" rather than a clean "unknown field `isolation`"
+/// message. This is acceptable; a custom `Deserialize` for
+/// `MountEntry` could improve the message but is not implemented
+/// here.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct GlobalMountConfig {
@@ -31,19 +38,6 @@ impl From<GlobalMountConfig> for MountConfig {
     }
 }
 
-impl From<MountConfig> for GlobalMountConfig {
-    fn from(m: MountConfig) -> Self {
-        // Discards isolation by design; only used when reading existing
-        // MountConfig back into the global wire format. If you need to
-        // preserve isolation, you're using the wrong struct.
-        Self {
-            src: m.src,
-            dst: m.dst,
-            readonly: m.readonly,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MountEntry {
@@ -59,18 +53,8 @@ impl DockerMounts {
         self.0.get(key)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn get_mut(&mut self, key: &str) -> Option<&mut MountEntry> {
-        self.0.get_mut(key)
-    }
-
     pub(crate) fn insert(&mut self, key: String, value: MountEntry) -> Option<MountEntry> {
         self.0.insert(key, value)
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn remove(&mut self, key: &str) -> Option<MountEntry> {
-        self.0.remove(key)
     }
 
     pub(crate) fn entry(
@@ -144,21 +128,34 @@ impl AppConfig {
     // (launch/preview.rs, workspace/resolve.rs). Production callers use ConfigEditor.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
+        // Global mounts cannot carry isolation; the wire format
+        // (`GlobalMountConfig`) doesn't have the field. Convert
+        // explicitly to make the lossy projection visible at the
+        // call site rather than hidden behind `Into`.
+        debug_assert!(
+            matches!(mount.isolation, crate::isolation::MountIsolation::Shared),
+            "global mounts cannot carry isolation"
+        );
+        let global = GlobalMountConfig {
+            src: mount.src,
+            dst: mount.dst,
+            readonly: mount.readonly,
+        };
         let scope_key = scope.unwrap_or("");
         if scope_key.is_empty() {
             self.docker
                 .mounts
-                .insert(name.to_string(), MountEntry::Mount(mount.into()));
+                .insert(name.to_string(), MountEntry::Mount(global));
         } else {
             match self.docker.mounts.entry(scope_key.to_string()) {
                 Entry::Occupied(mut entry) => {
                     if let MountEntry::Scoped(map) = entry.get_mut() {
-                        map.insert(name.to_string(), mount.into());
+                        map.insert(name.to_string(), global);
                     }
                 }
                 Entry::Vacant(entry) => {
                     let mut map = BTreeMap::new();
-                    map.insert(name.to_string(), mount.into());
+                    map.insert(name.to_string(), global);
                     entry.insert(MountEntry::Scoped(map));
                 }
             }
@@ -442,5 +439,26 @@ readonly = true
 "#;
         let m: GlobalMountConfig = toml::from_str(toml).unwrap();
         assert!(m.readonly);
+    }
+
+    #[test]
+    fn wire_path_rejects_isolation_on_global_mount() {
+        // Production wire path: AppConfig → DockerMounts → MountEntry
+        // (untagged enum) → GlobalMountConfig. Setting `isolation` on
+        // a top-level `[docker.mounts]` entry must fail to deserialize.
+        // Because `MountEntry` is `#[serde(untagged)]`, the message is
+        // the generic "data did not match any variant" rather than
+        // the cleaner "unknown field `isolation`" — see the doc
+        // comment on `GlobalMountConfig` for the rationale.
+        let toml = r#"
+[docker.mounts]
+gradle-cache = { src = "/tmp/x", dst = "/workspace/x", isolation = "worktree" }
+"#;
+        let err = toml::from_str::<AppConfig>(toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("did not match any variant of untagged enum MountEntry"),
+            "expected untagged-enum mismatch error, got: {msg}"
+        );
     }
 }
