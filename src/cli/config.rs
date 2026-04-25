@@ -13,6 +13,73 @@ pub enum ConfigCommand {
     /// Manage Claude Code authentication forwarding from host
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
     Auth(AuthCommand),
+    /// Manage operator env vars at global and per-agent scope
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    Env(EnvCommand),
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum EnvCommand {
+    /// Set an env var at global or per-agent scope
+    ///
+    /// Without `--agent`, writes to the global `[env]` table. With
+    /// `--agent <SELECTOR>`, writes to `[agents.<selector>.env]`. The agent
+    /// selector is not pre-validated — the table path is written regardless
+    /// of whether that agent is registered, matching `config auth set`.
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin config env set API_TOKEN \"op://Personal/api/token\"
+  jackin config env set LOG_LEVEL debug --agent agent-smith
+  jackin config env set OPENAI_KEY \"op://Work/OpenAI/key\" --comment \"rotate quarterly\""
+    )]
+    Set {
+        /// Env var name (stored verbatim; no POSIX validation)
+        key: String,
+        /// Env var value (use `op://...`, `$VAR`, `${VAR}`, or literal)
+        value: String,
+        /// Apply to a specific agent instead of globally
+        #[arg(long)]
+        agent: Option<String>,
+        /// Write a TOML comment line above the key
+        #[arg(long)]
+        comment: Option<String>,
+    },
+    /// Unset an env var at global or per-agent scope
+    ///
+    /// Idempotent: if the key is not present, prints "KEY not set." and
+    /// exits 0 without saving the config.
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin config env unset API_TOKEN
+  jackin config env unset LOG_LEVEL --agent agent-smith"
+    )]
+    Unset {
+        /// Env var name to remove
+        key: String,
+        /// Unset from a specific agent instead of globally
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// List env vars at global or per-agent scope
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin config env list
+  jackin config env list --agent agent-smith"
+    )]
+    List {
+        /// List vars for a specific agent instead of the global scope
+        #[arg(long)]
+        agent: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]

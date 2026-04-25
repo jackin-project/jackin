@@ -131,3 +131,69 @@ jackin workspace prune my-app --yes  # non-interactive
 ```
 
 Under rule C, a mount is redundant when another mount in the same workspace strictly covers it at the same container location — same host-to-container offset. See [Redundant-mount invariant](../guides/mounts.mdx#redundant-mount-invariant) in the mounts guide.
+
+## `workspace env`
+
+Manage operator env vars at workspace and workspace-agent scope.
+
+Values are stored verbatim — `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work. jackin' resolves values at launch time through the operator-env layer; there is no editor-side validation of key names or value shape.
+
+Without `--agent`, writes and reads target `[workspaces.<WORKSPACE>.env]`. With `--agent <SELECTOR>`, they target `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]`. The workspace must already exist — unknown workspaces fail fast with a non-zero exit. The agent selector is not pre-validated.
+
+### `workspace env set`
+
+```bash
+jackin workspace env set <WORKSPACE> <KEY> <VALUE> [OPTIONS]
+```
+
+Set or overwrite an env var at the chosen scope.
+
+| Option | Description |
+|---|---|
+| `--agent <SELECTOR>` | Apply to `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]` instead of the workspace-wide table |
+| `--comment <TEXT>` | Write a TOML line comment directly above the key |
+
+```bash
+# Workspace scope
+jackin workspace env set prod DB_URL "op://Work/Prod/db-url"
+
+# Workspace-agent scope
+jackin workspace env set prod OPENAI_KEY "op://Work/OpenAI/key" --agent agent-smith
+
+# Attach a comment
+jackin workspace env set prod DEBUG "1" --comment "temporary; remove after Q2"
+```
+
+### `workspace env unset`
+
+```bash
+jackin workspace env unset <WORKSPACE> <KEY> [OPTIONS]
+```
+
+Remove an env var from the chosen scope. Idempotent: if the key is not present, prints `<KEY> not set.` and exits 0 without modifying the config file. Fails fast if `<WORKSPACE>` does not exist.
+
+| Option | Description |
+|---|---|
+| `--agent <SELECTOR>` | Unset from `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]` instead of the workspace-wide table |
+
+```bash
+jackin workspace env unset prod DB_URL
+jackin workspace env unset prod OPENAI_KEY --agent agent-smith
+```
+
+### `workspace env list`
+
+```bash
+jackin workspace env list <WORKSPACE> [OPTIONS]
+```
+
+Show the env vars registered at the chosen scope as a table with `Key` and `Value` columns. Prints `No env vars set.` when the scope is empty. Values are shown as-stored (no resolution, no masking). Fails fast if `<WORKSPACE>` does not exist.
+
+| Option | Description |
+|---|---|
+| `--agent <SELECTOR>` | List vars from `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]` instead of the workspace-wide table |
+
+```bash
+jackin workspace env list prod
+jackin workspace env list prod --agent agent-smith
+```
