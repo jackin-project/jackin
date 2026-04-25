@@ -39,7 +39,27 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 
 ### Internal cleanups
 
-_(none yet)_
+#### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check
+
+- **What:** the deploy job's `Check deployed docs links` step in [`.github/workflows/docs.yml`](.github/workflows/docs.yml) emits a one-line `[WARN] [Full Github Actions output]: No files found for this input source` from the lychee binary, then continues and reports `Total 4703 / Successful 4703 / Errors 0`. Identify which of the 46 sitemap input URLs triggered the warn and either fix the cause or filter the warn so the signal is clean.
+- **Why:** the warn means at least one of the 46 deployed pages we feed via `--files-from lychee/deployed-pages.txt` resolved to zero extractable links. Right now we tolerate it because the rest of the run is green, but if a future regression causes 5 inputs to silently skip, we wouldn't notice — the warn count is the only tell. A clean run gives us a real signal that every deployed page was actually scanned.
+- **Tracking:**
+  - First observed in [run 24940918362](https://github.com/jackin-project/jackin/actions/runs/24940918362) on `main` after [`34bb396`](https://github.com/jackin-project/jackin/commit/34bb396) ([#176](https://github.com/jackin-project/jackin/pull/176) merge).
+  - Warn string is emitted by the lychee binary (`strings lychee | grep "No files found"` confirms in v0.24.1), not the lychee-action wrapper.
+  - lychee source — search for the literal string in <https://github.com/lycheeverse/lychee> to find the emitter and the exact condition.
+- **Last verified:** 2026-04-25 — present on every `main` push since #176 merged.
+- **Hypotheses to check (in order):**
+  1. **Redirected page returns non-HTML.** The same run reports 9 redirects. One redirected URL might land on a page lychee can't extract from (e.g., raw text, unusual content-type).
+  2. **Sitemap entry that yields zero anchors.** Some Starlight pages — landing-style or auto-generated — render with no `<a href>` in body content. Identify by running `curl <url> | grep -c '<a href' ` for each of the 46 URLs and finding the one with zero.
+  3. **Spurious empty arg in the `eval`-ed command.** lychee-action's entrypoint uses `eval lychee … ${ARGS}` (unquoted). If our YAML folded scalar produces an extra empty token, lychee would treat it as an empty input source and warn.
+- **How to reproduce:**
+  ```sh
+  curl -fsSL https://jackin.tailrocks.com/sitemap-0.xml \
+    | grep -oE '<loc>[^<]+</loc>' | sed 's|<loc>||; s|</loc>||' > /tmp/pages.txt
+  lychee --verbose --files-from /tmp/pages.txt 2>&1 | grep -B1 -A1 "No files found"
+  ```
+  The verbose output names the input source that triggered the warn.
+- **Done when:** either (a) the warn is no longer emitted on a clean main run, or (b) it is, but the cause is documented as benign (e.g., one Starlight page renders without anchors by design) and the warn is suppressed/filtered so it doesn't mask future genuine warnings. In case (a) remove this entry; in case (b) replace it with a one-line note in `docs.yml`.
 
 ## Roadmap
 
