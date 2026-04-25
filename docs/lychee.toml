@@ -7,7 +7,6 @@
 accept = ["100..=103", "200..=299", "429"]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
-exclude = ["^https://github\\.com/jackin-project/jackin/edit/main/"]
 format = "compact"
 index_files = ["index.html"]
 max_concurrency = 32

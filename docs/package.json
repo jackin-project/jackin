@@ -9,8 +9,7 @@
     "astro": "astro",
     "gen-og": "bun run scripts/gen-og.ts",
     "gen-icons": "bun run scripts/gen-icons.ts",
-    "check:edit-links": "bun run scripts/check-edit-links.ts",
-    "check:links": "bun run build && bun run check:edit-links && lychee --config lychee.toml --include-fragments --root-dir \"$PWD/dist\" 'dist/**/*.html'",
+    "check:links": "bun run build && lychee --config lychee.toml --include-fragments --remap \"https://github.com/jackin-project/jackin/edit/main/(.*) file://$PWD/../\\$1\" --root-dir \"$PWD/dist\" 'dist/**/*.html'",
     "test": "bun test"
   },
   "dependencies": {

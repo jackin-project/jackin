@@ -40,16 +40,14 @@ jobs:
         working-directory: docs
         run: mise exec -- bun run build
 
-      - name: Check generated edit links
-        working-directory: docs
-        run: mise exec -- bun run check:edit-links
-
       - name: Check built site links
         uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
         with:
           args: >-
             --config docs/lychee.toml
             --include-fragments
+            --remap
+            "https://github.com/jackin-project/jackin/edit/main/(.*) file://${{ github.workspace }}/\$1"
             --root-dir ${{ github.workspace }}/docs/dist
             docs/dist/**/*.html
           fail: true
@@ -99,6 +97,8 @@ jobs:
           args: >-
             --config docs/lychee.toml
             --include-fragments
+            --remap
+            "https://github.com/jackin-project/jackin/edit/main/(.*) https://raw.githubusercontent.com/jackin-project/jackin/main/\$1"
             --files-from lychee/deployed-pages.txt
           fail: true
         env:
