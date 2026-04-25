@@ -3,7 +3,7 @@ title: "Per-Mount Isolation for Parallel Agents"
 ---
 
 
-**Status**: Open — design proposal
+**Status**: Implemented in V1
 
 ## Problem
 
@@ -110,7 +110,7 @@ Beyond the per-type validation:
 - Pre-flight validation only covers cases where git would silently do the wrong thing (subdirectory misrouting, mid-rebase HEAD). Obviously-broken cases (not a repo, unborn branch, bare repo) are left to git's own error messages — jackin' doesn't re-wrap errors that git already reports clearly.
 - Mount collapse / redundancy planning must treat `isolation` as part of the mount's semantics. A `shared` child under a `worktree` parent is not automatically equivalent to the parent just because `src`/`dst` suffixes line up; collapse is only safe when `readonly` and `isolation` match.
 - Shared cache overrides are a supported composition pattern. A workspace can mount an isolated source tree at `/workspace/app` and then mount a shared cache under it, such as `/workspace/app/target` or `/workspace/app/node_modules`. The effective Docker mount order must preserve this behavior by emitting parent mounts before deeper child mounts, so the child cache mount overlays the corresponding path inside the isolated worktree.
-- Duplicate isolated mounts that point at the same canonical repo root are allowed in V1. They materialize as separate worktrees keyed by mount destination, not as one shared worktree. Branch naming must avoid collisions for this case, for example by appending the mount-destination slug when more than one isolated mount in the same container would otherwise use the same scratch branch.
+- Multiple isolated mounts per workspace are allowed (siblings or same-repo siblings with branch-name disambiguation). Two isolated mounts whose `dst` paths nest are rejected at validation time — the inner worktree's `.git` would land inside the outer worktree's tree, which is unsafe regardless of mode.
 
 ## Host-Side Materialization
 
