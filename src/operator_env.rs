@@ -355,6 +355,261 @@ impl OpRunner for OpCli {
     }
 }
 
+/// Test seam for structural `op` queries used by the 1Password picker.
+///
+/// Where [`OpRunner`] resolves a single `op://...` reference to its
+/// secret value, `OpStructRunner` enumerates *metadata* — accounts,
+/// vaults, items, and field shapes — without ever touching field
+/// values. The picker is a metadata browser; it must never deserialize
+/// a secret value into memory. The serde shapes used internally
+/// (`RawOpField` in particular) intentionally omit the `value` key.
+pub trait OpStructRunner {
+    /// `op account list --format json`. Used as a sign-in probe before
+    /// any subsequent call.
+    fn account_list(&self) -> anyhow::Result<Vec<OpAccount>>;
+    /// `op vault list --format json`.
+    fn vault_list(&self) -> anyhow::Result<Vec<OpVault>>;
+    /// `op item list --vault <vault_id> --format json`.
+    fn item_list(&self, vault_id: &str) -> anyhow::Result<Vec<OpItem>>;
+    /// `op item get <item_id> --vault <vault_id> --format json`.
+    /// Returns the structural `fields` array with values stripped.
+    fn item_get(&self, item_id: &str, vault_id: &str) -> anyhow::Result<Vec<OpField>>;
+}
+
+/// Identifier of a 1Password account as reported by `op account list`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpAccount {
+    pub id: String,
+}
+
+/// Vault metadata as reported by `op vault list`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpVault {
+    pub id: String,
+    pub name: String,
+}
+
+/// Item metadata as reported by `op item list`. The `name` field is
+/// mapped from the JSON `title` key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpItem {
+    pub id: String,
+    pub name: String,
+}
+
+/// Field metadata as reported by `op item get`. Notably absent: the
+/// field's value. The picker is a metadata browser only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpField {
+    pub id: String,
+    pub label: String,
+    pub field_type: String,
+    pub concealed: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct RawOpAccount {
+    id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct RawOpVault {
+    id: String,
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+struct RawOpItem {
+    id: String,
+    title: String,
+}
+
+#[derive(serde::Deserialize)]
+struct RawOpItemDetail {
+    #[serde(default)]
+    fields: Vec<RawOpField>,
+}
+
+// SAFETY: 'value' is intentionally absent from this struct. The picker is a
+// metadata browser; serde must not deserialize secret values into memory.
+// Any change adding a `value` field here breaks the picker's trust model.
+#[derive(serde::Deserialize)]
+struct RawOpField {
+    id: String,
+    #[serde(default)]
+    label: String,
+    #[serde(rename = "type", default)]
+    field_type: String,
+    #[serde(default)]
+    purpose: String,
+}
+
+impl From<RawOpAccount> for OpAccount {
+    fn from(raw: RawOpAccount) -> Self {
+        Self { id: raw.id }
+    }
+}
+
+impl From<RawOpVault> for OpVault {
+    fn from(raw: RawOpVault) -> Self {
+        Self {
+            id: raw.id,
+            name: raw.name,
+        }
+    }
+}
+
+impl From<RawOpItem> for OpItem {
+    fn from(raw: RawOpItem) -> Self {
+        Self {
+            id: raw.id,
+            name: raw.title,
+        }
+    }
+}
+
+impl From<RawOpField> for OpField {
+    fn from(raw: RawOpField) -> Self {
+        let concealed = raw.field_type == "CONCEALED" || raw.purpose == "PASSWORD";
+        Self {
+            id: raw.id,
+            label: raw.label,
+            field_type: raw.field_type,
+            concealed,
+        }
+    }
+}
+
+/// Run an `op` subcommand with `--format json` and return its stdout
+/// bytes. Uses the same spawn-and-channel timeout pattern as
+/// [`OpRunner::read`]. Non-zero exit codes are surfaced as
+/// [`anyhow::Error`]; the picker pattern-matches on the message to
+/// distinguish signed-out from generic failures.
+fn run_op_json(
+    binary: &str,
+    args: &[&str],
+    timeout: std::time::Duration,
+) -> anyhow::Result<Vec<u8>> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new(binary)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "failed to spawn 1Password CLI {binary:?}: {e} \
+                 (is `op` installed and on your PATH? see \
+                 https://developer.1password.com/docs/cli/)"
+            )
+        })?;
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let stderr = child.stderr.take().expect("piped stderr");
+
+    let stdout_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        buf
+    });
+    let stderr_handle = std::thread::spawn(move || drain_bounded_stderr(stderr));
+
+    let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
+    spawn_wait_thread(std::sync::Arc::clone(&child), tx);
+
+    let cmd_label = format!("op {}", args.join(" "));
+    let status = match rx.recv_timeout(timeout) {
+        Ok(Ok(status)) => status,
+        Ok(Err(e)) => {
+            anyhow::bail!("1Password CLI wait failed for `{cmd_label}`: {e}");
+        }
+        Err(_) => {
+            let killed = child.lock().expect("child mutex poisoned").take();
+            if let Some(mut c) = killed {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            anyhow::bail!(
+                "1Password CLI timed out after {}s running `{cmd_label}`",
+                timeout.as_secs()
+            );
+        }
+    };
+
+    let stdout_bytes = stdout_handle.join().unwrap_or_default();
+    let stderr_bytes = stderr_handle.join().unwrap_or_default();
+
+    if status.success() {
+        return Ok(stdout_bytes);
+    }
+
+    let stderr = String::from_utf8_lossy(&stderr_bytes);
+    let stderr_trimmed = truncate_stderr(&stderr);
+    let stderr_msg = stderr_trimmed.trim();
+    if stderr_msg.contains("not currently signed") || stderr_msg.contains("no accounts") {
+        anyhow::bail!(
+            "1Password CLI is not signed in (running `{cmd_label}` returned: {stderr_msg}). \
+             Run `op signin` in your shell, then retry."
+        );
+    }
+    anyhow::bail!(
+        "1Password CLI exited with status {} running `{cmd_label}`: {stderr_msg}",
+        format_exit_status(status),
+    )
+}
+
+impl OpStructRunner for OpCli {
+    fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
+        let bytes = run_op_json(
+            &self.binary,
+            &["account", "list", "--format", "json"],
+            self.timeout,
+        )?;
+        let raw: Vec<RawOpAccount> = serde_json::from_slice(&bytes)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op account list` JSON: {e}"))?;
+        Ok(raw.into_iter().map(OpAccount::from).collect())
+    }
+
+    fn vault_list(&self) -> anyhow::Result<Vec<OpVault>> {
+        let bytes = run_op_json(
+            &self.binary,
+            &["vault", "list", "--format", "json"],
+            self.timeout,
+        )?;
+        let raw: Vec<RawOpVault> = serde_json::from_slice(&bytes)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op vault list` JSON: {e}"))?;
+        Ok(raw.into_iter().map(OpVault::from).collect())
+    }
+
+    fn item_list(&self, vault_id: &str) -> anyhow::Result<Vec<OpItem>> {
+        let bytes = run_op_json(
+            &self.binary,
+            &["item", "list", "--vault", vault_id, "--format", "json"],
+            self.timeout,
+        )?;
+        let raw: Vec<RawOpItem> = serde_json::from_slice(&bytes)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op item list` JSON: {e}"))?;
+        Ok(raw.into_iter().map(OpItem::from).collect())
+    }
+
+    fn item_get(&self, item_id: &str, vault_id: &str) -> anyhow::Result<Vec<OpField>> {
+        let bytes = run_op_json(
+            &self.binary,
+            &[
+                "item", "get", item_id, "--vault", vault_id, "--format", "json",
+            ],
+            self.timeout,
+        )?;
+        let detail: RawOpItemDetail = serde_json::from_slice(&bytes)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op item get` JSON: {e}"))?;
+        Ok(detail.fields.into_iter().map(OpField::from).collect())
+    }
+}
+
 /// Tracks which layer supplied the currently-winning value for a key.
 ///
 /// Used to produce precise error messages during reserved-name
@@ -1565,5 +1820,145 @@ mod tests {
         assert!(rendered.contains("literal"), "{rendered}");
         assert!(!rendered.contains("super-secret"), "{rendered}");
         assert!(!rendered.contains("op-value-secret"), "{rendered}");
+    }
+
+    // ---- OpStructRunner tests --------------------------------------------
+
+    #[test]
+    fn op_field_concealed_derives_from_type_or_purpose() {
+        // Type CONCEALED -> concealed=true.
+        let raw_concealed = RawOpField {
+            id: "f1".to_string(),
+            label: "password".to_string(),
+            field_type: "CONCEALED".to_string(),
+            purpose: String::new(),
+        };
+        assert!(OpField::from(raw_concealed).concealed);
+
+        // Purpose PASSWORD -> concealed=true, even when type is empty.
+        let raw_purpose = RawOpField {
+            id: "f2".to_string(),
+            label: "pw".to_string(),
+            field_type: String::new(),
+            purpose: "PASSWORD".to_string(),
+        };
+        assert!(OpField::from(raw_purpose).concealed);
+
+        // Plain text field -> concealed=false.
+        let raw_text = RawOpField {
+            id: "f3".to_string(),
+            label: "username".to_string(),
+            field_type: "STRING".to_string(),
+            purpose: "USERNAME".to_string(),
+        };
+        assert!(!OpField::from(raw_text).concealed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_vault_list_parses_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-vault-list");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\nif [ \"$1\" = \"vault\" ] && [ \"$2\" = \"list\" ]; then \
+             printf '%s' '[{\"id\":\"v1\",\"name\":\"Personal\"}]'; exit 0; fi\nexit 99\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let vaults = runner.vault_list().unwrap();
+        assert_eq!(
+            vaults,
+            vec![OpVault {
+                id: "v1".to_string(),
+                name: "Personal".to_string(),
+            }]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_item_list_parses_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-item-list");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"list\" ]; then \
+             printf '%s' '[{\"id\":\"i1\",\"title\":\"API Keys\"}]'; exit 0; fi\nexit 99\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let items = runner.item_list("v1").unwrap();
+        assert_eq!(
+            items,
+            vec![OpItem {
+                id: "i1".to_string(),
+                name: "API Keys".to_string(),
+            }]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_item_get_parses_fields_no_value() {
+        // The crucial safety test: even when `op item get` JSON contains
+        // a `value` key on each field, our `RawOpField` struct does not
+        // declare it, so serde silently drops the value during
+        // deserialization. The resulting `OpField` has no value field
+        // at all (the type itself doesn't have one).
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-item-get");
+        let json = r#"{"id":"i1","title":"API Keys","fields":[
+            {"id":"username","label":"username","type":"STRING","purpose":"USERNAME","value":"alice"},
+            {"id":"password","label":"password","type":"CONCEALED","purpose":"PASSWORD","value":"super-secret"}
+        ]}"#;
+        let script = format!(
+            "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"get\" ]; then \
+             cat <<'JSON'\n{json}\nJSON\nexit 0; fi\nexit 99\n"
+        );
+        std::fs::write(&bin_path, script).unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let fields = runner.item_get("i1", "v1").unwrap();
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].label, "username");
+        assert!(!fields[0].concealed);
+        assert_eq!(fields[1].label, "password");
+        assert!(fields[1].concealed);
+        // Compile-time guarantee: OpField has no `value` field. If a
+        // future refactor adds one, this struct-match will fail to
+        // compile and force an explicit re-review of the trust model.
+        let OpField {
+            id: _,
+            label: _,
+            field_type: _,
+            concealed: _,
+        } = fields[1].clone();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_signed_out_detection() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-signed-out");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\n>&2 echo 'You are not currently signed in. Run `op signin`.'\nexit 1\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let err = runner.vault_list().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not signed in") || msg.contains("op signin"),
+            "expected signed-out detection in error: {msg}"
+        );
     }
 }
