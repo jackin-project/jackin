@@ -100,6 +100,57 @@ This means terminal-specific features (such as Ghostty's Kitty keyboard protocol
 
 If the export fails (e.g. `infocmp` is not installed or the terminfo entry is missing), jackin' falls back to `xterm-256color`.
 
+## Workspace materialization
+
+Workspace mounts pass through three distinct shapes between operator intent and a Docker bind-mount. Keeping these separate is what lets per-mount isolation slot in cleanly:
+
+| Shape | Origin | Owns |
+|---|---|---|
+| `WorkspaceConfig` | `~/.config/jackin/config.toml` | Persisted operator intent — raw `src`/`dst`/`readonly`/`isolation` fields per mount. |
+| `ResolvedWorkspace` | `resolve_load_workspace` | Expanded host paths plus the merged composition of workspace, ad-hoc, and global mounts. Still independent of the actual container instance. |
+| `MaterializedWorkspace` | post-name-claim materializer | Final host paths Docker should bind-mount for *this* container. Worktrees have been created on disk; isolated `src` values point at the per-container worktree path. |
+
+Materialization happens **after** the runtime claims the final container name (e.g. resolves `-clone-N` collisions) and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: first load creates the scratch branch from host `HEAD` and records `base_commit`; later loads to the same container reuse the existing worktree as-is — no reset, no rebase, no fast-forward.
+
+On first worktree creation for a host repo, jackin' enables `extensions.worktreeConfig` (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config writes via `git config --worktree` don't leak into the shared host `.git/config`.
+
+### `isolation.json`
+
+Materialized isolated mounts are recorded at:
+
+```
+<data_dir>/jackin-<container>/.jackin/isolation.json
+```
+
+The file lives next to the existing `.claude/` and `.jackin/` per-container state and is the source of truth for `purge` and `jackin cd` after the operator has changed (or removed) the workspace config. Each record contains at least:
+
+| Field | Purpose |
+|---|---|
+| `workspace` | Workspace name at materialization time |
+| `mount_dst` | Container destination path (the mount identity) |
+| `original_src` | Resolved host `src` recorded for source-drift detection |
+| `isolation` | Mode (`worktree` in V1) |
+| `worktree_path` | Materialized worktree path on the host |
+| `branch` | Scratch branch name (`jackin/scratch/<branch-instance>`) |
+| `base_commit` | Host `HEAD` at first materialization |
+| `selector` | Agent selector key |
+| `container` | Final container name |
+| `status` | `active` \| `preserved_dirty` \| `preserved_unpushed` |
+
+Successful cleanup removes the corresponding record rather than keeping a historical `cleaned` entry.
+
+### Foreground session finalization
+
+Every command that opens or reopens an agent foreground session — `jackin load`, `jackin launch`, `jackin hardline`, the operator console — funnels through the same post-attach finalizer. After `docker attach` returns, jackin' inspects the container and decides:
+
+- **Container is still running** → preserve everything for `jackin hardline` to reconnect later. No isolated-worktree action.
+- **Stopped, non-zero exit or OOM** → preserve the container, DinD, and isolated worktrees so `jackin hardline` can restart in place.
+- **Stopped, exit code 0 (clean)** → attempt safe isolated-worktree cleanup. A worktree is safe to delete only when it has no uncommitted changes and no branch-only commits that would be lost (either `HEAD == base_commit`, or every local commit is reachable from the upstream tracking branch). Clean+pushed worktrees are auto-deleted; clean+unpushed ones are preserved or prompted.
+- **Clean exit with unsafe cleanup**, interactive stdin → ask the operator whether to return to the agent (restart + re-attach), preserve recovery state, or force-delete.
+- **Clean exit with unsafe cleanup**, non-interactive → preserve the recovery state and print the worktree path plus how to return, inspect, or discard.
+
+The same finalizer runs after `hardline` attaches, so the cleanup decision is independent of how the foreground session was opened.
+
 ## State management
 
 ```
