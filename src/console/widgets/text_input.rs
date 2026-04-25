@@ -5,6 +5,17 @@ use ratatui_textarea::{CursorMove, Input, TextArea};
 
 use super::ModalOutcome;
 
+/// Border-color key for the text-input modal.
+///
+/// Chosen by [`TextInputState::border_style`]. `Default` means render
+/// the canonical `PHOSPHOR_DARK` border; `Error` means render the
+/// `DANGER_RED` border to match the inline duplicate warning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BorderStyle {
+    Default,
+    Error,
+}
+
 /// Single-line text-input modal state.
 ///
 /// `forbidden` is an optional list of values that the input must not
@@ -81,13 +92,37 @@ impl TextInputState<'_> {
         !v.is_empty() && self.forbidden.iter().any(|f| f == &v)
     }
 
+    /// Whether Enter would commit the current input (non-empty AND not
+    /// in the forbidden list). Drives both the commit gate and the
+    /// footer-hint visibility — when this is false, the modal hides
+    /// the `Enter confirm` hint to avoid telling the operator a key
+    /// will work that won't.
+    pub fn is_valid(&self) -> bool {
+        let v = self.trimmed_value();
+        !v.is_empty() && !self.forbidden.iter().any(|f| f == &v)
+    }
+
+    /// Border style key — `Default` for empty/valid, `Error` for
+    /// duplicate. Empty is intentionally `Default`; emptiness is
+    /// "not ready" not "wrong", so we don't paint the modal red until
+    /// the operator types something that is explicitly an error.
+    pub fn border_style(&self) -> BorderStyle {
+        if self.is_duplicate() {
+            BorderStyle::Error
+        } else {
+            BorderStyle::Default
+        }
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
         match key.code {
             KeyCode::Enter => {
-                // Block commit while the trimmed value collides with the
-                // forbidden list. The render path shows the inline
-                // warning; the operator must backspace and retype.
-                if self.is_duplicate() {
+                // Block commit unless the input is valid (non-empty
+                // AND not a duplicate). The render path shows the
+                // inline warning for duplicates and hides the
+                // `Enter confirm` hint while empty; the operator must
+                // type a unique value before Enter does anything.
+                if !self.is_valid() {
                     return ModalOutcome::Continue;
                 }
                 ModalOutcome::Commit(self.value())
@@ -135,9 +170,16 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
         format!(" {} ", state.label),
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
     );
+    // Border color tracks the validation state: DANGER_RED matches the
+    // inline duplicate warning; PHOSPHOR_DARK is the canonical default
+    // (also used for empty input — emptiness is "not ready" not "wrong").
+    let border_color = match state.border_style() {
+        BorderStyle::Error => DANGER_RED,
+        BorderStyle::Default => PHOSPHOR_DARK,
+    };
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(border_color))
         .title(title);
 
     let inner = block.inner(area);
@@ -196,19 +238,35 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
     //   Key      = WHITE + BOLD
     //   Text     = PHOSPHOR_GREEN
     //   Sep (·)  = PHOSPHOR_DARK
-    let hint = ratatui::text::Line::from(vec![
-        Span::styled(
-            "Enter",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" confirm", Style::default().fg(PHOSPHOR_GREEN)),
-        Span::styled(" \u{b7} ", Style::default().fg(PHOSPHOR_DARK)),
-        Span::styled(
-            "Esc",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" cancel", Style::default().fg(PHOSPHOR_GREEN)),
-    ]);
+    //
+    // We hide the `Enter confirm` half of the legend whenever Enter
+    // wouldn't actually commit (empty input, or duplicate). Telling the
+    // operator a key works that doesn't is worse than showing a
+    // shorter hint.
+    let hint_spans: Vec<Span> = if state.is_valid() {
+        vec![
+            Span::styled(
+                "Enter",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" confirm", Style::default().fg(PHOSPHOR_GREEN)),
+            Span::styled(" \u{b7} ", Style::default().fg(PHOSPHOR_DARK)),
+            Span::styled(
+                "Esc",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" cancel", Style::default().fg(PHOSPHOR_GREEN)),
+        ]
+    } else {
+        vec![
+            Span::styled(
+                "Esc",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" cancel", Style::default().fg(PHOSPHOR_GREEN)),
+        ]
+    };
+    let hint = ratatui::text::Line::from(hint_spans);
     frame.render_widget(Paragraph::new(hint).alignment(Alignment::Center), rows[3]);
 }
 
@@ -332,5 +390,60 @@ mod tests {
         let mut s = TextInputState::new_with_forbidden("Key", "API_KEY", vec!["DB_URL".into()]);
         let outcome = s.handle_key(key(KeyCode::Enter));
         assert!(matches!(outcome, ModalOutcome::Commit(v) if v == "API_KEY"));
+    }
+
+    // ── is_valid / border_style — the validation predicate that
+    // drives both the commit gate and the footer-hint visibility. ───
+
+    #[test]
+    fn text_input_is_valid_false_for_empty() {
+        let s = TextInputState::new_with_forbidden("Key", "", vec!["DB_URL".into()]);
+        assert!(!s.is_valid());
+    }
+
+    #[test]
+    fn text_input_is_valid_false_for_duplicate() {
+        let s = TextInputState::new_with_forbidden("Key", "DB_URL", vec!["DB_URL".into()]);
+        assert!(!s.is_valid());
+    }
+
+    #[test]
+    fn text_input_is_valid_true_for_unique_non_empty() {
+        let s = TextInputState::new_with_forbidden("Key", "API_KEY", vec!["DB_URL".into()]);
+        assert!(s.is_valid());
+    }
+
+    #[test]
+    fn text_input_border_style_default_for_empty() {
+        // Empty is intentionally Default — emptiness is "not ready" not
+        // "wrong". The modal stays default-bordered until the operator
+        // types something that's explicitly an error (a duplicate).
+        let s = TextInputState::new_with_forbidden("Key", "", vec!["DB_URL".into()]);
+        assert_eq!(s.border_style(), BorderStyle::Default);
+    }
+
+    #[test]
+    fn text_input_border_style_error_for_duplicate() {
+        let s = TextInputState::new_with_forbidden("Key", "DB_URL", vec!["DB_URL".into()]);
+        assert_eq!(s.border_style(), BorderStyle::Error);
+    }
+
+    #[test]
+    fn text_input_border_style_default_for_valid() {
+        let s = TextInputState::new_with_forbidden("Key", "API_KEY", vec!["DB_URL".into()]);
+        assert_eq!(s.border_style(), BorderStyle::Default);
+    }
+
+    #[test]
+    fn text_input_enter_blocked_when_empty() {
+        // Regression — with the new validity gate, Enter on an empty
+        // value must not commit. Previously the widget only blocked
+        // duplicates; emptiness was caught at the call-site.
+        let mut s = TextInputState::new_with_forbidden("Key", "", vec!["DB_URL".into()]);
+        let outcome = s.handle_key(key(KeyCode::Enter));
+        assert!(
+            matches!(outcome, ModalOutcome::Continue),
+            "Enter on an empty value must not commit; got {outcome:?}"
+        );
     }
 }
