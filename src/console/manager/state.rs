@@ -841,6 +841,94 @@ mod tests {
         assert_eq!(e.change_count(), 1);
     }
 
+    // ── change_count env-diff coverage (Secrets tab) ──
+
+    /// Setting a new workspace-level env key on `pending` (with
+    /// `original.env` empty) contributes exactly +1 to the change count.
+    #[test]
+    fn change_count_env_set_counts_as_one() {
+        let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
+        assert_eq!(e.change_count(), 0);
+        e.pending.env.insert("DB_URL".into(), "postgres://…".into());
+        assert_eq!(e.change_count(), 1);
+    }
+
+    /// Removing an existing workspace-level env key (seeded in
+    /// `original.env` at construction time) contributes exactly +1.
+    #[test]
+    fn change_count_env_remove_counts_as_one() {
+        let mut ws = empty_ws("/a");
+        ws.env.insert("DB_URL".into(), "postgres://…".into());
+        let mut e = EditorState::new_edit("a".into(), ws);
+        assert_eq!(e.change_count(), 0);
+        e.pending.env.remove("DB_URL");
+        assert_eq!(e.change_count(), 1);
+    }
+
+    /// Adding and removing per-agent env override keys each contribute +1
+    /// via the same env_change_count helper as workspace-level env.
+    #[test]
+    fn change_count_agent_env_delta() {
+        use crate::workspace::WorkspaceAgentOverride;
+        // Seed one agent with one env key.
+        let mut ws = empty_ws("/a");
+        let mut agent_x_env = std::collections::BTreeMap::new();
+        agent_x_env.insert("LOG_LEVEL".into(), "info".into());
+        ws.agents.insert(
+            "agent-x".into(),
+            WorkspaceAgentOverride { env: agent_x_env },
+        );
+        let mut e = EditorState::new_edit("a".into(), ws);
+        assert_eq!(e.change_count(), 0);
+
+        // Add a new key to pending.
+        e.pending
+            .agents
+            .get_mut("agent-x")
+            .unwrap()
+            .env
+            .insert("DEBUG".into(), "1".into());
+        assert_eq!(e.change_count(), 1);
+
+        // Remove the original key. Net delta: 2 (one add + one remove).
+        e.pending
+            .agents
+            .get_mut("agent-x")
+            .unwrap()
+            .env
+            .remove("LOG_LEVEL");
+        assert_eq!(e.change_count(), 2);
+    }
+
+    /// Any env mutation (workspace-level or per-agent) flips `is_dirty()`
+    /// to true because `pending != original` in the underlying
+    /// `WorkspaceConfig` PartialEq.
+    #[test]
+    fn is_dirty_from_env_mutation() {
+        use crate::workspace::WorkspaceAgentOverride;
+
+        // Workspace env path.
+        let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
+        assert!(!e.is_dirty());
+        e.pending.env.insert("K".into(), "v".into());
+        assert!(e.is_dirty(), "workspace env set must make state dirty");
+
+        // Per-agent env path.
+        let mut e2 = EditorState::new_edit("a".into(), empty_ws("/a"));
+        assert!(!e2.is_dirty());
+        e2.pending.agents.insert(
+            "agent-x".into(),
+            WorkspaceAgentOverride {
+                env: {
+                    let mut m = std::collections::BTreeMap::new();
+                    m.insert("K".into(), "v".into());
+                    m
+                },
+            },
+        );
+        assert!(e2.is_dirty(), "agent env set must make state dirty");
+    }
+
     #[test]
     fn create_prelude_starts_at_first_step() {
         let p = CreatePreludeState::new();

@@ -82,3 +82,26 @@ The older spelling `jackin launch` still works but is deprecated and
 emits a warning. It delegates to the same console handler as
 `jackin console`.
 </Aside>
+
+## Workspace editor — Secrets tab
+
+The Secrets tab in the `jackin console` workspace editor manages env vars at
+two scopes:
+
+- **Workspace env** — applies to every agent launch in this workspace,
+  stored under `[workspaces.<name>.env]`.
+- **Per-agent overrides** — applies only when a specific agent is launched in
+  this workspace, stored under `[workspaces.<name>.agents.<agent>.env]`.
+
+Values are stored as-typed. Use `op://...` for 1Password references, `$VAR`
+or `${VAR}` for shell-variable substitution, or a literal string.
+jackin' resolves them at launch via `operator_env`.
+
+| Key | Action |
+|---|---|
+| `Enter` on key row | Edit the value in a modal text input |
+| `D` on key row | Delete the key (single confirmation) |
+| `A` | Add a new key/value pair to the focused section |
+| `Ctrl+M` | Toggle value masking (masked by default; resets on tab exit) |
+| `→` or `Enter` on section header | Expand an agent override section |
+| `←` on section header | Collapse an agent override section |

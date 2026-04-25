@@ -1055,3 +1055,151 @@ mod agents_tab_render_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod secrets_tab_render_tests {
+    //! Render-buffer tests for the Secrets tab. Verifies the masking
+    //! default, the unmasked literal-value path, and that the flat-row
+    //! builder honours `secrets_expanded` for per-agent override sections.
+    use super::render_secrets_tab;
+    use crate::config::AppConfig;
+    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::workspace::{WorkspaceAgentOverride, WorkspaceConfig};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+
+    /// Build an editor sitting on the Secrets tab with a single
+    /// workspace-level env key (`DB_URL = postgres://localhost/db`).
+    fn editor_with_workspace_env() -> EditorState<'static> {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "postgres://localhost/db".into());
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env,
+            agents: std::collections::BTreeMap::new(),
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        editor
+    }
+
+    /// Build an editor sitting on the Secrets tab with one agent override
+    /// carrying a single env key (`agent-smith`: `LOG_LEVEL = debug`).
+    fn editor_with_agent_override() -> EditorState<'static> {
+        let mut agent_env = std::collections::BTreeMap::new();
+        agent_env.insert("LOG_LEVEL".into(), "debug".into());
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert(
+            "agent-smith".into(),
+            WorkspaceAgentOverride { env: agent_env },
+        );
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents,
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        editor
+    }
+
+    /// Render the Secrets tab to a 80x15 `TestBackend`, return the raw
+    /// buffer as newline-delimited rows so tests can search for glyphs.
+    fn render_to_dump(editor: &EditorState<'_>) -> String {
+        let config = AppConfig::default();
+        let backend = TestBackend::new(80, 15);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_secrets_tab(f, Rect::new(0, 0, 80, 15), editor, &config);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn secrets_tab_defaults_to_masked() {
+        // `new_edit` sets `secrets_masked = true` by default; assert the
+        // mask glyph appears and the literal secret value does not.
+        let editor = editor_with_workspace_env();
+        assert!(
+            editor.secrets_masked,
+            "new_edit must default secrets_masked to true"
+        );
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("●●●●●●●●●●●"),
+            "masked-default render must show the mask glyph; got:\n{dump}"
+        );
+        assert!(
+            !dump.contains("postgres://localhost/db"),
+            "masked-default render must hide the literal value; got:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn secrets_tab_unmasked_shows_literal_value() {
+        let mut editor = editor_with_workspace_env();
+        editor.secrets_masked = false;
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("postgres://localhost/db"),
+            "unmasked render must show literal value; got:\n{dump}"
+        );
+        assert!(
+            !dump.contains("●●●●●●●●●●●"),
+            "unmasked render must not show the mask glyph; got:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn secrets_tab_collapsed_agent_omits_key_rows() {
+        // `secrets_expanded` is empty by default (set by `new_edit`), so
+        // the agent section header renders but its `LOG_LEVEL` key row
+        // does not.
+        let editor = editor_with_agent_override();
+        assert!(editor.secrets_expanded.is_empty());
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("agent-smith"),
+            "agent header must render; got:\n{dump}"
+        );
+        assert!(
+            !dump.contains("LOG_LEVEL"),
+            "collapsed agent section must omit key rows; got:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn secrets_tab_expanded_agent_shows_key_rows() {
+        let mut editor = editor_with_agent_override();
+        editor.secrets_expanded.insert("agent-smith".into());
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("agent-smith"),
+            "agent header must still render when expanded; got:\n{dump}"
+        );
+        assert!(
+            dump.contains("LOG_LEVEL"),
+            "expanded agent section must show its key rows; got:\n{dump}"
+        );
+    }
+}
