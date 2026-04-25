@@ -45,4 +45,31 @@ Persisted state at `~/.jackin/data/<container-name>/`:
 - `.config/gh/` — GitHub CLI authentication and settings
 - `plugins.json` — installed Claude plugins
 
+For workspaces with isolated mounts, `purge` also force-removes:
+
+- every isolated worktree recorded in `<data_dir>/jackin-<container>/.jackin/isolation.json` (`git worktree remove --force`)
+- the corresponding `isolated/` subtree
+- the recorded local scratch branch (`jackin/scratch/<branch-instance>` by default)
+
+There is no unpushed-commit guard, no `--delete-branches` flag, and no interactive prompt — once the operator runs `purge`, the recovery state is gone. If you may still need an isolated branch, push it (or rename it) before purging.
+
+If the host repo recorded in `isolation.json` has been deleted or moved between `load` and `purge`, jackin' tolerates the missing parent: it best-effort attempts `git worktree remove --force` and then `rm -rf` the isolated tree. Purge does not fail just because the host repo is gone.
+
 The Docker image and cached agent repo are **not** affected. Use `--rebuild` on the next `jackin load` to force a full image rebuild.
+
+## Running-agent guard
+
+`purge` refuses to run on an agent whose container is currently running. This protects shared-mode state (which `purge` previously deleted out from under live containers) and keeps isolated worktrees from being yanked while the agent is editing them.
+
+To purge a running agent, eject first:
+
+```bash
+jackin eject agent-smith
+jackin purge agent-smith
+```
+
+Or use the combined form:
+
+```bash
+jackin eject agent-smith --purge
+```
