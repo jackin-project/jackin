@@ -14,6 +14,18 @@ This repository uses `main` as its primary branch. This file is the canonical ho
 
 If you are uncertain whether authorization applies to the PR in front of you, ask. The cost of pausing is ~30 seconds; the cost of merging something the operator wasn't ready for is much higher.
 
+### PR merge commit titles
+
+When an agent merges a pull request, the resulting squash/merge commit title must preserve the GitHub PR reference.
+
+- Always use squash merge unless the human operator explicitly requests a different merge method for that specific PR.
+- Prefer GitHub's default squash/merge title when it already includes `(#PR_NUMBER)`.
+- If overriding the commit title, manually append `(#PR_NUMBER)`.
+- For Codex/GitHub connector merges: do not pass a custom `commit_title` unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
+- Example: `docs(roadmap): refine per-mount isolation design (#168)`
+
+This keeps commit history, GitHub commit pages, and local `git log --oneline` visibly linked back to the PR.
+
 ## Commit Attribution (agent-only)
 
 Every commit created by an AI agent in this repository must include **exactly one** `Co-authored-by` trailer identifying the agent that made the commit. The trailer identifies the **agent tool**, not the underlying model — **never stack multiple agent trailers on one commit** (for example, an Amp-generated commit must not also carry `Co-authored-by: Claude` or `Co-authored-by: Codex` just because Amp used one of those vendors' models under the hood).
