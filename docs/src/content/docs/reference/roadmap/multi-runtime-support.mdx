@@ -13,6 +13,7 @@ Today the codebase assumes Claude in all of these places:
 - manifest schema (`[claude]` plugins and marketplaces)
 - derived image generation (install Claude during build)
 - runtime entrypoint (`exec claude --dangerously-skip-permissions --verbose`)
+- runtime user and home path conventions (`claude`, `/home/claude`)
 - persisted state layout (`.claude/`, `.claude.json`, `plugins.json`)
 - auth forwarding and token handling
 - version probing and cache busting
@@ -86,7 +87,6 @@ jackin load agent-smith --runtime amp
 - Achieving feature parity between Claude plugins and Codex/Amp on day one
 - Translating Claude plugins automatically into Codex config, Amp skills, or MCP servers
 - Supporting browser-driven OAuth login forwarding for Codex or Amp in the first pass
-- Renaming the container user or `/home/claude` path as part of this work
 - Reworking the agent Dockerfile contract away from `projectjackin/construct:trixie`
 
 ## Recommendation
@@ -166,7 +166,30 @@ In practice that means the current Claude-specific logic in these files needs on
 - `src/app/context.rs`
 - docs for manifest, auth, architecture, and creating agents
 
-### 4. Treat runtime state as per-runtime, not globally Claude-shaped
+### 4. Rename the runtime user from `claude` to `agent`
+
+This should be treated as an intentional **breaking change** in the multi-runtime foundation, not as follow-up cleanup.
+
+The current `claude` username and `/home/claude` path leak Claude-specific assumptions into too many places:
+
+- generated Dockerfiles in `src/derived_image.rs`
+- entrypoint and runtime helper scripts under `docker/runtime/`
+- mount destinations in `src/runtime/launch.rs`
+- docs examples and built-in mount defaults such as Gradle caches
+- first-party agent repos that occasionally reference `/home/claude`
+
+If jackin' is going to support multiple runtimes cleanly, the runtime account should become a neutral operator-facing concept such as `agent` with home directory `/home/agent`.
+
+Recommended migration posture:
+
+- make the rename part of Phase 1, before Codex and Amp ship
+- update the construct image and derived-image generator together
+- update mount destinations, entrypoint paths, and docs in the same release
+- treat old `/home/claude` assumptions as deprecated and remove them rather than preserving them forever
+
+This is a breaking change because existing agent Dockerfiles, operator muscle memory, and some workspace/global mount examples may still point at `/home/claude`. That is acceptable here: the current multi-runtime work is exactly the point where the project should pay down the Claude-shaped base contract instead of cementing it.
+
+### 5. Treat runtime state as per-runtime, not globally Claude-shaped
 
 The current persisted state layout is a strong clue that instance state must be refactored before more runtimes land cleanly.
 
@@ -193,9 +216,9 @@ Example shape:
       skills/
 ```
 
-This does **not** require changing the in-container home path in V1. Claude can still mount to `/home/claude/.claude`, Codex can mount to `/home/claude/.codex`, and Amp can mount to `/home/claude/.config/amp/settings.json` while the host-side layout becomes cleaner.
+After the user/home rename, runtime adapters can mount their state into neutral paths such as `/home/agent/.claude`, `/home/agent/.codex`, and `/home/agent/.config/amp/settings.json` while keeping the host-side layout cleaner.
 
-### 5. Use pragmatic runtime defaults instead of chasing parity
+### 6. Use pragmatic runtime defaults instead of chasing parity
 
 #### Claude
 
@@ -223,7 +246,7 @@ V1 should prefer:
 
 Amp's thread sync is already cloud-backed, so jackin' does not need to recreate Claude-style conversation persistence locally.
 
-### 6. Be explicit about what is deferred
+### 7. Be explicit about what is deferred
 
 The first Codex/Amp release does **not** need all of these:
 
@@ -272,6 +295,7 @@ If a later pass proves that Amp skills or Codex-specific config deserve first-cl
 
 - add runtime to the selector/instance identity
 - introduce the runtime adapter seam
+- rename the runtime user/home from `claude` and `/home/claude` to `agent` and `/home/agent`
 - make host-side state preparation runtime-aware
 - generalize launch flow so the adapter supplies mounts, env, and launch command
 - keep Claude behavior unchanged behind the new seam
@@ -314,6 +338,7 @@ If a later pass proves that Amp skills or Codex-specific config deserve first-cl
 
 ## Related Files
 
+- `docker/construct/Dockerfile`
 - `src/manifest/mod.rs`
 - `src/manifest/validate.rs`
 - `src/derived_image.rs`
