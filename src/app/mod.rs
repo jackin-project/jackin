@@ -863,6 +863,8 @@ pub fn run(cli: Cli) -> Result<()> {
         },
         Command::Purge(PurgeArgs { selector, all }) => match Selector::parse(&selector)? {
             Selector::Container(container) => {
+                let short_name = container.trim_start_matches("jackin-");
+                runtime::ensure_agent_not_running(&mut runner, short_name)?;
                 remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                 println!("Purged state for {container}.");
                 Ok(())
@@ -873,6 +875,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     println!("Purged all state for {}.", class.key());
                 } else {
                     let container = instance::primary_container_name(&class);
+                    let short_name = container.trim_start_matches("jackin-");
+                    runtime::ensure_agent_not_running(&mut runner, short_name)?;
                     remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                     println!("Purged state for {container}.");
                 }
