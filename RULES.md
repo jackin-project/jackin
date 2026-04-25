@@ -21,3 +21,31 @@ See `DEPRECATED.md` itself for the entry format.
 TUI keybindings must use plain letters, numbers, `Enter`, `Esc`, `Tab`, or arrow keys. Avoid `Ctrl`/`Alt`/`Cmd`/`Shift` modifiers — they add friction, conflict with terminal and multiplexer chords (tmux, iTerm2, Ghostty), and are not discoverable in footer hints.
 
 Where a command would otherwise collide with text input (a key inside a textarea would be typed as text), move the command to a parent context where it does not conflict — typically as a sibling row action rather than a sub-mode of the text editor.
+
+## TUI List Modals
+
+List-modal widgets (pickers — agent picker, 1Password picker, source
+picker, etc.) follow a single canonical layout for consistency:
+
+- **Title** — short subject of the modal (e.g., `1Password`, `Select Agent`,
+  `<email> → <vault>`). Filter buffer is **never** part of the title.
+- **Filter row** — first body row, persistent. Format: `Filter: <buf>`
+  with placeholder dots (`░`) padding when empty, live characters when
+  typing. Even pickers that don't accept filter input render this row
+  empty (or omit it explicitly only if filtering is genuinely
+  out-of-scope).
+- **List body** — bordered area below the filter row. Rows render with
+  `▸ ` prefix on the focused row, two-space prefix on unfocused. Empty
+  filtered state is just blank space — no `(no items match)` placeholder.
+- **Footer** — single line, separator-delimited:
+  `↑↓ navigate · type filter · Enter <action> · Esc cancel` plus any
+  picker-specific hints (e.g., `r refresh` for the 1Password picker).
+  Use plain words for the action (`select`, `launch`, etc.) — see
+  `TUI Keybindings` for the modifier-free key rule.
+- **Border** — phosphor-dim single-line via `Block::default().borders
+  (Borders::ALL)` matching the rest of the TUI chrome.
+
+Reference implementation: `src/console/widgets/op_picker/render.rs`.
+New picker widgets should follow this layout. If a picker needs a
+visually distinct treatment, raise it as a design question first — the
+default is "match the established pattern".
