@@ -1,5 +1,8 @@
 use crate::docker::CommandRunner;
 use crate::isolation::MountIsolation;
+use crate::isolation::branch::{branch_name, dst_to_branch_suffix};
+use crate::isolation::state::{CleanupStatus, IsolationRecord, read_record, upsert_record};
+use crate::workspace::ResolvedWorkspace;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 
@@ -203,6 +206,190 @@ fn check_dirty_tree(
         mount.dst,
         mount.src
     );
+}
+
+/// Top-level materialization.
+///
+/// Iterates the resolved workspace mounts, passes through `Shared` mounts,
+/// and per-mount-materializes `Worktree` mounts. Returns the
+/// `MaterializedWorkspace` ready for Docker launch.
+pub fn materialize_workspace(
+    resolved: &ResolvedWorkspace,
+    container_state_dir: &Path,
+    selector_key: &str,
+    container_name: &str,
+    workspace_name: &str,
+    ctx: &PreflightContext,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<MaterializedWorkspace> {
+    // Sort by dst length ascending so parents materialize before children
+    // (depth ordering for the bind-mount stack).
+    let mut indexed: Vec<(usize, &MountConfig)> = resolved.mounts.iter().enumerate().collect();
+    indexed.sort_by_key(|(_, m)| m.dst.trim_end_matches('/').len());
+
+    // Count isolated mounts per host repo for branch disambiguation.
+    let isolated_per_repo = count_isolated_per_repo(&resolved.mounts);
+
+    let mut materialized: Vec<Option<MaterializedMount>> =
+        (0..resolved.mounts.len()).map(|_| None).collect();
+
+    for (idx, mount) in indexed {
+        let m = match mount.isolation {
+            MountIsolation::Shared => MaterializedMount {
+                bind_src: mount.src.clone(),
+                dst: mount.dst.clone(),
+                readonly: mount.readonly,
+                isolation: MountIsolation::Shared,
+            },
+            MountIsolation::Worktree => materialize_one(
+                mount,
+                container_state_dir,
+                selector_key,
+                container_name,
+                workspace_name,
+                &isolated_per_repo,
+                ctx,
+                runner,
+            )?,
+            MountIsolation::Clone => {
+                anyhow::bail!(
+                    "isolated mount `{}`: clone mode is reserved but not implemented yet",
+                    mount.dst
+                )
+            }
+        };
+        materialized[idx] = Some(m);
+    }
+
+    // Re-emit in original order — Docker mount-flag order is settled later.
+    let mounts: Vec<MaterializedMount> = materialized
+        .into_iter()
+        .map(|m| m.expect("every mount index populated by the loop above"))
+        .collect();
+    Ok(MaterializedWorkspace {
+        workdir: resolved.workdir.clone(),
+        mounts,
+    })
+}
+
+fn canonicalize_or_clone(src: &str) -> String {
+    std::fs::canonicalize(src).map_or_else(|_| src.to_owned(), |p| p.to_string_lossy().into_owned())
+}
+
+fn count_isolated_per_repo(
+    mounts: &[MountConfig],
+) -> std::collections::HashMap<String, Vec<String>> {
+    let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for m in mounts {
+        if matches!(m.isolation, MountIsolation::Worktree) {
+            let canon = canonicalize_or_clone(&m.src);
+            map.entry(canon).or_default().push(m.dst.clone());
+        }
+    }
+    map
+}
+
+#[allow(clippy::too_many_arguments)]
+fn materialize_one(
+    mount: &MountConfig,
+    container_state_dir: &Path,
+    selector_key: &str,
+    container_name: &str,
+    workspace_name: &str,
+    isolated_per_repo: &std::collections::HashMap<String, Vec<String>>,
+    ctx: &PreflightContext,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<MaterializedMount> {
+    let worktree_path = worktree_path_for(container_state_dir, &mount.dst);
+
+    // Drift guard: if a record exists, src must match.
+    if let Some(record) = read_record(container_state_dir, &mount.dst)? {
+        if record.original_src != mount.src {
+            anyhow::bail!(
+                "source drift on container `{}`, mount `{}`: recorded src `{}` differs from configured src `{}`; preserved worktree at `{}`. Restore the previous src, run `jackin cd {} {}` to inspect, or `jackin purge {}` to discard.",
+                container_name,
+                mount.dst,
+                record.original_src,
+                mount.src,
+                record.worktree_path,
+                container_name,
+                mount.dst,
+                container_name,
+            );
+        }
+        // Reuse if worktree path looks alive (.git file or dir under it).
+        if worktree_path.join(".git").exists() {
+            return Ok(MaterializedMount {
+                bind_src: worktree_path.to_string_lossy().into(),
+                dst: mount.dst.clone(),
+                readonly: mount.readonly,
+                isolation: MountIsolation::Worktree,
+            });
+        }
+        // Record exists but worktree is gone — fall through and re-create.
+    }
+
+    // Pre-flight, then enable worktree-config, then create the worktree.
+    preflight_worktree(mount, ctx, runner)?;
+
+    let _ = ensure_worktree_config_enabled(std::path::Path::new(&mount.src), runner)?;
+
+    let base_commit = runner
+        .capture("git", &["-C", &mount.src, "rev-parse", "HEAD"], None)?
+        .trim()
+        .to_string();
+
+    // Decide branch suffix: only when >1 isolated mount targets the same host repo.
+    let canon = canonicalize_or_clone(&mount.src);
+    let suffix = isolated_per_repo
+        .get(&canon)
+        .filter(|dsts| dsts.len() > 1)
+        .map(|_| dst_to_branch_suffix(&mount.dst));
+    let scratch_branch = branch_name(selector_key, suffix.as_deref());
+
+    if let Some(parent) = worktree_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create parent dir for worktree at {}", parent.display()))?;
+    }
+
+    runner.run(
+        "git",
+        &[
+            "-C",
+            &mount.src,
+            "worktree",
+            "add",
+            "-b",
+            &scratch_branch,
+            &worktree_path.to_string_lossy(),
+            &base_commit,
+        ],
+        None,
+        &crate::docker::RunOptions::default(),
+    )?;
+
+    upsert_record(
+        container_state_dir,
+        IsolationRecord {
+            workspace: workspace_name.into(),
+            mount_dst: mount.dst.clone(),
+            original_src: mount.src.clone(),
+            isolation: MountIsolation::Worktree,
+            worktree_path: worktree_path.to_string_lossy().into(),
+            scratch_branch,
+            base_commit,
+            selector_key: selector_key.into(),
+            container_name: container_name.into(),
+            cleanup_status: CleanupStatus::Active,
+        },
+    )?;
+
+    Ok(MaterializedMount {
+        bind_src: worktree_path.to_string_lossy().into(),
+        dst: mount.dst.clone(),
+        readonly: mount.readonly,
+        isolation: MountIsolation::Worktree,
+    })
 }
 
 #[cfg(test)]
@@ -428,5 +615,215 @@ mod tests {
         let m = worktree_mount("/workspace/x", &repo.path().to_string_lossy());
         let mut runner = fake_with_repo_and_status(repo.path(), ignored_only_porcelain());
         preflight_worktree(&m, &ctx(), &mut runner).unwrap();
+    }
+
+    use crate::isolation::state::{CleanupStatus, read_records};
+    use crate::workspace::ResolvedWorkspace;
+
+    fn resolved_with_one_isolated(repo: &std::path::Path, dst: &str) -> ResolvedWorkspace {
+        ResolvedWorkspace {
+            label: "jackin".into(),
+            workdir: dst.into(),
+            mounts: vec![MountConfig {
+                src: repo.to_string_lossy().into(),
+                dst: dst.into(),
+                readonly: false,
+                isolation: MountIsolation::Worktree,
+            }],
+        }
+    }
+
+    #[test]
+    fn first_materialization_runs_worktree_add_and_writes_record() {
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-the-architect");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        let resolved = resolved_with_one_isolated(repo.path(), "/workspace/jackin");
+        // capture queue (in order materialize_workspace will request):
+        //   preflight: rev-parse --show-toplevel
+        //   preflight: status --porcelain
+        //   ensure_worktree_config: extensions.worktreeConfig --get
+        //   ensure_worktree_config: core.repositoryformatversion --get
+        //   rev-parse HEAD
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(), // rev-parse --show-toplevel (preflight)
+            "",                             // status --porcelain (clean)
+            "",                             // extensions.worktreeConfig --get (not enabled)
+            "0",                            // core.repositoryformatversion --get
+            "deadbeef\n",                   // rev-parse HEAD
+        ]);
+
+        let mat = materialize_workspace(
+            &resolved,
+            &container_dir,
+            "the-architect",
+            "jackin-the-architect",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+
+        assert_eq!(mat.mounts.len(), 1);
+        let m = &mat.mounts[0];
+        assert!(m.bind_src.contains("isolated/workspace/jackin"));
+        assert_eq!(m.dst, "/workspace/jackin");
+        assert_eq!(m.isolation, MountIsolation::Worktree);
+
+        // git worktree add should have been invoked.
+        assert!(
+            runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree add"))
+        );
+
+        // record persisted
+        let recs = read_records(&container_dir).unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::Active);
+        assert_eq!(recs[0].base_commit, "deadbeef");
+        assert_eq!(recs[0].scratch_branch, "jackin/scratch/the-architect");
+    }
+
+    #[test]
+    fn shared_mounts_pass_through_unchanged() {
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+        let resolved = ResolvedWorkspace {
+            label: "jackin".into(),
+            workdir: "/workspace/x".into(),
+            mounts: vec![MountConfig {
+                src: "/tmp/cache".into(),
+                dst: "/workspace/cache".into(),
+                readonly: false,
+                isolation: MountIsolation::Shared,
+            }],
+        };
+        let mut runner = FakeRunner::default();
+        let mat = materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(mat.mounts[0].bind_src, "/tmp/cache");
+        assert_eq!(mat.mounts[0].isolation, MountIsolation::Shared);
+        assert!(
+            runner.run_recorded.is_empty(),
+            "no git ops for shared mounts"
+        );
+    }
+
+    #[test]
+    fn second_materialization_with_existing_record_skips_git_ops() {
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        let dst = "/workspace/jackin";
+        let wt_path = worktree_path_for(&container_dir, dst);
+        std::fs::create_dir_all(&wt_path).unwrap();
+        std::fs::write(wt_path.join(".git"), "gitdir: /elsewhere").unwrap();
+        crate::isolation::state::write_records(
+            &container_dir,
+            std::slice::from_ref(&crate::isolation::state::IsolationRecord {
+                workspace: "jackin".into(),
+                mount_dst: dst.into(),
+                original_src: repo.path().to_string_lossy().into(),
+                isolation: MountIsolation::Worktree,
+                worktree_path: wt_path.to_string_lossy().into(),
+                scratch_branch: "jackin/scratch/x".into(),
+                base_commit: "abc".into(),
+                selector_key: "x".into(),
+                container_name: "jackin-x".into(),
+                cleanup_status: CleanupStatus::Active,
+            }),
+        )
+        .unwrap();
+
+        let resolved = resolved_with_one_isolated(repo.path(), dst);
+        let mut runner = FakeRunner::default();
+        let mat = materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(mat.mounts[0].bind_src, wt_path.to_string_lossy());
+        assert!(runner.run_recorded.is_empty(), "no git ops on reuse");
+    }
+
+    #[test]
+    fn drift_when_recorded_src_differs_errors_before_git_ops() {
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        let dst = "/workspace/jackin";
+        let wt_path = worktree_path_for(&container_dir, dst);
+        std::fs::create_dir_all(&wt_path).unwrap();
+        crate::isolation::state::write_records(
+            &container_dir,
+            std::slice::from_ref(&crate::isolation::state::IsolationRecord {
+                workspace: "jackin".into(),
+                mount_dst: dst.into(),
+                original_src: "/different/src".into(),
+                isolation: MountIsolation::Worktree,
+                worktree_path: wt_path.to_string_lossy().into(),
+                scratch_branch: "jackin/scratch/x".into(),
+                base_commit: "abc".into(),
+                selector_key: "x".into(),
+                container_name: "jackin-x".into(),
+                cleanup_status: CleanupStatus::Active,
+            }),
+        )
+        .unwrap();
+
+        let resolved = resolved_with_one_isolated(repo.path(), dst);
+        let mut runner = FakeRunner::default();
+        let err = materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("source drift") || msg.contains("differs"));
+        assert!(msg.contains("/different/src"));
+        assert!(runner.run_recorded.is_empty(), "no git ops on drift error");
     }
 }
