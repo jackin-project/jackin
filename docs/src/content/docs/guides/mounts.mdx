@@ -139,6 +139,48 @@ jackin enforces this on write: `workspace create` auto-removes redundants (with 
 
 Ad-hoc `-v` mounts passed on the command line at launch time are not collapsed; they stay literal.
 
+## Mount isolation
+
+Workspace mounts accept an `isolation` field that controls whether the host path is bind-mounted as-is or materialized into a per-container `git worktree` first.
+
+| Value | Default | Behavior |
+|---|---|---|
+| `shared` | yes | Host path bind-mounted as-is. |
+| `worktree` | no | jackin' runs `git worktree add` on the host repo and bind-mounts the worktree. Each container gets its own checkout and scratch branch. |
+
+```toml
+[[workspaces.my-app.mounts]]
+src = "~/projects/my-app"
+dst = "/workspace/my-app"
+isolation = "worktree"
+```
+
+Omitting the field is equivalent to `isolation = "shared"` and `shared` values are not written back on save (the default stays implicit in stored TOML).
+
+<Aside type="note">
+Isolation is a workspace-mount concept only. Global mounts (`[[mounts]]` and `jackin config mount add`) reject the `isolation` field at parse time — global mounts are typically non-repo system paths where `shared` is the only sensible answer.
+</Aside>
+
+### Isolated source with a shared cache
+
+A common composition: keep source isolated per agent, but mount a shared host cache directory back in as an explicit `shared` child so build artifacts persist across agents and containers.
+
+```toml
+[[workspaces.jackin.mounts]]
+src = "~/projects/jackin"
+dst = "/workspace/jackin"
+isolation = "worktree"
+
+[[workspaces.jackin.mounts]]
+src = "~/.cache/jackin/target"
+dst = "/workspace/jackin/target"
+isolation = "shared"
+```
+
+The agent sees an isolated checkout at `/workspace/jackin` while `target/` is backed by a shared host cache directory. jackin' emits parent mounts before children so the cache mount overlays the corresponding path inside the isolated worktree. This is intentional, not a redundant mount to collapse.
+
+See the [workspaces guide](./workspaces.mdx#per-mount-isolation) for the full validation rules and dirty-host caveats.
+
 ## Sensitive path warnings
 
 jackin' detects when a mount source matches a known sensitive directory and warns before proceeding:
