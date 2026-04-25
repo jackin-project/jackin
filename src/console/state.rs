@@ -61,6 +61,14 @@ pub struct ConsoleState {
     /// running it on every modal open would add a perceptible UI hitch
     /// for negligible benefit.
     pub op_available: bool,
+    /// Top-level "Exit jackin'?" confirmation dialog. Opened by `Q`
+    /// pressed anywhere outside the manager list (with no `list_modal`),
+    /// closed by Y (commits an exit) / N / Esc (returns the operator
+    /// to wherever they were). Lifted to `ConsoleState` rather than
+    /// `ManagerState` because the dialog must overlay any sub-stage
+    /// uniformly — see `is_on_main_screen` / `consumes_letter_input`
+    /// in `console::mod` for the routing gate.
+    pub quit_confirm: Option<crate::console::widgets::confirm::ConfirmState>,
 }
 
 impl ConsoleState {
@@ -131,6 +139,7 @@ impl ConsoleState {
             workspaces,
             op_cache,
             op_available,
+            quit_confirm: None,
         })
     }
 

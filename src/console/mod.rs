@@ -117,6 +117,93 @@ impl ConsoleState {
 /// idle frames; looser (>100 ms) makes the spinner stutter.
 const TICK_MS: u64 = 50;
 
+/// Centered rect for the "Exit jackin'?" confirm dialog. Sized to
+/// what the `confirm` widget needs given its prompt; clamped to a
+/// modest 44-column width so it reads as a small dialog rather than
+/// a full-screen takeover.
+fn quit_confirm_area(
+    frame: ratatui::layout::Rect,
+    confirm: &crate::console::widgets::confirm::ConfirmState,
+) -> ratatui::layout::Rect {
+    let width: u16 = 44.min(frame.width.saturating_sub(4));
+    let height: u16 = crate::console::widgets::confirm::required_height(confirm)
+        .min(frame.height.saturating_sub(2));
+    let x = frame.x + frame.width.saturating_sub(width) / 2;
+    let y = frame.y + frame.height.saturating_sub(height) / 2;
+    ratatui::layout::Rect {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
+/// `true` when the operator is on the main manager list — the only
+/// place a bare `Q` exits silently. Defined as: top-level stage is
+/// `Manager`, the manager sub-stage is `List`, and no `list_modal`
+/// is open. Any other condition (editor stage, create prelude,
+/// confirm-delete, or a list-anchored modal like `AgentPicker`) is
+/// "inside" something and should pop the exit confirmation instead.
+const fn is_on_main_screen(state: &ConsoleState) -> bool {
+    let ConsoleStage::Manager(ms) = &state.stage;
+    matches!(ms.stage, crate::console::manager::state::ManagerStage::List)
+        && ms.list_modal.is_none()
+}
+
+/// `true` when the active modal consumes letter characters as input
+/// (text entry or filter-as-you-type). The Q-intercept must defer to
+/// these modals so pressing Q types the letter rather than popping
+/// the exit confirmation.
+///
+/// Modals checked:
+/// - [`TextInput`](manager::state::Modal::TextInput) (name, workdir,
+///   mount dst, `EnvKey`, `EnvValue`) — types `Q` into the textarea.
+/// - [`OpPicker`](manager::state::Modal::OpPicker) (any pane: Account /
+///   Vault / Item / Field) — appends `Q` to the per-pane filter buffer.
+/// - [`AgentPicker`](manager::state::Modal::AgentPicker) — appends `Q`
+///   to its filter.
+///
+/// Modals deliberately omitted because they don't consume letters as
+/// input: `Confirm`, `ConfirmSave`, `MountDstChoice`, `WorkdirPick`,
+/// `SaveDiscardCancel`, `GithubPicker`, `SourcePicker`, `ErrorPopup`,
+/// `FileBrowser`. Letting `Q` escape from those modals to the exit
+/// confirm matches the spec — the operator typically uses arrow keys /
+/// enter / esc there.
+const fn consumes_letter_input(state: &ConsoleState) -> bool {
+    use crate::console::manager::state::{ManagerStage, Modal};
+    let ConsoleStage::Manager(ms) = &state.stage;
+
+    // List-anchored modals (AgentPicker, GithubPicker, etc.).
+    if let Some(modal) = &ms.list_modal
+        && matches!(modal, Modal::AgentPicker { .. } | Modal::OpPicker { .. })
+    {
+        return true;
+    }
+
+    // Editor-anchored modals.
+    if let ManagerStage::Editor(editor) = &ms.stage
+        && let Some(modal) = &editor.modal
+        && matches!(
+            modal,
+            Modal::TextInput { .. } | Modal::OpPicker { .. } | Modal::AgentPicker { .. }
+        )
+    {
+        return true;
+    }
+
+    // CreatePrelude-anchored modals (FileBrowser, MountDstChoice,
+    // WorkdirPick, TextInput for naming the workspace).
+    if let ManagerStage::CreatePrelude(p) = &ms.stage
+        && let Some(modal) = &p.modal
+        && matches!(modal, Modal::TextInput { .. })
+    {
+        return true;
+    }
+
+    false
+}
+
+#[allow(clippy::too_many_lines)]
 pub fn run_console(
     mut config: AppConfig,
     paths: &JackinPaths,
@@ -125,7 +212,9 @@ pub fn run_console(
     use std::time::Duration;
 
     use crossterm::ExecutableCommand;
-    use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
+    use crossterm::event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    };
     use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 
     // NOTE: `EnableMouseCapture` intercepts mouse events so the workspace
@@ -179,8 +268,20 @@ pub fn run_console(
         // the legacy full-screen agent picker was replaced by a
         // `Modal::AgentPicker` overlay that the manager render already
         // handles via the list_modal slot.
+        //
+        // When the top-level "Exit jackin'?" confirm is open, render
+        // the manager first as the underlay, then overlay the confirm
+        // dialog as a centered modal in the same frame so the operator
+        // sees both — the dialog doesn't lose its context.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
-            terminal.draw(|frame| manager::render(frame, ms, &config, cwd))?;
+            let confirm_state = state.quit_confirm.as_ref();
+            terminal.draw(|frame| {
+                manager::render(frame, ms, &config, cwd);
+                if let Some(confirm) = confirm_state {
+                    let area = quit_confirm_area(frame.area(), confirm);
+                    crate::console::widgets::confirm::render(frame, area, confirm);
+                }
+            })?;
         }
         // Capture terminal size before polling for input so the mouse
         // handler can hit-test against the current seam position. Cheap
@@ -199,6 +300,40 @@ pub fn run_console(
         if event::poll(Duration::from_millis(TICK_MS))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    // Quit-confirm dialog is the single chokepoint when
+                    // open: it consumes ALL keys until it closes. Y commits
+                    // exit; N / Esc closes the dialog without touching any
+                    // underlying state, so the operator returns to exactly
+                    // where they were.
+                    if let Some(confirm) = state.quit_confirm.as_mut() {
+                        use crate::console::widgets::ModalOutcome;
+                        match confirm.handle_key(key) {
+                            ModalOutcome::Commit(true) => break Ok(None),
+                            ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
+                                state.quit_confirm = None;
+                            }
+                            ModalOutcome::Continue => {}
+                        }
+                        continue;
+                    }
+
+                    // Top-level Q intercept: outside the main screen, Q
+                    // pops the "Exit jackin'?" confirmation. Skips when a
+                    // modal that consumes letter input is up (textarea or
+                    // filter-as-you-type picker), so Q types as a
+                    // character there. Caps-lock parity: accept Shift but
+                    // no other modifiers (matches commit 24).
+                    if matches!(key.code, KeyCode::Char('q' | 'Q'))
+                        && (key.modifiers - KeyModifiers::SHIFT).is_empty()
+                        && !is_on_main_screen(&state)
+                        && !consumes_letter_input(&state)
+                    {
+                        state.quit_confirm = Some(
+                            crate::console::widgets::confirm::ConfirmState::new("Exit jackin'?"),
+                        );
+                        continue;
+                    }
+
                     let outcome = if let ConsoleStage::Manager(ms) = &mut state.stage {
                         manager::handle_key(ms, &mut config, paths, cwd, key)?
                     } else {
@@ -272,4 +407,118 @@ pub fn run_console(
 
     drop(guard);
     result
+}
+
+#[cfg(test)]
+mod quit_confirm_tests {
+    //! Pin the routing rules for the top-level "Exit jackin'?" confirm:
+    //!
+    //! - `is_on_main_screen` is true ONLY on the bare manager list with
+    //!   no list_modal open. Any sub-stage / modal flips it false.
+    //! - `consumes_letter_input` is true when a TextInput / OpPicker /
+    //!   AgentPicker modal owns the keyboard so Q types as input.
+    //!
+    //! These two predicates gate the Q-intercept in `run_console`'s
+    //! event loop. The integration of those gates with the actual
+    //! keypress dispatch is verified end-to-end in the
+    //! `quit_confirm_handle_key_*` tests below, which drive the same
+    //! `ConfirmState::handle_key` the loop calls.
+    use super::*;
+    use crate::console::manager::state::{
+        EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
+    };
+    use crate::console::widgets::{
+        ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
+        text_input::TextInputState,
+    };
+
+    fn fresh_state() -> ConsoleState {
+        let cwd = std::env::temp_dir();
+        let config = AppConfig::default();
+        ConsoleState::new(&config, &cwd).unwrap()
+    }
+
+    #[test]
+    fn main_screen_is_list_with_no_modal() {
+        let state = fresh_state();
+        assert!(is_on_main_screen(&state));
+        assert!(!consumes_letter_input(&state));
+    }
+
+    #[test]
+    fn editor_stage_is_not_main_screen() {
+        let mut state = fresh_state();
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        ms.stage = ManagerStage::Editor(EditorState::new_create());
+        assert!(!is_on_main_screen(&state));
+    }
+
+    #[test]
+    fn list_modal_is_not_main_screen() {
+        let mut state = fresh_state();
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        // Open a FileBrowser as a stand-in for any list-anchored modal.
+        // (Production list_modal slots hold AgentPicker / GithubPicker /
+        // OpPicker; FileBrowser happens to construct cleanly without a
+        // real picker setup, and the predicate only checks `is_some`.)
+        ms.list_modal = Some(Modal::FileBrowser {
+            target: FileBrowserTarget::CreateFirstMountSrc,
+            state: FileBrowserState::new_from_home().unwrap(),
+        });
+        assert!(!is_on_main_screen(&state));
+    }
+
+    #[test]
+    fn text_input_modal_consumes_letter_input() {
+        let mut state = fresh_state();
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        let mut editor = EditorState::new_create();
+        editor.modal = Some(Modal::TextInput {
+            target: TextInputTarget::EnvKey {
+                scope: SecretsScopeTag::Workspace,
+            },
+            state: TextInputState::new("Key", ""),
+        });
+        ms.stage = ManagerStage::Editor(editor);
+        assert!(consumes_letter_input(&state));
+        assert!(!is_on_main_screen(&state));
+    }
+
+    #[test]
+    fn quit_confirm_handle_key_y_commits_exit() {
+        let mut s = ConfirmState::new("Exit jackin'?");
+        let key = crossterm::event::KeyEvent {
+            code: crossterm::event::KeyCode::Char('y'),
+            modifiers: crossterm::event::KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        assert!(matches!(s.handle_key(key), ModalOutcome::Commit(true)));
+    }
+
+    #[test]
+    fn quit_confirm_handle_key_n_returns_commit_false() {
+        let mut s = ConfirmState::new("Exit jackin'?");
+        let key = crossterm::event::KeyEvent {
+            code: crossterm::event::KeyCode::Char('n'),
+            modifiers: crossterm::event::KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        // The run-loop maps Commit(false) | Cancel to "close dialog",
+        // restoring the operator to where they were.
+        assert!(matches!(s.handle_key(key), ModalOutcome::Commit(false)));
+    }
+
+    #[test]
+    fn quit_confirm_handle_key_esc_cancels() {
+        let mut s = ConfirmState::new("Exit jackin'?");
+        let key = crossterm::event::KeyEvent {
+            code: crossterm::event::KeyCode::Esc,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        assert!(matches!(s.handle_key(key), ModalOutcome::Cancel));
+    }
 }
