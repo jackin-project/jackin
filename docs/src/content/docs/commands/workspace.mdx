@@ -30,12 +30,21 @@ Create a new workspace definition.
 | `--no-workdir-mount` | Don't auto-mount the workdir |
 | `--allowed-agent <NAME>` | Restrict to these agent classes (repeatable) |
 | `--default-agent <NAME>` | Agent class to auto-select |
+| `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared` or `worktree`. `clone` is recognized but rejected with a "planned but not implemented yet" error. The `<DST>` must match a mount destination present in the final mount plan. |
 
 ```bash
 jackin workspace create my-app --workdir ~/Projects/my-app
 jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
 jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
 jackin workspace create restricted --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith
+
+# Isolated source mount + shared cache child
+jackin workspace create jackin \
+  --workdir /workspace/jackin \
+  --no-workdir-mount \
+  --mount ~/projects/jackin:/workspace/jackin \
+  --mount ~/.cache/jackin/target:/workspace/jackin/target \
+  --mount-isolation /workspace/jackin=worktree
 ```
 
 ### `workspace list`
@@ -54,6 +63,8 @@ jackin workspace show <NAME>
 
 Display details of a specific workspace including workdir, mounts, and agent restrictions.
 
+The mount table includes an **Isolation** column showing each mount's effective isolation mode (`shared` or `worktree`). Mounts with no `isolation` field in TOML display as `shared`.
+
 ### `workspace edit`
 
 ```bash
@@ -71,6 +82,8 @@ Modify an existing workspace.
 | `--remove-allowed-agent <NAME>` | Revoke agent class access (repeatable) |
 | `--default-agent <NAME>` | Set default agent |
 | `--clear-default-agent` | Clear the default agent |
+| `--mount-isolation <DST>=<TYPE>` | Set isolation for a mount destination (repeatable). Can target an existing mount or a mount being upserted in the same command. |
+| `--delete-isolated-state` | Acknowledge deleting preserved isolated state when an edit changes the `src` of a materialized isolated mount. Required for non-interactive source-drift edits; ignored when no preserved state exists. |
 
 ```bash
 jackin workspace edit my-app --workdir ~/new-dir
@@ -79,7 +92,18 @@ jackin workspace edit my-app --remove-destination /old-mount
 jackin workspace edit my-app --allowed-agent chainargos/backend-engineer
 jackin workspace edit my-app --default-agent agent-smith
 jackin workspace edit my-app --clear-default-agent
+
+# Flip an existing mount to per-container worktrees
+jackin workspace edit my-app --mount-isolation /workspace/my-app=worktree
+
+# Change the host src of a previously materialized isolated mount
+# (non-interactive; explicitly accept that preserved state will be deleted)
+jackin workspace edit my-app \
+  --mount ~/projects/my-app-v2:/workspace/my-app \
+  --delete-isolated-state
 ```
+
+`workspace edit` rejects isolation changes on a running container with a clear "eject first" message. Source-drift edits that would invalidate preserved isolated state prompt interactively; non-interactive runs require `--delete-isolated-state` to proceed.
 
 ### Mount collapse
 
