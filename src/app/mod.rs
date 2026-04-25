@@ -58,6 +58,7 @@ pub fn run(cli: Cli) -> Result<()> {
             rebuild,
             no_intro,
             debug,
+            force,
         }) => {
             runner.debug = debug;
             tui::set_debug_mode(debug);
@@ -103,7 +104,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("aborted — sensitive mount paths were not confirmed");
             }
 
-            let opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
+            let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
+            opts.force = force;
             let result = runtime::load_agent(
                 &paths,
                 &mut config,
