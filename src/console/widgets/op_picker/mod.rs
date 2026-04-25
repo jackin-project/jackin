@@ -377,7 +377,13 @@ impl OpPickerState {
 
     /// Drain the in-flight receiver if a result is available, updating
     /// `load_state` + the relevant `Vec`.
-    fn poll_load(&mut self) {
+    ///
+    /// Public so the outer console event loop can drain pending worker
+    /// results on every tick (not just on key events / render frames),
+    /// keeping the picker responsive without keystroke pumping. The
+    /// render path's [`OpPickerState::tick`] still calls this internally
+    /// — both call sites are idempotent on an empty channel.
+    pub fn poll_load(&mut self) {
         let Some(rx) = self.rx.as_ref() else {
             return;
         };

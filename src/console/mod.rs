@@ -107,11 +107,23 @@ impl ConsoleState {
     }
 }
 
+/// Outer event-loop tick interval. 20 Hz keeps the picker's Braille
+/// spinner visibly fluid and lets the per-tick worker-channel drain
+/// surface `op` results within ~50 ms of the worker finishing — without
+/// hot-spinning the CPU. Matched against [`crossterm::event::poll`]'s
+/// timeout: when no input arrives within `TICK_MS`, the loop falls
+/// through to the next iteration, re-renders, and re-polls. Picked at
+/// the brief's recommended balance — tighter (≤16 ms) wastes cycles on
+/// idle frames; looser (>100 ms) makes the spinner stutter.
+const TICK_MS: u64 = 50;
+
 pub fn run_console(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
 ) -> anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>> {
+    use std::time::Duration;
+
     use crossterm::ExecutableCommand;
     use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
     use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
@@ -153,6 +165,16 @@ pub fn run_console(
             ms.toast = None;
         }
 
+        // Drain pending background-worker results (1Password picker
+        // loading state, etc.) BEFORE rendering so a freshly-arrived
+        // result lands in this frame rather than a one-tick-stale
+        // Loading frame. The render path's `OpPickerState::tick` also
+        // drains the channel; both call sites are idempotent on an
+        // empty channel.
+        if let ConsoleStage::Manager(ms) = &mut state.stage {
+            ms.poll_picker_loads();
+        }
+
         // Render the manager. `ConsoleStage` is single-variant today —
         // the legacy full-screen agent picker was replaced by a
         // `Modal::AgentPicker` overlay that the manager render already
@@ -160,79 +182,92 @@ pub fn run_console(
         if let ConsoleStage::Manager(ms) = &mut state.stage {
             terminal.draw(|frame| manager::render(frame, ms, &config, cwd))?;
         }
-        // Capture terminal size before the blocking read so the mouse
-        // handler can hit-test against the current seam position. Harmless
-        // to call every loop turn — it's a cheap syscall and the render
-        // path already needs the size via the Frame abstraction. Convert
-        // the `Size` into a `Rect` with zero origin so the handler signature
-        // stays aligned with ratatui's own area-based hit-test conventions.
+        // Capture terminal size before polling for input so the mouse
+        // handler can hit-test against the current seam position. Cheap
+        // syscall; harmless to call every loop turn. Convert the `Size`
+        // into a `Rect` with zero origin so the handler signature stays
+        // aligned with ratatui's own area-based hit-test conventions.
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
-        match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => {
-                let outcome = if let ConsoleStage::Manager(ms) = &mut state.stage {
-                    manager::handle_key(ms, &mut config, paths, cwd, key)?
-                } else {
-                    manager::InputOutcome::Continue
-                };
-                match outcome {
-                    manager::InputOutcome::Continue => {}
-                    manager::InputOutcome::ExitJackin => {
-                        break Ok(None);
-                    }
-                    manager::InputOutcome::LaunchNamed(name) => {
-                        // Find the workspace by name in ConsoleState.workspaces.
-                        if let Some(idx) = state
-                            .workspaces
-                            .iter()
-                            .position(|choice| choice.name == name)
-                        {
-                            match state.dispatch_launch_for_workspace(&config, cwd, idx) {
+
+        // Non-blocking event poll with a tick timeout. When no input
+        // arrives within `TICK_MS`, `poll` returns `false` and the loop
+        // falls through to the next iteration — keeping the picker
+        // spinner advancing and the worker channel draining at 20 Hz
+        // regardless of operator input. (A prior blocking
+        // `event::read()` froze both updates between keystrokes, making
+        // the picker feel unresponsive while `op` was loading.)
+        if event::poll(Duration::from_millis(TICK_MS))? {
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    let outcome = if let ConsoleStage::Manager(ms) = &mut state.stage {
+                        manager::handle_key(ms, &mut config, paths, cwd, key)?
+                    } else {
+                        manager::InputOutcome::Continue
+                    };
+                    match outcome {
+                        manager::InputOutcome::Continue => {}
+                        manager::InputOutcome::ExitJackin => {
+                            break Ok(None);
+                        }
+                        manager::InputOutcome::LaunchNamed(name) => {
+                            // Find the workspace by name in ConsoleState.workspaces.
+                            if let Some(idx) = state
+                                .workspaces
+                                .iter()
+                                .position(|choice| choice.name == name)
+                            {
+                                match state.dispatch_launch_for_workspace(&config, cwd, idx) {
+                                    Ok(Some(outcome)) => break Ok(Some(outcome)),
+                                    Ok(None) => {}
+                                    Err(e) => break Err(e),
+                                }
+                            }
+                        }
+                        manager::InputOutcome::LaunchCurrentDir => {
+                            // Index 0 of ConsoleState.workspaces is the
+                            // synthetic "Current directory" choice (built
+                            // in ConsoleState::new). Route it through the
+                            // same dispatcher as a saved workspace.
+                            match state.dispatch_launch_for_workspace(&config, cwd, 0) {
                                 Ok(Some(outcome)) => break Ok(Some(outcome)),
                                 Ok(None) => {}
                                 Err(e) => break Err(e),
                             }
                         }
-                    }
-                    manager::InputOutcome::LaunchCurrentDir => {
-                        // Index 0 of ConsoleState.workspaces is the synthetic
-                        // "Current directory" choice (built in
-                        // ConsoleState::new). Route it through the same
-                        // dispatcher as a saved workspace.
-                        match state.dispatch_launch_for_workspace(&config, cwd, 0) {
-                            Ok(Some(outcome)) => break Ok(Some(outcome)),
-                            Ok(None) => {}
-                            Err(e) => break Err(e),
-                        }
-                    }
-                    manager::InputOutcome::LaunchWithAgent(agent) => {
-                        // The `AgentPicker` modal just committed. The
-                        // dispatcher pinned `selected_workspace` when it
-                        // opened the picker, so resolve against that.
-                        // Should be unreachable when the index is missing
-                        // — the dispatcher validated it on open — but fall
-                        // back to staying in the run-loop rather than
-                        // panicking on a state-machine inconsistency.
-                        let idx = state.selected_workspace;
-                        if let Some(choice) = state.workspaces.get(idx) {
-                            match preview::resolve_selected_workspace(&config, cwd, choice, &agent)
-                            {
-                                Ok(workspace) => break Ok(Some((agent, workspace))),
-                                Err(e) => break Err(e),
+                        manager::InputOutcome::LaunchWithAgent(agent) => {
+                            // The `AgentPicker` modal just committed. The
+                            // dispatcher pinned `selected_workspace` when
+                            // it opened the picker, so resolve against
+                            // that. Should be unreachable when the index
+                            // is missing — the dispatcher validated it on
+                            // open — but fall back to staying in the
+                            // run-loop rather than panicking on a state-
+                            // machine inconsistency.
+                            let idx = state.selected_workspace;
+                            if let Some(choice) = state.workspaces.get(idx) {
+                                match preview::resolve_selected_workspace(
+                                    &config, cwd, choice, &agent,
+                                ) {
+                                    Ok(workspace) => break Ok(Some((agent, workspace))),
+                                    Err(e) => break Err(e),
+                                }
                             }
                         }
                     }
                 }
-            }
-            Event::Mouse(mouse) => {
-                // Only the Manager/List stage consumes mouse events today
-                // (list/details seam drag). Modals on other stages fall
-                // through as silent no-ops.
-                if let ConsoleStage::Manager(ms) = &mut state.stage {
-                    manager::input::handle_mouse(ms, mouse, term_size);
+                Event::Mouse(mouse) => {
+                    // Only the Manager/List stage consumes mouse events
+                    // today (list/details seam drag). Modals on other
+                    // stages fall through as silent no-ops.
+                    if let ConsoleStage::Manager(ms) = &mut state.stage {
+                        manager::input::handle_mouse(ms, mouse, term_size);
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
+        // No `else` — when `poll` times out, fall through to the next
+        // loop turn so the spinner ticks and channels drain.
     };
 
     drop(guard);

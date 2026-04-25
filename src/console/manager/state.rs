@@ -577,6 +577,32 @@ impl ManagerState<'_> {
             None
         }
     }
+
+    /// Drain any pending results from background `op` worker threads.
+    ///
+    /// Called from the outer console event loop on every tick (not only
+    /// on key events) so the [`OpPicker`] modal's loading state advances
+    /// and result data lands as soon as the worker finishes — without
+    /// waiting for the operator to press a key. The render path's
+    /// [`OpPickerState::tick`] also drains the channel; both call sites
+    /// are idempotent on an empty channel, but draining here ahead of
+    /// render means the freshly-rendered frame already reflects any
+    /// just-arrived result.
+    ///
+    /// Covers both modal anchors: the manager-list `list_modal` slot
+    /// (which today never holds an `OpPicker`, but matching the variant
+    /// keeps the helper future-proof) and the editor's `modal` slot
+    /// (where the Secrets-tab picker lives).
+    pub fn poll_picker_loads(&mut self) {
+        if let Some(Modal::OpPicker { state }) = self.list_modal.as_mut() {
+            state.poll_load();
+        }
+        if let ManagerStage::Editor(editor) = &mut self.stage
+            && let Some(Modal::OpPicker { state }) = editor.modal.as_mut()
+        {
+            state.poll_load();
+        }
+    }
 }
 
 impl EditorState<'_> {
