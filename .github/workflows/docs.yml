@@ -49,6 +49,7 @@ jobs:
         with:
           args: >-
             --config docs/lychee.toml
+            --include-fragments
             --root-dir ${{ github.workspace }}/docs/dist
             docs/dist/**/*.html
           fail: true
@@ -97,6 +98,7 @@ jobs:
         with:
           args: >-
             --config docs/lychee.toml
+            --include-fragments
             --files-from lychee/deployed-pages.txt
           fail: true
         env:

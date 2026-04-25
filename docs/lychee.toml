@@ -7,8 +7,8 @@
 accept = ["100..=103", "200..=299", "429"]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
+exclude = ["^https://github\\.com/jackin-project/jackin/edit/main/"]
 format = "compact"
-include_fragments = "anchor-only"
 index_files = ["index.html"]
 max_concurrency = 32
 max_redirects = 10
