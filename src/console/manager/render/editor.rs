@@ -254,12 +254,6 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 
     let FieldFocus::Row(cursor) = state.active_field;
 
-    let is_edit = matches!(&state.mode, EditorMode::Edit { .. });
-
-    let name_dirty = match &state.mode {
-        EditorMode::Edit { name } => state.pending_name.as_deref().is_some_and(|n| n != name),
-        EditorMode::Create => false,
-    };
     let name_value = match &state.mode {
         EditorMode::Edit { name } => state.pending_name.as_deref().unwrap_or(name.as_str()),
         EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
@@ -275,44 +269,26 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     // clutter and has no place here. The underlying schema fields
     // (`default_agent`, `last_agent`) still live on `WorkspaceConfig` —
     // we just don't surface them on the General tab anymore.
+    //
+    // Per-row dirty markers were removed for consistency with the other
+    // tabs; the footer's `S save workspace (N changes)` is the canonical
+    // unsaved-state indicator.
     let mut rows: Vec<Line> = Vec::new();
 
-    if is_edit {
-        // Edit mode: dirty markers diff against the original workspace.
-        rows.push(render_editor_row(0, cursor, "Name", name_value, name_dirty));
-        let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
-        rows.push(render_editor_row(
-            1,
-            cursor,
-            "Working dir",
-            &workdir_display,
-            state.pending.workdir != state.original.workdir,
-        ));
-    } else {
-        // Create mode: no dirty markers — there's no "original" workspace
-        // to diff against; the save_count tracks field-level changes.
-        rows.push(render_editor_row(0, cursor, "Name", name_value, false));
-        let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
-        rows.push(render_editor_row(
-            1,
-            cursor,
-            "Working dir",
-            &workdir_display,
-            false,
-        ));
-    }
+    rows.push(render_editor_row(0, cursor, "Name", name_value));
+    let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
+    rows.push(render_editor_row(
+        1,
+        cursor,
+        "Working dir",
+        &workdir_display,
+    ));
 
     frame.render_widget(Paragraph::new(rows).block(block), area);
 }
 
 /// Render a field row with cursor highlight when `row == cursor`.
-fn render_editor_row(
-    row: usize,
-    cursor: usize,
-    label: &str,
-    value: &str,
-    dirty: bool,
-) -> Line<'static> {
+fn render_editor_row(row: usize, cursor: usize, label: &str, value: &str) -> Line<'static> {
     let selected = row == cursor;
     let prefix = if selected { "▸ " } else { "  " };
     // Labels stay white regardless of focus — focus is signalled by the
@@ -331,12 +307,6 @@ fn render_editor_row(
         Style::default().fg(PHOSPHOR_GREEN)
     };
     spans.push(Span::styled(value.to_string(), value_style));
-    if dirty {
-        spans.push(Span::styled(
-            "    ● unsaved",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
-    }
     Line::from(spans)
 }
 
@@ -584,14 +554,11 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
         match row {
             SecretsRow::WorkspaceKeyRow(key) => {
                 let value = state.pending.env.get(key).cloned().unwrap_or_default();
-                let dirty =
-                    env_key_is_dirty(state.original.env.get(key), state.pending.env.get(key));
                 lines.push(render_secrets_key_line(
                     selected,
                     prefix,
                     key,
                     &value,
-                    dirty,
                     state.secrets_masked,
                     area.width,
                     label_width,
@@ -629,15 +596,12 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
             SecretsRow::AgentKeyRow { agent, key } => {
                 let empty = std::collections::BTreeMap::<String, String>::new();
                 let pend_env = state.pending.agents.get(agent).map_or(&empty, |o| &o.env);
-                let orig_env = state.original.agents.get(agent).map_or(&empty, |o| &o.env);
                 let value = pend_env.get(key).cloned().unwrap_or_default();
-                let dirty = env_key_is_dirty(orig_env.get(key), pend_env.get(key));
                 lines.push(render_secrets_key_line(
                     selected,
                     prefix,
                     key,
                     &value,
-                    dirty,
                     state.secrets_masked,
                     area.width,
                     label_width,
@@ -660,25 +624,15 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-/// Diff predicate for a single env key between two maps. Returns `true`
-/// when the key was added, removed, or changed.
-fn env_key_is_dirty(orig: Option<&String>, pend: Option<&String>) -> bool {
-    match (orig, pend) {
-        (Some(a), Some(b)) => a != b,
-        (None, Some(_)) | (Some(_), None) => true,
-        (None, None) => false,
-    }
-}
-
 /// Render one "KEY  value" row for the Secrets tab with the conventional
-/// focus prefix, masking, truncation, and dirty-marker semantics.
-#[allow(clippy::too_many_arguments)]
+/// focus prefix, masking, and truncation. Per-row dirty markers were
+/// removed for consistency with the other editor tabs; the footer's
+/// `S save workspace (N changes)` is the canonical unsaved-state signal.
 fn render_secrets_key_line(
     selected: bool,
     prefix: &str,
     key: &str,
     value: &str,
-    dirty: bool,
     masked: bool,
     area_width: u16,
     label_width: usize,
@@ -722,12 +676,6 @@ fn render_secrets_key_line(
         }
     };
     spans.push(Span::styled(rendered_value, value_style));
-    if dirty {
-        spans.push(Span::styled(
-            "    ● unsaved",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
-    }
     Line::from(spans)
 }
 
