@@ -98,7 +98,7 @@ pub(super) fn handle_editor_key(
             // Tab regardless of context) falls through to tab advance.
             if key.code == KeyCode::Right && editor.active_tab == EditorTab::Secrets {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = secrets_flat_rows(editor);
+                let rows = secrets_flat_rows(editor, config);
                 if let Some(SecretsRow::AgentHeader {
                     agent,
                     expanded: false,
@@ -126,7 +126,7 @@ pub(super) fn handle_editor_key(
             // row falls through to the standard previous-tab behavior.
             if editor.active_tab == EditorTab::Secrets {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = secrets_flat_rows(editor);
+                let rows = secrets_flat_rows(editor, config);
                 if let Some(SecretsRow::AgentHeader {
                     agent,
                     expanded: true,
@@ -172,7 +172,7 @@ pub(super) fn handle_editor_key(
                     // Enter on an existing mount row: no-op for now.
                 }
                 EditorTab::Secrets => {
-                    open_secrets_enter_modal(editor);
+                    open_secrets_enter_modal(editor, config);
                 }
                 EditorTab::Agents => {}
             }
@@ -205,7 +205,7 @@ pub(super) fn handle_editor_key(
             if editor.active_tab == EditorTab::Secrets
                 && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
-            toggle_focused_row_mask(editor);
+            toggle_focused_row_mask(editor, config);
         }
         // P opens the 1Password picker as a row-level Secrets-tab action.
         // Per RULES.md § TUI Keybindings, this binding fires only without
@@ -218,19 +218,19 @@ pub(super) fn handle_editor_key(
             if editor.active_tab == EditorTab::Secrets
                 && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
-            open_secrets_picker_modal(editor, op_cache);
+            open_secrets_picker_modal(editor, config, op_cache);
         }
         KeyCode::Char('d' | 'D')
             if editor.active_tab == EditorTab::Secrets
                 && !key.modifiers.contains(KeyModifiers::CONTROL) =>
         {
-            open_secrets_delete_confirm(editor);
+            open_secrets_delete_confirm(editor, config);
         }
         KeyCode::Char('a' | 'A')
             if editor.active_tab == EditorTab::Secrets
                 && !key.modifiers.contains(KeyModifiers::CONTROL) =>
         {
-            open_secrets_add_modal(editor);
+            open_secrets_add_modal(editor, config);
         }
         KeyCode::Char('r' | 'R') if editor.active_tab == super::super::state::EditorTab::Mounts => {
             // Flip the `readonly` flag on the highlighted mount row. Silent
@@ -296,7 +296,7 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         EditorTab::General => 1,
         EditorTab::Mounts => editor.pending.mounts.len(), // mounts fill 0..N-1, sentinel at N
         EditorTab::Agents => config.agents.len().saturating_sub(1), // 0-based into agents
-        EditorTab::Secrets => secrets_flat_row_count(editor).saturating_sub(1),
+        EditorTab::Secrets => secrets_flat_row_count(editor, config).saturating_sub(1),
     }
 }
 
@@ -311,9 +311,9 @@ fn reset_secrets_view(editor: &mut EditorState<'_>) {
 /// Toggle the per-row mask state for the row the operator is currently
 /// focused on. Header rows, sentinels, and op:// rows are no-ops — only
 /// plain-text key rows participate in masking.
-fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
+fn toggle_focused_row_mask(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
+    let rows = secrets_flat_rows(editor, config);
     let Some(row) = rows.get(n).cloned() else {
         return;
     };
@@ -387,10 +387,10 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
 /// value-edit modal, header rows expand collapsed sections (expanded
 /// headers are a no-op per the plan), and `+ Add` sentinels jump into
 /// the two-step key+value add flow.
-fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
+fn open_secrets_enter_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
     use super::super::super::widgets::text_input::TextInputState;
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
+    let rows = secrets_flat_rows(editor, config);
     let Some(row) = rows.get(n).cloned() else {
         return;
     };
@@ -461,15 +461,38 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
                 state,
             });
         }
+        SecretsRow::AddAgentOverrideSentinel => {
+            open_agent_override_picker(editor, config);
+        }
     }
+}
+
+/// Open the editor-stage agent picker that adds a fresh per-agent
+/// override section. Filtered to allowed agents that don't yet have an
+/// entry in `pending.agents`. If the eligible set is empty (which the
+/// sentinel-render path already guards against) this is a silent no-op.
+fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
+    use super::super::super::widgets::agent_picker::AgentPickerState;
+    use crate::selector::ClassSelector;
+    let eligible: Vec<ClassSelector> =
+        super::super::render::editor::eligible_agents_without_override(editor, config)
+            .into_iter()
+            .filter_map(|name| ClassSelector::parse(&name).ok())
+            .collect();
+    if eligible.is_empty() {
+        return;
+    }
+    editor.modal = Some(Modal::AgentOverridePicker {
+        state: AgentPickerState::new(eligible),
+    });
 }
 
 /// Open the `Confirm(DeleteEnvVar)` modal when the operator presses `D`
 /// on a key row. Silent no-op on non-key rows.
-fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
+fn open_secrets_delete_confirm(editor: &mut EditorState<'_>, config: &AppConfig) {
     use crate::console::widgets::confirm::ConfirmState;
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
+    let rows = secrets_flat_rows(editor, config);
     let Some(row) = rows.get(n).cloned() else {
         return;
     };
@@ -490,9 +513,14 @@ fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
 /// section the focused row lives in; on the workspace header / workspace
 /// key rows / workspace sentinel the scope is `Workspace`, and on
 /// agent-section rows it's `Agent(name)`.
-fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
+///
+/// `A` on the bottom-of-tab `AddAgentOverrideSentinel` doesn't open an
+/// `EnvKey` modal — it opens the override-add agent picker, mirroring
+/// the dual-binding pattern (`Enter`/`A`) that the workspace and
+/// per-agent `+ Add environment variable` sentinels already use.
+fn open_secrets_add_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
+    let rows = secrets_flat_rows(editor, config);
     let Some(row) = rows.get(n).cloned() else {
         return;
     };
@@ -507,6 +535,10 @@ fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
             SecretsScopeTag::Agent(agent.clone()),
             format!("New {agent} environment key"),
         ),
+        SecretsRow::AddAgentOverrideSentinel => {
+            open_agent_override_picker(editor, config);
+            return;
+        }
     };
     let state = env_key_input_state(editor, &scope, label, String::new());
     editor.modal = Some(Modal::TextInput {
@@ -625,6 +657,7 @@ pub(super) fn handle_editor_modal(
     key: KeyEvent,
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    config: &AppConfig,
 ) {
     let Some(modal) = editor.modal.as_mut() else {
         return;
@@ -720,6 +753,34 @@ pub(super) fn handle_editor_modal(
         // cancel so the operator isn't stuck.
         Modal::GithubPicker { .. } | Modal::AgentPicker { .. } => {
             editor.modal = None;
+        }
+        Modal::AgentOverridePicker { state: picker } => {
+            match picker.handle_key(key) {
+                ModalOutcome::Commit(agent) => {
+                    let agent_name = agent.key();
+                    // Create the override entry if it didn't already exist
+                    // (eligibility filter should guarantee this — defensive
+                    // `entry().or_default()` mirrors the `Agent` scope env-
+                    // write helpers and stays correct if the picker is ever
+                    // opened with a relaxed filter).
+                    editor.pending.agents.entry(agent_name.clone()).or_default();
+                    editor.secrets_expanded.insert(agent_name.clone());
+                    editor.modal = None;
+                    // Land the cursor on the new section's
+                    // `+ Add <agent> environment variable` sentinel so the
+                    // operator can immediately add the first override key.
+                    let rows = super::super::render::editor::secrets_flat_rows(editor, config);
+                    if let Some(idx) = rows.iter().position(|row| {
+                        matches!(row, super::super::render::editor::SecretsRow::AgentAddSentinel(a) if a == &agent_name)
+                    }) {
+                        editor.active_field = FieldFocus::Row(idx);
+                    }
+                }
+                ModalOutcome::Cancel => {
+                    editor.modal = None;
+                }
+                ModalOutcome::Continue => {}
+            }
         }
         Modal::ConfirmSave { state: modal_state } => {
             use crate::console::widgets::confirm_save::SaveChoice;
@@ -885,10 +946,11 @@ pub(super) fn handle_editor_modal(
 /// `op` metadata.
 fn open_secrets_picker_modal(
     editor: &mut EditorState<'_>,
+    config: &AppConfig,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
 ) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor);
+    let rows = secrets_flat_rows(editor, config);
     let Some(row) = rows.get(n).cloned() else {
         return;
     };
@@ -897,7 +959,7 @@ fn open_secrets_picker_modal(
         SecretsRow::AgentKeyRow { agent, key } => Some((SecretsScopeTag::Agent(agent), Some(key))),
         SecretsRow::WorkspaceAddSentinel => Some((SecretsScopeTag::Workspace, None)),
         SecretsRow::AgentAddSentinel(agent) => Some((SecretsScopeTag::Agent(agent), None)),
-        SecretsRow::AgentHeader { .. } => None,
+        SecretsRow::AgentHeader { .. } | SecretsRow::AddAgentOverrideSentinel => None,
     };
     let Some(target) = target else {
         return;
@@ -1217,6 +1279,7 @@ mod tests {
             k,
             false,
             std::rc::Rc::new(std::cell::RefCell::new(OpCache::default())),
+            &AppConfig::default(),
         );
     }
 

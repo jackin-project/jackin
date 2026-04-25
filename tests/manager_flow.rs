@@ -1648,3 +1648,234 @@ fn env_key_modal_allows_unique_name() -> Result<()> {
     );
     Ok(())
 }
+
+// ── AddAgentOverrideSentinel + AgentOverridePicker integration tests ─
+
+/// Seed the on-disk config + workspace for the override-picker tests.
+/// Adds a workspace with the given `allowed_agents` (each also
+/// registered as an `AgentSource`), and pre-populates `pending` per-
+/// agent overrides for any names in `with_overrides`.
+fn seed_override_picker_workspace(
+    paths: &JackinPaths,
+    temp_dir: &std::path::Path,
+    allowed: &[&str],
+    with_overrides: &[&str],
+) -> Result<AppConfig> {
+    paths.ensure_base_dirs()?;
+    let host_path = temp_dir.display().to_string();
+    let mut config = AppConfig::default();
+    for name in allowed {
+        config.agents.insert(
+            (*name).to_string(),
+            jackin::config::AgentSource {
+                git: format!("https://example.invalid/{name}.git"),
+                trusted: true,
+                claude: None,
+                env: std::collections::BTreeMap::new(),
+            },
+        );
+    }
+    let toml = toml::to_string(&config)?;
+    std::fs::write(&paths.config_file, toml)?;
+
+    let mut agents_map = std::collections::BTreeMap::new();
+    for name in with_overrides {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("LOG_LEVEL".into(), "debug".into());
+        agents_map.insert((*name).into(), WorkspaceAgentOverride { env });
+    }
+
+    let ws = WorkspaceConfig {
+        workdir: host_path.clone(),
+        mounts: vec![MountConfig {
+            src: host_path.clone(),
+            dst: host_path,
+            readonly: false,
+        }],
+        allowed_agents: allowed.iter().map(|s| (*s).to_string()).collect(),
+        default_agent: None,
+        last_agent: None,
+        env: std::collections::BTreeMap::new(),
+        agents: agents_map,
+    };
+    let mut ce = ConfigEditor::open(paths)?;
+    ce.create_workspace("big-monorepo", ws)?;
+    ce.save()
+}
+
+/// Press `Enter` on the `+ Add per-agent override for ...` sentinel:
+/// the `Modal::AgentOverridePicker` opens on the editor stage with the
+/// eligible-set populated.
+#[test]
+fn enter_on_add_agent_override_sentinel_opens_agent_picker() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Rows: [WorkspaceAddSentinel, AddAgentOverrideSentinel].
+    // Cursor opens on row 0; Down moves to the override sentinel.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    match &editor(&state).modal {
+        Some(Modal::AgentOverridePicker { state: picker }) => {
+            assert_eq!(
+                picker.agents.len(),
+                1,
+                "picker must list every eligible agent"
+            );
+            assert_eq!(picker.agents[0].key(), "agent-smith");
+        }
+        other => panic!("expected Modal::AgentOverridePicker; got {other:?}"),
+    }
+    Ok(())
+}
+
+/// Picker commit on a fresh agent: a new override entry is created in
+/// `pending.agents`, the section auto-expands, and the cursor lands on
+/// the new section's `+ Add <agent> environment variable` sentinel so
+/// the operator can immediately start adding keys.
+#[test]
+fn picking_an_agent_creates_override_section_auto_expanded() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Drive Enter on the override sentinel to open the picker.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::AgentOverridePicker { .. })
+    ));
+
+    // Commit the picker selection (defaults to the only eligible agent).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // Override entry must exist with an empty env map.
+    let agents = &editor(&state).pending.agents;
+    assert!(
+        agents.contains_key("agent-smith"),
+        "pending.agents must contain the chosen agent; got keys={:?}",
+        agents.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        agents.get("agent-smith").unwrap().env.is_empty(),
+        "new override entry must start empty"
+    );
+    // Section must be auto-expanded.
+    assert!(
+        editor(&state).secrets_expanded.contains("agent-smith"),
+        "new override section must auto-expand"
+    );
+    // Modal must be closed.
+    assert!(
+        editor(&state).modal.is_none(),
+        "picker commit must close the modal; got {:?}",
+        editor(&state).modal
+    );
+    // Cursor must land on the new section's
+    // `+ Add agent-smith environment variable` sentinel. Post-commit
+    // row layout (the only allowed agent now has an override, so the
+    // bottom override sentinel disappears):
+    //   0 WorkspaceAddSentinel
+    //   1 AgentHeader (expanded)
+    //   2 AgentAddSentinel("agent-smith")  ← cursor
+    assert!(
+        matches!(editor(&state).active_field, FieldFocus::Row(2)),
+        "cursor must land on the new section's AgentAddSentinel (row 2); got {:?}",
+        editor(&state).active_field
+    );
+    // Verify by render dump that the focus prefix `▸` precedes the
+    // `+ Add agent-smith environment variable` sentinel.
+    let dump = render_to_dump(&mut state, &config, cwd);
+    assert!(
+        dump.lines().any(|l| {
+            l.contains('\u{25B8}') && l.contains("+ Add agent-smith environment variable")
+        }),
+        "focused row must be the new agent's `+ Add` sentinel; dump:\n{dump}"
+    );
+    Ok(())
+}
+
+/// Open the override picker on a workspace with two allowed agents
+/// where one already has an override section: the picker's eligible
+/// set must contain only the agent that doesn't yet have overrides.
+#[test]
+fn agent_override_picker_excludes_agents_with_existing_overrides() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_override_picker_workspace(
+        &paths,
+        temp.path(),
+        &["agent-smith", "agent-brown"],
+        &["agent-smith"],
+    )?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Rows: [WorkspaceAddSentinel, AgentHeader(agent-smith collapsed),
+    //        AddAgentOverrideSentinel] — last row is the sentinel.
+    // Navigate down twice to land on it.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    match &editor(&state).modal {
+        Some(Modal::AgentOverridePicker { state: picker }) => {
+            assert_eq!(
+                picker.agents.len(),
+                1,
+                "picker eligible set must exclude agent-smith (already has override)"
+            );
+            assert_eq!(
+                picker.agents[0].key(),
+                "agent-brown",
+                "only agent-brown should remain eligible"
+            );
+        }
+        other => panic!("expected Modal::AgentOverridePicker; got {other:?}"),
+    }
+    Ok(())
+}
+
+/// Esc on the override picker closes the modal and leaves
+/// `pending.agents` untouched — the operator can back out without
+/// committing.
+#[test]
+fn cancel_from_agent_override_picker_does_not_create_section() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &[])?;
+    let cwd = temp.path();
+    let mut state = manager_on_secrets_tab(&config, cwd);
+
+    // Open the picker.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::AgentOverridePicker { .. })
+    ));
+
+    // Esc — the modal closes and pending.agents stays empty.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "Esc must close the override picker; got {:?}",
+        editor(&state).modal
+    );
+    assert!(
+        editor(&state).pending.agents.is_empty(),
+        "Esc must not create an override entry; got pending.agents keys={:?}",
+        editor(&state).pending.agents.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        editor(&state).secrets_expanded.is_empty(),
+        "Esc must not expand any section"
+    );
+    Ok(())
+}

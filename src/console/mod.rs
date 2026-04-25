@@ -185,7 +185,10 @@ const fn consumes_letter_input(state: &ConsoleState) -> bool {
         && let Some(modal) = &editor.modal
         && matches!(
             modal,
-            Modal::TextInput { .. } | Modal::OpPicker { .. } | Modal::AgentPicker { .. }
+            Modal::TextInput { .. }
+                | Modal::OpPicker { .. }
+                | Modal::AgentPicker { .. }
+                | Modal::AgentOverridePicker { .. }
         )
     {
         return true;

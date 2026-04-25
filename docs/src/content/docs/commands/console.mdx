@@ -161,6 +161,17 @@ If you type a name that's already used in the same scope (workspace
 env, or an agent's overrides), the modal flags it inline and won't
 accept Enter until you change it.
 
+### Adding per-agent overrides
+
+The `+ Add per-agent override for ...` sentinel at the bottom of the
+Environments tab opens an agent picker showing allowed agents that
+don't yet have overrides. Picking an agent creates a new collapsible
+override section, auto-expands it, and drops your cursor on its `+ Add`
+sentinel so you can add the first override key right away.
+
+The sentinel hides itself when every workspace-allowed agent already
+has an override section — there's no action left to take.
+
 ### 1Password picker
 
 Pressing `P` on an Environments-tab row opens a three-pane picker that browses

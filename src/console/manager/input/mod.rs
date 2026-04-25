@@ -70,7 +70,7 @@ pub fn handle_key(
     if let ManagerStage::Editor(editor) = &mut state.stage
         && editor.modal.is_some()
     {
-        editor::handle_editor_modal(editor, key, op_available, op_cache);
+        editor::handle_editor_modal(editor, key, op_available, op_cache, config);
 
         // Drain the ConfirmSave → commit signal FIRST. The modal handler
         // only closes the modal and stashes the plan; this outer layer

@@ -56,7 +56,7 @@ pub fn render_editor(
     let mut items: Vec<FooterItem> = Vec::new();
 
     // Row-specific group (may be empty).
-    let row_items = contextual_row_items(state);
+    let row_items = contextual_row_items(state, config);
     if !row_items.is_empty() {
         items.extend(row_items);
         items.push(FooterItem::GroupSep);
@@ -113,7 +113,7 @@ pub fn render_editor(
 /// Compute a row-specific hint fragment based on the active tab and cursor.
 /// Returns an empty vec when the current position has no action.
 #[allow(clippy::too_many_lines)]
-fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
+fn contextual_row_items(state: &EditorState<'_>, config: &AppConfig) -> Vec<FooterItem> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
@@ -186,7 +186,7 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
             // is sitting on. Op:// rows are read-only at the value level —
             // the operator deletes and re-adds via the source picker — so
             // we drop `Enter edit` and `M mask/unmask` on those rows.
-            let rows = secrets_flat_rows(state);
+            let rows = secrets_flat_rows(state, config);
             // Determine if the focused key row carries an op:// reference.
             let focused_value_is_op_ref = match rows.get(cursor) {
                 Some(SecretsRow::WorkspaceKeyRow(key)) => state
@@ -259,6 +259,16 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
                     FooterItem::Sep,
                     FooterItem::Key("P"),
                     FooterItem::Text("1Password"),
+                ],
+                Some(SecretsRow::AddAgentOverrideSentinel) => vec![
+                    FooterItem::Key("Enter"),
+                    FooterItem::Text("pick agent"),
+                    FooterItem::Sep,
+                    FooterItem::Key("A"),
+                    FooterItem::Text("pick agent"),
+                    FooterItem::Sep,
+                    FooterItem::Key("Q"),
+                    FooterItem::Text("exit"),
                 ],
                 None => vec![FooterItem::Key("M"), FooterItem::Text("mask/unmask")],
             }
@@ -504,6 +514,13 @@ pub(in crate::console::manager) enum SecretsRow {
     /// "+ Add agent-NAME environment variable" sentinel — only emitted
     /// when the agent section is expanded.
     AgentAddSentinel(String),
+    /// "+ Add per-agent override for ..." sentinel — appended at the
+    /// absolute bottom of the Secrets tab when at least one allowed
+    /// agent does not yet have an override section. Pressing Enter (or
+    /// `A`) opens an agent picker filtered to the eligible set; on
+    /// commit a new `pending.agents.<agent>` entry is created and the
+    /// section auto-expands.
+    AddAgentOverrideSentinel,
 }
 
 /// Build the flat row list used by both `render_secrets_tab` (to draw the
@@ -514,7 +531,17 @@ pub(in crate::console::manager) enum SecretsRow {
 /// rows + add sentinel. There is no preamble row above the workspace
 /// keys — the empty state is just the `+ Add environment variable`
 /// sentinel.
-pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
+///
+/// `config` is consulted to decide whether to append the
+/// `AddAgentOverrideSentinel` row at the bottom — it is emitted iff at
+/// least one allowed agent (per `eligible_agents_for_workspace`) does not
+/// yet have an entry in `pending.agents`. When every eligible agent is
+/// already covered (or there are no eligible agents at all) the sentinel
+/// is omitted so the operator never sees an action that can't proceed.
+pub(in crate::console::manager) fn secrets_flat_rows(
+    editor: &EditorState<'_>,
+    config: &AppConfig,
+) -> Vec<SecretsRow> {
     let mut rows = Vec::new();
     for key in editor.pending.env.keys() {
         rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
@@ -538,14 +565,53 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
             rows.push(SecretsRow::AgentAddSentinel(agent.clone()));
         }
     }
+    if !eligible_agents_without_override(editor, config).is_empty() {
+        rows.push(SecretsRow::AddAgentOverrideSentinel);
+    }
     rows
 }
 
 /// Number of navigable rows on the Secrets tab. Used by the input
 /// handlers' `max_row_for_tab` to clamp the cursor.
 #[must_use]
-pub(in crate::console::manager) fn secrets_flat_row_count(editor: &EditorState<'_>) -> usize {
-    secrets_flat_rows(editor).len()
+pub(in crate::console::manager) fn secrets_flat_row_count(
+    editor: &EditorState<'_>,
+    config: &AppConfig,
+) -> usize {
+    secrets_flat_rows(editor, config).len()
+}
+
+/// Compute the list of agents (by class-key string) that are eligible
+/// for a per-agent override on this workspace but don't yet have one.
+///
+/// "Eligible" mirrors the launch-time semantics from
+/// [`crate::app::context::eligible_agents_for_workspace`]: when the
+/// workspace's `allowed_agents` list is empty we return every globally
+/// registered agent in `config.agents`; otherwise we narrow to that
+/// list. Either way, agents already present in `editor.pending.agents`
+/// are filtered out — they already have a section and don't need to
+/// appear in the picker.
+///
+/// Returned strings match the keying scheme of
+/// `WorkspaceConfig.agents` (the `BTreeMap<String, WorkspaceAgentOverride>`).
+pub(in crate::console::manager) fn eligible_agents_without_override(
+    editor: &EditorState<'_>,
+    config: &AppConfig,
+) -> Vec<String> {
+    config
+        .agents
+        .keys()
+        .filter(|name| {
+            editor.pending.allowed_agents.is_empty()
+                || editor
+                    .pending
+                    .allowed_agents
+                    .iter()
+                    .any(|allowed| allowed == name.as_str())
+        })
+        .filter(|name| !editor.pending.agents.contains_key(name.as_str()))
+        .cloned()
+        .collect()
 }
 
 /// Full Secrets-tab render. Walks the flat-row list once emitting a
@@ -572,7 +638,7 @@ fn render_secrets_tab(
         .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
 
-    let rows = secrets_flat_rows(state);
+    let rows = secrets_flat_rows(state, config);
     let mut lines: Vec<Line> = Vec::with_capacity(rows.len());
 
     // Label column width — keep identical to General tab so the Secrets
@@ -662,6 +728,17 @@ fn render_secrets_tab(
                 };
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}  + Add {agent} environment variable"),
+                    style,
+                )));
+            }
+            SecretsRow::AddAgentOverrideSentinel => {
+                let style = if selected {
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(WHITE)
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("{cursor_col}  + Add per-agent override for ..."),
                     style,
                 )));
             }
@@ -789,6 +866,7 @@ mod contextual_row_items_tests {
 
     use super::super::FooterItem;
     use super::contextual_row_items;
+    use crate::config::AppConfig;
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{MountConfig, WorkspaceConfig};
 
@@ -859,7 +937,7 @@ mod contextual_row_items_tests {
         .unwrap();
 
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor);
+        let hint = contextual_row_items(&editor, &AppConfig::default());
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
@@ -880,7 +958,7 @@ mod contextual_row_items_tests {
         // Plain folder (no .git) — no GitHub URL, so `O` must not appear.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor);
+        let hint = contextual_row_items(&editor, &AppConfig::default());
         let keys = key_glyphs(&hint);
         assert!(
             !keys.contains(&"O"),
@@ -898,7 +976,7 @@ mod contextual_row_items_tests {
         // hint composes alongside D/A even without the O extension.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor);
+        let hint = contextual_row_items(&editor, &AppConfig::default());
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
@@ -918,7 +996,7 @@ mod contextual_row_items_tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         editor.active_field = FieldFocus::Row(editor.pending.mounts.len());
-        let hint = contextual_row_items(&editor);
+        let hint = contextual_row_items(&editor, &AppConfig::default());
         let keys = key_glyphs(&hint);
         assert!(
             !keys.contains(&"R"),
@@ -937,19 +1015,19 @@ mod contextual_row_items_tests {
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
 
         // Mounts data-row hint.
-        let mounts_row = contextual_row_items(&editor);
+        let mounts_row = contextual_row_items(&editor, &AppConfig::default());
         assert_hint_hotkeys_uppercase(&mounts_row, "Mounts row 0");
 
         // Mounts sentinel "+ Add mount" row.
         let mut sentinel_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         sentinel_editor.active_field = FieldFocus::Row(sentinel_editor.pending.mounts.len());
-        let sentinel_row = contextual_row_items(&sentinel_editor);
+        let sentinel_row = contextual_row_items(&sentinel_editor, &AppConfig::default());
         assert_hint_hotkeys_uppercase(&sentinel_row, "Mounts sentinel");
 
         // Agents tab uses Space + `*` — both multi-char / non-alpha.
         let mut agents_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         agents_editor.active_tab = EditorTab::Agents;
-        let agents_row = contextual_row_items(&agents_editor);
+        let agents_row = contextual_row_items(&agents_editor, &AppConfig::default());
         assert_hint_hotkeys_uppercase(&agents_row, "Agents");
     }
 
@@ -1280,7 +1358,7 @@ mod secrets_tab_render_tests {
             agents: std::collections::BTreeMap::new(),
         };
         let editor = EditorState::new_edit("ws".into(), ws);
-        let rows = super::secrets_flat_rows(&editor);
+        let rows = super::secrets_flat_rows(&editor, &AppConfig::default());
         assert!(
             !rows.is_empty(),
             "secrets_flat_rows must always include at least the WorkspaceAddSentinel"
@@ -1557,6 +1635,114 @@ mod secrets_tab_render_tests {
         assert!(
             alpha < mike && mike < zulu,
             "keys must render alphabetically (ALPHA < MIKE < ZULU); offsets {alpha}/{mike}/{zulu}\n{dump}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod add_agent_override_sentinel_tests {
+    //! Pins the conditional rendering of the bottom-of-tab
+    //! `+ Add per-agent override for ...` sentinel: emitted iff at
+    //! least one workspace-allowed agent has no entry in
+    //! `pending.agents`, suppressed otherwise so the operator never
+    //! sees an action that can't proceed.
+    use super::{SecretsRow, secrets_flat_rows};
+    use crate::config::{AgentSource, AppConfig};
+    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::workspace::{WorkspaceAgentOverride, WorkspaceConfig};
+
+    fn config_with_agents(names: &[&str]) -> AppConfig {
+        let mut config = AppConfig::default();
+        for name in names {
+            config.agents.insert((*name).into(), AgentSource::default());
+        }
+        config
+    }
+
+    fn ws_with_overrides(allowed: &[&str], override_agents: &[&str]) -> WorkspaceConfig {
+        let mut agents = std::collections::BTreeMap::new();
+        for a in override_agents {
+            let mut env = std::collections::BTreeMap::new();
+            env.insert("LOG_LEVEL".into(), "debug".into());
+            agents.insert((*a).into(), WorkspaceAgentOverride { env });
+        }
+        WorkspaceConfig {
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_agents: allowed.iter().map(|s| (*s).into()).collect(),
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents,
+        }
+    }
+
+    fn editor_for(ws: WorkspaceConfig) -> EditorState<'static> {
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        editor
+    }
+
+    #[test]
+    fn secrets_flat_rows_includes_add_agent_override_sentinel_when_eligible_agents_exist() {
+        // One allowed agent, no overrides yet → the sentinel must be the
+        // last row in the flat-row list so the operator can reach it.
+        let cfg = config_with_agents(&["agent-smith"]);
+        let editor = editor_for(ws_with_overrides(&["agent-smith"], &[]));
+        let rows = secrets_flat_rows(&editor, &cfg);
+        assert!(
+            matches!(rows.last(), Some(SecretsRow::AddAgentOverrideSentinel)),
+            "rows must end with AddAgentOverrideSentinel; got {rows:?}"
+        );
+    }
+
+    #[test]
+    fn secrets_flat_rows_omits_sentinel_when_all_agents_have_overrides() {
+        // Two allowed agents, both already have overrides → no eligible
+        // candidates remain, so the sentinel is suppressed.
+        let cfg = config_with_agents(&["agent-smith", "agent-brown"]);
+        let editor = editor_for(ws_with_overrides(
+            &["agent-smith", "agent-brown"],
+            &["agent-smith", "agent-brown"],
+        ));
+        let rows = secrets_flat_rows(&editor, &cfg);
+        assert!(
+            !rows
+                .iter()
+                .any(|r| matches!(r, SecretsRow::AddAgentOverrideSentinel)),
+            "sentinel must be omitted when every allowed agent already has an override; got {rows:?}"
+        );
+    }
+
+    #[test]
+    fn secrets_flat_rows_omits_sentinel_when_no_allowed_agents() {
+        // Empty `allowed_agents` is the "all agents allowed" shorthand,
+        // but there are zero registered agents in the config — so the
+        // eligible set is empty and the sentinel is suppressed.
+        let cfg = config_with_agents(&[]);
+        let editor = editor_for(ws_with_overrides(&[], &[]));
+        let rows = secrets_flat_rows(&editor, &cfg);
+        assert!(
+            !rows
+                .iter()
+                .any(|r| matches!(r, SecretsRow::AddAgentOverrideSentinel)),
+            "sentinel must be omitted when no agents are registered; got {rows:?}"
+        );
+    }
+
+    #[test]
+    fn secrets_flat_rows_includes_sentinel_under_all_shorthand_when_global_agent_lacks_override() {
+        // `allowed_agents = []` is the "all" shorthand. With one
+        // globally-registered agent and no overrides yet, that agent is
+        // eligible and the sentinel must render.
+        let cfg = config_with_agents(&["agent-smith"]);
+        let editor = editor_for(ws_with_overrides(&[], &[]));
+        let rows = secrets_flat_rows(&editor, &cfg);
+        assert!(
+            rows.iter()
+                .any(|r| matches!(r, SecretsRow::AddAgentOverrideSentinel)),
+            "sentinel must render under the all-allowed shorthand when a globally-registered agent has no override; got {rows:?}"
         );
     }
 }

@@ -361,6 +361,17 @@ pub enum Modal<'a> {
     AgentPicker {
         state: AgentPickerState,
     },
+    /// Agent picker opened from the editor's Environments tab when the
+    /// operator activates the `+ Add per-agent override for ...`
+    /// sentinel row. Filtered to workspace-allowed agents that don't yet
+    /// have an entry in `pending.agents`. Anchored on `EditorState.modal`
+    /// (not the launch-disambiguation slot on `ManagerState.list_modal`)
+    /// so the editor's commit handler can create the override entry,
+    /// auto-expand the new section, and move the cursor onto its
+    /// `+ Add <agent> environment variable` sentinel.
+    AgentOverridePicker {
+        state: AgentPickerState,
+    },
     /// Two-button "Source for KEY" prompt opened between the `EnvKey`
     /// modal and the value-entry path on the Secrets-tab Enter-on-
     /// sentinel flow. Plain commits a follow-up `EnvValue` text modal;
