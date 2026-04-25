@@ -176,13 +176,33 @@ pub fn preflight_worktree(
     Ok(())
 }
 
-#[allow(clippy::missing_const_for_fn, clippy::unnecessary_wraps)]
 fn check_dirty_tree(
-    _mount: &MountConfig,
-    _ctx: &PreflightContext,
-    _runner: &mut impl CommandRunner,
+    mount: &MountConfig,
+    ctx: &PreflightContext,
+    runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    Ok(()) // implemented in Task 4.5
+    let porcelain = runner
+        .capture("git", &["-C", &mount.src, "status", "--porcelain"], None)
+        .with_context(|| format!("isolated mount `{}`: git status --porcelain", mount.dst))?;
+    if porcelain.trim().is_empty() {
+        return Ok(());
+    }
+    if ctx.force {
+        eprintln!(
+            "[jackin] proceeding with dirty host tree at `{}` (--force)",
+            mount.src
+        );
+        return Ok(());
+    }
+    if ctx.interactive {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "isolated mount `{}`: host tree at `{}` is dirty (staged/unstaged/untracked); \
+         pass --force to acknowledge, or commit/stash before launching",
+        mount.dst,
+        mount.src
+    );
 }
 
 #[cfg(test)]
@@ -358,5 +378,55 @@ mod tests {
         let mut runner = fake_with_outputs(&[&dir.path().to_string_lossy()]);
         let err = preflight_worktree(&m, &ctx(), &mut runner).unwrap_err();
         assert!(err.to_string().contains("not its root"));
+    }
+
+    fn dirty_porcelain() -> &'static str {
+        " M src/foo.rs\n?? new.rs\n"
+    }
+
+    fn ignored_only_porcelain() -> &'static str {
+        ""
+    }
+
+    fn make_repo_root() -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        dir
+    }
+
+    fn fake_with_repo_and_status(repo: &std::path::Path, status: &str) -> FakeRunner {
+        // Capture queue order: rev-parse --show-toplevel, status --porcelain
+        fake_with_outputs(&[&repo.to_string_lossy(), status])
+    }
+
+    #[test]
+    fn dirty_tree_rejected_non_interactive_no_force() {
+        let repo = make_repo_root();
+        let m = worktree_mount("/workspace/x", &repo.path().to_string_lossy());
+        let mut runner = fake_with_repo_and_status(repo.path(), dirty_porcelain());
+        let mut c = ctx();
+        c.force = false;
+        c.interactive = false;
+        let err = preflight_worktree(&m, &c, &mut runner).unwrap_err();
+        assert!(err.to_string().contains("dirty"));
+        assert!(err.to_string().contains("--force"));
+    }
+
+    #[test]
+    fn dirty_tree_passes_with_force_non_interactive() {
+        let repo = make_repo_root();
+        let m = worktree_mount("/workspace/x", &repo.path().to_string_lossy());
+        let mut runner = fake_with_repo_and_status(repo.path(), dirty_porcelain());
+        let mut c = ctx();
+        c.force = true;
+        preflight_worktree(&m, &c, &mut runner).unwrap();
+    }
+
+    #[test]
+    fn clean_tree_passes() {
+        let repo = make_repo_root();
+        let m = worktree_mount("/workspace/x", &repo.path().to_string_lossy());
+        let mut runner = fake_with_repo_and_status(repo.path(), ignored_only_porcelain());
+        preflight_worktree(&m, &ctx(), &mut runner).unwrap();
     }
 }
