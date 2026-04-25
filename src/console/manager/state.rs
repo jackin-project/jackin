@@ -1,9 +1,12 @@
 //! Manager state machine. See docs/superpowers/specs/2026-04-23-workspace-manager-tui-design.md § 3.
 
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use crate::config::AppConfig;
+use crate::console::op_cache::OpCache;
 use crate::workspace::WorkspaceConfig;
 
 use crate::console::widgets::{
@@ -62,6 +65,16 @@ pub struct ManagerState<'a> {
     /// button is held down after a seam-anchored Down event; cleared on
     /// Up. Readers (render) never need this — only the mouse handler.
     pub drag_state: Option<DragState>,
+    /// Process-lifetime cache of `op` structural metadata, shared with
+    /// `ConsoleState` and threaded into the picker on open. Survives
+    /// Esc-back-to-list and editor re-entry: the `Rc` is preserved
+    /// across [`ManagerState::from_config`] resets in production reset
+    /// paths (see `editor::handle_editor_key`'s Esc branch and
+    /// `input::handle_key`'s post-modal reset). Test-only callers that
+    /// don't care about the cache use plain
+    /// [`ManagerState::from_config`], which allocates a fresh empty
+    /// cache; it never carries credentials so re-allocation is harmless.
+    pub op_cache: Rc<RefCell<OpCache>>,
 }
 
 /// Anchors a mouse-drag resize of the list/details seam.
@@ -460,7 +473,24 @@ impl ManagerState<'_> {
     /// When cwd is covered by a saved workspace, preselect the saved row.
     /// Otherwise land on the current-directory row so Enter launches against
     /// the current directory without saving.
+    ///
+    /// Allocates a fresh empty [`OpCache`] — call
+    /// [`ManagerState::from_config_with_cache`] from production reset
+    /// paths to preserve the `ConsoleState`-owned cache across resets.
+    /// Tests don't care about the cache and use this entry point.
     pub fn from_config(config: &AppConfig, cwd: &std::path::Path) -> Self {
+        Self::from_config_with_cache(config, cwd, Rc::new(RefCell::new(OpCache::default())))
+    }
+
+    /// Build the manager state from config, threading a caller-supplied
+    /// `op_cache`. Used by `ConsoleState::new` and by the production
+    /// reset paths (Esc-back-to-list, post-save reset) so the cache
+    /// outlives a single editor session.
+    pub fn from_config_with_cache(
+        config: &AppConfig,
+        cwd: &std::path::Path,
+        op_cache: Rc<RefCell<OpCache>>,
+    ) -> Self {
         let workspaces: Vec<WorkspaceSummary> = config
             .workspaces
             .iter()
@@ -484,6 +514,7 @@ impl ManagerState<'_> {
             list_modal: None,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
+            op_cache,
         }
     }
 

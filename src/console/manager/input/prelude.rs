@@ -18,7 +18,8 @@ pub(super) fn handle_prelude_key(
     key: KeyEvent,
 ) -> InputOutcome {
     if key.code == KeyCode::Esc {
-        *state = ManagerState::from_config(config, cwd);
+        let cache = state.op_cache.clone();
+        *state = ManagerState::from_config_with_cache(config, cwd, cache);
     }
     InputOutcome::Continue
 }

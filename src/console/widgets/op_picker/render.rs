@@ -205,6 +205,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
             ("\u{2191}\u{2193}", "navigate"),
             ("type", "filter"),
             ("Enter", "select"),
+            ("r", "refresh"),
             ("Esc", "cancel"),
         ],
         OpPickerStage::Vault => {
@@ -217,6 +218,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
                 ("\u{2191}\u{2193}", "navigate"),
                 ("type", "filter"),
                 ("Enter", "select"),
+                ("r", "refresh"),
                 ("Esc", esc_label),
             ]
         }
@@ -224,12 +226,14 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
             ("\u{2191}\u{2193}", "navigate"),
             ("Backspace", "clear filter"),
             ("Enter", "select"),
+            ("r", "refresh"),
             ("Esc", "back to vaults"),
         ],
         OpPickerStage::Field => vec![
             ("\u{2191}\u{2193}", "navigate"),
             ("type", "filter"),
             ("Enter", "select"),
+            ("r", "refresh"),
             ("Esc", "back"),
         ],
     };

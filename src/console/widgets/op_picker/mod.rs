@@ -29,11 +29,14 @@
 //! Failure modes (`op` not installed, signed out, no vaults, generic
 //! error) drive the four "fatal-state" instructional panels.
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::mpsc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_widget_list::ListState;
 
+use crate::console::op_cache::OpCache;
 use crate::operator_env::{OpAccount, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
 use super::ModalOutcome;
@@ -135,6 +138,13 @@ pub struct OpPickerState {
     /// Receiver for the in-flight background call. `None` when no call
     /// is pending; drained by [`OpPickerState::poll_load`].
     rx: Option<mpsc::Receiver<LoadResult>>,
+    /// Session-scoped cache shared with `ConsoleState`. Hits short-
+    /// circuit the `OpStructRunner` calls; misses populate the cache
+    /// when the load resolves. The default constructor allocates a
+    /// fresh empty cache local to this picker — only the production
+    /// open path (via [`OpPickerState::new_with_cache`]) wires the
+    /// shared cache in.
+    op_cache: Rc<RefCell<OpCache>>,
 }
 
 // Manual `Debug` because `runner: Box<dyn OpStructRunner + Send>` and
@@ -169,14 +179,43 @@ impl Default for OpPickerState {
 impl OpPickerState {
     /// Production constructor. Boxes a fresh [`OpCli`] runner internally
     /// and kicks off the probe + vault-list load on the spot so the
-    /// picker is responsive on first frame.
+    /// picker is responsive on first frame. Allocates a fresh empty
+    /// cache local to this picker — production callers should use
+    /// [`OpPickerState::new_with_cache`] instead so cache hits across
+    /// picker open/close cycles work.
     pub fn new() -> Self {
-        Self::new_with_runner(Box::new(OpCli::new()))
+        Self::new_with_runner_and_cache(
+            Box::new(OpCli::new()),
+            Rc::new(RefCell::new(OpCache::default())),
+        )
+    }
+
+    /// Production constructor with a shared session-scoped cache.
+    /// Threaded in by `editor::open_secrets_picker_modal` from the
+    /// `ManagerState`-owned (and ultimately `ConsoleState`-owned)
+    /// `Rc<RefCell<OpCache>>`. Subsequent picker opens within the same
+    /// `jackin console` invocation reuse the cached vault / item /
+    /// field metadata.
+    pub fn new_with_cache(op_cache: Rc<RefCell<OpCache>>) -> Self {
+        Self::new_with_runner_and_cache(Box::new(OpCli::new()), op_cache)
     }
 
     /// Test seam — accepts an injected runner so unit / integration
     /// tests can drive the state machine without an `op` binary.
+    /// Allocates a fresh empty cache local to the picker (tests that
+    /// care about cache behavior pass a shared one via
+    /// [`OpPickerState::new_with_runner_and_cache`]).
     pub fn new_with_runner(runner: Box<dyn OpStructRunner + Send>) -> Self {
+        Self::new_with_runner_and_cache(runner, Rc::new(RefCell::new(OpCache::default())))
+    }
+
+    /// Test seam — accepts both an injected runner and a shared cache,
+    /// so cache-hit / cache-miss tests can drive the picker against a
+    /// pre-populated cache.
+    pub fn new_with_runner_and_cache(
+        runner: Box<dyn OpStructRunner + Send>,
+        op_cache: Rc<RefCell<OpCache>>,
+    ) -> Self {
         let mut s = Self {
             stage: OpPickerStage::Vault,
             filter_buf: String::new(),
@@ -194,6 +233,7 @@ impl OpPickerState {
             load_state: OpLoadState::Idle,
             runner,
             rx: None,
+            op_cache,
         };
         s.probe_and_start_initial_load();
         s
@@ -209,7 +249,19 @@ impl OpPickerState {
     /// list` returning `[]` — is functionally equivalent to "not signed
     /// in" and maps to that fatal state.
     fn probe_and_start_initial_load(&mut self) {
-        match self.runner.account_list() {
+        // Cache hit on the accounts list short-circuits the synchronous
+        // `account_list` probe. Cache miss falls through to the runner
+        // and stores the result.
+        let accounts_result = if let Some(cached) = self.op_cache.borrow().get_accounts() {
+            Ok(cached)
+        } else {
+            let r = self.runner.account_list();
+            if let Ok(ref accounts) = r {
+                self.op_cache.borrow_mut().put_accounts(accounts.clone());
+            }
+            r
+        };
+        match accounts_result {
             Ok(accounts) if accounts.is_empty() => {
                 self.load_state =
                     OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotSignedIn));
@@ -238,10 +290,18 @@ impl OpPickerState {
     }
 
     /// Spawn the vault-load worker, optionally scoped to `account_id`.
+    /// Cache hits short-circuit the spawn and route the cached result
+    /// directly into [`OpPickerState::poll_load`] via the in-memory
+    /// channel — keeps a single completion path so `poll_load`'s "stage
+    /// transition + select" logic stays canonical.
     fn start_vault_load(&mut self, account_id: Option<String>) {
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
+        if let Some(cached) = self.op_cache.borrow().get_vaults(account_id.as_deref()) {
+            let _ = tx.send(LoadResult::Vaults(Ok(cached)));
+            return;
+        }
         // `account_list` already proved the binary is reachable;
         // this thread can call vault_list directly.
         let runner = Self::runner_clone_for_thread();
@@ -251,11 +311,19 @@ impl OpPickerState {
     }
 
     /// Spawn the item-list worker for the currently-selected vault,
-    /// optionally scoped to `account_id`.
+    /// optionally scoped to `account_id`. Cache hits short-circuit.
     fn start_item_load(&mut self, vault_id: String, account_id: Option<String>) {
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
+        if let Some(cached) = self
+            .op_cache
+            .borrow()
+            .get_items(account_id.as_deref(), &vault_id)
+        {
+            let _ = tx.send(LoadResult::Items(Ok(cached)));
+            return;
+        }
         let runner = Self::runner_clone_for_thread();
         std::thread::spawn(move || {
             let _ = tx.send(LoadResult::Items(
@@ -265,11 +333,20 @@ impl OpPickerState {
     }
 
     /// Spawn the field-list worker for the currently-selected item /
-    /// vault pair, optionally scoped to `account_id`.
+    /// vault pair, optionally scoped to `account_id`. Cache hits
+    /// short-circuit.
     fn start_field_load(&mut self, item_id: String, vault_id: String, account_id: Option<String>) {
         self.load_state = OpLoadState::Loading { spinner_tick: 0 };
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
+        if let Some(cached) =
+            self.op_cache
+                .borrow()
+                .get_fields(account_id.as_deref(), &vault_id, &item_id)
+        {
+            let _ = tx.send(LoadResult::Fields(Ok(cached)));
+            return;
+        }
         let runner = Self::runner_clone_for_thread();
         std::thread::spawn(move || {
             let _ = tx.send(LoadResult::Fields(runner.item_get(
@@ -312,6 +389,12 @@ impl OpPickerState {
                         OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NoVaults));
                     return;
                 }
+                // Populate the session cache so the next `start_vault_load`
+                // for the same account short-circuits the subprocess.
+                let account_id = self.selected_account_id();
+                self.op_cache
+                    .borrow_mut()
+                    .put_vaults(account_id.as_deref(), vaults.clone());
                 self.vaults = vaults;
                 self.vault_list_state.select(Some(0));
                 self.load_state = OpLoadState::Ready;
@@ -322,6 +405,17 @@ impl OpPickerState {
             }
             Ok(LoadResult::Items(Ok(items))) => {
                 self.rx = None;
+                let account_id = self.selected_account_id();
+                let vault_id = self
+                    .selected_vault
+                    .as_ref()
+                    .map(|v| v.id.clone())
+                    .unwrap_or_default();
+                self.op_cache.borrow_mut().put_items(
+                    account_id.as_deref(),
+                    &vault_id,
+                    items.clone(),
+                );
                 self.items = items;
                 self.item_list_state
                     .select(if self.items.is_empty() { None } else { Some(0) });
@@ -341,6 +435,25 @@ impl OpPickerState {
                 // within each bucket — `false < true`, so reverse with
                 // a key that puts `concealed == true` first.
                 fields.sort_by_key(|f| !f.concealed);
+                // Cache the sorted result so cache-hit hands back the
+                // already-presentation-ordered vec on subsequent opens.
+                let account_id = self.selected_account_id();
+                let vault_id = self
+                    .selected_vault
+                    .as_ref()
+                    .map(|v| v.id.clone())
+                    .unwrap_or_default();
+                let item_id = self
+                    .selected_item
+                    .as_ref()
+                    .map(|i| i.id.clone())
+                    .unwrap_or_default();
+                self.op_cache.borrow_mut().put_fields(
+                    account_id.as_deref(),
+                    &vault_id,
+                    &item_id,
+                    fields.clone(),
+                );
                 self.fields = fields;
                 self.field_list_state.select(if self.fields.is_empty() {
                     None
@@ -458,6 +571,19 @@ impl OpPickerState {
     fn handle_account_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
         match key.code {
             KeyCode::Esc => ModalOutcome::Cancel,
+            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Refresh: drop the cached account list and re-run the
+                // probe synchronously. Carrying out a fresh probe also
+                // re-routes single-vs-multi-account branching, so callers
+                // who add or sign out of accounts mid-session see the
+                // change without restarting `jackin console`.
+                self.op_cache.borrow_mut().invalidate_accounts();
+                self.accounts.clear();
+                self.account_list_state = ListState::default();
+                self.selected_account = None;
+                self.probe_and_start_initial_load();
+                ModalOutcome::Continue
+            }
             KeyCode::Up => {
                 let n = self.filtered_accounts().len();
                 let cur = self.account_list_state.selected.unwrap_or(0);
@@ -505,6 +631,17 @@ impl OpPickerState {
 
     fn handle_vault_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
         match key.code {
+            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let account_id = self.selected_account_id();
+                self.op_cache
+                    .borrow_mut()
+                    .invalidate_vaults(account_id.as_deref());
+                self.vaults.clear();
+                self.vault_list_state = ListState::default();
+                self.selected_vault = None;
+                self.start_vault_load(account_id);
+                ModalOutcome::Continue
+            }
             KeyCode::Esc => {
                 // Multi-account: back to Account; clear vault state so
                 // the operator gets a fresh start when re-drilling.
@@ -570,6 +707,23 @@ impl OpPickerState {
 
     fn handle_item_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
         match key.code {
+            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let account_id = self.selected_account_id();
+                let vault_id = self
+                    .selected_vault
+                    .as_ref()
+                    .map(|v| v.id.clone())
+                    .unwrap_or_default();
+                self.op_cache
+                    .borrow_mut()
+                    .invalidate_items(account_id.as_deref(), &vault_id);
+                self.items.clear();
+                self.item_list_state = ListState::default();
+                self.start_item_load(vault_id, account_id);
+                // start_item_load sets stage = Loading; poll_load will
+                // route back to Item once the new result arrives.
+                ModalOutcome::Continue
+            }
             KeyCode::Esc => {
                 // Back to vault pane; keep the previous vault list +
                 // selection intact, just clear the per-pane filter.
@@ -630,6 +784,28 @@ impl OpPickerState {
 
     fn handle_field_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
         match key.code {
+            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let account_id = self.selected_account_id();
+                let vault_id = self
+                    .selected_vault
+                    .as_ref()
+                    .map(|v| v.id.clone())
+                    .unwrap_or_default();
+                let item_id = self
+                    .selected_item
+                    .as_ref()
+                    .map(|i| i.id.clone())
+                    .unwrap_or_default();
+                self.op_cache.borrow_mut().invalidate_fields(
+                    account_id.as_deref(),
+                    &vault_id,
+                    &item_id,
+                );
+                self.fields.clear();
+                self.field_list_state = ListState::default();
+                self.start_field_load(item_id, vault_id, account_id);
+                ModalOutcome::Continue
+            }
             KeyCode::Esc => {
                 self.stage = OpPickerStage::Item;
                 self.filter_buf.clear();
@@ -1234,5 +1410,181 @@ mod tests {
             matches!(outcome, ModalOutcome::Cancel),
             "Esc on Vault in single-account mode must cancel the picker"
         );
+    }
+
+    // ── OpCache integration tests ─────────────────────────────────────
+    //
+    // These tests focus on the synchronous, single-threaded portion of
+    // the cache path: the constructor's `account_list` probe and any
+    // call site that consults the cache *before* spawning a worker
+    // thread. The worker thread itself uses the production
+    // `runner_clone_for_thread` helper (always `OpCli`), so we don't
+    // assert against runner counts after a thread-spawning miss — only
+    // after a synchronous hit.
+
+    /// Counting runner — increments a shared call counter on
+    /// `account_list` so cache-hit tests can assert "subprocess not
+    /// invoked". The counter is `Arc<Mutex<usize>>` so callers can hold
+    /// a clone for inspection while the runner is moved into the
+    /// picker.
+    struct CounterRunner {
+        accounts: Vec<OpAccount>,
+        counter: std::sync::Arc<Mutex<usize>>,
+    }
+
+    impl OpStructRunner for CounterRunner {
+        fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
+            *self.counter.lock().unwrap() += 1;
+            Ok(self.accounts.clone())
+        }
+        fn vault_list(&self, _: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
+            Ok(Vec::new())
+        }
+        fn item_list(&self, _: &str, _: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
+            Ok(Vec::new())
+        }
+        fn item_get(&self, _: &str, _: &str, _: Option<&str>) -> anyhow::Result<Vec<OpField>> {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Building two pickers against the same shared cache — the second
+    /// constructor's synchronous `account_list` probe must short-circuit
+    /// to the cached vector instead of invoking the runner again.
+    #[test]
+    fn op_cache_hit_skips_account_list_subprocess() {
+        use crate::console::op_cache::OpCache;
+        use std::sync::Arc;
+
+        let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));
+        let counter1: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+        let counter2: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+
+        // First picker — cache miss; runner invoked once and the cache
+        // is populated as a side effect.
+        let _ = OpPickerState::new_with_runner_and_cache(
+            Box::new(CounterRunner {
+                accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
+                counter: counter1.clone(),
+            }),
+            cache.clone(),
+        );
+        assert_eq!(
+            *counter1.lock().unwrap(),
+            1,
+            "first picker constructor must miss the empty cache"
+        );
+
+        // Second picker — cache hit; runner must NOT be invoked.
+        let _ = OpPickerState::new_with_runner_and_cache(
+            Box::new(CounterRunner {
+                accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
+                counter: counter2.clone(),
+            }),
+            cache,
+        );
+        assert_eq!(
+            *counter2.lock().unwrap(),
+            0,
+            "second picker against the same cache must hit and skip account_list"
+        );
+    }
+
+    /// Cache miss populates the cache; a subsequent picker on the same
+    /// cache hits without invoking the runner again.
+    #[test]
+    fn op_cache_miss_calls_runner_and_stores() {
+        use crate::console::op_cache::OpCache;
+        use std::sync::Arc;
+
+        let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));
+        let counter: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+
+        // Empty cache → runner called once.
+        let _ = OpPickerState::new_with_runner_and_cache(
+            Box::new(CounterRunner {
+                accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
+                counter: counter.clone(),
+            }),
+            cache.clone(),
+        );
+        assert_eq!(*counter.lock().unwrap(), 1, "first picker must miss");
+        assert!(
+            cache.borrow().get_accounts().is_some(),
+            "first picker must populate the cache"
+        );
+
+        // Same cache + new picker → no new runner call.
+        let _ = OpPickerState::new_with_runner_and_cache(
+            Box::new(CounterRunner {
+                accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
+                counter: counter.clone(),
+            }),
+            cache,
+        );
+        assert_eq!(
+            *counter.lock().unwrap(),
+            1,
+            "second picker on populated cache must hit and not re-call account_list"
+        );
+    }
+
+    /// Pressing `r` on the Account pane must invalidate the accounts
+    /// cache entry and re-fire the probe (count goes up).
+    #[test]
+    fn op_cache_refresh_re_fires_subprocess() {
+        use crate::console::op_cache::OpCache;
+        use std::sync::Arc;
+
+        let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));
+        let counter: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+
+        // Two-account setup so the picker lands on the Account pane.
+        let r = Box::new(CounterRunner {
+            accounts: vec![
+                account("acct1", "a@example.com", "alpha.1password.com"),
+                account("acct2", "b@example.com", "beta.1password.com"),
+            ],
+            counter: counter.clone(),
+        });
+        let mut s = OpPickerState::new_with_runner_and_cache(r, cache);
+        // Discard the worker rx; the constructor's vault load (if any)
+        // is irrelevant to this test.
+        s.rx = None;
+        s.load_state = OpLoadState::Ready;
+        assert_eq!(*counter.lock().unwrap(), 1, "constructor must miss once");
+
+        // Press `r` on the Account pane — runner must be called again
+        // because refresh invalidated the accounts cache entry.
+        let _ = s.handle_key(key(KeyCode::Char('r')));
+        assert_eq!(
+            *counter.lock().unwrap(),
+            2,
+            "r on Account must invalidate cache and re-fire account_list"
+        );
+        // Accounts vec is repopulated.
+        assert_eq!(s.accounts.len(), 2);
+        assert_eq!(s.stage, OpPickerStage::Account);
+    }
+
+    /// Compile-time guarantee: the cache stores `Vec<OpField>`, which
+    /// has no `value` field. Mirrors the safety test in
+    /// `operator_env.rs` — if a future refactor adds a value field, the
+    /// destructure here fails to compile and forces re-review.
+    #[test]
+    fn op_cache_picker_does_not_store_field_values() {
+        let f = OpField {
+            id: "password".into(),
+            label: "password".into(),
+            field_type: "concealed".into(),
+            concealed: true,
+        };
+        // Exhaustive destructure — every field of `OpField` listed here.
+        let OpField {
+            id: _,
+            label: _,
+            field_type: _,
+            concealed: _,
+        } = f;
     }
 }

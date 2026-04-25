@@ -301,7 +301,8 @@ pub(super) fn commit_editor_save(
                 // feedback while direct `s` saves (which stay on the
                 // editor) keep theirs. Carry the toast across the reset.
                 let carry_toast = state.toast.take();
-                *state = ManagerState::from_config(config, cwd);
+                let cache = state.op_cache.clone();
+                *state = ManagerState::from_config_with_cache(config, cwd, cache);
                 state.toast = carry_toast;
             }
         }

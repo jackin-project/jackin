@@ -6,10 +6,12 @@
 #![allow(irrefutable_let_patterns)]
 
 pub mod manager;
+pub mod op_cache;
 mod preview;
 pub mod state;
 pub mod widgets;
 
+pub use op_cache::OpCache;
 pub use state::ConsoleStage;
 pub use state::ConsoleState;
 pub use state::WorkspaceChoice;

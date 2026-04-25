@@ -109,7 +109,8 @@ pub fn handle_key(
                     save::begin_editor_save(state, config, true)?;
                 }
                 ExitIntent::Discard => {
-                    *state = ManagerState::from_config(config, cwd);
+                    let cache = state.op_cache.clone();
+                    *state = ManagerState::from_config_with_cache(config, cwd, cache);
                 }
             }
             return Ok(InputOutcome::Continue);
@@ -161,7 +162,8 @@ pub fn handle_key(
                     state.stage = ManagerStage::Editor(editor);
                 }
                 PreludeStatus::Cancelled => {
-                    *state = ManagerState::from_config(config, cwd);
+                    let cache = state.op_cache.clone();
+                    *state = ManagerState::from_config_with_cache(config, cwd, cache);
                 }
                 PreludeStatus::InProgress => {}
             }
@@ -215,7 +217,8 @@ fn handle_confirm_delete_key(
             let mut editor = crate::config::ConfigEditor::open(paths)?;
             editor.remove_workspace(&ws_name)?;
             *config = editor.save()?;
-            *state = ManagerState::from_config(config, cwd);
+            let cache = state.op_cache.clone();
+            *state = ManagerState::from_config_with_cache(config, cwd, cache);
             state.toast = Some(Toast {
                 message: format!("deleted \"{ws_name}\""),
                 kind: ToastKind::Success,

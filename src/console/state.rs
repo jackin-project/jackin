@@ -1,5 +1,9 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::app::context::{eligible_agents_for_workspace, find_saved_workspace_for_cwd};
 use crate::config::{AppConfig, MountEntry};
+use crate::console::op_cache::OpCache;
 use crate::selector::ClassSelector;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 
@@ -35,6 +39,15 @@ pub struct ConsoleState {
     /// path to resolve the chosen agent against the right workspace.
     pub selected_workspace: usize,
     pub workspaces: Vec<WorkspaceChoice>,
+    /// Process-lifetime cache of `op` structural metadata, shared with
+    /// the embedded `ManagerState` and any picker the operator opens.
+    /// Survives Esc-back-to-list and editor re-entry within a single
+    /// `jackin console` invocation. See [`OpCache`].
+    ///
+    /// `Rc<RefCell<_>>` so the picker can hold a clone of the handle
+    /// while the modal is open. The TUI event loop is single-threaded;
+    /// `RefCell` is sufficient — no `Mutex` needed.
+    pub op_cache: Rc<RefCell<OpCache>>,
 }
 
 impl ConsoleState {
@@ -82,12 +95,18 @@ impl ConsoleState {
             .and_then(|(name, _)| workspaces.iter().position(|choice| choice.name == name))
             .unwrap_or(0);
 
+        let op_cache = Rc::new(RefCell::new(OpCache::default()));
         Ok(Self {
-            stage: ConsoleStage::Manager(crate::console::manager::ManagerState::from_config(
-                config, cwd,
-            )),
+            stage: ConsoleStage::Manager(
+                crate::console::manager::ManagerState::from_config_with_cache(
+                    config,
+                    cwd,
+                    op_cache.clone(),
+                ),
+            ),
             selected_workspace,
             workspaces,
+            op_cache,
         })
     }
 

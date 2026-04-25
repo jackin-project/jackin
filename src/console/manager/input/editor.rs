@@ -66,13 +66,19 @@ pub(super) fn handle_editor_key(
                         });
                     }
                 } else {
-                    *state = ManagerState::from_config(config, cwd);
+                    let cache = state.op_cache.clone();
+                    *state = ManagerState::from_config_with_cache(config, cwd, cache);
                 }
             }
             return Ok(InputOutcome::Continue);
         }
         _ => {}
     }
+
+    // Clone the cache handle before the editor borrow so the
+    // `open_secrets_picker_modal` call site below can hand it to the
+    // picker without re-borrowing `state`.
+    let op_cache = state.op_cache.clone();
 
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(InputOutcome::Continue);
@@ -197,7 +203,7 @@ pub(super) fn handle_editor_key(
         KeyCode::Char('p' | 'P')
             if editor.active_tab == EditorTab::Secrets && key.modifiers == KeyModifiers::NONE =>
         {
-            open_secrets_picker_modal(editor);
+            open_secrets_picker_modal(editor, op_cache);
         }
         KeyCode::Char('d' | 'D')
             if editor.active_tab == EditorTab::Secrets
@@ -729,7 +735,15 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
 ///   stashes the path on `pending_picker_value` and opens an `EnvKey`
 ///   modal so the operator can name the new key.
 /// - Headers and any out-of-range row are silent no-ops.
-fn open_secrets_picker_modal(editor: &mut EditorState<'_>) {
+///
+/// The picker is constructed with a clone of the session-scoped
+/// [`crate::console::op_cache::OpCache`] handle so subsequent picker
+/// open/close cycles within one `jackin console` run reuse the cached
+/// `op` metadata.
+fn open_secrets_picker_modal(
+    editor: &mut EditorState<'_>,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+) {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = secrets_flat_rows(editor);
     let Some(row) = rows.get(n).cloned() else {
@@ -747,7 +761,7 @@ fn open_secrets_picker_modal(editor: &mut EditorState<'_>) {
     };
     editor.pending_picker_target = Some(target);
     editor.modal = Some(Modal::OpPicker {
-        state: Box::new(OpPickerState::new()),
+        state: Box::new(OpPickerState::new_with_cache(op_cache)),
     });
 }
 
