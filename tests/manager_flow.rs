@@ -26,8 +26,8 @@ const fn key(code: KeyCode) -> KeyEvent {
     }
 }
 
-/// Ctrl-modified key event — used by the Secrets tab's `Ctrl+M` mask
-/// toggle tests.
+/// Ctrl-modified key event — still used by the Secrets-tab 1Password
+/// picker (`Ctrl+O`) tests.
 const fn ctrl_key(code: KeyCode) -> KeyEvent {
     KeyEvent {
         code,
@@ -371,11 +371,11 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
     Ok(())
 }
 
-/// `Ctrl+M` flips `secrets_masked` on the editor state. Verifies the
+/// `M` flips `secrets_masked` on the editor state. Verifies the
 /// default (true), the first toggle (false), and the second toggle
 /// (back to true).
 #[test]
-fn secrets_masking_ctrl_m_toggle() -> Result<()> {
+fn secrets_masking_m_toggle() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "v")])?;
@@ -388,22 +388,22 @@ fn secrets_masking_ctrl_m_toggle() -> Result<()> {
         &mut config,
         &paths,
         cwd,
-        ctrl_key(KeyCode::Char('m')),
+        key(KeyCode::Char('m')),
     )?;
     assert!(
         !editor(&state).secrets_masked,
-        "Ctrl+M must flip masked to false"
+        "M must flip masked to false"
     );
     handle_key(
         &mut state,
         &mut config,
         &paths,
         cwd,
-        ctrl_key(KeyCode::Char('m')),
+        key(KeyCode::Char('m')),
     )?;
     assert!(
         editor(&state).secrets_masked,
-        "second Ctrl+M must flip masked back to true"
+        "second M must flip masked back to true"
     );
     Ok(())
 }

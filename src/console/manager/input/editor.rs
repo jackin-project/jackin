@@ -193,14 +193,12 @@ pub(super) fn handle_editor_key(
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
         }
-        // Ctrl+M toggles secret masking on the Secrets tab. The
-        // text-input widget already swallows Ctrl+M in-modal (see
-        // text_input::handle_key), so this binding only fires when no
-        // modal is open — which is the state where a mask toggle is
-        // meaningful.
-        KeyCode::Char('m')
-            if editor.active_tab == EditorTab::Secrets
-                && key.modifiers.contains(KeyModifiers::CONTROL) =>
+        // M toggles secret masking on the Secrets tab. Per RULES.md
+        // § TUI Keybindings, in-tab actions are bound to plain letters;
+        // this binding fires only when no modal is open (text-input
+        // modals handle their own keys).
+        KeyCode::Char('m' | 'M')
+            if editor.active_tab == EditorTab::Secrets && key.modifiers == KeyModifiers::NONE =>
         {
             editor.secrets_masked = !editor.secrets_masked;
         }

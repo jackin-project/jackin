@@ -175,7 +175,7 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
         ],
         EditorTab::Secrets => {
             // Row-specific hints depend on which SecretsRow kind the cursor
-            // is sitting on. `Ctrl+M` is universal across the tab.
+            // is sitting on. `M` is universal across the tab.
             let rows = secrets_flat_rows(state);
             match rows.get(cursor) {
                 Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::AgentKeyRow { .. }) => vec![
@@ -188,7 +188,7 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
                     FooterItem::Key("A"),
                     FooterItem::Text("add"),
                     FooterItem::Sep,
-                    FooterItem::Key("Ctrl+M"),
+                    FooterItem::Key("M"),
                     FooterItem::Text("mask/unmask"),
                     FooterItem::Sep,
                     FooterItem::Key("Ctrl+O"),
@@ -204,17 +204,17 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
                     FooterItem::Key("A"),
                     FooterItem::Text("add"),
                     FooterItem::Sep,
-                    FooterItem::Key("Ctrl+M"),
+                    FooterItem::Key("M"),
                     FooterItem::Text("mask/unmask"),
                 ],
                 Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::AgentAddSentinel(_)) => vec![
                     FooterItem::Key("Enter"),
                     FooterItem::Text("add"),
                     FooterItem::Sep,
-                    FooterItem::Key("Ctrl+M"),
+                    FooterItem::Key("M"),
                     FooterItem::Text("mask/unmask"),
                 ],
-                None => vec![FooterItem::Key("Ctrl+M"), FooterItem::Text("mask/unmask")],
+                None => vec![FooterItem::Key("M"), FooterItem::Text("mask/unmask")],
             }
         }
     }

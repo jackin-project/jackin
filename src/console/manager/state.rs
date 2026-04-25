@@ -144,7 +144,7 @@ pub struct EditorState<'a> {
     /// `pending_save_commit` flags that used to live on this struct.
     pub save_flow: EditorSaveFlow,
     /// Secrets tab: whether values are rendered masked (default `true`).
-    /// Toggled via `Ctrl+M` while on the Secrets tab. Resets to `true`
+    /// Toggled via `M` while on the Secrets tab. Resets to `true`
     /// each time the operator leaves and re-enters the tab.
     pub secrets_masked: bool,
     /// Secrets tab: which per-agent override sections are currently
