@@ -1,0 +1,87 @@
+# Deprecated
+
+Tracker for deprecated APIs, CLIs, config values, and usage patterns
+that are still supported for backwards compatibility but should
+**eventually be removed**. Periodically review this file and prune
+entries whose removal is safe.
+
+When you deprecate something, add it here in the **same commit** that
+introduces the deprecation. See [RULES.md](RULES.md#deprecations) for
+the rule.
+
+## How to read this file
+
+Each entry includes:
+
+- **Item** — what is deprecated (CLI verb, type, function, config field, value, behavior).
+- **Type** — `cli` / `api` / `config` / `behavior`.
+- **Deprecated since** — the date or version the deprecation landed.
+- **Replacement** — what to use instead.
+- **Remove when** — the trigger or target for removal (a date, a version,
+  or a condition like "after CI no longer sees the warning for two
+  consecutive releases").
+- **Where** — the source files / docs that implement the deprecation,
+  so removal is straightforward.
+
+## Active deprecations
+
+### `jackin launch` CLI verb
+
+- **Type:** cli
+- **Deprecated since:** 2026-04-23 (PR #166)
+- **Replacement:** bare `jackin` (interactive terminal) or
+  [`jackin console`](docs/src/content/docs/commands/console.mdx)
+  (explicit; works on any terminal that can host a TUI).
+- **Behavior today:** the binary still accepts `jackin launch [...]`
+  and dispatches to the same console handler, but prints
+  `warning: \`jackin launch\` is deprecated and will be removed in a
+  future release; use \`jackin\` or \`jackin console\` instead` on
+  stderr.
+- **Remove when:** no operator-reported usage of `jackin launch` for
+  two consecutive releases AND the docs deprecation page has been
+  live for ≥ 90 days.
+- **Where:**
+  - `src/cli/dispatch.rs::LAUNCH_DEPRECATION_WARNING` — warning string.
+  - `src/cli/dispatch.rs::Action::{RunConsole, ErrorNotTtyCapable}` —
+    `deprecated_alias: bool` field; remove the field and its emission
+    sites in `src/main.rs`.
+  - `src/cli/agent.rs::LaunchArgs` — type alias for `ConsoleArgs`.
+  - `src/cli/root.rs::Command::Launch` — clap variant wrapping
+    `LaunchArgs`.
+  - `docs/src/content/docs/commands/launch.mdx` — deprecation page;
+    delete the page and remove its sidebar entry from
+    `docs/astro.config.ts`.
+  - `tests/bare_jackin_fallback.rs` — three tests pin the deprecation
+    warning on stderr; delete them at removal time.
+
+### `auth_forward = "copy"` config value
+
+- **Type:** config
+- **Deprecated since:** 2026-04-23 (auth-sync default)
+- **Replacement:** `auth_forward = "sync"` (the new default).
+- **Behavior today:** any `config.toml` declaring `auth_forward = "copy"`
+  is silently migrated to `"sync"` on the next config write, with a
+  one-line deprecation notice (`migrated auth_forward "copy" → "sync"
+  in {path} (copy is deprecated)`) printed via `tui::deprecation_warning`.
+- **Remove when:** rewriting any config no longer encounters the
+  legacy value across collected operator telemetry / support reports
+  for one full release cycle.
+- **Where:**
+  - `src/config/persist.rs` — migration on save.
+  - `src/app/mod.rs::parse_auth_forward_mode_from_cli` — the
+    `was_deprecated` return tuple element.
+  - `src/config/mod.rs::AuthForwardMode::from_str` — accepts `"copy"`
+    as an alias.
+  - `src/tui/output.rs::deprecation_warning` — printer used by the
+    migration; can stay if other deprecations need it.
+
+## How to add an entry
+
+When you deprecate something, append a new section to **Active
+deprecations** above. Use the same field structure. If the deprecation
+ships behind a CLI warning, link the warning's source location.
+
+Removing an entry is the opposite of adding it: in the commit that
+removes the deprecated code/config, also delete the entry from this
+file (or move it to a brief "Removed in <release>" appendix if you
+want a historical record).

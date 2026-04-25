@@ -45,14 +45,14 @@ a domain group.
 | Module | Owns |
 |---|---|
 | `app/` | `run()` command dispatch (`mod.rs`) and context helpers (`context.rs`): target classification, workspace-for-cwd, agent-from-context, last-agent persistence |
-| `cli/` | Clap schema split by topic: `root.rs` (`Cli` + `Command` enum), `agent.rs` (Load/Hardline/Launch args), `cleanup.rs` (Eject/Purge args), `workspace.rs` (`WorkspaceCommand`), `config.rs` (`ConfigCommand` + sub-enums) |
+| `cli/` | Clap schema split by topic: `root.rs` (`Cli` + `Command` enum), `agent.rs` (Load/Hardline/Launch args), `cleanup.rs` (Eject/Purge args), `workspace.rs` (`WorkspaceCommand`), `config.rs` (`ConfigCommand` + sub-enums), `dispatch.rs` (bare-`jackin`/`console`/`launch` classification — `classify`, `is_tui_capable`, deprecation shims) |
 | `workspace/` | Workspace model and planning. `mod.rs` (types, re-exports), `paths.rs` (expand_tilde, resolve_path), `mounts.rs` (parse/validate), `planner.rs` (`plan_create`, `plan_edit`, `plan_collapse`), `resolve.rs` (runtime resolution), `sensitive.rs` (sensitive-mount detection) |
 | `config/` | TOML config model and persistence. `mod.rs` (types, `require_workspace` helper), `persist.rs` (load/save), `agents.rs` (builtin sync, trust, auth-forward), `mounts.rs` (global mount registry), `workspaces.rs` (workspace CRUD) |
 | `manifest/` | Agent-manifest (`jackin.agent.toml`) schema + validator. `mod.rs` (schema structs, `load`, `display_name`), `validate.rs` (`validate`, `is_valid_env_var_name`) |
 | `runtime/` | Container lifecycle. `mod.rs` (thin re-exports), `naming.rs` (labels, container/image naming, family matching), `identity.rs` (git/host identity), `repo_cache.rs` (repo lock + fetch), `image.rs` (docker build), `launch.rs` (`launch_agent_runtime`, `load_agent`, `load_agent_with`), `attach.rs` (attach + hardline + DinD readiness), `discovery.rs` (list managed agents), `cleanup.rs` (eject, purge, orphan GC), `test_support.rs` (shared `FakeRunner`) |
-| `launch/` | Interactive TUI launcher. `mod.rs` (`run_launch` entrypoint), `state.rs` (`LaunchState`, `WorkspaceChoice`), `input.rs` (event handling), `preview.rs` (workspace preview + detail lines), `render.rs` (all drawing functions) |
+| `console/` | Interactive operator-console TUI. `mod.rs` (`run_console` entrypoint), `state.rs` (`ConsoleState`, `WorkspaceChoice`), `input.rs` (event handling), `preview.rs` (workspace preview + detail lines), `render.rs` (all drawing functions), `manager/` (workspace-manager TUI subsystem — `state.rs`, `input.rs`, `render.rs`, `create.rs`, `mount_info.rs`), `widgets/` (reusable modal/widget components — `file_browser`, `text_input`, `confirm`, `confirm_save`, `error_popup`, `mount_dst_choice`, `workdir_pick`, `github_picker`, `save_discard`, `panel_rain`) |
 | `instance/` | Per-container state preparation. `mod.rs` (`AgentState`, orchestration), `naming.rs` (container slug + clone naming + class-family matching), `auth.rs` (auth-forward modes + credential handling + symlink safety), `plugins.rs` (plugin-marketplace serialization) |
-| `tui/` | General terminal UI helpers (separate from the launcher). `mod.rs` (shared palette, `DEBUG_MODE`), `animation.rs` (intro/outro, digital rain), `output.rs` (tables, hints, fatal, logo, title), `prompt.rs` (`prompt_choice`, `spin_wait`, `require_interactive_stdin`) |
+| `tui/` | General terminal UI helpers (separate from the operator console). `mod.rs` (shared palette, `DEBUG_MODE`), `animation.rs` (intro/outro, digital rain), `output.rs` (tables, hints, fatal, logo, title), `prompt.rs` (`prompt_choice`, `spin_wait`, `require_interactive_stdin`) |
 
 ### Flat helper files at crate root
 
@@ -96,7 +96,8 @@ Maps 1:1 with the published site sidebar:
 | | `guides/security-model.mdx` | Isolation and permissions |
 | | `guides/comparison.mdx` | Comparison with alternatives |
 | Commands | `commands/load.mdx` | `jackin load` |
-| | `commands/launch.mdx` | `jackin launch` |
+| | `commands/console.mdx` | `jackin console` (bare `jackin` dispatches here) |
+| | `commands/launch.mdx` | `jackin launch` (deprecated alias for `jackin console`) |
 | | `commands/hardline.mdx` | `jackin hardline` |
 | | `commands/eject.mdx` | `jackin eject` |
 | | `commands/exile.mdx` | `jackin exile` |
