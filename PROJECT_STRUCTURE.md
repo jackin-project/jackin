@@ -11,7 +11,7 @@ Quick navigation reference for AI agents working in this repository.
 | `AGENTS.md` | Shared instructions for all AI agents (testing, pre-commit, security) |
 | `CLAUDE.md` | Claude-specific pointer to `AGENTS.md` |
 | `RULES.md` | Project-wide conventions (docs go in `AGENTS.md`, not tool-specific files) |
-| `TODO.md` | Pointer to roadmap docs (full design docs live under `docs/src/content/docs/reference/roadmap/`) |
+| `TODO.md` | Small follow-ups (especially upstream-dependency tracking), per-PR stale-docs checklist, and `TODO(<topic>)` marker convention. Larger feature work lives under `docs/src/content/docs/reference/roadmap/` |
 | `TESTING.md` | Test runner setup, commands, and pre-commit requirements |
 | `release.toml` | Release configuration |
 | `mise.toml` | Tool version management (bun) |

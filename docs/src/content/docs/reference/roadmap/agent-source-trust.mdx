@@ -1,6 +1,7 @@
 ---
 title: "Agent Source Trust Model"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 
 **Status**: Resolved
@@ -29,7 +30,7 @@ A trust-on-first-use model:
 
 ## Related Files
 
-- `src/config/mod.rs` — `AgentSource` (with `trusted` field)
-- `src/config/agents.rs` — `trust_agent()`, `resolve_agent_source()`
-- `src/runtime/launch.rs` — `confirm_agent_trust()`, trust gate in `load_agent_with()`
-- `src/selector.rs` — namespace/name parsing
+- <RepoFile path="src/config/mod.rs" /> — `AgentSource` (with `trusted` field)
+- <RepoFile path="src/config/agents.rs" /> — `trust_agent()`, `resolve_agent_source()`
+- <RepoFile path="src/runtime/launch.rs" /> — `confirm_agent_trust()`, trust gate in `load_agent_with()`
+- <RepoFile path="src/selector.rs" /> — namespace/name parsing

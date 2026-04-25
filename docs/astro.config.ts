@@ -34,7 +34,7 @@ export default defineConfig({
       },
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/jackin-project/jackin' }],
       editLink: {
-        baseUrl: 'https://github.com/jackin-project/jackin/edit/main/docs/src/content/docs/',
+        baseUrl: 'https://github.com/jackin-project/jackin/edit/main/docs/',
       },
       sidebar: [
         {
@@ -103,6 +103,7 @@ export default defineConfig({
                     { label: 'Reproducibility & provenance pinning', slug: 'reference/roadmap/reproducibility-pinning' },
                     { label: 'Per-mount isolation', slug: 'reference/roadmap/per-mount-isolation' },
                     { label: 'Devcontainer parity', slug: 'reference/roadmap/devcontainer-parity' },
+                    { label: 'Docs markdown linting', slug: 'reference/roadmap/docs-markdown-linting' },
                     { label: 'Open review findings', slug: 'reference/roadmap/open-review-findings' },
                   ],
                 },

@@ -135,7 +135,7 @@ A saved workspace never contains two mounts where one strictly covers the other 
 
 In that case `C` projects the same host subtree to the same container path that `P` already exposes it at — making `C` strictly redundant.
 
-jackin enforces this on write: `workspace create` auto-removes redundants (with a stderr summary), and `workspace edit` prompts before collapsing (see [mount collapse](../commands/workspace.mdx#mount-collapse)). Identity mounts (same `src` AND same `dst`) are not covered by this rule — they're handled by upsert-by-destination semantics.
+jackin enforces this on write: `workspace create` auto-removes redundants (with a stderr summary), and `workspace edit` prompts before collapsing (see [mount collapse](/commands/workspace/#mount-collapse)). Identity mounts (same `src` AND same `dst`) are not covered by this rule — they're handled by upsert-by-destination semantics.
 
 Ad-hoc `-v` mounts passed on the command line at launch time are not collapsed; they stay literal.
 
