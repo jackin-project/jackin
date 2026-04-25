@@ -213,6 +213,13 @@ impl EditorSaveFlow {
 pub struct PendingSaveCommit {
     pub effective_removals: Vec<String>,
     pub final_mounts: Option<Vec<crate::workspace::MountConfig>>,
+    /// `true` when the operator has already confirmed the source-drift
+    /// modal in this save cycle (Task 10.3). Causes
+    /// `commit_editor_save` to skip the drift-detection check and go
+    /// straight to `force_cleanup_isolated` + the on-disk write.
+    /// Defaults to `false` so the first commit attempt always runs the
+    /// safety check.
+    pub delete_isolated_acknowledged: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -297,9 +304,19 @@ pub enum FileBrowserTarget {
     EditAddMountSrc,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ConfirmTarget {
     DeleteWorkspace,
+    /// Source-drift confirmation (Task 10.3): operator's edit changes the
+    /// `src` of one or more mounts that have preserved isolated state on
+    /// stopped containers. Carries the planner's pending save material so
+    /// the commit pass can run `force_cleanup_isolated` for each affected
+    /// container then write the edit through.
+    DeleteIsolatedAndSave {
+        plan: PendingSaveCommit,
+        exit_on_success: bool,
+        affected_containers: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

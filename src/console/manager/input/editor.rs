@@ -372,15 +372,41 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             }
             ModalOutcome::Continue => {}
         },
-        Modal::Confirm { target: _, state } => match state.handle_key(key) {
-            // Editor-side Confirm only reaches here for non-destructive
-            // variants now that SaveCollapse folds into ConfirmSave.
-            // Treat Commit/Cancel identically — close the modal.
-            ModalOutcome::Commit(_) | ModalOutcome::Cancel => {
-                editor.modal = None;
+        Modal::Confirm { target, state } => {
+            // Snapshot the target so we can match on it after the borrow.
+            let target_snapshot = target.clone();
+            match state.handle_key(key) {
+                ModalOutcome::Commit(true) => match target_snapshot {
+                    super::super::state::ConfirmTarget::DeleteIsolatedAndSave {
+                        mut plan,
+                        exit_on_success,
+                        ..
+                    } => {
+                        // Operator confirmed the source-drift modal. Flip
+                        // the acknowledgment flag and re-stash the plan as
+                        // a fresh `PendingCommit`; the outer dispatcher
+                        // (which owns `paths` / `cwd` / `runner`) drains
+                        // it and calls `commit_editor_save`, which will
+                        // now skip the drift check and run
+                        // `force_cleanup_isolated`.
+                        plan.delete_isolated_acknowledged = true;
+                        editor.modal = None;
+                        editor.save_flow = EditorSaveFlow::PendingCommit {
+                            plan,
+                            exit_on_success,
+                        };
+                    }
+                    super::super::state::ConfirmTarget::DeleteWorkspace => {
+                        editor.modal = None;
+                    }
+                },
+                ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
+                    editor.modal = None;
+                    editor.save_flow = EditorSaveFlow::Idle;
+                }
+                ModalOutcome::Continue => {}
             }
-            ModalOutcome::Continue => {}
-        },
+        }
         Modal::MountDstChoice {
             target,
             state: modal_state,
@@ -424,6 +450,12 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
                     let plan = super::super::state::PendingSaveCommit {
                         effective_removals: modal_state.effective_removals.clone(),
                         final_mounts: modal_state.final_mounts.clone(),
+                        // First commit pass — the drift check in
+                        // `commit_editor_save` runs unconditionally. The
+                        // `DeleteIsolatedAndSave` confirm modal is what
+                        // re-stashes the plan with the flag flipped to
+                        // `true` so the second pass skips the check.
+                        delete_isolated_acknowledged: false,
                     };
                     let exit_on_success = matches!(
                         editor.save_flow,
