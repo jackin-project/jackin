@@ -30,10 +30,10 @@ pub fn render_editor(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // header
-            Constraint::Length(2), // tab strip
-            Constraint::Min(8),    // tab body
-            Constraint::Length(2), // footer
+            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Min(8),
+            Constraint::Length(2),
         ])
         .split(area);
 
@@ -52,17 +52,14 @@ pub fn render_editor(
         EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config, op_accounts),
     }
 
-    // Contextual footer: row-specific hints + base stage hints.
     let mut items: Vec<FooterItem> = Vec::new();
 
-    // Row-specific group (may be empty).
     let row_items = contextual_row_items(state, config);
     if !row_items.is_empty() {
         items.extend(row_items);
         items.push(FooterItem::GroupSep);
     }
 
-    // Save group — label varies with dirty/clean.
     items.push(FooterItem::Key("S"));
     items.push(FooterItem::Text("save workspace"));
     if state.is_dirty() {
@@ -72,10 +69,6 @@ pub fn render_editor(
         )));
     }
 
-    // Tab-for-next-tab and ↑↓-for-cursor-move are universal across every
-    // editor tab — they don't need to be advertised in the base footer.
-
-    // Exit group — discard if dirty, back if clean.
     items.push(FooterItem::GroupSep);
     items.push(FooterItem::Key("Esc"));
     if state.is_dirty() {
@@ -86,11 +79,7 @@ pub fn render_editor(
 
     render_footer(frame, chunks[3], &items);
 
-    // Error banner overlay — top line of the body. Only rendered when
-    // `save_flow` is in the `Error` state AND no ErrorPopup modal is up
-    // (the popup is the commit-time error surface; the banner is the
-    // pre-commit validation surface — they share the `Error` variant but
-    // present differently).
+    // Pre-commit validation surface; the popup handles commit errors.
     if state.modal.is_none()
         && let Some(err) = state.save_flow.error_message()
     {
@@ -485,53 +474,24 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-/// Flat-row model for the Secrets tab. The cursor is a single index into
-/// this list; render walks it to draw each row, and input handlers walk
-/// it to decide what `Enter` / `D` / `A` / `←` do on the focused row.
-///
-/// The Secrets tab no longer renders a "Workspace env" header label or a
-/// "(no env vars)" placeholder — operators already know they're on the
-/// Secrets tab from the tab strip, and the empty state is just the
-/// `+ Add environment variable` sentinel (consistent with how the Mounts
-/// and Agents tabs present their empty states).
+/// Flat row model for the Secrets tab; cursor is a single index.
 #[derive(Debug, Clone)]
 pub(in crate::console::manager) enum SecretsRow {
-    /// A single workspace-level env key row.
     WorkspaceKeyRow(String),
-    /// "+ Add environment variable" sentinel — always present.
     WorkspaceAddSentinel,
-    /// "Agent: NAME" section header. `expanded` mirrors membership in
-    /// `editor.secrets_expanded` at the moment the rows were enumerated.
-    /// Focusable: pressing Enter / Right / Left expands or collapses.
-    AgentHeader { agent: String, expanded: bool },
-    /// An agent-override env key row — only emitted when the section is
-    /// expanded.
-    AgentKeyRow { agent: String, key: String },
-    /// "+ Add agent-NAME environment variable" sentinel — only emitted
-    /// when the agent section is expanded.
+    AgentHeader {
+        agent: String,
+        expanded: bool,
+    },
+    AgentKeyRow {
+        agent: String,
+        key: String,
+    },
     AgentAddSentinel(String),
-    /// Visual blank-line separator between sections (workspace section ↔
-    /// first agent section, and between consecutive agent sections).
-    /// **Not focusable** — the cursor `↑`/`↓` handlers skip over this
-    /// variant so navigation reads as section-to-section without the
-    /// operator stepping onto an empty line.
+    /// Non-focusable; cursor `↑`/`↓` skip over it.
     SectionSpacer,
 }
 
-/// Build the flat row list used by both `render_secrets_tab` (to draw the
-/// rows) and the input handlers (to map cursor index → row kind).
-///
-/// Agent sections render in `BTreeMap` iteration order. Collapsed sections
-/// show only the (focusable) header; expanded sections show header + key
-/// rows + add sentinel. There is no preamble row above the workspace
-/// keys — the empty state is just the `+ Add environment variable`
-/// sentinel.
-///
-/// `config` is unused today but retained on the signature so the input
-/// handlers (which already pass it through for parallel reasons) don't
-/// need a separate path. The bottom-of-tab "+ Add per-agent override"
-/// sentinel was removed in favour of the scope-first `ScopePicker`
-/// modal opened from the workspace-level sentinel.
 pub(in crate::console::manager) fn secrets_flat_rows(
     editor: &EditorState<'_>,
     _config: &AppConfig,
@@ -541,13 +501,6 @@ pub(in crate::console::manager) fn secrets_flat_rows(
         rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
     }
     rows.push(SecretsRow::WorkspaceAddSentinel);
-    // Emit a blank-line spacer above each agent section so the
-    // workspace block and each agent override section read as visually
-    // distinct units — dense back-to-back rows were hard to scan at a
-    // glance. The spacer is non-focusable; the cursor `↑`/`↓` handlers
-    // skip over it. The first iteration's spacer separates the
-    // workspace section from the first agent section; subsequent
-    // iterations' spacers separate consecutive agent sections.
     for agent in editor.pending.agents.keys() {
         rows.push(SecretsRow::SectionSpacer);
         let expanded = editor.secrets_expanded.contains(agent);
@@ -570,8 +523,6 @@ pub(in crate::console::manager) fn secrets_flat_rows(
     rows
 }
 
-/// Number of navigable rows on the Secrets tab. Used by the input
-/// handlers' `max_row_for_tab` to clamp the cursor.
 #[must_use]
 pub(in crate::console::manager) fn secrets_flat_row_count(
     editor: &EditorState<'_>,
@@ -580,24 +531,10 @@ pub(in crate::console::manager) fn secrets_flat_row_count(
     secrets_flat_rows(editor, config).len()
 }
 
-/// Compute the list of agents (by class-key string) that are eligible
-/// for a per-agent override on this workspace.
-///
-/// Mirrors the launch-time semantics from
-/// [`crate::app::context::eligible_agents_for_workspace`]: when the
-/// workspace's `allowed_agents` list is non-empty we return only those
-/// names; when it's empty (the launch-time "all agents allowed"
-/// shorthand), we return every agent registered in `config.agents`.
-///
-/// Unlike the previous `eligible_agents_without_override`, this does
-/// NOT filter out agents that already have an override section —
-/// operators may legitimately want to add additional keys to an agent
-/// that already has some, and the new `ScopePicker` → `AgentPicker`
-/// flow is the only entry point for picking an agent (no longer a
-/// bottom-of-tab sentinel that gets greyed out per-agent).
-///
-/// Returned strings match the keying scheme of
-/// `WorkspaceConfig.agents` (the `BTreeMap<String, WorkspaceAgentOverride>`).
+/// Mirrors launch-time semantics from
+/// [`crate::app::context::eligible_agents_for_workspace`]. Agents
+/// already carrying an override are NOT filtered — operators may add
+/// more keys to an existing override.
 pub(in crate::console::manager) fn eligible_agents_for_override(
     editor: &EditorState<'_>,
     config: &AppConfig,
@@ -609,17 +546,7 @@ pub(in crate::console::manager) fn eligible_agents_for_override(
     }
 }
 
-/// Full Secrets-tab render. Walks the flat-row list once emitting a
-/// `Line` per row. `config` is consumed only for the `(not in registry)`
-/// annotation on agent headers.
-///
-/// No preamble lines are rendered above the navigable rows — empty state
-/// is just the `+ Add environment variable` sentinel, consistent with the
-/// minimalist layout of the other editor tabs.
-//
-// Match arms per row kind makes the body naturally linear — splitting it
-// into per-arm helpers would scatter the table-like structure without
-// clarity win. Accept the length for readability.
+// Linear match per row kind reads better than scattered helpers.
 #[allow(clippy::too_many_lines)]
 fn render_secrets_tab(
     frame: &mut Frame,
@@ -636,19 +563,13 @@ fn render_secrets_tab(
     let rows = secrets_flat_rows(state, config);
     let mut lines: Vec<Line> = Vec::with_capacity(rows.len());
 
-    // Label column width — keep identical to General tab so the Secrets
-    // tab's visual rhythm matches the rest of the editor.
+    // Match General tab's label column for visual rhythm parity.
     let label_width: usize = 22;
 
     for (i, row) in rows.iter().enumerate() {
         let selected = i == cursor;
-        // Two-column prefix: cursor (`▸ ` / `  `, 2 cells) followed by
-        // the op-marker column (`[op] ` / `     `, 5 chars). The marker
-        // is only filled for op:// key rows; every other row leaves the
-        // column blank so column alignment is preserved across the tab —
-        // the operator's eye scans the marker column at a glance to see
-        // which keys are 1Password-backed. Total prefix width before the
-        // key column is always 7 chars (2 + 5), regardless of row kind.
+        // 7-char prefix: 2-char cursor col + 5-char op-marker col.
+        // The marker col is blank on non-op rows so [op] keys line up.
         let cursor_col = if selected { "▸ " } else { "  " };
         match row {
             SecretsRow::WorkspaceKeyRow(key) => {
@@ -673,8 +594,6 @@ fn render_secrets_tab(
                 } else {
                     Style::default().fg(WHITE)
                 };
-                // 5-space marker column keeps alignment with op:// rows
-                // that fill the marker column with `[op] `.
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}     + Add environment variable"),
                     style,
@@ -728,9 +647,6 @@ fn render_secrets_tab(
                 )));
             }
             SecretsRow::SectionSpacer => {
-                // Render as a literal blank line. The cursor never lands
-                // on this row — `↑`/`↓` skip over it — so we don't even
-                // bother with the cursor-column prefix.
                 lines.push(Line::from(""));
             }
         }
@@ -739,22 +655,10 @@ fn render_secrets_tab(
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-/// Render one "KEY  value" row for the Secrets tab with the conventional
-/// focus prefix, masking, and truncation. Per-row dirty markers were
-/// removed for consistency with the other editor tabs; the footer's
-/// `S save workspace (N changes)` is the canonical unsaved-state signal.
-///
-/// `op://` references skip masking entirely and render as a styled
-/// breadcrumb following the official 1Password CLI syntax:
-/// - 3-segment: `<vault> / <item> → <field>`
-/// - 4-segment: `<vault> / <item> / <section> → <field>` (the field
-///   lives inside a named section of the item)
-///
-/// Account scope is **not** encoded in `op://` — see the picker
-/// docstring for the multi-account model — so the breadcrumb does not
-/// prepend an account-derived email. `op_accounts` is retained on the
-/// signature for compatibility with other render-call sites; the
-/// breadcrumb itself does not consult it.
+/// `op://` rows skip masking and render as a breadcrumb (3-segment:
+/// `vault / item → field`, 4-segment adds `section`). Account scope
+/// isn't part of the `op://` path — see the picker docstring.
+/// `op_accounts` is retained for signature compatibility.
 #[allow(clippy::too_many_arguments)]
 fn render_secrets_key_line(
     selected: bool,
@@ -766,21 +670,10 @@ fn render_secrets_key_line(
     label_width: usize,
     op_accounts: &[OpAccount],
 ) -> Line<'static> {
-    /// Plain-text marker that flags `op://` rows in the marker column.
-    /// Renders as `[op] ` (5 chars) — earlier iterations used the `⚿`
-    /// glyph but it was hard to read across terminals and didn't carry
-    /// any "1Password" association at a glance. Plain rows render five
-    /// blank spaces in the same column to keep label/value alignment
-    /// consistent across the tab.
     const OP_MARKER: &str = "[op] ";
     const NO_MARKER: &str = "     ";
     const MASK: &str = "●●●●●●●●●●●";
 
-    // `op_accounts` is unused by the breadcrumb after the parser
-    // change (4-segment is now `vault/item/section/field`, not
-    // `account/vault/item/field`). The argument stays on the
-    // signature so the call sites in this module aren't churned in
-    // the same commit, but mark it consumed to silence the warning.
     let _ = op_accounts;
 
     let label_style = if selected {
@@ -1048,10 +941,8 @@ mod contextual_row_items_tests {
 
 #[cfg(test)]
 mod agents_tab_render_tests {
-    //! Pins the `[x]` / `[ ]` glyph on each agent row to the
-    //! *effectively allowed* state, not literal `allowed_agents` list
-    //! membership. An empty list is the shorthand for "all allowed",
-    //! and every row must render `[x]` in that mode.
+    //! Pins `[x]`/`[ ]` to the *effectively allowed* state — empty
+    //! `allowed_agents` is the "all allowed" shorthand.
     use super::render_agents_tab;
     use crate::config::{AgentSource, AppConfig};
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
@@ -1334,12 +1225,6 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Empty workspace: opening the Secrets tab must place the cursor on
-    /// the first focusable row — the `+ Add environment variable`
-    /// sentinel. Pre-existing render did emit a "Workspace env" header
-    /// and a "(no env vars)" placeholder above the sentinel; both are
-    /// gone now, so the test only asserts the cursor lands on the
-    /// sentinel.
     #[test]
     fn secrets_tab_cursor_skips_workspace_header_label() {
         let ws = WorkspaceConfig {
@@ -1368,10 +1253,6 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Empty Secrets tab is a single navigable row — the
-    /// `+ Add environment variable` sentinel. No "Workspace env" header
-    /// label, no "(no env vars)" placeholder. Consistent with the
-    /// minimalist empty state of the Mounts and Agents tabs.
     #[test]
     fn secrets_tab_empty_renders_only_sentinel() {
         let ws = WorkspaceConfig {
@@ -1398,19 +1279,12 @@ mod secrets_tab_render_tests {
             !dump.contains("(no env vars)"),
             "the `(no env vars)` placeholder must NOT render; dump:\n{dump}"
         );
-        // The legacy abbreviated "env var" wording must be gone too — TUI
-        // labels read "environment variable" everywhere.
         assert!(
             !dump.contains("env var"),
             "TUI text must say `environment variable`, not `env var`; dump:\n{dump}"
         );
     }
 
-    /// Op:// rows render as a breadcrumb: `<vault> / <item> → <field>`
-    /// for 3-segment paths. Masking is irrelevant — the path isn't a
-    /// credential — so the literal segments must appear regardless of
-    /// `unmasked_rows`. The arrow glyph must appear too (no `op://`
-    /// scheme prefix in the rendered output).
     #[test]
     fn op_row_breadcrumb_render_three_segment() {
         let mut env = std::collections::BTreeMap::new();
@@ -1449,8 +1323,8 @@ mod secrets_tab_render_tests {
             !dump.contains("op://"),
             "op:// scheme prefix must not appear in the breadcrumb; dump:\n{dump}"
         );
-        // Crucially: the mask glyph must NOT appear on an op:// row even
-        // though the editor defaults to all-masked.
+        // Mask glyph must not appear on op:// rows even though
+        // editor defaults to all-masked.
         assert!(
             editor.unmasked_rows.is_empty(),
             "default state is all-masked; op:// rows must still bypass masking"
@@ -1461,12 +1335,8 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Four-segment op:// references render the section component
-    /// between the item and the field, per the official 1Password CLI
-    /// syntax (`op://<vault>/<item>/<section>/<field>`). Earlier
-    /// revisions interpreted 4-segment as `account/vault/item/field`
-    /// and prepended an account-derived email; that branch is removed
-    /// and the section is shown instead.
+    /// 4-segment is `vault/item/section/field` per the 1Password CLI
+    /// syntax — not the earlier `account/vault/item/field` reading.
     #[test]
     fn op_row_breadcrumb_render_four_segment_with_section() {
         let mut env = std::collections::BTreeMap::new();
@@ -1515,11 +1385,8 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Op:// rows render with the `[op]` text marker in the left-edge
-    /// marker column. Plain rows do not. The marker is text rather than
-    /// a single glyph because terminals render `⚿` (the previous marker)
-    /// inconsistently in width and the bracketed text immediately reads
-    /// as "1Password" without the operator having to learn a glyph.
+    /// Text marker (not glyph) — `⚿` rendered inconsistently across
+    /// terminals; `[op]` reads as "1Password" at a glance.
     #[test]
     fn op_row_renders_with_op_text_marker() {
         let mut env = std::collections::BTreeMap::new();
@@ -1542,17 +1409,12 @@ mod secrets_tab_render_tests {
             dump.contains("[op]"),
             "op:// row must render the `[op]` text marker; dump:\n{dump}"
         );
-        // Belt-and-suspenders: the previous `⚿` glyph must NOT appear
-        // in the rendered output.
         assert!(
             !dump.contains("\u{26BF}"),
             "the legacy `⚿` glyph must not appear after the marker swap; dump:\n{dump}"
         );
     }
 
-    /// Plain-text rows must NOT render the `[op]` marker — that text is
-    /// reserved for op:// rows so the operator can scan the marker
-    /// column to see which keys are 1Password-backed.
     #[test]
     fn plain_row_renders_without_op_marker() {
         let mut env = std::collections::BTreeMap::new();
@@ -1577,10 +1439,6 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// The `[op]` marker is exactly 5 chars wide (`[`, `o`, `p`, `]`,
-    /// space) so it lines up with the 5-blank-space padding plain rows
-    /// render in the same column. Pinning the width here guards against
-    /// future tweaks that would re-break the alignment audit.
     #[test]
     fn op_row_marker_column_is_5_chars_wide_with_brackets() {
         let mut env = std::collections::BTreeMap::new();
@@ -1606,11 +1464,6 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Plain rows render five blank chars in the marker column so the
-    /// key text starts at the same screen column as it does on op://
-    /// rows. Together with the `[op] ` width assertion above, this
-    /// guarantees the operator sees the key column line up across the
-    /// tab.
     #[test]
     fn plain_row_marker_column_is_5_blank_chars_for_alignment() {
         let mut env = std::collections::BTreeMap::new();
@@ -1628,11 +1481,8 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        // Render directly to an 80x15 buffer and pull out the row 1 line
-        // (row 0 is the top border). Examine the cells at columns 1..7,
-        // which is the 7-char prefix region (cursor column 1..3 +
-        // marker column 3..8). Cells 3..8 must all be blank spaces on a
-        // plain row.
+        // 7-char prefix region = cursor (1..3) + marker (3..8); on
+        // a plain row, cells 3..8 are all blanks.
         let backend = TestBackend::new(80, 15);
         let mut term = Terminal::new(backend).unwrap();
         let config = AppConfig::default();
@@ -1642,7 +1492,6 @@ mod secrets_tab_render_tests {
         })
         .unwrap();
         let buf = term.backend().buffer();
-        // Line 1 is the first content row inside the bordered block.
         let mut cells = String::new();
         for x in 3..8 {
             cells.push_str(buf[(x, 1)].symbol());
@@ -1654,14 +1503,9 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Workspace env keys render in alphabetical order — `BTreeMap`
-    /// already iterates sorted, but we pin the ordering invariant
-    /// here so future refactors that swap the storage type can't
-    /// silently regress the operator's scanning experience.
     #[test]
     fn secrets_tab_renders_keys_in_alphabetical_order() {
         let mut env = std::collections::BTreeMap::new();
-        // Insertion order is intentionally not alphabetical.
         env.insert("ZULU".into(), "z".into());
         env.insert("ALPHA".into(), "a".into());
         env.insert("MIKE".into(), "m".into());
@@ -1679,8 +1523,6 @@ mod secrets_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
 
         let dump = render_to_dump(&editor);
-        // Locate the byte offsets of each key in the dump and assert
-        // they appear in ascending order.
         let alpha = dump.find("ALPHA").expect("ALPHA must appear");
         let mike = dump.find("MIKE").expect("MIKE must appear");
         let zulu = dump.find("ZULU").expect("ZULU must appear");
@@ -1690,15 +1532,8 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Section spacer is emitted between the workspace section and the
-    /// first agent section so the rows read as visually distinct units
-    /// rather than one dense block. The spacer slot lives between the
-    /// `WorkspaceAddSentinel` and the first `AgentHeader`.
     #[test]
     fn section_spacer_appears_between_workspace_and_first_agent_section() {
-        // Workspace with one env key + one agent override → flat rows
-        // are: WorkspaceKeyRow(0), WorkspaceAddSentinel(1),
-        //      SectionSpacer(2), AgentHeader(3).
         let mut env = std::collections::BTreeMap::new();
         env.insert("DB_URL".into(), "postgres://localhost/db".into());
         let mut agent_env = std::collections::BTreeMap::new();
@@ -1733,9 +1568,6 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Section spacer also appears between two consecutive agent
-    /// override sections — every transition into an agent block carries
-    /// a one-row blank gap above it.
     #[test]
     fn section_spacer_appears_between_consecutive_agent_sections() {
         let mut a_env = std::collections::BTreeMap::new();
@@ -1759,12 +1591,6 @@ mod secrets_tab_render_tests {
         };
         let editor = EditorState::new_edit("ws".into(), ws);
         let rows = super::secrets_flat_rows(&editor, &AppConfig::default());
-        // Expected rows (no workspace keys; both agents collapsed):
-        //   0 WorkspaceAddSentinel
-        //   1 SectionSpacer
-        //   2 AgentHeader { agent-architect }
-        //   3 SectionSpacer
-        //   4 AgentHeader { agent-smith }
         assert!(
             matches!(rows.get(1), Some(super::SecretsRow::SectionSpacer)),
             "spacer expected before the first agent header; rows={rows:?}"
@@ -1773,7 +1599,6 @@ mod secrets_tab_render_tests {
             matches!(rows.get(3), Some(super::SecretsRow::SectionSpacer)),
             "spacer expected between consecutive agent sections; rows={rows:?}"
         );
-        // No trailing spacer after the last section.
         assert!(
             !matches!(rows.last(), Some(super::SecretsRow::SectionSpacer)),
             "no trailing spacer after the final section; rows={rows:?}"
@@ -1783,12 +1608,8 @@ mod secrets_tab_render_tests {
 
 #[cfg(test)]
 mod eligible_agents_for_override_tests {
-    //! Pins the eligible-agent computation that feeds the
-    //! ScopePicker → AgentPicker flow. Unlike the previous
-    //! `eligible_agents_without_override`, this list is NOT filtered
-    //! by "doesn't yet have an override" — operators may legitimately
-    //! want to add additional keys to an agent that already carries
-    //! some.
+    //! Agents already carrying an override are NOT filtered — the
+    //! picker can add more keys to an existing override.
     use super::eligible_agents_for_override;
     use crate::config::{AgentSource, AppConfig};
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};

@@ -144,33 +144,20 @@ pub(super) fn format_mount_rows(
         .collect()
 }
 
-/// Width of the `Mode` column. Pinned to the length of the header label
-/// "Mode" (4 chars) so the data-row values "rw"/"ro" pad to the same width.
-/// Without the pad, `rw`/`ro` (2 chars) would render 2 chars short of the
-/// header's 4, shifting the `Type` column left by 2 on every data row.
-/// Both the header and data rows emit a two-space gutter after this column
-/// before the `Type` column so "Mode" and "Type" never run together.
+/// "Mode" header is 4 chars; pad row values so the Type column
+/// stays aligned across header and data rows.
 pub(super) const MOUNT_MODE_COL_WIDTH: usize = 4;
 
-/// Compute the width used for the `Path` column so that header and data rows
-/// align. Derived from both the "Path" header label and the widest row path,
-/// with a minimum floor so short-path tables still look tabular.
 pub(super) fn mount_path_width(rows: &[(String, &str, String)]) -> usize {
     rows.iter()
         .map(|(p, _, _)| p.chars().count())
         .max()
         .unwrap_or(0)
-        .max(10) // floor so a single-row mount still has a clear column
+        .max(10)
         .max("Path".len())
 }
 
-/// Header row for the mount table. `path_w` must come from
-/// [`mount_path_width`] over the same `rows` used for the data lines so the
-/// columns line up.
 pub(super) fn render_mount_header(path_w: usize) -> Line<'static> {
-    // Format: "  <path padded to path_w>  <mode padded>  Type"
-    // Leading two-space gutter + two-space gap between Mode and Type both
-    // match the data-row format — so "Mode" never runs into "Type".
     let mode_col = format!("{:<mw$}", "Mode", mw = MOUNT_MODE_COL_WIDTH);
     Line::from(Span::styled(
         format!("  {path:<path_w$}  {mode_col}  Type", path = "Path"),
@@ -178,8 +165,6 @@ pub(super) fn render_mount_header(path_w: usize) -> Line<'static> {
     ))
 }
 
-/// Render aligned mount rows as `Line`s (no selection prefix). `path_w` is
-/// passed in so the header and data rows share the same column boundary.
 pub(super) fn render_mount_lines(
     rows: &[(String, &str, String)],
     path_w: usize,
@@ -192,7 +177,6 @@ pub(super) fn render_mount_lines(
                     format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
                     Style::default().fg(PHOSPHOR_DIM),
                 ),
-                // Two-space gap before the type column — matches the header.
                 Span::raw("  "),
                 Span::styled(
                     kind.clone(),
@@ -212,13 +196,13 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     let show_envs = ws_config.is_some_and(workspace_has_any_env);
 
     let mut constraints = vec![
-        Constraint::Length(3), // General: workdir + 2 borders (Last used moved to Agents)
-        Constraint::Length(mount_block_height(mounts)), // Mounts: header + N rows + 2 borders
+        Constraint::Length(3),
+        Constraint::Length(mount_block_height(mounts)),
     ];
     if show_envs {
-        constraints.push(Constraint::Length(env_block_height(ws_config))); // Environments
+        constraints.push(Constraint::Length(env_block_height(ws_config)));
     }
-    constraints.push(Constraint::Length(agents_block_height(agent_count))); // Agents: default + blank + names + 2 borders
+    constraints.push(Constraint::Length(agents_block_height(agent_count)));
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -237,56 +221,28 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     render_agents_subpanel(frame, rows[idx], ws_config, config);
 }
 
-/// `true` when the workspace has any env entry — workspace-level
-/// (`WorkspaceConfig.env`) or any per-agent override
-/// (`WorkspaceAgentOverride.env`). Drives whether the right-pane
-/// Environments preview block is rendered at all; when the total
-/// count is zero, the block (header + body + border) is omitted and
-/// the Agents block fills the freed vertical space.
 fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
     !ws.env.is_empty() || ws.agents.values().any(|o| !o.env.is_empty())
 }
 
-/// Exact row count a Mounts sub-panel needs to render `mounts` without
-/// leaving a phantom empty row inside the block. Layout: 2 borders + 1
-/// header row + N data rows (minimum 1 for the "(none)" placeholder when
-/// `mounts` is empty). Clamped to a reasonable maximum so a workspace with
-/// many mounts can't eat the full right pane.
-///
-/// Shared by `render_details_pane` and `render_current_dir_details_pane`
-/// so both produce identically-tight blocks.
 fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
     let data_rows = if mounts.is_empty() { 1 } else { mounts.len() };
-    (data_rows + 2 + 1).min(12) as u16 // +1 header, +2 borders
+    (data_rows + 2 + 1).min(12) as u16
 }
 
-/// Exact row count the Environments sub-panel needs given the workspace
-/// config. Layout: 2 borders + one row per (env name, scope) entry —
-/// workspace-level keys plus each per-agent override key. Clamped to a
-/// reasonable maximum so a workspace with many env vars and override
-/// rows can't eat the full right pane.
-///
-/// Caller is expected to have already verified the workspace has at
-/// least one env entry via `workspace_has_any_env` — the empty case
-/// is handled by omitting the block entirely from the layout, not by
-/// rendering a placeholder here.
+/// Caller is expected to have gated on `workspace_has_any_env` —
+/// empty case omits the block entirely, not via placeholder.
 fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u16 {
     let Some(ws) = ws_config else {
-        // No workspace config — degenerate case; reserve a minimal
-        // border-only block. Practically unreachable because callers
-        // gate on `workspace_has_any_env(ws_config)`.
         return 2;
     };
 
     let workspace_keys = ws.env.len();
     let agent_keys: usize = ws.agents.values().map(|o| o.env.len()).sum();
     let total_rows = workspace_keys + agent_keys;
-    (total_rows + 2).min(20) as u16 // +2 borders, clamped
+    (total_rows + 2).min(20) as u16
 }
 
-/// Number of agent rows the Agents block will render. Mirrors the
-/// agent-listing rule in `render_agents_subpanel` so the block height
-/// can be sized exactly.
 fn agents_block_agent_count(
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
@@ -299,32 +255,19 @@ fn agents_block_agent_count(
     }
 }
 
-/// Exact row count the Agents sub-panel needs: 2 borders + 1 default
-/// row + 1 blank spacer + N agent rows. Clamped to a reasonable max so
-/// a globally-allowed workspace with many agents doesn't push the
-/// Environments block off-screen.
 fn agents_block_height(agent_count: usize) -> u16 {
-    // Always reserve at least one row for the agent list area, even
-    // when there are no agents — the block reads as broken otherwise.
+    // Reserve at least one row even when empty so the block doesn't
+    // read as broken.
     let agent_rows = agent_count.max(1);
     (2 + 1 + 1 + agent_rows).min(14) as u16
 }
 
-/// Right-pane details shown when the cursor is on the synthetic "Current
-/// directory" row (row 0). Summarises the cwd workspace that would be
-/// launched: workdir + the auto-mount derived from cwd + "any agent".
-///
-/// Keeps the General/Mounts/Agents three-block vertical layout of
-/// `render_details_pane` so operators see a familiar shape, but uses
-/// a dedicated General block (no "last used" row — not meaningful for
-/// a non-persistent launch) with the " Current directory " title.
+/// Cursor on the synthetic "Current directory" row — mirrors
+/// `workspace::current_dir_workspace`: src=dst=cwd, rw, any agent.
 fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::path::Path) {
     let cwd_str = cwd.display().to_string();
     let workdir_short = crate::tui::shorten_home(&cwd_str);
 
-    // The single auto-mount mirrors `workspace::current_dir_workspace`:
-    // src = dst = cwd, rw. Built here as a local so we can pass it into
-    // the shared `render_mounts_subpanel` helper.
     let mounts = [crate::workspace::MountConfig {
         src: cwd_str.clone(),
         dst: cwd_str,
@@ -334,8 +277,8 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),                           // General: workdir + 2 borders
-            Constraint::Length(mount_block_height(&mounts)), // Mounts: header + N rows + 2 borders
+            Constraint::Length(3),
+            Constraint::Length(mount_block_height(&mounts)),
             Constraint::Length(agents_block_height(agents_block_agent_count(
                 None,
                 &AppConfig::default(),
@@ -571,7 +514,6 @@ fn render_environments_subpanel(
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
 
-    // Flatten workspace + per-agent env maps into one list of rows.
     let mut rows: Vec<EnvRow> = Vec::new();
     if let Some(ws) = ws_config {
         for (key, value) in &ws.env {
@@ -592,8 +534,7 @@ fn render_environments_subpanel(
         }
     }
 
-    // Alphabetical by name; on ties, workspace (None) before agent (Some);
-    // when both are agent rows, agent name decides.
+    // Alphabetical, ties: workspace before agent; agent-vs-agent by name.
     rows.sort_by(|a, b| {
         a.name
             .cmp(&b.name)
@@ -605,9 +546,6 @@ fn render_environments_subpanel(
             })
     });
 
-    // Inner content width = panel width - 2 borders. Right edge of
-    // the agent label is anchored to that width; padding is filled
-    // with spaces between the key name and the agent name.
     let inner_width = area.width.saturating_sub(2) as usize;
     let lines: Vec<Line> = rows
         .iter()
@@ -620,23 +558,12 @@ fn render_environments_subpanel(
     frame.render_widget(p, area);
 }
 
-/// Render one `EnvRow` as a single `Line`. Layout:
-///
-/// ```text
-/// <SUBPANEL_CONTENT_INDENT spaces><[op] | 5 spaces><gap><name>...<padding>...<agent>
-/// ```
-///
-/// `inner_width` is the panel's interior width (excluding borders); the
-/// agent label is right-aligned to it. When the left content already
-/// fills or overflows the row, the agent label is dropped — the panel
-/// is too narrow to show both, so the key name takes priority.
+/// `<indent><[op] | 5 spaces><space><name>...<pad>...<agent>` —
+/// agent is right-aligned to `inner_width`; dropped if the left
+/// content already fills the row.
 fn env_row_line(row: &EnvRow, inner_width: usize) -> Line<'static> {
-    // Outer indent matches the other sub-panels (General / Mounts / Agents).
     let outer_indent = " ".repeat(SUBPANEL_CONTENT_INDENT);
-    // 5-char marker column: "[op] " or 5 spaces.
     let marker_text: &'static str = if row.is_op { "[op] " } else { "     " };
-    // 1-space gap between marker column and key name, matching the
-    // editor's Environments-tab spacing.
     let gap = " ";
     let left_visible_width = outer_indent.len() + marker_text.len() + gap.len() + row.name.len();
 
@@ -659,11 +586,8 @@ fn env_row_line(row: &EnvRow, inner_width: usize) -> Line<'static> {
     ));
 
     if let Some(agent) = &row.scope {
-        // Right-pad with spaces so the agent label ends one cell before
-        // `inner_width`, leaving a 1-cell gap to the right border so the
-        // label doesn't sit flush against it. When the panel is too
-        // narrow to fit both, fall back to a single-space gap and let
-        // the Paragraph clip — the key name takes priority.
+        // Reserve a 1-cell gap to the right border; when too narrow,
+        // fall back to a single-space gap and let Paragraph clip.
         let pad_count = if left_visible_width + 1 + agent.len() + 1 < inner_width {
             inner_width - left_visible_width - agent.len() - 1
         } else {
@@ -694,22 +618,10 @@ fn render_agents_subpanel(
         ));
 
     let allowed = ws_config.map_or(&[][..], |w| w.allowed_agents.as_slice());
-    // `all-agents-allowed` covers both the "no ws_config" case and the
-    // empty-list shorthand on a real workspace. See `agent_allow` for the
-    // canonical rule.
     let all_allowed = ws_config.is_none_or(super::super::agent_allow::allows_all_agents);
 
     let mut lines: Vec<Line> = Vec::new();
 
-    // `Default: <agent>` — kept at the top of the Agents block so the
-    // operator sees the workspace-default before scanning the agent
-    // list. `Last used` is intentionally absent — that's launch-time
-    // history, not part of the workspace's saved shape, and the
-    // editor's General tab cleanup demoted it accordingly.
-    //
-    // Per-agent env detail moved to the consolidated Environments
-    // block above, so this list is just names — one per line, with a
-    // trailing star on the default-agent row.
     let default = ws_config.and_then(|w| w.default_agent.as_deref());
     let (value_text, value_style): (String, Style) = default.map_or_else(
         || ("(none)".to_string(), Style::default().fg(PHOSPHOR_DIM)),
@@ -722,10 +634,6 @@ fn render_agents_subpanel(
     ]));
     lines.push(Line::from(""));
 
-    // Agent listing. When `allowed_agents` is non-empty, that's the
-    // operator's curated subset; when empty (the "all agents allowed"
-    // shorthand) we list every globally-configured agent — same source
-    // the editor's Agents tab iterates over.
     let agent_names: Vec<&str> = if all_allowed {
         config.agents.keys().map(String::as_str).collect()
     } else {
