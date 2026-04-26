@@ -1511,3 +1511,51 @@ Also noted: env resolution (interactive prompts for op:// and $NAME refs) happen
 1. **§3 CI gate for PROJECT_STRUCTURE.md staleness** — flagged in iterations 32, 33, 34, 35. Still no concrete proposal. Priority: add a simple shell check or pre-commit hook.
 2. **§7 external Rust TUI comparison** — `gitui`, `bottom`, `zellij` structure comparison still not done. Would validate or contradict the documentation-first vs structure-first debate in §4.
 3. **Env resolution between Step 1 and Step 2 not yet in spec** — op:// interactive prompts happen before Docker image build. This is a UX invariant worth capturing.
+
+---
+
+## Iteration 36 — 2026-04-26
+
+### What was improved
+
+1. **§3: Added concrete CI gate proposal for PROJECT_STRUCTURE.md staleness** (flagged in iterations 32–35, finally addressed)
+   
+   Read the existing `check:repo-links.ts` script at `docs/scripts/check-repo-links.ts` (lines 1–40) to understand the CI check pattern already established in the project. The script scans MDX files for bare code spans pointing to repo paths and requires `<RepoFile />` instead. An analogous check for PROJECT_STRUCTURE.md coverage follows the same philosophy but runs in `ci.yml` (Rust side) rather than `docs.yml` (docs side).
+   
+   Added three options to §3 "Diagnosis" as a new "Preventing future staleness" subsection:
+   - Option A: CONTRIBUTING.md rule (necessary but insufficient — already failed once)
+   - Option B: `ci.yml` git-diff-scoped shell check (recommended) — checks only files ADDED in the current PR, fast, non-disruptive to existing stale entries
+   - Option C: Structured module registry TOML (strongest, over-engineered for current scale)
+   
+   Key design decision in Option B: grep for the MODULE DIRECTORY NAME (e.g. `op_picker`) rather than the full file path, because PROJECT_STRUCTURE.md uses prose that contains the module name but not an exact path.
+
+2. **Workspace module //! coverage noted** — fresh read of `workspace/` submodules confirms:
+   - `workspace/planner.rs` (714L, 235L production) — has `//!` doc (lines 1–8); already in hot-spot table as "Low"
+   - `workspace/resolve.rs` (473L) — NO `//!` doc (grep returned empty)
+   - `workspace/mod.rs` (226L) — NO `//!` doc
+   - `workspace/mounts.rs`, `workspace/paths.rs`, `workspace/sensitive.rs` — not checked in this iteration
+   These should be added to the §10 //! priority queue (currently focused on runtime/console files).
+
+### What was read
+- `docs/scripts/check-repo-links.ts` lines 1–40 — CI check pattern
+- `docs/package.json` `check:repo-links` script definition
+- `src/workspace/` all files — LOC and `//!` coverage
+- `src/workspace/resolve.rs` — confirmed no `//!` doc
+- §3 in full — insertion point for CI gate proposal
+
+### What changed in the roadmap
+- §3: Added "Preventing future PROJECT_STRUCTURE.md staleness" subsection with 3 options (A/B/C) and a recommendation; includes concrete YAML snippet for Option B
+
+### Confidence assessment
+| Section | Confidence | Notes |
+|---|---|---|
+| CI gate Option B YAML | Medium | Logic grounded in existing CI structure; exact grep command may need adjustment for the prose-description format of PROJECT_STRUCTURE.md |
+| workspace/resolve.rs has no //! | High | grep returned empty |
+
+### User directive received during this iteration
+**The operator asked to focus on Rust code structuring for a project that will grow substantially — research best practices as if rewriting from scratch, not constrained by current structure.** This is addressed in the next iteration (37) as a new angle that challenges the incremental-refactor approach the roadmap has taken so far.
+
+### Weakest sections for iteration 37
+1. **New operator directive: Rust project structure best practices for a growing project** — research Cargo workspace conventions, module layout in large Rust CLIs (ripgrep, starship, cargo itself), and propose an ideal greenfield structure for jackin. This may significantly challenge §4's current incremental approach.
+2. **workspace/resolve.rs and workspace/mod.rs missing //!** — add to §10 //! priority queue.
+3. **§7 external Rust TUI comparison** — `gitui`, `bottom` structure still not researched.

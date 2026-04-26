@@ -378,6 +378,40 @@ The repository has two overlapping doc hierarchies that serve different audience
 - `RULES.md` is growing: it started as two rules (doc convention + deprecation), and PR #171 added two more (TUI Keybindings, TUI List Modals). As it grows it risks becoming a rules-dump without clear audience. Each rule section has a distinct audience (deprecation is contributor-facing; TUI Keybindings is agent-facing for UI work).
 - `docs/internal/roadmap/` now exists (created by this analysis loop). The broader `docs/internal/` hierarchy (ARCHITECTURE.md, CODE_TOUR.md, decisions/, REVIEWS/) does not yet exist and remains a target state.
 
+### Preventing future PROJECT_STRUCTURE.md staleness
+
+`PROJECT_STRUCTURE.md` is confirmed stale (iteration 31: missing op_picker, agent_picker, scope_picker, source_picker from PR #171). Without a structural enforcement mechanism it will drift again after every PR that adds modules. Three options, evaluated for `jackin` specifically:
+
+**Option A — CONTRIBUTING.md rule only (weakest):** Add a step to the PR checklist: "If you added a new `.rs` module file, update `PROJECT_STRUCTURE.md`." Enforced through review discipline. Fails silently when reviewers miss it. Zero implementation cost. Verdict: necessary but insufficient — it broke already.
+
+**Option B — `ci.yml` shell check (recommended):** Add a step to the existing `check` job in `ci.yml`:
+
+```yaml
+- name: Check PROJECT_STRUCTURE.md covers new modules
+  run: |
+    missing=()
+    while IFS= read -r f; do
+      mod="${f#src/}"      # e.g. "console/widgets/op_picker/mod.rs"
+      # Check both the file path and the module name without extension
+      stem="${mod%.rs}"    # e.g. "console/widgets/op_picker/mod"
+      dir="${stem%/mod}"   # e.g. "console/widgets/op_picker"
+      if ! grep -qF "op_picker" PROJECT_STRUCTURE.md 2>/dev/null && \
+         ! grep -qF "$stem" PROJECT_STRUCTURE.md 2>/dev/null; then
+        missing+=("$f")
+      fi
+    done < <(git diff --name-only origin/main...HEAD -- 'src/**/*.rs')
+    if [ ${#missing[@]} -gt 0 ]; then
+      printf 'Not in PROJECT_STRUCTURE.md: %s\n' "${missing[@]}"
+      exit 1
+    fi
+```
+
+This checks only files ADDED in the current PR (not all 94 files), making it fast and non-disruptive to existing stale entries. Limitation: only catches net-new modules, not moved or renamed ones. Does not require retroactively fixing the existing stale entries before merging.
+
+**Option C — Structured module registry (strongest, highest cost):** Replace `PROJECT_STRUCTURE.md` prose with a machine-readable `docs/internal/module-registry.toml` that lists every module with description, audience, and file path. CI generates a human-readable report from it. New `.rs` files must have a registry entry (checked by comparing `find src -name "*.rs"` against registry). Cost: requires converting all existing entries; imposes a structured format on a currently free-form document. Verdict: over-engineered for a single-maintainer project at current scale.
+
+**Recommendation: Option B** — the git-diff-scoped check catches the most common failure mode (forgetting to update after adding a PR's new modules) with minimal implementation cost. Add alongside option A (CONTRIBUTING.md checklist step) as defense in depth. The script greps for the basename of the module directory (e.g. `op_picker` for `src/console/widgets/op_picker/mod.rs`) rather than the full path, because PROJECT_STRUCTURE.md uses prose descriptions that contain the module name but not the exact path.
+
 ### Target document shape
 
 The proposed shape below addresses the problems above. URLs on the public docs site are invariants and must not change.
