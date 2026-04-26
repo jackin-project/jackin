@@ -1290,9 +1290,7 @@ fn seed_config_with_agents(
         }],
         allowed_agents: agent_keys.iter().map(|s| (*s).to_string()).collect(),
         default_agent: default_agent.map(String::from),
-        last_agent: None,
-        env: std::collections::BTreeMap::new(),
-        agents: std::collections::BTreeMap::new(),
+        ..Default::default()
     };
     let mut ce = ConfigEditor::open(paths)?;
     ce.create_workspace("multi-agent-ws", ws)?;
@@ -1712,10 +1710,8 @@ fn seed_override_picker_workspace(
             readonly: false,
         }],
         allowed_agents: allowed.iter().map(|s| (*s).to_string()).collect(),
-        default_agent: None,
-        last_agent: None,
-        env: std::collections::BTreeMap::new(),
         agents: agents_map,
+        ..Default::default()
     };
     let mut ce = ConfigEditor::open(paths)?;
     ce.create_workspace("big-monorepo", ws)?;
@@ -2356,9 +2352,7 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
         }],
         allowed_agents: vec!["chainargos/agent-smith".to_string()],
         default_agent: Some("chainargos/agent-smith".to_string()),
-        last_agent: None,
-        env: std::collections::BTreeMap::new(),
-        agents: std::collections::BTreeMap::new(),
+        ..Default::default()
     };
     {
         let mut ce = ConfigEditor::open(&paths)?;
@@ -2522,9 +2516,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
         }],
         allowed_agents: vec!["chainargos/agent-smith".to_string()],
         default_agent: Some("chainargos/agent-smith".to_string()),
-        last_agent: None,
-        env: std::collections::BTreeMap::new(),
-        agents: std::collections::BTreeMap::new(),
+        ..Default::default()
     };
     let mut config = {
         let mut ce = ConfigEditor::open(&paths)?;
