@@ -484,3 +484,41 @@ User requested consolidation to single loop `88287a35` (every 30 min). Cancelled
 1. **§6 CI — `ci.yml` step-level detail** — §6 documents each workflow at a high level but `ci.yml` is the most important (it gates every PR). What exactly do the `check` and `build-validator` jobs do? The exact job steps and their order would sharpen the CI modernization recommendations.
 2. **§7.9 `insta` snapshot test — first targets depth** — the three concrete first targets (`render_sentinel_description_pane`, `render_tab_strip`, `render_mounts_subpanel`) were named after reading render function signatures but not grep-confirmed to exist in the current codebase. A grep would confirm or correct.
 3. **§2 concept 25 — toolchain version pinning** — `rust-toolchain.toml` is recommended as the canonical source but the roadmap doesn't verify whether `dtolnay/rust-toolchain` in CI automatically reads `rust-toolchain.toml` (it does — but this should be cited).
+
+---
+
+## Iteration 11 — 2026-04-26
+
+### Improvements chosen
+
+1. **`dtolnay/rust-toolchain` + `rust-toolchain.toml` behavior** — read the dtolnay/rust-toolchain README in full. Finding: the action does NOT read `rust-toolchain.toml`. Its toolchain version is encoded in the @rev SHA (`@e081816... = 1.95.0`). If `rust-toolchain.toml` exists, `rustup` uses it for cargo invocations but the dtolnay action installs independently. The §7.7 Option A claim "CI dtolnay/rust-toolchain action reads rust-toolchain.toml automatically" was wrong. Corrected in §7.7, §2 concept 25, and §10 step 3. The three sources (dtolnay SHA, `mise.toml`, `rust-toolchain.toml`) must be kept in sync manually — there is no auto-sync mechanism.
+
+2. **`ci.yml` step-level detail** — read `ci.yml` in full (74 lines). Two jobs: (a) `check`: SHA-pinned throughout (checkout, dtolnay, rust-cache, taiki-e nextest install); runs `cargo fmt --check` → `cargo clippy -- -D warnings` → `cargo nextest run`; gates every PR and push. (b) `build-validator`: push-to-main only (not PRs); needs `check`; uses floating `@v6`/`@v2`/`@v7` tags for checkout/cache/artifact (security inconsistency with `check`'s SHA pins); cross-compiles `jackin-validate` for x86_64 + aarch64; 7-day artifact retention. Key gaps confirmed: no MSRV job; main `jackin` binary never compiled in CI; no `cargo doc` job. Updated §6 `ci.yml` row with exact job steps and gap analysis.
+
+3. **Snapshot test function names confirmed** — grepped all three function names against current codebase. All three exist at exactly the claimed locations: `render_sentinel_description_pane` at `list.rs:306`, `render_mounts_subpanel` at `list.rs:408`, `render_tab_strip` at `editor.rs:180`. All are private fns. Confirmed Rust inline test access pattern: `list.rs:720` already calls `render_mounts_subpanel` directly from an inline `#[cfg(test)]` block — no visibility change required. Updated §7.9 with exact function signatures and private-fn accessibility note.
+
+### What was read
+- `.github/workflows/ci.yml` (full — 74 lines)
+- `dtolnay/rust-toolchain` README (via gh API — confirmed no `rust-toolchain.toml` reading)
+- `grep` output for all 3 render function names across `src/console/manager/render/`
+- `src/console/manager/render/list.rs:306,408,720` (fn signatures + existing test access pattern)
+- `src/console/manager/render/editor.rs:180` (fn signature)
+
+### What changed in the roadmap
+- §7.7 Option A: Corrected false claim about dtolnay action reading `rust-toolchain.toml`; explained actual relationship (dtolnay installs independently via SHA; rustup uses the file for cargo invocations; three sources must be manually synced)
+- §2 concept 25: Updated proposed solution to reflect correct dtolnay behavior
+- §10 step 3: Added explicit note that dtolnay SHA pins in ci.yml/release.yml must be manually updated alongside any `rust-toolchain.toml` change
+- §6 ci.yml row: Expanded from high-level to exact job steps, gap analysis (no MSRV job, floating tags in build-validator, no doc job, main binary never compiled)
+- §7.9: Added "grep-confirmed" qualifier; added exact function signatures; added private-fn accessibility pattern note with `list.rs:720` example
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| §7.7 Toolchain (Option A) | High | dtolnay README read directly; no-auto-read behavior confirmed |
+| §6 ci.yml | High | Read in full; exact job steps documented |
+| §7.9 snapshot targets | High | All three fn names grep-confirmed; access pattern verified from existing test |
+
+### Weakest sections for iteration 12
+1. **§5 naming candidates — `ClassSelector` → `AgentClass`** — the rename candidate was proposed but the impact scope (how many files use `ClassSelector`) hasn't been counted. A grep would quantify how many call sites need updating.
+2. **§7.8 Lint configuration** — `Cargo.toml` `[lints.clippy]` section was read in iteration 1 but the full list of enabled/disabled lints hasn't been enumerated. The "cast truncation allowed for TUI" comment needs a specific line citation.
+3. **§4 `app/mod.rs` — `run()` function deep read** — only lines 39–130 were read in iteration 1. The full `run()` dispatch structure (how many Command arms, which ones are largest) hasn't been verified against the proposed `dispatch.rs` split.

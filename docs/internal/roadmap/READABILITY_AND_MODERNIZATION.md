@@ -303,7 +303,7 @@ Post-refactor target: **zero** entries rated `requires-grep` or `requires-tribal
 | 22 | **Agent manifest schema** | `src/manifest/mod.rs` (522L) — `AgentManifest` struct and sub-structs | `discoverable-in-2-hops` — PROJECT_STRUCTURE.md documents this | Split `AgentManifest` structs from `load()` function: `src/manifest/schema.rs` (types) + `src/manifest/loader.rs` (I/O) | `obvious` |
 | 23 | **Topological env-var ordering (cycle detection)** | `src/env_model.rs` — `topological_env_order` function; file has a full `//!` module doc | `obvious` — `//!` doc is exemplary; PROJECT_STRUCTURE.md documents the file | No change needed; model for other files | `obvious` |
 | 24 | **Lint and clippy configuration** | `Cargo.toml` `[lints.clippy]` section — pedantic + nursery as warn, correctness + suspicious as deny, cast truncation allowed for TUI | `discoverable-in-2-hops` — `Cargo.toml` is top-level | No structural change; document rationale inline in Cargo.toml comments or a `docs/internal/decisions/` ADR | `discoverable-in-2-hops` |
-| 25 | **Toolchain version pinning** | `mise.toml` (rust = "1.95.0") + `Cargo.toml` rust-version = "1.94" + CI workflows (dtolnay/rust-toolchain SHA `e08181...` = 1.95.0) | `requires-tribal-knowledge` — three different files express the version; the 1.94/1.95 discrepancy is subtle | Add a `rust-toolchain.toml` pointing at 1.95.0 as the canonical source; `mise.toml` and CI steps read from it (or document why they don't) | `discoverable-in-2-hops` |
+| 25 | **Toolchain version pinning** | `mise.toml` (rust = "1.95.0") + `Cargo.toml` rust-version = "1.94" + CI workflows (dtolnay/rust-toolchain SHA `e08181...` = 1.95.0) | `requires-tribal-knowledge` — three different files express the version; the 1.94/1.95 discrepancy is subtle | Add a `rust-toolchain.toml` pointing at 1.95.0 for local `rustup` users not using mise; CI still pins via the dtolnay action SHA (the action does NOT read `rust-toolchain.toml` — version is encoded in its @rev). The three sources must be kept in sync manually. | `discoverable-in-2-hops` |
 
 ---
 
@@ -638,7 +638,7 @@ Each entry is a **candidate**, not a mandate. Confirmed present in the repositor
 
 | Workflow | Triggers | Gate purpose | Comments quality | Diagnosis |
 |---|---|---|---|---|
-| `ci.yml` | push/PR to main | Rust fmt, clippy, nextest; build `jackin-validate` on main push | Sparse inline comments | `check` and `build-validator` are separate jobs; `check` is the required gate, `build-validator` only runs on main push — this asymmetry is intentional but not commented |
+| `ci.yml` | push/PR to main | Two jobs: (1) **`check`** — `cargo fmt --check` → `cargo clippy -- -D warnings` → `cargo nextest run`; (2) **`build-validator`** (push-to-main only, needs `check`) — cross-compiles `jackin-validate` binary for x86_64 and aarch64, tars + sha256s, uploads as artifact (7-day retention). All actions in `check` are SHA-pinned; `build-validator` uses floating `@v6`/`@v2`/`@v7` tags — a security inconsistency. | No MSRV check job despite `Cargo.toml` declaring `rust-version = "1.94"`. Main `jackin` binary is never built in CI — only `jackin-validate`. No `cargo doc` job. | `check` is the required PR gate; `build-validator` provides cross-compiled validation artifacts on merge. The two-job split means PRs see only fmt+clippy+tests, never binary compilation or cross-compilation errors. |
 | `construct.yml` | push/PR to main (construct paths); `workflow_dispatch` | Build + push construct Docker image (amd64/arm64 by digest, then merge manifest) | Good job structure; `just` wrapper adds discoverability | No direct container for `jackin-validate`; the build-validator uploads artifacts but no workflow runs them |
 | `docs.yml` | push to main; PR; deploy on merge | Astro build + deploy; link checking (lychee) | SHA-pinned lychee-action still on post-v2.8.0 master SHA (tracked in TODO.md) | `docs-link-check` job name was renamed from `build` (PR #181) for unique status context — good practice |
 | `preview.yml` | `workflow_run` (on CI success on main) + `workflow_dispatch` | Publishes a rolling preview Homebrew formula to `jackin-project/homebrew-tap`. Computes a `{version}-preview.{commit_count}+{sha7}` version using GitHub's GraphQL API for monotonic commit ordering. Downloads the source tarball, hashes it (sha256), rewrites `Formula/jackin-preview.rb`, opens a PR on the tap repo, and auto-merges it. Requires `HOMEBREW_TAP_TOKEN` secret. | The `verify source SHA is on main` step uses GitHub's compare API (not local `git rev-list`) after a bug where shallow-clone git ancestry checks were unreliable (documented inline with the root cause). | This is the most complex workflow by far; it cross-references a private tap repo and has a non-obvious `workflow_run` trigger creating an implicit sequencing dependency on the "CI" workflow's success. No documentation in README.md, CONTRIBUTING.md, or TODO.md describes the preview channel distribution mechanism. |
@@ -772,13 +772,15 @@ Extends `config:recommended` + `docker:pinDigests`. Removes per-PR and concurren
 *Testing approach A — `insta` snapshot tests for TUI rendering:*
 ratatui provides `TestBackend` which captures rendered cells to a `Buffer`. `insta` can snapshot the buffer as a string (one line per terminal row). This catches accidental layout regressions — e.g., when a column header shifts after a refactor. The approach is documented at ratatui.rs/recipes/testing/snapshots/ and is the community-endorsed path. Cost: add `insta` to `[dev-dependencies]`; write one snapshot test per major render function.
 
-**Concrete first 3 snapshot tests** (verified by reading the render modules):
+**Concrete first 3 snapshot tests** (function names grep-confirmed in current codebase):
 
-1. **`render_sentinel_description_pane`** (`src/console/manager/render/list.rs:306`) — takes only `&mut Frame` and `Rect`; zero state input; renders the static "+ New workspace" description panel. Simplest possible snapshot test — no fixture construction. Terminal size 80×10 suffices. Approx 10 lines of test code including the `TestBackend` setup.
+All three are private functions. Rust inline tests access private functions via `use super::*` inside `#[cfg(test)] mod tests { ... }`. This pattern is already in use in `list.rs` — the existing test at `list.rs:720` calls `render_mounts_subpanel` directly, confirming no visibility change is needed.
 
-2. **`render_tab_strip`** (`src/console/manager/render/editor.rs:180`) — takes `&mut Frame`, `Rect`, and `EditorTab` enum value. Enumerate all 4 tab variants (`General`, `Mounts`, `Agents`, `Secrets`/stub) as separate snapshot assertions. Terminal size 80×3 (just the strip). 4 snapshots, ~20 lines of test code.
+1. **`render_sentinel_description_pane`** (`src/console/manager/render/list.rs:306`) — `fn render_sentinel_description_pane(frame: &mut Frame, area: Rect)`. Takes only frame and area; zero state input; renders the static "+ New workspace" description panel. Simplest possible snapshot test — no fixture construction. Terminal size 80×10 suffices. Approx 10 lines of test code including the `TestBackend` setup.
 
-3. **`render_mounts_subpanel`** (`src/console/manager/render/list.rs:408`) — takes `&mut Frame`, `Rect`, `&[MountConfig]`. Three cases: empty slice, 1 mount, 3 mounts. `MountConfig` can be constructed with `MountConfig { src: "/home/op/project".into(), dst: "/workspace/project".into(), read_only: false }`. Terminal size 60×20. ~30 lines of test code covering 3 snapshots.
+2. **`render_tab_strip`** (`src/console/manager/render/editor.rs:180`) — `fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab)`. Takes frame, area, and `EditorTab` enum value. Enumerate all 4 tab variants (`General`, `Mounts`, `Agents`, `Secrets`/stub) as separate snapshot assertions. Terminal size 80×3 (just the strip). 4 snapshots, ~20 lines of test code.
+
+3. **`render_mounts_subpanel`** (`src/console/manager/render/list.rs:408`) — `fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::workspace::MountConfig])`. Three cases: empty slice, 1 mount, 3 mounts. `MountConfig` can be constructed with `MountConfig { src: "/home/op/project".into(), dst: "/workspace/project".into(), read_only: false }`. Terminal size 60×20. ~30 lines of test code covering 3 snapshots.
 
 These 3 tests together exercise 2 different render modules, cover both zero-state and data-driven cases, and catch any future column-width, padding, or color-palette regressions in the most-visited code paths.
 
@@ -835,7 +837,7 @@ Applicable to parsing functions (`src/selector.rs`, `src/workspace/mounts.rs`, `
 
 **The 2026-modern landscape:**
 
-*Option A — Add `rust-toolchain.toml`:* One file, read by both `rustup` and `mise`. `mise.toml` would then just reference `rust = "file:rust-toolchain.toml"` (or simply be removed for Rust). CI `dtolnay/rust-toolchain` action reads `rust-toolchain.toml` automatically.
+*Option A — Add `rust-toolchain.toml`:* One file, read by `rustup` directly and respected by `mise`. Useful for: (1) local developers not using mise who rely on raw `rustup`; (2) IDE toolchain selectors (rust-analyzer picks this up automatically); (3) GitHub Codespaces devcontainer prebuilds. **Important correction (verified by reading dtolnay/rust-toolchain README):** the `dtolnay/rust-toolchain` GitHub Action does NOT read `rust-toolchain.toml`. Its toolchain version is encoded in the action's @rev SHA — `@e081816240890017053eacbb1bdf337761dc5582` is hardcoded to 1.95.0. If `rust-toolchain.toml` exists and specifies the same version, `rustup` will use it for `cargo` invocations in CI and they'll agree; but the dtolnay action installs its version independently. Three sources (dtolnay SHA, `mise.toml`, `rust-toolchain.toml`) must be kept in sync manually — there is no auto-sync mechanism.
 
 *Option B — Reconcile MSRV with actual feature use:* Run `cargo +1.94.0 check` in CI as a separate job. If it fails, either lower the MSRV requirement or raise it to match actual feature use.
 
@@ -1198,7 +1200,7 @@ Install cc-sdd (`gotalab/cc-sdd`) to get spec/plan/execute `.claude/commands/` f
 
 **Step 3 — Toolchain and MSRV clarity (§7.7)**
 
-Add `rust-toolchain.toml` (1.95.0). Update `mise.toml` to reference it. Add MSRV CI job (`cargo +1.94.0 check`). Reconcile the 1.94 vs 1.95 discrepancy in comments.
+Add `rust-toolchain.toml` (1.95.0) for local `rustup` users and IDE toolchain selection (rust-analyzer reads this file automatically). Update `mise.toml` comment to cross-reference it. Add MSRV CI job (`cargo +1.94.0 check`). **Note:** `dtolnay/rust-toolchain` does NOT read `rust-toolchain.toml` — its version is encoded in the action SHA. The dtolnay SHA pins in `ci.yml` and `release.yml` must be manually updated to match any version change in `rust-toolchain.toml`.
 
 *What could go wrong:* `cargo +1.94.0 check` reveals features used above 1.94. If so, update `rust-version` in `Cargo.toml` to the correct floor.
 
