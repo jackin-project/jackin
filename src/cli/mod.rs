@@ -30,7 +30,6 @@ pub(super) const BANNER: &str = concat!(
 );
 
 pub mod agent;
-pub mod cd;
 pub mod cleanup;
 pub mod config;
 pub mod dispatch;
@@ -79,8 +78,6 @@ pub enum Command {
     Exile,
     Purge(PurgeArgs),
     Console(ConsoleArgs),
-    /// Open a child shell in an isolated worktree path.
-    Cd(crate::cli::cd::CdArgs),
     /// Open the operator console (deprecated — use `jackin` or `jackin console`)
     #[command(hide = true)]
     Launch(LaunchArgs),

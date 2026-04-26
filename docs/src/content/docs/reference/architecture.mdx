@@ -122,7 +122,7 @@ Materialized isolated mounts are recorded at:
 <data_dir>/jackin-<container>/.jackin/isolation.json
 ```
 
-The file lives next to the existing `.claude/` and `.jackin/` per-container state and is the source of truth for `purge` and `jackin cd` after the operator has changed (or removed) the workspace config. Each record contains at least:
+The file lives next to the existing `.claude/` and `.jackin/` per-container state and is the source of truth for `purge` after the operator has changed (or removed) the workspace config. Each record contains at least:
 
 | Field | Purpose |
 |---|---|

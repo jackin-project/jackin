@@ -158,7 +158,7 @@ fn finalize_clean_exit(
 
     if !is_interactive {
         eprintln!(
-            "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: see cleanup status\n         run `jackin hardline {short}` to return, `jackin cd {short}` to inspect, or `jackin purge {short}` to discard",
+            "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: see cleanup status\n         run `jackin hardline {short}` to return, inspect the path above directly, or `jackin purge {short}` to discard",
             wt = rec.worktree_path,
             short = container_name.trim_start_matches("jackin-"),
         );

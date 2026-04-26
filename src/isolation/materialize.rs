@@ -515,14 +515,12 @@ fn materialize_one(
                 configured = mount.src,
             );
             anyhow::bail!(
-                "source drift on container `{}`, mount `{}`: recorded src `{}` differs from configured src `{}`; preserved worktree at `{}`. Restore the previous src, run `jackin cd {} {}` to inspect, or `jackin purge {}` to discard.",
+                "source drift on container `{}`, mount `{}`: recorded src `{}` differs from configured src `{}`; preserved worktree at `{}`. Restore the previous src, inspect the worktree at the path above, or `jackin purge {}` to discard.",
                 container_name,
                 mount.dst,
                 record.original_src,
                 mount.src,
                 record.worktree_path,
-                container_name,
-                mount.dst,
                 container_name,
             );
         }
