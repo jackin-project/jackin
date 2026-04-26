@@ -1357,3 +1357,50 @@ The loop prompt was also updated to embed these directives explicitly.
 1. **§3 documentation hierarchy — no CI gate proposed for PROJECT_STRUCTURE.md freshness** — PROJECT_STRUCTURE.md is confirmed stale (missing PR #171 additions) but §3 has no proposal for preventing future staleness (e.g., a CI check that fails if new `.rs` files have no corresponding entry, or a CONTRIBUTING.md rule requiring PROJECT_STRUCTURE.md updates with module changes).
 2. **§7 modernization — alternative thesis needs external Rust TUI project comparison** — the §4 "documentation-first vs structure-first" debate would be strengthened by examining how other large Rust TUI projects (`gitui`, `bottom`, `zellij`) structure their code. Do they split files, or use large well-documented files? This is external research that could validate or contradict the alternative thesis.
 3. **§10 execution plan — Phase 1 "documentation sprint" is underspecified** — §10 says "Step 5 — write //! module docs" but the new §4 Phase 1 includes not just //! docs but also behavioral specs for 3 subsystems. §10 Step 2 (AI-agent workflow files) is where behavioral spec authoring should fit, but the plan doesn't mention creating `docs/internal/specs/` files.
+
+---
+
+## Iteration 33 — 2026-04-26
+
+### Critical challenge this iteration
+The roadmap itself has a readability problem: at 1865 lines, it violates its own Rule 5 (no god files >500L). A 1865-line document about readability is a meta-irony. The solution is not to split the document but to add an executive summary so readers can navigate without reading everything.
+
+### What was improved
+
+1. **Added executive summary to §0** — the roadmap had no entry point summary. A reader opening it cold faced 1865 lines with no orientation. Added a ~300-word executive summary with:
+   - The core problem statement (AI-generated code, no behavioral specs, 59% of files lack //! docs)
+   - The recommended 3-phase path (Phase 1: docs sprint, Phase 2: 4 targeted splits, Phase 3: workspace)
+   - The key counter-argument (documentation-first may be sufficient without splits)
+   - A navigation table: "Where to find what" pointing to §2, §4, §7, §8, §10 by question
+
+2. **Fixed stale reference in §0 item 2**: "1569-line monolith" → "2130-line monolith" — `operator_env.rs` is 2130L (verified repeatedly since iteration 15), not the original 1569L. This stale number was in the very first section a reader sees.
+
+3. **Challenged §0 item 3 — "Separation of types from behaviour" is NOT universal Rust idiom**
+   The original framing presented struct/impl separation as a general principle. This is incorrect: standard Rust co-locates struct + impl in the same file. The impl-extension pattern (multiple `impl` blocks across files) is justified only for very large files. Added the qualifier "for very large files only" and "(selective)" to the heading, with an explicit note that standard Rust does NOT separate these. The threshold: production LOC >800L (same as Phase 2 split threshold).
+   
+   **Why this matters:** The §4 module-shape rules propose struct/impl separation across the board, which could lead an implementer to split small files unnecessarily. The clarification prevents over-application of the pattern.
+
+### What was read (fresh scan)
+- `wc -l READABILITY_AND_MODERNIZATION.md` — 1865 lines (confirmed roadmap size)
+- `find src -name "*.rs" | wc -l` — 94 files, stable
+- Top hot-spots: launch.rs 2368, input/editor.rs 2349, operator_env.rs 2130 — stable since iteration 30
+- §0, §6, §9 read in full for quality assessment
+- §9: well-populated (R1-R5, OQ1-OQ4, out-of-scope list) — no changes needed
+- §6: well-grounded with specific workflow analysis — no changes needed
+
+### What changed in the roadmap
+- §0: Added "Executive Summary" subsection (~300 words, navigation table)
+- §0 item 2: "1569-line monolith" → "2130-line monolith"
+- §0 item 3: Added "(selective)" qualifier, clarification that standard Rust does NOT separate struct from impl; added 800L production threshold
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| Executive summary accuracy | High | All figures cross-referenced against verified data from earlier iterations |
+| §0 item 3 Rust idiom critique | High | Standard Rust idiom (struct + impl co-located) is well-established; impl-extension pattern is documented in Rust reference as advanced pattern |
+| "1569" → "2130" correction | High | 2130L verified multiple times |
+
+### Weakest sections for iteration 34
+1. **§10 execution plan — Phase 1 behavioral spec authoring not integrated** — §10 Step 2 (AI-agent workflow files) should explicitly include "create docs/internal/specs/ with behavioral specs for op_picker/, config/editor, runtime/launch" but currently it doesn't. The executive summary says Phase 1 includes this; §10 should match.
+2. **§3 documentation hierarchy — PROJECT_STRUCTURE.md staleness CI gate** — no CI check prevents PROJECT_STRUCTURE.md from drifting again. A `check:repo-structure` script (similar to existing `check:repo-links` in docs/) would catch new `.rs` files not listed in PROJECT_STRUCTURE.md.
+3. **§7 modernization — no comparison of large Rust TUI projects** — the documentation-first vs structure-first debate in §4 would be strengthened by examining how projects like `gitui` or `bottom` actually structure their TUI code. This requires external research.

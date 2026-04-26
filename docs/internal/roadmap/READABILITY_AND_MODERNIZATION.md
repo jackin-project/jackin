@@ -7,8 +7,8 @@
 This roadmap has one primary goal: **make the `jackin` Rust codebase verifiable, auditable, and easy to maintain** — especially given that significant portions are AI-generated. When code is produced by an AI agent, the reader cannot rely on "I recognize this author's style" as a trust signal. Instead, trust comes from:
 
 1. **Module contracts** — each file has a `//!` doc that states exactly what it does and what invariants it maintains. A reviewer can check whether the code matches its stated contract.
-2. **Localised concerns** — each file has one dominant responsibility. A bug in env resolution is in `operator_env/layers.rs`, not buried in a 1569-line monolith.
-3. **Separation of types from behaviour** — struct definitions separate from `impl` blocks, so the shape of the data is auditable without reading the logic.
+2. **Localised concerns** — each file has one dominant responsibility. A bug in env resolution is in `operator_env/layers.rs`, not buried in a 2130-line monolith.
+3. **Separation of types from behaviour (selective)** — for very large files only: struct definitions in a `types.rs` sub-file, behaviour in domain sub-files, so the shape of the data is auditable without reading the logic. *Note: this is NOT standard Rust idiom for small/medium files. Standard Rust co-locates struct + impl in the same file. The impl-extension pattern (multiple `impl` blocks across files) is justified only when a file's production LOC exceeds ~800L.*
 4. **Consistent naming** — names that match the domain language, so anomalies stand out.
 
 Everything in this document serves that goal. Recommendations are inputs to a future execution effort — no code has been changed by this analysis.
@@ -20,6 +20,27 @@ Research sources: [`_research_notes.md`](./_research_notes.md).
 - Application code: Rust only.
 - Docs site: TypeScript strict mode + Astro Starlight only. No migration to other frameworks.
 - Everything else (crate selection, tooling, CI structure) is open and is researched and recommended in this document.
+
+### Executive Summary
+
+*This document is 1800+ lines. Read this summary first; navigate to sections by question.*
+
+**The core problem:** Significant portions of `jackin` are AI-generated (PR #171 added ~2,600L of new code across 10+ files). AI-generated code can contain subtle invariant violations that look correct on inspection. The current codebase has no behavioral specs, no `//!` module contracts on 59% of files, and no systematic way to verify "did the AI implement this correctly?"
+
+**The recommended path (§4 Phase 1 → Phase 2 → Phase 3):**
+
+- **Phase 1 — Documentation sprint** (2–3 PRs, zero structural change, immediately applicable): Write `//!` module contracts for the 10 highest-priority files (§10 Step 5 //! queue). Author behavioral specs (`docs/internal/specs/`) for `op_picker/`, `config/editor`, and `runtime/launch` — the three most AI-generated, hardest-to-verify subsystems. Each spec follows the `INV-N` format with grep-executable "Verify by:" commands (§8.1 template).
+- **Phase 2 — Targeted structural splits** (4 PRs, moderate risk): Split only the 4 files with >800L production code: `input/editor.rs` (~1141L), `runtime/launch.rs` (~1077L), `app/mod.rs` (~957L), `operator_env.rs` (~880L). The other 9 files above 500L total but below 800L production are deferred.
+- **Phase 3 — Workspace split** only if LOC exceeds 150K or a second binary needs its own semver identity. Current: 43,587L — well short.
+
+**Key counter-argument (§4 alternative thesis):** File splitting is not the only path. Documentation-first verification (//! contracts + specs) may be sufficient for most files — AI context windows (200K+ tokens) can hold entire codebases, so file size is not the constraint. Splitting adds PR risk (circular imports, 30+ use-path updates per split). Phase 1 alone may deliver 80% of the verifiability gain at 20% of the risk.
+
+**Where to find what:**
+- `§2` — Where does feature X live in the codebase today? (25 concept locations)
+- `§4` — What structural changes are proposed? (module rules, split proposals, alternative thesis)
+- `§7` — Which modernization candidates are worth adopting in 2026?
+- `§8` — How to do spec-driven development? (tool comparison + spec template)
+- `§10` — In what order should changes be executed?
 
 ---
 
