@@ -60,12 +60,11 @@ impl SourcePickerState {
             // pressing it on a disabled button).
             KeyCode::Char('p' | 'P') => ModalOutcome::Commit(SourceChoice::Plain),
             KeyCode::Char('o' | 'O') if self.op_available => ModalOutcome::Commit(SourceChoice::Op),
-            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l' | 'L') => {
-                self.cycle_forward();
-                ModalOutcome::Continue
-            }
-            KeyCode::Left | KeyCode::Char('h' | 'H') => {
-                self.cycle_backward();
+            KeyCode::Tab
+            | KeyCode::Right
+            | KeyCode::Left
+            | KeyCode::Char('l' | 'L' | 'h' | 'H') => {
+                self.cycle();
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
@@ -82,19 +81,11 @@ impl SourcePickerState {
         }
     }
 
-    const fn cycle_forward(&mut self) {
-        // With Op disabled, cycling is a no-op — only Plain is
-        // selectable, so focus stays put.
-        if !self.op_available {
-            return;
-        }
-        self.focused = match self.focused {
-            SourceChoice::Plain => SourceChoice::Op,
-            SourceChoice::Op => SourceChoice::Plain,
-        };
-    }
-
-    const fn cycle_backward(&mut self) {
+    const fn cycle(&mut self) {
+        // Symmetric two-button modal: forward and backward produce the
+        // same result, so navigation collapses to one method (matching
+        // ScopePickerState's pattern). With Op disabled, cycling is a
+        // no-op — only Plain is selectable, so focus stays put.
         if !self.op_available {
             return;
         }

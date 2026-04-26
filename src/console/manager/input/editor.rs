@@ -245,13 +245,13 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Char('d' | 'D')
             if editor.active_tab == EditorTab::Secrets
-                && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
             open_secrets_delete_confirm(editor, config);
         }
         KeyCode::Char('a' | 'A')
             if editor.active_tab == EditorTab::Secrets
-                && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
             open_secrets_add_modal(editor, config);
         }
