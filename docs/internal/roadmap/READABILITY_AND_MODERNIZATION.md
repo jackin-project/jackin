@@ -3,7 +3,7 @@
 ## §0 — Meta
 
 **Last updated:** 2026-04-26
-**Iteration:** 5
+**Iteration:** 6
 
 This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` treated as already merged per operator instruction). Recommendations are inputs to a future, separate execution effort — no code has been touched.
 
@@ -214,34 +214,34 @@ jackin/
 
 ### Hot-spot list
 
-Files with >500 lines (verified counts):
+Files with >500 lines (verified counts). **Production LOC** is the critical metric — files large due to test suites are less urgent to split than files with large production logic. Test section start confirmed by `grep -n "#\[cfg(test)\]"` for each file (iteration 6).
 
-| File | Lines | Suppressions | Primary concern |
-|---|---|---|---|
-| `src/runtime/launch.rs` | 2368 | 3× `too_many_lines` | Container bootstrap pipeline |
-| `src/operator_env.rs` | 1569 | 0 | Env resolution + op CLI + diagnostics |
-| `src/config/editor.rs` | 1467 | 0 | TOML editing engine |
-| `src/console/manager/input/save.rs` | 1418 | 2× `too_many_lines` | ConfirmSave modal |
-| `src/console/manager/input/editor.rs` | 1304 | 3× `too_many_lines` | Editor tab key bindings |
-| `src/console/manager/render/list.rs` | 1122 | 0 | List view rendering |
-| `src/manifest/validate.rs` | 962 | 0 | Manifest validation |
-| `src/app/mod.rs` | 951 | 1× `too_many_lines` | Command dispatch |
-| `src/config/mod.rs` | 867 | 0 | Config types |
-| `src/console/manager/state.rs` | 865 | 0 | Manager + editor state |
-| `src/app/context.rs` | 800 | 0 | Context resolution |
-| `src/instance/auth.rs` | 796 | 0 | Auth-forward modes |
-| `src/console/manager/render/editor.rs` | 782 | 0 | Editor tab rendering |
-| `src/workspace/planner.rs` | 718 | 0 | Workspace mutation planning |
-| `src/console/manager/input/mouse.rs` | 689 | 0 | Mouse events |
-| `src/console/manager/input/mouse.rs` | 689 | 0 | Mouse events |
-| `src/console/widgets/file_browser/git_prompt.rs` | 576 | 0 | Git URL input |
-| `src/tui/animation.rs` | 582 | 1× `too_many_lines` | Animations |
-| `src/runtime/cleanup.rs` | 587 | 0 | Cleanup logic |
-| `src/runtime/repo_cache.rs` | 559 | 0 | Repo cache |
-| `src/env_resolver.rs` | 560 | 0 | Env resolution |
-| `src/console/manager/input/prelude.rs` | 533 | 1× `too_many_lines` | Create-wizard input |
-| `src/manifest/mod.rs` | 522 | 0 | Manifest schema |
-| `src/workspace/resolve.rs` | 503 | 0 | Workspace resolution |
+| File | Total | Prod LOC | Test LOC | Suppressions | Priority |
+|---|---|---|---|---|---|
+| `src/runtime/launch.rs` | 2368 | **1085** | 1282 | 3× `too_many_lines` | **Highest** — production code is genuinely large |
+| `src/app/mod.rs` | 951 | **928** | 22 | 1× `too_many_lines` | **High** — nearly all production; 928L dispatch function |
+| `src/operator_env.rs` | 1569 | **810** | 758 | 0 | **High** — production and tests roughly equal |
+| `src/console/manager/state.rs` | 865 | **577** | 287 | 0 | **Medium** — Modal enum + EditorState logic |
+| `src/console/manager/input/save.rs` | 1418 | **567** | 850 | 2× `too_many_lines` | **Medium** — ConfirmSave pipeline |
+| `src/console/manager/input/editor.rs` | 1304 | **547** | 756 | 3× `too_many_lines` | **Medium** — editor key bindings |
+| `src/app/context.rs` | 800 | **347** | 452 | 0 | Low — tests dominate |
+| `src/console/manager/render/editor.rs` | 782 | ~782 (no test section found) | ~0 | 0 | **Medium** — all production (render functions, no tests) |
+| `src/workspace/planner.rs` | 718 | **235** | 482 | 0 | Low — tests dominate |
+| `src/console/manager/input/mouse.rs` | 689 | **206** | 482 | 0 | Low — tests dominate |
+| `src/console/manager/render/list.rs` | 1122 | **404** | 718 | 0 | Low-medium — multiple interspersed test blocks |
+| `src/config/editor.rs` | 1467 | **503** | 963 | 0 | Medium — production reasonable; tests dominate |
+| `src/tui/animation.rs` | 582 | ~582 (no test section found) | ~0 | 1× `too_many_lines` | Medium — all production (animation logic) |
+| `src/runtime/cleanup.rs` | 587 | **220** | 366 | 0 | Low |
+| `src/runtime/repo_cache.rs` | 559 | **213** | 345 | 0 | Low |
+| `src/env_resolver.rs` | 560 | **137** | 422 | 0 | Low — tests dominate; production is small |
+| `src/console/manager/input/prelude.rs` | 533 | **284** | 248 | 1× `too_many_lines` | Low-medium |
+| `src/manifest/mod.rs` | 522 | **86** | 435 | 0 | Low — tiny production, well-tested |
+| `src/workspace/resolve.rs` | 503 | **170** | 332 | 0 | Low |
+| `src/manifest/validate.rs` | 962 | **145** | 816 | 0 | **Low** — 145L production, 816L tests; exemplary test discipline |
+| `src/config/mod.rs` | 867 | **134** | 732 | 0 | **Low** — 134L production; tests are comprehensive |
+| `src/instance/auth.rs` | 796 | **210** | 585 | 0 | **Low** — resolved OQ5; not a god file |
+
+**Key insight from iteration 6 analysis:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `runtime/launch.rs` (1085L), `app/mod.rs` (928L), and `operator_env.rs` (810L).
 
 Total `#[allow(clippy::too_many_lines)]` suppressions: **13** across 8 files.
 
@@ -293,7 +293,7 @@ Post-refactor target: **zero** entries rated `requires-grep` or `requires-tribal
 | 11 | **Release automation flow** | `release.toml` (cargo-release config) + `.github/workflows/release.yml` + `CHANGELOG.md` next-header convention | `requires-grep` for first-timers | `docs/internal/CONTRIBUTING.md` (§ Cutting a release) | `discoverable-in-2-hops` |
 | 12 | **Candidate-config validation-before-rename invariant** | `src/config/editor.rs` — commit `f4487fa` in PR #171 adds pre-rename validation; the invariant is: validate the candidate WorkspaceConfig before applying a name change, so rename + invalid-config doesn't partially commit | `requires-tribal-knowledge` — only visible from PR #171 commit message | Add a named test (`fn rename_validates_candidate_before_applying`) with a doc comment explaining the invariant; once PR #171 merges this is at `src/config/editor.rs` | `discoverable-in-2-hops` |
 | 13 | **`op://` reference parsing (3-segment vs 4-segment)** | `src/operator_env.rs` — `dispatch_value` handles `op://` prefix; PR #171 commit `05c1866` adds 4-segment `vault/item/section/field` parsing in `OpCli::item_get` | `requires-grep` | The 4-segment rule belongs in a `//!` comment at the top of `operator_env.rs` and/or in `docs/src/content/docs/developing/agent-manifest.mdx` | `discoverable-in-2-hops` |
-| 14 | **Session-scoped op metadata cache** | Added in PR #171 — `src/console/widgets/op_picker/mod.rs` or related state; exact location pending post-merge reading (iteration 1 guess: `OpPickerState` holds a cache field populated on first `account_list` call) | `requires-tribal-knowledge` (pre-merge) | After merge: document in PROJECT_STRUCTURE.md §console/widgets and in `_research_notes.md` | `discoverable-in-2-hops` |
+| 14 | **Session-scoped op metadata cache** | PR #171 branch `src/console/op_cache.rs` (252L, verified iteration 6) — standalone module `OpCache` with `//!` module doc stating "Session-scoped cache for `op` structural-metadata calls. Stores only structural metadata (UUIDs, names, labels, types). Field values are never read." Keyed by `(account, vault_id, item_id)` tuples; `OpPickerState` holds a reference to the cache; the `OpCache` is separate from `OpPickerState` to allow sharing across picker reopens within a session. Invalidation methods: `invalidate_accounts()`, `invalidate_vaults()`. A `DEFAULT_ACCOUNT_KEY = ""` sentinel avoids `Option<String>` in BTreeMap keys. | `requires-tribal-knowledge` (pre-merge) — `op_cache.rs` is a new module not yet in PROJECT_STRUCTURE.md | After merge: add `src/console/op_cache.rs` entry to PROJECT_STRUCTURE.md with a one-line description of the trust invariant (metadata only, never field values) | `discoverable-in-2-hops` |
 | 15 | **Caps-lock SHIFT-modifier tolerance pattern** | `src/console/manager/input/editor.rs:1034` ("Operators often hit `d` without holding shift; the binding...") and `:1177` (same for `r`); `src/console/mod.rs:75` comment about Shift/Option for text selection bypass | `requires-grep` — scattered across three files | `RULES.md § TUI Keybindings` (already documents modifier-free approach) + inline comments are sufficient; no structural change needed | `discoverable-in-2-hops` once RULES.md updated |
 | 16 | **`Q` exit-confirmation gating** | Two layers: (1) main branch `src/console/manager/input/list.rs:26` — bare `q\|Q` exits from the list view; (2) PR #171 `src/console/mod.rs:111–130` adds `is_on_main_screen` and `consumes_letter_input` helper functions that gate whether `Q` exits silently (when on the main list with no modal) or opens a confirmation dialog (`state.quit_confirm`). The PR also adds a `quit_confirm_area()` layout helper at line ~92. The design intent: `Q` on the main screen is a "safe" exit because no unsaved work is possible; `Q` anywhere else (editor, picker) opens a confirm modal because unsaved changes may exist. | `requires-grep` — the two-layer design (main branch list.rs + PR #171 console/mod.rs) is not obvious from reading either file alone | Add `//!` to `console/mod.rs` explaining the `Q` routing contract; reference `is_on_main_screen` and `consumes_letter_input` | `discoverable-in-2-hops` |
 | 17 | **Workspace list refresh after manager save (b3c6998)** | PR #171 fix commit — after save, the console list state is rebuilt from config so the launch routing sees the updated workspace | `requires-tribal-knowledge` pre-merge | After merge: the fix is in the save path in `console/manager/input/save.rs`; a doc comment on the save function explaining "list state is rebuilt from config post-save" is sufficient | `discoverable-in-2-hops` |
@@ -946,6 +946,28 @@ This is required by the stack constraint. `docs/AGENTS.md` already names this as
 
 ---
 
+### 7.14 Structured Logging / Debug Observability
+
+**What it is:** A library and convention for emitting structured diagnostic output — either operator-facing status messages or developer-facing debug traces — in a consistent, filterable format.
+
+**What `jackin` does today:** No logging framework. Operator-facing output uses `tui::step_shimmer`, `tui::step_quiet`, `tui::step_fail`, `tui::auth_mode_notice` (in `src/tui/output.rs`) and direct `eprintln!()` calls. Developer-facing debug output is gated by `--debug` which passes raw Docker command output via `runner.debug = true` (`src/docker.rs`). There is no `RUST_LOG`-based filtering, no structured fields, and no span-style tracing. Source: `Cargo.toml` has neither `log` nor `tracing` in dependencies.
+
+**The 2026-modern landscape:**
+
+*Option A — `log` crate + `env_logger` or `simplelog`:* The `log` crate is the de-facto "lowest common denominator" for Rust logging, providing `debug!()`, `info!()`, `warn!()`, `error!()` macros. `env_logger` adds `RUST_LOG` filtering with zero configuration. Cost: 2 dependencies (~1 day), no behavior change (existing `eprintln!` can migrate gradually). The `log` ecosystem is stable and mature. For `jackin`'s fully-synchronous architecture, this is the appropriate tier.
+
+*Option B — `tracing` crate + `tracing-subscriber`:* Structured, span-based observability built for async Rust. Supports fields, spans, and structured event data. Substantially more powerful than `log` but also more complex. The `#[instrument]` attribute macro auto-captures function arguments as structured log fields. For a CLI that does no async I/O and shells out to Docker synchronously, `tracing`'s span model adds overhead without proportional benefit. Source: research at `docs.rs/tracing` and `tokio.rs/tokio/topics/tracing` (see `_research_notes.md`).
+
+*Option C — Keep current (no framework, explicit eprintln!):* The current approach is intentional for operator-facing messages — they are styled TUI output, not log records. Developer-facing debug traces via `--debug` are also intentional: raw Docker commands are exactly what a debugging operator needs to see.
+
+**Cost (A):** Low — `cargo add log env_logger --dev` for `env_logger` (dev only); add `env_logger::init()` in `main.rs` behind an `#[cfg(debug_assertions)]` gate or a `RUST_LOG` check. Existing `eprintln!` calls can stay; new internal trace points use `log::debug!()`.
+
+**Gain (A):** A `RUST_LOG=debug jackin load` experience for jackin developers debugging the bootstrap pipeline without needing `--debug` (which also exposes Docker command strings to the operator, not just to developers). Currently there is no developer-only debug path.
+
+**Recommendation:** `defer`. The operator-facing TUI output is intentionally separate from logging and should stay that way (`tui::step_*` functions are fine). Internal developer debug traces would benefit from `log` + `env_logger` but this is a developer convenience, not a readability or navigability problem. Flip condition: if jackin contributors start instrumenting code with `eprintln!` for debugging and forgetting to remove them, introducing `log::debug!()` + `env_logger` gives a proper filter gate.
+
+---
+
 ## §8 — AI-Agent Development Workflow
 
 ### §8.1 — Intent-Driven and Spec-Driven Development for `jackin`
@@ -978,12 +1000,11 @@ The approach works. The gap is: (a) the artifacts live under `docs/superpowers/`
 | `/loop` compatible | ✓ | ✓ (designed for it) | ✓ |
 | Lifecycle enforcement | No | Yes (phase gates) | Optional |
 
-**Recommendation:** Adopt option C (hand-rolled) with option B's phase-gate concept. Specifically:
-- Specs live at `docs/internal/specs/YYYY-MM-DD-<topic>-design.md` with front-matter `status: draft | active | merged`.
-- Plans live at `docs/internal/specs/YYYY-MM-DD-<topic>-plan.md`.
-- A `docs/internal/specs/README.md` documents the lifecycle and template format.
-- The operator's existing docs/superpowers/specs/ files are migrated here.
-- `.claude/commands/spec.md` (a 30-line command file) encodes the brainstorm → spec → plan → execute gate for Claude Code.
+**Recommendation (updated iteration 6 — operator prefers existing tools over hand-rolled):** Adopt option B (cc-sdd) as the primary spec/intent tool. It provides ready-made `.claude/commands/spec.md`, `plan.md`, and `execute.md` — no custom file authoring needed. The operator installs it and the phase gates (spec approved before plan; plan before execute) work out of the box for Claude Code `/loop` sessions.
+
+Migration of existing artifacts: the 6 specs in `docs/superpowers/specs/` and 5 plans in `docs/superpowers/plans/` migrate to `docs/internal/specs/` (the cc-sdd convention), preserving their content with a `status: merged` front-matter entry since the features they describe have already shipped.
+
+The cc-sdd commands replace `.claude/commands/` file authoring entirely — no need to write custom brainstorm, plan, or execute flows.
 
 ---
 
@@ -1012,58 +1033,23 @@ These files are committed to the repo, reviewed by the operator when changed, an
 *Category 4 — claude-flow / agent-OS style orchestrators:*
 Heavy frameworks for multi-agent parallelism. Overkill for a single-maintainer project. `claude-flow` is more relevant for teams running many parallel agent instances.
 
-**Recommendation: Category 3 (hand-rolled `docs/internal/agent-skills/`).**
+**Recommendation (updated iteration 6 — operator prefers existing tools):** Adopt cc-sdd (option B from §8.1) as the primary replacement. cc-sdd already provides the spec/plan/execute discipline that superpowers' `brainstorming` + `writing-plans` + `executing-plans` skills deliver — without authoring custom skill files.
 
-**Superpowers feature → recommended replacement mapping:**
+For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle, debugging protocol, review gates), the revised approach is:
 
-| Superpowers feature | Recommended equivalent | What's lost | What's gained |
+| Superpowers feature | Replacement (existing tool / built-in) | What's lost | What's gained |
 |---|---|---|---|
-| `brainstorming` skill | `docs/internal/agent-skills/brainstorm.md` + `.claude/commands/brainstorm.md` | Automated task-list creation | Full operator control over the workflow; no framework version drift |
-| `writing-plans` skill | `docs/internal/agent-skills/spec.md` (lifecycle) + `.claude/commands/plan.md` | Plan-format validation | Specs committed in semantically correct location (`docs/internal/specs/`) |
-| `test-driven-development` skill | `docs/internal/agent-skills/tdd.md` | TDD cycle enforcement | Transparent, editable TDD rules visible to any agent |
-| `systematic-debugging` skill | `docs/internal/agent-skills/debug.md` | — | Same as TDD above |
-| `requesting-code-review` skill | `docs/internal/agent-skills/review.md` + `docs/src/content/docs/reference/roadmap/open-review-findings.mdx` | Automated agent dispatch for review | Review findings remain in the repo's source-of-truth location |
-| `verification-before-completion` | Checklist section in `docs/internal/agent-skills/review.md` | — | Integrated into review workflow |
-| `using-superpowers` meta-skill | `AGENTS.md` § Agent workflow section pointing to `docs/internal/agent-skills/` | Discovery via plugin | Root-level AGENTS.md is read by every agent session |
-| Plugin version management | None needed | Automatic updates | Files evolve via normal PR review |
+| `brainstorming` + `writing-plans` skills | **cc-sdd** (gotalab/cc-sdd) — ships `.claude/commands/spec.md` and `plan.md` ready-made | Automated task-list UI | Phase-gate enforcement; no file authoring; `/loop`-compatible |
+| `executing-plans` skill | **cc-sdd** `execute.md` command | — | Consistent with spec/plan phase gates |
+| `test-driven-development` skill | Claude Code's built-in `test` command + TESTING.md doc; no framework needed for a 1046-test nextest suite | Explicit TDD loop enforcement | Zero new tooling; TESTING.md is already read by agents |
+| `systematic-debugging` skill | None needed unless debugging regressions become frequent. First try: `cargo nextest run -E 'test(failing_test)'` is discoverable from TESTING.md | Structured debugging script | Simpler; TESTING.md stays the canonical debugging reference |
+| `requesting-code-review` + `verification-before-completion` | `docs/src/content/docs/reference/roadmap/open-review-findings.mdx` (already the canonical open-finding tracker per AGENTS.md) | Automated review agent dispatch | Review findings are in the public-facing docs where they belong |
+| `using-superpowers` meta-skill | AGENTS.md § Agent workflow points to cc-sdd installation | Plugin discovery | AGENTS.md is always loaded; no plugin version drift |
+| Plugin version management | cc-sdd is a repo-level tool installed via `bun` or copied; version tracked in `package.json` or as a git submodule | Automatic updates | Operator controls versions explicitly |
 
-**Files and contracts:**
-- `docs/internal/agent-skills/README.md` — index of available skills, when to invoke each.
-- Each skill file follows a standard 6-field format (see template below).
-- An agent invokes a skill by reading the file: `@docs/internal/agent-skills/brainstorm.md` or via a `.claude/commands/` shortcut (optional).
-- New skills are proposed in a PR, reviewed by the operator. Operator approval = the skill is "blessed."
-- `.claude/commands/*.md` can be thin wrappers that reference `docs/internal/agent-skills/*.md`.
+**What does NOT need to be authored from scratch:** brainstorming.md, writing-plans.md, executing-plans.md, tdd.md, debug.md, review.md — cc-sdd provides the spec/plan/execute trio; the remaining discipline (TDD, debugging, review) is covered by existing project docs. No `docs/internal/agent-skills/` directory is needed.
 
-**Concrete example: `docs/internal/agent-skills/brainstorm.md`**
-
-```markdown
-# Skill: Brainstorm
-
-**Purpose**: Explore the problem space and design options before writing any code.
-
-**When to invoke**: Before implementing any feature or non-trivial fix. Triggered
-by operator requests like "add X", "change Y behavior", or "fix Z if it's not obvious".
-Do NOT skip for "simple" requests — unexamined assumptions cause the most waste.
-
-**Steps**:
-1. Read `AGENTS.md`, `RULES.md`, and the relevant section of `PROJECT_STRUCTURE.md`.
-2. Read the 3–5 source files most likely to be affected (no more than 5 at this stage).
-3. Write a 3–5 sentence problem statement: what does the operator want, and why?
-4. Propose 2–3 solution approaches with explicit trade-offs and a recommendation.
-5. Present to the operator and wait for approval before proceeding to code.
-6. Once approved, write a spec to `docs/internal/specs/YYYY-MM-DD-<topic>-design.md`
-   with `status: draft` front-matter. Commit the spec before writing any code.
-
-**Outputs**: A committed spec file with operator-approved approach documented.
-
-**Done when**: Spec is committed AND operator has explicitly approved the approach.
-Silence is not approval — ask if unclear.
-
-**Overlap guard**: Do not duplicate invariants from `RULES.md`. New product invariants
-discovered during brainstorm belong in `RULES.md` after the PR merges, not in the spec.
-```
-
-This template (17 lines) is intentionally short enough that an agent can read it in one context window slot without crowding out source code. The "Done when" and "Overlap guard" fields are the critical discipline gates missing from superpowers' default brainstorming skill.
+**What DOES need to be authored:** a brief `AGENTS.md` section pointing to cc-sdd and the spec location (`docs/internal/specs/`). This is ~5 lines added to an existing file, not a new skill framework.
 
 ---
 

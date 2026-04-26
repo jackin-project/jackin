@@ -233,6 +233,50 @@ See §9 of the roadmap for the canonical list. Key items:
 
 ---
 
+## Iteration 6 — 2026-04-26
+
+### Improvements chosen
+
+1. **§1 hot-spot list** — added production/test split column for all 22 hot-spot files using confirmed test-section start lines. Key finding: `manifest/validate.rs` (962L total) is only 145L production — one of the best-tested files in the codebase. `app/mod.rs` (951L) is 928L production with only 22L tests — the most genuine god file after `runtime/launch.rs`. Added "Key insight" note: total LOC is a misleading triage metric.
+2. **§8 revision based on operator feedback** — operator prefers existing tools over hand-rolled skill files. Revised §8.1 recommendation from Option C (hand-rolled) to Option B (cc-sdd). Revised §8.2 from Category 3 (hand-rolled agent-skills dir) to cc-sdd as the primary replacement. Removed the custom brainstorm.md template (iteration 5 addition); replaced with a comparison table showing what cc-sdd covers and what doesn't need authoring.
+3. **§2 concept 14** — op_picker session cache confirmed at `src/console/op_cache.rs` (252L, PR #171 branch). Full module detail: keyed by (account, vault_id, item_id) tuples, `DEFAULT_ACCOUNT_KEY = ""` sentinel, invalidation methods, `//!` doc explicitly states "metadata only, never field values." Updated concept 14 from `requires-tribal-knowledge (pre-merge)` with location unknown to specific file/line citation.
+4. **§7.14 new candidate** — Structured logging (`log` vs `tracing` vs current `eprintln!` approach). Recommendation: `defer`. Research grounded in `docs.rs/tracing`, `tokio.rs` guide, and LogRocket comparison article (all cited in `_research_notes.md`).
+
+### What was read
+
+- PR #171 `src/console/op_cache.rs` (full — 252L, all production, no tests)
+- PR #171 `src/console/widgets/op_picker/mod.rs` (first 80L — confirmed `OpCache` import + background thread architecture)
+- `grep -n "#\[cfg(test)\]"` across all 22 hot-spot files — test section start lines confirmed
+- Web: structured logging ecosystem (tracing vs log vs simplelog for CLIs)
+
+### What changed in the roadmap
+
+- §0: Iteration count bumped to 6
+- §1 hot-spot table: Completely rewritten with Prod LOC / Test LOC columns + Priority column + Key insight note
+- §2 concept 14: Updated from guess to specific citation (`src/console/op_cache.rs`, 252L, PR #171)
+- §7.14: New modernization entry — structured logging with 3-option comparison
+- §8.1: Recommendation flipped from hand-rolled (Option C) to cc-sdd (Option B)
+- §8.2: Recommendation table rewritten — cc-sdd replaces custom agent-skills files; brainstorm template removed; table maps superpowers features to existing tools
+- `_research_notes.md`: structured logging research added
+
+### Confidence assessment by section (updated)
+
+| Section | Confidence | Notes |
+|---|---|---|
+| §1 Hot-spot list | High | All 22 files now have production/test split data from grep |
+| §2 Concept-to-location | High for 24/25; concept 14 (op_cache) now confirmed | Only concept 9 (construct base image build) feels slightly thin |
+| §8 AI-agent workflow | High | cc-sdd recommendation grounded in research; operator preference for existing tools incorporated |
+| §7 Modernization | Medium-high | 14 entries; some still thin (§7.13 Renovate has no real analysis) |
+
+### Weakest sections for iteration 7
+
+1. **§10 step 2** — still says "create docs/internal/agent-skills/" but §8.2 now recommends cc-sdd instead of a hand-rolled dir. Step 2 needs rewriting to match the updated §8 recommendation.
+2. **§7.13 Renovate** — has only a two-sentence recommendation with no alternatives comparison. This violates the six-subheading format requirement (§7 format spec). Needs: `automerge` alternative research, RenovateBot config best practices, and the three-option evaluation.
+3. **§4 "trait definitions live with their domain"** — Rule 4 in §4 mentions this as a principle but the current `AuthForwardMode` in `config/mod.rs` (while implemented in `instance/auth.rs`) is a concrete violator not yet called out with a line citation.
+4. **§9 Risks** — R1 mentions `config/mod.rs` surgery causing circular imports but doesn't verify the actual dependency path. With the hot-spot analysis done, this can be verified: does `config/mod.rs` import from `workspace/`? If so, moving `AppConfig` to `config/types.rs` might cause a circular dependency if `workspace/` also imports from `config/`.
+
+---
+
 ## Iteration 2 — 2026-04-26
 
 ### Improvements chosen

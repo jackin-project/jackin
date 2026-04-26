@@ -91,6 +91,21 @@ Append new entries at the bottom; include retrieval date.
 
 ---
 
+## 2026-04-26 — Structured logging: log vs tracing for Rust CLI
+
+**Sources (retrieved 2026-04-26):**
+- https://blog.logrocket.com/comparing-logging-tracing-rust/ (LogRocket — comparing log vs tracing)
+- https://www.shuttle.dev/blog/2023/09/20/logging-in-rust (Shuttle — logging in Rust 2025)
+- https://docs.rs/tracing (tracing crate docs)
+- https://tokio.rs/tokio/topics/tracing (tokio tracing guide)
+
+**Summary:**
+- `log` crate: stable de-facto standard, "lowest common denominator", works with env_logger for RUST_LOG filtering. Appropriate for synchronous CLIs.
+- `tracing` crate: span-based, async-aware, structured fields. The right choice for async servers and services. Overkill for synchronous CLIs.
+- For `jackin`: defer. Operator output (TUI step helpers) is intentionally styled, not logging. Developer debug traces (--debug mode) expose Docker commands intentionally. A RUST_LOG=debug path using `log` + `env_logger` would be a developer convenience improvement, not a readability fix.
+
+---
+
 ## 2026-04-26 — astro-og-canvas 0.11.1 exactOptionalPropertyTypes conflict
 
 **Source:** Direct reading of `docs/src/pages/og/[...slug].png.ts` and `docs/package.json` (iteration 3).
