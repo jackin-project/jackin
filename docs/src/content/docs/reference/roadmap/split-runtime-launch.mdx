@@ -1,0 +1,51 @@
+---
+title: "Split runtime/launch.rs"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 2, confirmation needed (do behavioral spec first)
+
+## Problem
+
+<RepoFile path="src/runtime/launch.rs" /> is 2368L total with 4 distinct concerns mixed together: public API, container bootstrap pipeline, terminal setup, and trust verification. The test suite alone is 1282L (starting at line 1078). It is the hardest file to split safely because any error here blocks all runtime changes.
+
+## Proposed split
+
+```
+src/runtime/
+  launch.rs          ← thin public API: pub fn load_agent (line 533), LoadOptions struct (line 23)
+  launch_pipeline.rs ← fn load_agent_with (553–894), LaunchContext, StepCounter, LoadCleanup
+  terminfo.rs        ← resolve_terminal_setup (141), export_host_terminfo (167)
+  trust.rs           ← confirm_agent_trust (216) — already isolated via FnOnce injection
+```
+
+## Why the split is safe — FnOnce injection pattern
+
+`confirm_agent_trust` is passed to `load_agent_with` as a `FnOnce` argument at line 553–560:
+
+```rust
+fn load_agent_with(..., confirm_trust: impl FnOnce(...) -> anyhow::Result<()>)
+```
+
+`launch_pipeline.rs` does NOT import `trust.rs` by name — it receives the function as a generic parameter. After split, `launch.rs` imports `confirm_agent_trust` from `trust.rs` and passes it in. Zero circular import risk.
+
+## Import chain safety (verified)
+
+- `terminfo.rs`: only imports from `std` — zero crate dependencies
+- `trust.rs`: imports from `std`, `owo_colors`, `dialoguer`, `crate::config` — no runtime dependency
+- `launch_pipeline.rs`: imports from `crate::config`, `crate::instance`, `crate::tui`, etc.
+- `launch.rs` (thin API): imports from `launch_pipeline`, `trust`, `terminfo`
+
+## What needs confirmation
+
+- Exact placement of `LoadCleanup` (lines 1030–1085 — pipeline concern or launch concern?)
+- Whether `claim_container_name` (line 918–957) and `verify_token_env_present` (line 959–992) stay in `launch_pipeline.rs` or move to `launch_helpers.rs`
+
+## Ordering note
+
+Do **last** among the Phase 2 splits. The test suite is the most complex and any compilation error here blocks all runtime changes. The behavioral spec must exist first — it is the verification oracle.
+
+## Related files
+
+- <RepoFile path="src/runtime/launch.rs" /> — target file
+- <RepoFile path="src/runtime/test_support.rs" /> — `FakeRunner` used by the test suite

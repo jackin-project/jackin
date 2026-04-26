@@ -1,0 +1,39 @@
+---
+title: "Per-directory README + AGENTS.md"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 1, no confirmation needed
+
+## Problem
+
+AI coding agents (Claude Code, Copilot, Cursor) load `README.md` automatically when they enter a directory context. Without these files, agents must open source files to get orientation. After the greenfield workspace split, each crate also needs an `AGENTS.md` for crate-specific agent rules.
+
+## Target directories
+
+| Directory | README should say |
+|---|---|
+| `src/` | Top-level module map + entry points (`load_agent`, `run_console`, `validate`). Link to PROJECT_STRUCTURE.md. |
+| `src/runtime/` | Container bootstrap pipeline. Entry: `load_agent()` in `launch.rs`. 4-step sequence. |
+| `src/console/` | Operator console TUI. Entry: `run_console()`. Two subsystems: `manager/` and `widgets/`. No import from `runtime/`. |
+| `src/console/manager/` | Workspace manager TUI. 3-layer: `state.rs` (data), `input/` (dispatch), `render/` (drawing). |
+| `src/console/widgets/` | Reusable TUI widget library. Each widget is a self-contained state machine. |
+| `docs/` | Astro Starlight docs site. Public: `src/content/docs/`. Internal/browsable: `src/content/docs/internal/`. |
+
+## AGENTS.md per crate (after workspace split)
+
+When the greenfield workspace split creates `crates/jackin-console/`, `crates/jackin-runtime/`, etc., each crate should get its own `AGENTS.md` with crate-specific rules — shorter and more focused than the root `AGENTS.md`. Examples:
+
+- `crates/jackin-core/AGENTS.md` — "this crate has no I/O, no `std::process::Command`; keep it that way"
+- `crates/jackin-console/AGENTS.md` — "no import from `jackin-runtime`; this is enforced by Cargo"
+- `crates/jackin-runtime/AGENTS.md` — "all Docker operations go through `CommandRunner`; never shell out directly"
+
+## Steps
+
+1. Create `src/README.md` through `docs/README.md` with the content above.
+2. Keep each file under ~20 lines — orientation only, not comprehensive documentation.
+3. After the workspace split, add `AGENTS.md` to each crate directory.
+
+## Caveats
+
+These files are not CI-checked for staleness (that's the CI gate item). They will drift if modules change significantly — the workspace split is a natural opportunity to refresh them.
