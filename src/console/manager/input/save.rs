@@ -2,7 +2,8 @@
 //! `ConfirmSave` preview modal, and `ConfigEditor`-driven writes.
 
 use super::super::state::{
-    EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, Toast, ToastKind,
+    EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
+    Toast, ToastKind,
 };
 use crate::config::AppConfig;
 use crate::config::editor::EnvScope;
@@ -263,6 +264,12 @@ pub(super) fn commit_editor_save(
                 *state =
                     ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
                 state.toast = carry_toast;
+                // Land on the workspace that was just saved.
+                let saved_count = state.workspaces.len();
+                if let Some(idx) = state.workspaces.iter().position(|w| w.name == current_name) {
+                    state.selected =
+                        ManagerListRow::SavedWorkspace(idx).to_screen_index(saved_count);
+                }
             }
         }
         Err(e) => {
@@ -997,6 +1004,50 @@ mod tests {
             matches!(state.stage, ManagerStage::List),
             "save with exit_on_success = true should return to the list stage"
         );
+    }
+
+    #[test]
+    fn exit_on_success_selects_just_saved_workspace_on_return_to_list() {
+        // Two workspaces: "a-first" (index 0) and "z-second" (index 1) in
+        // BTreeMap order. Editing "z-second" and saving must land the cursor
+        // on "z-second" (screen index 2 = 1 + 1), not on "a-first" or the
+        // CWD row.
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            ..Default::default()
+        };
+        let (tmp, paths, mut config) = setup_with_workspace("z-second", ws.clone()).unwrap();
+        config.workspaces.insert(
+            "a-first".to_string(),
+            WorkspaceConfig {
+                workdir: "/a".into(),
+                mounts: vec![mount("/a", "/a")],
+                ..Default::default()
+            },
+        );
+        let toml = toml::to_string(&config).unwrap();
+        std::fs::write(&paths.config_file, toml).unwrap();
+        config = AppConfig::load_or_init(&paths).unwrap();
+
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("z-second".into(), ws);
+        editor.pending.workdir = "/w/sub".into();
+        state.stage = ManagerStage::Editor(editor);
+
+        begin_editor_save(&mut state, &config, true).unwrap();
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        assert!(matches!(state.stage, ManagerStage::List));
+        // BTreeMap order: ["a-first"=0, "z-second"=1]; screen index = i + 1.
+        // "z-second" is at saved_index 1, so screen index = 2.
+        assert_eq!(
+            state.selected, 2,
+            "cursor must land on the just-saved workspace; got selected={}",
+            state.selected
+        );
+        assert_eq!(state.workspaces[state.selected - 1].name, "z-second");
     }
 
     #[test]
