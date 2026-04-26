@@ -77,21 +77,37 @@ pub struct WorkspaceEdit {
     pub mount_isolation_overrides: Vec<(String, crate::isolation::MountIsolation)>,
 }
 
-/// Reject two `Worktree` mounts where one's `dst` is a strict ancestor of
-/// the other's. Sibling isolated mounts and isolated-parent-with-shared-child
-/// remain allowed.
+/// Validate the isolation layout for a workspace's mounts. Two rules
+/// today, both worktree-specific:
+///
+/// 1. **No nested isolated mounts.** Two `Worktree` mounts where one's
+///    `dst` is a strict ancestor of the other's are rejected. The
+///    inner worktree's `.git` would land inside the outer worktree's
+///    tree, which is unsafe regardless of mode.
+///
+/// 2. **No same-host-repo isolated siblings.** Two `Worktree` mounts
+///    that resolve to the same host repository are rejected. Each
+///    isolated worktree creates an admin entry under
+///    `<host_repo>/.git/worktrees/<n>/`, and our naming uses the
+///    container name as `<n>` so admin entries are globally unique
+///    per (`host_repo`, container). Allowing two isolated mounts on the
+///    same host repo in one container would force `<container>` to
+///    appear twice in that namespace; that case is rare/unmotivated
+///    in practice (no operator workflow has surfaced for it). Reject
+///    upfront. Revisit if a real use case shows up.
 pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
     use crate::isolation::MountIsolation;
 
-    let isolated: Vec<(usize, &str)> = mounts
+    let isolated: Vec<(usize, &MountConfig, &str)> = mounts
         .iter()
         .enumerate()
         .filter(|(_, m)| matches!(m.isolation, MountIsolation::Worktree))
-        .map(|(i, m)| (i, m.dst.trim_end_matches('/')))
+        .map(|(i, m)| (i, m, m.dst.trim_end_matches('/')))
         .collect();
 
-    for (i, (_, a)) in isolated.iter().enumerate() {
-        for (_, b) in &isolated[i + 1..] {
+    for (i, (_, ma, a)) in isolated.iter().enumerate() {
+        for (_, mb, b) in &isolated[i + 1..] {
+            // Rule 1: nested dst paths.
             if is_strict_ancestor(a, b) || is_strict_ancestor(b, a) {
                 anyhow::bail!(
                     "isolated mount `{b}` cannot be nested inside isolated mount `{a}`; \
@@ -101,9 +117,34 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
                     b = if is_strict_ancestor(a, b) { b } else { a },
                 );
             }
+            // Rule 2: same host repo (same `src` after canonicalization
+            // best-effort; falls back to literal string equality if a
+            // path can't be canonicalized — e.g., `src` doesn't exist
+            // yet on disk).
+            if same_host_repo(&ma.src, &mb.src) {
+                anyhow::bail!(
+                    "isolated mounts `{}` and `{}` cannot share the same host repository `{}`; \
+                     remove one of them or change one to `shared` (V1 limitation — see roadmap)",
+                    ma.dst,
+                    mb.dst,
+                    ma.src,
+                );
+            }
         }
     }
     Ok(())
+}
+
+fn same_host_repo(a: &str, b: &str) -> bool {
+    let ca = std::fs::canonicalize(a).ok();
+    let cb = std::fs::canonicalize(b).ok();
+    match (ca, cb) {
+        (Some(x), Some(y)) => x == y,
+        // If either path can't be canonicalized (e.g. doesn't exist
+        // on disk yet during planning), fall back to literal string
+        // equality. Stricter checks happen later at materialize time.
+        _ => a == b,
+    }
 }
 
 fn is_strict_ancestor(parent: &str, child: &str) -> bool {
@@ -385,6 +426,38 @@ isolation = "worktree"
         ];
         let err = validate_isolation_layout(&mounts).unwrap_err().to_string();
         assert!(err.contains("/workspace") && err.contains("/workspace/proj/sub"));
+    }
+
+    #[test]
+    fn isolation_layout_rejects_two_worktree_mounts_on_same_repo() {
+        // V1 limitation: two isolated mounts in one workspace cannot
+        // share the same host repository (literal `src` equality is
+        // sufficient when the path can't be canonicalized — the case
+        // exercised by this test).
+        let mounts = vec![
+            worktree_mount("/host/jackin", "/workspace/jackin"),
+            worktree_mount("/host/jackin", "/workspace/jackin-copy"),
+        ];
+        let err = validate_isolation_layout(&mounts).unwrap_err().to_string();
+        assert!(
+            err.contains("same host repository"),
+            "expected same-host-repo error; got: {err}"
+        );
+        assert!(err.contains("/workspace/jackin"));
+        assert!(err.contains("/workspace/jackin-copy"));
+        assert!(err.contains("/host/jackin"));
+    }
+
+    #[test]
+    fn isolation_layout_allows_different_host_repos_in_one_workspace() {
+        // The common multi-mount case: agent works on two different
+        // host repos, each isolated. Distinct `src` paths → no
+        // collision in host's `.git/worktrees/` namespace.
+        let mounts = vec![
+            worktree_mount("/host/jackin", "/workspace/jackin"),
+            worktree_mount("/host/jackin-docs", "/workspace/jackin-docs"),
+        ];
+        validate_isolation_layout(&mounts).unwrap();
     }
 
     #[test]

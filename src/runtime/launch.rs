@@ -150,6 +150,59 @@ const STANDARD_TERMS: &[&str] = &[
 /// Returns `(term_value, Some(mount_string))` when the host's terminfo
 /// was exported, or `(term_value, None)` when the TERM is standard or
 /// export failed (in which case `term_value` is the safe fallback).
+/// Translate a [`MaterializedWorkspace`] into the `-v` argument values
+/// for `docker run`. Pulled out of `load_agent_with` so the mount-flag
+/// shape — including the `:ro` placement on worktree-mode override
+/// files — can be unit-tested without docker mocks.
+///
+/// For each mount, the worktree dir / shared bind goes first; when the
+/// mount is worktree-mode, five auxiliary entries follow:
+///
+/// 1. Host's `.git/` at `/jackin/host/<dst-stripped>/.git` (rw).
+/// 2. Per-worktree admin dir at `/jackin/admin/<dst-stripped>` (rw).
+///    Mounted at a separate top-level `/jackin/<category>/` so the
+///    override files (next three) sit on top of files inside this
+///    admin mount, not nested inside `/jackin/host/.../.git/`.
+/// 3. `.git` pointer override at `<dst>/.git` (`:ro`). Redirects
+///    gitdir to `/jackin/admin/...`.
+/// 4. `commondir` override at `/jackin/admin/.../commondir` (`:ro`).
+///    Absolute path to the host `.git/` mount (the on-disk default
+///    `../..` would resolve to `/jackin/` inside the container).
+/// 5. `gitdir` back-pointer override at `/jackin/admin/.../gitdir`
+///    (`:ro`). Matches the worktree's `<dst>/.git` location so git's
+///    verification check passes inside the container.
+///
+/// `:ro` on the three override files is defensive hardening: git only
+/// reads them during normal agent work, and a misbehaving agent could
+/// otherwise rewrite the gitdir pointer or commondir to redirect
+/// operations at a different repo entirely.
+fn build_workspace_mount_strings(
+    workspace: &crate::isolation::materialize::MaterializedWorkspace,
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for mount in crate::isolation::materialize::mount_order_for_docker(workspace) {
+        let suffix = if mount.readonly { ":ro" } else { "" };
+        out.push(format!("{}:{}{}", mount.bind_src, mount.dst, suffix));
+        if let Some(aux) = &mount.worktree_aux {
+            out.push(format!("{}:{}", aux.host_git_dir, aux.host_git_target));
+            out.push(format!("{}:{}", aux.admin_dir, aux.admin_target));
+            out.push(format!(
+                "{}:{}:ro",
+                aux.git_file_override, aux.git_file_target
+            ));
+            out.push(format!(
+                "{}:{}:ro",
+                aux.commondir_override, aux.commondir_target
+            ));
+            out.push(format!(
+                "{}:{}:ro",
+                aux.gitdir_back_override, aux.gitdir_back_target
+            ));
+        }
+    }
+    out
+}
+
 fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String>) {
     let host_term = std::env::var("TERM").unwrap_or_default();
 
@@ -507,25 +560,7 @@ fn launch_agent_runtime(
         run_args.extend_from_slice(&["-v", ti_mount]);
     }
 
-    let mut mount_strings: Vec<String> = Vec::new();
-    for mount in crate::isolation::materialize::mount_order_for_docker(workspace) {
-        let suffix = if mount.readonly { ":ro" } else { "" };
-        mount_strings.push(format!("{}:{}{}", mount.bind_src, mount.dst, suffix));
-        // Worktree-mode auxiliary mounts: host .git, replacement .git
-        // pointer, replacement gitdir back-pointer. Order matters:
-        // each container path must be created by an earlier mount
-        // before its file-level override sits on top. The worktree
-        // mount above has already created `<dst>/`; the host_git_dir
-        // mount creates `/jackin-isolation/.../worktrees/<n>/`.
-        if let Some(aux) = &mount.worktree_aux {
-            mount_strings.push(format!("{}:{}", aux.host_git_dir, aux.host_git_target));
-            mount_strings.push(format!("{}:{}", aux.git_file_override, aux.git_file_target));
-            mount_strings.push(format!(
-                "{}:{}",
-                aux.gitdir_back_override, aux.gitdir_back_target
-            ));
-        }
-    }
+    let mount_strings = build_workspace_mount_strings(workspace);
     for ms in &mount_strings {
         run_args.push("-v");
         run_args.push(ms);
@@ -1217,10 +1252,179 @@ mod tests {
     use super::super::test_support::FakeRunner;
     use super::*;
     use crate::config::AppConfig;
+    use crate::isolation::MountIsolation;
+    use crate::isolation::materialize::{
+        MaterializedMount, MaterializedWorkspace, WorktreeAuxMounts,
+    };
     use crate::paths::JackinPaths;
     use crate::selector::ClassSelector;
     use std::collections::VecDeque;
     use tempfile::tempdir;
+
+    #[test]
+    fn build_workspace_mount_strings_marks_overrides_readonly() {
+        // One worktree-mode mount with all six bind sources populated.
+        // The host `.git/` and admin mounts MUST stay rw (git writes
+        // refs/objects/HEAD/index/logs); the three override files MUST
+        // be `:ro`-suppressed.
+        let mat = MaterializedWorkspace {
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![MaterializedMount {
+                bind_src:
+                    "/data/jackin-the-architect/isolated/Users/donbeave/Projects/jackin-project/jackin"
+                        .into(),
+                dst: "/Users/donbeave/Projects/jackin-project/jackin".into(),
+                readonly: false,
+                isolation: MountIsolation::Worktree,
+                worktree_aux: Some(WorktreeAuxMounts {
+                    host_git_dir: "/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
+                    host_git_target:
+                        "/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
+                    admin_dir:
+                        "/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jackin"
+                            .into(),
+                    admin_target:
+                        "/jackin/admin/Users/donbeave/Projects/jackin-project/jackin".into(),
+                    git_file_override:
+                        "/data/jackin-the-architect/git/Users/donbeave/Projects/jackin-project/jackin/overrides/.git"
+                            .into(),
+                    git_file_target: "/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
+                    commondir_override:
+                        "/data/jackin-the-architect/git/Users/donbeave/Projects/jackin-project/jackin/overrides/commondir"
+                            .into(),
+                    commondir_target:
+                        "/jackin/admin/Users/donbeave/Projects/jackin-project/jackin/commondir"
+                            .into(),
+                    gitdir_back_override:
+                        "/data/jackin-the-architect/git/Users/donbeave/Projects/jackin-project/jackin/overrides/gitdir"
+                            .into(),
+                    gitdir_back_target:
+                        "/jackin/admin/Users/donbeave/Projects/jackin-project/jackin/gitdir".into(),
+                }),
+            }],
+        };
+
+        let strings = build_workspace_mount_strings(&mat);
+        assert_eq!(strings.len(), 6, "one worktree mount → six bind specs");
+
+        // 1: worktree at <dst>, no :ro (writable).
+        assert_eq!(
+            strings[0],
+            "/data/jackin-the-architect/isolated/Users/donbeave/Projects/jackin-project/jackin:/Users/donbeave/Projects/jackin-project/jackin"
+        );
+        assert!(!strings[0].ends_with(":ro"));
+
+        // 2: host .git/, MUST stay rw — refs/objects are written by
+        // every commit/branch/fetch. Both ends terminate in `.git`.
+        assert_eq!(
+            strings[1],
+            "/Users/donbeave/Projects/jackin-project/jackin/.git:/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git"
+        );
+        assert!(
+            !strings[1].ends_with(":ro"),
+            "host .git mount must remain rw",
+        );
+
+        // 3: per-worktree admin dir (HEAD/index/logs). Bind from a
+        // subdir of host's .git, mounted at /jackin/admin/. rw because
+        // git writes HEAD/index on commit/checkout.
+        assert_eq!(
+            strings[2],
+            "/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jackin:/jackin/admin/Users/donbeave/Projects/jackin-project/jackin"
+        );
+        assert!(
+            !strings[2].ends_with(":ro"),
+            "admin mount must remain rw — git writes HEAD/index on each commit",
+        );
+
+        // 4: .git pointer override at <dst>/.git, redirects gitdir to
+        // /jackin/admin/. :ro hardening — agent must not rewrite this.
+        assert!(
+            strings[3].ends_with(":ro"),
+            "git-file override must be ro; got {}",
+            strings[3],
+        );
+        assert!(
+            strings[3]
+                .contains("/git/Users/donbeave/Projects/jackin-project/jackin/overrides/.git")
+        );
+        assert!(strings[3].contains(":/Users/donbeave/Projects/jackin-project/jackin/.git:ro"));
+
+        // 5: commondir override at /jackin/admin/.../commondir, points
+        // at /jackin/host/.../.git absolute. :ro.
+        assert!(
+            strings[4].ends_with(":ro"),
+            "commondir override must be ro; got {}",
+            strings[4],
+        );
+        assert!(
+            strings[4]
+                .contains("/git/Users/donbeave/Projects/jackin-project/jackin/overrides/commondir")
+        );
+        assert!(
+            strings[4].contains(
+                ":/jackin/admin/Users/donbeave/Projects/jackin-project/jackin/commondir:ro"
+            )
+        );
+
+        // 6: gitdir back-pointer override at /jackin/admin/.../gitdir.
+        // Lives under /jackin/admin/, NOT nested in /jackin/host/.../.git/. :ro.
+        assert!(
+            strings[5].ends_with(":ro"),
+            "gitdir-back override must be ro; got {}",
+            strings[5],
+        );
+        assert!(
+            strings[5]
+                .contains("/git/Users/donbeave/Projects/jackin-project/jackin/overrides/gitdir")
+        );
+        assert!(
+            strings[5]
+                .contains(":/jackin/admin/Users/donbeave/Projects/jackin-project/jackin/gitdir:ro")
+        );
+        assert!(
+            !strings[5].contains("/jackin/host/"),
+            "gitdir-back override must NOT live under /jackin/host/.../.git/ — that's the visual nesting we explicitly avoid",
+        );
+    }
+
+    #[test]
+    fn build_workspace_mount_strings_passthrough_for_shared_mounts() {
+        // Shared mounts produce exactly one bind spec, no aux entries.
+        let mat = MaterializedWorkspace {
+            workdir: "/workspace".into(),
+            mounts: vec![MaterializedMount {
+                bind_src: "/host/shared".into(),
+                dst: "/workspace/shared".into(),
+                readonly: false,
+                isolation: MountIsolation::Shared,
+                worktree_aux: None,
+            }],
+        };
+
+        let strings = build_workspace_mount_strings(&mat);
+        assert_eq!(strings, vec!["/host/shared:/workspace/shared".to_string()]);
+    }
+
+    #[test]
+    fn build_workspace_mount_strings_preserves_readonly_on_user_facing_mount() {
+        // A user-configured `readonly = true` mount still gets `:ro` on
+        // the user-facing dst — this is independent of the override
+        // hardening.
+        let mat = MaterializedWorkspace {
+            workdir: "/workspace".into(),
+            mounts: vec![MaterializedMount {
+                bind_src: "/host/cache".into(),
+                dst: "/workspace/cache".into(),
+                readonly: true,
+                isolation: MountIsolation::Shared,
+                worktree_aux: None,
+            }],
+        };
+
+        let strings = build_workspace_mount_strings(&mat);
+        assert_eq!(strings, vec!["/host/cache:/workspace/cache:ro".to_string()]);
+    }
 
     fn repo_workspace(repo_dir: &std::path::Path) -> crate::workspace::ResolvedWorkspace {
         crate::workspace::ResolvedWorkspace {
