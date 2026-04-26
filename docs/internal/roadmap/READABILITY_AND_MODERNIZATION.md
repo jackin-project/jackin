@@ -2152,3 +2152,121 @@ Each adoption is independent and can be sequenced freely:
 - Add `rust-toolchain.toml` (already in step 3).
 - Add `clippy.toml` (already in step 5).
 - Evaluate `miette` for manifest/config diagnostics (§7.1) — defer until after structural moves.
+
+---
+
+## §11 — Future Project: Modern Rust Documentation Platform
+
+*This section documents a separate future project that emerges naturally from `jackin`'s own documentation work. It is not part of the `jackin` readability roadmap — it is a product idea that the jackin internal API docs pipeline (§7.15) will prototype. Captured here so the vision is not lost.*
+
+### The problem
+
+`docs.rs` solved one problem well: automatically build and host documentation for every crate published to crates.io. It has not solved presentation. The UI is rustdoc HTML from 2015 — functional, ugly, and entirely opaque to AI agents. There is no structured API, no semantic search, no cross-linking between types and their behavioral specs, and no way for an AI coding assistant to query "what does `OpPickerState::handle_field_key` do?" without loading an HTML page and parsing it.
+
+**Context7** (context7.com) partially addresses this for AI agents: it maintains a curated index of popular library documentation and exposes it via MCP, so Claude Code and similar tools can query current docs instead of relying on potentially stale training data. But Context7 is language-agnostic, generic, and not Rust-aware. It cannot reason about trait implementations, type graphs, or the relationship between a struct and the behavioral invariants it must maintain.
+
+This project is a Rust-native, AI-native alternative: a modern documentation platform that replaces docs.rs's HTML renderer with Astro Starlight and adds an MCP-accessible structured API layer.
+
+### Vision
+
+**For human developers:** Beautiful, searchable, navigable Rust API documentation — the same experience as reading Astro Starlight docs — for every crate on crates.io.
+
+**For AI agents:** A structured API and MCP server so agents can query type signatures, doc comments, trait implementations, and behavioral specs without parsing HTML or relying on training-data snapshots that go stale.
+
+**For the Rust ecosystem:** A community resource that makes Rust more approachable (better UX) and more AI-agent-friendly (structured context) simultaneously.
+
+### Why now
+
+Three things that didn't exist until recently make this viable:
+
+1. **rustdoc JSON is stabilizing.** `cargo rustdoc --output-format json` produces a fully structured representation of any crate's public API — types, signatures, doc comments, cross-references, source locations. This is the data layer the platform is built on.
+2. **Astro Starlight is mature.** It handles the hard parts of documentation UX: search, navigation, mobile layout, dark/light theme, MDX rendering. The presentation layer is solved.
+3. **MCP (Model Context Protocol) is the standard.** AI agents in 2026 query tools via MCP. A documentation platform with a built-in MCP server is a first-class AI development tool.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Ingestion                                                       │
+│  cargo rustdoc --output-format json  ──►  per-crate JSON index  │
+│  (any crate, any version, triggered by crates.io publish event) │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────────┐
+│  Processing                                                      │
+│  • Parse rustdoc JSON → typed item graph                        │
+│  • Resolve cross-references (struct → methods → trait impls)    │
+│  • Extract usage patterns from crates.io source corpus          │
+│  • Link types to behavioral specs (if spec frontmatter present) │
+│  • Generate Starlight MDX pages (per module, per type)          │
+│  • Build search index (full-text + optional semantic embeddings) │
+└──────────────┬──────────────────────────┬───────────────────────┘
+               │                          │
+┌──────────────▼──────────┐  ┌────────────▼───────────────────────┐
+│  Starlight site          │  │  Structured API + MCP server        │
+│  (browsable, beautiful)  │  │                                     │
+│                          │  │  GET /api/v1/type/{crate}/{name}   │
+│  /crate/tokio/           │  │  → signature, docs, methods,       │
+│    JoinHandle/           │  │    impls, usage examples           │
+│    spawn/                │  │                                    │
+│    select/               │  │  MCP tool: rust_lookup_type()      │
+│  /crate/serde/           │  │  MCP tool: rust_search_types()     │
+│    Serialize/            │  │  MCP tool: rust_find_impls()       │
+│    Deserialize/          │  │  MCP tool: rust_get_context()      │
+└──────────────────────────┘  └────────────────────────────────────┘
+```
+
+### What makes it an alternative to Context7
+
+| Feature | Context7 | This platform |
+|---|---|---|
+| Coverage | Multi-language, curated | All of crates.io (auto-indexed) |
+| Rust awareness | Generic | Deep — trait graph, lifetime annotations, impl blocks |
+| Data freshness | Curated updates | Triggered by crates.io publish events |
+| MCP interface | Yes | Yes — plus richer Rust-specific query types |
+| Behavioral spec linkage | No | Yes — if a crate ships specs, they appear alongside the API |
+| UI for humans | Minimal | Full Starlight site |
+| Private crates | No | Yes — self-hosted mode |
+| Offline / local use | No | Yes — `cargo starlight serve` for local crate docs |
+
+The key Rust-specific MCP tools Context7 cannot provide:
+
+```
+rust_get_context(type: "tokio::task::JoinHandle", depth: 2)
+→ {
+    summary: "Owned handle to a spawned task...",
+    key_methods: ["abort()", "is_finished()", ".await"],
+    trait_impls: ["Future<Output=Result<T>>", "Drop"],
+    commonly_used_with: ["tokio::spawn", "tokio::select!"],
+    behavioral_spec_url: null,
+    usage_example: "let handle = tokio::spawn(async { ... });\nhandle.await?;"
+  }
+
+rust_find_impls(trait: "serde::Serialize", in_crate: "jackin")
+→ [WorkspaceConfig, MountConfig, AgentManifest, ...]
+
+rust_search_types(query: "async read bytes", crate_filter: ["tokio", "async-std"])
+→ [AsyncReadExt::read_to_end, AsyncBufReadExt::fill_buf, ...]
+```
+
+### The jackin pipeline is the prototype
+
+The internal API docs work planned in §7.15 (`gen-rust-api.ts` script + Starlight `internal/api/` pages) is intentionally designed as the proof of concept:
+
+- `gen-rust-api.ts` → the crate processor, extracted and generalized becomes the platform's processing layer
+- `docs/src/content/docs/internal/api/` → the per-crate Starlight template, generalized becomes the platform's presentation layer
+- The spec cross-links from `OpPickerState` → `internal/specs/op-picker/` → becomes the behavioral spec linkage feature
+
+Once the jackin pipeline works and the templates are proven, extracting them into:
+1. A standalone CLI tool: `cargo-starlight` — run in any Rust project to generate Starlight pages locally
+2. A hosted service — accept rustdoc JSON, return a Starlight-rendered crate documentation site
+
+### Name candidates
+
+- **rustlight** — Rust + Starlight
+- **ferrodoc** — ferrous (iron/Rust) + doc
+- **cargo-starlight** — the CLI tool name; the service could be `starlight.rs`
+
+### Out of scope for the jackin readability roadmap
+
+This is a separate product. It does not affect `jackin`'s code, its CLI surface, its docs site URLs, or any current work item. The only connection is that the §7.15 internal API pipeline is the intentional prototype. When that pipeline is working, the codebase for the platform can be started in a new repository.
