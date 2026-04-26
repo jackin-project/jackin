@@ -846,6 +846,9 @@ pub(super) fn build_workspace_edit(
     if pending.default_agent != original.default_agent {
         edit.default_agent = Some(pending.default_agent.clone());
     }
+    if pending.keep_awake.enabled != original.keep_awake.enabled {
+        edit.keep_awake_enabled = Some(pending.keep_awake.enabled);
+    }
     edit
 }
 
@@ -897,6 +900,48 @@ mod tests {
         cwd: &std::path::Path,
     ) {
         handle_key(state, config, paths, cwd, key(KeyCode::Char('s'))).unwrap();
+    }
+
+    #[test]
+    fn build_workspace_edit_emits_keep_awake_change_only_when_diffed() {
+        // The TUI save path leans on `build_workspace_edit` to discover
+        // what fields the operator touched. If keep_awake's diff path
+        // ever regresses to "always emit," the resulting WorkspaceEdit
+        // would clobber the field on every save — breaking the "edit
+        // workdir doesn't flip keep_awake" contract that
+        // `edit_workspace_toggles_keep_awake_when_set` enforces.
+        use crate::workspace::KeepAwakeConfig;
+        let original = WorkspaceConfig {
+            workdir: "/workspace/proj".into(),
+            mounts: vec![mount("/work", "/workspace/proj")],
+            keep_awake: KeepAwakeConfig { enabled: false },
+            ..Default::default()
+        };
+
+        // No change → no field set.
+        let pending_unchanged = original.clone();
+        let edit = super::build_workspace_edit(&original, &pending_unchanged);
+        assert_eq!(edit.keep_awake_enabled, None);
+
+        // Flip on → Some(true).
+        let pending_on = WorkspaceConfig {
+            keep_awake: KeepAwakeConfig { enabled: true },
+            ..original.clone()
+        };
+        let edit = super::build_workspace_edit(&original, &pending_on);
+        assert_eq!(edit.keep_awake_enabled, Some(true));
+
+        // Flip off (when original was on) → Some(false).
+        let original_on = WorkspaceConfig {
+            keep_awake: KeepAwakeConfig { enabled: true },
+            ..original.clone()
+        };
+        let pending_off = WorkspaceConfig {
+            keep_awake: KeepAwakeConfig { enabled: false },
+            ..original.clone()
+        };
+        let edit = super::build_workspace_edit(&original_on, &pending_off);
+        assert_eq!(edit.keep_awake_enabled, Some(false));
     }
 
     #[test]

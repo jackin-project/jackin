@@ -239,7 +239,26 @@ This feature is **macOS-only** today. On Linux and Windows the flag is silently 
 
 Other workspaces (those without the flag) are unaffected: their containers do not contribute to the keep-awake count, and the host is free to sleep if no opted-in agent is running.
 
-Editing the flag on an existing workspace requires editing `~/.config/jackin/config.toml` directly today; there is no `jackin workspace edit --keep-awake` shortcut yet.
+### Setting keep-awake
+
+You can opt in (or out) from the CLI or the operator console — no need to hand-edit `config.toml`.
+
+**CLI** — paired flags on `workspace create` and `workspace edit`:
+
+```bash
+# Opt in at creation time
+jackin workspace create my-app --workdir ~/Projects/my-app --keep-awake
+
+# Toggle on an existing workspace
+jackin workspace edit my-app --keep-awake
+jackin workspace edit my-app --no-keep-awake
+```
+
+`--keep-awake` and `--no-keep-awake` are mutually exclusive. Omit both for "no change."
+
+**Operator console** — the **General** tab of the workspace editor has a `Keep awake` row. Press `Space` to toggle it; the change persists when you save the workspace.
+
+`jackin workspace show <name>` surfaces a `Keep Awake: enabled (macOS only)` row when the flag is on, so you can confirm at a glance which workspaces are holding power assertions.
 
 ## Workspace auto-detection
 

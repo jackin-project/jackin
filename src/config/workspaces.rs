@@ -173,6 +173,10 @@ impl AppConfig {
             workspace.default_agent = default_agent;
         }
 
+        if let Some(enabled) = edit.keep_awake_enabled {
+            workspace.keep_awake.enabled = enabled;
+        }
+
         // Rule-C invariant: after applying this edit, the mount list must be
         // pairwise non-covering under rule C. The CLI layer pre-collapses
         // redundants; if any remain here, the caller is buggy (non-CLI) or
@@ -276,6 +280,70 @@ mod tests {
             "must be equal to, inside, or a parent of one of the workspace mount destinations"
         ));
         assert_eq!(config.workspaces.get("big-monorepo").unwrap(), &original);
+    }
+
+    #[test]
+    fn edit_workspace_toggles_keep_awake_when_set() {
+        // Round-trip: enable, disable, no-change. The Option<bool> shape
+        // distinguishes "user touched the field" from "user said nothing
+        // about it", which is the whole point of the field type.
+        let temp = tempdir().unwrap();
+        let mut config = AppConfig::default();
+        config
+            .create_workspace(
+                "my-app",
+                WorkspaceConfig {
+                    workdir: "/workspace/proj".to_string(),
+                    mounts: vec![MountConfig {
+                        src: temp.path().display().to_string(),
+                        dst: "/workspace/proj".to_string(),
+                        readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
+                    }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(!config.workspaces.get("my-app").unwrap().keep_awake.enabled);
+
+        config
+            .edit_workspace(
+                "my-app",
+                WorkspaceEdit {
+                    keep_awake_enabled: Some(true),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap();
+        assert!(config.workspaces.get("my-app").unwrap().keep_awake.enabled);
+
+        // Subsequent edit with no keep_awake change must leave the
+        // field alone — this is the contract that lets `workspace edit
+        // --workdir` not silently flip power-management state.
+        config
+            .edit_workspace(
+                "my-app",
+                WorkspaceEdit {
+                    workdir: Some("/workspace/proj".to_string()),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap();
+        assert!(
+            config.workspaces.get("my-app").unwrap().keep_awake.enabled,
+            "unrelated edits must not flip keep_awake",
+        );
+
+        config
+            .edit_workspace(
+                "my-app",
+                WorkspaceEdit {
+                    keep_awake_enabled: Some(false),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap();
+        assert!(!config.workspaces.get("my-app").unwrap().keep_awake.enabled);
     }
 
     #[test]

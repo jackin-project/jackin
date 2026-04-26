@@ -106,6 +106,11 @@ pub struct WorkspaceEdit {
     pub allowed_agents_to_remove: Vec<String>,
     pub default_agent: Option<Option<String>>,
     pub mount_isolation_overrides: Vec<(String, crate::isolation::MountIsolation)>,
+    /// Toggle for the macOS keep-awake reconciler. `None` = no change,
+    /// `Some(true)` = opt in, `Some(false)` = opt out. The CLI's paired
+    /// `--keep-awake` / `--no-keep-awake` flags map onto this; the TUI
+    /// derives it by diffing `pending.keep_awake` vs `original`.
+    pub keep_awake_enabled: Option<bool>,
 }
 
 /// Validate the isolation layout for a workspace's mounts. Two rules

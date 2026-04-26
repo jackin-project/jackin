@@ -475,6 +475,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 allowed_agents,
                 default_agent,
                 mount_isolation,
+                keep_awake,
             } => {
                 let expanded_workdir = workspace::resolve_path(&workdir);
                 let parsed_mounts = mounts
@@ -514,7 +515,9 @@ pub fn run(cli: Cli) -> Result<()> {
                     last_agent: None,
                     env: std::collections::BTreeMap::new(),
                     agents: std::collections::BTreeMap::new(),
-                    keep_awake: crate::workspace::KeepAwakeConfig::default(),
+                    keep_awake: crate::workspace::KeepAwakeConfig {
+                        enabled: keep_awake,
+                    },
                 };
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
                 editor.create_workspace(&name, ws)?;
@@ -595,7 +598,19 @@ pub fn run(cli: Cli) -> Result<()> {
                 prune,
                 mount_isolation,
                 delete_isolated_state,
+                keep_awake,
+                no_keep_awake,
             } => {
+                // Map paired flags to Option<bool>: None = no change.
+                // Mutual exclusion is enforced at parse time by clap's
+                // `conflicts_with`, so at most one of the two is true.
+                let keep_awake_change = if keep_awake {
+                    Some(true)
+                } else if no_keep_awake {
+                    Some(false)
+                } else {
+                    None
+                };
                 let upsert_mounts = mounts
                     .iter()
                     .map(|value| parse_mount_spec_resolved(value))
@@ -716,6 +731,12 @@ pub fn run(cli: Cli) -> Result<()> {
                 } else if let Some(ref agent) = default_agent {
                     changes.push(format!("default agent → {agent}"));
                 }
+                if let Some(v) = keep_awake_change {
+                    changes.push(format!(
+                        "keep_awake → {}",
+                        if v { "enabled" } else { "disabled" }
+                    ));
+                }
 
                 // Build the prospective mount list (mirrors edit_workspace's
                 // merge order) so we can check for source drift on any mount
@@ -791,6 +812,7 @@ pub fn run(cli: Cli) -> Result<()> {
                             default_agent.map(Some)
                         },
                         mount_isolation_overrides: mount_isolation,
+                        keep_awake_enabled: keep_awake_change,
                     },
                 )?;
                 editor.save()?;
