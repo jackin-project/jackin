@@ -933,7 +933,27 @@ No current violators found (names are descriptive), but three edge cases:
 - `src/docker.rs` — `CommandRunner` trait is defined here alongside `ShellRunner`, its primary production implementation. Rule 3 is satisfied: trait + primary implementation are co-located. `FakeRunner` (test double) correctly lives in `runtime/test_support.rs` — it's a test concern, not the trait's primary implementation.
 
 **Rule 4: `pub` discipline.**
-Currently most items use bare `pub`. A pass to replace `pub` with `pub(crate)` or `pub(super)` where cross-crate visibility is not needed would improve encapsulation signalling without behavior change. Estimated scope: moderate (50–100 items across the codebase).
+
+Verified by grep (iteration 40):
+- **257 bare `pub` items** (top-level functions, structs, enums, traits, types, consts) across `src/`
+- **21 `pub(crate)` items** — restricted to crate-internal consumers
+- **61 `pub(super)` items** — restricted to parent module; concentrated in `console/manager/` subsystem
+- **0 files** use `#![warn(unreachable_pub)]` or `#![deny(unreachable_pub)]`
+- **`unreachable_pub` not in `Cargo.toml` `[lints]`** — no enforcement gate
+
+In a binary crate (no external library consumers), every `pub` item that is not the binary's public API entry point is over-exposed. Rust's `unreachable_pub` lint detects `pub` items that are unreachable from the crate root (i.e., not re-exported through a public path). Enabling it would identify which of the 257 `pub` items should be `pub(crate)`.
+
+Top violators by bare `pub` item count (verified by grep):
+- `src/operator_env.rs` — 17 bare `pub` items (the trait `OpRunner`, `OpCli`, `OpStructRunner` + associated types — these are intentionally `pub` because `console/` uses them; `pub(crate)` would be correct since there are no external consumers)
+- `src/tui/output.rs` — 13 bare `pub` items (all operator-facing output functions; `pub(crate)` correct)
+- `src/workspace/planner.rs` — 8 bare `pub` items (plan structs used by `app/` and `console/`; `pub(crate)` correct)
+
+**Recommendation:** Enable `unreachable_pub` as a `warn` in `Cargo.toml [lints.rust]`:
+```toml
+[lints.rust]
+unreachable_pub = "warn"
+```
+This lint runs in the existing `cargo clippy -- -D warnings` CI gate (after the `unreachable_pub` warnings are cleaned up). A single pass converting `pub` → `pub(crate)` for the non-entry-point items is mechanical — the compiler finds all missed usages. Scope: ~150–200 items estimated after excluding the genuine public entry points (`pub fn load_agent`, `pub fn run_console`, CLI structs, `bin/validate.rs` items).
 
 **Rule 5: No god files (>500 lines) without justification.**
 The **28+ files above the 500-line threshold** (§1 hot-spot list, updated by `find src -name "*.rs" | xargs wc -l | sort -rn` in iteration 27) should each have an explicit justification in a `//!` module comment. If no justification exists, the file should be split per Rule 2. `src/runtime/launch.rs` at 2368L has no `//!` module comment — this is the clearest violation.
@@ -1608,6 +1628,48 @@ This is required by the stack constraint. `docs/AGENTS.md` already names this as
 **Gain (A):** A `RUST_LOG=debug jackin load` experience for jackin developers debugging the bootstrap pipeline without needing `--debug` (which also exposes Docker command strings to the operator, not just to developers). Currently there is no developer-only debug path.
 
 **Recommendation:** `defer`. The operator-facing TUI output is intentionally separate from logging and should stay that way (`tui::step_*` functions are fine). Internal developer debug traces would benefit from `log` + `env_logger` but this is a developer convenience, not a readability or navigability problem. Flip condition: if jackin contributors start instrumenting code with `eprintln!` for debugging and forgetting to remove them, introducing `log::debug!()` + `env_logger` gives a proper filter gate.
+
+---
+
+### 7.15 Rustdoc JSON → Astro Starlight API documentation pipeline
+
+**What it is:** A build step that replaces `cargo doc`'s HTML renderer with Astro Starlight — consuming `rustdoc`'s structured JSON output to generate browsable, searchable, on-brand API documentation integrated into the same site as user guides, behavioral specs, and ADRs. Referenced in §0 executive summary and §11 (future project prototype).
+
+**What `jackin` does today:** `cargo doc --no-deps --document-private-items` generates `target/doc/` HTML locally. This output is never published. The CI `check` job does not run `cargo doc`. There is no API documentation visible to contributors or AI agents beyond the inline `//!` module docs (59% coverage, §4) and `cargo doc` HTML on the developer's local machine. The public docs site (`jackin.tailrocks.com`) has zero Rust API content.
+
+**The 2026-modern landscape:**
+
+*Option A — Publish rustdoc HTML to `docs.rs` or a subdomain (minimal work):* Simply run `cargo doc` in CI and publish the HTML artifact to e.g. `api.jackin.tailrocks.com`. This preserves the rustdoc UX (functional but dated) and adds zero maintenance burden. The search index is per-crate and not integrated with the Starlight search. Cost: 1 CI step + subdomain routing. Gain: at least the docs exist publicly. Verdict: solves discoverability but not UX.
+
+*Option B — `rustdoc --output-format json` + custom Starlight pages (recommended):* `cargo +nightly rustdoc --output-format json -p jackin` produces `target/doc/jackin.json` — a structured representation of every public and private item, its signature, doc comment, source location, and cross-references. A bun TypeScript build script (`docs/scripts/gen-rust-api.ts`) processes this JSON and emits Starlight MDX pages at `docs/src/content/docs/internal/api/`. The output is `.gitignore`d (build artifact, regenerated by `bun run gen:api` before `bun run build`).
+
+*Option C — `rustdoc-json` crate as a Rust build script:* The [`rustdoc-json`](https://crates.io/crates/rustdoc-json) crate wraps the unstable `--output-format json` flag and manages toolchain selection. The processing layer is then a Rust binary (`cargo run --bin gen-api`) rather than a bun TypeScript script. Consistent with the "Rust-only application code" constraint. Cost: an additional small Rust binary; slower build than a bun script; requires nightly toolchain management.
+
+**Recommended: Option B** — bun TypeScript matches the existing `docs/scripts/` pattern (`check-repo-links.ts`, `gen-icons.ts`, `gen-og.ts`). The nightly toolchain can be isolated to a separate CI job that doesn't affect the stable Rust build.
+
+**Key design decisions for Option B:**
+
+1. **What to include:** All public items (`pub fn`, `pub struct`, `pub enum`, `pub trait`) plus private items with `//!` docs or `///` comments — using `--document-private-items` for the full internal picture. Filter by module path to exclude test helpers.
+
+2. **URL structure:** `docs/src/content/docs/internal/api/<module>/<ItemName>.mdx` → browsable at `jackin.tailrocks.com/internal/api/runtime/LoadOptions/`. These pages live in the "Developer Reference" Starlight section alongside specs and ADRs.
+
+3. **Cross-linking to behavioral specs:** The `gen-rust-api.ts` script carries a hardcoded map from type name → spec URL (e.g. `OpPickerState` → `/internal/specs/op-picker/`). Each generated page emits a Starlight `<Aside>` linking to the spec if one exists. This is the feature rustdoc will never have.
+
+4. **Search integration:** Starlight's built-in search indexes all MDX pages — API docs, behavioral specs, user guides, and ADRs in one index. An operator searching "op_picker" finds both the API page and the behavioral spec.
+
+5. **The nightly caveat:** `--output-format json` currently requires `+nightly`. Add a dedicated `gen-api` CI step using `dtolnay/rust-toolchain@nightly` — isolated from the stable `check` job. The `docs.yml` workflow already runs after `ci.yml`; the `gen:api` bun script runs as part of the Astro build step.
+
+**Cost:** 1–2 days initial implementation (bun TypeScript script ~200–400L, Starlight MDX templates for module/struct/function pages). Ongoing: zero — the script regenerates automatically on each `bun run build`. Nightly toolchain: one additional GitHub Actions step; no effect on the stable CI gate.
+
+**Gain:**
+- `cargo doc` HTML in `target/` → zero: replaced by beautiful, branded, searchable pages on the live site
+- API docs cross-linked to behavioral specs — no existing Rust doc tool provides this
+- AI agents can be pointed to `jackin.tailrocks.com/internal/api/runtime/load_agent/` for current, structured context without parsing HTML
+- Prototype for the §11 future project: the `gen-rust-api.ts` script becomes the processing layer for a generalized rustdoc JSON → Starlight platform
+
+**`pub(crate)` visibility note:** Running the pipeline with `--document-private-items` will surface the full visibility picture. The current codebase has 257 bare `pub` items vs only 21 `pub(crate)` items (verified by grep, iteration 40). In a binary crate with no external consumers, many of the 257 `pub` items are over-exposed. The `gen-rust-api.ts` script can annotate items that are `pub` but not re-exported anywhere — feeding back into the Rule 4 visibility audit proposed in §4.
+
+**Recommendation:** `adopt` — defer until after Phase 1 (//! docs sprint) completes. The pipeline's value increases proportionally with `//!` coverage. Building it on 41%-covered source produces half the value of building it after the coverage sprint reaches 80%+.
 
 ---
 

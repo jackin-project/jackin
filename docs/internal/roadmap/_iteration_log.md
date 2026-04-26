@@ -1709,3 +1709,54 @@ Operator asked to follow standard Rust community practices for project structure
 1. **`pub(crate)` visibility audit** — the roadmap proposes `pub(crate)` discipline (Rule 4) but never verified the current state across all 94 files. How many items are `pub` that should be `pub(crate)`?
 2. **§7.15 is mentioned in the executive summary but doesn't exist yet** — the rustdoc JSON → Starlight pipeline is referenced in §0 as if it exists, but §7.15 has not been written.
 3. **§11 editor integration note** — user asked about fff.nvim; noted briefly in conversation but not added to §11.
+
+---
+
+## Iteration 40 — 2026-04-26
+
+### What was improved
+
+1. **Wrote §7.15 — rustdoc JSON → Astro Starlight API pipeline** (section referenced in §0 and §11 but previously unwritten — internal contradiction resolved)
+
+   Added a full six-subheading §7 entry covering:
+   - Three options: publish rustdoc HTML (minimal), rustdoc JSON + bun TypeScript script (recommended), rustdoc-json crate as Rust build script
+   - Recommended Option B (bun TypeScript, matches existing docs/scripts/ pattern)
+   - Key design decisions: what to include, URL structure, cross-linking to behavioral specs, search integration, nightly caveat
+   - Pub(crate) visibility note: gen-rust-api.ts can annotate over-exposed items, feeding Rule 4 audit
+   - Cost/gain analysis: prototype for §11, AI agent URL access, search integration
+   - Recommendation: `adopt` after Phase 1 //! docs sprint (pipeline value ∝ coverage)
+
+2. **Rule 4 `pub` discipline — grounded in actual numbers (iteration 40 grep)**
+
+   Previous Rule 4 text said "Estimated scope: moderate (50–100 items)" — pure guess. Replaced with verified data:
+   - 257 bare `pub` items, 21 `pub(crate)` items, 61 `pub(super)` items (grep confirmed)
+   - 0 files use `unreachable_pub` lint — no enforcement gate at all
+   - Top violators: `operator_env.rs` (17), `tui/output.rs` (13), `workspace/planner.rs` (8)
+   - Added concrete `Cargo.toml [lints.rust]` snippet: `unreachable_pub = "warn"`
+   - Revised scope estimate: ~150–200 items after excluding genuine entry points
+
+### What was read (fresh scan)
+- `grep -r "^pub fn\|^pub struct..."` across all 94 files — 257 bare pub items confirmed
+- `grep -r "^pub(crate)..."` — 21 items confirmed  
+- `grep -r "^pub(super)..."` — 61 items confirmed
+- `grep -r "unreachable_pub"` — 0 hits confirmed (no enforcement)
+- `Cargo.toml` — confirmed unreachable_pub not in [lints] section
+- Top violators identified by per-file grep
+
+### What changed in the roadmap
+- §7: Added §7.15 (rustdoc JSON → Starlight pipeline) between §7.14 and §8
+- §4 Rule 4: Replaced estimated scope with verified numbers and `unreachable_pub` recommendation
+
+### Confidence assessment
+| Section | Confidence | Notes |
+|---|---|---|
+| 257 bare pub items | High | grep confirmed |
+| 21 pub(crate) items | High | grep confirmed |
+| "0 unreachable_pub uses" | High | grep confirmed |
+| ~150-200 mechanical conversions | Medium | Estimates genuine entry points at ~57-100 items; excludes CLI structs, bin/validate items |
+| §7.15 Option B nightly CI step | Medium | Pattern is established (ci.yml uses dtolnay/rust-toolchain); implementation not verified by reading the actual workflow |
+
+### Weakest sections for iteration 41
+1. **§7.15 nightly CI step** — described as "one additional GitHub Actions step" but `.github/workflows/docs.yml` has not been read to verify the actual integration point. Should be verified.
+2. **Rule 4 — which pub items are genuine entry points?** — the 257 count includes the CLI struct, `pub fn main`, and other true public items. Identifying them precisely would sharpen the "~150-200 mechanical conversions" estimate.
+3. **§11 editor integration (fff.nvim)** — user asked about this during the session; the MCP server note was made in conversation but §11 doesn't mention editor integration as a future consideration.
