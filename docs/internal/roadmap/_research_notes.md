@@ -118,6 +118,55 @@ Append new entries at the bottom; include retrieval date.
 
 ---
 
+## 2026-04-26 — OpenSpec (Fission-AI/OpenSpec)
+
+**Sources (retrieved 2026-04-26):**
+- https://github.com/Fission-AI/OpenSpec
+- https://openspec.dev/
+- https://openspec.pro/
+- https://www.augmentcode.com/tools/best-spec-driven-development-tools (tool comparison, 2026)
+- https://medium.com/@richardhightower/agentic-coding-gsd-vs-spec-kit-vs-openspec-vs-taskmaster-ai-where-sdd-tools-diverge-0414dcb97e46
+
+**Summary:**
+- **What it is:** Lightweight spec-driven development framework. "Brownfield-first" philosophy — designed for iterating on mature codebases, not greenfield starts. Published to npm; `npm install -g @fission-ai/openspec@latest` (requires Node.js 20.19.0+).
+- **Core workflow — three-phase state machine:**
+  1. `/opsx:propose` — creates `openspec/changes/<feature>/` with `proposal.md`, `design.md`, `tasks.md`, `specs/`
+  2. `/opsx:apply` — task-based implementation with progress tracking
+  3. `/opsx:archive` — completed change moves to `openspec/changes/archive/[date]-[feature]/`; specs persist at `openspec/specs/<capability>/spec.md`
+- **Delta markers (unique feature):** Proposal artifacts annotate requirements as `ADDED`, `MODIFIED`, or `REMOVED` relative to existing functionality. Makes brownfield change scope explicit at the spec level — the AI and operator agree on what changes, not just what the feature is.
+- **Living specs:** Completed specs persist in `openspec/specs/` as architecture documentation; they don't disappear post-archive. This is the same "specs as living documentation" principle as the Starlight MDX approach already recommended in §8.1, but stored in a private directory.
+- **Claude Code compatibility:** Integrates via native slash commands (`/opsx:propose`, `/opsx:apply`, `/opsx:archive`). `/loop`-compatible. Works with 25+ AI assistants.
+- **vs GitHub Spec Kit:** Lighter artifacts (~250L vs ~800L); less rigid phases; explicitly brownfield-aware. Spec Kit produces a fixed REQUIREMENTS/DESIGN/TASKS trio; OpenSpec separates change proposals (transient) from capability specs (permanent).
+- **vs cc-sdd:** cc-sdd is a Claude Code–specific harness (spec → plan → execute); OpenSpec adds delta markers and a clear propose/apply/archive lifecycle. cc-sdd has no brownfield change-tracking.
+- **Blocker for jackin:** The `openspec/` directory structure creates an internal artifact hierarchy that competes with the `docs/src/content/docs/specs/*.mdx` public-site approach already chosen in §8.1. They address different concerns (workflow automation vs. public living documentation), so they could coexist, but adds tooling complexity. Node.js 20.19+ is already a dev dependency (via bun), so installation cost is low.
+- **jackin verdict:** OpenSpec's delta-marker approach is the most compelling feature not found in any other tool — explicitly tagging ADDED/MODIFIED/REMOVED at the spec level would be high-value for the §4 module-split proposals in this roadmap, where "what changes" needs to be agreed before refactoring begins. The `/opsx:propose` + Starlight MDX combination is feasible: use OpenSpec for the proposal/apply workflow, then migrate the final spec content to a Starlight MDX page for public living documentation. Recommended as a complement to cc-sdd rather than a replacement — evaluate for the first structural refactoring PR.
+
+---
+
+## 2026-04-26 — IIKit (intent-integrity-chain/kit)
+
+**Sources (retrieved 2026-04-26):**
+- https://github.com/intent-integrity-chain/kit (README, v2.10.0)
+- https://tessl.io/registry/tessl-labs/intent-integrity-kit
+
+**Summary:**
+- **What it is:** "Intent Integrity Kit" — closes the "intent-to-code chasm" via cryptographic verification at each phase. Chain: `Intent → Spec → .feature → Steps → Code`. SHA256-locks Gherkin `.feature` files before implementation to prevent AI from modifying tests to match buggy code.
+- **Installation:** Via Tessl CLI (`npm install -g @tessl/cli && tessl install tessl-labs/intent-integrity-kit`). Requires Tessl — direct repo clone does NOT produce self-contained skills (shared reference files are only resolved at publish time).
+- **Phases (8 skills):** `iikit-core init` → `iikit-00-constitution` → `iikit-01-specify` → `iikit-02-plan` → `iikit-03-checklist` → `iikit-04-testify` → `iikit-05-tasks` → `iikit-06-analyze` → `iikit-07-implement`. Never skip phases.
+- **BDD verification chain:** `iikit-04-testify` generates Gherkin `.feature` files from Given/When/Then acceptance criteria and stores a SHA256 hash in `context.json` + git notes. `iikit-07-implement` enforces: hash check (tamper detection), step coverage (`verify-steps.sh`), RED→GREEN TDD cycle, step quality (`verify-step-quality.sh` — no empty bodies, no `assert True`).
+- **Tessl integration:** At `/iikit-02-plan`, Tessl installs tiles for the tech stack; at `/iikit-07-implement`, Tessl queries current library APIs before writing code. This is valuable for JS/Python ecosystems with rapidly shifting APIs; less so for Rust where `cargo doc` and `docs.rs` are the authoritative sources.
+- **Stars:** 39 (as of 2026-04-24). Active development; v2.10.0 (2026-04-24).
+- **Claude Code compatibility:** Explicitly supported (CLAUDE.md → AGENTS.md); also supports Codex, Gemini, OpenCode, Copilot.
+- **jackin blockers (multiple):**
+  1. **Gherkin dependency:** The BDD verification chain assumes a Gherkin step runner (Cucumber or equivalent). `jackin` uses Rust + `cargo nextest` with `#[test]` — there is no Gherkin step runner, no step coverage tool, and no `verify-steps.sh` equivalent for Rust. The entire cryptographic hash-locking mechanism is inert without a step runner.
+  2. **Tessl runtime library queries:** Tessl's value proposition is querying current library APIs at plan/implement time. For Rust, this means querying `docs.rs`-level data — which Tessl doesn't yet support well. The Rust ecosystem is served better by `cargo doc --no-deps`.
+  3. **Spec format conflict:** IIKit produces `specs/NNN-feature/spec.md` internal artifacts. These are not compatible with the Starlight MDX living-documentation approach in §8.1 — they would need to be manually migrated post-implementation.
+  4. **Heavyweight for single-maintainer:** 8 mandatory phases for every feature PR is disproportionate overhead for a single-maintainer CLI project.
+  5. **Tessl lock-in:** Unlike cc-sdd (just `.claude/commands/*.md` files) or OpenSpec (npm install), IIKit can only be installed through Tessl. If Tessl's service or registry changes, IIKit breaks.
+- **jackin verdict:** Not recommended. The cryptographic `.feature`-file hash-locking is an elegant solution to AI test corruption, but it's the wrong layer for jackin — Rust's type system and `#[test]` inline tests provide stronger corruption resistance than Gherkin step hashes. The Tessl dependency, 8-phase mandatory workflow, and Gherkin incompatibility with nextest are blocking. Revisit if jackin ever adopts a Gherkin-based acceptance test layer (unlikely given single-crate Rust structure).
+
+---
+
 ## 2026-04-26 — cargo-mutants mutation testing
 
 **Sources:**

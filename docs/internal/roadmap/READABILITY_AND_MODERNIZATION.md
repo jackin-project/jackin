@@ -1025,16 +1025,23 @@ The approach works. The gap is: (a) the artifacts live under `docs/superpowers/`
 
 *Option D — Kiro (AWS IDE):* Spec-first IDE with VS Code extension. Not compatible with Claude Code CLI `/loop` pattern. Rejected for tool incompatibility.
 
+*Option E — OpenSpec (Fission-AI/OpenSpec):* Brownfield-first SDD framework (`npm install -g @fission-ai/openspec`). Three-phase state machine: `/opsx:propose` → `/opsx:apply` → `/opsx:archive`. Unique feature: **delta markers** (`ADDED`/`MODIFIED`/`REMOVED`) in proposal artifacts explicitly mark what changes relative to existing functionality — critical for brownfield iteration. Produces `openspec/changes/<feature>/` (transient, archived post-completion) and `openspec/specs/<capability>/spec.md` (permanent, living documentation). `/loop`-compatible; supports 25+ AI assistants. Source: github.com/Fission-AI/OpenSpec; openspec.dev (see `_research_notes.md`).
+
+*Option F — IIKit (intent-integrity-chain/kit):* 8-phase intent-integrity chain with SHA256 hash-locking of Gherkin `.feature` files to prevent AI from modifying tests to match buggy code. Installed via Tessl only (`tessl install tessl-labs/intent-integrity-kit`). BDD verification chain (hash check → step coverage → RED→GREEN → step quality) requires a Gherkin step runner. Stars: 39 as of 2026-04-24. Source: github.com/intent-integrity-chain/kit (see `_research_notes.md`). **Verdict for jackin: not compatible** — jackin uses Rust `#[test]` + nextest, not Gherkin step runners; Tessl dependency is extra lock-in; 8 mandatory phases are heavyweight for a single-maintainer CLI.
+
 **Evaluation for `jackin`:**
 
-| Criterion | Spec Kit (A) | cc-sdd (B) | Hand-rolled (C) |
-|---|---|---|---|
-| Survives across agent sessions | ✓ (committed files) | ✓ (committed files) | ✓ (committed files) |
-| PR-workflow integration | ✓ | ✓ | ✓ |
-| No unwanted tooling | ✓ | Needs `.claude/commands/` | ✓ |
-| Artifacts the next agent picks up cold | ✓ | ✓ (cc-sdd commands explain the format) | Only if format is documented |
-| `/loop` compatible | ✓ | ✓ (designed for it) | ✓ |
-| Lifecycle enforcement | No | Yes (phase gates) | Optional |
+| Criterion | Spec Kit (A) | cc-sdd (B) | Hand-rolled (C) | OpenSpec (E) | IIKit (F) |
+|---|---|---|---|---|---|
+| Survives across agent sessions | ✓ | ✓ | ✓ | ✓ | ✓ |
+| PR-workflow integration | ✓ | ✓ | ✓ | ✓ | ✓ |
+| No unwanted tooling | ✓ | Needs `.claude/commands/` | ✓ | Needs npm pkg | Needs Tessl CLI |
+| Artifacts the next agent picks up cold | ✓ | ✓ | Only if documented | ✓ | ✓ |
+| `/loop` compatible | ✓ | ✓ | ✓ | ✓ | Partial |
+| Lifecycle enforcement | No | Yes (phase gates) | Optional | Yes (propose/apply/archive) | Yes (8 mandatory phases) |
+| Brownfield delta tracking | No | No | No | **Yes (ADDED/MODIFIED/REMOVED)** | No |
+| Specs become living public docs | Only with extra work | Only with extra work | Only with extra work | Needs MDX migration step | No (internal artifacts) |
+| Compatible with Rust/nextest test model | ✓ | ✓ | ✓ | ✓ | **No (Gherkin required)** |
 
 **Recommendation:**
 
@@ -1047,6 +1054,8 @@ The operator requirement is: specs must be easily updatable without special tool
 - When the feature ships, `draft: true` is removed and the page joins the public site — the spec becomes the user-facing documentation.
 - When behavior changes, the spec MDX page is updated in the same PR that changes the code. The `CODE_TOUR.md` convention (update docs alongside code per PROJECT_STRUCTURE.md §Code ↔ Docs Cross-Reference) already enforces this; specs just become one more doc to update.
 - cc-sdd (`gotalab/cc-sdd`) still provides the `.claude/commands/spec.md`, `plan.md`, and `execute.md` discipline gates — the agent is guided to create a spec MDX page before coding, not a separate internal artifact.
+
+**OpenSpec complement (Option E):** OpenSpec's `/opsx:propose` + delta markers (`ADDED`/`MODIFIED`/`REMOVED`) add brownfield-specific value that cc-sdd lacks — particularly for the §4 structural refactoring work (module splits, type moves) where agreeing *what changes* before implementation begins prevents scope creep. The two can coexist: use `/opsx:propose` for the workflow artifact during a PR, then migrate the final stable spec content to a Starlight MDX page when the feature ships. OpenSpec's `openspec/specs/` living-docs layer would be a secondary, internal view; the Starlight MDX page would be the canonical public view. Cost: `npm install -g @fission-ai/openspec` (Node.js 20.19+ already satisfied via bun).
 
 **What this replaces:**
 - `docs/superpowers/specs/` (internal, hidden from contributors) — replaced by visible Starlight pages
