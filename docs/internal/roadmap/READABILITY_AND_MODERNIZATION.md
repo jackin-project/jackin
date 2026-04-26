@@ -157,7 +157,7 @@ jackin/
 | `console/manager/input/save.rs` | 1472 | `begin_editor_save`, `commit_editor_save`, `open_save_error_popup`, `build_workspace_edit` | two-phase save: Phase 1 validate+preview, Phase 2 commit to disk | manager/* |
 | `console/manager/input/prelude.rs` | 533 | — | workspace-create wizard input | manager/* |
 | `console/manager/input/mouse.rs` | 689 | — | mouse event handling for manager | manager/* |
-| `console/manager/render/mod.rs` | — | `render` | render dispatch for manager stages | manager/render/* |
+| `console/manager/render/mod.rs` | 421 | `render`, `FooterItem`, `PHOSPHOR_GREEN/DIM/DARK`, `WHITE`, `render_header`, `centered_rect_fixed` | stage dispatch (Editor vs List vs CreatePrelude) + shared TUI utilities: `FooterItem` footer model, phosphor-green palette constants, header/footer/layout helpers | manager/render/* |
 | `console/manager/render/list.rs` | 1989 | — | list view drawing (left column, right-pane details, toast) | ratatui |
 | `console/manager/render/editor.rs` | 1666 | — | editor tabs drawing (General, Mounts, Agents, Secrets) | ratatui |
 | `console/manager/render/modal.rs` | — | — | modal overlay rendering | ratatui |
@@ -762,6 +762,22 @@ The doc does three things, in order, that every good `//!` should do:
 3. **Consolidation history** — lines 12–17 name the two previous locations (`manifest::RESERVED_RUNTIME_ENV_VARS` and `runtime::RUNTIME_OWNED_ENV_VARS`) and explain why they were merged. This makes the design decision visible without needing `git blame`. **This is the element most files lack** — they state what they do but not why they exist or what they replaced.
 
 A `//!` that only does item 1 is adequate. One that does all three eliminates a class of tribal-knowledge questions entirely.
+
+**Positive exemplars already in the codebase (verified by reading first lines):**
+
+| File | Level | What makes it exemplary |
+|---|---|---|
+| `src/env_model.rs` | 3-element | One-line purpose + "source of truth" scope claims + consolidation history (two previous locations named) |
+| `src/console/manager/agent_allow.rs` | 3-element | Names the business rule ("empty list = all allowed"), states which three consumers rely on it; 6 lines serving 3 code sites |
+| `src/console/manager/input/save.rs` | 2-element | Names both save phases ("two-phase commit... ConfirmSave preview modal... ConfigEditor-driven writes") |
+| `src/console/manager/input/list.rs` | 2-element | Names the `GithubPicker` modal explicitly — non-obvious from the file name alone |
+| `src/console/manager/mount_info.rs` | 2-element | Names both the concern ("display — no functional effect on the workspace config") and the scope boundary (display-only) |
+| `src/console/manager/input/mod.rs` | 2-element | Names the dispatch precedence rule ("Modal-first precedence") — would otherwise require reading the entire function |
+| `src/console/manager/render/mod.rs` | 1-element | Present but minimal — only the one-line purpose; lacks scope claims and consolidation history |
+
+**Pattern observation:** The `console/manager/` subsystem has the best `//!` coverage in the codebase. PR #171 was written with docs discipline — every new file received a `//!` doc. The contrast with `src/app/`, `src/runtime/`, and `src/instance/` (which have almost none) is stark. The `//!` priority queue in §10 Step 5 targets the highest-impact gaps in those older subsystems.
+
+**The `render/mod.rs` minimal doc** is an example of a 1-element `//!` that could be upgraded. The two missing elements: (1) scope claim — "this is the canonical home for the phosphor-green palette constants; all render sub-files import from here"; (2) consolidation history — "FooterItem model was added in PR #165 when the footer was refactored from plain strings." A `//!` upgrade is lower priority than writing docs for undocumented files, but worth noting as the difference between "adequate" and "exemplary."
 
 ---
 

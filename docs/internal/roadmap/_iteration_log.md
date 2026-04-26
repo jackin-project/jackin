@@ -965,3 +965,37 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 — roadmap has no explicit "current state" inventory of which files already have good //! docs** — we know 37/90 files have `//!` docs, but the roadmap doesn't enumerate the "well-documented" files alongside the "needs documentation" list. The positive examples (env_model.rs, agent_allow.rs) exist but there's no complete positive inventory.
 2. **§1 module map — `console/manager/render/mod.rs`** — listed but no line count or key export. The render module dispatch is important for understanding how the three render stages are wired.
 3. **§7.5 snapshot testing — `render_tab_strip` EditorTab variants** — the roadmap says "4 tab variants" but doesn't name them. After PR #171, the tabs are General, Mounts, Agents, and Secrets/Environments — the exact variant names matter for writing the snapshot tests.
+
+---
+
+## Iteration 24 — 2026-04-26
+
+### Improvements chosen
+
+1. **`render/mod.rs` read in full — module map corrected + Role clarified** — read the complete file (421L, 244L production, tests at line 245). Key findings: (a) `FooterItem` enum is a substantial shared TUI infrastructure model (5 variants, inline block comment explaining the model); (b) 4 palette constants (`PHOSPHOR_GREEN/DIM/DARK`, `WHITE`) are defined here and used by all render sub-files; (c) `pub fn render` has `#[allow(clippy::too_many_lines)]` (14th suppression — hot-spot table says "13", may be undercounted); (d) the file has a minimal 1-element `//!` doc ("Render functions for the workspace manager TUI.") — lacks scope claims and consolidation history. Module map updated: 421L, `FooterItem` + palette constants + `render_header` + `centered_rect_fixed` added to key exports; description expanded to "stage dispatch + shared TUI utilities."
+
+2. **EditorTab variants confirmed — `/stub` qualifier already gone** — confirmed `EditorTab` enum has exactly 4 variants: `General`, `Mounts`, `Agents`, `Secrets` (reading `state.rs:187–191`). The `Secrets` Rust variant is what the UI labels "Secrets / Environments." The §7.5 description already had `/stub` removed in an earlier iteration — this was a false alarm.
+
+3. **§4 Rule 7 — positive exemplars table added** — added a 7-row "positive exemplars" table contrasting: 3-element `//!` docs (env_model.rs, agent_allow.rs) vs 2-element (input/save.rs, input/list.rs, mount_info.rs, input/mod.rs) vs 1-element (render/mod.rs). Added a "pattern observation" note that `console/manager/` is the reference model for `//!` coverage — PR #171 was written with docs discipline. Added a concrete example of how `render/mod.rs` could be upgraded from 1-element to 3-element.
+
+### What was read
+- `src/console/manager/render/mod.rs` (full — 421L read in full via `cat`)
+- `src/console/manager/state.rs:187–191` (EditorTab enum variants confirmed via grep)
+- §7.5 snapshot test section (confirmed `/stub` already removed in iteration 17)
+
+### What changed in the roadmap
+- §1 module map: `render/mod.rs` updated (— → 421L; key exports expanded from just `render` to full list; description expanded)
+- §4 Rule 7: Added 7-entry positive exemplars table; pattern observation about console/manager/ subsystem; render/mod.rs upgrade example
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `render/mod.rs` 421L/244L production | High | `wc -l` confirmed; `grep #[cfg(test)]` confirmed tests at line 245 |
+| `render/mod.rs` FooterItem as key export | High | Read full file; FooterItem enum at lines ~37-50 |
+| EditorTab Secrets variant | High | state.rs:187-191 read via grep; all 4 variants confirmed |
+| §4 Rule 7 positive exemplars table | High | All 7 files confirmed with `//!` docs by reading first lines in prior iterations |
+
+### Weakest sections for iteration 25
+1. **§7.5 snapshot test `render_mounts_subpanel` — `MountConfig` struct construction** — the test description says `MountConfig { src: ..., dst: ..., read_only: false }`. After reading `workspace/mod.rs` in iteration 1, the struct fields were confirmed. But `MountConfig` is being renamed to `MountSpec` in §5 #13. The snapshot test description should note this is the CURRENT name and will change.
+2. **Hot-spot table `too_many_lines` count** — `render/mod.rs` has `#[allow(clippy::too_many_lines)]` on `pub fn render` (line 88). The hot-spot table says "13 across 8 files" but this is a 14th. Need to recount.
+3. **§4 Rule 7 — `render/mod.rs` upgrade path** — the analysis says the consolidation history for `FooterItem` would reference "PR #165". This should be verified — what PR actually introduced the FooterItem model?
