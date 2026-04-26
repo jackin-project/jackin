@@ -12,7 +12,7 @@ use ratatui::{
 
 use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::list::{
-    MOUNT_ISO_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
+    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
     render_mount_header,
 };
 use super::{
@@ -399,7 +399,7 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             // Two-space gap before the iso column — matches the header.
             Span::raw("  "),
             Span::styled(
-                format!("{iso:<MOUNT_ISO_COL_WIDTH$}"),
+                format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             // Two-space gap before the type column — matches the header.

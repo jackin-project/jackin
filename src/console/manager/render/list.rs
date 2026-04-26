@@ -152,12 +152,11 @@ pub(super) fn format_mount_rows(
 /// stays aligned across header and data rows.
 pub(super) const MOUNT_MODE_COL_WIDTH: usize = 4;
 
-/// Width of the `Iso` column. Pinned to the longest isolation label —
-/// "worktree" (8 chars) — so data rows pad to the same width and the
-/// downstream `Type` column stays aligned regardless of which strategy
-/// the mount uses. Header label "Iso" (3 chars) is shorter so the pad
-/// is driven by the data values.
-pub(super) const MOUNT_ISO_COL_WIDTH: usize = 8;
+/// Width of the `Isolation` column. Pinned to the wider of the
+/// "Isolation" header label (9 chars) and the longest data value
+/// "worktree" (8 chars), so header and data rows always align without
+/// the downstream `Type` column shifting.
+pub(super) const MOUNT_ISOLATION_COL_WIDTH: usize = 9;
 
 /// Compute the width used for the `Path` column so that header and data rows
 /// align. Derived from both the "Path" header label and the widest row path,
@@ -176,7 +175,7 @@ pub(super) fn render_mount_header(path_w: usize) -> Line<'static> {
     // Leading two-space gutter + two-space gap between every column matches
     // the data-row format so columns never run into each other.
     let mode_col = format!("{:<mw$}", "Mode", mw = MOUNT_MODE_COL_WIDTH);
-    let iso_col = format!("{:<iw$}", "Iso", iw = MOUNT_ISO_COL_WIDTH);
+    let iso_col = format!("{:<iw$}", "Isolation", iw = MOUNT_ISOLATION_COL_WIDTH);
     Line::from(Span::styled(
         format!(
             "  {path:<path_w$}  {mode_col}  {iso_col}  Type",
@@ -201,7 +200,7 @@ pub(super) fn render_mount_lines(
                 // Two-space gap before the iso column — matches the header.
                 Span::raw("  "),
                 Span::styled(
-                    format!("{iso:<MOUNT_ISO_COL_WIDTH$}"),
+                    format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
                     Style::default().fg(PHOSPHOR_DIM),
                 ),
                 // Two-space gap before the type column — matches the header.
@@ -698,7 +697,7 @@ fn render_agents_subpanel(
 #[cfg(test)]
 mod mount_table_tests {
     use super::{
-        MOUNT_ISO_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
+        MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
         render_mount_header, render_mount_lines,
     };
     use crate::workspace::MountConfig;
@@ -808,10 +807,10 @@ mod mount_table_tests {
             "  {path:<path_w$}  {mode:<mw$}  {iso:<iw$}  Type",
             path = "Path",
             mode = "Mode",
-            iso = "Iso",
+            iso = "Isolation",
             path_w = path_w,
             mw = MOUNT_MODE_COL_WIDTH,
-            iw = MOUNT_ISO_COL_WIDTH,
+            iw = MOUNT_ISOLATION_COL_WIDTH,
         );
         let s = line_text(&header);
         assert_eq!(s, expected);
@@ -820,11 +819,12 @@ mod mount_table_tests {
     #[test]
     fn header_has_two_space_gap_between_columns() {
         // Regression for the "Mode Type" spacing bug, extended to cover the
-        // new `Iso` column: header must emit a literal two-space gap between
-        // every column (Mode → Iso → Type), mirroring the gap data rows
-        // emit between `rw`/`ro`, the iso label, and the kind. Additionally
-        // pins the type-column alignment: the `Type` header label must start
-        // at the same character offset as the data row's kind label.
+        // new `Isolation` column: header must emit a literal two-space gap
+        // between every column (Mode → Isolation → Type), mirroring the gap
+        // data rows emit between `rw`/`ro`, the isolation label, and the
+        // kind. Additionally pins the type-column alignment: the `Type`
+        // header label must start at the same character offset as the data
+        // row's kind label.
         let rows: Vec<(String, &str, &str, String)> =
             vec![("~/p".into(), "rw", "shared", "folder".into())];
         let path_w = mount_path_width(&rows);
@@ -832,10 +832,10 @@ mod mount_table_tests {
         let data = render_mount_lines(&rows, path_w);
         let header_text = line_text(&header);
         let data_text = line_text(&data[0]);
-        // Header should have "Mode" followed by gap+padding to the iso column.
+        // Header should have "Mode" followed by gap+padding to the isolation column.
         assert!(
-            header_text.contains("Iso"),
-            "expected header to contain 'Iso'; got {header_text:?}"
+            header_text.contains("Isolation"),
+            "expected header to contain 'Isolation'; got {header_text:?}"
         );
         let header_type_offset = header_text.find("Type").expect("header has 'Type'");
         let data_kind_offset = data_text.find("folder").expect("data row has 'folder'");

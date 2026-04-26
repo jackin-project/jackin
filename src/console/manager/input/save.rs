@@ -541,32 +541,46 @@ fn build_confirm_save_lines(
                 )));
             }
 
-            let added_mounts: Vec<_> = editor
-                .pending
-                .mounts
+            let mount_diffs = super::super::state::classify_mount_diffs(
+                &editor.original.mounts,
+                &editor.pending.mounts,
+            );
+            let any_diff = mount_diffs
                 .iter()
-                .filter(|m| !editor.original.mounts.contains(m))
-                .collect();
-            let removed_mounts: Vec<_> = editor
-                .original
-                .mounts
-                .iter()
-                .filter(|m| !editor.pending.mounts.contains(m))
-                .collect();
-            if !added_mounts.is_empty() || !removed_mounts.is_empty() {
+                .any(|d| !matches!(d, super::super::state::MountDiff::Unchanged(_)));
+            if any_diff {
                 out.push(Line::raw(""));
                 out.push(Line::from(Span::styled("Mounts:", heading)));
-                for m in &added_mounts {
-                    out.push(Line::from(Span::styled(
-                        format!("  + {}", mount_summary(m)),
-                        value,
-                    )));
-                }
-                for m in &removed_mounts {
-                    out.push(Line::from(Span::styled(
-                        format!("  - {}", mount_summary(m)),
-                        dim,
-                    )));
+                for diff in &mount_diffs {
+                    match diff {
+                        super::super::state::MountDiff::Added(m) => {
+                            out.push(Line::from(Span::styled(
+                                format!("  + {}", mount_summary(m)),
+                                value,
+                            )));
+                        }
+                        super::super::state::MountDiff::Removed(m) => {
+                            out.push(Line::from(Span::styled(
+                                format!("  - {}", mount_summary(m)),
+                                dim,
+                            )));
+                        }
+                        super::super::state::MountDiff::Modified { original, pending } => {
+                            // Modified row: show the new state (`~`) with a
+                            // dimmed `was:` follow-up so the operator can
+                            // see exactly what changed without reading a
+                            // remove + add pair.
+                            out.push(Line::from(Span::styled(
+                                format!("  ~ {}", mount_summary(pending)),
+                                value,
+                            )));
+                            out.push(Line::from(Span::styled(
+                                format!("      was: {}", mount_summary(original)),
+                                dim,
+                            )));
+                        }
+                        super::super::state::MountDiff::Unchanged(_) => {}
+                    }
                 }
             }
 
@@ -631,7 +645,8 @@ fn mount_summary(m: &crate::workspace::MountConfig) -> String {
     let src = crate::tui::shorten_home(&m.src);
     let kind = super::super::mount_info::inspect(&m.src);
     let rw = if m.readonly { "ro" } else { "rw" };
-    format!("{src}  ({rw}, {})", kind.label())
+    let isolation = m.isolation.as_str();
+    format!("{src}  ({rw}, {isolation}, {})", kind.label())
 }
 
 fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {

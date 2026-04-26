@@ -16,6 +16,27 @@ Keeping a single ledger means we can periodically review what's safe to remove i
 
 See `DEPRECATED.md` itself for the entry format.
 
+## TUI Labels
+
+User-facing labels in the TUI (column headers, tab names, button text, footer hints, modal titles, status badges) must use the **full word**, not an abbreviation. Operators read the TUI in passing — they cannot afford to pause and decode what `Iso`, `Cfg`, `Env`, `Auth`, `WD` etc. stand for, and the meaning of an abbreviation is rarely obvious from context.
+
+Examples:
+
+- `Isolation` — not `Iso`
+- `Environments` — not `Env`
+- `Workdir` — not `WD`
+- `Read-only` — not `RO` (the `rw`/`ro` data values inside a row are fine; the *header* labelling that column should be the full word)
+
+When a column would be uncomfortably wide, prefer wrapping or a layout
+adjustment over an abbreviated label. The cost of a few extra characters
+in the header is much smaller than the cost of an operator
+mis-interpreting a screen.
+
+Already-established short forms in this codebase that are NOT considered
+abbreviations: `dst` (destination, used in mount paths), `src` (source,
+same), `git`, `op` (1Password, an actual product name). Don't extend
+this set without raising it as a design question.
+
 ## TUI Keybindings
 
 TUI keybindings must use plain letters, numbers, `Enter`, `Esc`, `Tab`, or arrow keys. Avoid `Ctrl`/`Alt`/`Cmd`/`Shift` modifiers — they add friction, conflict with terminal and multiplexer chords (tmux, iTerm2, Ghostty), and are not discoverable in footer hints.
