@@ -184,7 +184,24 @@ fn count_keep_awake_agents(runner: &mut impl CommandRunner) -> anyhow::Result<us
 
 fn read_pid_file(path: &Path) -> anyhow::Result<Option<u32>> {
     match std::fs::read_to_string(path) {
-        Ok(contents) => Ok(contents.trim().parse::<u32>().ok()),
+        Ok(contents) => {
+            let trimmed = contents.trim();
+            // Distinguish "file empty" from "file has unparseable bytes."
+            // Empty → behave like "no PID recorded" (treat as fresh
+            // start). Unparseable → propagate so the outer reconcile()
+            // breadcrumb fires; silently coercing to None would let a
+            // corrupted PID file orphan a live caffeinate by spawning a
+            // duplicate over the unrecorded survivor.
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            trimmed.parse::<u32>().map(Some).map_err(|e| {
+                anyhow::Error::new(e).context(format!(
+                    "PID file {} contains non-numeric data; refusing to overwrite to avoid orphaning caffeinate",
+                    path.display()
+                ))
+            })
+        }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err).with_context(|| format!("reading {}", path.display())),
     }
@@ -383,11 +400,30 @@ mod tests {
     }
 
     #[test]
-    fn read_pid_file_returns_none_for_garbage() {
+    fn read_pid_file_returns_none_for_empty_file() {
+        // Empty file is the legitimate "no PID recorded" state — treat
+        // as a fresh start, not as corruption.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.pid");
+        std::fs::write(&path, "").unwrap();
+        assert_eq!(read_pid_file(&path).unwrap(), None);
+    }
+
+    #[test]
+    fn read_pid_file_errors_on_garbage() {
+        // Corrupted PID file (non-numeric content) MUST surface as an
+        // error rather than coercing to None — silent coercion would
+        // let the next `(true, Gone)` arm spawn a duplicate caffeinate
+        // over the unrecorded survivor, orphaning the prior process
+        // until reboot.
         let tmp = tempdir().unwrap();
         let path = tmp.path().join("p.pid");
         std::fs::write(&path, "not-a-pid").unwrap();
-        assert_eq!(read_pid_file(&path).unwrap(), None);
+        let err = read_pid_file(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("non-numeric"),
+            "error must mention non-numeric content; got: {err}",
+        );
     }
 
     #[test]

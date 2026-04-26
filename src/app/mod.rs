@@ -1037,12 +1037,18 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
     let default_agent = workspace.default_agent.as_deref().unwrap_or("none");
 
     let short_workdir = tui::shorten_home(&workspace.workdir);
-    let info = [
+    let mut info: Vec<(&str, &str)> = vec![
         ("Name", name),
         ("Workdir", short_workdir.as_str()),
         ("Allowed Agents", allowed.as_str()),
         ("Default Agent", default_agent),
     ];
+    // Only surface keep_awake when opted in — disabled is the default and
+    // shouldn't add noise. When enabled, the operator sees it here so a
+    // mysteriously sleepless Mac traces back to the workspace.
+    if workspace.keep_awake.enabled {
+        info.push(("Keep Awake", "enabled (macOS only)"));
+    }
     let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
     info_table
         .with(Style::modern_rounded())

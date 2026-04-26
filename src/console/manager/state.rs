@@ -560,6 +560,13 @@ impl EditorState<'_> {
         if self.pending.allowed_agents != self.original.allowed_agents {
             n += 1;
         }
+        // Future-proofs the save toast for the moment a TUI handler is
+        // wired to toggle keep_awake — without this, the count would
+        // under-report by 1 and the persistence path would still write
+        // the change, leaving operators confused about what was saved.
+        if self.pending.keep_awake != self.original.keep_awake {
+            n += 1;
+        }
         // Rename in Edit mode counts as a change.
         if let EditorMode::Edit { name } = &self.mode
             && self.pending_name.as_deref().is_some_and(|pn| pn != name)
