@@ -123,10 +123,13 @@ fn render_toast(frame: &mut Frame, area: Rect, toast: &super::super::state::Toas
     frame.render_widget(Paragraph::new(line), banner_area);
 }
 
-/// Build aligned 3-column mount rows: (`path_display`, mode, `kind_label`).
+/// Build aligned 4-column mount rows: (`path_display`, mode, `iso_label`,
+/// `kind_label`). `iso_label` is the canonical spelling of the mount's
+/// isolation strategy ("shared" / "worktree") — rendered for every
+/// mount including `shared` per the per-mount-isolation spec.
 pub(super) fn format_mount_rows(
     mounts: &[crate::workspace::MountConfig],
-) -> Vec<(String, &'static str, String)> {
+) -> Vec<(String, &'static str, &'static str, String)> {
     mounts
         .iter()
         .map(|m| {
@@ -138,8 +141,9 @@ pub(super) fn format_mount_rows(
                 format!("{src} \u{2192} {dst}")
             };
             let mode: &'static str = if m.readonly { "ro" } else { "rw" };
+            let iso: &'static str = m.isolation.as_str();
             let kind = super::super::mount_info::inspect(&m.src).label();
-            (path, mode, kind)
+            (path, mode, iso, kind)
         })
         .collect()
 }
@@ -148,9 +152,18 @@ pub(super) fn format_mount_rows(
 /// stays aligned across header and data rows.
 pub(super) const MOUNT_MODE_COL_WIDTH: usize = 4;
 
-pub(super) fn mount_path_width(rows: &[(String, &str, String)]) -> usize {
+/// Width of the `Isolation` column. Pinned to the wider of the
+/// "Isolation" header label (9 chars) and the longest data value
+/// "worktree" (8 chars), so header and data rows always align without
+/// the downstream `Type` column shifting.
+pub(super) const MOUNT_ISOLATION_COL_WIDTH: usize = 9;
+
+/// Compute the width used for the `Path` column so that header and data rows
+/// align. Derived from both the "Path" header label and the widest row path,
+/// with a minimum floor so short-path tables still look tabular.
+pub(super) fn mount_path_width(rows: &[(String, &str, &str, String)]) -> usize {
     rows.iter()
-        .map(|(p, _, _)| p.chars().count())
+        .map(|(p, _, _, _)| p.chars().count())
         .max()
         .unwrap_or(0)
         .max(10)
@@ -158,25 +171,39 @@ pub(super) fn mount_path_width(rows: &[(String, &str, String)]) -> usize {
 }
 
 pub(super) fn render_mount_header(path_w: usize) -> Line<'static> {
+    // Format: "  <path padded to path_w>  <mode padded>  <iso padded>  Type"
+    // Leading two-space gutter + two-space gap between every column matches
+    // the data-row format so columns never run into each other.
     let mode_col = format!("{:<mw$}", "Mode", mw = MOUNT_MODE_COL_WIDTH);
+    let iso_col = format!("{:<iw$}", "Isolation", iw = MOUNT_ISOLATION_COL_WIDTH);
     Line::from(Span::styled(
-        format!("  {path:<path_w$}  {mode_col}  Type", path = "Path"),
+        format!(
+            "  {path:<path_w$}  {mode_col}  {iso_col}  Type",
+            path = "Path"
+        ),
         Style::default().fg(WHITE),
     ))
 }
 
 pub(super) fn render_mount_lines(
-    rows: &[(String, &str, String)],
+    rows: &[(String, &str, &str, String)],
     path_w: usize,
 ) -> Vec<Line<'static>> {
     rows.iter()
-        .map(|(path, mode, kind)| {
+        .map(|(path, mode, iso, kind)| {
             Line::from(vec![
                 Span::raw(format!("  {path:<path_w$}  ")),
                 Span::styled(
                     format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
                     Style::default().fg(PHOSPHOR_DIM),
                 ),
+                // Two-space gap before the iso column — matches the header.
+                Span::raw("  "),
+                Span::styled(
+                    format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
+                    Style::default().fg(PHOSPHOR_DIM),
+                ),
+                // Two-space gap before the type column — matches the header.
                 Span::raw("  "),
                 Span::styled(
                     kind.clone(),
@@ -277,6 +304,7 @@ fn render_current_dir_details_pane(
         src: cwd_str.clone(),
         dst: cwd_str,
         readonly: false,
+        isolation: crate::isolation::MountIsolation::Shared,
     }];
 
     let rows = Layout::default()
@@ -668,7 +696,11 @@ fn render_agents_subpanel(
 
 #[cfg(test)]
 mod mount_table_tests {
-    use super::{MOUNT_MODE_COL_WIDTH, mount_path_width, render_mount_header, render_mount_lines};
+    use super::{
+        MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
+        render_mount_header, render_mount_lines,
+    };
+    use crate::workspace::MountConfig;
 
     /// Collapse a `Line` into a single plain string (concat of all span contents).
     fn line_text(line: &ratatui::text::Line<'_>) -> String {
@@ -716,11 +748,12 @@ mod mount_table_tests {
     #[test]
     fn header_and_data_rows_share_path_column_width() {
         // Short path + long path forces path_w to be the length of the long one.
-        let rows: Vec<(String, &str, String)> = vec![
-            ("~/short".into(), "rw", "git · main".into()),
+        let rows: Vec<(String, &str, &str, String)> = vec![
+            ("~/short".into(), "rw", "shared", "git · main".into()),
             (
                 "~/Projects/very/deeply/nested/directory".into(),
                 "ro",
+                "worktree",
                 "dir".into(),
             ),
         ];
@@ -748,9 +781,10 @@ mod mount_table_tests {
     fn single_row_still_uses_minimum_column_width() {
         // Single short mount — path_w should stay at the floor so the
         // table is still visibly tabular.
-        let rows: Vec<(String, &str, String)> = vec![(
+        let rows: Vec<(String, &str, &str, String)> = vec![(
             "~/Projects/ChainArgos/blockchain-nodes".into(),
             "rw",
+            "shared",
             "git · main".into(),
         )];
         let path_w = mount_path_width(&rows);
@@ -764,41 +798,44 @@ mod mount_table_tests {
     #[test]
     fn empty_rows_uses_floor_for_header() {
         // Empty case: header should still render with the floor width and
-        // include the two-space gap between "Mode" and "Type".
+        // include the two-space gap between every column.
         let path_w = mount_path_width(&[]);
         assert_eq!(path_w, 10);
         let header = render_mount_header(path_w);
-        // "  <path padded>  <mode padded>  Type"
+        // "  <path padded>  <mode padded>  <iso padded>  Type"
         let expected = format!(
-            "  {path:<path_w$}  {mode:<mw$}  Type",
+            "  {path:<path_w$}  {mode:<mw$}  {iso:<iw$}  Type",
             path = "Path",
             mode = "Mode",
+            iso = "Isolation",
             path_w = path_w,
             mw = MOUNT_MODE_COL_WIDTH,
+            iw = MOUNT_ISOLATION_COL_WIDTH,
         );
         let s = line_text(&header);
         assert_eq!(s, expected);
     }
 
     #[test]
-    fn header_has_two_space_gap_between_mode_and_type() {
-        // Regression for the "Mode Type" spacing bug: header must emit a
-        // literal two-space gap between the `Mode` column and the `Type`
-        // label, mirroring the gap data rows emit between `rw`/`ro` and the
+    fn header_has_two_space_gap_between_columns() {
+        // Regression for the "Mode Type" spacing bug, extended to cover the
+        // new `Isolation` column: header must emit a literal two-space gap
+        // between every column (Mode → Isolation → Type), mirroring the gap
+        // data rows emit between `rw`/`ro`, the isolation label, and the
         // kind. Additionally pins the type-column alignment: the `Type`
         // header label must start at the same character offset as the data
-        // row's kind label (e.g. "folder") — without padding `rw`/`ro` to
-        // the full width of "Mode", the kind column would render 2 chars
-        // left of the header.
-        let rows: Vec<(String, &str, String)> = vec![("~/p".into(), "rw", "folder".into())];
+        // row's kind label.
+        let rows: Vec<(String, &str, &str, String)> =
+            vec![("~/p".into(), "rw", "shared", "folder".into())];
         let path_w = mount_path_width(&rows);
         let header = render_mount_header(path_w);
         let data = render_mount_lines(&rows, path_w);
         let header_text = line_text(&header);
         let data_text = line_text(&data[0]);
+        // Header should have "Mode" followed by gap+padding to the isolation column.
         assert!(
-            header_text.contains("Mode  Type"),
-            "expected 'Mode  Type' (two spaces between Mode and Type); got {header_text:?}"
+            header_text.contains("Isolation"),
+            "expected header to contain 'Isolation'; got {header_text:?}"
         );
         let header_type_offset = header_text.find("Type").expect("header has 'Type'");
         let data_kind_offset = data_text.find("folder").expect("data row has 'folder'");
@@ -806,6 +843,47 @@ mod mount_table_tests {
             header_type_offset, data_kind_offset,
             "Type column misaligned: header at {header_type_offset}, data at {data_kind_offset}"
         );
+    }
+
+    /// Worktree mounts must surface an `Iso = worktree` badge in the data
+    /// row. Per the per-mount-isolation spec the badge renders the canonical
+    /// spelling for every mount (no blank for `shared`).
+    #[test]
+    fn mount_row_renders_isolation_badge_for_worktree() {
+        let m = MountConfig {
+            src: "/tmp/x".into(),
+            dst: "/workspace/x".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Worktree,
+        };
+        let rows = format_mount_rows(std::slice::from_ref(&m));
+        assert_eq!(rows.len(), 1);
+        let path_w = mount_path_width(&rows);
+        let lines = render_mount_lines(&rows, path_w);
+        let text = line_text(&lines[0]);
+        assert!(
+            text.contains("worktree"),
+            "missing worktree badge: {text:?}"
+        );
+    }
+
+    /// Shared mounts must also surface a literal `shared` badge — the spec's
+    /// canonical-spelling rule means `shared` is rendered explicitly rather
+    /// than blank, so operators always see which strategy applies.
+    #[test]
+    fn mount_row_renders_isolation_badge_for_shared() {
+        let m = MountConfig {
+            src: "/tmp/x".into(),
+            dst: "/workspace/x".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
+        };
+        let rows = format_mount_rows(std::slice::from_ref(&m));
+        assert_eq!(rows.len(), 1);
+        let path_w = mount_path_width(&rows);
+        let lines = render_mount_lines(&rows, path_w);
+        let text = line_text(&lines[0]);
+        assert!(text.contains("shared"), "missing shared badge: {text:?}");
     }
 }
 
@@ -824,6 +902,7 @@ mod mount_block_height_tests {
             src: path.into(),
             dst: path.into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         }
     }
 
@@ -1925,6 +2004,7 @@ mod subpanel_padding_tests {
             src: "/tmp/demo".into(),
             dst: "/workspace/demo".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         });
         ws.env.insert("API_KEY".into(), "literal".into());
 

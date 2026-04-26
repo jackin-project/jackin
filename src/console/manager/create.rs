@@ -58,6 +58,7 @@ impl CreatePreludeState<'_> {
                 src: src.display().to_string(),
                 dst: dst.clone(),
                 readonly: self.pending_readonly,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..WorkspaceConfig::default()
         })

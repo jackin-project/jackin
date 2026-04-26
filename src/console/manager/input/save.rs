@@ -131,6 +131,15 @@ pub(super) fn begin_editor_save(
 /// Phase 2: write to disk via `ConfigEditor` (no CLI subprocess). On
 /// Err → `EditorSaveFlow::Error` + `ErrorPopup`. On Ok → refresh
 /// editor snapshot, optionally bounce to list.
+///
+/// **Source-drift safeguard (Task 10.3):** before any disk write, runs
+/// the same `detect_workspace_edit_drift` check the CLI uses. Running
+/// containers with preserved isolated state for an affected mount → open
+/// `ErrorPopup` ("eject first") and abort. Stopped containers with
+/// preserved state → open a `ConfirmTarget::DeleteIsolatedAndSave`
+/// confirm modal that, on Yes, re-stashes the plan with
+/// `delete_isolated_acknowledged = true` so the second commit pass skips
+/// the check and runs `force_cleanup_isolated` for each affected record.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 pub(super) fn commit_editor_save(
     state: &mut ManagerState<'_>,
@@ -139,6 +148,32 @@ pub(super) fn commit_editor_save(
     cwd: &std::path::Path,
     plan: super::super::state::PendingSaveCommit,
     exit_on_success: bool,
+) -> anyhow::Result<()> {
+    commit_editor_save_with_runner(
+        state,
+        config,
+        paths,
+        cwd,
+        plan,
+        exit_on_success,
+        &mut crate::docker::ShellRunner::default(),
+    )
+}
+
+/// Test seam: the same flow as [`commit_editor_save`] but with an
+/// injectable `CommandRunner`. Production code paths thread through the
+/// public wrapper above with `ShellRunner::default()`. Tests pass a
+/// `FakeRunner` so the drift detection branch is exercised without a
+/// real Docker daemon.
+#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
+pub(super) fn commit_editor_save_with_runner(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+    plan: super::super::state::PendingSaveCommit,
+    exit_on_success: bool,
+    runner: &mut impl crate::docker::CommandRunner,
 ) -> anyhow::Result<()> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
@@ -158,9 +193,123 @@ pub(super) fn commit_editor_save(
     };
 
     // Operator already approved the collapsed mount set in
-    // ConfirmSave; honour it now.
-    if let Some(final_mounts) = plan.final_mounts {
+    // ConfirmSave; honour it now. Clone so subsequent source-drift logic
+    // can still inspect the full `plan`.
+    if let Some(final_mounts) = plan.final_mounts.clone() {
         editor.pending.mounts = final_mounts;
+    }
+
+    // ── Source-drift safeguard ────────────────────────────────────────
+    // Only meaningful in Edit mode — Create has no preserved state. Skip
+    // entirely if the operator already acknowledged the modal on a
+    // previous commit pass.
+    if let SaveMode::Edit { original_name } = &save_mode
+        && !plan.delete_isolated_acknowledged
+    {
+        // Build prospective mounts mirroring `edit_workspace`'s merge
+        // order: drop `effective_removals`, then upsert each pending
+        // mount over the existing on-disk set.
+        let current_ws = config.workspaces.get(original_name).cloned();
+        if let Some(current_ws) = current_ws {
+            let prospective_mounts = build_prospective_mounts(
+                &current_ws.mounts,
+                &editor.pending.mounts,
+                &plan.effective_removals,
+            );
+            match crate::config::detect_workspace_edit_drift(
+                paths,
+                original_name,
+                &prospective_mounts,
+                runner,
+            ) {
+                Err(e) => {
+                    open_save_error_popup(editor, &e.to_string());
+                    return Ok(());
+                }
+                Ok(detection) => {
+                    if !detection.running_containers.is_empty() {
+                        let msg = format!(
+                            "Cannot save: {} container(s) are running with isolated state for an affected mount: {}; eject them first.",
+                            detection.running_containers.len(),
+                            detection.running_containers.join(", "),
+                        );
+                        open_save_error_popup(editor, &msg);
+                        return Ok(());
+                    }
+                    if !detection.stopped_records.is_empty() {
+                        let affected_containers: Vec<String> = detection
+                            .stopped_records
+                            .iter()
+                            .map(|r| r.container_name.clone())
+                            .collect();
+                        let prompt = format!(
+                            "Edit affects preserved isolated state for {} stopped container(s):\n  {}\n\n\
+                             Delete the preserved state and save?",
+                            affected_containers.len(),
+                            affected_containers.join("\n  "),
+                        );
+                        editor.modal = Some(Modal::Confirm {
+                            target: super::super::state::ConfirmTarget::DeleteIsolatedAndSave {
+                                plan,
+                                exit_on_success,
+                                affected_containers,
+                            },
+                            state: crate::console::widgets::confirm::ConfirmState::new(prompt),
+                        });
+                        // Park the save flow until the operator answers the
+                        // modal. The modal handler re-stashes the plan
+                        // with `delete_isolated_acknowledged = true` on Yes.
+                        editor.save_flow =
+                            super::super::state::EditorSaveFlow::Confirming { exit_on_success };
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    // Acknowledged — clean up preserved state for each affected record
+    // before the on-disk write so a partial failure leaves the system in
+    // a recoverable state. Mirrors the CLI's `--delete-isolated-state`
+    // branch in `app/mod.rs`.
+    if let SaveMode::Edit { original_name } = &save_mode
+        && plan.delete_isolated_acknowledged
+    {
+        let current_ws = config.workspaces.get(original_name).cloned();
+        if let Some(current_ws) = current_ws {
+            let prospective_mounts = build_prospective_mounts(
+                &current_ws.mounts,
+                &editor.pending.mounts,
+                &plan.effective_removals,
+            );
+            // Re-detect to avoid a TOCTOU window where state changed
+            // between the confirm modal opening and the operator's Yes.
+            // `force_cleanup_isolated` is idempotent so re-running is safe.
+            match crate::config::detect_workspace_edit_drift(
+                paths,
+                original_name,
+                &prospective_mounts,
+                runner,
+            ) {
+                Err(e) => {
+                    open_save_error_popup(editor, &e.to_string());
+                    return Ok(());
+                }
+                Ok(detection) => {
+                    for rec in &detection.stopped_records {
+                        let container_dir = paths.data_dir.join(&rec.container_name);
+                        if let Err(e) = crate::isolation::cleanup::force_cleanup_isolated(
+                            rec,
+                            &container_dir,
+                            runner,
+                        ) {
+                            open_save_error_popup(editor, &e.to_string());
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
     }
 
     let ce_res = crate::config::ConfigEditor::open(paths);
@@ -392,32 +541,46 @@ fn build_confirm_save_lines(
                 )));
             }
 
-            let added_mounts: Vec<_> = editor
-                .pending
-                .mounts
+            let mount_diffs = super::super::state::classify_mount_diffs(
+                &editor.original.mounts,
+                &editor.pending.mounts,
+            );
+            let any_diff = mount_diffs
                 .iter()
-                .filter(|m| !editor.original.mounts.contains(m))
-                .collect();
-            let removed_mounts: Vec<_> = editor
-                .original
-                .mounts
-                .iter()
-                .filter(|m| !editor.pending.mounts.contains(m))
-                .collect();
-            if !added_mounts.is_empty() || !removed_mounts.is_empty() {
+                .any(|d| !matches!(d, super::super::state::MountDiff::Unchanged(_)));
+            if any_diff {
                 out.push(Line::raw(""));
                 out.push(Line::from(Span::styled("Mounts:", heading)));
-                for m in &added_mounts {
-                    out.push(Line::from(Span::styled(
-                        format!("  + {}", mount_summary(m)),
-                        value,
-                    )));
-                }
-                for m in &removed_mounts {
-                    out.push(Line::from(Span::styled(
-                        format!("  - {}", mount_summary(m)),
-                        dim,
-                    )));
+                for diff in &mount_diffs {
+                    match diff {
+                        super::super::state::MountDiff::Added(m) => {
+                            out.push(Line::from(Span::styled(
+                                format!("  + {}", mount_summary(m)),
+                                value,
+                            )));
+                        }
+                        super::super::state::MountDiff::Removed(m) => {
+                            out.push(Line::from(Span::styled(
+                                format!("  - {}", mount_summary(m)),
+                                dim,
+                            )));
+                        }
+                        super::super::state::MountDiff::Modified { original, pending } => {
+                            // Modified row: show the new state (`~`) with a
+                            // dimmed `was:` follow-up so the operator can
+                            // see exactly what changed without reading a
+                            // remove + add pair.
+                            out.push(Line::from(Span::styled(
+                                format!("  ~ {}", mount_summary(pending)),
+                                value,
+                            )));
+                            out.push(Line::from(Span::styled(
+                                format!("      was: {}", mount_summary(original)),
+                                dim,
+                            )));
+                        }
+                        super::super::state::MountDiff::Unchanged(_) => {}
+                    }
                 }
             }
 
@@ -482,7 +645,8 @@ fn mount_summary(m: &crate::workspace::MountConfig) -> String {
     let src = crate::tui::shorten_home(&m.src);
     let kind = super::super::mount_info::inspect(&m.src);
     let rw = if m.readonly { "ro" } else { "rw" };
-    format!("{src}  ({rw}, {})", kind.label())
+    let isolation = m.isolation.as_str();
+    format!("{src}  ({rw}, {isolation}, {})", kind.label())
 }
 
 fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {
@@ -574,6 +738,32 @@ fn collapse_section_lines(
             ))
         })
         .collect()
+}
+
+/// Mirror the merge order `AppConfig::edit_workspace` uses to build the
+/// post-edit mount list, so the source-drift check in
+/// `commit_editor_save` evaluates the same shape that will land on disk.
+/// Steps:
+///   1. Drop every mount whose dst is in `effective_removals`.
+///   2. For each pending mount, upsert (replace by dst, otherwise push).
+fn build_prospective_mounts(
+    current: &[crate::workspace::MountConfig],
+    pending: &[crate::workspace::MountConfig],
+    effective_removals: &[String],
+) -> Vec<crate::workspace::MountConfig> {
+    let mut out: Vec<crate::workspace::MountConfig> = current
+        .iter()
+        .filter(|m| !effective_removals.iter().any(|d| d == &m.dst))
+        .cloned()
+        .collect();
+    for upsert in pending {
+        if let Some(existing) = out.iter_mut().find(|existing| existing.dst == upsert.dst) {
+            *existing = upsert.clone();
+        } else {
+            out.push(upsert.clone());
+        }
+    }
+    out
 }
 
 /// Agents present only in `original` get all keys removed.
@@ -679,6 +869,7 @@ mod tests {
             src: src.into(),
             dst: dst.into(),
             readonly: true,
+            isolation: crate::isolation::MountIsolation::Shared,
         }
     }
 
@@ -1113,6 +1304,7 @@ mod tests {
         let bad_plan = crate::console::manager::state::PendingSaveCommit {
             effective_removals: vec!["/does/not/exist".to_string()],
             final_mounts: None,
+            delete_isolated_acknowledged: false,
         };
         commit_editor_save(&mut state, &mut config, &paths, cwd, bad_plan, false).unwrap();
 
@@ -1429,6 +1621,205 @@ mod tests {
             .join("|");
         assert!(joined.contains("/old"), "old value shown: {joined}");
         assert!(joined.contains("/new"), "new value shown: {joined}");
+    }
+
+    // ── Source-drift safeguard (Task 10.3) ────────────────────────────
+
+    /// Stand up a workspace with a single mount whose isolated state has
+    /// been recorded for `container`, with `original_src` set to the
+    /// pre-edit value. The fixture lets the source-drift tests trigger
+    /// the safeguard by simply changing `editor.pending.mounts[0].src`.
+    fn setup_with_isolated_record(
+        ws_name: &str,
+        original_src: &str,
+        dst: &str,
+        container: &str,
+    ) -> (TempDir, JackinPaths, AppConfig, WorkspaceConfig) {
+        use crate::isolation::MountIsolation;
+        use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};
+
+        // workdir must match a mount destination per workspace
+        // validation, so anchor it on `dst`. The drift safeguard cares
+        // about `src`, not `workdir`, so this doesn't perturb the test.
+        let ws = WorkspaceConfig {
+            workdir: dst.into(),
+            mounts: vec![MountConfig {
+                src: original_src.into(),
+                dst: dst.into(),
+                readonly: false,
+                isolation: MountIsolation::Worktree,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
+
+        // Pre-write an isolation record under data_dir/<container>/.
+        let cdir = paths.data_dir.join(container);
+        std::fs::create_dir_all(&cdir).unwrap();
+        let rec = IsolationRecord {
+            workspace: ws_name.into(),
+            mount_dst: dst.into(),
+            original_src: original_src.into(),
+            isolation: MountIsolation::Worktree,
+            worktree_path: cdir.join("isolated").join(dst).display().to_string(),
+            scratch_branch: format!("jackin/scratch/{container}"),
+            base_commit: "deadbeef".into(),
+            selector_key: container.trim_start_matches("jackin-").into(),
+            container_name: container.into(),
+            cleanup_status: CleanupStatus::Active,
+        };
+        write_records(&cdir, std::slice::from_ref(&rec)).unwrap();
+
+        (tmp, paths, config, ws)
+    }
+
+    /// `detect_workspace_edit_drift` issues two `capture` calls on the
+    /// runner: `list_records_for_workspace` is filesystem-only (no
+    /// runner traffic), but `list_agent_names(running)` issues a `docker
+    /// ps` capture that returns the newline-separated container names.
+    /// Tests construct the runner with the appropriate output queued.
+    fn fake_runner_with_running(names: &[&str]) -> crate::runtime::FakeRunner {
+        let mut runner = crate::runtime::FakeRunner::default();
+        let joined = if names.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n", names.join("\n"))
+        };
+        runner.capture_queue.push_back(joined);
+        runner
+    }
+
+    #[test]
+    fn save_blocks_with_error_popup_when_running_container_has_drifted_state() {
+        let (tmp, paths, mut config, ws) =
+            setup_with_isolated_record("driftws", "/old/src", "/workspace/x", "jackin-driftws");
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("driftws".into(), ws);
+        // Operator changes the src — this drifts the recorded original_src.
+        editor.pending.mounts[0].src = "/new/src".into();
+        state.stage = ManagerStage::Editor(editor);
+
+        // Drive the save flow: `s` opens ConfirmSave; Enter on the modal
+        // produces the PendingCommit signal we hand to commit_editor_save_with_runner.
+        press_s(&mut state, &mut config, &paths, cwd);
+        let plan = match &mut state.stage {
+            ManagerStage::Editor(e) => match &e.modal {
+                Some(Modal::ConfirmSave { state: m }) => {
+                    crate::console::manager::state::PendingSaveCommit {
+                        effective_removals: m.effective_removals.clone(),
+                        final_mounts: m.final_mounts.clone(),
+                        delete_isolated_acknowledged: false,
+                    }
+                }
+                other => panic!("expected ConfirmSave modal; got {other:?}"),
+            },
+            _ => panic!("editor stage expected"),
+        };
+        // Drop the modal so the commit runs cleanly.
+        if let ManagerStage::Editor(e) = &mut state.stage {
+            e.modal = None;
+        }
+
+        let mut runner = fake_runner_with_running(&["jackin-driftws"]);
+        super::commit_editor_save_with_runner(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            plan,
+            false,
+            &mut runner,
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            matches!(e.modal, Some(Modal::ErrorPopup { .. })),
+            "running-container drift must surface as ErrorPopup; got {:?}",
+            e.modal,
+        );
+        // On-disk config must be unchanged.
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        let on_disk = reloaded.workspaces.get("driftws").unwrap();
+        assert_eq!(
+            on_disk.mounts[0].src, "/old/src",
+            "source-drift block must abort the write",
+        );
+    }
+
+    #[test]
+    fn save_opens_confirm_modal_when_stopped_container_has_drifted_state() {
+        let (tmp, paths, mut config, ws) =
+            setup_with_isolated_record("driftws2", "/old/src", "/workspace/x", "jackin-driftws2");
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("driftws2".into(), ws);
+        editor.pending.mounts[0].src = "/new/src".into();
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+        let plan = match &mut state.stage {
+            ManagerStage::Editor(e) => match &e.modal {
+                Some(Modal::ConfirmSave { state: m }) => {
+                    crate::console::manager::state::PendingSaveCommit {
+                        effective_removals: m.effective_removals.clone(),
+                        final_mounts: m.final_mounts.clone(),
+                        delete_isolated_acknowledged: false,
+                    }
+                }
+                other => panic!("expected ConfirmSave modal; got {other:?}"),
+            },
+            _ => panic!("editor stage expected"),
+        };
+        if let ManagerStage::Editor(e) = &mut state.stage {
+            e.modal = None;
+        }
+
+        // No running container — drift lands on stopped_records and we
+        // expect the confirm modal.
+        let mut runner = fake_runner_with_running(&[]);
+        super::commit_editor_save_with_runner(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            plan,
+            false,
+            &mut runner,
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        match &e.modal {
+            Some(Modal::Confirm {
+                target:
+                    crate::console::manager::state::ConfirmTarget::DeleteIsolatedAndSave {
+                        affected_containers,
+                        ..
+                    },
+                ..
+            }) => {
+                assert_eq!(
+                    affected_containers,
+                    &vec!["jackin-driftws2".to_string()],
+                    "modal must carry the affected container names",
+                );
+            }
+            other => panic!("expected DeleteIsolatedAndSave Confirm modal; got {other:?}"),
+        }
+        // On-disk config still unchanged — we're parked on the modal.
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        let on_disk = reloaded.workspaces.get("driftws2").unwrap();
+        assert_eq!(on_disk.mounts[0].src, "/old/src");
     }
 
     #[test]

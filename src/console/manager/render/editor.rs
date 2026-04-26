@@ -11,7 +11,10 @@ use ratatui::{
 };
 
 use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
-use super::list::{MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width, render_mount_header};
+use super::list::{
+    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
+    render_mount_header,
+};
 use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
 };
@@ -159,6 +162,12 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
                 items.push(FooterItem::Sep);
                 items.push(FooterItem::Key("R"));
                 items.push(FooterItem::Text("toggle ro/rw"));
+                // `I` cycles the per-mount isolation strategy on the
+                // highlighted row (shared ↔ worktree).
+                // Same gating as R: hidden on the `+ Add mount` sentinel.
+                items.push(FooterItem::Sep);
+                items.push(FooterItem::Key("I"));
+                items.push(FooterItem::Text("cycle isolation"));
                 items
             } else {
                 // Sentinel "+ Add mount" row — both Enter and A invoke the
@@ -368,7 +377,7 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     // with data rows regardless of path width.
     let mut lines: Vec<Line> = vec![render_mount_header(path_w)];
 
-    lines.extend(rows.iter().enumerate().map(|(i, (path, mode, kind))| {
+    lines.extend(rows.iter().enumerate().map(|(i, (path, mode, iso, kind))| {
         let selected = i == cursor;
         let prefix = if selected { "▸ " } else { "  " };
         let base_style = if selected {
@@ -385,6 +394,12 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
             Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
             Span::styled(
                 format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            // Two-space gap before the iso column — matches the header.
+            Span::raw("  "),
+            Span::styled(
+                format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             // Two-space gap before the type column — matches the header.
@@ -779,6 +794,7 @@ mod contextual_row_items_tests {
                 src: src.to_string(),
                 dst: src.to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..WorkspaceConfig::default()
         };

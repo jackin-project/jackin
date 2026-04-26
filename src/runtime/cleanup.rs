@@ -218,6 +218,58 @@ pub fn exile_all(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Refuse to proceed if the named agent's container is currently running.
+/// Used by purge to close a pre-existing gap (also relevant to shared mode).
+pub fn ensure_agent_not_running(
+    runner: &mut impl CommandRunner,
+    short_name: &str,
+) -> anyhow::Result<()> {
+    let running = list_agent_names(runner, false)?;
+    let container = format!("jackin-{short_name}");
+    if running.iter().any(|n| n == &container || n == short_name) {
+        anyhow::bail!(
+            "agent `{short_name}` is currently running; run `jackin eject {short_name}` first \
+             (or `jackin eject {short_name} --purge` to combine eject and purge)"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod purge_guard_tests {
+    use super::*;
+    use crate::runtime::test_support::FakeRunner;
+
+    #[test]
+    fn purge_refuses_when_container_running() {
+        let mut runner = FakeRunner::default();
+        // list_agent_names performs two `docker ps` queries (role-labeled
+        // first, then a legacy fallback).  The first response includes the
+        // running container; the second can stay empty.
+        runner
+            .capture_queue
+            .push_back("jackin-the-architect\n".into());
+        runner.capture_queue.push_back(String::new());
+        let err = ensure_agent_not_running(&mut runner, "the-architect").unwrap_err();
+        assert!(
+            err.to_string().contains("running"),
+            "error did not mention 'running': {err}"
+        );
+        assert!(
+            err.to_string().contains("jackin eject"),
+            "error did not mention 'jackin eject': {err}"
+        );
+    }
+
+    #[test]
+    fn purge_proceeds_when_container_not_running() {
+        let mut runner = FakeRunner::default();
+        runner.capture_queue.push_back(String::new());
+        runner.capture_queue.push_back(String::new());
+        ensure_agent_not_running(&mut runner, "the-architect").unwrap();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::naming::matching_family;

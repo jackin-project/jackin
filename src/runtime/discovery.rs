@@ -55,7 +55,13 @@ fn list_legacy_managed_agent_names(
         .collect())
 }
 
-pub(super) fn list_agent_names(
+// `pub(crate)` so workspace-edit drift detection in `config/workspaces.rs`
+// can see the raw running-list before `ensure_agent_not_running`'s wrapper
+// applies. Tagged with `allow(clippy::redundant_pub_crate)` because clippy's
+// nursery flags `pub(crate)` inside private modules even when the wider
+// visibility is intentional.
+#[allow(clippy::redundant_pub_crate)]
+pub(crate) fn list_agent_names(
     runner: &mut impl CommandRunner,
     include_stopped: bool,
 ) -> anyhow::Result<Vec<String>> {

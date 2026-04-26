@@ -58,6 +58,7 @@ pub fn run(cli: Cli) -> Result<()> {
             rebuild,
             no_intro,
             debug,
+            force,
         }) => {
             runner.debug = debug;
             tui::set_debug_mode(debug);
@@ -103,7 +104,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("aborted — sensitive mount paths were not confirmed");
             }
 
-            let opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
+            let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
+            opts.force = force;
             let result = runtime::load_agent(
                 &paths,
                 &mut config,
@@ -154,7 +156,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 let cwd = std::env::current_dir()?;
                 resolve_running_container_from_context(&config, &cwd, &mut runner)?
             };
-            runtime::hardline_agent(&container, &mut runner)
+            runtime::hardline_agent(&paths, &container, &mut runner)
         }
         Command::Eject(EjectArgs {
             selector,
@@ -180,6 +182,10 @@ pub fn run(cli: Cli) -> Result<()> {
                 for container in &containers {
                     runtime::eject_agent(container, &mut runner)?;
                     if purge {
+                        crate::isolation::cleanup::purge_isolated_for_container(
+                            &paths.data_dir.join(container),
+                            &mut runner,
+                        )?;
                         remove_data_dir_if_exists(&paths.data_dir.join(container))?;
                         println!("Ejected and purged {container}.");
                     } else {
@@ -217,6 +223,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         src: resolved_src,
                         dst: dst.clone(),
                         readonly,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     };
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.add_mount(&name, mount, scope.as_deref());
@@ -444,16 +451,21 @@ pub fn run(cli: Cli) -> Result<()> {
                 no_workdir_mount,
                 allowed_agents,
                 default_agent,
+                mount_isolation,
             } => {
                 let expanded_workdir = workspace::resolve_path(&workdir);
                 let parsed_mounts = mounts
                     .iter()
                     .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
-                let plan = workspace::planner::plan_create(
+                let mut plan = workspace::planner::plan_create(
                     &expanded_workdir,
                     parsed_mounts,
                     no_workdir_mount,
+                )?;
+                workspace::planner::apply_isolation_overrides(
+                    &mut plan.final_mounts,
+                    &mount_isolation,
                 )?;
                 if !plan.collapsed.is_empty() {
                     let removed_list: Vec<String> = plan
@@ -541,64 +553,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
             WorkspaceCommand::Show { name } => {
-                use tabled::settings::Style;
-                use tabled::{Table, Tabled};
-
-                #[derive(Tabled)]
-                struct MountRow {
-                    #[tabled(rename = "Source")]
-                    src: String,
-                    #[tabled(rename = "Destination")]
-                    dst: String,
-                    #[tabled(rename = "Mode")]
-                    mode: String,
-                }
-
                 let workspace = config.require_workspace(&name)?;
-
-                let allowed = if workspace.allowed_agents.is_empty() {
-                    "any agent".to_string()
-                } else {
-                    workspace.allowed_agents.join(", ")
-                };
-                let default_agent = workspace.default_agent.as_deref().unwrap_or("none");
-
-                let short_workdir = tui::shorten_home(&workspace.workdir);
-                let info = [
-                    ("Name", name.as_str()),
-                    ("Workdir", short_workdir.as_str()),
-                    ("Allowed Agents", &allowed),
-                    ("Default Agent", default_agent),
-                ];
-                let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
-                info_table
-                    .with(Style::modern_rounded())
-                    .with(tabled::settings::Remove::row(
-                        tabled::settings::object::Rows::first(),
-                    ));
-                println!("{info_table}");
-
-                if !workspace.mounts.is_empty() {
-                    println!();
-                    println!("Mounts:");
-                    let mount_rows: Vec<MountRow> = workspace
-                        .mounts
-                        .iter()
-                        .map(|m| MountRow {
-                            src: tui::shorten_home(&m.src),
-                            dst: tui::shorten_home(&m.dst),
-                            mode: if m.readonly {
-                                "read-only".to_string()
-                            } else {
-                                "read-write".to_string()
-                            },
-                        })
-                        .collect();
-                    let mut mount_table = Table::new(mount_rows);
-                    mount_table.with(Style::modern_rounded());
-                    println!("{mount_table}");
-                }
-
+                print!("{}", render_workspace_show(&name, workspace));
                 Ok(())
             }
             WorkspaceCommand::Edit {
@@ -613,6 +569,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 clear_default_agent,
                 assume_yes,
                 prune,
+                mount_isolation,
+                delete_isolated_state,
             } => {
                 let upsert_mounts = mounts
                     .iter()
@@ -735,6 +693,64 @@ pub fn run(cli: Cli) -> Result<()> {
                     changes.push(format!("default agent → {agent}"));
                 }
 
+                // Build the prospective mount list (mirrors edit_workspace's
+                // merge order) so we can check for source drift on any mount
+                // that has preserved isolated state on disk.
+                let mut prospective_mounts: Vec<workspace::MountConfig> = current_ws
+                    .mounts
+                    .iter()
+                    .filter(|m| !plan.effective_removals.iter().any(|d| d == &m.dst))
+                    .cloned()
+                    .collect();
+                if no_workdir_mount {
+                    let workdir = &current_ws.workdir;
+                    prospective_mounts.retain(|m| !(m.src == *workdir && m.dst == *workdir));
+                }
+                for upsert in &upsert_mounts {
+                    if let Some(existing) = prospective_mounts
+                        .iter_mut()
+                        .find(|existing| existing.dst == upsert.dst)
+                    {
+                        *existing = upsert.clone();
+                    } else {
+                        prospective_mounts.push(upsert.clone());
+                    }
+                }
+                let detection = crate::config::detect_workspace_edit_drift(
+                    &paths,
+                    &name,
+                    &prospective_mounts,
+                    &mut runner,
+                )?;
+                if !detection.running_containers.is_empty() {
+                    anyhow::bail!(
+                        "cannot edit workspace `{name}` while these containers are running with isolated state: {}; eject them first",
+                        detection.running_containers.join(", ")
+                    );
+                }
+                if !detection.stopped_records.is_empty() {
+                    if !delete_isolated_state {
+                        let names: Vec<String> = detection
+                            .stopped_records
+                            .iter()
+                            .map(|r| r.container_name.clone())
+                            .collect();
+                        anyhow::bail!(
+                            "edit affects preserved isolated state for {} container(s): {}; pass --delete-isolated-state to remove and apply, or restore the previous src",
+                            detection.stopped_records.len(),
+                            names.join(", ")
+                        );
+                    }
+                    for rec in &detection.stopped_records {
+                        let container_dir = paths.data_dir.join(&rec.container_name);
+                        crate::isolation::cleanup::force_cleanup_isolated(
+                            rec,
+                            &container_dir,
+                            &mut runner,
+                        )?;
+                    }
+                }
+
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
                 editor.edit_workspace(
                     &name,
@@ -750,6 +766,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         } else {
                             default_agent.map(Some)
                         },
+                        mount_isolation_overrides: mount_isolation,
                     },
                 )?;
                 editor.save()?;
@@ -890,6 +907,12 @@ pub fn run(cli: Cli) -> Result<()> {
         },
         Command::Purge(PurgeArgs { selector, all }) => match Selector::parse(&selector)? {
             Selector::Container(container) => {
+                let short_name = container.trim_start_matches("jackin-");
+                runtime::ensure_agent_not_running(&mut runner, short_name)?;
+                crate::isolation::cleanup::purge_isolated_for_container(
+                    &paths.data_dir.join(&container),
+                    &mut runner,
+                )?;
                 remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                 println!("Purged state for {container}.");
                 Ok(())
@@ -900,6 +923,12 @@ pub fn run(cli: Cli) -> Result<()> {
                     println!("Purged all state for {}.", class.key());
                 } else {
                     let container = instance::primary_container_name(&class);
+                    let short_name = container.trim_start_matches("jackin-");
+                    runtime::ensure_agent_not_running(&mut runner, short_name)?;
+                    crate::isolation::cleanup::purge_isolated_for_container(
+                        &paths.data_dir.join(&container),
+                        &mut runner,
+                    )?;
                     remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                     println!("Purged state for {container}.");
                 }
@@ -954,6 +983,77 @@ fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
     }
 }
 
+/// Render the `workspace show <name>` output as a string. Includes the info
+/// table (name/workdir/allowed/default-agent), and, when there are mounts, a
+/// trailing mounts table with one row per mount. The mounts table renders the
+/// canonical lowercase isolation name (`shared`/`worktree`) so the output
+/// matches TOML/CLI input verbatim.
+fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
+    use std::fmt::Write as _;
+    use tabled::settings::Style;
+    use tabled::{Table, Tabled};
+
+    #[derive(Tabled)]
+    struct MountRow {
+        #[tabled(rename = "Source")]
+        src: String,
+        #[tabled(rename = "Destination")]
+        dst: String,
+        #[tabled(rename = "Mode")]
+        mode: String,
+        #[tabled(rename = "Isolation")]
+        isolation: String,
+    }
+
+    let allowed = if workspace.allowed_agents.is_empty() {
+        "any agent".to_string()
+    } else {
+        workspace.allowed_agents.join(", ")
+    };
+    let default_agent = workspace.default_agent.as_deref().unwrap_or("none");
+
+    let short_workdir = tui::shorten_home(&workspace.workdir);
+    let info = [
+        ("Name", name),
+        ("Workdir", short_workdir.as_str()),
+        ("Allowed Agents", allowed.as_str()),
+        ("Default Agent", default_agent),
+    ];
+    let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
+    info_table
+        .with(Style::modern_rounded())
+        .with(tabled::settings::Remove::row(
+            tabled::settings::object::Rows::first(),
+        ));
+
+    let mut out = String::new();
+    let _ = writeln!(out, "{info_table}");
+
+    if !workspace.mounts.is_empty() {
+        let mount_rows: Vec<MountRow> = workspace
+            .mounts
+            .iter()
+            .map(|m| MountRow {
+                src: tui::shorten_home(&m.src),
+                dst: tui::shorten_home(&m.dst),
+                mode: if m.readonly {
+                    "read-only".to_string()
+                } else {
+                    "read-write".to_string()
+                },
+                isolation: m.isolation.as_str().to_string(),
+            })
+            .collect();
+        let mut mount_table = Table::new(mount_rows);
+        mount_table.with(Style::modern_rounded());
+        let _ = writeln!(out);
+        let _ = writeln!(out, "Mounts:");
+        let _ = writeln!(out, "{mount_table}");
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod auth_set_tests {
     use super::*;
@@ -975,5 +1075,35 @@ mod auth_set_tests {
     #[test]
     fn parse_auth_forward_mode_from_cli_rejects_bogus() {
         assert!(parse_auth_forward_mode_from_cli("bogus").is_err());
+    }
+
+    #[test]
+    fn workspace_show_includes_isolation_column() {
+        let ws = crate::workspace::WorkspaceConfig {
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![
+                crate::workspace::MountConfig {
+                    src: "/tmp/x".into(),
+                    dst: "/workspace/jackin".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Worktree,
+                },
+                crate::workspace::MountConfig {
+                    src: "/tmp/cache".into(),
+                    dst: "/workspace/cache".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            ],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: std::collections::BTreeMap::new(),
+            agents: std::collections::BTreeMap::new(),
+        };
+        let out = render_workspace_show("jackin", &ws);
+        assert!(out.contains("Isolation"));
+        assert!(out.contains("worktree"));
+        assert!(out.contains("shared"));
     }
 }
