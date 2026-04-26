@@ -678,6 +678,7 @@ impl OpPickerState {
                 self.stage = OpPickerStage::Item;
                 self.filter_buf.clear();
                 self.fields.clear();
+                self.selected_item = None;
                 ModalOutcome::Continue
             }
             KeyCode::Up => {
