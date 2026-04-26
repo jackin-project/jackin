@@ -43,7 +43,7 @@ pub(super) fn render_list_body(
 
     match state.selected_row() {
         ManagerListRow::CurrentDirectory => {
-            render_current_dir_details_pane(frame, columns[1], cwd);
+            render_current_dir_details_pane(frame, columns[1], cwd, config);
         }
         ManagerListRow::NewWorkspace => {
             render_sentinel_description_pane(frame, columns[1]);
@@ -264,7 +264,12 @@ fn agents_block_height(agent_count: usize) -> u16 {
 
 /// Cursor on the synthetic "Current directory" row — mirrors
 /// `workspace::current_dir_workspace`: src=dst=cwd, rw, any agent.
-fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::path::Path) {
+fn render_current_dir_details_pane(
+    frame: &mut Frame,
+    area: Rect,
+    cwd: &std::path::Path,
+    config: &AppConfig,
+) {
     let cwd_str = cwd.display().to_string();
     let workdir_short = crate::tui::shorten_home(&cwd_str);
 
@@ -279,10 +284,7 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
         .constraints([
             Constraint::Length(3),
             Constraint::Length(mount_block_height(&mounts)),
-            Constraint::Length(agents_block_height(agents_block_agent_count(
-                None,
-                &AppConfig::default(),
-            ))), // Agents: default + blank + per-agent name rows + 2 borders
+            Constraint::Length(agents_block_height(agents_block_agent_count(None, config))),
         ])
         .split(area);
 
@@ -320,7 +322,7 @@ fn render_current_dir_details_pane(frame: &mut Frame, area: Rect, cwd: &std::pat
     // Agents block — reuse the no-`ws_config` branch of the shared renderer,
     // which lists every globally-configured agent (without per-agent
     // overrides since the cwd workspace has none).
-    render_agents_subpanel(frame, rows[2], None, &AppConfig::default());
+    render_agents_subpanel(frame, rows[2], None, config);
 }
 
 /// Right-pane description shown when the cursor is on the "+ New workspace"

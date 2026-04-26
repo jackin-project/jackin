@@ -36,6 +36,11 @@ fn seed_config(paths: &JackinPaths, temp_dir: &std::path::Path) -> Result<AppCon
 /// Seed a workspace with pre-populated `env` keys. Used by several Secrets
 /// integration tests that need existing env rows to navigate over. Pass
 /// an empty `Vec` (or call `seed_config`) for the no-env case.
+///
+/// # Drop requirement
+/// The caller must hold the `TempDir` that owns `temp_dir` alive for the
+/// entire duration of the test. Dropping `TempDir` before the test assertions
+/// removes the on-disk workspace paths that `JackinPaths` references.
 fn seed_config_with_env(
     paths: &JackinPaths,
     temp_dir: &std::path::Path,
