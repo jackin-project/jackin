@@ -172,6 +172,16 @@ fn finalize_clean_exit(
     // immediately. "Preserve" and "Force delete" are per-record decisions.
     // The container teardown only happens (`Cleaned`) when *every*
     // preserved record was force-deleted.
+    //
+    // A `force_cleanup_isolated` failure (`bail!` from cleanup.rs's
+    // verify-and-bail flow) must not propagate as an `Err` from this
+    // function — that would leave the operator with a raw error from
+    // deep in the cleanup path, no `Preserved` signal to the caller,
+    // the container left running without an explicit teardown decision,
+    // and any subsequent records in the loop never prompted. Convert
+    // such failures to a per-record warning + `any_preserved_after_prompt`
+    // and continue. The caller treats the resulting `Preserved` as
+    // "container survives, run `jackin purge` later to retry."
     let mut any_preserved_after_prompt = false;
     for rec in preserved_records {
         match prompt.ask_unsafe_cleanup(container_name, &rec.worktree_path)? {
@@ -182,7 +192,14 @@ fn finalize_clean_exit(
                 any_preserved_after_prompt = true;
             }
             2 => {
-                force_cleanup_isolated(&rec, container_state_dir, runner)?;
+                if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner) {
+                    eprintln!(
+                        "[jackin] warning: force-delete of isolated worktree `{wt}` failed: {e}\n         record retained — re-run `jackin purge {short}` to retry after resolving the underlying issue",
+                        wt = rec.worktree_path,
+                        short = container_name.trim_start_matches("jackin-"),
+                    );
+                    any_preserved_after_prompt = true;
+                }
             }
             other => anyhow::bail!("unexpected prompt choice {other}"),
         }
@@ -868,6 +885,113 @@ mod tests {
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].mount_dst, "/workspace/b");
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
+    }
+
+    /// `ReturnToAgent` chosen on the SECOND prompt of a 3-record loop
+    /// must short-circuit immediately. Records 3..N are never prompted,
+    /// no further force-delete runs, and the caller restarts the
+    /// container. Both records 1 (force-deleted) and 2 (pending decision)
+    /// would have left state somewhere — this pins that the early-return
+    /// happens cleanly.
+    #[test]
+    fn multi_mount_return_to_agent_on_second_prompt_short_circuits() {
+        let dir = TempDir::new().unwrap();
+        let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
+        let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
+        let r3 = rec_at(dir.path(), "/workspace/c", "jackin/scratch/x-c");
+        std::fs::create_dir_all(&r1.original_src).unwrap();
+        write_records(dir.path(), &[r1.clone(), r2.clone(), r3.clone()]).unwrap();
+        // All three records assess to PreservedDirty.
+        let mut runner = fake_with_outputs(&[" M f1\n", " M f2\n", " M f3\n"]);
+        // Operator: force-delete first, then return-to-agent on second.
+        // Third should never be prompted.
+        let mut p = ScriptedPrompt(VecDeque::from([2, 0]));
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::ReturnToAgent);
+        // First was force-deleted; second and third remain on disk.
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs.len(), 2);
+        let mut dsts: Vec<_> = recs.iter().map(|r| r.mount_dst.clone()).collect();
+        dsts.sort();
+        assert_eq!(dsts, vec!["/workspace/b", "/workspace/c"]);
+        // Exactly one worktree-remove ran (for record 1 only).
+        let removes = runner
+            .run_recorded
+            .iter()
+            .filter(|c| c.contains("worktree remove --force"))
+            .count();
+        assert_eq!(
+            removes, 1,
+            "ReturnToAgent on the 2nd prompt must NOT trigger cleanup of records 3..N; recorded={:?}",
+            runner.run_recorded
+        );
+    }
+
+    /// `force_cleanup_isolated` failing partway through the prompt loop
+    /// must NOT propagate as Err. The caller would see a raw cleanup
+    /// error, the container would be left running without a Preserved
+    /// signal, and any subsequent records would never be prompted.
+    /// Instead the failure is logged and the loop continues.
+    #[test]
+    fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
+        let dir = TempDir::new().unwrap();
+        let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
+        let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
+        std::fs::create_dir_all(&r1.original_src).unwrap();
+        write_records(dir.path(), &[r1.clone(), r2.clone()]).unwrap();
+        // Both records assess to PreservedDirty (status returns dirty
+        // for each), then force_cleanup_isolated runs git commands.
+        // We simulate the first mount's `git branch -D` failing AND
+        // the verify capture (`git branch --list`) confirming the
+        // branch is still present → force_cleanup_isolated bails.
+        // Pre-fix: that bail would propagate via `?` and the second
+        // record would never be prompted.
+        let mut runner = FakeRunner {
+            // Capture queue: status for r1, status for r2, then verify
+            // capture for r1 (says branch IS present — triggers bail),
+            // then verify capture for r2 (says branch absent — proceed).
+            capture_queue: VecDeque::from([
+                " M f1\n".to_string(),
+                " M f2\n".to_string(),
+                "  jackin/scratch/x-a\n".to_string(),
+                String::new(),
+            ]),
+            // git branch -D for r1's branch fails; r2's branch -D succeeds.
+            fail_on: vec!["branch -D jackin/scratch/x-a".into()],
+            ..FakeRunner::default()
+        };
+        // Operator force-deletes both.
+        let mut p = ScriptedPrompt(VecDeque::from([2, 2]));
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .expect("loop must NOT propagate the cleanup Err — caller would see a raw error");
+        assert_eq!(
+            dec,
+            FinalizeDecision::Preserved,
+            "first record's failed cleanup must surface as Preserved (record retained); \
+             second record was successfully force-deleted",
+        );
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(
+            recs.len(),
+            1,
+            "first record retained (cleanup bailed), second removed (force-deleted ok)"
+        );
+        assert_eq!(recs[0].mount_dst, "/workspace/a");
     }
 
     /// Non-interactive multi-mount: every preserved record's path is

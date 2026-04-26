@@ -176,6 +176,13 @@ fn branch_still_present(runner: &mut impl CommandRunner, repo: &str, branch: &st
 }
 
 /// Force-cleanup every record in a container's isolation.json. Used by purge.
+///
+/// Iterates ALL records (does not stop at the first failure) so a single
+/// stuck mount doesn't block cleanup of independent siblings. After the
+/// loop, if any record failed to clean, surfaces an aggregate `Err` so
+/// the caller's exit code reflects reality — operator gets a non-zero
+/// status and an actionable summary instead of a misleading exit-0
+/// "purge succeeded" with a warning that scrolled past.
 pub fn purge_isolated_for_container(
     container_state_dir: &Path,
     runner: &mut impl CommandRunner,
@@ -187,13 +194,25 @@ pub fn purge_isolated_for_container(
         n = records.len(),
         dir = container_state_dir.display(),
     );
+    let mut failed: Vec<String> = Vec::new();
     for rec in records {
         if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner) {
             eprintln!(
                 "[jackin] warning: failed to clean up isolated mount `{}`: {e}",
                 rec.mount_dst
             );
+            failed.push(rec.mount_dst);
         }
+    }
+    if !failed.is_empty() {
+        anyhow::bail!(
+            "purge of isolated mounts had {n} failure(s): {list}; \
+             record(s) retained at `{dir}` so re-running `jackin purge` is possible \
+             after resolving the underlying issue(s) (see warnings above for details)",
+            n = failed.len(),
+            list = failed.join(", "),
+            dir = container_state_dir.display(),
+        );
     }
     Ok(())
 }
@@ -390,6 +409,85 @@ mod tests {
     /// record. We can't easily simulate `remove_dir_all` failure
     /// portably; this test instead pins the contract via the doc comment
     /// and the error-message check on a related path.
+    /// When one record fails and others succeed, purge must:
+    /// (a) iterate ALL records (not stop at the first failure),
+    /// (b) bail with an aggregate Err so the exit code reflects reality.
+    /// Pre-fix: returned Ok(()) regardless, masking the failure as a
+    /// scrolled-past stderr warning.
+    #[test]
+    fn purge_isolated_for_container_bails_when_any_record_fails() {
+        let repo_dir = TempDir::new().unwrap();
+        let container_dir = TempDir::new().unwrap();
+        // Two records on different mounts.
+        let r1 = rec_for(repo_dir.path(), container_dir.path());
+        let mut r2 = rec_for(repo_dir.path(), container_dir.path());
+        r2.mount_dst = "/workspace/docs".into();
+        let wt2 = container_dir.path().join("isolated/workspace/docs");
+        std::fs::create_dir_all(&wt2).unwrap();
+        r2.worktree_path = wt2.to_string_lossy().into();
+        r2.scratch_branch = "jackin/scratch/x-2".into();
+        write_records(container_dir.path(), &[r1.clone(), r2.clone()]).unwrap();
+
+        // r1's branch -D fails AND verify says it's still present →
+        // force_cleanup_isolated bails for r1. r2's branch -D succeeds
+        // (different branch name doesn't match the fail_on substring).
+        let mut runner = FakeRunner {
+            // r1's verify returns "still present"; r2's verify returns empty.
+            capture_queue: std::collections::VecDeque::from(vec![
+                "  jackin/scratch/x\n".to_string(),
+                String::new(),
+            ]),
+            // Only r1's specific branch fails. Substring match avoids
+            // catching r2's `branch -D jackin/scratch/x-2`.
+            fail_on: vec!["branch -D jackin/scratch/x ".into()],
+            ..Default::default()
+        };
+        let err = purge_isolated_for_container(container_dir.path(), &mut runner).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("1 failure"),
+            "must aggregate failure count; got: {msg}"
+        );
+        assert!(
+            msg.contains("/workspace/jackin"),
+            "must name the failing mount; got: {msg}"
+        );
+        // r2 (the successful one) should be removed; r1 (the failing
+        // one) retained.
+        let recs = read_records(container_dir.path()).unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].mount_dst, "/workspace/jackin");
+    }
+
+    /// `branch_still_present` returns `None` when the verify capture
+    /// itself errors (e.g., host `.git` corrupted between `branch -D`
+    /// and `branch --list`). The doc comment on the helper says
+    /// "callers treat None as 'couldn't verify, don't bail'" — pin
+    /// that contract so a refactor to `unwrap_or(true)` (the "safer"
+    /// reading) doesn't break purge for any verify failure.
+    #[test]
+    fn force_cleanup_proceeds_when_verify_capture_itself_errors() {
+        let repo_dir = TempDir::new().unwrap();
+        let container_dir = TempDir::new().unwrap();
+        let rec = rec_for(repo_dir.path(), container_dir.path());
+        write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+        // `git branch -D` fails AND `git branch --list` (the verify
+        // capture) ALSO fails. branch_still_present returns None →
+        // proceed (don't bail) → record removed.
+        let mut runner = FakeRunner {
+            fail_on: vec!["branch -D".into(), "branch --list".into()],
+            ..Default::default()
+        };
+        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap();
+        assert!(
+            read_records(container_dir.path()).unwrap().is_empty(),
+            "record should be removed when verify is inconclusive (None) — \
+             cost of false negative (orphan branch) is lower than cost of \
+             false positive (operator stuck unable to purge)"
+        );
+    }
+
     #[test]
     fn force_cleanup_error_message_mentions_record_retention() {
         // This test pins that any failure path produces an error

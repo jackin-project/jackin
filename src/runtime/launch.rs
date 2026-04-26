@@ -640,12 +640,39 @@ pub fn inspect_attach_outcome(
     let status = parts.first().copied().unwrap_or("");
     let exit_code = parts.get(1).and_then(|s| s.parse::<i32>().ok());
     let oom = parts.get(2).copied().unwrap_or("") == "true";
-    if status == "running" {
-        Ok(AttachOutcome::still_running())
-    } else if oom {
-        Ok(AttachOutcome::oom_killed())
-    } else {
-        Ok(AttachOutcome::stopped(exit_code.unwrap_or(0)))
+    // Only `exited` legitimately routes through finalize_clean_exit.
+    // `paused | restarting | removing | created` are all states where
+    // the container hasn't exited and has no exit code to act on —
+    // collapsing them into stopped(0) would let finalize_clean_exit
+    // auto-delete worktrees of containers that may resume any moment.
+    // OOM is a real exit (the kernel killed the process); we surface
+    // it explicitly so finalize preserves the recovery state.
+    // Unknown status strings (future Docker versions, exotic runtimes)
+    // are treated conservatively as still_running with a debug_log so
+    // the issue is debuggable but not data-destructive.
+    match status {
+        "running" | "paused" | "restarting" | "removing" | "created" => {
+            Ok(AttachOutcome::still_running())
+        }
+        "exited" | "dead" if oom => Ok(AttachOutcome::oom_killed()),
+        "exited" => Ok(AttachOutcome::stopped(exit_code.unwrap_or(0))),
+        "dead" => {
+            // `dead` means the daemon failed to deinitialize the container
+            // — rare, indicates trouble. Preserve records so the operator
+            // can inspect rather than auto-cleaning.
+            crate::debug_log!(
+                "isolation",
+                "inspect_attach_outcome: container {container} status=dead; treating as still_running to preserve records for inspection",
+            );
+            Ok(AttachOutcome::still_running())
+        }
+        other => {
+            crate::debug_log!(
+                "isolation",
+                "inspect_attach_outcome: unknown docker status `{other}` for {container}; treating as still_running (conservative)",
+            );
+            Ok(AttachOutcome::still_running())
+        }
     }
 }
 
@@ -2908,6 +2935,112 @@ plugins = []
             fail_on: vec!["docker inspect".into()],
             ..Default::default()
         };
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::still_running());
+    }
+
+    /// Helper for inspect_attach_outcome status tests — returns a
+    /// FakeRunner whose `docker inspect` capture returns the given
+    /// `status|exit_code|oom` line. Other docker calls also queue the
+    /// same response (we make only one inspect call per test).
+    fn inspect_runner(
+        status: &str,
+        exit_code: i32,
+        oom: bool,
+    ) -> crate::runtime::test_support::FakeRunner {
+        crate::runtime::test_support::FakeRunner {
+            capture_queue: std::collections::VecDeque::from(vec![format!(
+                "{status}|{exit_code}|{oom}\n",
+            )]),
+            ..Default::default()
+        }
+    }
+
+    /// `exited` with exit_code=0 → stopped(0) → enters finalize_clean_exit
+    /// which is the documented happy path for clean container exits.
+    #[test]
+    fn inspect_attach_outcome_exited_zero_returns_stopped() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("exited", 0, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::stopped(0));
+    }
+
+    /// `exited` with non-zero exit_code → preserved by finalize.
+    #[test]
+    fn inspect_attach_outcome_exited_nonzero_returns_stopped_with_code() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("exited", 137, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::stopped(137));
+    }
+
+    /// `exited` with OOMKilled=true → oom_killed.
+    #[test]
+    fn inspect_attach_outcome_exited_oom_returns_oom_killed() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("exited", 137, true);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::oom_killed());
+    }
+
+    /// `running` → still_running. The basic happy detach case.
+    #[test]
+    fn inspect_attach_outcome_running_returns_still_running() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("running", 0, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::still_running());
+    }
+
+    /// `paused` → still_running. The container hasn't exited; treating
+    /// it as stopped(0) would let finalize_clean_exit auto-delete its
+    /// worktrees while the container is paused but recoverable.
+    #[test]
+    fn inspect_attach_outcome_paused_returns_still_running() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("paused", 0, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(
+            outcome,
+            AttachOutcome::still_running(),
+            "paused containers must NOT route through finalize_clean_exit's auto-cleanup path"
+        );
+    }
+
+    /// `restarting`, `removing`, `created` → still_running for the same
+    /// reason as `paused`: not exited, no real exit code to act on.
+    #[test]
+    fn inspect_attach_outcome_transient_states_return_still_running() {
+        use crate::isolation::finalize::AttachOutcome;
+        for status in ["restarting", "removing", "created"] {
+            let mut runner = inspect_runner(status, 0, false);
+            let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+            assert_eq!(
+                outcome,
+                AttachOutcome::still_running(),
+                "status `{status}` must map to still_running",
+            );
+        }
+    }
+
+    /// `dead` → still_running (conservative: daemon failed to
+    /// deinitialize; records preserved for inspection).
+    #[test]
+    fn inspect_attach_outcome_dead_returns_still_running() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("dead", 0, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::still_running());
+    }
+
+    /// Unknown status (future Docker versions, exotic runtimes) →
+    /// still_running with debug_log. Conservative direction so a new
+    /// status string never accidentally triggers data deletion.
+    #[test]
+    fn inspect_attach_outcome_unknown_status_returns_still_running() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("hibernated", 0, false);
         let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
         assert_eq!(outcome, AttachOutcome::still_running());
     }
