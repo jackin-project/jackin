@@ -7,7 +7,7 @@ use super::super::super::widgets::{
     ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
     workdir_pick::WorkdirPickState,
 };
-use super::super::render::editor::{SecretsRow, secrets_flat_row_count, secrets_flat_rows};
+use super::super::render::editor::{SecretsRow, secrets_flat_rows};
 use super::super::state::{
     ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
     FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget, Toast,
@@ -141,7 +141,8 @@ pub(super) fn handle_editor_key(
             // Skip Secrets-tab spacer rows so the cursor never lands
             // on a blank line.
             let next = if editor.active_tab == EditorTab::Secrets {
-                step_secrets_cursor_up(editor, config, candidate)
+                let rows = secrets_flat_rows(editor, config);
+                step_secrets_cursor_up(&rows, candidate)
             } else {
                 candidate
             };
@@ -149,14 +150,16 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             let FieldFocus::Row(n) = editor.active_field;
-            let max = max_row_for_tab(editor, config);
-            let candidate = (n + 1).min(max);
-            let next = if editor.active_tab == EditorTab::Secrets {
-                step_secrets_cursor_down(editor, config, candidate, max)
+            if editor.active_tab == EditorTab::Secrets {
+                let rows = secrets_flat_rows(editor, config);
+                let max = rows.len().saturating_sub(1);
+                let candidate = (n + 1).min(max);
+                editor.active_field =
+                    FieldFocus::Row(step_secrets_cursor_down(&rows, candidate, max));
             } else {
-                candidate
-            };
-            editor.active_field = FieldFocus::Row(next);
+                let max = max_row_for_tab(editor, config);
+                editor.active_field = FieldFocus::Row((n + 1).min(max));
+            }
         }
         KeyCode::Enter => match editor.active_tab {
             EditorTab::General => open_editor_field_modal(editor),
@@ -273,20 +276,19 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         EditorTab::General => 1,
         EditorTab::Mounts => editor.pending.mounts.len(),
         EditorTab::Agents => config.agents.len().saturating_sub(1),
-        EditorTab::Secrets => secrets_flat_row_count(editor, config).saturating_sub(1),
+        // Secrets tab is handled inline in the Down key arm; never reached here.
+        EditorTab::Secrets => 0,
     }
 }
 
 /// Walks forward past spacer rows. Defensive fallback to `candidate`
 /// if every row through `max` is a spacer (currently impossible).
 fn step_secrets_cursor_down(
-    editor: &EditorState<'_>,
-    config: &AppConfig,
+    rows: &[super::super::render::editor::SecretsRow],
     candidate: usize,
     max: usize,
 ) -> usize {
     use super::super::render::editor::SecretsRow;
-    let rows = secrets_flat_rows(editor, config);
     let mut idx = candidate;
     while idx <= max {
         match rows.get(idx) {
@@ -298,9 +300,11 @@ fn step_secrets_cursor_down(
 }
 
 /// Walks backward past spacers; index 0 is always focusable.
-fn step_secrets_cursor_up(editor: &EditorState<'_>, config: &AppConfig, candidate: usize) -> usize {
+fn step_secrets_cursor_up(
+    rows: &[super::super::render::editor::SecretsRow],
+    candidate: usize,
+) -> usize {
     use super::super::render::editor::SecretsRow;
-    let rows = secrets_flat_rows(editor, config);
     let mut idx = candidate;
     loop {
         match rows.get(idx) {
@@ -1869,7 +1873,7 @@ mod tests {
         let backend = TestBackend::new(80, 10);
         let mut term = ratatui::Terminal::new(backend).unwrap();
         term.draw(|f| {
-            crate::console::manager::render::render_editor(f, editor, &config, &[]);
+            crate::console::manager::render::render_editor(f, editor, &config);
         })
         .unwrap();
         let buf = term.backend().buffer();
