@@ -17,15 +17,8 @@ use crate::console::widgets::{
     workdir_pick::WorkdirPickState,
 };
 
-/// Logical identity of a row in the workspace-manager list.
-///
-/// The list has a fixed shape:
-///   - `CurrentDirectory` — the synthetic "Current directory" row (always row 0 on screen)
-///   - `SavedWorkspace(i)` — the i-th saved workspace (0-indexed into `ManagerState::workspaces`)
-///   - `NewWorkspace`     — the "+ New workspace" sentinel (always the last row on screen)
-///
-/// Prefer this enum (and the `ManagerState` helpers below) over the raw
-/// `selected: usize` when reasoning about what the operator is pointing at.
+/// Logical row in the manager list. Prefer over the raw `selected:
+/// usize` when reasoning about what the operator is pointing at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManagerListRow {
     CurrentDirectory,
@@ -34,9 +27,6 @@ pub enum ManagerListRow {
 }
 
 impl ManagerListRow {
-    /// Inverse of [`ManagerState::row_at`]. Maps a logical row back to the
-    /// raw screen index — used by callers that still need to hand a `usize`
-    /// to ratatui's [`ListState::select`].
     #[must_use]
     pub const fn to_screen_index(self, saved_count: usize) -> usize {
         match self {
@@ -53,67 +43,31 @@ pub struct ManagerState<'a> {
     pub workspaces: Vec<WorkspaceSummary>,
     pub selected: usize,
     pub toast: Option<Toast>,
-    /// Modal overlay anchored at the `ManagerState` level — populated only
-    /// from the list view (e.g. `Modal::GithubPicker`). The Editor and
-    /// `CreatePrelude` stages own their own modal slots on their inner state.
+    /// Modal slot at the list level (e.g. `Modal::GithubPicker`); the
+    /// Editor / `CreatePrelude` stages own their own modal slots.
     pub list_modal: Option<Modal<'a>>,
-    /// Left-pane (workspace list) width as percentage of total terminal
-    /// width. Clamped to [`MIN_SPLIT_PCT`, `MAX_SPLIT_PCT`]. Drives the
-    /// 30/70 split in `render_list_body`; mouse-drag on the seam column
-    /// updates it via `handle_mouse`.
     pub list_split_pct: u16,
-    /// Active mouse-drag on the list/details seam. `Some` while a left
-    /// button is held down after a seam-anchored Down event; cleared on
-    /// Up. Readers (render) never need this — only the mouse handler.
     pub drag_state: Option<DragState>,
-    /// Process-lifetime cache of `op` structural metadata, shared with
-    /// `ConsoleState` and threaded into the picker on open. Survives
-    /// Esc-back-to-list and editor re-entry: the `Rc` is preserved
-    /// across [`ManagerState::from_config`] resets in production reset
-    /// paths (see `editor::handle_editor_key`'s Esc branch and
-    /// `input::handle_key`'s post-modal reset). Test-only callers that
-    /// don't care about the cache use plain
-    /// [`ManagerState::from_config`], which allocates a fresh empty
-    /// cache; it never carries credentials so re-allocation is harmless.
+    /// Process-lifetime cache of `op` structural metadata, threaded
+    /// into the picker on open. Carries no credentials — see
+    /// `op_cache.rs`.
     pub op_cache: Rc<RefCell<OpCache>>,
-    /// Whether the 1Password CLI was reachable on PATH at console
-    /// startup. Mirrored from `ConsoleState::op_available` on
-    /// construction so the Secrets-tab editor (which only sees
-    /// `ManagerState`) can decide whether the source-picker's
-    /// 1Password choice is enabled. Read-only here — the source-of-
-    /// truth probe lives in `ConsoleState::new`.
+    /// Mirrored from `ConsoleState::op_available` (probed once at
+    /// startup) so the Secrets-tab editor can disable the
+    /// source-picker's 1Password choice without re-probing.
     pub op_available: bool,
 }
 
-/// Anchors a mouse-drag resize of the list/details seam.
-///
-/// Captured on `MouseEventKind::Down(Left)` when the click lands within
-/// ±1 column of the current seam; consumed by `MouseEventKind::Drag(Left)`
-/// events to compute the new `list_split_pct`; cleared on `Up`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DragState {
-    /// `list_split_pct` at the moment the drag began.
     pub anchor_pct: u16,
-    /// Mouse column (0-based) at the moment the drag began.
     pub anchor_x: u16,
 }
 
-/// Minimum list-pane width as percentage of total terminal width.
-///
-/// Keeps the workspace-name list readable even when operator drags the
-/// seam left. Mirrors the cap on the details pane (`100 - MAX_SPLIT_PCT`
-/// is 20).
 pub const MIN_SPLIT_PCT: u16 = 20;
-/// Maximum list-pane width as percentage of total terminal width. Keeps
-/// the details pane viable when the operator drags the seam right.
 pub const MAX_SPLIT_PCT: u16 = 80;
-/// Initial split value — gives workspace names a tight column and lets
-/// the details pane breathe for git branches and full paths.
 pub const DEFAULT_SPLIT_PCT: u16 = 30;
 
-/// Clamp `pct` into the allowed [`MIN_SPLIT_PCT`, `MAX_SPLIT_PCT`] range.
-/// Used by `handle_mouse` to keep drag-computed percentages sane, and by
-/// `ManagerState::from_config` for defense in depth.
 #[must_use]
 pub const fn clamp_split(pct: u16) -> u16 {
     if pct < MIN_SPLIT_PCT {
@@ -153,110 +107,60 @@ pub struct EditorState<'a> {
     pub original: WorkspaceConfig,
     pub pending: WorkspaceConfig,
     pub modal: Option<Modal<'a>>,
-    /// In Create mode, the workspace name the prelude collected.
-    /// Unused in Edit mode (name comes from `EditorMode::Edit { name }`).
+    /// Create-mode only; Edit mode reads name from `EditorMode::Edit`.
     pub pending_name: Option<String>,
-    /// Set by the `SaveDiscardCancel` modal handler to signal that the outer
-    /// `handle_key` should perform a save and/or navigate to List.
+    /// Signals the outer `handle_key` to save and/or pop to List.
     pub exit_after_save: Option<ExitIntent>,
-    /// Explicit state machine for the multi-step save protocol (open
-    /// `ConfirmSave` → stash plan → outer-loop commit → maybe `ErrorPopup`).
-    /// Replaces the sibling `error_banner`, `exit_on_save_success`, and
-    /// `pending_save_commit` flags that used to live on this struct.
     pub save_flow: EditorSaveFlow,
-    /// Secrets tab: per-row mask state. A `(scope, key)` pair is in this
-    /// set iff that row's value is rendered unmasked. Default state is
-    /// empty — every plain-text value is masked. `M` while on a key row
-    /// toggles membership for the focused row only (operator feedback:
-    /// the mask toggle should never reveal values they didn't mean to
-    /// reveal). Cleared on tab leave so re-entering the tab returns to
-    /// the all-masked baseline.
-    ///
-    /// Op:// rows ignore this set entirely — they render as a breadcrumb
-    /// (commit 31), not a masked value.
+    /// Secrets tab: keys whose value is currently unmasked. Cleared on
+    /// tab leave so re-entry starts all-masked. Op:// rows ignore this
+    /// — they render as a breadcrumb, not a masked value.
     pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
-    /// Secrets tab: which per-agent override sections are currently
-    /// expanded. Keyed by agent name. Empty on tab entry; populated as
-    /// the operator presses `→` / `Enter` on an agent header.
     pub secrets_expanded: BTreeSet<String>,
-    /// Secrets tab: scratch field for the two-step "add" flow. Set when
-    /// the first `TextInput(EnvKey)` modal commits; cleared when the
-    /// follow-up `TextInput(EnvValue)` modal commits or cancels.
+    /// Scratch for the two-step add flow: set on `EnvKey` commit,
+    /// cleared on `EnvValue` commit/cancel.
     pub pending_env_key: Option<(SecretsScopeTag, String)>,
-    /// When the operator presses `P` on a Secrets row, the focused row's
-    /// scope (and key, if a key row) is stashed here. The `OpPicker`
-    /// reads it on commit to know where to write the chosen `op://` path.
-    /// Cleared on every modal-reset path that doesn't represent a direct
-    /// picker step.
-    ///
-    /// Variants:
-    /// - `Some((scope, Some(key)))` — `P` pressed on a key row; replace
-    ///   that key's value on commit.
-    /// - `Some((scope, None))` — `P` pressed on the `+ Add` sentinel; on
-    ///   commit, open the `EnvKey` modal for the key name (with value
-    ///   pre-stashed in `pending_picker_value`).
-    /// - `None` — no in-flight picker invocation.
+    /// Stashed by `P` on a Secrets row so `OpPicker` knows where to
+    /// write its `op://` path. `Some((scope, Some(key)))` replaces a
+    /// row's value; `Some((scope, None))` opens the `EnvKey` modal
+    /// next with the value pre-stashed in `pending_picker_value`.
     pub pending_picker_target: Option<(SecretsScopeTag, Option<String>)>,
-    /// In the sentinel-add flow, the picker commits a path before the
-    /// operator has named the key. The path is held here until the
-    /// `EnvKey` modal commits and writes both fields to pending env at
-    /// once. Cleared on every modal-reset path that doesn't represent a
-    /// direct picker step.
+    /// In the sentinel-add flow, holds the picker-supplied path until
+    /// the operator names the key and the `EnvKey` modal commits both
+    /// fields at once.
     pub pending_picker_value: Option<String>,
 }
 
-/// Explicit state-machine for the workspace editor's save cycle.
+/// Save cycle state machine.
 ///
-/// The save path is a multi-step protocol:
-///
-/// 1. Operator presses `s` (or picks `Save` in the `SaveDiscardCancel` modal).
-/// 2. `begin_editor_save` runs validation + planning and opens the
-///    `ConfirmSave` modal — transitions `Idle → Confirming`.
-/// 3. Operator picks `Save` in `ConfirmSave`: the modal handler stashes
-///    the plan — transitions `Confirming → PendingCommit`.
-/// 4. The outer `handle_key` (which holds `paths` / `cwd`) drains the
-///    `PendingCommit` variant and calls `commit_editor_save`, which writes
-///    to disk — success transitions back to `Idle`; failure transitions
-///    to `Error` which renders as an `ErrorPopup` until the operator
-///    dismisses it.
-///
-/// Validation failures from `begin_editor_save` (missing name, planner
-/// reject, pre-existing-only collapse) also land in `Error`, with the
-/// message surfaced as an inline banner instead of a modal — see the
-/// rendering in `render_editor`.
+/// `Idle` → (open `ConfirmSave`) `Confirming` → (stash plan)
+/// `PendingCommit` → (outer loop writes to disk) `Idle` or `Error`.
+/// `exit_on_success` is true when save came from `SaveDiscardCancel`
+/// — outer loop pops to list on success. Pre-commit validation
+/// errors land in `Error` and render as an inline banner instead of
+/// a modal.
 #[derive(Debug, Clone, Default)]
 pub enum EditorSaveFlow {
     #[default]
     Idle,
-    /// Operator has opened the `ConfirmSave` modal; when they click Save,
-    /// the modal handler stashes the commit plan and closes the modal.
-    /// `exit_on_success` is true when this save cycle originated from
-    /// `SaveDiscardCancel`'s Save choice (so the outer loop should pop
-    /// back to the workspace list on success), false when the operator
-    /// triggered save directly from the editor (stay in place).
-    Confirming { exit_on_success: bool },
-    /// `ConfirmSave` handler has handed off a ready-to-commit plan.
-    /// Drained by the outer `handle_key` which actually performs the
-    /// write (it holds `paths` / `cwd`).
+    Confirming {
+        exit_on_success: bool,
+    },
     PendingCommit {
         plan: PendingSaveCommit,
         exit_on_success: bool,
     },
-    /// The last commit attempt failed; `message` is shown in the
-    /// `ErrorPopup` overlay (or, for pre-commit validation errors, as
-    /// an inline banner) until dismissed.
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
 
 impl EditorSaveFlow {
-    /// True when the save flow is in the `Error` state — used by the
-    /// render path to decide whether to draw the inline banner.
     #[must_use]
     pub const fn is_error(&self) -> bool {
         matches!(self, Self::Error { .. })
     }
 
-    /// The error message currently pending display, if any.
     #[must_use]
     pub const fn error_message(&self) -> Option<&str> {
         if let Self::Error { message } = self {
@@ -267,9 +171,6 @@ impl EditorSaveFlow {
     }
 }
 
-/// Plan material the `ConfirmSave` modal stashes on the editor state when
-/// the operator clicks Save. `input.rs::commit_editor_save` drains this
-/// and actually writes to disk.
 #[derive(Debug, Clone)]
 pub struct PendingSaveCommit {
     pub effective_removals: Vec<String>,
@@ -324,72 +225,35 @@ pub enum Modal<'a> {
     SaveDiscardCancel {
         state: crate::console::widgets::save_discard::SaveDiscardState,
     },
-    /// Opened from the workspace list view when the highlighted workspace
-    /// has ≥2 GitHub mounts and the operator presses `o`. Committing picks
-    /// one URL to hand to `open::that_detached`.
+    /// Workspace list, when ≥2 GitHub mounts and operator pressed `o`.
     GithubPicker {
         state: GithubPickerState,
     },
-    /// Preview-and-confirm modal shown when the operator presses `s` in
-    /// the editor with changes pending. Lists every field-level change
-    /// (and any mount-collapse warning) up-front so the operator sees a
-    /// single dialog covering the whole plan.
     ConfirmSave {
         state: ConfirmSaveState,
     },
-    /// Error popup opened by the save path when an internal-API call
-    /// returns an Err (e.g. duplicate workspace name, planner reject).
-    /// Dismiss returns the operator to the editor with changes intact.
     ErrorPopup {
         state: ErrorPopupState,
     },
-    /// 1Password vault/item/field picker — opened as a row-level action
-    /// from the Secrets tab when the operator presses `P`. The picker
-    /// commits an `op://...` reference directly into the focused row's
-    /// pending value (key row) or stashes it on
-    /// `EditorState::pending_picker_value` for the follow-up `EnvKey`
-    /// modal (sentinel row). Boxed because the picker's three result
-    /// `Vec`s, runner trait object, and load-channel receiver make it
-    /// substantially larger than the existing variants.
+    /// Boxed because the picker's `Vec`s + runner + channel are
+    /// substantially larger than other variants.
     OpPicker {
         state: Box<OpPickerState>,
     },
-    /// Agent disambiguation picker — opened from the manager list view
-    /// when the highlighted workspace has ≥2 eligible agents and the
-    /// operator presses `Enter`. Anchored on `ManagerState.list_modal`
-    /// (the same slot as `GithubPicker`); committing returns the chosen
-    /// `ClassSelector` which the caller resolves to a launch outcome.
+    /// Manager-list disambiguation picker (`ManagerState.list_modal`
+    /// slot, same as `GithubPicker`).
     AgentPicker {
         state: AgentPickerState,
     },
-    /// Agent picker opened from the editor's Environments tab when the
-    /// operator activates the `+ Add per-agent override for ...`
-    /// sentinel row. Filtered to workspace-allowed agents that don't yet
-    /// have an entry in `pending.agents`. Anchored on `EditorState.modal`
-    /// (not the launch-disambiguation slot on `ManagerState.list_modal`)
-    /// so the editor's commit handler can create the override entry,
-    /// auto-expand the new section, and move the cursor onto its
-    /// `+ Add <agent> environment variable` sentinel.
+    /// Editor-tab override picker (`EditorState.modal` slot, not the
+    /// launch-disambiguation slot on `ManagerState`) so the editor's
+    /// commit handler can create the override entry and auto-expand.
     AgentOverridePicker {
         state: AgentPickerState,
     },
-    /// Two-button "Source for KEY" prompt opened between the `EnvKey`
-    /// modal and the value-entry path on the Secrets-tab Enter-on-
-    /// sentinel flow. Plain commits a follow-up `EnvValue` text modal;
-    /// 1Password commits a follow-up `OpPicker` modal. The 1Password
-    /// option renders disabled when the host has no `op` CLI on PATH
-    /// (probed once at startup — see `ConsoleState::op_available`).
     SourcePicker {
         state: SourcePickerState,
     },
-    /// Two-button "All agents / Specific agent" prompt opened at the
-    /// very start of the Secrets-tab Add flow when the operator presses
-    /// `Enter` on the workspace-level `+ Add environment variable`
-    /// sentinel. `All agents` drops into the standard `EnvKey` modal
-    /// with `Workspace` scope; `Specific agent` opens the
-    /// [`Modal::AgentOverridePicker`] so the operator chooses which
-    /// agent's overrides to extend before falling into the `EnvKey`
-    /// modal with `Agent(<name>)` scope.
     ScopePicker {
         state: ScopePickerState,
     },
@@ -400,19 +264,8 @@ pub enum TextInputTarget {
     Name,
     Workdir,
     MountDst,
-    /// Secrets tab — entering the key half of the two-step add flow.
-    /// Commit of this modal stashes the key on `pending_env_key` and
-    /// opens a follow-up `EnvValue` modal.
-    EnvKey {
-        scope: SecretsScopeTag,
-    },
-    /// Secrets tab — entering the value, either editing an existing
-    /// key (`scope` resolved from the focused row) or completing the
-    /// second half of the two-step add flow.
-    EnvValue {
-        scope: SecretsScopeTag,
-        key: String,
-    },
+    EnvKey { scope: SecretsScopeTag },
+    EnvValue { scope: SecretsScopeTag, key: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -424,22 +277,14 @@ pub enum FileBrowserTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmTarget {
     DeleteWorkspace,
-    /// Secrets tab — confirming deletion of an env var. Carries the
-    /// scope (workspace-level or agent override) and the key to remove.
-    DeleteEnvVar {
-        scope: SecretsScopeTag,
-        key: String,
-    },
+    DeleteEnvVar { scope: SecretsScopeTag, key: String },
 }
 
-/// Identifies a Secrets-tab scope when stashed in `TextInputTarget` /
-/// `ConfirmTarget`.
+/// Separate from [`crate::config::editor::EnvScope`].
 ///
-/// Intentionally separate from [`crate::config::editor::EnvScope`] —
-/// that type requires the workspace name, which `EditorState` doesn't
-/// always have handy at modal-commit time (Create mode captures the name
-/// on `pending_name`). We derive the full `EnvScope` at save time inside
-/// `commit_editor_save`.
+/// That type needs the workspace name, which Create mode hasn't
+/// captured until `pending_name` lands at save time. The full
+/// `EnvScope` is derived in `commit_editor_save`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SecretsScopeTag {
     Workspace,
@@ -461,15 +306,11 @@ pub struct CreatePreludeState<'a> {
     pub pending_workdir: Option<String>,
     pub pending_name: Option<String>,
     pub modal: Option<Modal<'a>>,
-    /// Last cwd the `FileBrowser` was pointing at when the operator
-    /// committed a mount src. Captured so that pressing Esc on the
-    /// `MountDstChoice` step can re-open `FileBrowser` at the same directory
-    /// instead of starting back at `$HOME`.
+    /// Captured so Esc on `MountDstChoice` re-opens `FileBrowser` at
+    /// the same directory instead of `$HOME`.
     pub last_browser_cwd: Option<PathBuf>,
-    /// Tracks whether the operator took the "Edit destination" branch
-    /// during the current wizard run. Determines which step Esc on
-    /// `WorkdirPick` should rewind to — `TextInputDst` if Edit was used,
-    /// `MountDstChoice` otherwise.
+    /// Picks Esc-on-`WorkdirPick` rewind target: `TextInputDst` when
+    /// the Edit-destination branch was used, else `MountDstChoice`.
     pub used_edit_dst: bool,
 }
 
@@ -511,31 +352,13 @@ impl WorkspaceSummary {
 }
 
 impl ManagerState<'_> {
-    /// Build the manager state from config, preselecting the row that best
-    /// matches `cwd`.
-    ///
-    /// See [`ManagerListRow`] docs for row layout.
-    ///
-    /// When cwd is covered by a saved workspace, preselect the saved row.
-    /// Otherwise land on the current-directory row so Enter launches against
-    /// the current directory without saving.
-    ///
-    /// Allocates a fresh empty [`OpCache`] and assumes `op` is **not**
-    /// available — call [`ManagerState::from_config_with_cache`] from
-    /// production reset paths to preserve the `ConsoleState`-owned
-    /// cache and probe result across resets. Tests that don't exercise
-    /// the source picker can use this entry point unchanged.
+    /// Allocates a fresh empty cache and assumes `op` unavailable —
+    /// production reset paths use the `_with_cache_and_op` variant to
+    /// preserve the `ConsoleState`-owned cache.
     pub fn from_config(config: &AppConfig, cwd: &std::path::Path) -> Self {
         Self::from_config_with_cache(config, cwd, Rc::new(RefCell::new(OpCache::default())))
     }
 
-    /// Build the manager state from config, threading a caller-supplied
-    /// `op_cache`. Used by `ConsoleState::new` and by the production
-    /// reset paths (Esc-back-to-list, post-save reset) so the cache
-    /// outlives a single editor session.
-    ///
-    /// `op_available` defaults to `false`; production callers thread
-    /// the probe result via [`ManagerState::from_config_with_cache_and_op`].
     pub fn from_config_with_cache(
         config: &AppConfig,
         cwd: &std::path::Path,
@@ -544,11 +367,6 @@ impl ManagerState<'_> {
         Self::from_config_with_cache_and_op(config, cwd, op_cache, false)
     }
 
-    /// Full-fidelity constructor used by production code paths in
-    /// `ConsoleState::new` and the editor reset arms. Threads both the
-    /// session-scoped `op_cache` and the startup `op_available` probe
-    /// result so the embedded editor can decide whether the source-
-    /// picker's 1Password choice should be enabled.
     pub fn from_config_with_cache_and_op(
         config: &AppConfig,
         cwd: &std::path::Path,
@@ -643,21 +461,9 @@ impl ManagerState<'_> {
         }
     }
 
-    /// Drain any pending results from background `op` worker threads.
-    ///
-    /// Called from the outer console event loop on every tick (not only
-    /// on key events) so the [`OpPicker`] modal's loading state advances
-    /// and result data lands as soon as the worker finishes — without
-    /// waiting for the operator to press a key. The render path's
-    /// [`OpPickerState::tick`] also drains the channel; both call sites
-    /// are idempotent on an empty channel, but draining here ahead of
-    /// render means the freshly-rendered frame already reflects any
-    /// just-arrived result.
-    ///
-    /// Covers both modal anchors: the manager-list `list_modal` slot
-    /// (which today never holds an `OpPicker`, but matching the variant
-    /// keeps the helper future-proof) and the editor's `modal` slot
-    /// (where the Secrets-tab picker lives).
+    /// Drained from the outer event loop every tick so picker results
+    /// land without keystroke pumping. Idempotent on empty channels.
+    /// Covers both modal anchors (`list_modal` and `editor.modal`).
     pub fn poll_picker_loads(&mut self) {
         if let Some(Modal::OpPicker { state }) = self.list_modal.as_mut() {
             state.poll_load();
@@ -730,7 +536,7 @@ impl EditorState<'_> {
         false
     }
 
-    /// Count field-level differences. Used for "s save (N changes)".
+    /// Field-level diff count used for "s save (N changes)".
     pub fn change_count(&self) -> usize {
         let mut n = 0;
         if self.pending.workdir != self.original.workdir {
@@ -748,9 +554,8 @@ impl EditorState<'_> {
         {
             n += 1;
         }
-        // Mounts: count adds + removes + content changes.
-        // MountConfig doesn't implement Ord/Hash so we use linear containment
-        // checks — mount lists are small so this is perfectly acceptable.
+        // MountConfig has no Ord/Hash; linear contains is fine for
+        // the few mounts a workspace has.
         let added = self
             .pending
             .mounts
@@ -764,12 +569,9 @@ impl EditorState<'_> {
             .filter(|m| !self.pending.mounts.contains(m))
             .count();
         n += added + removed;
-        // Env vars: count workspace-level adds, removes, and value changes.
         n += env_change_count(&self.original.env, &self.pending.env);
-        // Per-agent env overrides: union of agent keys across original
-        // and pending. For each agent, count env deltas; if an agent
-        // exists in one side but not the other, its whole env map is
-        // counted as added/removed.
+        // Per-agent overrides: union the keys; an agent present on
+        // only one side counts its whole env map as added/removed.
         let agent_keys: std::collections::BTreeSet<&String> = self
             .original
             .agents
@@ -788,8 +590,6 @@ impl EditorState<'_> {
     }
 }
 
-/// Count add/remove/change deltas between two env maps. Added keys,
-/// removed keys, and value-changed keys each contribute +1.
 fn env_change_count(
     original: &std::collections::BTreeMap<String, String>,
     pending: &std::collections::BTreeMap<String, String>,

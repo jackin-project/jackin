@@ -8,22 +8,10 @@ use crate::config::AppConfig;
 use crate::config::editor::EnvScope;
 use crate::paths::JackinPaths;
 
-/// Phase 1 of the save flow: run pre-save validation, compute the
-/// plan, and open a `Modal::ConfirmSave` summarising the change set.
-///
-/// Validation failures (missing name, planner reject, pre-existing-only
-/// collapse) surface via `EditorSaveFlow::Error { message }` and render
-/// as an inline banner — NOT as an `ErrorPopup`. The popup is reserved
-/// for commit-time errors (phase 2). See `EditorSaveFlow` for the full
-/// state machine.
-///
-/// `exit_on_success` is remembered on the `Confirming` variant so that
-/// the commit phase can decide whether to bounce to the workspace list
-/// after a successful write.
-///
-/// On success, the function stashes the planner's `effective_removals`
-/// / `final_mounts` on the modal state so the commit path doesn't need
-/// to re-run `plan_edit`/`plan_create`.
+/// Phase 1: validate, plan, open `ConfirmSave`. Validation failures
+/// route to `EditorSaveFlow::Error` as an inline banner (popup is
+/// reserved for phase-2 commit errors). The plan is stashed on the
+/// modal so commit doesn't re-run `plan_edit`/`plan_create`.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 pub(super) fn begin_editor_save(
     state: &mut ManagerState<'_>,
@@ -33,11 +21,10 @@ pub(super) fn begin_editor_save(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
     };
-    // A stale banner from a previous cycle should clear now that the
-    // operator has kicked off a fresh save attempt.
+    // Clear any stale banner from a prior attempt.
     editor.save_flow = EditorSaveFlow::Idle;
 
-    // Classify once so mutating arms below don't keep editor.mode borrowed.
+    // Classify first so mutating arms don't keep editor.mode borrowed.
     #[allow(clippy::items_after_statements)]
     enum SaveMode {
         Edit { original_name: String },
@@ -128,9 +115,6 @@ pub(super) fn begin_editor_save(
         }
     };
 
-    // Build the display lines describing the plan. These pre-computed
-    // lines are what the ConfirmSave widget renders; the widget itself
-    // stays dumb.
     let lines = build_confirm_save_lines(editor, config, &collapse_lines);
     let mut confirm_state = crate::console::widgets::confirm_save::ConfirmSaveState::new(lines);
     confirm_state.effective_removals = effective_removals;
@@ -143,14 +127,9 @@ pub(super) fn begin_editor_save(
     Ok(())
 }
 
-/// Phase 2 of the save flow: the operator clicked Save in the `ConfirmSave`
-/// dialog. Actually write to the on-disk config via the internal
-/// `ConfigEditor` API (NO CLI subprocess).
-///
-/// On Err, transitions the editor's `save_flow` to `Error` and surfaces
-/// the failure as an `ErrorPopup`. On Ok, refreshes the editor's
-/// origin-of-truth snapshot and — if `exit_on_success` is set —
-/// transitions the whole manager back to the list view.
+/// Phase 2: write to disk via `ConfigEditor` (no CLI subprocess). On
+/// Err → `EditorSaveFlow::Error` + `ErrorPopup`. On Ok → refresh
+/// editor snapshot, optionally bounce to list.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 pub(super) fn commit_editor_save(
     state: &mut ManagerState<'_>,
@@ -164,8 +143,7 @@ pub(super) fn commit_editor_save(
         return Ok(());
     };
 
-    // Reuse the classify-first pattern from begin_editor_save so the
-    // mutating write arms don't keep editor.mode borrowed.
+    // Same classify-first pattern as begin_editor_save.
     #[allow(clippy::items_after_statements)]
     enum SaveMode {
         Edit { original_name: String },
@@ -178,8 +156,8 @@ pub(super) fn commit_editor_save(
         EditorMode::Create => SaveMode::Create,
     };
 
-    // If plan_create stashed a collapsed mount set, honour it now — the
-    // operator already saw + approved it in the confirm dialog.
+    // Operator already approved the collapsed mount set in
+    // ConfirmSave; honour it now.
     if let Some(final_mounts) = plan.final_mounts {
         editor.pending.mounts = final_mounts;
     }
@@ -193,16 +171,10 @@ pub(super) fn commit_editor_save(
         }
     };
 
-    // Track a pending rename across the inner match. Finding #4: the
-    // `editor.mode = EditorMode::Edit { name }` mutation is deferred
-    // until after `ce.save()` succeeds — otherwise a later
-    // `ce.edit_workspace` or `ce.save` failure would leave the editor UI
-    // advertising the new name while nothing has reached disk.
-    //
-    // The save-time workspace name (after any rename) is returned via
-    // `current_name` so the subsequent env-diff step can target the
-    // right `[workspaces.<name>.env]` / `[workspaces.<name>.agents.<agent>.env]`
-    // tables.
+    // Defer `editor.mode` rename until ce.save() succeeds — a later
+    // failure would otherwise leave the UI advertising a name that
+    // never reached disk. `current_name` carries the post-rename name
+    // for the env-diff step.
     let (pending_rename, current_name): (Option<String>, String) = match save_mode {
         SaveMode::Edit { original_name } => {
             let mut current_name = original_name.clone();
@@ -227,8 +199,6 @@ pub(super) fn commit_editor_save(
                 return Ok(());
             }
 
-            // Defer `editor.mode` mutation — only commit it in the
-            // `ce.save()` success arm below.
             (rename_to, current_name)
         }
         SaveMode::Create => {
@@ -244,14 +214,8 @@ pub(super) fn commit_editor_save(
         }
     };
 
-    // Env diff: walk workspace-level and per-agent env maps and apply
-    // adds / changes / removes via ConfigEditor. `create_workspace` /
-    // `edit_workspace` do NOT write env (env lives outside
-    // `WorkspaceEdit`) — the TUI manages env changes exclusively
-    // through this diff loop calling `set_env_var` / `remove_env_var`.
-    //
-    // In Create mode `editor.original.env` is empty, so every entry in
-    // `editor.pending.env` falls through the "added" branch.
+    // `create_workspace`/`edit_workspace` don't touch env — TUI
+    // manages env exclusively through this diff loop.
     apply_env_diff(&mut ce, &current_name, &editor.original, &editor.pending);
 
     match ce.save() {
@@ -290,16 +254,9 @@ pub(super) fn commit_editor_save(
                     })
                 )
             {
-                // Create mode always exits to the list after a successful
-                // write; there's no persistent "edit" view for a freshly-
-                // created workspace until the operator picks it.
-                //
-                // `ManagerState::from_config` allocates a fresh state
-                // with `toast: None`, which would discard the success
-                // toast we just set above — leaving the two exit-to-list
-                // flows (create-save, Esc→Save) with no positive
-                // feedback while direct `s` saves (which stay on the
-                // editor) keep theirs. Carry the toast across the reset.
+                // Carry the toast across `from_config_with_cache_and_op`
+                // (which would otherwise discard it) so create-save and
+                // Esc→Save keep positive feedback parity with direct `s`.
                 let carry_toast = state.toast.take();
                 let cache = state.op_cache.clone();
                 let op_available = state.op_available;
@@ -329,11 +286,6 @@ pub(super) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str)
     };
 }
 
-/// Build the list of display lines shown inside the `ConfirmSave` modal.
-/// In Create mode we show a summary; in Edit mode a structured diff
-/// between `editor.original` and `editor.pending`. If the planner
-/// reports mount collapses, a final "Mount collapse required:" section
-/// is appended.
 #[allow(clippy::too_many_lines)]
 fn build_confirm_save_lines(
     editor: &EditorState<'_>,
@@ -405,8 +357,6 @@ fn build_confirm_save_lines(
                 Span::styled(display_name, value),
             ]));
 
-            // Rename diff (a rename counts even though it's not a
-            // workspace-field change per se).
             if let Some(new_name) = &editor.pending_name
                 && new_name != name
             {
@@ -494,10 +444,6 @@ fn build_confirm_save_lines(
                 }
             }
 
-            // Env vars — same diff layout as mounts / allowed agents.
-            // Covers workspace-level env plus per-agent overrides; each
-            // per-agent section is prefixed with the agent name so a
-            // single heading can host them all.
             let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
             if !env_lines.is_empty() {
                 out.push(Line::raw(""));
@@ -507,8 +453,6 @@ fn build_confirm_save_lines(
         }
     }
 
-    // Create mode — include an "Env vars:" section listing every
-    // pending entry as added. Skip entirely when the map is empty.
     if matches!(editor.mode, EditorMode::Create) {
         let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
         if !env_lines.is_empty() {
@@ -530,8 +474,6 @@ fn build_confirm_save_lines(
     out
 }
 
-/// Summarise a mount as `<src>  (rw|ro, <label>)` where label is
-/// github/git/folder/missing from `mount_info::inspect`.
 fn mount_summary(m: &crate::workspace::MountConfig) -> String {
     let src = crate::tui::shorten_home(&m.src);
     let kind = super::super::mount_info::inspect(&m.src);
@@ -539,9 +481,6 @@ fn mount_summary(m: &crate::workspace::MountConfig) -> String {
     format!("{src}  ({rw}, {})", kind.label())
 }
 
-/// Summarise the allowed-agent selection — `any (N agents)` when the
-/// workspace lets every configured agent run, otherwise a comma-separated
-/// list.
 fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {
     if super::super::agent_allow::allows_all_agents(&editor.pending) {
         return format!("any ({} agents)", config.agents.len());
@@ -549,11 +488,8 @@ fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> Strin
     editor.pending.allowed_agents.join(", ")
 }
 
-/// Produce `+ KEY = VALUE` / `- KEY` env-var diff lines covering both
-/// workspace-level env and every per-agent override. Per-agent sections
-/// are prefixed with a `  <agent>:` header line so a single "Env vars:"
-/// heading can host the lot. Returns an empty vec when there are no
-/// changes.
+/// Per-agent sections are prefixed with `  <agent>:` so a single
+/// "Env vars:" heading hosts both workspace and override deltas.
 fn env_diff_lines(
     original: &crate::workspace::WorkspaceConfig,
     pending: &crate::workspace::WorkspaceConfig,
@@ -616,9 +552,6 @@ fn append_env_map_diff_lines(
     }
 }
 
-/// Render each mount-collapse entry as `  <child> → <parent>`, to be
-/// appended to the `ConfirmSave` lines under a "Mount collapse required:"
-/// heading.
 fn collapse_section_lines(
     collapses: &[crate::workspace::Removal],
 ) -> Vec<ratatui::text::Line<'static>> {
@@ -639,23 +572,17 @@ fn collapse_section_lines(
         .collect()
 }
 
-/// Apply the full env diff between `original` and `pending` to `ce` —
-/// both the workspace-level `env` table and each per-agent override's
-/// `env` table. Calls `set_env_var` for added / value-changed keys and
-/// `remove_env_var` for absent keys. Agents that exist only in
-/// `original.agents` have every one of their env keys removed.
+/// Agents present only in `original` get all keys removed.
 fn apply_env_diff(
     ce: &mut crate::config::ConfigEditor,
     workspace_name: &str,
     original: &crate::workspace::WorkspaceConfig,
     pending: &crate::workspace::WorkspaceConfig,
 ) {
-    // Workspace-level env.
     let ws_scope = EnvScope::Workspace(workspace_name.to_string());
     apply_env_map_diff(ce, &ws_scope, &original.env, &pending.env);
 
-    // Per-agent overrides. Union of agent keys so we catch agents that
-    // exist only on one side.
+    // Union so agents on only one side are caught.
     let agent_keys: std::collections::BTreeSet<&String> = original
         .agents
         .keys()
@@ -687,10 +614,8 @@ fn apply_env_map_diff(
     }
     for k in original.keys() {
         if !pending.contains_key(k) {
-            // `remove_env_var` returns false when the TOML path is
-            // missing (e.g. a sibling process already removed the
-            // section). Treat that as a no-op success — the key isn't
-            // there, goal achieved.
+            // `remove_env_var` returns false when the path is already
+            // missing — treat as a no-op success.
             let _ = ce.remove_env_var(scope, k);
         }
     }
@@ -733,8 +658,6 @@ pub(super) fn build_workspace_edit(
 #[cfg(test)]
 #[allow(clippy::too_many_lines)]
 mod tests {
-    //! Save-flow tests: editor `s` press → planner validation →
-    //! `ConfirmSave` modal → commit → on-disk write or error popup.
     use super::super::super::state::{
         EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, ToastKind,
     };
@@ -755,7 +678,6 @@ mod tests {
         }
     }
 
-    /// Persist an `AppConfig` with one workspace to a test `JackinPaths`.
     fn setup_with_workspace(
         name: &str,
         ws: WorkspaceConfig,
@@ -773,8 +695,6 @@ mod tests {
         Ok((tmp, paths, reloaded))
     }
 
-    /// Press `s` in the editor. Convenience helper that routes through
-    /// the public `handle_key` to mirror real operator input.
     fn press_s(
         state: &mut ManagerState<'_>,
         config: &mut AppConfig,
@@ -786,9 +706,6 @@ mod tests {
 
     #[test]
     fn save_editor_opens_confirm_save_on_edit_driven_collapse() {
-        // Existing workspace with /work/sub; operator adds /work which
-        // subsumes the child. Expected: ConfirmSave modal opens with a
-        // "Mount collapse required" section; no write yet.
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
