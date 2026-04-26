@@ -7,16 +7,17 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/runtime/launch.rs" /> is 2368L total with 4 distinct concerns mixed together: public API, container bootstrap pipeline, terminal setup, and trust verification. The test suite alone is 1282L (starting at line 1078). It is the hardest file to split safely because any error here blocks all runtime changes.
+<RepoFile path="src/runtime/launch.rs" /> is now 3047L total, with tests starting at line 1320. It no longer mixes just 4 concerns: the file now owns the public load API, trust verification, terminal setup, operator-env / auth handling, container slot claiming, workspace materialization, launch orchestration, and attach/finalizer cleanup. It is still the hardest file to split safely because any error here blocks all runtime changes.
 
 ## Proposed split
 
 ```
 src/runtime/
-  launch.rs          ← thin public API: pub fn load_agent (line 533), LoadOptions struct (line 23)
-  launch_pipeline.rs ← fn load_agent_with (553–894), LaunchContext, StepCounter, LoadCleanup
-  terminfo.rs        ← resolve_terminal_setup (141), export_host_terminfo (167)
-  trust.rs           ← confirm_agent_trust (216) — already isolated via FnOnce injection
+  launch.rs          ← thin public API: `load_agent`, `LoadOptions`
+  launch_pipeline.rs ← fn load_agent_with, LaunchContext, StepCounter, LoadCleanup, workspace materialization / finalize flow
+  terminfo.rs        ← `resolve_terminal_setup`, `export_host_terminfo`
+  trust.rs           ← `confirm_agent_trust` — already isolated via FnOnce injection
+  launch_slot.rs     ← claim_container_name + verify_token_env_present (if they still feel like a coherent seam)
 ```
 
 ## Why the split is safe — FnOnce injection pattern
@@ -33,13 +34,14 @@ fn load_agent_with(..., confirm_trust: impl FnOnce(...) -> anyhow::Result<()>)
 
 - `terminfo.rs`: only imports from `std` — zero crate dependencies
 - `trust.rs`: imports from `std`, `owo_colors`, `dialoguer`, `crate::config` — no runtime dependency
-- `launch_pipeline.rs`: imports from `crate::config`, `crate::instance`, `crate::tui`, etc.
-- `launch.rs` (thin API): imports from `launch_pipeline`, `trust`, `terminfo`
+- `launch_pipeline.rs`: imports from `crate::config`, `crate::instance`, `crate::tui`, `crate::operator_env`, and isolation helpers
+- `launch.rs` (thin API): imports from `launch_pipeline`, `trust`, `terminfo`, and possibly `launch_slot`
 
 ## What needs confirmation
 
-- Exact placement of `LoadCleanup` (lines 1030–1085 — pipeline concern or launch concern?)
-- Whether `claim_container_name` (line 918–957) and `verify_token_env_present` (line 959–992) stay in `launch_pipeline.rs` or move to `launch_helpers.rs`
+- Exact placement of `LoadCleanup` (pipeline concern or launch concern?)
+- Whether `claim_container_name` and `verify_token_env_present` stay in the main pipeline file or move into a small helper seam such as `launch_slot.rs`
+- Whether operator-env resolution / auth diagnostic logic should stay in the main pipeline file or split again later if it still dominates the module
 
 ## Ordering note
 

@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="PROJECT_STRUCTURE.md" /> line 53 is stale. The `console/` entry still lists the pre-PR#171 widget set and omits 4 new widgets plus the full `manager/` sub-structure. AI agents and contributors cannot find new subsystems via the primary navigation document.
+<RepoFile path="PROJECT_STRUCTURE.md" /> has drifted in several sections. The `console/` entry still lists the pre-PR#171 widget set and omits new widgets plus the fuller `manager/` sub-structure, but the staleness is broader than that: docs navigation and workflow sections also reference files that no longer exist or omit files that now do.
 
 ## Specific gaps
 
@@ -23,12 +23,18 @@ Currently listed in `widgets/`: `file_browser`, `text_input`, `confirm`, `confir
 
 **Also missing:** `op_cache.rs` (session-scoped op metadata cache).
 
+**Outside `src/console/`:**
+- `commands/cd.mdx` is still listed even though that page does not exist
+- `guides/environment-variables.mdx` exists but is omitted
+- <RepoFile path="build.rs" /> exists at the repo root but is omitted from Root Files
+- current workflows such as `preview.yml` and `renovate.yml` are omitted
+
 ## Steps
 
-1. Open <RepoFile path="PROJECT_STRUCTURE.md" /> at line 53.
-2. Update the `widgets/` list to include the 4 new items.
-3. Update the `manager/` description to reflect its actual structure.
-4. Add `op_cache.rs` entry.
+1. Update the `console/` section: widgets list, `manager/` sub-structure, and `op_cache.rs`.
+2. Fix docs-page listings so only real command pages are listed and current guides are present.
+3. Refresh the root-file / workflow tables so they mention current files such as <RepoFile path="build.rs" />, plus the newer workflows (`preview.yml`, `renovate.yml`, etc.).
+4. Re-read the file top-to-bottom once after editing; this page is a navigational map, so partial spot-fixes are how it drifts again.
 
 ## Caveats
 
