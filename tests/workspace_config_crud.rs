@@ -44,6 +44,7 @@ fn workspace_create_resolves_relative_workdir_and_mounts() {
                     src: expanded_workdir.clone(),
                     dst: expanded_workdir.clone(),
                     readonly: false,
+                    isolation: jackin::isolation::MountIsolation::Shared,
                 },
                 mount,
             ],
@@ -90,6 +91,7 @@ fn workspace_create_resolves_dot_workdir_and_dotdot_mount() {
                     src: expanded_workdir.clone(),
                     dst: expanded_workdir.clone(),
                     readonly: false,
+                    isolation: jackin::isolation::MountIsolation::Shared,
                 },
                 mount.clone(),
             ],
@@ -132,6 +134,7 @@ fn workspace_create_auto_mounts_workdir_by_default() {
                     src: expanded_workdir.clone(),
                     dst: expanded_workdir.clone(),
                     readonly: false,
+                    isolation: jackin::isolation::MountIsolation::Shared,
                 },
             );
         }
@@ -175,6 +178,7 @@ fn workspace_create_no_workdir_mount_skips_auto_mount() {
         src: src_path.clone(),
         dst: "/workspace".to_string(),
         readonly: false,
+        isolation: jackin::isolation::MountIsolation::Shared,
     }];
     if !no_workdir_mount {
         // This block should NOT execute
@@ -184,6 +188,7 @@ fn workspace_create_no_workdir_mount_skips_auto_mount() {
                 src: "/workspace".to_string(),
                 dst: "/workspace".to_string(),
                 readonly: false,
+                isolation: jackin::isolation::MountIsolation::Shared,
             },
         );
     }
@@ -225,6 +230,7 @@ fn workspace_create_skips_auto_mount_when_workdir_already_mounted() {
         src: expanded_workdir.clone(),
         dst: expanded_workdir.clone(),
         readonly: true, // user chose read-only
+        isolation: jackin::isolation::MountIsolation::Shared,
     }];
     if !no_workdir_mount {
         let already_mounted = all_mounts.iter().any(|m| m.dst == expanded_workdir);
@@ -235,6 +241,7 @@ fn workspace_create_skips_auto_mount_when_workdir_already_mounted() {
                     src: expanded_workdir.clone(),
                     dst: expanded_workdir.clone(),
                     readonly: false,
+                    isolation: jackin::isolation::MountIsolation::Shared,
                 },
             );
         }
@@ -283,6 +290,7 @@ fn workspace_edit_resolves_relative_mount() {
                     src: workdir_abs.clone(),
                     dst: workdir_abs.clone(),
                     readonly: false,
+                    isolation: jackin::isolation::MountIsolation::Shared,
                 }],
                 ..Default::default()
             },
@@ -342,11 +350,13 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
                         src: workdir_abs.clone(),
                         dst: workdir_abs.clone(),
                         readonly: false,
+                        isolation: jackin::isolation::MountIsolation::Shared,
                     },
                     workspace::MountConfig {
                         src: extra_abs.clone(),
                         dst: workdir_abs.clone() + "/extra",
                         readonly: false,
+                        isolation: jackin::isolation::MountIsolation::Shared,
                     },
                 ],
                 ..Default::default()
@@ -399,6 +409,7 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
                     src: src_abs,
                     dst: "/workspace".to_string(),
                     readonly: false,
+                    isolation: jackin::isolation::MountIsolation::Shared,
                 }],
                 ..Default::default()
             },

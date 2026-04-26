@@ -175,6 +175,13 @@ impl EditorSaveFlow {
 pub struct PendingSaveCommit {
     pub effective_removals: Vec<String>,
     pub final_mounts: Option<Vec<crate::workspace::MountConfig>>,
+    /// `true` when the operator has already confirmed the source-drift
+    /// modal in this save cycle (Task 10.3). Causes
+    /// `commit_editor_save` to skip the drift-detection check and go
+    /// straight to `force_cleanup_isolated` + the on-disk write.
+    /// Defaults to `false` so the first commit attempt always runs the
+    /// safety check.
+    pub delete_isolated_acknowledged: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -274,10 +281,23 @@ pub enum FileBrowserTarget {
     EditAddMountSrc,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ConfirmTarget {
     DeleteWorkspace,
-    DeleteEnvVar { scope: SecretsScopeTag, key: String },
+    DeleteEnvVar {
+        scope: SecretsScopeTag,
+        key: String,
+    },
+    /// Source-drift confirmation (Task 10.3): operator's edit changes the
+    /// `src` of one or more mounts that have preserved isolated state on
+    /// stopped containers. Carries the planner's pending save material so
+    /// the commit pass can run `force_cleanup_isolated` for each affected
+    /// container then write the edit through.
+    DeleteIsolatedAndSave {
+        plan: PendingSaveCommit,
+        exit_on_success: bool,
+        affected_containers: Vec<String>,
+    },
 }
 
 /// Separate from [`crate::config::editor::EnvScope`].
@@ -546,21 +566,10 @@ impl EditorState<'_> {
         {
             n += 1;
         }
-        // MountConfig has no Ord/Hash; linear contains is fine for
-        // the few mounts a workspace has.
-        let added = self
-            .pending
-            .mounts
+        n += classify_mount_diffs(&self.original.mounts, &self.pending.mounts)
             .iter()
-            .filter(|m| !self.original.mounts.contains(m))
+            .filter(|d| !matches!(d, MountDiff::Unchanged(_)))
             .count();
-        let removed = self
-            .original
-            .mounts
-            .iter()
-            .filter(|m| !self.pending.mounts.contains(m))
-            .count();
-        n += added + removed;
         n += env_change_count(&self.original.env, &self.pending.env);
         // Per-agent overrides: union the keys; an agent present on
         // only one side counts its whole env map as added/removed.
@@ -580,6 +589,64 @@ impl EditorState<'_> {
         }
         n
     }
+
+    /// Cycle the per-mount isolation strategy on the highlighted mount row.
+    /// Sequence: `Shared → Worktree → Shared`. Silent no-op when the cursor
+    /// is on the `+ Add mount` sentinel (i.e. past the last data row).
+    pub fn cycle_isolation_for_selected_mount(&mut self) {
+        use crate::isolation::MountIsolation::{Shared, Worktree};
+        let FieldFocus::Row(n) = self.active_field;
+        if let Some(m) = self.pending.mounts.get_mut(n) {
+            m.isolation = match m.isolation {
+                Shared => Worktree,
+                Worktree => Shared,
+            };
+        }
+    }
+}
+
+/// Per-mount classification used by both `change_count` and the
+/// Confirm Save mount-diff summary.
+///
+/// Same-`dst` matches with structural drift are reported as a single
+/// `Modified`, not as `Removed + Added` — operators perceive an
+/// isolation/readonly flip on an existing mount as one logical change,
+/// not two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MountDiff<'a> {
+    Unchanged(&'a crate::workspace::MountConfig),
+    Added(&'a crate::workspace::MountConfig),
+    Removed(&'a crate::workspace::MountConfig),
+    Modified {
+        original: &'a crate::workspace::MountConfig,
+        pending: &'a crate::workspace::MountConfig,
+    },
+}
+
+/// Classify the mount-set delta. `dst` is the identity key (matches the
+/// upsert/remove semantics used everywhere else). `Unchanged` rows are
+/// returned too so callers can render them or filter as needed.
+pub fn classify_mount_diffs<'a>(
+    original: &'a [crate::workspace::MountConfig],
+    pending: &'a [crate::workspace::MountConfig],
+) -> Vec<MountDiff<'a>> {
+    let mut out = Vec::with_capacity(original.len() + pending.len());
+    for p in pending {
+        match original.iter().find(|o| o.dst == p.dst) {
+            Some(o) if o == p => out.push(MountDiff::Unchanged(p)),
+            Some(o) => out.push(MountDiff::Modified {
+                original: o,
+                pending: p,
+            }),
+            None => out.push(MountDiff::Added(p)),
+        }
+    }
+    for o in original {
+        if !pending.iter().any(|p| p.dst == o.dst) {
+            out.push(MountDiff::Removed(o));
+        }
+    }
+    out
 }
 
 fn env_change_count(
@@ -647,11 +714,13 @@ mod tests {
                     src: "/s1".into(),
                     dst: "/a".into(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
                 MountConfig {
                     src: "/s2".into(),
                     dst: "/b".into(),
                     readonly: true,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
             allowed_agents: vec!["agent-smith".into()],
@@ -692,6 +761,7 @@ mod tests {
                     src: workdir.clone(),
                     dst: workdir,
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 }],
                 ..Default::default()
             },
@@ -782,8 +852,71 @@ mod tests {
             src: "/s".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         });
         assert_eq!(e.change_count(), 1);
+    }
+
+    /// Regression: cycling isolation on an existing mount (same `dst`,
+    /// same `src`) is one logical change. Pre-fix it counted as 2
+    /// because the structural-equality classifier treated the new
+    /// MountConfig as added and the old one as removed.
+    #[test]
+    fn isolation_only_change_counts_as_one() {
+        let mut ws = empty_ws("/workspace/jackin");
+        ws.mounts.push(MountConfig {
+            src: "/host/jackin".into(),
+            dst: "/workspace/jackin".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
+        });
+        let mut e = EditorState::new_edit("jackin".into(), ws);
+        assert_eq!(e.change_count(), 0);
+        // Cycle from Shared to Worktree on the only mount row.
+        e.active_field = FieldFocus::Row(0);
+        e.cycle_isolation_for_selected_mount();
+        assert_eq!(e.change_count(), 1);
+    }
+
+    #[test]
+    fn classify_mount_diffs_distinguishes_modified_from_remove_add() {
+        let original = vec![MountConfig {
+            src: "/host/jackin".into(),
+            dst: "/workspace/jackin".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
+        }];
+        let mut pending = original.clone();
+        pending[0].isolation = crate::isolation::MountIsolation::Worktree;
+
+        let diffs = classify_mount_diffs(&original, &pending);
+        assert_eq!(diffs.len(), 1, "same-dst diff is one row, not two");
+        assert!(
+            matches!(diffs[0], MountDiff::Modified { .. }),
+            "got {:?}",
+            diffs[0]
+        );
+    }
+
+    #[test]
+    fn classify_mount_diffs_keeps_genuine_remove_add_separate() {
+        let original = vec![MountConfig {
+            src: "/host/a".into(),
+            dst: "/workspace/a".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
+        }];
+        let pending = vec![MountConfig {
+            src: "/host/b".into(),
+            dst: "/workspace/b".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
+        }];
+        let diffs = classify_mount_diffs(&original, &pending);
+        assert_eq!(diffs.len(), 2);
+        // Order: pending first (Added), then original (Removed).
+        assert!(matches!(diffs[0], MountDiff::Added(_)));
+        assert!(matches!(diffs[1], MountDiff::Removed(_)));
     }
 
     // ── change_count env-diff coverage (Secrets tab) ──
@@ -988,5 +1121,75 @@ mod tests {
         state.selected = ManagerListRow::NewWorkspace.to_screen_index(1);
         assert!(state.selected_workspace_summary().is_none());
         assert!(state.is_new_workspace_selected());
+    }
+
+    // ── cycle_isolation_for_selected_mount ─────────────────────────────
+
+    /// Build an editor sitting on the Mounts tab with a single Shared mount,
+    /// cursor on row 0. Mirrors the readonly toggle test fixtures so the new
+    /// I-hotkey tests share the same shape as the R-hotkey ones.
+    fn editor_with_one_shared_mount() -> EditorState<'static> {
+        use std::collections::BTreeMap;
+        let ws = WorkspaceConfig {
+            workdir: String::new(),
+            mounts: vec![MountConfig {
+                src: "/host/a".into(),
+                dst: "/host/a".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            allowed_agents: vec![],
+            default_agent: None,
+            last_agent: None,
+            env: BTreeMap::default(),
+            agents: BTreeMap::default(),
+        };
+        let mut e = EditorState::new_edit("ws".into(), ws);
+        e.active_tab = EditorTab::Mounts;
+        e.active_field = FieldFocus::Row(0);
+        e
+    }
+
+    #[test]
+    fn cycle_isolation_shared_to_worktree() {
+        let mut e = editor_with_one_shared_mount();
+        e.cycle_isolation_for_selected_mount();
+        assert_eq!(
+            e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Worktree,
+            "Shared must cycle to Worktree on first I press"
+        );
+    }
+
+    #[test]
+    fn cycle_isolation_worktree_back_to_shared() {
+        let mut e = editor_with_one_shared_mount();
+        e.cycle_isolation_for_selected_mount();
+        e.cycle_isolation_for_selected_mount();
+        assert_eq!(
+            e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Shared,
+            "two I presses must net back to Shared (Clone is reserved-but-rejected in V1)"
+        );
+        assert_eq!(
+            e.change_count(),
+            0,
+            "a full cycle Shared → Worktree → Shared must net zero changes",
+        );
+    }
+
+    #[test]
+    fn cycle_isolation_on_sentinel_is_noop() {
+        // Cursor on the `+ Add mount` sentinel (row == mounts.len()) — I must
+        // not mutate mounts or trigger a change.
+        let mut e = editor_with_one_shared_mount();
+        e.active_field = FieldFocus::Row(e.pending.mounts.len());
+        let before = e.pending.mounts.clone();
+        e.cycle_isolation_for_selected_mount();
+        assert_eq!(
+            e.pending.mounts, before,
+            "I on sentinel row must leave mounts untouched"
+        );
+        assert_eq!(e.change_count(), 0);
     }
 }

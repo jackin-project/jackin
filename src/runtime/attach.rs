@@ -1,4 +1,5 @@
 use crate::docker::{CommandRunner, RunOptions};
+use crate::paths::JackinPaths;
 use crate::tui;
 
 use super::identity::try_capture;
@@ -75,8 +76,12 @@ pub(super) fn attach_running(
     )
 }
 
-pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
-    match inspect_container_state(runner, container_name) {
+pub fn hardline_agent(
+    paths: &JackinPaths,
+    container_name: &str,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    let attach_outcome = match inspect_container_state(runner, container_name) {
         ContainerState::Running => attach_running(container_name, runner),
         ContainerState::NotFound => {
             anyhow::bail!(
@@ -120,7 +125,24 @@ pub fn hardline_agent(container_name: &str, runner: &mut impl CommandRunner) -> 
             )?;
             attach_running(container_name, runner)
         }
-    }
+    };
+    attach_outcome?;
+
+    // Finalize per-mount isolation worktrees after re-attach. We do not honor
+    // a `ReturnToAgent` decision here — `hardline` is itself a re-attach, and
+    // the operator can simply re-invoke `jackin hardline` to come back.
+    let outcome = crate::runtime::launch::inspect_attach_outcome(runner, container_name)?;
+    let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
+    let mut prompt = crate::isolation::finalize::StdinPrompt;
+    let _ = crate::isolation::finalize::finalize_foreground_session(
+        container_name,
+        &paths.data_dir.join(container_name),
+        outcome,
+        interactive,
+        &mut prompt,
+        runner,
+    )?;
+    Ok(())
 }
 
 pub(super) fn wait_for_dind(
@@ -165,24 +187,38 @@ pub(super) fn wait_for_dind(
 mod tests {
     use super::super::test_support::FakeRunner;
     use super::*;
+    use tempfile::TempDir;
+
+    fn test_paths() -> (TempDir, JackinPaths) {
+        let dir = TempDir::new().unwrap();
+        let paths = JackinPaths::for_tests(dir.path());
+        (dir, paths)
+    }
 
     #[test]
     fn hardline_attaches_when_container_is_running() {
+        let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
 
-        hardline_agent("jackin-agent-smith", &mut runner).unwrap();
+        hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap();
 
-        assert_eq!(
-            runner.recorded.last().unwrap(),
-            "docker attach --detach-keys= --sig-proxy=false jackin-agent-smith"
+        // The attach command must appear; the trailing inspect for the
+        // finalizer is appended after.
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c == "docker attach --detach-keys= --sig-proxy=false jackin-agent-smith"),
+            "expected docker attach in recorded commands"
         );
     }
 
     #[test]
     fn hardline_errors_when_container_not_found() {
+        let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::default();
 
-        let err = hardline_agent("jackin-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
 
         assert!(err.to_string().contains("not found"));
         assert!(
@@ -195,9 +231,10 @@ mod tests {
 
     #[test]
     fn hardline_errors_on_clean_exit() {
+        let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue(["false 0 false".to_string()]);
 
-        let err = hardline_agent("jackin-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
 
         assert!(err.to_string().contains("exited cleanly"));
         assert!(
@@ -210,13 +247,14 @@ mod tests {
 
     #[test]
     fn hardline_restarts_crashed_container_when_dind_running() {
+        let (_tmp, paths) = test_paths();
         // Inspect calls: container stopped w/ exit 137, then dind running.
         let mut runner = FakeRunner::with_capture_queue([
             "false 137 false".to_string(),
             "true 0 false".to_string(),
         ]);
 
-        hardline_agent("jackin-agent-smith", &mut runner).unwrap();
+        hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap();
 
         assert!(
             runner
@@ -240,13 +278,14 @@ mod tests {
 
     #[test]
     fn hardline_refuses_when_dind_missing() {
+        let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue([
             "false 137 false".to_string(),
             // Second inspect (DinD) returns empty → NotFound
             String::new(),
         ]);
 
-        let err = hardline_agent("jackin-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
 
         assert!(err.to_string().contains("DinD sidecar"));
         assert!(
@@ -259,12 +298,13 @@ mod tests {
 
     #[test]
     fn hardline_refuses_when_dind_stopped() {
+        let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue([
             "false 137 false".to_string(),
             "false 0 false".to_string(),
         ]);
 
-        let err = hardline_agent("jackin-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
 
         assert!(err.to_string().contains("stopped"));
         assert!(

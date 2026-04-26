@@ -369,6 +369,7 @@ mod mouse_drag_tests {
                 src: "/w".into(),
                 dst: "/w".into(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..Default::default()
         };

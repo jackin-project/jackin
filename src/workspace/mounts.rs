@@ -32,6 +32,7 @@ fn parse_mount_spec_inner(spec: &str, resolve: bool) -> MountConfig {
         src: expanded_src,
         dst,
         readonly,
+        isolation: crate::isolation::MountIsolation::Shared,
     }
 }
 

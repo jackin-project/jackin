@@ -20,10 +20,19 @@ use super::naming::{
 };
 use super::repo_cache::resolve_agent_repo;
 
+// Four launch-time toggles (no_intro / debug / rebuild / force) all map
+// directly to CLI flags; bundling them into nested structs would obscure
+// rather than clarify the call sites.
+#[allow(clippy::struct_excessive_bools)]
 pub struct LoadOptions {
     pub no_intro: bool,
     pub debug: bool,
     pub rebuild: bool,
+
+    /// Bypass interactive preflight gates (e.g. dirty host repo).
+    /// Wired through to `PreflightContext.force` during workspace
+    /// materialization.
+    pub force: bool,
 
     /// Optional test seam: inject a custom `OpRunner` for `op://`
     /// resolution. `None` (the production default) means
@@ -44,6 +53,7 @@ impl LoadOptions {
             no_intro: no_intro || debug,
             debug,
             rebuild,
+            force: false,
             op_runner: None,
             host_env: None,
         }
@@ -56,6 +66,7 @@ impl LoadOptions {
             no_intro: debug,
             debug,
             rebuild: false,
+            force: false,
             op_runner: None,
             host_env: None,
         }
@@ -68,6 +79,7 @@ impl Default for LoadOptions {
             no_intro: true,
             debug: false,
             rebuild: false,
+            force: false,
             op_runner: None,
             host_env: None,
         }
@@ -138,6 +150,50 @@ const STANDARD_TERMS: &[&str] = &[
 /// Returns `(term_value, Some(mount_string))` when the host's terminfo
 /// was exported, or `(term_value, None)` when the TERM is standard or
 /// export failed (in which case `term_value` is the safe fallback).
+/// Translate a [`MaterializedWorkspace`] into the `-v` argument values
+/// for `docker run`. Pulled out of `load_agent_with` so the mount-flag
+/// shape — including the `:ro` placement on worktree-mode override
+/// files — can be unit-tested without docker mocks.
+///
+/// For each mount, the worktree dir / shared bind goes first; when the
+/// mount is worktree-mode, three auxiliary entries follow:
+///
+/// 1. Host's `.git/` at `/jackin/host/<dst-stripped>/.git` (rw).
+///    Includes the per-worktree admin dir at `worktrees/<container>/`
+///    natively (no separate admin mount).
+/// 2. `.git` pointer override at `<dst>/.git` (`:ro`). Redirects gitdir
+///    to the admin entry inside the host `.git/` mount.
+/// 3. `gitdir` back-pointer override at
+///    `/jackin/host/<dst-stripped>/.git/worktrees/<container>/gitdir`
+///    (`:ro`). Matches the worktree's `<dst>/.git` location so git's
+///    verification check passes inside the container.
+///
+/// `:ro` on the override files is defensive hardening: git only reads
+/// them during normal agent work, and a misbehaving agent could
+/// otherwise rewrite the gitdir pointer to redirect operations at a
+/// different repo entirely.
+fn build_workspace_mount_strings(
+    workspace: &crate::isolation::materialize::MaterializedWorkspace,
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for mount in crate::isolation::materialize::mount_order_for_docker(workspace) {
+        let suffix = if mount.readonly { ":ro" } else { "" };
+        out.push(format!("{}:{}{}", mount.bind_src, mount.dst, suffix));
+        if let Some(aux) = &mount.worktree_aux {
+            out.push(format!("{}:{}", aux.host_git_dir, aux.host_git_target));
+            out.push(format!(
+                "{}:{}:ro",
+                aux.git_file_override, aux.git_file_target
+            ));
+            out.push(format!(
+                "{}:{}:ro",
+                aux.gitdir_back_override, aux.gitdir_back_target
+            ));
+        }
+    }
+    out
+}
+
 fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String>) {
     let host_term = std::env::var("TERM").unwrap_or_default();
 
@@ -276,7 +332,7 @@ struct LaunchContext<'a> {
     dind: &'a str,
     selector: &'a ClassSelector,
     agent_display_name: &'a str,
-    workspace: &'a crate::workspace::ResolvedWorkspace,
+    workspace: &'a crate::isolation::materialize::MaterializedWorkspace,
     state: &'a AgentState,
     git: &'a GitIdentity,
     debug: bool,
@@ -512,11 +568,7 @@ fn launch_agent_runtime(
         run_args.extend_from_slice(&["-v", ti_mount]);
     }
 
-    let mut mount_strings: Vec<String> = Vec::new();
-    for mount in &workspace.mounts {
-        let suffix = if mount.readonly { ":ro" } else { "" };
-        mount_strings.push(format!("{}:{}{}", mount.src, mount.dst, suffix));
-    }
+    let mount_strings = build_workspace_mount_strings(workspace);
     for ms in &mount_strings {
         run_args.push("-v");
         run_args.push(ms);
@@ -544,6 +596,84 @@ fn launch_agent_runtime(
     attach_result?;
 
     Ok(())
+}
+
+/// Query a container's post-attach state for use by `finalize_foreground_session`.
+///
+/// Returns `AttachOutcome::still_running` when the container is still running
+/// (terminal closed / detach), `AttachOutcome::oom_killed` when the kernel
+/// killed the container OOM, otherwise `AttachOutcome::stopped(exit_code)`.
+///
+/// Capture failures (docker daemon hiccup, container removed mid-inspect)
+/// are mapped to `still_running()` — the **conservative** default. Returning
+/// `stopped(0)` here would route the call through `finalize_clean_exit`,
+/// which combined with any concurrent git failure inside `assess_cleanup`
+/// could auto-delete worktrees of containers that may actually still be
+/// running. `still_running()` instead skips the auto-cleanup path entirely
+/// and preserves records for `jackin hardline` to recover.
+#[allow(clippy::unnecessary_wraps)] // Result preserved so callers' `?` keeps working without a churn-y signature change
+pub fn inspect_attach_outcome(
+    runner: &mut impl crate::docker::CommandRunner,
+    container: &str,
+) -> anyhow::Result<crate::isolation::finalize::AttachOutcome> {
+    use crate::isolation::finalize::AttachOutcome;
+    let state = match runner.capture(
+        "docker",
+        &[
+            "inspect",
+            "-f",
+            "{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}",
+            container,
+        ],
+        None,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            crate::debug_log!(
+                "isolation",
+                "inspect_attach_outcome: docker inspect failed for {container}: {e}; treating as still_running (conservative — finalize_clean_exit's auto-cleanup never fires)",
+            );
+            return Ok(AttachOutcome::still_running());
+        }
+    };
+    let parts: Vec<&str> = state.trim().split('|').collect();
+    let status = parts.first().copied().unwrap_or("");
+    let exit_code = parts.get(1).and_then(|s| s.parse::<i32>().ok());
+    let oom = parts.get(2).copied().unwrap_or("") == "true";
+    // Only `exited` legitimately routes through finalize_clean_exit.
+    // `paused | restarting | removing | created` are all states where
+    // the container hasn't exited and has no exit code to act on —
+    // collapsing them into stopped(0) would let finalize_clean_exit
+    // auto-delete worktrees of containers that may resume any moment.
+    // OOM is a real exit (the kernel killed the process); we surface
+    // it explicitly so finalize preserves the recovery state.
+    // Unknown status strings (future Docker versions, exotic runtimes)
+    // are treated conservatively as still_running with a debug_log so
+    // the issue is debuggable but not data-destructive.
+    match status {
+        "running" | "paused" | "restarting" | "removing" | "created" => {
+            Ok(AttachOutcome::still_running())
+        }
+        "exited" | "dead" if oom => Ok(AttachOutcome::oom_killed()),
+        "exited" => Ok(AttachOutcome::stopped(exit_code.unwrap_or(0))),
+        "dead" => {
+            // `dead` means the daemon failed to deinitialize the container
+            // — rare, indicates trouble. Preserve records so the operator
+            // can inspect rather than auto-cleaning.
+            crate::debug_log!(
+                "isolation",
+                "inspect_attach_outcome: container {container} status=dead; treating as still_running to preserve records for inspection",
+            );
+            Ok(AttachOutcome::still_running())
+        }
+        other => {
+            crate::debug_log!(
+                "isolation",
+                "inspect_attach_outcome: unknown docker status `{other}` for {container}; treating as still_running (conservative)",
+            );
+            Ok(AttachOutcome::still_running())
+        }
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -838,6 +968,34 @@ fn load_agent_with(
             crate::instance::AuthProvisionOutcome::Skipped => {}
         }
 
+        // Materialize workspace mounts: shared mounts pass through;
+        // worktree-isolated mounts get a per-container `git worktree`
+        // staged on the host. Must run AFTER `AgentState::prepare` (so the
+        // per-container state directory exists) and BEFORE the docker run
+        // command is assembled (so the docker `-v` flags reflect the
+        // per-mount bind sources).
+        let interactive = std::io::stdin().is_terminal();
+        let workspace_label = workspace.label.as_str();
+        let container_state = paths.data_dir.join(&container_name);
+        crate::debug_log!(
+            "isolation",
+            "load_agent: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
+            force = opts.force,
+        );
+        let materialized = crate::isolation::materialize::materialize_workspace(
+            workspace,
+            &container_state,
+            &selector.key(),
+            &container_name,
+            workspace_label,
+            &crate::isolation::materialize::PreflightContext {
+                workspace_name: workspace_label.to_string(),
+                force: opts.force,
+                interactive,
+            },
+            runner,
+        )?;
+
         let network = format!("{container_name}-net");
         let dind = format!("{container_name}-dind");
 
@@ -851,7 +1009,7 @@ fn load_agent_with(
             dind: &dind,
             selector,
             agent_display_name: &agent_display_name,
-            workspace,
+            workspace: &materialized,
             state: &state,
             git: &git,
             debug: opts.debug,
@@ -870,6 +1028,48 @@ fn load_agent_with(
             cleanup.run(runner);
         }
         launch_result?;
+
+        // Finalize per-mount isolation worktrees BEFORE the container teardown
+        // decision below: clean exits without dirty/unpushed state get their
+        // worktrees swept; dirty state is preserved (with an interactive prompt
+        // when stdin is a TTY). A `ReturnToAgent` choice restarts + re-attaches
+        // the container exactly once so the operator can address the dirty
+        // state inside the agent, then the safe cleanup is retried.
+        let interactive_finalize = std::io::stdin().is_terminal();
+        let mut prompt = crate::isolation::finalize::StdinPrompt;
+        let outcome = inspect_attach_outcome(runner, &container_name)?;
+        let decision = crate::isolation::finalize::finalize_foreground_session(
+            &container_name,
+            &paths.data_dir.join(&container_name),
+            outcome,
+            interactive_finalize,
+            &mut prompt,
+            runner,
+        )?;
+        if matches!(
+            decision,
+            crate::isolation::finalize::FinalizeDecision::ReturnToAgent
+        ) {
+            // Restart and re-attach the container in one command, then retry
+            // the safe cleanup pass once. We do not loop further: if the
+            // operator still leaves dirty state, the second pass will fall
+            // back to Preserved and exit normally.
+            runner.run(
+                "docker",
+                &["start", "-ai", &container_name],
+                None,
+                &RunOptions::default(),
+            )?;
+            let outcome2 = inspect_attach_outcome(runner, &container_name)?;
+            let _ = crate::isolation::finalize::finalize_foreground_session(
+                &container_name,
+                &paths.data_dir.join(&container_name),
+                outcome2,
+                interactive_finalize,
+                &mut prompt,
+                runner,
+            )?;
+        }
 
         // Classify how the interactive session ended so we know whether to
         // tear the container down or preserve it for `jackin hardline` to
@@ -1122,10 +1322,222 @@ mod tests {
     use super::super::test_support::FakeRunner;
     use super::*;
     use crate::config::AppConfig;
+    use crate::isolation::MountIsolation;
+    use crate::isolation::materialize::{
+        MaterializedMount, MaterializedWorkspace, WorktreeAuxMounts,
+    };
     use crate::paths::JackinPaths;
     use crate::selector::ClassSelector;
     use std::collections::VecDeque;
     use tempfile::tempdir;
+
+    #[test]
+    fn build_workspace_mount_strings_marks_overrides_readonly() {
+        // One worktree-mode mount with all four bind sources populated.
+        // Host `.git/` mount MUST stay rw (git writes refs/objects/
+        // HEAD/index/logs all under it on every commit/branch/fetch).
+        // Both override files MUST be `:ro`-suppressed.
+        let mat = MaterializedWorkspace {
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![MaterializedMount {
+                bind_src:
+                    "/data/jackin-the-architect/git/worktree/repo/Users/donbeave/Projects/jackin-project/jackin/jackin-the-architect"
+                        .into(),
+                dst: "/Users/donbeave/Projects/jackin-project/jackin".into(),
+                readonly: false,
+                isolation: MountIsolation::Worktree,
+                worktree_aux: Some(WorktreeAuxMounts {
+                    host_git_dir: "/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
+                    host_git_target:
+                        "/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
+                    git_file_override:
+                        "/data/jackin-the-architect/git/overrides/Users/donbeave/Projects/jackin-project/jackin/.git"
+                            .into(),
+                    git_file_target: "/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
+                    gitdir_back_override:
+                        "/data/jackin-the-architect/git/overrides/Users/donbeave/Projects/jackin-project/jackin/gitdir"
+                            .into(),
+                    gitdir_back_target:
+                        "/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jackin-the-architect/gitdir"
+                            .into(),
+                }),
+            }],
+        };
+
+        let strings = build_workspace_mount_strings(&mat);
+        assert_eq!(strings.len(), 4, "one worktree mount → four bind specs");
+
+        // 1: worktree at <dst>, no :ro (writable).
+        assert_eq!(
+            strings[0],
+            "/data/jackin-the-architect/git/worktree/repo/Users/donbeave/Projects/jackin-project/jackin/jackin-the-architect:/Users/donbeave/Projects/jackin-project/jackin"
+        );
+        assert!(!strings[0].ends_with(":ro"));
+
+        // 2: host .git/, MUST stay rw — refs/objects/HEAD/index/logs
+        // are all written under it. Both ends terminate in `.git`.
+        assert_eq!(
+            strings[1],
+            "/Users/donbeave/Projects/jackin-project/jackin/.git:/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git"
+        );
+        assert!(
+            !strings[1].ends_with(":ro"),
+            "host .git mount must remain rw",
+        );
+
+        // 3: .git pointer override at <dst>/.git. :ro hardening.
+        assert!(
+            strings[2].ends_with(":ro"),
+            "git-file override must be ro; got {}",
+            strings[2],
+        );
+        assert!(
+            strings[2]
+                .contains("/git/overrides/Users/donbeave/Projects/jackin-project/jackin/.git")
+        );
+        assert!(strings[2].contains(":/Users/donbeave/Projects/jackin-project/jackin/.git:ro"));
+
+        // 4: gitdir back-pointer override at
+        // `/jackin/host/<dst-tree>/.git/worktrees/<container>/gitdir`.
+        // File-level overlay on top of the host `.git/` mount destination.
+        // :ro hardening.
+        assert!(
+            strings[3].ends_with(":ro"),
+            "gitdir-back override must be ro; got {}",
+            strings[3],
+        );
+        assert!(
+            strings[3]
+                .contains("/git/overrides/Users/donbeave/Projects/jackin-project/jackin/gitdir")
+        );
+        assert!(
+            strings[3].contains(
+                ":/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jackin-the-architect/gitdir:ro"
+            )
+        );
+    }
+
+    #[test]
+    fn build_workspace_mount_strings_passthrough_for_shared_mounts() {
+        // Shared mounts produce exactly one bind spec, no aux entries.
+        let mat = MaterializedWorkspace {
+            workdir: "/workspace".into(),
+            mounts: vec![MaterializedMount {
+                bind_src: "/host/shared".into(),
+                dst: "/workspace/shared".into(),
+                readonly: false,
+                isolation: MountIsolation::Shared,
+                worktree_aux: None,
+            }],
+        };
+
+        let strings = build_workspace_mount_strings(&mat);
+        assert_eq!(strings, vec!["/host/shared:/workspace/shared".to_string()]);
+    }
+
+    #[test]
+    fn build_workspace_mount_strings_two_isolated_mounts_emits_eight_distinct_strings() {
+        // A workspace with two isolated mounts on different host repos
+        // (allowed by validate_isolation_layout) must emit a clean
+        // 4-bind grouping per mount with no path collisions. This is
+        // the production multi-mount path; finalize.rs's prompt loop
+        // also handles this case (see multi_mount_force_delete_on_each_*).
+        let mat = MaterializedWorkspace {
+            workdir: "/workspace".into(),
+            mounts: vec![
+                MaterializedMount {
+                    bind_src: "/data/jackin-x/git/worktree/repo/workspace/a/jackin-x".into(),
+                    dst: "/workspace/a".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Worktree,
+                    worktree_aux: Some(crate::isolation::materialize::WorktreeAuxMounts {
+                        host_git_dir: "/host/repo-a/.git".into(),
+                        host_git_target: "/jackin/host/workspace/a/.git".into(),
+                        git_file_override: "/data/jackin-x/git/overrides/workspace/a/.git".into(),
+                        git_file_target: "/workspace/a/.git".into(),
+                        gitdir_back_override: "/data/jackin-x/git/overrides/workspace/a/gitdir"
+                            .into(),
+                        gitdir_back_target:
+                            "/jackin/host/workspace/a/.git/worktrees/jackin-x/gitdir".into(),
+                    }),
+                },
+                MaterializedMount {
+                    bind_src: "/data/jackin-x/git/worktree/repo/workspace/b/jackin-x".into(),
+                    dst: "/workspace/b".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Worktree,
+                    worktree_aux: Some(crate::isolation::materialize::WorktreeAuxMounts {
+                        host_git_dir: "/host/repo-b/.git".into(),
+                        host_git_target: "/jackin/host/workspace/b/.git".into(),
+                        git_file_override: "/data/jackin-x/git/overrides/workspace/b/.git".into(),
+                        git_file_target: "/workspace/b/.git".into(),
+                        gitdir_back_override: "/data/jackin-x/git/overrides/workspace/b/gitdir"
+                            .into(),
+                        gitdir_back_target:
+                            "/jackin/host/workspace/b/.git/worktrees/jackin-x/gitdir".into(),
+                    }),
+                },
+            ],
+        };
+
+        let strings = build_workspace_mount_strings(&mat);
+        assert_eq!(
+            strings.len(),
+            8,
+            "two isolated mounts → eight bind specs (4 per mount); got {strings:?}"
+        );
+
+        // No two emitted strings may be identical — distinct dsts
+        // throughout, which is the disambiguation guarantee under
+        // /jackin/host/<dst-tree>/.
+        let mut sorted = strings.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            strings.len(),
+            "no duplicate bind specs across mounts; got {strings:?}"
+        );
+
+        // Each mount's 4 bind specs reference its own dst tree.
+        let mount_a_count = strings
+            .iter()
+            .filter(|s| s.contains("/workspace/a") || s.contains("/jackin/host/workspace/a/"))
+            .count();
+        let mount_b_count = strings
+            .iter()
+            .filter(|s| s.contains("/workspace/b") || s.contains("/jackin/host/workspace/b/"))
+            .count();
+        assert_eq!(mount_a_count, 4, "mount A should have 4 bind specs");
+        assert_eq!(mount_b_count, 4, "mount B should have 4 bind specs");
+
+        // Both override files for both mounts must remain :ro.
+        let ro_count = strings.iter().filter(|s| s.ends_with(":ro")).count();
+        assert_eq!(
+            ro_count, 4,
+            ":ro hardening must apply to both override files of both mounts; got {strings:?}"
+        );
+    }
+
+    #[test]
+    fn build_workspace_mount_strings_preserves_readonly_on_user_facing_mount() {
+        // A user-configured `readonly = true` mount still gets `:ro` on
+        // the user-facing dst — this is independent of the override
+        // hardening.
+        let mat = MaterializedWorkspace {
+            workdir: "/workspace".into(),
+            mounts: vec![MaterializedMount {
+                bind_src: "/host/cache".into(),
+                dst: "/workspace/cache".into(),
+                readonly: true,
+                isolation: MountIsolation::Shared,
+                worktree_aux: None,
+            }],
+        };
+
+        let strings = build_workspace_mount_strings(&mat);
+        assert_eq!(strings, vec!["/host/cache:/workspace/cache:ro".to_string()]);
+    }
 
     fn repo_workspace(repo_dir: &std::path::Path) -> crate::workspace::ResolvedWorkspace {
         crate::workspace::ResolvedWorkspace {
@@ -1135,6 +1547,7 @@ mod tests {
                 src: repo_dir.display().to_string(),
                 dst: "/workspace".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
         }
     }
@@ -1359,11 +1772,13 @@ trusted = true
                     src: repo_dir.display().to_string(),
                     dst: "/workspace".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
                 crate::workspace::MountConfig {
                     src: mount_src.display().to_string(),
                     dst: "/test-data".to_string(),
                     readonly: true,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
         };
@@ -1498,6 +1913,7 @@ plugins = []
                 src: workspace_dir.display().to_string(),
                 dst: workspace_dir.display().to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
         };
 
@@ -1565,6 +1981,7 @@ plugins = []
                 src: workspace_dir.display().to_string(),
                 dst: workspace_dir.display().to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
         };
 
@@ -2505,5 +2922,126 @@ plugins = []
             msg.contains("[env]"),
             "error should point the operator at the [env] manifest table; got: {msg}"
         );
+    }
+
+    #[test]
+    fn inspect_attach_outcome_capture_failure_returns_still_running() {
+        // A docker daemon hiccup or a container removed mid-inspect must
+        // NOT route through finalize_clean_exit's auto-cleanup path —
+        // returning still_running keeps the records preserved for
+        // `jackin hardline` to recover.
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = crate::runtime::test_support::FakeRunner {
+            fail_on: vec!["docker inspect".into()],
+            ..Default::default()
+        };
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::still_running());
+    }
+
+    /// Helper for inspect_attach_outcome status tests — returns a
+    /// FakeRunner whose `docker inspect` capture returns the given
+    /// `status|exit_code|oom` line. Other docker calls also queue the
+    /// same response (we make only one inspect call per test).
+    fn inspect_runner(
+        status: &str,
+        exit_code: i32,
+        oom: bool,
+    ) -> crate::runtime::test_support::FakeRunner {
+        crate::runtime::test_support::FakeRunner {
+            capture_queue: std::collections::VecDeque::from(vec![format!(
+                "{status}|{exit_code}|{oom}\n",
+            )]),
+            ..Default::default()
+        }
+    }
+
+    /// `exited` with exit_code=0 → stopped(0) → enters finalize_clean_exit
+    /// which is the documented happy path for clean container exits.
+    #[test]
+    fn inspect_attach_outcome_exited_zero_returns_stopped() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("exited", 0, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::stopped(0));
+    }
+
+    /// `exited` with non-zero exit_code → preserved by finalize.
+    #[test]
+    fn inspect_attach_outcome_exited_nonzero_returns_stopped_with_code() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("exited", 137, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::stopped(137));
+    }
+
+    /// `exited` with OOMKilled=true → oom_killed.
+    #[test]
+    fn inspect_attach_outcome_exited_oom_returns_oom_killed() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("exited", 137, true);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::oom_killed());
+    }
+
+    /// `running` → still_running. The basic happy detach case.
+    #[test]
+    fn inspect_attach_outcome_running_returns_still_running() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("running", 0, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::still_running());
+    }
+
+    /// `paused` → still_running. The container hasn't exited; treating
+    /// it as stopped(0) would let finalize_clean_exit auto-delete its
+    /// worktrees while the container is paused but recoverable.
+    #[test]
+    fn inspect_attach_outcome_paused_returns_still_running() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("paused", 0, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(
+            outcome,
+            AttachOutcome::still_running(),
+            "paused containers must NOT route through finalize_clean_exit's auto-cleanup path"
+        );
+    }
+
+    /// `restarting`, `removing`, `created` → still_running for the same
+    /// reason as `paused`: not exited, no real exit code to act on.
+    #[test]
+    fn inspect_attach_outcome_transient_states_return_still_running() {
+        use crate::isolation::finalize::AttachOutcome;
+        for status in ["restarting", "removing", "created"] {
+            let mut runner = inspect_runner(status, 0, false);
+            let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+            assert_eq!(
+                outcome,
+                AttachOutcome::still_running(),
+                "status `{status}` must map to still_running",
+            );
+        }
+    }
+
+    /// `dead` → still_running (conservative: daemon failed to
+    /// deinitialize; records preserved for inspection).
+    #[test]
+    fn inspect_attach_outcome_dead_returns_still_running() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("dead", 0, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::still_running());
+    }
+
+    /// Unknown status (future Docker versions, exotic runtimes) →
+    /// still_running with debug_log. Conservative direction so a new
+    /// status string never accidentally triggers data deletion.
+    #[test]
+    fn inspect_attach_outcome_unknown_status_returns_still_running() {
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = inspect_runner("hibernated", 0, false);
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::still_running());
     }
 }

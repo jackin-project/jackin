@@ -81,6 +81,7 @@ mod tests {
             src: src.to_string(),
             dst: "/container/path".to_string(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         }
     }
 

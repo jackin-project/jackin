@@ -1511,6 +1511,7 @@ mod tests {
                 src: "/x".to_string(),
                 dst: "/x".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..Default::default()
         };
@@ -1537,6 +1538,7 @@ mod tests {
                 src: "/x".to_string(),
                 dst: "/x".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..Default::default()
         };
@@ -1620,6 +1622,7 @@ mod tests {
                 src: "/x".to_string(),
                 dst: "/x".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..Default::default()
         };

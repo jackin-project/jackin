@@ -12,7 +12,9 @@ mod persist;
 mod workspaces;
 
 pub use editor::{ConfigEditor, EnvScope};
-pub use mounts::{DockerMounts, MountEntry};
+pub use mounts::DockerMounts;
+pub(crate) use mounts::MountEntry;
+pub use workspaces::{DriftDetection, detect_workspace_edit_drift};
 
 /// Serde helper: `skip_serializing_if` requires `fn(&T) -> bool`.
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -214,6 +216,7 @@ readonly = true
                 src: temp.path().display().to_string(),
                 dst: "/workspace/src".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..Default::default()
         };
@@ -242,6 +245,7 @@ readonly = true
                         src,
                         dst: "/workspace/project".to_string(),
                         readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     }],
                     ..Default::default()
                 },
@@ -401,6 +405,7 @@ auth_forward = "token"
                         src: "/a".into(),
                         dst: "/a".into(),
                         readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     }],
                     ..Default::default()
                 },
@@ -415,6 +420,7 @@ auth_forward = "token"
                         src: "/a/b".into(),
                         dst: "/a/b".into(),
                         readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     }],
                     ..WorkspaceEdit::default()
                 },
@@ -442,6 +448,7 @@ auth_forward = "token"
                         src: "/a/b".into(),
                         dst: "/a/b".into(),
                         readonly: true,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     }],
                     ..Default::default()
                 },
@@ -456,6 +463,7 @@ auth_forward = "token"
                         src: "/a".into(),
                         dst: "/a".into(),
                         readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     }],
                     ..WorkspaceEdit::default()
                 },
@@ -484,11 +492,13 @@ auth_forward = "token"
                             src: "/a/b".into(),
                             dst: "/a/b".into(),
                             readonly: false,
+                            isolation: crate::isolation::MountIsolation::Shared,
                         },
                         MountConfig {
                             src: "/a/c".into(),
                             dst: "/a/c".into(),
                             readonly: false,
+                            isolation: crate::isolation::MountIsolation::Shared,
                         },
                     ],
                     ..Default::default()
@@ -504,6 +514,7 @@ auth_forward = "token"
                         src: "/a".into(),
                         dst: "/a".into(),
                         readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     }],
                     remove_destinations: vec!["/a/b".into(), "/a/c".into()],
                     ..WorkspaceEdit::default()
@@ -537,11 +548,13 @@ auth_forward = "token"
                         src: "/a".into(),
                         dst: "/a".into(),
                         readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     },
                     MountConfig {
                         src: "/a/b".into(),
                         dst: "/a/b".into(),
                         readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     },
                 ],
                 ..Default::default()
@@ -580,11 +593,13 @@ auth_forward = "token"
                             src: "/a".into(),
                             dst: "/a".into(),
                             readonly: false,
+                            isolation: crate::isolation::MountIsolation::Shared,
                         },
                         MountConfig {
                             src: "/a/b".into(),
                             dst: "/a/b".into(),
                             readonly: false,
+                            isolation: crate::isolation::MountIsolation::Shared,
                         },
                     ],
                     ..Default::default()
@@ -614,11 +629,13 @@ auth_forward = "token"
                             src: "/a".into(),
                             dst: "/a".into(),
                             readonly: false,
+                            isolation: crate::isolation::MountIsolation::Shared,
                         },
                         MountConfig {
                             src: "/a/b".into(),
                             dst: "/a/b".into(),
                             readonly: true,
+                            isolation: crate::isolation::MountIsolation::Shared,
                         },
                     ],
                     ..Default::default()
@@ -643,6 +660,7 @@ auth_forward = "token"
                         src: "/a".into(),
                         dst: "/a".into(),
                         readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
                     }],
                     ..Default::default()
                 },

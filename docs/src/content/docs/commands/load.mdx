@@ -28,6 +28,7 @@ Load an agent into an isolated Docker container. This is the primary command for
 |---|---|
 | `--mount <SPEC>` | Additional bind-mount spec. Repeatable. Format: `path[:ro]` or `src:dst[:ro]` |
 | `--rebuild` | Force rebuild the Docker image (updates Claude to latest version) |
+| `--force` | Acknowledge a dirty host working tree when materializing an isolated mount in non-interactive mode. Required only when (a) the workspace has at least one `worktree`-isolated mount and (b) the host repo's tree has staged, unstaged-tracked, or untracked files. Ignored otherwise. |
 | `--no-intro` | Skip the animated intro sequence |
 | `--debug` | Print raw container output for troubleshooting |
 
@@ -87,3 +88,17 @@ If two resolved mounts target the same container destination, `jackin load` fail
 <Aside type="tip">
 If no selector is given and the current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace's default or last-used agent is used automatically.
 </Aside>
+## Dirty-host acknowledgement (`--force`)
+
+When a workspace mount has `isolation = "worktree"`, `jackin load` materializes a new `git worktree` from the host repo's current `HEAD` before starting the container. If the host tree is dirty (staged changes, unstaged tracked changes, or untracked files — ignored files do not count), those edits stay on the host and are **not** carried into the agent's worktree.
+
+In an interactive shell jackin' prompts you to confirm before materializing. In non-interactive contexts (CI, scripts, piped input) the launch fails fast unless you pass `--force` to acknowledge that:
+
+- the worktree branches from `HEAD`, not from your working copy
+- uncommitted host edits will not appear inside the container
+
+`--force` does **not**:
+
+- discard, stash, or commit any host changes
+- relax any other validation (sensitive mounts, mid-rebase host repo, readonly worktree mounts, nested isolated dst paths still hard-error)
+- affect `shared` mounts or workspaces with no isolated mounts

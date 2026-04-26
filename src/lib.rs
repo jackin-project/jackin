@@ -7,6 +7,7 @@ pub mod docker;
 pub mod env_model;
 pub mod env_resolver;
 pub mod instance;
+pub mod isolation;
 pub mod manifest;
 pub mod operator_env;
 pub mod paths;

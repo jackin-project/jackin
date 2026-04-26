@@ -59,6 +59,7 @@ pub fn plan_create(
                     src: workdir.to_string(),
                     dst: workdir.to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             );
         }
@@ -135,6 +136,29 @@ pub fn plan_edit(
         edit_driven_collapses: edit_driven,
         pre_existing_collapses: pre_existing,
     })
+}
+
+/// Apply per-destination isolation overrides to the supplied mount list.
+///
+/// Each `(dst, mode)` pair must reference an existing destination in
+/// `mounts`; an unknown destination is a hard error so the operator can fix
+/// the typo instead of silently picking up the default. The plan must be the
+/// final, post-collapse mount list because the destinations the operator
+/// supplied on the CLI must match what gets persisted.
+pub fn apply_isolation_overrides(
+    mounts: &mut [crate::workspace::MountConfig],
+    overrides: &[(String, crate::isolation::MountIsolation)],
+) -> anyhow::Result<()> {
+    for (dst, mode) in overrides {
+        let target = mounts.iter_mut().find(|m| m.dst == *dst).ok_or_else(|| {
+            anyhow::anyhow!(
+                "--mount-isolation references unknown destination `{dst}`; \
+                 it must match a mount in the final plan"
+            )
+        })?;
+        target.isolation = *mode;
+    }
+    Ok(())
 }
 
 /// A proposed mount-set change produced by [`plan_collapse`]. `kept` is the
@@ -242,6 +266,7 @@ mod tests {
             src: src.to_string(),
             dst: dst.to_string(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         }
     }
 
@@ -390,6 +415,7 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let b = a.clone();
         assert!(!covers(&a, &b));
@@ -401,11 +427,13 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/a/b".into(),
             dst: "/a/b".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(covers(&parent, &child));
     }
@@ -416,11 +444,13 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/a/b/c/d".into(),
             dst: "/a/b/c/d".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(covers(&parent, &child));
     }
@@ -431,11 +461,13 @@ mod tests {
             src: "/host/root".into(),
             dst: "/container/root".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/host/root/sub".into(),
             dst: "/container/root/sub".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(covers(&parent, &child));
     }
@@ -446,11 +478,13 @@ mod tests {
             src: "/host/root".into(),
             dst: "/container/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/host/root/sub".into(),
             dst: "/container/b/sub".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(!covers(&parent, &child));
     }
@@ -461,11 +495,13 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let b = MountConfig {
             src: "/b".into(),
             dst: "/b".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(!covers(&a, &b));
     }
@@ -477,11 +513,13 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/a-x".into(),
             dst: "/a-x".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(!covers(&parent, &child));
     }
@@ -492,11 +530,13 @@ mod tests {
             src: "/a/".into(),
             dst: "/a/".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/a/b".into(),
             dst: "/a/b".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(covers(&parent, &child));
     }
@@ -508,11 +548,13 @@ mod tests {
             src: "/a".into(),
             dst: "/a".into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         let child = MountConfig {
             src: "/a/b".into(),
             dst: "/a/b".into(),
             readonly: true,
+            isolation: crate::isolation::MountIsolation::Shared,
         };
         assert!(covers(&parent, &child));
     }
@@ -522,6 +564,7 @@ mod tests {
             src: src.into(),
             dst: dst.into(),
             readonly: ro,
+            isolation: crate::isolation::MountIsolation::Shared,
         }
     }
 
@@ -684,6 +727,56 @@ mod tests {
             );
             assert_eq!(second.kept, plan.kept);
         }
+    }
+
+    #[test]
+    fn apply_isolation_overrides_updates_matching_dst() {
+        let mut mounts = vec![
+            crate::workspace::MountConfig {
+                src: "/tmp/a".into(),
+                dst: "/workspace/x".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            crate::workspace::MountConfig {
+                src: "/tmp/b".into(),
+                dst: "/workspace/y".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        ];
+        apply_isolation_overrides(
+            &mut mounts,
+            &[(
+                "/workspace/y".into(),
+                crate::isolation::MountIsolation::Worktree,
+            )],
+        )
+        .unwrap();
+        assert_eq!(
+            mounts[1].isolation,
+            crate::isolation::MountIsolation::Worktree
+        );
+        assert_eq!(
+            mounts[0].isolation,
+            crate::isolation::MountIsolation::Shared
+        );
+    }
+
+    #[test]
+    fn apply_isolation_overrides_unknown_dst_errors() {
+        let mut mounts = vec![crate::workspace::MountConfig {
+            src: "/tmp/a".into(),
+            dst: "/workspace/x".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
+        }];
+        let err = apply_isolation_overrides(
+            &mut mounts,
+            &[("/nope".into(), crate::isolation::MountIsolation::Worktree)],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown destination `/nope`"));
     }
 
     #[test]

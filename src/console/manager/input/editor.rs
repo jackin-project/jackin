@@ -233,6 +233,13 @@ pub(super) fn handle_editor_key(
                 m.readonly = !m.readonly;
             }
         }
+        KeyCode::Char('i' | 'I') if editor.active_tab == super::super::state::EditorTab::Mounts => {
+            // Cycle the per-mount isolation strategy on the highlighted row.
+            // Mirrors the R (readonly) toggle but threads through the
+            // dedicated state helper so the cycling rule lives in one place.
+            // Silent no-op on the `+ Add mount` sentinel.
+            editor.cycle_isolation_for_selected_mount();
+        }
         KeyCode::Char('o' | 'O') if editor.active_tab == super::super::state::EditorTab::Mounts => {
             // Open in browser; toast for non-GitHub mounts so the
             // binding stays discoverable.
@@ -675,11 +682,40 @@ pub(super) fn handle_editor_modal(
                 let target = target.clone();
                 editor.modal = None;
                 if yes {
-                    apply_editor_confirm(editor, &target);
+                    // Source-drift acknowledgement consumes `plan` and
+                    // re-stashes it as a `PendingCommit` for the outer
+                    // dispatcher (which owns `paths` / `cwd` / `runner`)
+                    // to drain via `commit_editor_save`.
+                    if let super::super::state::ConfirmTarget::DeleteIsolatedAndSave {
+                        mut plan,
+                        exit_on_success,
+                        ..
+                    } = target
+                    {
+                        plan.delete_isolated_acknowledged = true;
+                        editor.save_flow = EditorSaveFlow::PendingCommit {
+                            plan,
+                            exit_on_success,
+                        };
+                    } else {
+                        apply_editor_confirm(editor, &target);
+                    }
+                } else if matches!(
+                    target,
+                    super::super::state::ConfirmTarget::DeleteIsolatedAndSave { .. }
+                ) {
+                    editor.save_flow = EditorSaveFlow::Idle;
                 }
             }
             ModalOutcome::Cancel => {
+                let was_drift = matches!(
+                    target,
+                    super::super::state::ConfirmTarget::DeleteIsolatedAndSave { .. }
+                );
                 editor.modal = None;
+                if was_drift {
+                    editor.save_flow = EditorSaveFlow::Idle;
+                }
             }
             ModalOutcome::Continue => {}
         },
@@ -745,6 +781,12 @@ pub(super) fn handle_editor_modal(
                     let plan = super::super::state::PendingSaveCommit {
                         effective_removals: modal_state.effective_removals.clone(),
                         final_mounts: modal_state.final_mounts.clone(),
+                        // First commit pass — the drift check in
+                        // `commit_editor_save` runs unconditionally. The
+                        // `DeleteIsolatedAndSave` confirm modal is what
+                        // re-stashes the plan with the flag flipped to
+                        // `true` so the second pass skips the check.
+                        delete_isolated_acknowledged: false,
                     };
                     let exit_on_success = matches!(
                         editor.save_flow,
@@ -1064,8 +1106,11 @@ fn apply_editor_confirm(editor: &mut EditorState<'_>, target: &ConfirmTarget) {
                 }
             }
         },
-        // List-side target; never reaches the editor modal.
-        ConfirmTarget::DeleteWorkspace => {}
+        // `DeleteWorkspace` is a list-side target that never reaches the
+        // editor modal. `DeleteIsolatedAndSave` is handled inline at the
+        // dispatch site because it consumes `plan` and routes through
+        // `EditorSaveFlow::PendingCommit`. Both no-op here.
+        ConfirmTarget::DeleteWorkspace | ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
     }
 }
 
@@ -1085,6 +1130,7 @@ fn dispatch_editor_mount_dst_choice(
                     src: src.to_string(),
                     dst: src.to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 });
             }
             editor.modal = None;
@@ -1095,6 +1141,7 @@ fn dispatch_editor_mount_dst_choice(
                     src: src.to_string(),
                     dst: src.to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 });
                 editor.modal = Some(Modal::TextInput {
                     target: super::super::state::TextInputTarget::MountDst,
@@ -1222,6 +1269,7 @@ mod tests {
                 src: "/host/a".into(),
                 dst: "/host/a".into(),
                 readonly,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..WorkspaceConfig::default()
         }
@@ -1849,6 +1897,49 @@ mod tests {
         assert_eq!(
             e.pending.mounts, before,
             "R on non-Mounts tab must leave mounts untouched"
+        );
+    }
+
+    // ── Mounts tab: I cycles isolation (shared ↔ worktree) ────────────
+
+    #[test]
+    fn i_key_cycles_isolation_on_current_mount_row() {
+        // Start Shared → one I press should flip to Worktree and register
+        // as a change. Mirrors `r_key_toggles_readonly_on_current_mount_row`.
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('I')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Worktree,
+            "I on a Shared mount must cycle to Worktree",
+        );
+        assert!(
+            e.change_count() > 0,
+            "cycling isolation must surface as a change; got change_count={}",
+            e.change_count(),
+        );
+    }
+
+    #[test]
+    fn i_key_lowercase_also_cycles_isolation() {
+        // Operators often hit `i` without holding shift; both cases must work.
+        let mut config = AppConfig::default();
+        let mut state = editor_on_mounts_tab(ws_with_one_mount(false), 0);
+
+        press(&mut state, &mut config, KeyCode::Char('i')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(
+            e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Worktree,
         );
     }
 

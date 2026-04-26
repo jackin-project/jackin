@@ -7,6 +7,11 @@ use super::{BANNER, HELP_STYLES};
 /// TARGET can be a path (~/Projects/my-app), a path with container
 /// destination (~/Projects/my-app:/app), or a saved workspace name.
 /// When omitted, the current directory is used.
+//
+// Five launch-time toggles (rebuild / no_intro / debug / force) plus the
+// positional `selector` / `target` / `mounts` map directly to CLI flags;
+// bundling them into nested structs would obscure rather than clarify.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     before_help = BANNER,
@@ -41,6 +46,9 @@ pub struct LoadArgs {
     /// Print raw container output for troubleshooting
     #[arg(long, default_value_t = false)]
     pub debug: bool,
+    /// Acknowledge a dirty host working tree for isolated mounts.
+    #[arg(long)]
+    pub force: bool,
 }
 
 /// Reattach to a running agent's session
