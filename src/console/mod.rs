@@ -23,31 +23,9 @@ use crate::selector::ClassSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
 impl ConsoleState {
-    /// Shared `LaunchNamed` / `LaunchCurrentDir` transition: build a
-    /// fresh `WorkspaceChoice` from the current `AppConfig` for `input`,
-    /// then route by agent count.
-    ///
-    /// Three branches:
-    /// 1. `default_agent` set on the workspace → launch immediately with
-    ///    that agent.
-    /// 2. Exactly one eligible agent (after the
-    ///    `eligible_agents_for_workspace` filtering already baked into
-    ///    `WorkspaceChoice.allowed_agents`) → launch immediately with it.
-    /// 3. Multiple eligible agents and no default → open
-    ///    `Modal::AgentPicker` on the manager list and stay in the
-    ///    run-loop until the operator commits a choice; `pending_launch`
-    ///    is set so the picker-commit arm in `run_console` can rebuild
-    ///    the same choice when it resolves.
-    ///
-    /// Returns `Ok(Some(_))` if the caller should break with that
-    /// outcome, `Ok(None)` to stay in the run-loop (modal opened, or
-    /// there are no eligible agents and we surface a toast). Errors only
-    /// when workspace resolution itself fails.
-    ///
-    /// Builds `WorkspaceChoice` on the fly via [`build_workspace_choice`]
-    /// rather than indexing into a startup snapshot, so manager-driven
-    /// edits (create / rename / delete / `default_agent` / env) take
-    /// effect on the very next launch attempt. See PR #171 commit 53.
+    /// Default agent → launch; one eligible → launch; multiple →
+    /// open `Modal::AgentPicker`. `WorkspaceChoice` is built fresh
+    /// each call so manager edits take effect immediately.
     pub fn dispatch_launch_for_workspace(
         &mut self,
         config: &AppConfig,
@@ -55,16 +33,12 @@ impl ConsoleState {
         input: LoadWorkspaceInput,
     ) -> anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>> {
         let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
-            // Saved name no longer present in config (e.g. operator deleted
-            // it via the manager between the keypress and the dispatch).
-            // Stay in the run-loop silently; the manager already removed
-            // the row, so there's no UI to reconcile.
+            // Workspace was deleted between keypress and dispatch.
             return Ok(None);
         };
         let agents = choice.allowed_agents.clone();
         let default_agent = choice.default_agent.clone();
 
-        // Branch 1: default agent set + present in the eligible set → direct launch.
         if let Some(default_key) = default_agent.as_deref()
             && let Some(agent) = agents.iter().find(|a| a.key() == default_key).cloned()
         {
@@ -73,13 +47,10 @@ impl ConsoleState {
             return Ok(Some((agent, workspace)));
         }
 
-        // Branch 2: zero or one eligible agent.
         match agents.len() {
             0 => {
-                // No eligible agents — toast and stay in the manager list so
-                // the operator can edit the workspace's `allowed_agents` or
-                // register an agent. Avoids a hard error that would terminate
-                // the TUI from a single Enter press.
+                // Toast + stay so the operator can fix `allowed_agents`
+                // — a single Enter shouldn't terminate the TUI.
                 let name = choice.name;
                 if let ConsoleStage::Manager(ms) = &mut self.stage {
                     ms.toast = Some(crate::console::manager::state::Toast {
@@ -98,9 +69,8 @@ impl ConsoleState {
                 Ok(Some((agent, workspace)))
             }
             _ => {
-                // Branch 3: multiple eligible — open the picker overlay.
-                // Pin `pending_launch` so the `LaunchWithAgent` arm in
-                // `run_console` can rebuild the same choice on commit.
+                // Multiple eligible: pin `pending_launch` so the
+                // `LaunchWithAgent` arm rebuilds the choice on commit.
                 self.pending_launch = Some(input);
                 if let ConsoleStage::Manager(ms) = &mut self.stage {
                     ms.list_modal = Some(crate::console::manager::state::Modal::AgentPicker {
@@ -115,20 +85,10 @@ impl ConsoleState {
     }
 }
 
-/// Outer event-loop tick interval. 20 Hz keeps the picker's Braille
-/// spinner visibly fluid and lets the per-tick worker-channel drain
-/// surface `op` results within ~50 ms of the worker finishing — without
-/// hot-spinning the CPU. Matched against [`crossterm::event::poll`]'s
-/// timeout: when no input arrives within `TICK_MS`, the loop falls
-/// through to the next iteration, re-renders, and re-polls. Picked at
-/// the brief's recommended balance — tighter (≤16 ms) wastes cycles on
-/// idle frames; looser (>100 ms) makes the spinner stutter.
+/// 20 Hz: spinner stays fluid and op results surface within ~50ms
+/// without hot-spinning. <16ms wastes cycles, >100ms stutters.
 const TICK_MS: u64 = 50;
 
-/// Centered rect for the "Exit jackin'?" confirm dialog. Sized to
-/// what the `confirm` widget needs given its prompt; clamped to a
-/// modest 44-column width so it reads as a small dialog rather than
-/// a full-screen takeover.
 fn quit_confirm_area(
     frame: ratatui::layout::Rect,
     confirm: &crate::console::widgets::confirm::ConfirmState,
@@ -146,49 +106,26 @@ fn quit_confirm_area(
     }
 }
 
-/// `true` when the operator is on the main manager list — the only
-/// place a bare `Q` exits silently. Defined as: top-level stage is
-/// `Manager`, the manager sub-stage is `List`, and no `list_modal`
-/// is open. Any other condition (editor stage, create prelude,
-/// confirm-delete, or a list-anchored modal like `AgentPicker`) is
-/// "inside" something and should pop the exit confirmation instead.
+/// Bare `Q` exits silently only on the main list — anywhere else
+/// (editor, prelude, confirm, list modal) pops the exit prompt.
 const fn is_on_main_screen(state: &ConsoleState) -> bool {
     let ConsoleStage::Manager(ms) = &state.stage;
     matches!(ms.stage, crate::console::manager::state::ManagerStage::List)
         && ms.list_modal.is_none()
 }
 
-/// `true` when the active modal consumes letter characters as input
-/// (text entry or filter-as-you-type). The Q-intercept must defer to
-/// these modals so pressing Q types the letter rather than popping
-/// the exit confirmation.
-///
-/// Modals checked:
-/// - [`TextInput`](manager::state::Modal::TextInput) (name, workdir,
-///   mount dst, `EnvKey`, `EnvValue`) — types `Q` into the textarea.
-/// - [`OpPicker`](manager::state::Modal::OpPicker) (any pane: Account /
-///   Vault / Item / Field) — appends `Q` to the per-pane filter buffer.
-/// - [`AgentPicker`](manager::state::Modal::AgentPicker) — appends `Q`
-///   to its filter.
-///
-/// Modals deliberately omitted because they don't consume letters as
-/// input: `Confirm`, `ConfirmSave`, `MountDstChoice`, `WorkdirPick`,
-/// `SaveDiscardCancel`, `GithubPicker`, `SourcePicker`, `ErrorPopup`,
-/// `FileBrowser`. Letting `Q` escape from those modals to the exit
-/// confirm matches the spec — the operator typically uses arrow keys /
-/// enter / esc there.
+/// Modals that consume letters (`TextInput`, pickers with filter-as-
+/// you-type) must shadow the Q-intercept so `Q` types the letter.
 const fn consumes_letter_input(state: &ConsoleState) -> bool {
     use crate::console::manager::state::{ManagerStage, Modal};
     let ConsoleStage::Manager(ms) = &state.stage;
 
-    // List-anchored modals (AgentPicker, GithubPicker, etc.).
     if let Some(modal) = &ms.list_modal
         && matches!(modal, Modal::AgentPicker { .. } | Modal::OpPicker { .. })
     {
         return true;
     }
 
-    // Editor-anchored modals.
     if let ManagerStage::Editor(editor) = &ms.stage
         && let Some(modal) = &editor.modal
         && matches!(
@@ -202,8 +139,6 @@ const fn consumes_letter_input(state: &ConsoleState) -> bool {
         return true;
     }
 
-    // CreatePrelude-anchored modals (FileBrowser, MountDstChoice,
-    // WorkdirPick, TextInput for naming the workspace).
     if let ManagerStage::CreatePrelude(p) = &ms.stage
         && let Some(modal) = &p.modal
         && matches!(modal, Modal::TextInput { .. })
@@ -228,14 +163,8 @@ pub fn run_console(
     };
     use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 
-    // NOTE: `EnableMouseCapture` intercepts mouse events so the workspace
-    // manager can drive a draggable split between the list and details
-    // panes. A known side-effect is that the terminal's native text
-    // selection (click-drag to select, cmd/ctrl-C to copy) stops working
-    // while the TUI is running. Operators who need to copy text from the
-    // TUI can hold Shift (Terminal.app, iTerm2) or Option (iTerm2) to
-    // bypass capture at the terminal level. A runtime toggle could be
-    // added later but is out of scope here.
+    // EnableMouseCapture disables native text selection; operators
+    // hold Shift (Terminal.app, iTerm2) or Option (iTerm2) to bypass.
     struct TerminalGuard;
     impl Drop for TerminalGuard {
         fn drop(&mut self) {
@@ -265,25 +194,12 @@ pub fn run_console(
             ms.toast = None;
         }
 
-        // Drain pending background-worker results (1Password picker
-        // loading state, etc.) BEFORE rendering so a freshly-arrived
-        // result lands in this frame rather than a one-tick-stale
-        // Loading frame. The render path's `OpPickerState::tick` also
-        // drains the channel; both call sites are idempotent on an
-        // empty channel.
+        // Drain worker results before render so a fresh result lands
+        // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
             ms.poll_picker_loads();
         }
 
-        // Render the manager. `ConsoleStage` is single-variant today —
-        // the legacy full-screen agent picker was replaced by a
-        // `Modal::AgentPicker` overlay that the manager render already
-        // handles via the list_modal slot.
-        //
-        // When the top-level "Exit jackin'?" confirm is open, render
-        // the manager first as the underlay, then overlay the confirm
-        // dialog as a centered modal in the same frame so the operator
-        // sees both — the dialog doesn't lose its context.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
             let confirm_state = state.quit_confirm.as_ref();
             terminal.draw(|frame| {
@@ -294,28 +210,13 @@ pub fn run_console(
                 }
             })?;
         }
-        // Capture terminal size before polling for input so the mouse
-        // handler can hit-test against the current seam position. Cheap
-        // syscall; harmless to call every loop turn. Convert the `Size`
-        // into a `Rect` with zero origin so the handler signature stays
-        // aligned with ratatui's own area-based hit-test conventions.
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
 
-        // Non-blocking event poll with a tick timeout. When no input
-        // arrives within `TICK_MS`, `poll` returns `false` and the loop
-        // falls through to the next iteration — keeping the picker
-        // spinner advancing and the worker channel draining at 20 Hz
-        // regardless of operator input. (A prior blocking
-        // `event::read()` froze both updates between keystrokes, making
-        // the picker feel unresponsive while `op` was loading.)
+        // Non-blocking poll: a TICK_MS timeout falls through to advance
+        // the spinner and drain worker channels even when idle.
         if event::poll(Duration::from_millis(TICK_MS))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    // Quit-confirm dialog is the single chokepoint when
-                    // open: it consumes ALL keys until it closes. Y commits
-                    // exit; N / Esc closes the dialog without touching any
-                    // underlying state, so the operator returns to exactly
-                    // where they were.
                     if let Some(confirm) = state.quit_confirm.as_mut() {
                         use crate::console::widgets::ModalOutcome;
                         match confirm.handle_key(key) {
@@ -328,12 +229,8 @@ pub fn run_console(
                         continue;
                     }
 
-                    // Top-level Q intercept: outside the main screen, Q
-                    // pops the "Exit jackin'?" confirmation. Skips when a
-                    // modal that consumes letter input is up (textarea or
-                    // filter-as-you-type picker), so Q types as a
-                    // character there. Caps-lock parity: accept Shift but
-                    // no other modifiers (matches commit 24).
+                    // Q intercept: outside main screen, pop the exit
+                    // confirm. SHIFT tolerated for caps-lock parity.
                     if matches!(key.code, KeyCode::Char('q' | 'Q'))
                         && (key.modifiers - KeyModifiers::SHIFT).is_empty()
                         && !is_on_main_screen(&state)
@@ -356,11 +253,6 @@ pub fn run_console(
                             break Ok(None);
                         }
                         manager::InputOutcome::LaunchNamed(name) => {
-                            // Route the named workspace through the
-                            // dispatcher — it builds a fresh
-                            // `WorkspaceChoice` from the current
-                            // `AppConfig`, so manager edits flow through
-                            // immediately.
                             match state.dispatch_launch_for_workspace(
                                 &config,
                                 cwd,
@@ -372,8 +264,6 @@ pub fn run_console(
                             }
                         }
                         manager::InputOutcome::LaunchCurrentDir => {
-                            // Synthetic "Current directory" choice — same
-                            // dispatcher path as a saved workspace.
                             match state.dispatch_launch_for_workspace(
                                 &config,
                                 cwd,
@@ -385,17 +275,9 @@ pub fn run_console(
                             }
                         }
                         manager::InputOutcome::LaunchWithAgent(agent) => {
-                            // The `AgentPicker` modal just committed. The
-                            // dispatcher pinned `pending_launch` when it
-                            // opened the picker; rebuild the choice now
-                            // from current config so any edits between
-                            // open and commit flow through.
-                            //
-                            // `take()` clears the pin even if the
-                            // workspace went missing in the interim
-                            // (e.g. concurrent delete) — falling through
-                            // to stay in the run-loop is safer than
-                            // panicking on a state-machine inconsistency.
+                            // Rebuild the choice now so edits between
+                            // open and commit take effect. `take()`
+                            // clears the pin even on concurrent delete.
                             if let Some(input) = state.pending_launch.take()
                                 && let Some(choice) = build_workspace_choice(&config, cwd, &input)?
                             {
@@ -410,9 +292,6 @@ pub fn run_console(
                     }
                 }
                 Event::Mouse(mouse) => {
-                    // Only the Manager/List stage consumes mouse events
-                    // today (list/details seam drag). Modals on other
-                    // stages fall through as silent no-ops.
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         manager::input::handle_mouse(ms, mouse, term_size);
                     }
@@ -420,8 +299,6 @@ pub fn run_console(
                 _ => {}
             }
         }
-        // No `else` — when `poll` times out, fall through to the next
-        // loop turn so the spinner ticks and channels drain.
     };
 
     drop(guard);
@@ -430,18 +307,8 @@ pub fn run_console(
 
 #[cfg(test)]
 mod quit_confirm_tests {
-    //! Pin the routing rules for the top-level "Exit jackin'?" confirm:
-    //!
-    //! - `is_on_main_screen` is true ONLY on the bare manager list with
-    //!   no list_modal open. Any sub-stage / modal flips it false.
-    //! - `consumes_letter_input` is true when a TextInput / OpPicker /
-    //!   AgentPicker modal owns the keyboard so Q types as input.
-    //!
-    //! These two predicates gate the Q-intercept in `run_console`'s
-    //! event loop. The integration of those gates with the actual
-    //! keypress dispatch is verified end-to-end in the
-    //! `quit_confirm_handle_key_*` tests below, which drive the same
-    //! `ConfirmState::handle_key` the loop calls.
+    //! Pin the gates for the Q-intercept and the
+    //! `ConfirmState::handle_key` outcomes the run-loop dispatches.
     use super::*;
     use crate::console::manager::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
@@ -476,10 +343,8 @@ mod quit_confirm_tests {
     fn list_modal_is_not_main_screen() {
         let mut state = fresh_state();
         let ConsoleStage::Manager(ms) = &mut state.stage;
-        // Open a FileBrowser as a stand-in for any list-anchored modal.
-        // (Production list_modal slots hold AgentPicker / GithubPicker /
-        // OpPicker; FileBrowser happens to construct cleanly without a
-        // real picker setup, and the predicate only checks `is_some`.)
+        // FileBrowser stands in for any list-anchored modal — predicate
+        // only checks `is_some`.
         ms.list_modal = Some(Modal::FileBrowser {
             target: FileBrowserTarget::CreateFirstMountSrc,
             state: FileBrowserState::new_from_home().unwrap(),
@@ -524,8 +389,6 @@ mod quit_confirm_tests {
             kind: crossterm::event::KeyEventKind::Press,
             state: crossterm::event::KeyEventState::NONE,
         };
-        // The run-loop maps Commit(false) | Cancel to "close dialog",
-        // restoring the operator to where they were.
         assert!(matches!(s.handle_key(key), ModalOutcome::Commit(false)));
     }
 

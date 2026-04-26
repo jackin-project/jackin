@@ -45,27 +45,16 @@ impl ConfigEditor {
         })
     }
 
-    /// Writes the mutated document atomically and returns a freshly-deserialized
-    /// `AppConfig` parsed directly from the written content so callers that
-    /// still need the in-memory shape get it without a second manual
-    /// `load_or_init`.
+    /// Atomic write + return a fresh `AppConfig` parsed from the
+    /// written content.
     ///
-    /// Validates the candidate document **before** clobbering the real
-    /// config. The temp file is parsed and run through the subset of
-    /// `AppConfig::load_or_init`'s checks that the editor's typed setters
-    /// could plausibly violate (serde-required fields and
-    /// `validate_reserved_names`). If validation fails, the temp file is
-    /// removed and the error is returned — the real config is untouched.
-    /// This is the safety net that prevents a setter mutation from
-    /// rendering the on-disk config unloadable (which would brick every
-    /// subsequent CLI command until the operator hand-edits TOML to
-    /// recover). See `validate_candidate` for the rationale on which
-    /// validations run here.
+    /// Validates the candidate before renaming over the real config —
+    /// otherwise a setter that produced an unloadable shape (e.g.
+    /// stub agent missing `git`) would brick every subsequent CLI
+    /// command until the operator hand-edits TOML to recover.
     ///
-    /// The deserialization deliberately bypasses `AppConfig::load_or_init`'s
-    /// builtin-agent sync to avoid clobbering the just-written document with
-    /// a serde round-trip; the invariant the editor relies on is that
-    /// `load_or_init` ran once at `ConfigEditor::open` time, so builtins are
+    /// Skips `load_or_init`'s builtin-agent sync — the invariant is
+    /// that `load_or_init` ran once at `open` time, so builtins are
     /// already in place.
     pub fn save(self) -> anyhow::Result<AppConfig> {
         let contents = self.doc.to_string();
@@ -88,13 +77,12 @@ impl ConfigEditor {
         #[cfg(not(unix))]
         std::fs::write(&tmp, &contents)?;
 
-        // Validate the candidate BEFORE renaming over the real config so
-        // an invalid mutation cannot brick subsequent CLI commands.
+        // Validate before rename so an invalid mutation can't brick
+        // subsequent CLI commands.
         let config: AppConfig = match validate_candidate(&contents) {
             Ok(cfg) => cfg,
             Err(err) => {
-                // Best-effort cleanup; ignore any I/O error here so the
-                // real validation error reaches the caller.
+                // Best-effort cleanup so the real error reaches caller.
                 let _ = std::fs::remove_file(&tmp);
                 return Err(err.context(format!(
                     "rejecting candidate config (would have written to {})",
@@ -508,23 +496,11 @@ fn env_scope_path(scope: &EnvScope) -> Vec<String> {
     }
 }
 
-/// Parse `contents` into an `AppConfig` and run the subset of
-/// `AppConfig::load_or_init`'s validation that the editor's typed
-/// setters could plausibly violate:
-///
-/// - `toml::from_str` enforces serde-required fields (e.g. that every
-///   `[agents.<name>]` table carries a `git` field). This catches the
-///   primary brick-the-CLI case where a setter auto-created a stub
-///   agent table that missed the required key.
-/// - `validate_reserved_names` rejects reserved-runtime keys (e.g.
-///   `DOCKER_HOST` in `[env]`).
-///
-/// Deliberately skips `validate_workspaces` (workdir-vs-mount geometry)
-/// because the editor's typed setters cannot construct a workspace
-/// shape violation on their own — only `create_workspace` and
-/// `edit_workspace` mutate that geometry, and they already run
-/// `AppConfig::create_workspace` / `edit_workspace`'s validation
-/// before touching the document.
+/// Subset of `load_or_init` validations the editor's typed setters
+/// could plausibly violate: serde-required fields (catches stub
+/// agent missing `git`) and `validate_reserved_names`. Skips
+/// `validate_workspaces` — only `create_workspace`/`edit_workspace`
+/// mutate that geometry and they already validate.
 fn validate_candidate(contents: &str) -> anyhow::Result<AppConfig> {
     let config: AppConfig = toml::from_str(contents).context("deserializing candidate config")?;
     crate::operator_env::validate_reserved_names(&config)?;
@@ -983,30 +959,20 @@ API_TOKEN = "op://Personal/api/token"
         assert!(!tmp.exists(), "expected .tmp to be renamed away");
     }
 
-    /// Even when a setter (or, in this test, a direct `toml_edit` poke
-    /// that bypasses the typed setters) mutates the in-memory document
-    /// into a state that violates the schema invariants `load_or_init`
-    /// enforces, `save()` must reject the candidate BEFORE renaming over
-    /// the real config. Otherwise the operator's working config gets
-    /// clobbered with something subsequent CLI commands can't load,
-    /// bricking recovery via the CLI.
+    /// `save()` must reject before rename so an invalid mutation
+    /// can't brick subsequent CLI commands.
     #[test]
     fn save_rejects_invalid_candidate_and_preserves_on_disk_config() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        // Seed a valid baseline config we can later compare against
-        // byte-for-byte. `load_or_init` runs once at `open` to make sure
-        // builtin agents are synced; capture the post-bootstrap baseline.
         std::fs::write(&paths.config_file, "[env]\nVALID_KEY = \"valid-value\"\n").unwrap();
         AppConfig::load_or_init(&paths).unwrap();
         let baseline = std::fs::read_to_string(&paths.config_file).unwrap();
 
-        // Open the editor and bypass the typed setters to inject a
-        // partial `[agents.ghost.env]` table — `[agents.ghost]` is missing
-        // the required `git` field, so the candidate fails serde parsing
-        // (which `validate_candidate` runs before the rename).
+        // Inject `[agents.ghost.env]` without the required
+        // `[agents.ghost].git` — fails serde parsing.
         let mut editor = ConfigEditor::open(&paths).unwrap();
         let agents_table = table_path_mut(
             &mut editor.doc,
@@ -1021,7 +987,6 @@ API_TOKEN = "op://Personal/api/token"
             "expected rejection message; got: {msg}"
         );
 
-        // The real config is untouched.
         let after = std::fs::read_to_string(&paths.config_file).unwrap();
         assert_eq!(
             after, baseline,
@@ -1037,10 +1002,6 @@ API_TOKEN = "op://Personal/api/token"
         );
     }
 
-    /// Same invariant for a reserved-runtime-name candidate. If a setter
-    /// somehow planted `DOCKER_HOST` into the global env table,
-    /// `validate_reserved_names` must catch it during the candidate
-    /// check and the on-disk config must remain unchanged.
     #[test]
     fn save_rejects_reserved_name_candidate_and_preserves_on_disk_config() {
         let temp = tempdir().unwrap();
@@ -1052,8 +1013,7 @@ API_TOKEN = "op://Personal/api/token"
         let baseline = std::fs::read_to_string(&paths.config_file).unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        // Bypass the CLI pre-flight by writing the reserved name
-        // straight through the unchecked setter.
+        // Bypass the CLI pre-flight via the unchecked setter.
         editor.set_env_var(&EnvScope::Global, "DOCKER_HOST", "tcp://bad");
 
         let err = editor.save().unwrap_err();

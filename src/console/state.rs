@@ -7,12 +7,8 @@ use crate::console::op_cache::OpCache;
 use crate::selector::ClassSelector;
 use crate::workspace::{LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace};
 
-/// Top-level stage of the operator console.
-///
-/// Single-variant today — the legacy full-screen `Agent` picker was
-/// replaced by `Modal::AgentPicker` overlaid on the manager list. Kept
-/// as an `enum` so future stages (e.g. running-sessions cluster) can
-/// land without rewriting every `ConsoleStage::Manager(_)` match site.
+/// Single-variant today; kept as `enum` so future stages (e.g.
+/// running-sessions cluster) land without churning every match site.
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ConsoleStage {
@@ -33,60 +29,24 @@ pub struct WorkspaceChoice {
 #[derive(Debug)]
 pub struct ConsoleState {
     pub stage: ConsoleStage,
-    /// Workspace whose `AgentPicker` is currently open (or was just dispatched
-    /// against). Pinned by `dispatch_launch_for_workspace` when it routes
-    /// to Branch 3 (multiple eligible agents → picker), then read back by
-    /// the `LaunchWithAgent` arm in `run_console` to rebuild a fresh
-    /// `WorkspaceChoice` on commit.
-    ///
-    /// Storing a `LoadWorkspaceInput` rather than an index decouples
-    /// launch routing from any cached snapshot of the workspace list.
-    /// Each launch attempt rebuilds its `WorkspaceChoice` from the
-    /// current `AppConfig` via [`build_workspace_choice`] so manager
-    /// edits (rename / create / delete / `default_agent` / env) take
-    /// effect immediately — no stale-snapshot bug. See PR #171 review:
-    /// commit 53.
+    /// `LoadWorkspaceInput` (not an index) so each dispatch rebuilds
+    /// its `WorkspaceChoice` from current config — manager edits flow
+    /// through immediately.
     pub pending_launch: Option<LoadWorkspaceInput>,
-    /// Process-lifetime cache of `op` structural metadata, shared with
-    /// the embedded `ManagerState` and any picker the operator opens.
-    /// Survives Esc-back-to-list and editor re-entry within a single
-    /// `jackin console` invocation. See [`OpCache`].
-    ///
-    /// `Rc<RefCell<_>>` so the picker can hold a clone of the handle
-    /// while the modal is open. The TUI event loop is single-threaded;
-    /// `RefCell` is sufficient — no `Mutex` needed.
+    /// Process-lifetime `op` metadata cache. `Rc<RefCell<_>>` because
+    /// the TUI event loop is single-threaded.
     pub op_cache: Rc<RefCell<OpCache>>,
-    /// Whether the 1Password CLI (`op`) was reachable on PATH at console
-    /// startup. Probed exactly once via [`OpCli::probe`] in
-    /// [`ConsoleState::new`]; the result is read by the Secrets-tab
-    /// source-picker modal to decide whether the `1Password` button is
-    /// available or rendered dim.
-    ///
-    /// **Mid-session installs are not picked up.** If the operator
-    /// installs `op` after `jackin console` has started, they must
-    /// restart the console for the source-picker to enable the
-    /// 1Password choice. The probe is a synchronous subprocess spawn;
-    /// running it on every modal open would add a perceptible UI hitch
-    /// for negligible benefit.
+    /// Probed once at startup; mid-session installs require restart.
+    /// Re-probing on every modal open would add a perceptible hitch.
     pub op_available: bool,
-    /// Top-level "Exit jackin'?" confirmation dialog. Opened by `Q`
-    /// pressed anywhere outside the manager list (with no `list_modal`),
-    /// closed by Y (commits an exit) / N / Esc (returns the operator
-    /// to wherever they were). Lifted to `ConsoleState` rather than
-    /// `ManagerState` because the dialog must overlay any sub-stage
-    /// uniformly — see `is_on_main_screen` / `consumes_letter_input`
-    /// in `console::mod` for the routing gate.
+    /// Lifted to `ConsoleState` (not `ManagerState`) so it overlays
+    /// any sub-stage uniformly.
     pub quit_confirm: Option<crate::console::widgets::confirm::ConfirmState>,
 }
 
 impl ConsoleState {
     pub fn new(config: &AppConfig, cwd: &std::path::Path) -> anyhow::Result<Self> {
         let op_cache = Rc::new(RefCell::new(OpCache::default()));
-        // One-shot `op --version` probe — same code path the launch-time
-        // resolver uses. Failure is fine: it just means the source
-        // picker's 1Password choice will render disabled. Probe runs
-        // exactly once per console invocation; mid-session installs
-        // require a restart (see `op_available` doc).
         let op_available = {
             use crate::operator_env::OpRunner as _;
             crate::operator_env::OpCli::new().probe().is_ok()
@@ -108,22 +68,8 @@ impl ConsoleState {
     }
 }
 
-/// Build a fresh [`WorkspaceChoice`] from the current `AppConfig` for `input`.
-///
-/// `input` is a saved workspace name or the synthetic "current directory"
-/// choice. Called at launch dispatch time so manager edits — create,
-/// rename, delete, `default_agent`, `allowed_agents`, env — flow through
-/// immediately.
-///
-/// Returns `Ok(None)` when `input` is `Saved(name)` but `name` is no
-/// longer present in `config.workspaces` (e.g. the operator deleted it
-/// via the manager between the keypress and the dispatch). Surfaces
-/// resolution errors verbatim — they bubble up as a hard error from
-/// `dispatch_launch_for_workspace`.
-///
-/// Replaces the old `ConsoleState.workspaces: Vec<WorkspaceChoice>`
-/// snapshot built once at console startup. See `pending_launch` for the
-/// motivation.
+/// `Ok(None)` when a saved name went missing between keypress and
+/// dispatch (concurrent delete via the manager).
 pub fn build_workspace_choice(
     config: &AppConfig,
     cwd: &std::path::Path,
@@ -166,9 +112,8 @@ pub fn build_workspace_choice(
                 input: LoadWorkspaceInput::Saved(name.clone()),
             }))
         }
-        // `Path { .. }` is a CLI-only shape (`jackin load --path`); the
-        // console never produces it. Reject it loudly rather than papering
-        // over an unexpected dispatcher input.
+        // CLI-only shape (`jackin load --path`); console never
+        // produces it.
         LoadWorkspaceInput::Path { .. } => Ok(None),
     }
 }
@@ -198,22 +143,6 @@ fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Preselection of the saved workspace covering `cwd` is pinned by
-    // `ManagerState::from_config`'s tests in
-    // `console::manager::state::tests::manager_preselects_saved_workspace_matching_cwd`.
-    // The old `selected_workspace_name` accessor on `ConsoleState` was
-    // removed in commit 53 (PR #171) when the snapshot list was dropped
-    // in favour of build-on-demand `WorkspaceChoice`s — see
-    // [`build_workspace_choice`].
-
-    // ── build_workspace_choice: derive launch routing from current config ──
-    //
-    // These tests pin the new model: each launch dispatch builds a
-    // fresh `WorkspaceChoice` from the current `AppConfig`, so manager
-    // edits flow through immediately. Regression coverage for the
-    // stale-snapshot bug fixed in commit 53 lives in
-    // `tests/manager_flow.rs::launch_after_*`.
 
     #[test]
     fn build_workspace_choice_returns_none_for_unknown_saved_name() {
@@ -271,24 +200,7 @@ mod tests {
         assert_eq!(choice.allowed_agents.len(), 1);
     }
 
-    // ── Phase 0 gap-fill: agent-eligibility composition ────────────────────
-    //
-    // These tests pin the composition the TUI relies on:
-    //
-    //   configured_agents  →  eligible_agents_for_workspace
-    //                     (allowed_agents filter)  →
-    //                     workspace.allowed_agents  →
-    //                     on-screen result
-    //
-    // Invariants:
-    //
-    //   1. An empty `allowed_agents` list means "any configured agent."
-    //   2. A non-empty `allowed_agents` list strictly narrows to the named
-    //      set, and never resurrects an unconfigured ("ghost") name.
-    //
-    // Filter-time narrowing now lives on `AgentPickerState` (see
-    // `widgets/agent_picker.rs`) — the legacy `ConsoleState::filtered_agents`
-    // path was deleted alongside the full-screen `ConsoleStage::Agent`.
+    // ── agent-eligibility composition ───────────────────────────────
 
     fn agent_source_stub() -> crate::config::AgentSource {
         crate::config::AgentSource {
@@ -357,8 +269,6 @@ mod tests {
 
     #[test]
     fn eligible_agents_drops_ghost_name_not_in_config() {
-        // `allowed_agents` references an agent that was removed from config.
-        // The eligibility set must not fabricate a selector for it.
         let mut config = crate::config::AppConfig::default();
         config
             .agents
