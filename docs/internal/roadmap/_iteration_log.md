@@ -99,7 +99,55 @@ Each entry records what was read, what was produced, what changed, and what the 
 
 See §9 of the roadmap for the canonical list. Key items:
 - OQ1: PR #171 op_picker session cache design
-- OQ2: Custom Astro components strictness verification
-- OQ3: `preview.yml` purpose
+- OQ2: Custom Astro components strictness verification (partially addressed: rainEngine.ts blockers verified; astro-og-canvas still pending — OQ7)
+- OQ3: `preview.yml` purpose — **RESOLVED in iteration 2** (see §6)
 - OQ5: `src/instance/auth.rs` split proposal
 - OQ6: Rust edition 2024 MSRV interaction with `rust-version = "1.94"`
+- OQ7 (new): `astro-og-canvas` exact version and failing `exactOptionalPropertyTypes` type signatures
+
+---
+
+## Iteration 2 — 2026-04-26
+
+### Improvements chosen
+
+1. **§4 launch.rs split** — deep-read all of `src/runtime/launch.rs`, mapped every function to its exact line range, traced internal dependency graph, produced concrete split proposal with 4 files and justified line estimates.
+2. **§7.11 Astro TypeScript strictness** — discovered `docs/AGENTS.md` documents both blockers (`rainEngine` indexed access + `astro-og-canvas` optional properties); verified `rainEngine.ts` at 5 specific line locations; rewrote §7.11 recommendation from a vague "adopt" to a concrete 4-step fix plan.
+3. **§6 `preview.yml`** — read in full; identified the Homebrew tap rolling-preview pipeline as the most complex workflow; flagged the missing contributor documentation as a gap; resolved OQ3.
+4. **§2 concepts 4 & 6** — replaced iteration 1 guesses with exact PR #171 branch data: TICK_MS constant at `console/mod.rs:90`, `is_on_main_screen`/`consumes_letter_input` helpers at lines 111–130, `op_struct_runner_item_get_parses_fields_no_value` test at ~2055 with exhaustive struct destructure pattern.
+
+### What was read
+
+- `docs/AGENTS.md` (full — discovered the documented blockers for TypeScript strictness upgrade)
+- `src/runtime/launch.rs` (full structure traced; lines 530–894 read in detail)
+- `.github/workflows/preview.yml` (full)
+- PR #171 `src/console/mod.rs` (lines 88–230 read — TICK_MS, poll loop, is_on_main_screen, consumes_letter_input, quit_confirm_area)
+- PR #171 `src/operator_env.rs:2055–2110` (compile-time destructure test read in full)
+- `docs/src/components/landing/rainEngine.ts` (first 60L — indexed access blocker confirmed)
+
+### What changed in the roadmap
+
+- §0: Iteration count bumped to 2
+- §2 concept 4: Replaced "requires-tribal-knowledge" guess with exact TICK_MS line citation and rationale
+- §2 concept 6: Replaced vague "compile-fail test" claim with exact test name, line, and technique description (exhaustive struct destructure, not trybuild)
+- §2 concept 16: Expanded Q-exit gating to include PR #171's two-layer design (list.rs + console/mod.rs `is_on_main_screen`)
+- §4: `src/runtime/launch.rs` split proposal rewritten with exact line ranges, dependency graph, test-module observation, and 4-file split
+- §6: `preview.yml` row populated; documentation gap recommendation added; OQ3 resolved
+- §7.11: Completely rewritten — `docs/AGENTS.md` finding, both blockers verified in source, 4-step fix plan, OQ7 added
+- §9: OQ3 closed; OQ7 added
+
+### Confidence assessment by section (updated)
+
+| Section | Confidence | Notes |
+|---|---|---|
+| §4 Source code structural diagnosis | High for launch.rs; medium for operator_env.rs and config/editor.rs | launch.rs split is now fully grounded; operator_env split still directional only |
+| §6 Tooling / CI | High | preview.yml now fully read and documented |
+| §7.11 Astro TS | High | Both blockers verified from source; fix path is concrete |
+| §2 Concept-to-location | High for all except concepts 14 (session cache) and 12 (config editor invariant post-merge) | |
+
+### Weakest sections for iteration 3
+
+1. **§4 operator_env.rs split** — 1569L file has not been read as carefully as launch.rs. The proposed `src/op/` extraction needs the same line-range analysis.
+2. **§7 testing candidates** — `insta` snapshot test recommendation names the ratatui `TestBackend` approach but doesn't cite a specific function to start with. A concrete "here are the first 3 snapshot tests to write" would make this actionable.
+3. **OQ7 (astro-og-canvas)** — `docs/package.json` not yet read; exact version and failing type signatures unknown.
+4. **§8.2 comparison table** — superpowers feature → recommended equivalent mapping is thorough but the "How the agent invokes them" section is vague (says "reading the file" but doesn't specify prompt convention or `.claude/commands/` template).

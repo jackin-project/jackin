@@ -3,7 +3,7 @@
 ## §0 — Meta
 
 **Last updated:** 2026-04-26
-**Iteration:** 1
+**Iteration:** 2
 
 This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` treated as already merged per operator instruction). Recommendations are inputs to a future, separate execution effort — no code has been touched.
 
@@ -283,9 +283,9 @@ Post-refactor target: **zero** entries rated `requires-grep` or `requires-tribal
 | 1 | **`AgentPicker` modal** | `src/console/manager/state.rs:245` (Modal enum, `AgentPicker` variant, after PR #171); `src/console/widgets/agent_picker.rs` (state) | `requires-grep` — `Modal` enum is in state.rs, widget is flat at widgets root | `src/console/widgets/agent_picker/` — self-contained subdirectory with `mod.rs`, `state.rs`, `render.rs`; Modal enum documents where each variant's state type lives | `discoverable-in-2-hops` |
 | 2 | **`OpPicker` state machine** | `src/console/widgets/op_picker/mod.rs` + `render.rs` (after PR #171) | `requires-grep` — no entry in PROJECT_STRUCTURE.md yet | Entry in PROJECT_STRUCTURE.md; canonical layout rule in `RULES.md § TUI List Modals` already added in PR #171 | `discoverable-in-2-hops` |
 | 3 | **Workspace env diff (`change_count`)** | `src/console/manager/state.rs:517` — `EditorState::change_count()` method | `requires-grep` | Same file is fine; add `//!` to state.rs explaining it is the editor-state source of truth | `discoverable-in-2-hops` |
-| 4 | **Console event-loop polling (20 Hz / 50ms)** | `src/console/mod.rs` — `run_console()` inner loop; PR #171 changes from blocking `event::read()` to `event::poll(Duration::from_millis(TICK_MS))` where `TICK_MS` produces 20 Hz | `requires-tribal-knowledge` — the 20 Hz constant rationale (op_picker async result surfacing) is only in a comment | Extract `TICK_MS` to a named constant with doc comment; add `//!` to `console/mod.rs` explaining the non-blocking loop design | `discoverable-in-2-hops` |
+| 4 | **Console event-loop polling (20 Hz / 50ms)** | PR #171 branch `src/console/mod.rs:90` — `const TICK_MS: u64 = 50;` with doc comment "20 Hz: spinner stays fluid and op results surface within ~50ms without hot-spinning. <16ms wastes cycles, >100ms stutters."; `ms.poll_picker_loads()` is called at line ~200 before each render to drain worker results; the non-blocking `event::poll(Duration::from_millis(TICK_MS))` at line ~217 replaces the main branch's blocking `event::read()`. The `is_on_main_screen` and `consumes_letter_input` helpers at lines ~111–130 gate the `Q` exit-confirmation flow introduced in the same PR. | `requires-tribal-knowledge` on main (no TICK_MS, no poll rationale); `discoverable-in-2-hops` once PR #171 merges (TICK_MS is named and documented inline) | Add `//!` to `console/mod.rs` summarising the 20 Hz loop contract; the constant and its doc comment already do the job once PR #171 merges — no structural change needed | `discoverable-in-2-hops` |
 | 5 | **`OpStructRunner` trait and threading contract** | `src/operator_env.rs:348` (after PR #171); doc comment "Distinct from OpRunner: picker is a metadata browser and must never deserialize a secret value" | `requires-grep` — nothing in PROJECT_STRUCTURE.md points here yet | Update PROJECT_STRUCTURE.md §operator_env; the threading contract belongs in a `//!` module doc or in a separate `src/op/` module if operator_env splits | `discoverable-in-2-hops` |
-| 6 | **`RawOpField` no-`value`-key trust invariant** | `src/operator_env.rs:446` — `RawOpField` serde struct deliberately omits a `value` field; `From<RawOpField>` never extracts secret values; test at line ~2055 | `requires-tribal-knowledge` — the invariant is in a comment but not in a named type or module doc | Promote to a `//!` section in `operator_env.rs` ("Why `RawOpField` has no `value` field") or split into `src/op/picker.rs` | `discoverable-in-2-hops` |
+| 6 | **`RawOpField` no-`value`-key trust invariant + compile-time safety test** | PR #171 branch `src/operator_env.rs:446` — `RawOpField` serde struct has no `value` field by design (serde silently drops any `value` key from `op item get` JSON). The compile-time guarantee is enforced by a regular `#[test]` at line ~2055 (`op_struct_runner_item_get_parses_fields_no_value`) that uses an **exhaustive struct destructure** pattern: `let OpField { id: _, label: _, field_type: _, concealed: _, reference: _ } = fields[1].clone();` — if anyone adds a `value` field to `OpField`, Rust's exhaustive match fails to compile before the test even runs. The comment explicitly states: "Compile-time guarantee: OpField has no `value` field. If a future refactor adds one, this struct-match will fail to compile and force an explicit re-review of the trust model." | `requires-tribal-knowledge` — the technique is not a trybuild compile-fail test (which reviewers would search for), it's an exhaustive destructure inside a runtime test | Add a `//!` section to `operator_env.rs` titled "Trust invariant: no secret values in the picker path" explaining the `RawOpField` design and pointing to the compile-time enforcement test | `discoverable-in-2-hops` |
 | 7 | **`RULES.md § TUI Keybindings`** | `RULES.md` lines added by commit `9cf8f5e` in PR #171 | `obvious` — root-level file, AGENTS.md links to RULES.md | No change needed once PR #171 merges | `obvious` |
 | 8 | **Agent → Docker image resolution path for `jackin load`** | `src/app/mod.rs:55`–`~130` (Command::Load arm) → `src/workspace/resolve.rs:65` (`resolve_load_workspace`) → `src/runtime/launch.rs:533` (`load_agent`) → `src/runtime/image.rs` (`build_agent_image`) | `requires-grep` — 4-hop chain across modules | `docs/internal/CODE_TOUR.md` — a call-chain walkthrough; PROJECT_STRUCTURE.md already documents each hop but doesn't trace the sequence | `discoverable-in-2-hops` |
 | 9 | **`hardline` command implementation** | `src/app/mod.rs:147` dispatches to `src/runtime/attach.rs:78` (`hardline_agent`) | `discoverable-in-2-hops` — PROJECT_STRUCTURE.md documents `runtime/attach.rs` and its `hardline_agent` function | Stable; no move needed | `discoverable-in-2-hops` |
@@ -295,7 +295,7 @@ Post-refactor target: **zero** entries rated `requires-grep` or `requires-tribal
 | 13 | **`op://` reference parsing (3-segment vs 4-segment)** | `src/operator_env.rs` — `dispatch_value` handles `op://` prefix; PR #171 commit `05c1866` adds 4-segment `vault/item/section/field` parsing in `OpCli::item_get` | `requires-grep` | The 4-segment rule belongs in a `//!` comment at the top of `operator_env.rs` and/or in `docs/src/content/docs/developing/agent-manifest.mdx` | `discoverable-in-2-hops` |
 | 14 | **Session-scoped op metadata cache** | Added in PR #171 — `src/console/widgets/op_picker/mod.rs` or related state; exact location pending post-merge reading (iteration 1 guess: `OpPickerState` holds a cache field populated on first `account_list` call) | `requires-tribal-knowledge` (pre-merge) | After merge: document in PROJECT_STRUCTURE.md §console/widgets and in `_research_notes.md` | `discoverable-in-2-hops` |
 | 15 | **Caps-lock SHIFT-modifier tolerance pattern** | `src/console/manager/input/editor.rs:1034` ("Operators often hit `d` without holding shift; the binding...") and `:1177` (same for `r`); `src/console/mod.rs:75` comment about Shift/Option for text selection bypass | `requires-grep` — scattered across three files | `RULES.md § TUI Keybindings` (already documents modifier-free approach) + inline comments are sufficient; no structural change needed | `discoverable-in-2-hops` once RULES.md updated |
-| 16 | **`Q` / `q` exit gating** | `src/console/manager/input/list.rs:26` — `KeyCode::Esc \| KeyCode::Char('q' \| 'Q') => Ok(InputOutcome::ExitJackin)` | `requires-grep` | Add `//!` to `console/manager/input/list.rs` describing the key-routing contract | `discoverable-in-2-hops` |
+| 16 | **`Q` exit-confirmation gating** | Two layers: (1) main branch `src/console/manager/input/list.rs:26` — bare `q\|Q` exits from the list view; (2) PR #171 `src/console/mod.rs:111–130` adds `is_on_main_screen` and `consumes_letter_input` helper functions that gate whether `Q` exits silently (when on the main list with no modal) or opens a confirmation dialog (`state.quit_confirm`). The PR also adds a `quit_confirm_area()` layout helper at line ~92. The design intent: `Q` on the main screen is a "safe" exit because no unsaved work is possible; `Q` anywhere else (editor, picker) opens a confirm modal because unsaved changes may exist. | `requires-grep` — the two-layer design (main branch list.rs + PR #171 console/mod.rs) is not obvious from reading either file alone | Add `//!` to `console/mod.rs` explaining the `Q` routing contract; reference `is_on_main_screen` and `consumes_letter_input` | `discoverable-in-2-hops` |
 | 17 | **Workspace list refresh after manager save (b3c6998)** | PR #171 fix commit — after save, the console list state is rebuilt from config so the launch routing sees the updated workspace | `requires-tribal-knowledge` pre-merge | After merge: the fix is in the save path in `console/manager/input/save.rs`; a doc comment on the save function explaining "list state is rebuilt from config post-save" is sufficient | `discoverable-in-2-hops` |
 | 18 | **Auth-forward modes and credential symlink safety** | `src/instance/auth.rs` (796L) — `AuthForwardMode` enum is defined in `src/config/mod.rs:26`, implementation in `auth.rs` | `requires-grep` — enum definition and implementation are in different modules | Move `AuthForwardMode` definition into `instance/auth.rs` (its only implementation file), re-export from `config/mod.rs` with a comment | `discoverable-in-2-hops` |
 | 19 | **Workspace mount planning (plan_collapse)** | `src/workspace/planner.rs:195` — `plan_collapse` function | `discoverable-in-2-hops` — PROJECT_STRUCTURE.md names the file | Stable | `discoverable-in-2-hops` |
@@ -470,11 +470,39 @@ Violators:
 **Rule 2: One dominant concern per file.**
 
 Violators:
-- `src/runtime/launch.rs` (2368L) — contains `LoadOptions` (public API), `StepCounter` (internal UI helper), `launch_agent_runtime` (private function: Docker network/DinD/TLS), `load_agent` / `load_agent_with` (the actual public entry points), `render_exit` (TUI concern), `claim_container_name` (naming concern), `verify_token_env_present` (validation concern), `LoadCleanup` (RAII cleanup). Proposed split:
-  - `src/runtime/launch.rs` → public API types + `load_agent` entry points (~200L)
-  - `src/runtime/bootstrap.rs` → `launch_agent_runtime` private pipeline (~700L)
-  - `src/runtime/launch_cleanup.rs` → `LoadCleanup` RAII struct + `render_exit` (~200L)
-  - Remaining helpers (`claim_container_name`, `verify_token_env_present`, etc.) → `src/runtime/launch_helpers.rs`
+- `src/runtime/launch.rs` (2368L) — read in full for iteration 2; concrete structure:
+  - Lines 1–22: `use` imports
+  - Lines 23–75: `LoadOptions` struct + 2 `impl` blocks + `Default` (public API type)
+  - Lines 77–139: `StepCounter` struct + `impl` (internal UI progress indicator)
+  - Lines 107–165: `STANDARD_TERMS` const + `resolve_terminal_setup` fn (terminfo resolution)
+  - Lines 167–214: `export_host_terminfo` fn (compiles host terminfo for container mount)
+  - Lines 216–271: `confirm_agent_trust` fn (interactive TUI trust prompt; injected as a `FnOnce` parameter in tests)
+  - Lines 272–288: `LaunchContext<'a>` struct (assembles all launch inputs; used only within this file)
+  - Lines 289–531: `launch_agent_runtime` fn (Docker network → DinD → TLS cert vol → agent container, ~242L body; 3 `#[allow(clippy::too_many_lines)]`)
+  - Lines 533–550: `pub fn load_agent` (17L — public wrapper; injects `confirm_agent_trust` as the trust gate)
+  - Lines 553–894: `fn load_agent_with` (341L body — GC orphans → git identity → intro animation → resolve agent source → trust gate → repo clone → image build → container name claim → auth mode → AgentState prepare → operator env diagnostic → launch context assembly → `LoadCleanup` RAII → `launch_agent_runtime` call → container state inspection → cleanup decision)
+  - Lines 896–917: `render_exit` fn (prints exit screen; called at two callsites in `load_agent_with`)
+  - Lines 918–957: `claim_container_name` fn (lock-file-based unique name claim)
+  - Lines 959–992: `verify_token_env_present` fn (token-mode pre-flight check)
+  - Lines 993–1029: `auth_token_source_reference` + `lookup_operator_env_raw` fns (diagnostic helpers)
+  - Lines 1030–1085: `LoadCleanup` struct + `impl` (RAII: armed-by-default, explicit disarm)
+  - Lines 1086–2368: `#[cfg(test)] mod tests` (~1,282L — uses `FakeRunner` from `runtime/test_support.rs`)
+
+  **Key observation for split planning:** The test module (1,282L) exceeds the total production code (1,083L). The production concerns are actually well-contained; the file is large *primarily because the tests are co-located*. A split that moves tests out would be controversial (inline tests are idiomatic Rust); instead, splitting the production code into focused modules reduces the cognitive load for a reader who needs to understand the bootstrap pipeline.
+
+  **Dependency graph** (what calls what, within this file):
+  - `load_agent` → `load_agent_with` (injecting `confirm_agent_trust`)
+  - `load_agent_with` → `StepCounter`, `resolve_agent_repo`, `confirm_agent_trust` (injected), `build_agent_image`, `claim_container_name`, `verify_token_env_present`, `lookup_operator_env_raw`, `auth_token_source_reference`, `AgentState::prepare`, `LaunchContext` (assembled inline), `LoadCleanup` (assembled inline), `launch_agent_runtime`, `inspect_container_state`, `render_exit`
+  - `launch_agent_runtime` → `resolve_terminal_setup`, `export_host_terminfo` (via `resolve_terminal_setup`)
+  - `LoadCleanup::run` → `run_cleanup_command` (imported from `super::cleanup`)
+
+  **Proposed split** (refined from iteration 1, grounded in the dependency graph):
+  - `src/runtime/launch.rs` (~120L): public API only — `LoadOptions` (lines 23–75) + `pub fn load_agent` (lines 533–550) + re-exports. Tests for `load_agent`'s public contract stay here.
+  - `src/runtime/launch_pipeline.rs` (~560L production + ~1,200L tests): `fn load_agent_with` (lines 553–894) + `LaunchContext` (272–288) + `StepCounter` (77–139) + `LoadCleanup` (1030–1085) + `render_exit` (896–917) + `claim_container_name` (918–957) + `verify_token_env_present` (959–992) + `auth_token_source_reference`/`lookup_operator_env_raw` (993–1029) + all current tests.
+  - `src/runtime/terminfo.rs` (~110L): `STANDARD_TERMS` const (107–139) + `resolve_terminal_setup` (141–165) + `export_host_terminfo` (167–214). Self-contained; no external deps beyond `std`.
+  - `src/runtime/trust.rs` (~60L): `confirm_agent_trust` (216–271). Self-contained; depends only on `tui` and `config`. Test-injectable via the `FnOnce` parameter in `load_agent`.
+
+  **Net effect**: `launch.rs` shrinks from 2368L to ~120L (public API only). The pipeline logic is readable from `launch_pipeline.rs` without terminfo or trust noise. Terminfo and trust become independently testable units.
 - `src/operator_env.rs` (1569L) — contains `OpRunner` trait (secret resolution), `OpStructRunner` trait (metadata browser — PR #171), `OpCli` implementation, `OpAccount/Vault/Item/Field` types (PR #171), `EnvLayer` enum, `merge_layers`, `resolve_operator_env*`, `print_launch_diagnostic`, `write_launch_diagnostic`. Proposed split:
   - `src/operator_env.rs` → `OpRunner` trait, `dispatch_value`, `parse_host_ref` (~100L)
   - `src/op/mod.rs` → `OpStructRunner`, `OpAccount`, `OpVault`, `OpItem`, `OpField`, `RawOpField` (PR #171 additions)
@@ -538,9 +566,11 @@ Each entry is a **candidate**, not a mandate. Confirmed present in the repositor
 | `ci.yml` | push/PR to main | Rust fmt, clippy, nextest; build `jackin-validate` on main push | Sparse inline comments | `check` and `build-validator` are separate jobs; `check` is the required gate, `build-validator` only runs on main push — this asymmetry is intentional but not commented |
 | `construct.yml` | push/PR to main (construct paths); `workflow_dispatch` | Build + push construct Docker image (amd64/arm64 by digest, then merge manifest) | Good job structure; `just` wrapper adds discoverability | No direct container for `jackin-validate`; the build-validator uploads artifacts but no workflow runs them |
 | `docs.yml` | push to main; PR; deploy on merge | Astro build + deploy; link checking (lychee) | SHA-pinned lychee-action still on post-v2.8.0 master SHA (tracked in TODO.md) | `docs-link-check` job name was renamed from `build` (PR #181) for unique status context — good practice |
-| `preview.yml` | (not inspected in detail — iteration 1 gap) | Likely PR preview deploy | — | Candidate for next iteration |
+| `preview.yml` | `workflow_run` (on CI success on main) + `workflow_dispatch` | Publishes a rolling preview Homebrew formula to `jackin-project/homebrew-tap`. Computes a `{version}-preview.{commit_count}+{sha7}` version using GitHub's GraphQL API for monotonic commit ordering. Downloads the source tarball, hashes it (sha256), rewrites `Formula/jackin-preview.rb`, opens a PR on the tap repo, and auto-merges it. Requires `HOMEBREW_TAP_TOKEN` secret. | The `verify source SHA is on main` step uses GitHub's compare API (not local `git rev-list`) after a bug where shallow-clone git ancestry checks were unreliable (documented inline with the root cause). | This is the most complex workflow by far; it cross-references a private tap repo and has a non-obvious `workflow_run` trigger creating an implicit sequencing dependency on the "CI" workflow's success. No documentation in README.md, CONTRIBUTING.md, or TODO.md describes the preview channel distribution mechanism. |
 | `release.yml` | (tag push presumably) | cargo-release + artifact creation | dtolnay/rust-toolchain SHA `e081816…` = 1.95.0 — same SHA as `ci.yml` | Good: toolchain consistency across CI |
 | `renovate.yml` | scheduled | Renovate bot dependency updates | — | `commitBody` includes DCO sign-off for Renovate Bot — excellent practice |
+
+**`preview.yml` — documentation gap:** The Homebrew preview channel (`jackin@preview`) is described in `README.md` as an install option but the distribution mechanism (this workflow → `jackin-project/homebrew-tap`) is not documented anywhere in the contributor-facing docs. A contributor debugging a broken preview formula or adding the first alternative distribution channel would need to read this workflow cold. **Recommendation:** Add a `docs/internal/decisions/` ADR or a `docs/internal/ARCHITECTURE.md` section titled "Release and distribution channels" describing: (1) stable release flow (`release.yml` → Homebrew tap), (2) rolling preview flow (`preview.yml` → `jackin-preview.rb`), (3) the `HOMEBREW_TAP_TOKEN` secret requirement and what permissions it needs. This is pure documentation — zero code change.
 
 **Observation:** All workflows use SHA-pinned action versions (`actions/checkout@de0fac…`, `Swatinem/rust-cache@e18b497…`) which is consistent with supply-chain security. The only exception is the lychee-action pin tracked in TODO.md.
 
@@ -780,11 +810,21 @@ Formats: MADR (Markdown Any Decision Records, `docs/adr/` convention), Nygard's 
 
 **What it is:** The public documentation site's tooling and TypeScript strictness.
 
-**What `jackin` does today:** Astro Starlight site at `docs/`. `docs/tsconfig.json` extends `"astro/tsconfigs/strict"`. `bun` as package manager (1.3.13 per `mise.toml`). React integration (`@astrojs/react`) for landing-page islands. rehype-external-links for link targeting. No Pagefind search integration visible in `astro.config.ts`. Open Graph card generation via `astro-og-canvas`.
+**What `jackin` does today:** Astro Starlight site at `docs/`. `docs/tsconfig.json` extends `"astro/tsconfigs/strict"`. `bun` as package manager (1.3.13 per `mise.toml`). React integration (`@astrojs/react`) for landing-page islands. rehype-external-links for link targeting. No Pagefind search integration visible in `astro.config.ts`. Open Graph card generation via `astro-og-canvas`. Custom components at `docs/src/components/landing/` (16 React `.tsx` files) and `docs/src/components/overrides/` (5 Astro files).
 
-**TypeScript strictness gap:** `astro/tsconfigs/strict` enables `strictNullChecks`, `noImplicitAny`, `strictFunctionTypes`, etc. but does NOT enable `noUncheckedIndexedAccess` or `exactOptionalPropertyTypes`. The stack constraint requires these. They must be added to `docs/tsconfig.json` `compilerOptions` explicitly. Impact: likely breaks at least some array accesses in `docs/src/components/` — needs a targeted fix pass.
+**TypeScript strictness state (verified from `docs/AGENTS.md` and source reading):**
+
+`docs/AGENTS.md` explicitly documents the current strictness level: `astro/tsconfigs/strict` is enforced (non-negotiable), but upgrading to `astro/tsconfigs/strictest` (which adds `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, and similar) is described as "a desirable follow-up goal but not a current requirement — some existing code (rainEngine indexed access, astro-og-canvas optional-property types) would need targeted cleanup first."
+
+**Both blockers verified in source:**
+
+*Blocker 1 — `rainEngine.ts` indexed access:* `docs/src/components/landing/rainEngine.ts:26,66,68,81,94` — multiple array index accesses without null-check: `RAIN_CHARS[Math.floor(...)]`, `state.grid[r]`, `row[c]`, `state.columns[c]`, `state.grid[col.head][c]`. With `noUncheckedIndexedAccess` each would become `T | undefined`, requiring either a non-null assertion or a null check. The `rainEngine.test.ts` co-located test file confirms this is treated as production-quality code.
+
+*Blocker 2 — `astro-og-canvas` optional-property types:* `astro-og-canvas` types use optional properties that conflict with `exactOptionalPropertyTypes` (which forbids assigning `undefined` to optional fields). Exact scope depends on the version pinned in `docs/package.json` — not fully read in this iteration (OQ7: confirm `astro-og-canvas` version and exact failing type signatures).
 
 **The 2026-modern landscape:**
+
+*Strictness upgrade path:* `noUncheckedIndexedAccess` — add non-null assertions (`!`) or bounds checks in `rainEngine.ts` (5 locations); `exactOptionalPropertyTypes` — fix `astro-og-canvas` callers or wrap the call in a helper that satisfies the type.
 
 *Starlight search:* Starlight 0.x has built-in Pagefind integration via `@astrojs/starlight`. At 47 pages, full-text search would be a meaningful UX win. Check current `package.json` for Pagefind — if not yet integrated, cost is low (one `astro.config.ts` line).
 
@@ -792,7 +832,13 @@ Formats: MADR (Markdown Any Decision Records, `docs/adr/` convention), Nygard's 
 
 *Redirect handling:* If slugs ever need to change (currently frozen as invariants), Starlight has a `redirects` config key. Not needed now but worth knowing.
 
-**Recommendation:** `adopt` the two missing strictness flags (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) in a targeted fix pass — required by stack constraint. `defer` Pagefind search integration until the operator decides public discoverability is a priority.
+**Recommendation:** `adopt` the two strictness flags in a **targeted fix pass**:
+1. Fix `rainEngine.ts` (5 indexed accesses, low risk — all are trivially bounds-checked or can use `!` with a comment explaining the array is always correctly sized).
+2. Audit `astro-og-canvas` callers (`docs/src/pages/og/[...slug].png.ts`) and either add explicit `undefined` checks or pin a version with correct types.
+3. Add `"noUncheckedIndexedAccess": true, "exactOptionalPropertyTypes": true` to `docs/tsconfig.json` `compilerOptions`.
+4. Verify with `bunx tsc --noEmit`.
+
+This is required by the stack constraint. `docs/AGENTS.md` already names this as the target state; these two blockers are the only remaining gap. `defer` Pagefind search integration until the operator decides public discoverability is a priority.
 
 ---
 
@@ -950,13 +996,15 @@ Heavy frameworks for multi-agent parallelism. Overkill for a single-maintainer p
 
 **OQ2 — `docs/src/components/` TypeScript strictness:** Custom Starlight overrides (`overrides/`) and landing React islands (`landing/`) — do they currently pass `noUncheckedIndexedAccess`? Needs a focused `tsc --noEmit` run with the flag enabled. Tracked for iteration 2.
 
-**OQ3 — `preview.yml` workflow:** Not inspected in iteration 1. Purpose (PR preview deploy?), trigger, and gate are unknown. Tracked for iteration 2.
+**OQ3 — ~~`preview.yml` workflow~~** *(resolved in iteration 2)*: Publishes rolling preview Homebrew formula to `jackin-project/homebrew-tap`. Full analysis in §6.
 
 **OQ4 — `src/console/manager/agent_allow.rs` scope:** Module not deeply read. Responsibility and coupling need verification before the §4 structural proposal is considered final.
 
 **OQ5 — `src/instance/auth.rs` (796L) split proposal:** Named in §4 as a large file needing attention, but the auth-forward design space wasn't read deeply enough to propose a confident split. Tracked for iteration 2.
 
 **OQ6 — MSRV vs actual feature use:** Does the code use any Rust feature stabilised after 1.94? `let-else` (stable 1.65), `if let` chaining (1.64), `array::windows` — all fine. The `edition = "2024"` in `Cargo.toml` requires Rust ≥ 1.85. This means `rust-version = "1.94"` is correct (1.94 > 1.85) but `edition 2024` already implies ≥ 1.85, so the effective MSRV is max(1.85, 1.94) = 1.94. To be confirmed with `cargo +1.94.0 check`.
+
+**OQ7 — `astro-og-canvas` exact version and failing types:** `docs/package.json` not read in either iteration. Need to confirm the `astro-og-canvas` version and which specific type signatures fail with `exactOptionalPropertyTypes`. Tracked for iteration 3.
 
 ### Out of Scope for This Roadmap
 
