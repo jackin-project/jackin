@@ -132,7 +132,7 @@ fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
         .mounts
         .iter()
         .filter_map(|(name, entry)| match entry {
-            MountEntry::Mount(mount) => Some((name.clone(), mount.clone())),
+            MountEntry::Mount(mount) => Some((name.clone(), MountConfig::from(mount.clone()))),
             MountEntry::Scoped(_) => None,
         })
         .collect::<Vec<_>>();
@@ -180,6 +180,7 @@ mod tests {
                     src: workdir.clone(),
                     dst: workdir,
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 }],
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: Some("agent-smith".to_string()),

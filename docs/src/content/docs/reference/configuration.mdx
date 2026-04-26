@@ -80,6 +80,7 @@ last_agent = "the-architect"
 src = "/home/user/Projects/my-app"
 dst = "/home/user/Projects/my-app"
 readonly = false
+isolation = "worktree"
 
 [[workspaces.my-app.mounts]]
 src = "/home/user/cache"
@@ -94,6 +95,7 @@ readonly = true
 | `mounts[].src` | Host path |
 | `mounts[].dst` | Container path |
 | `mounts[].readonly` | Read-only flag |
+| `mounts[].isolation` | Per-mount isolation mode: `shared` (default) or `worktree`. Omitting the field deserializes to `shared`, but every save writes the field explicitly so old configs migrate to the new shape on first save. Global mounts (under `[docker.mounts]` or `[[mounts]]`) reject this field at parse time. A `clone` mode is on the [V1.1 roadmap](/reference/roadmap/per-mount-isolation/) but is not part of the V1 enum vocabulary. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation). |
 | `allowed_agents` | List of allowed agent selectors |
 | `default_agent` | Default agent selector |
 | `last_agent` | Most recently used agent selector for this workspace |

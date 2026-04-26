@@ -24,6 +24,13 @@ pub struct MountConfig {
     pub dst: String,
     #[serde(default)]
     pub readonly: bool,
+    /// Old configs without this field deserialize to `MountIsolation::Shared`
+    /// (the enum default). On save we always write the field — even when it's
+    /// the default — so the stored TOML is explicit and old configs migrate to
+    /// the new shape on first save instead of silently retaining their
+    /// pre-isolation form.
+    #[serde(default)]
+    pub isolation: crate::isolation::MountIsolation,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -69,6 +76,87 @@ pub struct WorkspaceEdit {
     pub allowed_agents_to_add: Vec<String>,
     pub allowed_agents_to_remove: Vec<String>,
     pub default_agent: Option<Option<String>>,
+    pub mount_isolation_overrides: Vec<(String, crate::isolation::MountIsolation)>,
+}
+
+/// Validate the isolation layout for a workspace's mounts. Two rules
+/// today, both worktree-specific:
+///
+/// 1. **No nested isolated mounts.** Two `Worktree` mounts where one's
+///    `dst` is a strict ancestor of the other's are rejected. The
+///    inner worktree's `.git` would land inside the outer worktree's
+///    tree, which is unsafe regardless of mode.
+///
+/// 2. **No same-host-repo isolated siblings.** Two `Worktree` mounts
+///    that resolve to the same host repository are rejected. Each
+///    isolated worktree creates an admin entry under
+///    `<host_repo>/.git/worktrees/<n>/`, and our naming uses the
+///    container name as `<n>` so admin entries are globally unique
+///    per (`host_repo`, container). Allowing two isolated mounts on the
+///    same host repo in one container would force `<container>` to
+///    appear twice in that namespace; that case is rare/unmotivated
+///    in practice (no operator workflow has surfaced for it). Reject
+///    upfront. Revisit if a real use case shows up.
+pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
+    use crate::isolation::MountIsolation;
+
+    let isolated: Vec<(usize, &MountConfig, &str)> = mounts
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| matches!(m.isolation, MountIsolation::Worktree))
+        .map(|(i, m)| (i, m, m.dst.trim_end_matches('/')))
+        .collect();
+
+    for (i, (_, ma, a)) in isolated.iter().enumerate() {
+        for (_, mb, b) in &isolated[i + 1..] {
+            // Rule 1: nested dst paths.
+            if is_strict_ancestor(a, b) || is_strict_ancestor(b, a) {
+                anyhow::bail!(
+                    "isolated mount `{b}` cannot be nested inside isolated mount `{a}`; \
+                     either make the inner mount `shared` or move the inner mount outside \
+                     the parent's path",
+                    a = if is_strict_ancestor(a, b) { a } else { b },
+                    b = if is_strict_ancestor(a, b) { b } else { a },
+                );
+            }
+            // Rule 2: same host repo (same `src` after canonicalization
+            // best-effort; falls back to literal string equality if a
+            // path can't be canonicalized — e.g., `src` doesn't exist
+            // yet on disk).
+            if same_host_repo(&ma.src, &mb.src) {
+                anyhow::bail!(
+                    "isolated mounts `{}` and `{}` cannot share the same host repository `{}`; \
+                     remove one of them or change one to `shared` (V1 limitation — see roadmap)",
+                    ma.dst,
+                    mb.dst,
+                    ma.src,
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn same_host_repo(a: &str, b: &str) -> bool {
+    let ca = std::fs::canonicalize(a).ok();
+    let cb = std::fs::canonicalize(b).ok();
+    match (ca, cb) {
+        (Some(x), Some(y)) => x == y,
+        // If either path can't be canonicalized (e.g. doesn't exist
+        // on disk yet during planning), fall back to literal string
+        // equality. Stricter checks happen later at materialize time.
+        _ => a == b,
+    }
+}
+
+fn is_strict_ancestor(parent: &str, child: &str) -> bool {
+    let parent = parent.trim_end_matches('/');
+    let child = child.trim_end_matches('/');
+    if parent == child {
+        return false;
+    }
+    let prefix = format!("{parent}/");
+    child.starts_with(&prefix)
 }
 
 pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> anyhow::Result<()> {
@@ -83,6 +171,7 @@ pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> any
     }
 
     validate_mount_specs(&workspace.mounts)?;
+    validate_isolation_layout(&workspace.mounts)?;
 
     let covers_workdir = workspace.mounts.iter().any(|mount| {
         let dst = mount.dst.trim_end_matches('/');
@@ -123,6 +212,7 @@ mod tests {
                 src: "/tmp/src".to_string(),
                 dst: dst.to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..Default::default()
         }
@@ -212,15 +302,209 @@ mod tests {
                     src: "/tmp/a".to_string(),
                     dst: "/other/path".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
                 MountConfig {
                     src: "/tmp/b".to_string(),
                     dst: "/workspace/project".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
             ..Default::default()
         };
         validate_workspace_config("test", &ws).unwrap();
+    }
+
+    use crate::isolation::MountIsolation;
+
+    #[test]
+    fn mount_config_defaults_isolation_to_shared() {
+        let toml = r#"src = "/tmp/src"
+dst = "/workspace/x"
+"#;
+        let mount: MountConfig = toml::from_str(toml).unwrap();
+        assert_eq!(mount.isolation, MountIsolation::Shared);
+    }
+
+    #[test]
+    fn mount_config_parses_worktree_isolation() {
+        let toml = r#"src = "/tmp/src"
+dst = "/workspace/x"
+isolation = "worktree"
+"#;
+        let mount: MountConfig = toml::from_str(toml).unwrap();
+        assert_eq!(mount.isolation, MountIsolation::Worktree);
+    }
+
+    #[test]
+    fn mount_config_writes_isolation_field_even_when_shared_on_serialize() {
+        // Old configs without `isolation` deserialize to Shared (the default);
+        // on save we re-emit the field explicitly so the stored TOML always
+        // names the isolation level. No surprises for operators reading the
+        // config — every mount shows what it is.
+        let mount = MountConfig {
+            src: "/tmp/src".into(),
+            dst: "/workspace/x".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        };
+        let serialized = toml::to_string(&mount).unwrap();
+        assert!(
+            serialized.contains(r#"isolation = "shared""#),
+            "serialized = {serialized:?}"
+        );
+    }
+
+    #[test]
+    fn mount_config_emits_isolation_field_when_non_shared_on_serialize() {
+        let mount = MountConfig {
+            src: "/tmp/src".into(),
+            dst: "/workspace/x".into(),
+            readonly: false,
+            isolation: MountIsolation::Worktree,
+        };
+        let serialized = toml::to_string(&mount).unwrap();
+        assert!(serialized.contains(r#"isolation = "worktree""#));
+    }
+
+    fn worktree_mount(src: &str, dst: &str) -> MountConfig {
+        MountConfig {
+            src: src.into(),
+            dst: dst.into(),
+            readonly: false,
+            isolation: MountIsolation::Worktree,
+        }
+    }
+
+    fn shared_mount(src: &str, dst: &str) -> MountConfig {
+        MountConfig {
+            src: src.into(),
+            dst: dst.into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        }
+    }
+
+    #[test]
+    fn isolation_layout_allows_one_worktree_plus_n_shared() {
+        let mounts = vec![
+            worktree_mount("/tmp/a", "/workspace/a"),
+            shared_mount("/tmp/cache", "/workspace/cache"),
+        ];
+        validate_isolation_layout(&mounts).unwrap();
+    }
+
+    #[test]
+    fn isolation_layout_allows_sibling_worktrees() {
+        let mounts = vec![
+            worktree_mount("/tmp/a", "/workspace/a"),
+            worktree_mount("/tmp/b", "/workspace/b"),
+        ];
+        validate_isolation_layout(&mounts).unwrap();
+    }
+
+    #[test]
+    fn isolation_layout_allows_isolated_parent_with_shared_child() {
+        let mounts = vec![
+            worktree_mount("/tmp/proj", "/workspace/proj"),
+            shared_mount("/tmp/proj-target", "/workspace/proj/target"),
+        ];
+        validate_isolation_layout(&mounts).unwrap();
+    }
+
+    #[test]
+    fn isolation_layout_rejects_nested_worktrees_parent_child() {
+        let mounts = vec![
+            worktree_mount("/tmp/proj", "/workspace/proj"),
+            worktree_mount("/tmp/sub", "/workspace/proj/sub"),
+        ];
+        let err = validate_isolation_layout(&mounts).unwrap_err().to_string();
+        assert!(err.contains("/workspace/proj"), "missing parent dst: {err}");
+        assert!(
+            err.contains("/workspace/proj/sub"),
+            "missing child dst: {err}"
+        );
+    }
+
+    #[test]
+    fn isolation_layout_rejects_nested_worktrees_grandparent() {
+        let mounts = vec![
+            worktree_mount("/tmp/a", "/workspace"),
+            worktree_mount("/tmp/b", "/workspace/proj/sub"),
+        ];
+        let err = validate_isolation_layout(&mounts).unwrap_err().to_string();
+        assert!(err.contains("/workspace") && err.contains("/workspace/proj/sub"));
+    }
+
+    #[test]
+    fn isolation_layout_rejects_two_worktree_mounts_on_same_repo() {
+        // V1 limitation: two isolated mounts in one workspace cannot
+        // share the same host repository (literal `src` equality is
+        // sufficient when the path can't be canonicalized — the case
+        // exercised by this test).
+        let mounts = vec![
+            worktree_mount("/host/jackin", "/workspace/jackin"),
+            worktree_mount("/host/jackin", "/workspace/jackin-copy"),
+        ];
+        let err = validate_isolation_layout(&mounts).unwrap_err().to_string();
+        assert!(
+            err.contains("same host repository"),
+            "expected same-host-repo error; got: {err}"
+        );
+        assert!(err.contains("/workspace/jackin"));
+        assert!(err.contains("/workspace/jackin-copy"));
+        assert!(err.contains("/host/jackin"));
+    }
+
+    #[test]
+    fn isolation_layout_allows_different_host_repos_in_one_workspace() {
+        // The common multi-mount case: agent works on two different
+        // host repos, each isolated. Distinct `src` paths → no
+        // collision in host's `.git/worktrees/` namespace.
+        let mounts = vec![
+            worktree_mount("/host/jackin", "/workspace/jackin"),
+            worktree_mount("/host/jackin-docs", "/workspace/jackin-docs"),
+        ];
+        validate_isolation_layout(&mounts).unwrap();
+    }
+
+    #[test]
+    fn isolation_layout_ignores_trailing_slashes() {
+        let mounts = vec![
+            worktree_mount("/tmp/a", "/workspace/proj/"),
+            worktree_mount("/tmp/b", "/workspace/proj/sub/"),
+        ];
+        let err = validate_isolation_layout(&mounts).unwrap_err().to_string();
+        assert!(err.contains("/workspace/proj"));
+    }
+
+    /// Pin the wiring: `validate_workspace_config` must call
+    /// `validate_isolation_layout` so isolation rejections actually
+    /// propagate through the public validation entrypoint. If the call
+    /// site at L174 is ever refactored away, every isolation rejection
+    /// would silently become a no-op (only catchable at materialize
+    /// time, after the operator has already saved a broken config).
+    #[test]
+    fn validate_workspace_config_surfaces_isolation_layout_errors() {
+        use std::collections::BTreeMap;
+        let workspace = WorkspaceConfig {
+            workdir: "/workspace/proj".into(),
+            mounts: vec![
+                worktree_mount("/tmp/a", "/workspace/proj"),
+                worktree_mount("/tmp/b", "/workspace/proj/sub"),
+            ],
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env: BTreeMap::new(),
+            agents: BTreeMap::new(),
+        };
+        let err = validate_workspace_config("ws", &workspace).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("nested inside"),
+            "validate_workspace_config must surface the nested-worktrees error from validate_isolation_layout; got: {msg}",
+        );
     }
 }

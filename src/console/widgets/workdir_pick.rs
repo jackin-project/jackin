@@ -228,6 +228,7 @@ mod tests {
             src: src.into(),
             dst: dst.into(),
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         }
     }
 

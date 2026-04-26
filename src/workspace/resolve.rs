@@ -14,6 +14,7 @@ pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
             src: path.clone(),
             dst: path,
             readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
         }],
         ..Default::default()
     })
@@ -109,6 +110,7 @@ pub fn resolve_load_workspace(
                         dst
                     },
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 }],
                 ..Default::default()
             };
@@ -207,11 +209,13 @@ mod tests {
                     src: repo_a.canonicalize().unwrap().display().to_string(),
                     dst: "/workspace/jackin".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
                 MountConfig {
                     src: repo_b.canonicalize().unwrap().display().to_string(),
                     dst: "/workspace/jackin-dev".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
             ..Default::default()
@@ -236,6 +240,7 @@ mod tests {
                 src: project_dir.canonicalize().unwrap().display().to_string(),
                 dst: "/workspace".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..Default::default()
         };
@@ -265,6 +270,7 @@ mod tests {
                 src: agent_repo.canonicalize().unwrap().display().to_string(),
                 dst: "/workspace/agent-repo".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..Default::default()
         };
@@ -289,6 +295,7 @@ mod tests {
                 src: canonical.join("repo").display().to_string(),
                 dst: "/workspace/repo".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..Default::default()
         };
@@ -312,6 +319,7 @@ mod tests {
                 src: mount_src.canonicalize().unwrap().display().to_string(),
                 dst: "/workspace/agent-repo".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
             ..Default::default()
         };
@@ -342,6 +350,7 @@ mod tests {
                     src: "/tmp/project".to_string(),
                     dst: "/workspace/project".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 }],
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: Some("agent-smith".to_string()),
@@ -386,6 +395,7 @@ mod tests {
                     src: mount_src.display().to_string(),
                     dst: "/workspace/project".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 }],
                 ..Default::default()
             },
@@ -441,6 +451,7 @@ mod tests {
                 src: "~".to_string(),
                 dst: "/home/claude/home".to_string(),
                 readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
             },
             None,
         );
@@ -490,6 +501,7 @@ mod tests {
                     src: mount_src.display().to_string(),
                     dst: "/workspace/project".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 }],
                 ..Default::default()
             },
@@ -505,6 +517,7 @@ mod tests {
                 src: extra_src.display().to_string(),
                 dst: "/extra".to_string(),
                 readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
         )
         .unwrap();
@@ -533,6 +546,7 @@ mod tests {
                     src: mount_src.display().to_string(),
                     dst: "/workspace/project".to_string(),
                     readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
                 }],
                 ..Default::default()
             },
@@ -548,6 +562,7 @@ mod tests {
                 src: mount_src.display().to_string(),
                 dst: "/workspace/project".to_string(),
                 readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
             }],
         )
         .unwrap_err();
