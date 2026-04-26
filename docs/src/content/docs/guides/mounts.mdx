@@ -179,7 +179,7 @@ isolation = "shared"
 
 The agent sees an isolated checkout at `/workspace/jackin` while `target/` is backed by a shared host cache directory. jackin' emits parent mounts before children so the cache mount overlays the corresponding path inside the isolated worktree. This is intentional, not a redundant mount to collapse.
 
-See the [workspaces guide](./workspaces.mdx#per-mount-isolation) for the full validation rules and dirty-host caveats.
+See the [workspaces guide](/guides/workspaces/#per-mount-isolation) for the full validation rules and dirty-host caveats.
 
 ## Sensitive path warnings
 

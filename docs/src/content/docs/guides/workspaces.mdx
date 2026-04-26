@@ -152,7 +152,7 @@ The agent sees an isolated checkout at `/workspace/jackin` while `target/` is ba
 
 ### Setting isolation from the CLI
 
-You don't need to hand-edit TOML to opt in. The `--mount-isolation <dst>=<type>` flag (repeatable) on `jackin workspace create` and `jackin workspace edit` sets isolation per mount destination — see the [`workspace`](../commands/workspace.mdx) command reference. To inspect what's been materialized for a container, use [`jackin cd <container> [dst]`](../commands/cd.mdx) to open a child shell in the worktree path.
+You don't need to hand-edit TOML to opt in. The `--mount-isolation <dst>=<type>` flag (repeatable) on `jackin workspace create` and `jackin workspace edit` sets isolation per mount destination — see the [`workspace`](/commands/workspace/) command reference. To inspect what's been materialized for a container, use [`jackin cd <container> [dst]`](/commands/cd/) to open a child shell in the worktree path.
 
 ## Managing workspaces
 

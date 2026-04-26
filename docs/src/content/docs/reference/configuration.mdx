@@ -95,7 +95,7 @@ readonly = true
 | `mounts[].src` | Host path |
 | `mounts[].dst` | Container path |
 | `mounts[].readonly` | Read-only flag |
-| `mounts[].isolation` | Per-mount isolation mode: `shared` (default) or `worktree`. `clone` is reserved in the enum vocabulary but rejected at validation time until implemented. Omitted/`shared` values are not written back on save. Global mounts (under `[docker.mounts]` or `[[mounts]]`) reject this field at parse time. See [Per-mount isolation](../guides/workspaces.mdx#per-mount-isolation). |
+| `mounts[].isolation` | Per-mount isolation mode: `shared` (default) or `worktree`. `clone` is reserved in the enum vocabulary but rejected at validation time until implemented. Omitted/`shared` values are not written back on save. Global mounts (under `[docker.mounts]` or `[[mounts]]`) reject this field at parse time. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation). |
 | `allowed_agents` | List of allowed agent selectors |
 | `default_agent` | Default agent selector |
 | `last_agent` | Most recently used agent selector for this workspace |
