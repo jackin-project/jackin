@@ -1,10 +1,4 @@
-//! Modal picker for agent disambiguation when launching a workspace
-//! that has more than one eligible agent.
-//!
-//! Mirrors `github_picker`'s shape — one `Vec`-driven list +
-//! `tui_widget_list::ListState` — so the manager can dispatch it with
-//! the same Up/Down/Enter pattern. Adds a filter-as-you-type field so a
-//! large agent roster can be narrowed in place.
+//! Modal picker for agent disambiguation.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
@@ -14,24 +8,12 @@ use crate::selector::ClassSelector;
 
 #[derive(Debug)]
 pub struct AgentPickerState {
-    /// Eligibility-filtered set captured at open time; never mutated
-    /// while the picker is up. Filter applies on top of this set.
     pub agents: Vec<ClassSelector>,
     pub list_state: ListState,
     pub filter: String,
-    /// Subset of `agents` whose `key()` contains `filter` (case-insensitive).
-    /// Recomputed on every filter mutation.
     pub filtered: Vec<ClassSelector>,
-    /// Verb that follows `Enter` in the footer hint. Defaults to
-    /// `select`. Constructed contexts override:
-    ///
-    /// - launch disambiguation (manager list → `Enter` on a workspace
-    ///   with ≥2 eligible agents) → `launch`,
-    /// - editor override-scope picking (Secrets tab `Specific agent`
-    ///   branch) → `select`.
-    ///
-    /// The widget itself is identical in both cases — only the verb
-    /// reads naturally for the operator's intent at the call site.
+    /// Verb after `Enter` in the footer (`launch` for launch
+    /// disambiguation, `select` for editor override-scope picking).
     pub confirm_label: String,
 }
 
@@ -41,10 +23,6 @@ impl AgentPickerState {
         Self::with_confirm_label(agents, "select")
     }
 
-    /// Same as [`AgentPickerState::new`] but with a caller-supplied verb
-    /// for the `Enter` footer hint. Pass `"launch"` for the launch-
-    /// disambiguation path; `"select"` (the default) for any "pick a
-    /// row, then keep filling out a form" path.
     #[must_use]
     pub fn with_confirm_label(agents: Vec<ClassSelector>, confirm_label: &str) -> Self {
         let filtered = agents.clone();
@@ -61,8 +39,6 @@ impl AgentPickerState {
         }
     }
 
-    /// Recompute `filtered` from `agents` and the current `filter`. Anchors
-    /// the selection at index 0 if the previous selection vanished.
     fn recompute_filtered(&mut self) {
         let needle = self.filter.to_ascii_lowercase();
         self.filtered = self
@@ -74,8 +50,6 @@ impl AgentPickerState {
         if self.filtered.is_empty() {
             self.list_state.select(None);
         } else {
-            // Always reset to the top after a filter change so the
-            // operator never lands on a stale row index.
             self.list_state.select(Some(0));
         }
     }
@@ -128,11 +102,8 @@ impl AgentPickerState {
             }
             KeyCode::Esc => ModalOutcome::Cancel,
             KeyCode::Char(ch) => {
-                // Every printable char appends to the filter — including
-                // `j`/`k`, which would otherwise be ambiguous between
-                // "type that letter" and "navigate the list" once the
-                // filter is non-empty. Operators use the arrow keys for
-                // navigation; the filter is the dominant interaction.
+                // Every printable char goes to the filter — `j`/`k`
+                // included; navigation is via arrow keys.
                 self.filter.push(ch);
                 self.recompute_filtered();
                 ModalOutcome::Continue
@@ -156,11 +127,8 @@ const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 
 pub fn render(frame: &mut Frame, area: Rect, state: &AgentPickerState) {
-    // Title style matches the rest of the launch TUI (WHITE + BOLD)
-    // so the modal feels native next to OpPicker / GithubPicker.
-    // Per the canonical list-modal layout (RULES.md "TUI List Modals"),
-    // the filter buffer is NEVER part of the title — it lives on its own
-    // dedicated row below the title bar.
+    // Filter row stays out of the title — see RULES.md "TUI List
+    // Modals" for the canonical layout.
     let title = Span::styled(
         " Select Agent ",
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
@@ -174,8 +142,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentPickerState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // Inner layout mirrors `OpPicker`'s pane stack:
-    // filter row / spacer / list / spacer / footer.
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -187,9 +153,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentPickerState) {
         ])
         .split(inner);
 
-    // Filter row: `Filter: <buf>█` — placeholder dotted underline when
-    // empty, cursor block at the end when populated. Same styling as
-    // `OpPicker` so the two pickers feel like the same widget.
     let filter_line = if state.filter.is_empty() {
         Line::from(vec![
             Span::styled("Filter: ", Style::default().fg(PHOSPHOR_DIM)),
@@ -235,10 +198,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentPickerState) {
         .collect();
     frame.render_widget(Paragraph::new(lines), rows[2]);
 
-    // Footer hint — canonical key/text/sep styling, same separator
-    // glyph and ordering as `OpPicker`. The Enter verb is supplied by
-    // the caller (`launch` for launch disambiguation, `select` for the
-    // override-scope path).
     let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let text_style = Style::default().fg(PHOSPHOR_GREEN);
     let sep_style = Style::default().fg(PHOSPHOR_DARK);
@@ -313,8 +272,6 @@ mod tests {
         ));
     }
 
-    /// Typing into the filter narrows the visible set; agents whose key
-    /// does not contain the substring are dropped.
     #[test]
     fn filter_narrows_agent_list() {
         let mut s = AgentPickerState::new(agents(&[
@@ -328,17 +285,13 @@ mod tests {
         assert_eq!(s.filter, "smith");
         assert_eq!(s.filtered.len(), 1);
         assert_eq!(s.filtered[0].key(), "chainargos/agent-smith");
-        // Selection re-anchors at index 0 of the filtered set.
         assert_eq!(s.list_state.selected, Some(0));
     }
 
-    /// An empty filter shows every agent — equivalent to the initial
-    /// state. Round-trip via Backspace must re-populate the list.
     #[test]
     fn filter_empty_shows_all() {
         let mut s = AgentPickerState::new(agents(&["agent-smith", "agent-brown"]));
         s.handle_key(key(KeyCode::Char('s')));
-        // Only "agent-smith" contains 's'.
         assert_eq!(s.filtered.len(), 1);
         s.handle_key(key(KeyCode::Backspace));
         assert!(s.filter.is_empty());
@@ -346,9 +299,6 @@ mod tests {
         assert_eq!(s.list_state.selected, Some(0));
     }
 
-    /// Pressing Enter when the filter has narrowed the list to nothing
-    /// is a no-op (no Commit, no Cancel) — the operator can keep typing
-    /// or backspace out.
     #[test]
     fn enter_on_empty_filtered_list_is_noop() {
         let mut s = AgentPickerState::new(agents(&["agent-smith"]));
@@ -360,7 +310,6 @@ mod tests {
         assert!(matches!(outcome, ModalOutcome::Continue));
     }
 
-    /// Down/Up wrap around the filtered list.
     #[test]
     fn down_wraps_at_end() {
         let mut s = AgentPickerState::new(agents(&["agent-a", "agent-b"]));
@@ -376,10 +325,8 @@ mod tests {
         assert_eq!(s.list_state.selected, Some(1));
     }
 
-    /// Printable chars always append to the filter — including `j`/`k`,
-    /// which are ambiguous between navigation and filter input. Pin
-    /// that the filter wins so agents with those letters in their key
-    /// can be typed naturally.
+    /// `j`/`k` append to the filter (no vim-style nav) so agents with
+    /// those letters in their key can be typed naturally.
     #[test]
     fn j_and_k_append_to_filter_not_navigate() {
         let mut s = AgentPickerState::new(agents(&["agent-jenkins", "agent-kafka"]));
@@ -390,10 +337,6 @@ mod tests {
     }
 
     // ── Render-buffer smoke tests ─────────────────────────────────────
-    //
-    // These pin the canonical list-modal layout (`RULES.md` "TUI List
-    // Modals"): persistent `Filter:` row, no `(no items match)`
-    // placeholder, configurable Enter-verb in the footer.
 
     fn dump(state: &AgentPickerState, w: u16, h: u16) -> String {
         use ratatui::{Terminal, backend::TestBackend, layout::Rect};
@@ -415,9 +358,6 @@ mod tests {
         out
     }
 
-    /// Empty filter → row reads `Filter:` followed by placeholder dots
-    /// (`░`). No filter text inlined in the title — the title bar is the
-    /// bare `Select Agent` label.
     #[test]
     fn agent_picker_renders_filter_row_with_placeholder_dots_when_empty() {
         let s = AgentPickerState::new(agents(&["chainargos/agent-smith"]));
@@ -430,8 +370,6 @@ mod tests {
             frame.contains('\u{2591}'),
             "filter row missing placeholder dots `░`; frame:\n{frame}"
         );
-        // Title bar is the top border; pull just that row to check the
-        // filter is NOT inlined into the title.
         let top: String = frame.lines().next().unwrap().to_string();
         assert!(
             top.contains("Select Agent"),
@@ -443,8 +381,6 @@ mod tests {
         );
     }
 
-    /// Typing a filter character → row shows the live characters in
-    /// place of the placeholder dots, with a trailing cursor block.
     #[test]
     fn agent_picker_renders_filter_row_with_live_chars_when_typing() {
         let mut s = AgentPickerState::new(agents(&[
@@ -459,7 +395,6 @@ mod tests {
             frame.contains("Filter: smi"),
             "filter row must show live characters; frame:\n{frame}"
         );
-        // The title bar still has no filter context.
         let top: String = frame.lines().next().unwrap().to_string();
         assert!(
             !top.contains("smi"),
@@ -467,8 +402,6 @@ mod tests {
         );
     }
 
-    /// Footer's Enter-verb is the configured `confirm_label`. Two
-    /// constructions, two verbs.
     #[test]
     fn agent_picker_footer_uses_configured_confirm_label() {
         let s_launch =
@@ -496,8 +429,6 @@ mod tests {
         );
     }
 
-    /// Filter narrows visible set to nothing → blank space below the
-    /// filter row, no `(no agents match)` placeholder.
     #[test]
     fn agent_picker_renders_no_empty_state_placeholder_when_filter_excludes_all() {
         let mut s = AgentPickerState::new(agents(&["agent-smith", "agent-brown"]));
@@ -514,7 +445,6 @@ mod tests {
             !frame.contains("(no items match"),
             "must not render an empty-state placeholder; frame:\n{frame}"
         );
-        // Sanity: the filter row still renders.
         assert!(frame.contains("Filter: zzzz"));
     }
 }

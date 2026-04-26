@@ -1,48 +1,27 @@
-//! Two-button modal that asks the operator whether a new env var's value
-//! should come from a Plain text input or from the 1Password picker.
-//!
-//! Inserted between the `EnvKey` text modal and the value-entry path on
-//! the Secrets-tab Enter-on-sentinel flow. The 1Password choice is
-//! disabled when the `op` CLI isn't on PATH (probed once at startup —
-//! see `ConsoleState::op_available`); the modal still opens, the
-//! disabled choice renders dim with an explanatory line, and `←`/`→`
-//! navigation skips it.
+//! Plain-or-1Password choice between `EnvKey` input and value entry.
 
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::ModalOutcome;
 
-/// Operator's source choice from the picker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceChoice {
-    /// Open the `EnvValue` text modal and let the operator type the value.
     Plain,
-    /// Open the `OpPicker` modal and drill Account → Vault → Item → Field
-    /// to produce an `op://...` reference.
     Op,
 }
 
 #[derive(Debug, Clone)]
 pub struct SourcePickerState {
-    /// `EnvKey` the operator typed in the previous modal — surfaced in
-    /// the modal title (`Source for MY_KEY`) so the choice's context is
-    /// visible without context-switching back to the previous step.
     pub key: String,
-    /// Whether the 1Password CLI was reachable at console startup. When
-    /// `false`, the Op button renders dim with an `(install op CLI to
-    /// enable)` hint and `←`/`→` skip it. Captured once in
-    /// `ConsoleState::op_available`; the operator must restart `jackin
-    /// console` to pick up a mid-session install.
+    /// Captured from `ConsoleState::op_available` (probed once at
+    /// startup); operator must restart to pick up a mid-session
+    /// install. When `false`, the Op button renders dim and `←`/`→`
+    /// skip it.
     pub op_available: bool,
-    /// Currently focused button. Default focus is `Plain` (the safer /
-    /// always-available option). `←`/`→`/`h`/`l`/`Tab` cycle focus,
-    /// skipping the Op button when it's unavailable.
     pub focused: SourceChoice,
 }
 
 impl SourcePickerState {
-    /// Construct a picker for the given key with the supplied
-    /// `op_available` flag. Default focus is `Plain`.
     #[must_use]
     pub const fn new(key: String, op_available: bool) -> Self {
         Self {
@@ -55,9 +34,6 @@ impl SourcePickerState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<SourceChoice> {
         match key.code {
             KeyCode::Esc => ModalOutcome::Cancel,
-            // Direct hotkeys — `O` only commits when 1Password is
-            // actually available; otherwise it's a silent no-op (same as
-            // pressing it on a disabled button).
             KeyCode::Char('p' | 'P') => ModalOutcome::Commit(SourceChoice::Plain),
             KeyCode::Char('o' | 'O') if self.op_available => ModalOutcome::Commit(SourceChoice::Op),
             KeyCode::Tab
@@ -68,10 +44,8 @@ impl SourcePickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
-                // `Enter` on the disabled Op button is a defensive no-op
-                // — `cycle_*` should never park focus there, but if some
-                // future code path leaves focus on an unavailable
-                // button, silently refuse to commit it.
+                // Defensive: `cycle` never parks focus on disabled Op,
+                // but refuse to commit if a future code path does.
                 if self.focused == SourceChoice::Op && !self.op_available {
                     return ModalOutcome::Continue;
                 }
@@ -82,10 +56,6 @@ impl SourcePickerState {
     }
 
     const fn cycle(&mut self) {
-        // Symmetric two-button modal: forward and backward produce the
-        // same result, so navigation collapses to one method (matching
-        // ScopePickerState's pattern). With Op disabled, cycling is a
-        // no-op — only Plain is selectable, so focus stays put.
         if !self.op_available {
             return;
         }
@@ -124,18 +94,14 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // top pad
-            Constraint::Length(1), // buttons
-            Constraint::Length(1), // disabled-explainer (always rendered, may be empty)
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // hint footer
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
         ])
         .split(inner);
 
-    // Buttons — same focus-pop scheme as `save_discard`: focused button
-    // gets a white background; unfocused stays flush with the modal
-    // backdrop. Disabled (Op when op_available=false) renders dim
-    // regardless of focus, since cycling skips it.
     let focused_style = Style::default()
         .bg(white)
         .fg(Color::Black)
@@ -168,9 +134,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
         chunks[1],
     );
 
-    // Disabled-explainer: only rendered when 1Password is unavailable.
-    // Same dim style as the disabled button so the relationship reads
-    // visually.
     if !state.op_available {
         frame.render_widget(
             Paragraph::new(Span::styled("(install op CLI to enable)", disabled_style))
@@ -179,7 +142,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
         );
     }
 
-    // Hint footer — same key/text/sep palette as every other modal.
     let key_style = Style::default().fg(white).add_modifier(Modifier::BOLD);
     let text_style = Style::default().fg(phosphor);
     let sep_style = Style::default().fg(phosphor_dark);
@@ -235,7 +197,6 @@ mod tests {
             SourceChoice::Plain,
             "cycling must skip the disabled Op button when op is unavailable"
         );
-        // Multiple presses don't park focus on Op either.
         let _ = s.handle_key(key_event(KeyCode::Right));
         let _ = s.handle_key(key_event(KeyCode::Tab));
         let _ = s.handle_key(key_event(KeyCode::Char('l')));
@@ -245,7 +206,6 @@ mod tests {
     #[test]
     fn source_picker_enter_on_plain_commits_plain() {
         let mut s = SourcePickerState::new("MY_KEY".into(), true);
-        // Default focus is Plain — Enter commits it.
         assert!(matches!(
             s.handle_key(key_event(KeyCode::Enter)),
             ModalOutcome::Commit(SourceChoice::Plain)
@@ -272,9 +232,6 @@ mod tests {
         ));
     }
 
-    /// The `O` hotkey is a no-op when the picker is unavailable —
-    /// rejecting it here matches the `← / →` skip behavior so a
-    /// disabled choice is never committable.
     #[test]
     fn source_picker_o_hotkey_inert_when_op_unavailable() {
         let mut s = SourcePickerState::new("MY_KEY".into(), false);

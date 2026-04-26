@@ -1,13 +1,4 @@
 //! Render path for [`super::OpPickerState`].
-//!
-//! Single entry point: [`render`] dispatches on `state.load_state` and
-//! `state.stage` to draw one of:
-//!   - a fatal-state instructional panel (`NotInstalled` /
-//!     `NotSignedIn` / `NoVaults` / `GenericFatal`),
-//!   - a Braille-spinner loading panel (`Loading`),
-//!   - a pane (`Vault` / `Item` / `Field`) when `Ready` (or when the
-//!     load finished with a recoverable error — the banner shows above
-//!     the list).
 
 use ratatui::{
     Frame,
@@ -26,8 +17,6 @@ const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 
-/// Braille spinner glyphs cycled by the `spinner_tick` field on
-/// `OpLoadState::Loading`. Ten frames; advance one per render.
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
@@ -43,19 +32,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     }
 }
 
-/// Compute the modal-block title for the current pane.
-///
-/// Breadcrumbs deliberately omit a trailing `Vaults` / `Items` /
-/// `Fields` suffix — the pane content makes the type self-evident so
-/// the suffix would just add noise.
-///
-/// - Single-account setups don't have an `<email>` prefix to surface
-///   (the operator only ever sees one account), so the Vault pane
-///   shows the bare brand `1Password` and the deeper panes show the
-///   vault/item context without a leading email.
-/// - Multi-account setups always lead with the chosen account's email
-///   so the operator can tell at a glance which account they're
-///   drilling into.
+/// Multi-account titles lead with the chosen account's email so the
+/// operator can see which account they're drilling into; single-
+/// account titles omit it (no ambiguity to resolve).
 fn breadcrumb_title(
     stage: OpPickerStage,
     multi_account: bool,
@@ -89,21 +68,9 @@ fn breadcrumb_title(
     }
 }
 
-/// Compute the scroll offset for the list viewport so the selected
-/// row stays visible.
-///
-/// - If the entire list fits in `height`, the offset is `0` (no scroll).
-/// - If `selected < height`, the offset is `0` so the head of the list
-///   stays anchored at the top until the cursor moves below the window.
-/// - Otherwise, anchor the selected row at the bottom of the visible
-///   window (`offset = selected - height + 1`), clamped to
-///   `total - height` so we don't scroll past the end.
-///
-/// Stateless — recomputed every frame. The earlier picker had no
-/// viewport math at all, so vaults / items beyond the modal's height
-/// were unreachable; this gives the operator predictable
-/// "cursor-follows" scrolling without a separate `offset` field on
-/// each pane's `ListState`.
+/// Cursor-follows scrolling — anchors selected at top until cursor
+/// moves below the window, then anchors at bottom (clamped to
+/// `total - height`). Stateless: recomputed each frame.
 fn viewport_offset(selected: usize, height: usize, total: usize) -> usize {
     if height == 0 || total <= height {
         return 0;
@@ -126,9 +93,6 @@ fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
         .title(title_span)
 }
 
-/// Footer line — canonical key/text/sep styling from the rest of the
-/// modal palette. `pairs` is a sequence of `(key, label)` chunks; the
-/// renderer interleaves `·` separators between them.
 fn footer_line(pairs: &[(&str, &str)]) -> Line<'static> {
     let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let text_style = Style::default().fg(PHOSPHOR_GREEN);
@@ -144,14 +108,8 @@ fn footer_line(pairs: &[(&str, &str)]) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Render the active drill-down pane (and any recoverable error
-/// banner). Title carries the breadcrumb.
 #[allow(clippy::too_many_lines)]
 fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
-    // Multi-account: prepend the chosen account's email to vault/item/
-    // field breadcrumbs so the operator can always see which account
-    // they're drilling into. Single-account: same compact title as
-    // before (no per-pane account context to surface).
     let multi_account = state.accounts.len() > 1;
     let account_email = state
         .selected_account
@@ -167,9 +125,6 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Reserve a row for the recoverable banner when present; otherwise
-    // the layout is the canonical "filter / spacer / list / spacer /
-    // hint" stack.
     let banner_height: u16 = match &state.load_state {
         OpLoadState::Error(OpPickerError::Recoverable { .. }) => 2,
         _ => 0,
@@ -237,17 +192,6 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         )))
         .alignment(Alignment::Center)
     } else {
-        // Cursor-tracking viewport: each render re-computes the offset
-        // from the selected index so the cursor stays visible whatever
-        // the operator's last navigation was. The earlier picker
-        // rendered the full `list_lines` as a `Paragraph` with no
-        // viewport math at all — pressing `↓` past the visible window
-        // moved `*_list_state.selected` but the rendered area didn't
-        // scroll, so vaults / items below the modal's height became
-        // unreachable. The viewport math here mirrors the canonical
-        // pattern: anchor the cursor at the bottom of the window once
-        // the selected row falls below the initial viewport, clamped
-        // so the last row sits on the bottom edge.
         let selected = match state.stage {
             OpPickerStage::Account => state.account_list_state.selected,
             OpPickerStage::Vault => state.vault_list_state.selected,
@@ -263,9 +207,6 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
     };
     frame.render_widget(list_para, rows[3]);
 
-    // Footer hint per pane. The Vault pane's Esc semantics depend on
-    // whether an Account pane is in play: with ≥2 accounts, Esc returns
-    // to that pane; otherwise it cancels the picker as before.
     let pairs: Vec<(&str, &str)> = match state.stage {
         OpPickerStage::Account => vec![
             ("\u{2191}\u{2193}", "navigate"),
@@ -310,9 +251,8 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
 }
 
 fn render_account_lines(state: &OpPickerState) -> Vec<Line<'static>> {
-    // Server order — do not alphabetize. `op` returns accounts in the
-    // order the operator signed them in; preserve that visible ordering
-    // so the picker doesn't surprise long-time multi-account users.
+    // Server order — do not alphabetize. `op` lists accounts in
+    // sign-in order; preserve it.
     let visible = state.filtered_accounts();
     let selected = state.account_list_state.selected;
     visible
@@ -328,9 +268,8 @@ fn render_account_lines(state: &OpPickerState) -> Vec<Line<'static>> {
             } else {
                 Style::default().fg(WHITE)
             };
-            // Display: `<email>  (<url>)`. Empty values render as empty
-            // strings rather than panicking — `op` versions older than
-            // the v2 schema may not include `email`/`url`.
+            // Pre-v2 op may omit email/url; render as empty rather
+            // than panicking.
             Line::from(vec![
                 Span::styled(format!("{prefix}{}", a.email), label_style),
                 Span::raw("  "),
@@ -377,12 +316,8 @@ fn render_item_lines(state: &OpPickerState) -> Vec<Line<'static>> {
             } else {
                 Style::default().fg(WHITE)
             };
-            // Subtitle (1Password's `additional_information`, typically a
-            // username/email) renders in PHOSPHOR_DIM regardless of
-            // selection so the title remains the primary visual anchor
-            // even on the focused row. Items without a subtitle (e.g.,
-            // secure notes) render with just the title — no trailing
-            // parens, no wasted whitespace.
+            // Subtitle stays dim even on the focused row so the title
+            // remains the primary anchor. Empty subtitle → no parens.
             let mut spans = vec![
                 Span::styled(prefix.to_string(), title_style),
                 Span::styled(item.name.clone(), title_style),
@@ -401,7 +336,6 @@ fn render_item_lines(state: &OpPickerState) -> Vec<Line<'static>> {
 fn render_field_lines(state: &OpPickerState) -> Vec<Line<'static>> {
     let visible: Vec<&OpField> = state.filtered_fields();
     let selected = state.field_list_state.selected;
-    // Pad labels to a consistent width so the type annotation aligns.
     let label_w = visible
         .iter()
         .map(|f| display_label(f).chars().count())
@@ -449,18 +383,10 @@ fn display_label(f: &OpField) -> String {
 }
 
 fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8) {
-    // The loading panel borrows the same breadcrumb that the Ready pane
-    // would render, so the operator sees the full path during the 1-3s
-    // op subprocess instead of a bare "1Password" title with no context.
-    // `state.stage` is set at request time (`start_*_load`) rather than
-    // result time, so the breadcrumb here already reflects the
-    // destination of the in-flight load.
-    //
-    // Field-stage loading is the one exception: the title shows the
-    // PARENT context (account → vault) rather than the full path,
-    // because the item name belongs in the body (`loading <item>…`)
-    // where it can carry the disambiguating subtitle. Principle: title
-    // = where you are, body = what you're descending into.
+    // Field-stage exception: the title shows the parent (account →
+    // vault) so the body can carry `loading <item>…` with the
+    // disambiguating subtitle. Title = where you are, body = what
+    // you're descending into.
     let multi_account = state.accounts.len() > 1;
     let account_email = state
         .selected_account
@@ -487,16 +413,8 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
 
     let glyph = SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()];
     let descriptor = match state.stage {
-        // Account-stage loading shouldn't normally be visible —
-        // `account_list` is synchronous in the constructor — but render
-        // a sensible string for completeness.
         OpPickerStage::Account => "loading accounts\u{2026}".to_string(),
         OpPickerStage::Vault => {
-            // For multi-account setups the title bar already shows the
-            // selected account, so the body reads "loading vaults from
-            // <email>" to mirror the Item/Field message format. Single-
-            // account setups have no parent context worth surfacing —
-            // fall back to the bare "loading vaults".
             if multi_account && !account_email.is_empty() {
                 format!("loading vaults from {account_email}\u{2026}")
             } else {
@@ -507,10 +425,6 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
             format!("loading items from {v_name}\u{2026}")
         }
         OpPickerStage::Field => {
-            // Body names the item being descended into; subtitle (when
-            // present) disambiguates same-named items the way the item
-            // list does. Title carries only the parent context, so this
-            // is the one place the operator sees the in-flight item.
             if i_subtitle.is_empty() {
                 format!("loading {i_name}\u{2026}")
             } else {
