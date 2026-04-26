@@ -48,7 +48,19 @@ fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
 pub fn saved_workspace_match_depth(workspace: &WorkspaceConfig, cwd: &Path) -> Option<usize> {
     let canonical_cwd = cwd.canonicalize().ok()?;
 
-    std::iter::once(host_path_match_depth(&workspace.workdir, &canonical_cwd))
+    // Workdir must match exactly — being a parent of cwd is not enough.
+    // Mount sources still match as a prefix so that subdirectories of a
+    // mounted host path are covered without needing to enumerate every file.
+    let workdir_depth = {
+        let expanded = expand_tilde(&workspace.workdir);
+        Path::new(&expanded)
+            .canonicalize()
+            .ok()
+            .filter(|p| &canonical_cwd == p)
+            .map(|p| p.components().count())
+    };
+
+    std::iter::once(workdir_depth)
         .chain(
             workspace
                 .mounts
@@ -236,6 +248,85 @@ mod tests {
         assert_eq!(
             saved_workspace_match_depth(&workspace, &nested_dir),
             Some(project_dir.canonicalize().unwrap().components().count())
+        );
+    }
+
+    #[test]
+    fn saved_workspace_match_depth_rejects_workdir_prefix_only_match() {
+        // Broad workdir that is a parent of cwd but not equal to it.
+        // The mount source exists and is canonicalized so it is a real
+        // candidate — the test confirms the exact-workdir rule rejects the
+        // match rather than a silent canonicalize failure on a missing path.
+        let temp = tempdir().unwrap();
+        let broad_workdir = temp.path().join("Projects");
+        let agent_repo = broad_workdir.join("agent-repo");
+        let unrelated_cwd = broad_workdir.join("jackin4");
+        std::fs::create_dir_all(&agent_repo).unwrap();
+        std::fs::create_dir_all(&unrelated_cwd).unwrap();
+
+        let workspace = WorkspaceConfig {
+            workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
+            mounts: vec![MountConfig {
+                src: agent_repo.canonicalize().unwrap().display().to_string(),
+                dst: "/workspace/agent-repo".to_string(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            saved_workspace_match_depth(&workspace, &unrelated_cwd),
+            None,
+            "workdir parent must not match when cwd is an unrelated subdirectory"
+        );
+    }
+
+    #[test]
+    fn saved_workspace_match_depth_matches_exact_workdir() {
+        let temp = tempdir().unwrap();
+        let workdir = temp.path().join("Projects");
+        std::fs::create_dir_all(&workdir).unwrap();
+        let canonical = workdir.canonicalize().unwrap();
+
+        let workspace = WorkspaceConfig {
+            workdir: canonical.display().to_string(),
+            mounts: vec![MountConfig {
+                src: canonical.join("repo").display().to_string(),
+                dst: "/workspace/repo".to_string(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            saved_workspace_match_depth(&workspace, &canonical),
+            Some(canonical.components().count()),
+        );
+    }
+
+    #[test]
+    fn saved_workspace_match_depth_matches_nested_path_under_mount_src() {
+        let temp = tempdir().unwrap();
+        let mount_src = temp.path().join("agent-repo");
+        let nested = mount_src.join("src");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        let workspace = WorkspaceConfig {
+            workdir: "/Users/me/Projects".to_string(),
+            mounts: vec![MountConfig {
+                src: mount_src.canonicalize().unwrap().display().to_string(),
+                dst: "/workspace/agent-repo".to_string(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            saved_workspace_match_depth(&workspace, &nested),
+            Some(mount_src.canonicalize().unwrap().components().count()),
         );
     }
 

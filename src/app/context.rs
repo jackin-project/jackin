@@ -786,4 +786,69 @@ mod tests {
             None
         );
     }
+
+    /// Regression: a workspace whose workdir is a broad parent directory must not
+    /// match when cwd is an unrelated subdirectory not covered by any mount source.
+    #[test]
+    fn broad_workdir_does_not_match_unrelated_subdirectory() {
+        let temp = tempfile::tempdir().unwrap();
+        let broad_workdir = temp.path().join("Projects");
+        let agent_repo = broad_workdir.join("agent-repo");
+        let unrelated = broad_workdir.join("jackin4");
+        std::fs::create_dir_all(&agent_repo).unwrap();
+        std::fs::create_dir_all(&unrelated).unwrap();
+
+        let mut config = config::AppConfig::default();
+        config.workspaces.insert(
+            "jackin-agents".to_string(),
+            workspace::WorkspaceConfig {
+                workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
+                mounts: vec![workspace::MountConfig {
+                    src: agent_repo.canonicalize().unwrap().display().to_string(),
+                    dst: "/workspace/agent-repo".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                }],
+                ..Default::default()
+            },
+        );
+
+        let result = find_saved_workspace_for_cwd(&config, &unrelated);
+        assert!(
+            result.is_none(),
+            "broad workdir must not preselect for an unrelated subdirectory"
+        );
+    }
+
+    /// Complement: workspace still matches when cwd IS under a mount source.
+    #[test]
+    fn workspace_matches_when_cwd_is_under_mount_src() {
+        let temp = tempfile::tempdir().unwrap();
+        let broad_workdir = temp.path().join("Projects");
+        let agent_repo = broad_workdir.join("agent-repo");
+        let inside_repo = agent_repo.join("src");
+        std::fs::create_dir_all(&inside_repo).unwrap();
+
+        let mut config = config::AppConfig::default();
+        config.workspaces.insert(
+            "jackin-agents".to_string(),
+            workspace::WorkspaceConfig {
+                workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
+                mounts: vec![workspace::MountConfig {
+                    src: agent_repo.canonicalize().unwrap().display().to_string(),
+                    dst: "/workspace/agent-repo".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                }],
+                ..Default::default()
+            },
+        );
+
+        let result = find_saved_workspace_for_cwd(&config, &inside_repo);
+        assert!(
+            result.is_some(),
+            "cwd inside a mount source must still preselect the workspace"
+        );
+        assert_eq!(result.unwrap().0, "jackin-agents");
+    }
 }

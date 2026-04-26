@@ -11,7 +11,7 @@ use std::io::IsTerminal;
 
 use super::attach::{ContainerState, inspect_container_state, wait_for_dind};
 use super::cleanup::{gc_orphaned_resources, run_cleanup_command};
-use super::discovery::{list_managed_agent_names, list_running_agent_display_names};
+use super::discovery::list_running_agent_display_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
 use super::image::build_agent_image;
 use super::naming::{
@@ -474,6 +474,23 @@ fn launch_agent_runtime(
     // decouples the container's lifetime from the foreground attach, so
     // closing the terminal tab only drops the attach — the container keeps
     // running and `jackin hardline` can reconnect to the same live session.
+    //
+    // No `--rm` here, intentionally.  Omitting `--rm` lets the container
+    // persist after exit so that:
+    //   - A crashed container's logs and filesystem remain available for
+    //     diagnosis, and `jackin hardline` can restart the exact same
+    //     container in place without rebuilding the network stack.
+    //   - Clean-exit containers (exit 0, not OOM-killed) are removed by
+    //     `cleanup` at the end of a normal session, and the
+    //     `claim_container_name` loop reclaims those slots on the next load
+    //     by inspecting per-candidate state rather than relying on Docker
+    //     auto-removal.
+    //
+    // Using the naming loop rather than `--rm` as the removal mechanism is
+    // the right boundary: the loop can inspect the exit code and OOM flag
+    // and make a correct per-container decision (reclaim vs. preserve for
+    // hardline), whereas `--rm` would indiscriminately destroy every exited
+    // container, making crash recovery impossible.
     let mut run_args: Vec<&str> = vec![
         "run",
         "-d",
@@ -1079,10 +1096,20 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
 /// exclusive lock file.
 ///
 /// Tries the primary name first, then clone-1, clone-2, etc.  For each
-/// candidate, a lock file at `~/.jackin/data/<name>.lock` is created and
-/// `try_lock_exclusive` is attempted.  If the lock succeeds, the name is
-/// ours for this session.  If another process already holds it (parallel
-/// load), we skip to the next candidate.
+/// candidate the container state is inspected individually:
+///
+/// - `Running`                    → skip (active session owns this slot).
+/// - `Stopped` / exit 0, no OOM  → remove the stopped container (best-effort)
+///   and reclaim the slot.  The state directory on disk is untouched, so
+///   credentials in `~/.jackin/data/<name>/.config/gh/` survive.
+/// - `Stopped` / non-zero exit or OOM-killed → skip (`jackin hardline` needs
+///   to restart the crashed container in place).
+/// - `NotFound`                   → try to claim the slot as usual.
+///
+/// For the two "free" cases (clean-exit and not-found) the slot is claimed by
+/// acquiring an exclusive lock file at `~/.jackin/data/<name>.lock`.  If the
+/// lock is already held by a concurrent `jackin load`, the loop advances to
+/// the next clone index.
 ///
 /// The returned `File` holds the lock — it must be kept alive for the
 /// duration of the agent session.  The lock is automatically released
@@ -1092,7 +1119,6 @@ fn claim_container_name(
     selector: &ClassSelector,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<(String, std::fs::File)> {
-    let existing = list_managed_agent_names(runner)?;
     let primary = primary_container_name(selector);
 
     std::fs::create_dir_all(&paths.data_dir)?;
@@ -1106,8 +1132,24 @@ fn claim_container_name(
             format!("{primary}-clone-{clone_index}")
         };
 
-        // Skip names that have an existing container (running or stopped)
-        if !existing.contains(&name) {
+        let slot_free = match inspect_container_state(runner, &name) {
+            // Clean exit: remove the stopped container so the slot is free.
+            // Best-effort; ignore errors — the state dir on disk is untouched.
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            } => {
+                let _ = runner.run("docker", &["rm", &name], None, &RunOptions::default());
+                true
+            }
+            // Active session, or crashed/OOM-killed: do not disturb.
+            // Crashed containers are preserved for `jackin hardline` restart.
+            ContainerState::Running | ContainerState::Stopped { .. } => false,
+            // No container exists — slot is free.
+            ContainerState::NotFound => true,
+        };
+
+        if slot_free {
             let lock_path = paths.data_dir.join(format!("{name}.lock"));
             let lock_file = std::fs::File::create(&lock_path)?;
             if lock_file.try_lock_exclusive().is_ok() {
@@ -1482,10 +1524,7 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(Some("chainargos"), "the-architect");
-        let mut runner = FakeRunner::for_load_agent([
-            String::new(),
-            "jackin-chainargos__the-architect".to_string(),
-        ]);
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = paths.agents_dir.join("chainargos").join("the-architect");
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -1530,7 +1569,9 @@ plugins = ["code-review@claude-plugins-official"]
             call.contains("docker build ") && call.contains("-t jackin-chainargos__the-architect")
         }));
         assert!(runner.recorded.iter().any(|call| {
-            call == "docker ps -a --filter label=jackin.role=agent --format {{.Names}}"
+            call.contains(
+                "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-chainargos__the-architect",
+            )
         }));
         assert!(runner.recorded.iter().any(|call| {
             call.contains("docker run -d -it --name jackin-chainargos__the-architect")
@@ -1622,10 +1663,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = ClassSelector::new(Some("chainargos"), "agent-brown");
-        let mut runner = FakeRunner::for_load_agent([
-            String::new(),
-            "jackin-chainargos-agent-brown".to_string(),
-        ]);
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = paths.agents_dir.join("chainargos").join("agent-brown");
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -1698,8 +1736,7 @@ trusted = true
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
-        let mut runner =
-            FakeRunner::for_load_agent([String::new(), "jackin-agent-smith".to_string()]);
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -1741,7 +1778,9 @@ plugins = ["code-review@claude-plugins-official"]
                 .any(|call| call.contains("docker build "))
         );
         assert!(runner.recorded.iter().any(|call| {
-            call == "docker ps -a --filter label=jackin.role=agent --format {{.Names}}"
+            call.contains(
+                "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agent-smith",
+            )
         }));
         assert!(
             runner
@@ -1770,7 +1809,6 @@ plugins = ["code-review@claude-plugins-official"]
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
-            String::new(),
             String::new(),
             String::new(),
             String::new(),
@@ -1839,7 +1877,6 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
-            String::new(),
             String::new(),
             String::new(),
             String::new(),
@@ -1991,7 +2028,6 @@ plugins = ["code-review@claude-plugins-official"]
             String::new(),
             String::new(),
             String::new(),
-            String::new(),
             "jackin-agent-smith".to_string(),
         ]);
 
@@ -2057,7 +2093,6 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
-            String::new(),
             String::new(),
             String::new(),
             String::new(),
@@ -2157,7 +2192,6 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            String::new(),
             "jackin-agent-smith".to_string(),
         ]);
 
@@ -2211,7 +2245,6 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            String::new(),
             "jackin-agent-smith".to_string(),
         ]);
 
@@ -2260,7 +2293,6 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
-            String::new(),
             String::new(),
             String::new(),
             String::new(),
@@ -2368,7 +2400,6 @@ trusted = true
             String::new(),
             String::new(),
             String::new(),
-            String::new(),
             "jackin-agent-smith".to_string(),
         ]);
 
@@ -2448,7 +2479,6 @@ trusted = true
             String::new(),
             String::new(),
             String::new(),
-            String::new(),
             "jackin-agent-smith".to_string(),
         ]);
 
@@ -2524,7 +2554,6 @@ trusted = true
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = ClassSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
-            String::new(),
             String::new(),
             String::new(),
             String::new(),
@@ -2625,7 +2654,6 @@ trusted = true
             String::new(),
             String::new(),
             String::new(),
-            String::new(),
             "jackin-agent-smith".to_string(),
         ]);
 
@@ -2679,6 +2707,119 @@ plugins = []
             run_cmd.contains("-e OPERATOR_TOKEN=resolved-op-token"),
             "op:// ref must resolve via the injected OpCli and inject; got: {run_cmd}"
         );
+    }
+
+    // ── claim_container_name tests ────────────────────────────────────────────
+
+    /// NotFound → claim the primary slot directly (no docker rm issued).
+    #[test]
+    fn claim_container_name_not_found_claims_primary() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        // inspect returns "" → NotFound
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+
+        let (name, _lock) = claim_container_name(&paths, &selector, &mut runner).unwrap();
+
+        assert_eq!(name, "jackin-agent-smith");
+        assert!(runner.recorded.iter().any(|call| {
+            call.contains(
+                "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agent-smith",
+            )
+        }));
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker rm"))
+        );
+    }
+
+    /// Running → skip primary, claim clone-1.
+    #[test]
+    fn claim_container_name_running_skips_to_clone() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        // primary inspect → Running; clone-1 inspect → NotFound
+        let mut runner =
+            FakeRunner::with_capture_queue(["true 0 false".to_string(), String::new()]);
+
+        let (name, _lock) = claim_container_name(&paths, &selector, &mut runner).unwrap();
+
+        assert_eq!(name, "jackin-agent-smith-clone-1");
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker rm"))
+        );
+    }
+
+    /// Stopped / exit 0 → docker rm issued, same slot reclaimed.
+    #[test]
+    fn claim_container_name_clean_exit_removes_and_reclaims() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        // primary inspect → Stopped / exit 0 / no OOM
+        let mut runner = FakeRunner::with_capture_queue(["false 0 false".to_string()]);
+
+        let (name, _lock) = claim_container_name(&paths, &selector, &mut runner).unwrap();
+
+        assert_eq!(name, "jackin-agent-smith");
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call == "docker rm jackin-agent-smith")
+        );
+    }
+
+    /// Stopped / non-zero exit → skip primary, claim clone-1 (hardline territory).
+    #[test]
+    fn claim_container_name_crashed_skips_to_clone() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        // primary inspect → Stopped / exit 1; clone-1 → NotFound
+        let mut runner =
+            FakeRunner::with_capture_queue(["false 1 false".to_string(), String::new()]);
+
+        let (name, _lock) = claim_container_name(&paths, &selector, &mut runner).unwrap();
+
+        assert_eq!(name, "jackin-agent-smith-clone-1");
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker rm"))
+        );
+    }
+
+    /// slot 0 crashed, slot 1 clean-exit → slot 1 reclaimed after rm, not slot 2.
+    #[test]
+    fn claim_container_name_crashed_then_clean_exit_reclaims_slot_1() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = ClassSelector::new(None, "agent-smith");
+        // primary → crashed; clone-1 → clean exit
+        let mut runner = FakeRunner::with_capture_queue([
+            "false 1 false".to_string(),
+            "false 0 false".to_string(),
+        ]);
+
+        let (name, _lock) = claim_container_name(&paths, &selector, &mut runner).unwrap();
+
+        assert_eq!(name, "jackin-agent-smith-clone-1");
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call == "docker rm jackin-agent-smith-clone-1")
+        );
+        assert!(!runner.recorded.iter().any(|call| call.contains("clone-2")));
     }
 
     #[test]

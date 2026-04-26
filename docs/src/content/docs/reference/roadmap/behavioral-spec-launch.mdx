@@ -1,0 +1,44 @@
+---
+title: "Behavioral spec: runtime/launch.rs"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 1, no confirmation needed
+
+## Problem
+
+<RepoFile path="src/runtime/launch.rs" /> is the `jackin load` critical path (~1077L production, no `//!` doc) and is targeted for a structural split. Without a behavioral spec, there is no oracle to verify the split preserved all invariants.
+
+## Verified invariants (read from lines 553–892)
+
+| INV | Description | Verify by |
+|---|---|---|
+| INV-1 | Trust gate (line 594) precedes image build (line 736) — untrusted agent cloned but NOT built until confirmed | `confirm_agent_trust` call before `build_agent_image` in `load_agent_with` |
+| INV-2 | Container name claimed (line 754) between image build and network creation (line 827) | `claim_container_name` between `build_agent_image` and `launch_agent_runtime` |
+| INV-3 | Token verified (line 763) before network creation — fail fast if auth token missing | `verify_token_env_present` before `launch_agent_runtime` |
+| INV-4 | `render_exit` called on ALL exit paths (lines 886 and 890) — both `Ok` and `Err` arms | both match arms call `render_exit` |
+| INV-5 | Cleanup disarm semantics: `Running` → disarm (hardline can restart), clean exit → cleanup, crash → disarm | `match inspect_container_state(...)` arm mapping |
+
+## Pipeline overview
+
+`load_agent` (public API) → `load_agent_with` (4-step pipeline):
+
+1. **Trust gate** — confirm untrusted agents with the operator
+2. **Image build** — `build_agent_image()` with name claimed afterward
+3. **Token verification** — verify auth before network creation
+4. **Runtime launch** — `launch_agent_runtime()` with full render lifecycle
+
+## Steps
+
+1. Create `docs/src/content/docs/internal/specs/runtime-launch.mdx` (once Developer Reference setup exists).
+2. Frontmatter: `title: "runtime/launch.rs — Behavioral Spec"`, `spec_type: behavioral`, `subsystem: runtime`.
+3. Sections: Purpose, pipeline overview, behavioral invariants (INV-1 through INV-5), testing notes.
+4. Note injection seams: `LoadOptions.op_runner` and `LoadOptions.host_env` at lines 657–693 (test injection points).
+
+## Why this must come before the split
+
+The spec is the verification oracle. If <RepoFile path="src/runtime/launch.rs" /> is split before the spec exists, there is no contract against which to verify the split preserved all invariants.
+
+## Key file
+
+<RepoFile path="src/runtime/launch.rs" /> — specifically `fn load_agent_with` at line 553.
