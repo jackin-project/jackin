@@ -7,21 +7,21 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="CONTRIBUTING.md" /> and <RepoFile path="TESTING.md" /> are contributor-facing files at the repo root. They belong in the `docs/internal/` Starlight section where contributors find them browsable at `jackin.tailrocks.com/internal/contributing/` and `jackin.tailrocks.com/internal/testing/`.
+<RepoFile path="CONTRIBUTING.md" /> and <RepoFile path="TESTING.md" /> are contributor-facing files at the repo root, but there is no browsable Starlight version of that guidance. The practical goal is to publish them into the future internal docs section without losing the repo-root entrypoints that GitHub and AI agents already rely on.
 
 ## Steps
 
-1. Move <RepoFile path="CONTRIBUTING.md" /> → `docs/src/content/docs/internal/contributing.mdx` (add MDX frontmatter).
-2. Move <RepoFile path="TESTING.md" /> → `docs/src/content/docs/internal/testing.mdx`.
-3. Update <RepoFile path="AGENTS.md" /> link: `[TESTING.md](TESTING.md)` → new Starlight URL.
-4. Add a one-liner at the old root paths for backward compatibility (GitHub UI shows `CONTRIBUTING.md` from root automatically).
-5. Verify `bun run check:links:fresh` passes.
+1. Copy <RepoFile path="CONTRIBUTING.md" /> into `docs/src/content/docs/internal/contributing.mdx` (add MDX frontmatter).
+2. Copy <RepoFile path="TESTING.md" /> into `docs/src/content/docs/internal/testing.mdx`.
+3. Keep the root files in place; they remain the repo-root entrypoints for GitHub and agent startup context.
+4. Add reciprocal links so the root docs point at the browsable pages and the internal pages point back to the canonical repo files where helpful.
+5. Update any repo-root docs that should advertise the new browsable pages, then verify `bun run check:links:fresh` passes.
 
 ## What needs confirmation
 
-- Whether to keep root-level `CONTRIBUTING.md` as a redirect (preserves GitHub UI behavior) or delete it entirely.
-- Recommended: keep a one-liner at root pointing to `docs/src/content/docs/internal/contributing.mdx`.
+- Whether the root files stay canonical or become short wrappers around the internal pages.
+- Recommended: keep the root files, at least while `AGENTS.md`, GitHub UI, and other repo-entry docs still link to them directly.
 
 ## Risk note
 
-<RepoFile path="AGENTS.md" /> explicitly links to `TESTING.md` at root. Running `grep -rn "TESTING.md\|CONTRIBUTING.md" .` before moving will find all references.
+<RepoFile path="AGENTS.md" /> explicitly links to both root docs today. If the source-of-truth plan changes, audit every reference first instead of assuming only `TESTING.md` needs updating.

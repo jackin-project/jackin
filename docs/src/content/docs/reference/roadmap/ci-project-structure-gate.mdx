@@ -16,6 +16,7 @@ Add a step to the `check` job in <RepoFile path=".github/workflows/ci.yml" />:
 ```yaml
 - name: Check PROJECT_STRUCTURE.md covers new modules
   run: |
+    base_ref="${GITHUB_BASE_REF:-main}"
     missing=()
     while IFS= read -r f; do
       stem="${f%.rs}"
@@ -24,7 +25,7 @@ Add a step to the `check` job in <RepoFile path=".github/workflows/ci.yml" />:
       if ! grep -qF "$basename" PROJECT_STRUCTURE.md 2>/dev/null; then
         missing+=("$f")
       fi
-    done < <(git diff --name-only origin/main...HEAD -- 'src/**/*.rs')
+    done < <(git diff --name-only "origin/${base_ref}...HEAD" -- src)
     if [ ${#missing[@]} -gt 0 ]; then
       printf 'Not mentioned in PROJECT_STRUCTURE.md: %s\n' "${missing[@]}"
       exit 1
@@ -36,14 +37,16 @@ Add a step to the `check` job in <RepoFile path=".github/workflows/ci.yml" />:
 - **Scoped to PR diff only** — checks only files added in the current PR, not all 94 existing files. Avoids requiring retroactive fixes before the gate can be enabled.
 - **Greps for basename** (e.g., `op_picker` for <RepoFile path="src/console/widgets/op_picker/mod.rs" />) — PROJECT_STRUCTURE.md uses prose descriptions containing the module name.
 - **False negative risk**: a file named `mod.rs` won't be caught (too generic). Only named modules are checked.
+- **Requires full-enough git history** — `actions/checkout` defaults to a single fetched commit, so the PR job must set `fetch-depth: 0` (or explicitly fetch the base ref) before this diff works reliably.
 
 ## Steps
 
 1. Do the project structure update item first (fix existing staleness before enabling the gate).
-2. Add the YAML step above to <RepoFile path=".github/workflows/ci.yml" /> after the `cargo fmt --check` step.
-3. Add a note to <RepoFile path="CONTRIBUTING.md" />: "When adding a new `.rs` module file, update PROJECT_STRUCTURE.md."
-4. Verify the step passes on the current branch before merging.
+2. Update the PR `actions/checkout` step to fetch the base history (`fetch-depth: 0` is the simplest option).
+3. Add the YAML step above to <RepoFile path=".github/workflows/ci.yml" /> after the `cargo fmt --check` step.
+4. Add a contributor note somewhere durable (`CONTRIBUTING.md` or the future internal contributor docs): "When adding a new `.rs` module file, update PROJECT_STRUCTURE.md."
+5. Verify the step passes on the current branch before merging.
 
 ## Caveats
 
-The script uses `git diff --name-only origin/main...HEAD` which requires the repo to have `origin/main` available in CI — already true since `actions/checkout` fetches it for the PR check job.
+The script uses a PR diff against the base branch, so it is only safe once checkout/fetch behavior guarantees that `origin/<base>` is present locally.

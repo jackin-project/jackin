@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## When to do this
 
-`jackin` today is ~43,587L — below the ~150K threshold where workspace benefits outweigh overhead. This item is not ready to execute. The trigger conditions are:
+`jackin` today is ~49,754L of Rust source — still below the ~150K threshold where workspace benefits outweigh overhead. This item is not ready to execute. The trigger conditions are:
 
 - LOC exceeds ~150K, **or**
 - A sub-component needs external consumers for third-party agent manifest tooling, **or**
@@ -33,7 +33,7 @@ jackin/
 
 ## Key structural insight
 
-`console/` has **zero imports from `runtime/`** — this pre-existing clean boundary is the most important structural asset. `jackin-console` and `jackin-runtime` can become separate crates without moving any logic.
+`console/` has **zero imports from `runtime/` in production code** — this pre-existing clean boundary is the most important structural asset. `jackin-console` and `jackin-runtime` can become separate crates without moving any logic; current coupling is limited to test helpers such as `crate::runtime::FakeRunner`.
 
 Starting point: extract just these two crates first. The Cargo workspace boundary makes the existing clean boundary enforced by the compiler rather than policed by convention.
 

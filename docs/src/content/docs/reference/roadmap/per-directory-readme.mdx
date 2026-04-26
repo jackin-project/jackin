@@ -18,7 +18,7 @@ AI coding agents (Claude Code, Copilot, Cursor) load `README.md` automatically w
 | `src/console/` | Operator console TUI. Entry: `run_console()`. Two subsystems: `manager/` and `widgets/`. No import from `runtime/`. |
 | `src/console/manager/` | Workspace manager TUI. 3-layer: `state.rs` (data), `input/` (dispatch), `render/` (drawing). |
 | `src/console/widgets/` | Reusable TUI widget library. Each widget is a self-contained state machine. |
-| `docs/` | Astro Starlight docs site. Public: `src/content/docs/`. Internal/browsable: `src/content/docs/internal/`. |
+| `docs/` | Astro Starlight docs site. Public docs live in `src/content/docs/`; current design/spec material still lives in `docs/superpowers/specs/` until the Developer Reference section exists. |
 
 ## AGENTS.md per crate (after workspace split)
 

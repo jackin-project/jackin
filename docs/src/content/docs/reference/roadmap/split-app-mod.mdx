@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/app/mod.rs" /> is 979L total, ~957L production (only 22L of tests). Nearly all production code is the `run()` dispatch function with a large match on CLI commands. A reviewer auditing "does `jackin workspace create` correctly validate the workdir?" must scan 957L of mixed-command dispatch.
+<RepoFile path="src/app/mod.rs" /> is now 1109L total, ~1056L production (tests start at line 1057). Nearly all production code is the `run()` dispatch function with a large match on CLI commands. A reviewer auditing "does `jackin workspace create` correctly validate the workdir?" still has to scan a thousand-plus lines of mixed-command dispatch.
 
 ## Proposed split
 
@@ -19,13 +19,13 @@ src/app/
   config_cmd.rs    ← config subcommand handlers (~100L)
 ```
 
-Note: <RepoFile path="src/app/context.rs" /> (784L) already implements the impl-extension pattern and stays as-is.
+Note: <RepoFile path="src/app/context.rs" /> already implements the impl-extension pattern and stays as-is.
 
 ## Import notes
 
-- `app/mod.rs` is referenced from `main.rs` as `mod app; app::run(...)` — this stays the same
+- <RepoFile path="src/main.rs" /> currently calls `jackin::run(...)` through the library crate export; that external call shape stays the same if `app/mod.rs` becomes a thinner internal dispatcher
 - `dispatch.rs` is `mod dispatch` inside `app/`; `run()` calls `dispatch::dispatch_command(args)`
-- `context.rs` already lives in `app/` — no change
+- `context.rs` already lives in `app/` — no change, just updated import paths within the module tree
 
 ## What needs confirmation
 
@@ -34,4 +34,4 @@ Note: <RepoFile path="src/app/context.rs" /> (784L) already implements the impl-
 
 ## Auditability gain
 
-To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` (~150L) instead of scanning 957L of mixed-command dispatch.
+To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` (~150L) instead of scanning ~1056L of mixed-command dispatch.

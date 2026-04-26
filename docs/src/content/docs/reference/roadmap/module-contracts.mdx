@@ -7,22 +7,22 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-41% of source files have `//!` orientation docs. The remaining 59% give AI agents and contributors no orientation when they open the file — purpose, scope, and key invariants must be reverse-engineered from the code.
+43% of source files have `//!` orientation docs. The remaining 57% give AI agents and contributors no orientation when they open the file — purpose, scope, and key invariants must be reverse-engineered from the code.
 
-## Priority files (verified — zero `//!` docs)
+## Priority files (current largest / most central undocumented modules)
 
 | File | Production LOC | Why urgent |
 |---|---|---|
-| <RepoFile path="src/runtime/launch.rs" /> | ~1077 | Largest production file, `jackin load` critical path |
-| <RepoFile path="src/app/mod.rs" /> | ~957 | CLI dispatch entry point |
-| <RepoFile path="src/operator_env.rs" /> | ~880 | 1Password + env layer composition |
-| <RepoFile path="src/instance/mod.rs" /> | — | `AgentState`, auth provisioning |
-| <RepoFile path="src/runtime/cleanup.rs" /> | ~220 | `gc_orphaned_resources`, container lifecycle |
-| <RepoFile path="src/runtime/image.rs" /> | — | Docker image build + naming |
-| <RepoFile path="src/docker.rs" /> | — | `CommandRunner` trait + `ShellRunner` |
-| <RepoFile path="src/derived_image.rs" /> | — | Agent image derivation |
-| <RepoFile path="src/tui/animation.rs" /> | — | 21 `eprintln!` calls, no docs |
-| <RepoFile path="src/app/context.rs" /> | — | App helper fns |
+| <RepoFile path="src/runtime/launch.rs" /> | ~1319 | Largest undocumented production file, `jackin load` critical path |
+| <RepoFile path="src/isolation/materialize.rs" /> | ~1277 | Central mount-materialization flow with many invariants |
+| <RepoFile path="src/app/mod.rs" /> | ~1056 | CLI dispatch entry point |
+| <RepoFile path="src/isolation/finalize.rs" /> | ~1055 | Foreground-session cleanup / preservation policy |
+| <RepoFile path="src/app/context.rs" /> | ~854 | Target resolution and workspace/agent context helpers |
+| <RepoFile path="src/config/mod.rs" /> | ~849 | Main config schema and auth/source policy |
+| <RepoFile path="src/instance/auth.rs" /> | ~796 | Credential forwarding and auth provisioning logic |
+| <RepoFile path="src/runtime/cleanup.rs" /> | ~639 | Container/class cleanup semantics |
+| <RepoFile path="src/tui/animation.rs" /> | ~582 | Shared intro/outro animation behavior |
+| <RepoFile path="src/workspace/mod.rs" /> | ~510 | Core workspace types and validation rules |
 
 ## Steps
 

@@ -7,11 +7,11 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-The current spec workflow uses `obra/superpowers` — a Claude Code plugin that stores specs in `docs/superpowers/specs/` outside the Starlight site. Specs are not browsable, not linked to code, and not version-controlled in a format accessible to all agents.
+The current spec workflow uses `obra/superpowers` and stores committed design/spec docs in `docs/superpowers/specs/`. Those specs are version-controlled, but they are not part of the Starlight site and the command surface is tied to one plugin/tooling stack.
 
 ## Goal
 
-Replace with `cc-sdd` (gotalab/cc-sdd) — a minimal spec-driven development harness using `.claude/commands/` files that are version-controlled in the repo and visible to all agents. Specs land in `docs/src/content/docs/internal/specs/` and become browsable at `jackin.tailrocks.com/internal/specs/`.
+Establish a repo-committed, docs-first spec workflow. If `cc-sdd` (gotalab/cc-sdd) is adopted, treat `.claude/commands/` as one client wrapper; the canonical artifact should still be the spec page under `docs/src/content/docs/internal/specs/`, browsable at `jackin.tailrocks.com/internal/specs/`.
 
 ## What superpowers provides today
 
@@ -22,20 +22,21 @@ Replace with `cc-sdd` (gotalab/cc-sdd) — a minimal spec-driven development har
 
 ## cc-sdd equivalent
 
-- `/spec` command → creates a spec MDX page at `docs/src/content/docs/internal/specs/`
+- `/spec` command → creates or updates a spec MDX page at `docs/src/content/docs/internal/specs/`
 - `/plan` command → creates an implementation plan
 - `/execute` command → implements against the spec
-- No external tooling dependency — just `.claude/commands/*.md` files in the repo
+- `.claude/commands/*.md` stays a Claude-facing wrapper, not the canonical cross-agent source of truth
 
 ## Steps
 
-1. Install cc-sdd: follow gotalab/cc-sdd setup (creates `.claude/commands/spec.md`, `plan.md`, `execute.md`).
-2. Add a 5-line section to <RepoFile path="AGENTS.md" /> pointing to cc-sdd and the spec location.
-3. Migrate existing `docs/superpowers/specs/` → `docs/src/content/docs/internal/specs/` (review each file; convert shipped features to spec MDX pages).
-4. Remove superpowers plugin from Claude Code configuration.
-5. Verify `/spec` works in a new Claude Code session.
+1. Create the canonical spec location and template under `docs/src/content/docs/internal/specs/` (depends on Developer Reference setup).
+2. Decide whether `cc-sdd` is the wrapper to adopt; if yes, install it and point `.claude/commands/spec.md`, `plan.md`, and `execute.md` at the canonical spec location.
+3. Add a short repo-level note to <RepoFile path="AGENTS.md" /> explaining the chosen wrapper and where specs live.
+4. Migrate high-value existing specs from `docs/superpowers/specs/` into the Starlight-backed internal-specs area.
+5. Remove the superpowers plugin only after the replacement workflow covers the same day-to-day needs.
 
 ## What needs confirmation
 
+- Whether `cc-sdd` is the chosen wrapper or just one candidate implementation.
 - Migration plan for `docs/superpowers/specs/` — which specs are for shipped features (convert) vs in-progress (draft pages)?
 - Whether to remove superpowers immediately or run both in parallel for one PR cycle.

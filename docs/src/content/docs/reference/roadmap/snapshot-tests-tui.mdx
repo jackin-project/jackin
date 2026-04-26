@@ -7,19 +7,19 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-The TUI has 16 `#[allow(clippy::too_many_lines)]` suppressions across 11 files. Refactoring <RepoFile path="src/console/manager/render/list.rs" /> (1989L) or <RepoFile path="src/console/manager/render/editor.rs" /> (1666L) currently has no automated regression net. Any refactor can silently change TUI appearance.
+The TUI already has meaningful `TestBackend`-based render tests, but it still has no snapshot-style regression net for the largest composite panes. There are currently 17 `#[allow(clippy::too_many_lines)]` suppressions across the repo, and refactoring <RepoFile path="src/console/manager/render/list.rs" /> (2069L) or <RepoFile path="src/console/manager/render/editor.rs" /> (1682L) can still silently change TUI appearance without a crisp before/after review artifact.
 
 ## Three target functions
 
 | Function | File | Line | What to snapshot |
 |---|---|---|---|
-| `render_sentinel_description_pane` | <RepoFile path="src/console/manager/render/list.rs" /> | 332 | Static "+ New workspace" panel. Zero state. 80×10 terminal. |
-| `render_tab_strip` | <RepoFile path="src/console/manager/render/editor.rs" /> | 269 | Tab bar with `EditorTab` active. 4 variants × 1 snapshot each. 80×3 terminal. |
-| `render_mounts_subpanel` | <RepoFile path="src/console/manager/render/list.rs" /> | 433 | Mount list subpanel. 3 cases: empty, 1 mount, 3 mounts. 60×20 terminal. |
+| `render_sentinel_description_pane` | <RepoFile path="src/console/manager/render/list.rs" /> | 360 | Static "+ New workspace" panel. Zero state. 80×10 terminal. |
+| `render_tab_strip` | <RepoFile path="src/console/manager/render/editor.rs" /> | 278 | Tab bar with `EditorTab` active. 4 variants × 1 snapshot each. 80×3 terminal. |
+| `render_mounts_subpanel` | <RepoFile path="src/console/manager/render/list.rs" /> | 461 | Mount list subpanel. 3 cases: empty, 1 mount, 3 mounts. 60×20 terminal. |
 
 ## Implementation
 
-Use `insta` for snapshot storage + review workflow; `ratatui::backend::TestBackend` for the buffer (already used in existing tests — no extra dependency just for the backend).
+Use `insta` for snapshot storage + review workflow; `ratatui::backend::TestBackend` for the buffer (already used widely in existing tests — no extra dependency just for the backend).
 
 | Library | Stars | Approach | Fit |
 |---|---|---|---|
@@ -36,4 +36,4 @@ Use `insta` for snapshot storage + review workflow; `ratatui::backend::TestBacke
 
 ## Why before Phase 2
 
-These snapshot tests are the regression net for the Phase 2 file splits. Without them, a split that silently changes TUI rendering won't be caught by the existing test suite.
+These snapshot tests are the regression net for the Phase 2 file splits. Existing render assertions still help, but snapshots make layout regressions obvious during review instead of forcing reviewers to infer them from low-level buffer assertions.
