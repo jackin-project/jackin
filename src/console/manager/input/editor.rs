@@ -1033,7 +1033,7 @@ pub(super) fn handle_editor_modal(
                     let target = editor.pending_picker_target.take();
                     match target {
                         Some((scope, Some(key))) => {
-                            apply_picker_value_to_pending(editor, &scope, &key, &path);
+                            set_pending_env_value(editor, &scope, &key, &path);
                             editor.modal = None;
                         }
                         Some((scope, None)) => {
@@ -1167,13 +1167,21 @@ fn env_key_input_state<'a>(
     state
 }
 
-/// Write `value` into `editor.pending` at the given scope + key. Used by
-/// both the picker's key-row commit path and (in the future) any other
-/// caller that wants to set a single env value without going through a
-/// text modal. Agent scope auto-creates the override entry and auto-
-/// expands the section — same semantics as the `EnvValue` text-input
-/// commit handler.
-fn apply_picker_value_to_pending(
+/// Write `value` into `editor.pending` at the given scope + key.
+///
+/// Single source of truth for "set one env entry on the pending
+/// workspace draft". Used by every Secrets-tab commit path that
+/// produces a final `(scope, key, value)` triple — the `OpPicker`
+/// key-row commit, the `EnvValue` text-modal commit, and the
+/// `EnvKey` commit's sentinel-picker fast path (where the operator
+/// pressed `P` on a sentinel, committed a path, and is naming the
+/// key now).
+///
+/// Agent scope auto-creates the override entry and auto-expands the
+/// section so the operator sees the value they just landed — same
+/// semantics as `ConfigEditor::set_env_var` on the save path. The
+/// section-expand is idempotent on an already-expanded agent.
+fn set_pending_env_value(
     editor: &mut EditorState<'_>,
     scope: &SecretsScopeTag,
     key: &str,
@@ -1242,16 +1250,7 @@ pub(super) fn apply_text_input_to_pending(
             // write both the key and value into pending env now and
             // skip everything else.
             if let Some(stashed) = editor.pending_picker_value.take() {
-                match scope {
-                    SecretsScopeTag::Workspace => {
-                        editor.pending.env.insert(key, stashed);
-                    }
-                    SecretsScopeTag::Agent(agent) => {
-                        let entry = editor.pending.agents.entry(agent.clone()).or_default();
-                        entry.env.insert(key, stashed);
-                        editor.secrets_expanded.insert(agent.clone());
-                    }
-                }
+                set_pending_env_value(editor, scope, &key, &stashed);
                 editor.pending_env_key = None;
                 return;
             }
@@ -1272,20 +1271,11 @@ pub(super) fn apply_text_input_to_pending(
         TextInputTarget::EnvValue { scope, key } => {
             // Write the committed value into the appropriate scope on
             // `pending`. Agent scope auto-creates the override entry if
-            // the agent wasn't in `pending.agents` yet — matches the
-            // `ConfigEditor::set_env_var` semantics the save path uses.
-            // Auto-expand the agent's section so the operator sees the
-            // value they just landed (no-op if it was already expanded).
-            match scope {
-                SecretsScopeTag::Workspace => {
-                    editor.pending.env.insert(key.clone(), value.to_string());
-                }
-                SecretsScopeTag::Agent(agent) => {
-                    let entry = editor.pending.agents.entry(agent.clone()).or_default();
-                    entry.env.insert(key.clone(), value.to_string());
-                    editor.secrets_expanded.insert(agent.clone());
-                }
-            }
+            // the agent wasn't in `pending.agents` yet, and auto-expands
+            // the section so the operator sees the value they just
+            // landed — see `set_pending_env_value` for the shared
+            // contract.
+            set_pending_env_value(editor, scope, key, value);
             editor.pending_env_key = None;
         }
     }
