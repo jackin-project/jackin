@@ -3,7 +3,7 @@
 ## §0 — Meta
 
 **Last updated:** 2026-04-26
-**Iteration:** 9
+**Iteration:** 10
 
 This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` treated as already merged per operator instruction). Recommendations are inputs to a future, separate execution effort — no code has been touched.
 
@@ -597,6 +597,16 @@ Current coverage = 41% (37/90 files have `//!` module docs — exact count from 
 **Rule 7: Top-of-module `//!` orientation comments.**
 `src/env_model.rs` is the exemplar — it has a full `//!` module doc explaining what the module is, what it provides, and what invariants it maintains. This pattern should be adopted for all 50+ files currently lacking it, starting with the largest (see hot-spot list).
 
+**Why `env_model.rs` is the model (verified iteration 10, lines 1–17):**
+
+The doc does three things, in order, that every good `//!` should do:
+
+1. **One-line purpose** (`//! Env policy model: reserved runtime env vars and interpolation parsing.`) — searchable, scannable, answers "what is this module?" before any code is read.
+2. **"Source of truth" scope** — two bulleted claims explicitly state what this module is *the* authority for. Future contributors can't accidentally duplicate these definitions elsewhere without noticing the claim.
+3. **Consolidation history** — lines 12–17 name the two previous locations (`manifest::RESERVED_RUNTIME_ENV_VARS` and `runtime::RUNTIME_OWNED_ENV_VARS`) and explain why they were merged. This makes the design decision visible without needing `git blame`. **This is the element most files lack** — they state what they do but not why they exist or what they replaced.
+
+A `//!` that only does item 1 is adequate. One that does all three eliminates a class of tribal-knowledge questions entirely.
+
 ---
 
 ## §5 — Naming Pass Candidates
@@ -610,7 +620,7 @@ Each entry is a **candidate**, not a mandate. Confirmed present in the repositor
 | 3 | `load_agent` | `src/runtime/launch.rs:533` | "load" is the user-facing verb (matches `jackin load`), but internally this function bootstraps a container — "load" undersells the complexity | `launch_agent`, `bootstrap_agent` | Leave as `load_agent` to match CLI verb; document in `//!` that it is the container bootstrap entry point |
 | 4 | `StepCounter` | `src/runtime/launch.rs:77` | Not obviously a UI step indicator; "counter" suggests a number, not a display concern | `LaunchProgress`, `BootstrapSteps` | `LaunchProgress` |
 | 5 | `ClassSelector` | `src/selector.rs` | "Class" is a Docker container label concept; a fresh contributor may confuse with OOP class or CSS class | `AgentClass`, `AgentSelector` | `AgentClass` aligns with the "agent class" concept in docs |
-| 6 | `dispatch_value` | `src/operator_env.rs:33` | "dispatch" suggests routing to a handler; what this actually does is resolve a single env value to its final string | `resolve_env_value`, `evaluate_env_value` | `resolve_env_value` |
+| 6 | `dispatch_value` | `src/operator_env.rs:33` | "dispatch" suggests routing to a handler; what this actually does is resolve a single env value to its final string | `resolve_env_value`, `evaluate_env_value` | `resolve_env_value`. **Rename scope (verified iteration 10):** 1 production call site (`operator_env.rs:595`, inside `resolve_operator_env_with`) + 6 test call sites (all inside `mod tests` at line 812 of the same file). All callers are in a single file — this is the lowest-cost rename in the table. |
 | 7 | `parse_host_ref` | `src/operator_env.rs:66` | "host ref" — "host" means "host machine" (as opposed to Docker container), "ref" means `$NAME` or `${NAME}`. Not obvious. | `parse_host_env_ref`, `extract_env_var_name` | `extract_host_env_name` |
 | 8 | `OpRunner` | `src/operator_env.rs:10` | "Op" is ambiguous: "operation"? "operator"? "1Password op CLI"? In this context it's specifically the 1Password CLI. | `OnePasswordReader`, `OpCliRunner` | `OpCliRunner` — makes the 1Password CLI connection obvious |
 | 9 | `OpStructRunner` | `src/operator_env.rs:348` (PR #171) | Same ambiguity; "Struct" differentiates it from `OpRunner` but is an implementation detail | `OpMetadataClient`, `OnePasswordBrowser` | `OpMetadataClient` — "client" signals structured query, no secret value |
@@ -954,7 +964,20 @@ This is required by the stack constraint. `docs/AGENTS.md` already names this as
 
 **Gain:** The self-hosted approach is already delivering value (SHA-pinned Actions, Docker digest pins, Cargo updates). The only tuning gap is `prConcurrentLimit = 20` (reduce to 3–5 for a small repo) and `LOG_LEVEL: debug` (lower to `info`).
 
-**Recommendation:** `defer` migration — current self-hosted approach is correct given the DCO sign-off constraint. Two low-cost improvements worth making: (1) lower `prConcurrentLimit` from 20 to 5 in `renovate.json`; (2) lower `LOG_LEVEL` from `debug` to `info` in `renovate.yml`. Neither requires alternatives research — they are config tuning, not tool changes.
+**Recommendation:** `defer` migration — current self-hosted approach is correct given the DCO sign-off constraint. Three low-cost improvements worth making (all in `renovate.json` or `renovate.yml`, no tool change):
+
+1. **Lower `prConcurrentLimit`** from 20 to 5 in `renovate.json` — a single-maintainer repo doesn't benefit from 20 simultaneous open PRs.
+2. **Lower `LOG_LEVEL`** from `debug` to `info` in `.github/workflows/renovate.yml` — `debug` produces very long logs that obscure real issues.
+3. **Add `automerge` for `lockFileMaintenance`** — the minimal safe pattern (verified against current `renovate.json` in iteration 10; current file has no `packageRules` key):
+   ```json
+   "packageRules": [
+     {
+       "matchUpdateTypes": ["lockFileMaintenance"],
+       "automerge": true
+     }
+   ]
+   ```
+   `lockFileMaintenance` PRs refresh `Cargo.lock` (and `bun.lock`) without bumping any declared version — they are pure noise and always safe to merge. The DCO sign-off is already in the commit body via `RENOVATE_GIT_AUTHOR`, so automerge does not bypass DCO. **Do not automerge patch or minor version bumps** — Rust crates have inconsistently applied semver (a "patch" can break APIs), and GitHub Actions pinned to SHA require human review of the new digest. Lock-file automerge is the correct conservative scope.
 
 ---
 

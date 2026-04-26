@@ -327,6 +327,44 @@ See §9 of the roadmap for the canonical list. Key items:
 
 ---
 
+## Iteration 10 — 2026-04-26
+
+### Active loop status
+`88287a35` (every 30 min) is the only active loop. User re-invoked `/loop` but requested keeping only the oldest; new CronCreate was skipped.
+
+### Improvements chosen
+
+1. **§5 row 6 — `dispatch_value` rename scope** — grep-verified: 1 production call site (`operator_env.rs:595`, inside `resolve_operator_env_with`) + 6 test call sites (lines 817–904, all inside `mod tests` at line 812). All 7 callers are in one file. This makes `dispatch_value → resolve_env_value` the lowest-cost rename in the §5 table. Added scope note to the recommendation column.
+
+2. **§7.13 Renovate — `automerge` pattern** — read `renovate.json` in full (iteration 10): current file has no `packageRules` key. Added the minimal safe automerge pattern: `matchUpdateTypes: ["lockFileMaintenance"]` only. `lockFileMaintenance` PRs refresh `Cargo.lock`/`bun.lock` without bumping declared versions — always safe, DCO sign-off already in commit. Explicitly documented NOT to automerge patch/minor Cargo bumps (Rust semver inconsistency) or SHA-pinned Actions (need human review of new digest).
+
+3. **§4 Rule 7 — `//!` exemplar content** — read `src/env_model.rs:1–17` in full. Extracted the three-element pattern that makes it exemplary: (1) one-line scannable purpose, (2) explicit "source of truth" scope claims, (3) consolidation history naming previous locations. Highlighted element 3 as the most commonly missing piece — it makes design decisions visible without `git blame`.
+
+### What was read
+- `renovate.json` (full — confirmed no `packageRules`; `prConcurrentLimit = 20`, no `automerge`)
+- `src/operator_env.rs` line counts at: 595 (production dispatch_value call), 812 (mod tests start), 817–904 (6 test call sites); function definition at line 33
+- `src/env_model.rs:1–17` (full `//!` module doc — quoted in §4 Rule 7 analysis)
+
+### What changed in the roadmap
+- §0: Iteration count bumped to 10
+- §5 row 6: Added verified rename scope (1 prod + 6 test call sites, single file)
+- §7.13: Recommendation expanded from 2 to 3 points; added exact `packageRules` JSON for lockFileMaintenance automerge with rationale
+- §4 Rule 7: Expanded from 2 sentences to a structured 3-element analysis with direct quotes from `env_model.rs:1–17`
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| §5 row 6 `dispatch_value` | High | Call sites grep-counted; all in one file |
+| §7.13 Renovate automerge | High | `renovate.json` read in full; automerge scope and risks grounded |
+| §4 Rule 7 `//!` exemplar | High | `env_model.rs` lines 1–17 read and quoted directly |
+
+### Weakest sections for iteration 11
+1. **§6 CI — `ci.yml` step-level detail** — §6 documents each workflow at a high level but `ci.yml` is the most important (it gates every PR). What exactly do the `check` and `build-validator` jobs do? The exact job steps and their order would sharpen the CI modernization recommendations.
+2. **§7.9 `insta` snapshot test — first targets depth** — iteration 3 named three concrete first targets (`render_sentinel_description_pane`, `render_tab_strip`, `render_mounts_subpanel`) but didn't verify those function names exist in the current codebase. A grep would confirm or correct.
+3. **§2 concept 25 — toolchain version pinning** — `rust-toolchain.toml` is recommended as the canonical source but the roadmap doesn't verify whether `dtolnay/rust-toolchain` in CI automatically reads `rust-toolchain.toml` (it does — but this should be cited).
+
+---
+
 ## Iteration 8 — 2026-04-26
 
 ### Active loop status
