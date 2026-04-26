@@ -187,38 +187,48 @@ pub fn run(cli: Cli) -> Result<()> {
                     }
                 }
             };
-            if containers.is_empty() {
-                println!("No matching agents found.");
-            } else {
-                for container in &containers {
-                    runtime::eject_agent(container, &mut runner)?;
-                    if purge {
-                        crate::isolation::cleanup::purge_isolated_for_container(
-                            &paths.data_dir.join(container),
-                            &mut runner,
-                        )?;
-                        remove_data_dir_if_exists(&paths.data_dir.join(container))?;
-                        println!("Ejected and purged {container}.");
-                    } else {
-                        println!("Ejected {container}.");
+            // Wrap the loop so a partial failure still hits the trailing
+            // reconcile — otherwise a `--all` eject that errors on
+            // container N+1 would leave caffeinate running even though
+            // earlier containers were already removed.
+            let result: anyhow::Result<()> = (|| {
+                if containers.is_empty() {
+                    println!("No matching agents found.");
+                } else {
+                    for container in &containers {
+                        runtime::eject_agent(container, &mut runner)?;
+                        if purge {
+                            crate::isolation::cleanup::purge_isolated_for_container(
+                                &paths.data_dir.join(container),
+                                &mut runner,
+                            )?;
+                            remove_data_dir_if_exists(&paths.data_dir.join(container))?;
+                            println!("Ejected and purged {container}.");
+                        } else {
+                            println!("Ejected {container}.");
+                        }
                     }
                 }
-            }
+                Ok(())
+            })();
             runtime::reconcile_keep_awake(&paths, &mut runner);
-            Ok(())
+            result
         }
         Command::Exile => {
             let names = runtime::list_managed_agent_names(&mut runner)?;
-            if names.is_empty() {
-                println!("No agents running.");
-            } else {
-                for name in &names {
-                    runtime::eject_agent(name, &mut runner)?;
-                    println!("Ejected {name}.");
+            let result: anyhow::Result<()> = (|| {
+                if names.is_empty() {
+                    println!("No agents running.");
+                } else {
+                    for name in &names {
+                        runtime::eject_agent(name, &mut runner)?;
+                        println!("Ejected {name}.");
+                    }
                 }
-            }
+                Ok(())
+            })();
             runtime::reconcile_keep_awake(&paths, &mut runner);
-            Ok(())
+            result
         }
         Command::Config(config_cmd) => match config_cmd {
             cli::ConfigCommand::Mount(mount_cmd) => match mount_cmd {
