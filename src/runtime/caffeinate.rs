@@ -112,9 +112,9 @@ fn reconcile_inner(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyh
             // propagating — otherwise the detached caffeinate would
             // run until reboot with no recoverable handle (we'd lose
             // the PID with the stack frame).
-            let pid = spawn_caffeinate()?;
+            let pid = spawn_caffeinate(runner)?;
             if let Err(err) = write_pid_file(&pid_path, pid) {
-                if let Err(stop_err) = stop_caffeinate(pid) {
+                if let Err(stop_err) = stop_caffeinate(runner, pid) {
                     eprintln!(
                         "[jackin] keep_awake: PID file write failed AND cleanup kill of newly-spawned caffeinate (PID {pid}) also failed: {stop_err}; manual `pkill caffeinate` may be required"
                     );
@@ -131,7 +131,7 @@ fn reconcile_inner(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyh
                 // would spawn a duplicate next to the orphan).
                 // Propagating with `?` keeps the PID file intact so
                 // the next reconcile retries the same PID.
-                stop_caffeinate(pid)?;
+                stop_caffeinate(runner, pid)?;
             }
             remove_pid_file_if_present(&pid_path)?;
         }
@@ -329,32 +329,21 @@ fn classify_ps_comm_output(success: bool, stdout: &str) -> Liveness {
 ///    (Ctrl-C targets the foreground PGID, and there is no
 ///    foreground process in the original PGID once jackin exits),
 ///    but we cannot guarantee group isolation without `unsafe`.
-fn spawn_caffeinate() -> anyhow::Result<u32> {
-    let output = Command::new("sh")
-        .arg("-c")
-        // `nohup` ignores SIGHUP for the child; redirecting all three
-        // fds to /dev/null prevents nohup from creating `nohup.out` in
-        // the cwd. `echo $!` returns the PID of the backgrounded job
-        // — caffeinate itself, not the shell.
-        .arg("nohup caffeinate -imsu </dev/null >/dev/null 2>&1 & echo $!")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .context("spawning caffeinate via sh")?;
-
-    anyhow::ensure!(
-        output.status.success(),
-        "shell wrapper exited with {} while spawning caffeinate: {}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-
-    let raw = String::from_utf8(output.stdout).context("caffeinate PID output not UTF-8")?;
-    let pid: u32 = raw
-        .trim()
-        .parse()
-        .with_context(|| format!("parsing caffeinate PID from {:?}", raw.trim()))?;
-    Ok(pid)
+fn spawn_caffeinate(runner: &mut impl CommandRunner) -> anyhow::Result<u32> {
+    // Routed through `CommandRunner` so `--debug` surfaces the spawn
+    // (`[debug] sh -c …`) and the resulting PID (`[debug] -> <pid>`).
+    // Operators validating keep_awake need to see this transition or
+    // the reconciler is opaque from the outside.
+    let raw = runner.capture(
+        "sh",
+        &[
+            "-c",
+            "nohup caffeinate -imsu </dev/null >/dev/null 2>&1 & echo $!",
+        ],
+        None,
+    )?;
+    raw.parse::<u32>()
+        .with_context(|| format!("parsing caffeinate PID from {raw:?}"))
 }
 
 /// SIGTERM the caffeinate process.
@@ -372,22 +361,15 @@ fn spawn_caffeinate() -> anyhow::Result<u32> {
 /// EPERM (PID flipped to a process owned by someone else — the very
 /// TOCTOU the comm check exists to prevent) both surface here so the
 /// operator sees a breadcrumb when the rare race fires.
-fn stop_caffeinate(pid: u32) -> anyhow::Result<()> {
-    let output = Command::new("kill")
-        .arg(pid.to_string())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
-        .with_context(|| format!("spawning kill({pid})"))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let trimmed = stderr.trim();
-    if trimmed.is_empty() {
-        anyhow::bail!("kill {pid} exited {}", output.status);
-    }
-    anyhow::bail!("kill {pid}: {trimmed}")
+fn stop_caffeinate(runner: &mut impl CommandRunner, pid: u32) -> anyhow::Result<()> {
+    // Routed through `CommandRunner` for the same reason as the spawn:
+    // `--debug` must show the kill so operators can correlate the
+    // teardown with the agent exit. `capture` (vs `run`) folds the
+    // kill's stderr into the error message — preserving the prior
+    // behaviour where `ESRCH`/`EPERM` text reached the breadcrumb.
+    runner
+        .capture("kill", &[&pid.to_string()], None)
+        .map(|_| ())
 }
 
 /// Path helper exported for tests of higher-level integrations.
