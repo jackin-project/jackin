@@ -3,7 +3,7 @@
 ## §0 — Meta
 
 **Last updated:** 2026-04-26
-**Iteration:** 2
+**Iteration:** 3
 
 This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` treated as already merged per operator instruction). Recommendations are inputs to a future, separate execution effort — no code has been touched.
 
@@ -503,11 +503,52 @@ Violators:
   - `src/runtime/trust.rs` (~60L): `confirm_agent_trust` (216–271). Self-contained; depends only on `tui` and `config`. Test-injectable via the `FnOnce` parameter in `load_agent`.
 
   **Net effect**: `launch.rs` shrinks from 2368L to ~120L (public API only). The pipeline logic is readable from `launch_pipeline.rs` without terminfo or trust noise. Terminfo and trust become independently testable units.
-- `src/operator_env.rs` (1569L) — contains `OpRunner` trait (secret resolution), `OpStructRunner` trait (metadata browser — PR #171), `OpCli` implementation, `OpAccount/Vault/Item/Field` types (PR #171), `EnvLayer` enum, `merge_layers`, `resolve_operator_env*`, `print_launch_diagnostic`, `write_launch_diagnostic`. Proposed split:
-  - `src/operator_env.rs` → `OpRunner` trait, `dispatch_value`, `parse_host_ref` (~100L)
-  - `src/op/mod.rs` → `OpStructRunner`, `OpAccount`, `OpVault`, `OpItem`, `OpField`, `RawOpField` (PR #171 additions)
-  - `src/op/client.rs` → `OpCli`, `OpCli::account_list`, etc.
-  - `src/operator_env.rs` keeps env-layer logic: `EnvLayer`, `merge_layers`, `resolve_operator_env`, `print_launch_diagnostic`
+- `src/operator_env.rs` (1569L) — read in full for iteration 3; concrete structure:
+  - Lines 1–3: `//!` module doc (present — one of the few files with it)
+  - Lines 5–22: `OpRunner` trait (public, 2 methods: `read`, `probe`)
+  - Lines 24–65: `dispatch_value` fn (public, dispatches op:// vs $NAME vs literal)
+  - Lines 66–95: `parse_host_ref` + `is_valid_env_name` (private, name-parsing helpers)
+  - Lines 96–103: 3 constants: `OP_DEFAULT_BIN`, `OP_DEFAULT_TIMEOUT` (30s), `OP_STDERR_MAX` (4KiB)
+  - Lines 105–152: `OpCli` struct + `impl OpCli` (public struct; `new()`, `with_binary()`, test-only `with_binary_and_timeout()`) + `Default` impl
+  - Lines 154–195: Private subprocess helpers: `format_exit_status`, `truncate_stderr`, `drain_bounded_stderr` (caps stderr read to OP_STDERR_MAX+1 bytes)
+  - Lines 196–231: `spawn_wait_thread` fn (spawns a background thread that polls `try_wait` and forwards exit status via channel — the threading contract for `op read` timeout handling)
+  - Lines 233–364: `impl OpRunner for OpCli` (~131L — the actual `op read` subprocess logic: spawn, stderr drain, wait with timeout, error formatting)
+  - Lines 365–383: `EnvLayer` enum (public) + `Display` impl
+  - Lines 385–413: `merge_layers` fn (public, 4-BTreeMap merge, later-wins)
+  - Lines 416–485: `validate_reserved_names` fn (public, ~69L, load-time reserved-name check across all 4 layers)
+  - Lines 487–510: `resolve_operator_env` fn (public, ~23L, thin wrapper injecting default `OpCli`)
+  - Lines 512–633: `resolve_operator_env_with` fn (public, ~121L body, test-injectable via `R: OpRunner + ?Sized`)
+  - Lines 634–655: `print_launch_diagnostic` fn (public, writes to stderr via `write_launch_diagnostic`)
+  - Lines 657–679: `format_launch_diagnostic_for_test` fn (`#[cfg(test)]` only)
+  - Lines 681–778: `write_launch_diagnostic` fn (private, ~97L, debug mode shows full attribution; normal mode shows counts only)
+  - Lines 780–808: `ValueKind` private enum + `classify_value` fn (Op/Host/Literal classification for diagnostic display)
+  - Lines 811–1569: `#[cfg(test)] mod tests` (~758L — tests for all above)
+
+  **PR #171 additions** (at line ~348 in PR branch — not yet on main):
+  - `OpStructRunner` trait (metadata browser; never deserializes secret values — the `RawOpField` invariant)
+  - `OpAccount`, `OpVault`, `OpItem`, `OpField` structs
+  - `RawOpField` deserialization struct (deliberately omits `value` field)
+  - Shared timeout primitive
+  - `impl OpStructRunner for OpCli`
+  - These additions grow the file from 1569L to ~1900L+ on the PR branch
+
+  **Two distinct clusters (dependency graph):**
+  - *`op` CLI subprocess layer* (lines 96–364, ~270L): `OpCli`, constants, `spawn_wait_thread`, `drain_bounded_stderr`, `impl OpRunner for OpCli`. Concern: "How do I talk to the `op` binary?" Depends on: `OpRunner` trait only.
+  - *Env layer resolution* (lines 365–808, ~443L): `EnvLayer`, `merge_layers`, `validate_reserved_names`, `resolve_operator_env*`, diagnostic output. Concern: "How do I merge and resolve the 4 config layers?" Depends on: `OpRunner` + `dispatch_value` for resolution; `config::AppConfig` for structure.
+  - *Connective tissue* (lines 5–95, ~90L): `OpRunner` trait + `dispatch_value` + `parse_host_ref` + `is_valid_env_name`. Used by both clusters.
+
+  **Proposed split** (converts `src/operator_env.rs` to a module directory — the idiomatic Rust pattern):
+  - `src/operator_env/mod.rs` (~100L): Public API — `OpRunner` trait (5–22), `dispatch_value` (24–65), `parse_host_ref` + `is_valid_env_name` (66–95), re-exports from sub-modules.
+  - `src/operator_env/client.rs` (~280L production + tests): `OpCli` struct (105–152), subprocess helpers (154–231), `impl OpRunner for OpCli` (233–364).
+  - `src/operator_env/layers.rs` (~470L production + tests): `EnvLayer` + `merge_layers` (365–413), `validate_reserved_names` (416–485), `resolve_operator_env*` (487–633), diagnostic output (634–808).
+  - `src/operator_env/picker.rs` (~250L production + tests — PR #171 additions): `OpStructRunner` trait, `OpAccount/Vault/Item/Field`, `RawOpField`, `impl OpStructRunner for OpCli`.
+
+  **Net effect**: Max file size drops from 1569L to ~470L (`layers.rs`, excluding tests). The `picker.rs` module fully encapsulates the metadata-browser concern introduced by PR #171, and its `RawOpField` trust invariant is findable by module name alone. The `client.rs` / subprocess concern is isolated from all env-resolution logic.
+
+  **Dependency graph for the split** (no circularity):
+  - `client.rs` imports `OpRunner` from `mod.rs`.
+  - `layers.rs` imports `OpRunner` + `dispatch_value` from `mod.rs`.
+  - `picker.rs` imports `OpRunner` from `mod.rs` + `OpCli` from `client.rs`.
 - `src/config/editor.rs` (1467L) — a single file for the entire TOML editing engine. The file is cohesive (all about `toml_edit` mutations) but too long. Proposed split:
   - `src/config/editor/mod.rs` → `ConfigEditor` struct, `EnvScope`, public API surface
   - `src/config/editor/workspace_ops.rs` → workspace CRUD methods
@@ -695,7 +736,17 @@ Extends `config:recommended` + `docker:pinDigests`. Removes per-PR and concurren
 **The 2026-modern landscape:**
 
 *Testing approach A — `insta` snapshot tests for TUI rendering:*
-ratatui provides `TestBackend` which captures rendered cells to a `Buffer`. `insta` can snapshot the buffer as a string (one line per terminal row). This catches accidental layout regressions — e.g., when a column header shifts after a refactor. The approach is documented at ratatui.rs/recipes/testing/snapshots/ and is the community-endorsed path. Cost: add `insta` to `[dev-dependencies]`; write one snapshot test per major render function (estimated: 8–12 functions in `console/manager/render/`). The test suite is large enough that snapshot regressions would be caught quickly.
+ratatui provides `TestBackend` which captures rendered cells to a `Buffer`. `insta` can snapshot the buffer as a string (one line per terminal row). This catches accidental layout regressions — e.g., when a column header shifts after a refactor. The approach is documented at ratatui.rs/recipes/testing/snapshots/ and is the community-endorsed path. Cost: add `insta` to `[dev-dependencies]`; write one snapshot test per major render function.
+
+**Concrete first 3 snapshot tests** (verified by reading the render modules — iteration 3):
+
+1. **`render_sentinel_description_pane`** (`src/console/manager/render/list.rs:306`) — takes only `&mut Frame` and `Rect`; zero state input; renders the static "+ New workspace" description panel. Simplest possible snapshot test — no fixture construction. Terminal size 80×10 suffices. Approx 10 lines of test code including the `TestBackend` setup.
+
+2. **`render_tab_strip`** (`src/console/manager/render/editor.rs:180`) — takes `&mut Frame`, `Rect`, and `EditorTab` enum value. Enumerate all 4 tab variants (`General`, `Mounts`, `Agents`, `Secrets`/stub) as separate snapshot assertions. Terminal size 80×3 (just the strip). 4 snapshots, ~20 lines of test code.
+
+3. **`render_mounts_subpanel`** (`src/console/manager/render/list.rs:408`) — takes `&mut Frame`, `Rect`, `&[MountConfig]`. Three cases: empty slice, 1 mount, 3 mounts. `MountConfig` can be constructed with `MountConfig { src: "/home/op/project".into(), dst: "/workspace/project".into(), read_only: false }`. Terminal size 60×20. ~30 lines of test code covering 3 snapshots.
+
+These 3 tests together exercise 2 different render modules, cover both zero-state and data-driven cases, and catch any future column-width, padding, or color-palette regressions in the most-visited code paths.
 
 *Testing approach B — `ratatui-testlib` (PTY-based):*
 Runs TUI in a real pseudo-terminal; captures with a terminal emulator. More faithful (captures ANSI colours) but heavier setup. Deferred until colour fidelity is a real requirement.
@@ -820,7 +871,7 @@ Formats: MADR (Markdown Any Decision Records, `docs/adr/` convention), Nygard's 
 
 *Blocker 1 — `rainEngine.ts` indexed access:* `docs/src/components/landing/rainEngine.ts:26,66,68,81,94` — multiple array index accesses without null-check: `RAIN_CHARS[Math.floor(...)]`, `state.grid[r]`, `row[c]`, `state.columns[c]`, `state.grid[col.head][c]`. With `noUncheckedIndexedAccess` each would become `T | undefined`, requiring either a non-null assertion or a null check. The `rainEngine.test.ts` co-located test file confirms this is treated as production-quality code.
 
-*Blocker 2 — `astro-og-canvas` optional-property types:* `astro-og-canvas` types use optional properties that conflict with `exactOptionalPropertyTypes` (which forbids assigning `undefined` to optional fields). Exact scope depends on the version pinned in `docs/package.json` — not fully read in this iteration (OQ7: confirm `astro-og-canvas` version and exact failing type signatures).
+*Blocker 2 — `astro-og-canvas` optional-property types (resolved OQ7):* Version `^0.11.1` (confirmed `docs/package.json`). The concrete conflict is in `docs/src/pages/og/[...slug].png.ts:~35`: `logo: undefined` in the `getImageOptions` return. With `exactOptionalPropertyTypes`, setting an optional property to `undefined` explicitly is a type error (must either omit it or declare the type as `T | undefined`). **Fix**: remove the `logo: undefined` line from the options object. There may be additional conflicts inside `astro-og-canvas`'s own type definitions that a `bunx tsc --noEmit` run would surface; the user-code fix is confirmed.
 
 **The 2026-modern landscape:**
 
@@ -1004,7 +1055,7 @@ Heavy frameworks for multi-agent parallelism. Overkill for a single-maintainer p
 
 **OQ6 — MSRV vs actual feature use:** Does the code use any Rust feature stabilised after 1.94? `let-else` (stable 1.65), `if let` chaining (1.64), `array::windows` — all fine. The `edition = "2024"` in `Cargo.toml` requires Rust ≥ 1.85. This means `rust-version = "1.94"` is correct (1.94 > 1.85) but `edition 2024` already implies ≥ 1.85, so the effective MSRV is max(1.85, 1.94) = 1.94. To be confirmed with `cargo +1.94.0 check`.
 
-**OQ7 — `astro-og-canvas` exact version and failing types:** `docs/package.json` not read in either iteration. Need to confirm the `astro-og-canvas` version and which specific type signatures fail with `exactOptionalPropertyTypes`. Tracked for iteration 3.
+**OQ7 — ~~`astro-og-canvas` exact version and failing types~~** *(resolved in iteration 3)*: Version is `^0.11.1` (from `docs/package.json`). Usage is in `docs/src/pages/og/[...slug].png.ts` via `OGImageRoute({ getImageOptions: ... })`. The concrete `exactOptionalPropertyTypes` conflict is in the `getImageOptions` callback return value at line ~35: `logo: undefined` — this pattern is forbidden under `exactOptionalPropertyTypes` because it explicitly assigns `undefined` to an optional property. The fix is one-line: remove `logo: undefined` entirely (omit it from the options object). A `bunx tsc --noEmit` run with the flag enabled would reveal any additional conflicts in the library's own type definitions, but the user-code fix is confirmed. See §7.11 for the updated recommendation.
 
 ### Out of Scope for This Roadmap
 

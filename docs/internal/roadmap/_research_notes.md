@@ -91,6 +91,18 @@ Append new entries at the bottom; include retrieval date.
 
 ---
 
+## 2026-04-26 — astro-og-canvas 0.11.1 exactOptionalPropertyTypes conflict
+
+**Source:** Direct reading of `docs/src/pages/og/[...slug].png.ts` and `docs/package.json` (iteration 3).
+
+**Summary:**
+- `astro-og-canvas ^0.11.1` is the pinned version.
+- User-code conflict: `logo: undefined` on the `getImageOptions` return value. Under `exactOptionalPropertyTypes` this is a type error — must omit the property instead.
+- Fix: delete `logo: undefined,` from the options object (~line 35 of the OG card generator).
+- Possibly more conflicts in `astro-og-canvas` internals — needs `bunx tsc --noEmit` to confirm.
+
+---
+
 ## 2026-04-26 — cargo-mutants mutation testing
 
 **Sources:**

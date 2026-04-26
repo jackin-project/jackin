@@ -107,6 +107,56 @@ See §9 of the roadmap for the canonical list. Key items:
 
 ---
 
+## Iteration 3 — 2026-04-26
+
+### Improvements chosen
+
+1. **§4 `operator_env.rs` deep read** — mirrored the launch.rs analysis from iteration 2: mapped every function to exact line ranges, traced the two distinct clusters (`op` CLI subprocess layer vs env layer resolution), identified connective tissue, produced a concrete module-directory split (`src/operator_env/mod.rs`, `client.rs`, `layers.rs`, `picker.rs`) with line estimates and dependency graph.
+2. **§7.5 testing** — replaced generic "write ~10 snapshot tests" with three concrete, verified first targets: `render_sentinel_description_pane` (zero state, 10 lines), `render_tab_strip` (4 enum variants, 20 lines), `render_mounts_subpanel` (3 data-driven cases, 30 lines).
+3. **OQ7 resolved** — read `docs/package.json` (astro-og-canvas ^0.11.1 confirmed); read `docs/src/pages/og/[...slug].png.ts` and identified the exact user-code conflict (`logo: undefined` on line ~35); updated §7.11 and §9 OQ7.
+
+### What was read
+
+- `src/operator_env.rs` (full structure traced; lines 1–231 read in detail; lines 360–808 read in detail; tests start confirmed at line 811)
+- `src/console/manager/render/list.rs` (structure + first 10 fn signatures)
+- `src/console/manager/render/editor.rs` (structure + first 10 fn signatures)
+- `docs/package.json` (full)
+- `docs/src/pages/og/[...slug].png.ts` (full)
+
+### What changed in the roadmap
+
+- §0: Iteration count bumped to 3
+- §4: `operator_env.rs` split proposal rewritten with exact line ranges, two-cluster analysis, and 4-file module-directory split including PR #171 additions
+- §7.5: First 3 concrete snapshot test targets named with file paths, line numbers, fixture requirements, and estimated test sizes
+- §7.11: Blocker 2 entry updated to reference confirmed version and exact fix
+- §9 OQ7: Resolved with version + concrete `logo: undefined` finding
+- `_research_notes.md`: astro-og-canvas 0.11.1 entry added
+
+### Confidence assessment by section (updated)
+
+| Section | Confidence | Notes |
+|---|---|---|
+| §4 Source code structural diagnosis | High for launch.rs and operator_env.rs; medium for config/editor.rs | Both 2000L+ files now have concrete, line-grounded split proposals; config/editor still directional only |
+| §7.5 Testing | High | First 3 snapshot targets are concrete and verified by reading the render function signatures |
+| §7.11 Astro TS | High | Both blockers confirmed in source; OQ7 resolved |
+| §9 Open questions | OQ3 and OQ7 resolved; OQ1, OQ2, OQ5, OQ6 remain | |
+
+### Weakest sections for iteration 4
+
+1. **§4 `config/editor.rs` (1467L) split** — only directional so far; needs the same line-range treatment as launch.rs and operator_env.rs. The `ConfigEditor` struct's method count and method groupings need to be mapped.
+2. **§8.2 agent invocation convention** — "reads the file" is still vague. What does a specific `.claude/commands/brainstorm.md` file look like? A template would make the recommendation actionable.
+3. **§5 naming candidates** — 15 candidates, but candidates 6–15 have thin rationale. Each should cite the exact location in code (some do; some don't).
+4. **§1 Rustdoc coverage** — the "~28%" estimate should be replaced by an exact count (grep-countable).
+
+### Open questions
+
+- OQ1: PR #171 op_picker session cache design — still unread
+- OQ2: Custom Astro components (`overrides/`, `landing/`) — TypeScript strictness needs `bunx tsc --noEmit`
+- OQ5: `src/instance/auth.rs` (796L) — split not yet analyzed
+- OQ6: MSRV — `cargo +1.94.0 check` not yet run
+
+---
+
 ## Iteration 2 — 2026-04-26
 
 ### Improvements chosen
