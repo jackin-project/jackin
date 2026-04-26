@@ -30,7 +30,7 @@ Create a new workspace definition.
 | `--no-workdir-mount` | Don't auto-mount the workdir |
 | `--allowed-agent <NAME>` | Restrict to these agent classes (repeatable) |
 | `--default-agent <NAME>` | Agent class to auto-select |
-| `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared` or `worktree`. `clone` is recognized but rejected with a "planned but not implemented yet" error. The `<DST>` must match a mount destination present in the final mount plan. |
+| `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared` or `worktree`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
 
 ```bash
 jackin workspace create my-app --workdir ~/Projects/my-app

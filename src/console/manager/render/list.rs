@@ -125,7 +125,7 @@ fn render_toast(frame: &mut Frame, area: Rect, toast: &super::super::state::Toas
 
 /// Build aligned 4-column mount rows: (`path_display`, mode, `iso_label`,
 /// `kind_label`). `iso_label` is the canonical spelling of the mount's
-/// isolation strategy ("shared" / "worktree" / "clone") — rendered for every
+/// isolation strategy ("shared" / "worktree") — rendered for every
 /// mount including `shared` per the per-mount-isolation spec.
 pub(super) fn format_mount_rows(
     mounts: &[crate::workspace::MountConfig],

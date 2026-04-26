@@ -464,12 +464,6 @@ pub fn materialize_workspace(
                 ctx,
                 runner,
             )?,
-            MountIsolation::Clone => {
-                anyhow::bail!(
-                    "isolated mount `{}`: clone mode is reserved but not implemented yet",
-                    mount.dst
-                )
-            }
         };
         materialized[idx] = Some(m);
     }

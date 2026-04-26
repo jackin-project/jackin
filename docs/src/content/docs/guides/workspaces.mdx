@@ -113,7 +113,8 @@ Setting `isolation = "worktree"` on a source mount tells jackin' to materialize 
 |---|---|---|
 | `shared` | Default | Host path bind-mounted as-is. Today's behavior. |
 | `worktree` | V1 | Materialize a `git worktree` per container; bind-mount the worktree path. Branch defaults to `jackin/scratch/<container>`, base is host `HEAD`. |
-| `clone` | Reserved | Recognized in the enum vocabulary but rejected with a "planned but not implemented yet" error. |
+
+A `clone` mode (per-agent `git clone --local --shared` for full ref isolation) is on the [roadmap for V1.1](/reference/roadmap/per-mount-isolation/) but is not part of the V1 vocabulary — passing `--mount-isolation /…=clone` today errors with the standard "invalid isolation" message.
 
 ### Validation
 

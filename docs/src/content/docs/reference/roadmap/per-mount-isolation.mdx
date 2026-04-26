@@ -45,9 +45,9 @@ Modes:
 
 - **`shared`** — current behavior. Host path bind-mounted as-is.
 - **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path into the container. Each agent gets its own working tree, HEAD, and index, but **refs and the object database are shared with the host repo** — this is fundamental to git worktrees, there's only one ref namespace per repo. Branches the agent creates appear immediately in the host's `git branch -a` without an explicit push step. To make git work inside the container, jackin' also bind-mounts the host repo's `.git/` directory into the container (see [Design Decision: Worktree Materialization Layout](#design-decision-worktree-materialization-layout) below); this means the agent has read-write access to that `.git/`. Use worktree mode for **trusted agents on personal projects** where immediate ref visibility is valuable; use clone mode (planned) for the untrusted-agent / fully-isolated case. Branch is hardcoded as `jackin/scratch/<container>` — an ephemeral scratch ref whose only job is to keep the agent's in-progress work reachable until it pushes. Agents (or external tooling such as the Superpowers plugin in Claude Code) rename the branch before pushing a PR. Base is always the host repo's current `HEAD`.
-- **`clone`** — deferred from V1, planned for V1.1. jackin' will run `git clone --local --shared <src> <per-agent-copy>`, hardlinking objects for disk efficiency. Each agent gets a fully self-contained `.git/` with **independent refs** — the agent's branches don't appear on the host's `git branch -a` until `git push origin <branch>` is run from inside the container against the host clone path. Right answer for **parallel agents on shared/untrusted workloads**, where ref isolation matters more than immediate visibility. Worktree mode (V1) covers the trusted-agent / immediate-visibility case; clone mode is planned for the complementary use case. See [Comparison with Other Tools](#comparison-with-other-tools) for how this differs from worktree mode and from prior art (Docker Sandboxes, Conductor).
+- **`clone`** — planned for V1.1, **not part of the V1 enum vocabulary**. Will run `git clone --local --shared <src> <per-agent-copy>`, hardlinking objects for disk efficiency. Each agent will get a fully self-contained `.git/` with **independent refs** — the agent's branches won't appear on the host's `git branch -a` until `git push origin <branch>` is run from inside the container against the host clone path. Right answer for **parallel agents on shared/untrusted workloads**, where ref isolation matters more than immediate visibility. Worktree mode (V1) covers the trusted-agent / immediate-visibility case; clone mode is the complementary case. See [Comparison with Other Tools](#comparison-with-other-tools) for how it will differ from worktree mode and from prior art (Docker Sandboxes, Conductor).
 
-The mode vocabulary is intentionally enum-shaped from the start: `shared | worktree | clone`. `shared` is the canonical spelling, not `share`, because it describes the mount state and matches the persisted TOML value. V1 implements `shared` and `worktree`; `clone` is reserved in the public vocabulary but rejected by validation with a clear "planned but not implemented yet" message until clone mode ships.
+V1's mode vocabulary is `shared | worktree`. `shared` is the canonical spelling, not `share`, because it describes the mount state and matches the persisted TOML value. `clone` is documented above as a planned future mode but is not in the enum today: V1 doesn't pre-add API for unimplemented features, and a value the runtime can't honor would only confuse operators (TOML linting tools accept it, the CLI accepts it, then materialization fails). When clone mode lands, `clone` is added back to the enum, the parser, and the docs in the same change.
 
 Branch naming (Model B — full container name verbatim):
 
@@ -77,15 +77,15 @@ jackin workspace edit jackin \
   --mount-isolation /workspace/jackin=shared
 ```
 
-`--mount-isolation <dst>=<type>` is keyed by mount destination because destination is already the identity used by workspace upserts and removals. `<type>` uses the same canonical isolation enum as TOML (`shared | worktree | clone`). Keeping isolation out of the `--mount` string avoids overloading the existing `src:dst[:ro]` grammar and lets operators change only the isolation mode without retyping the mount source.
+`--mount-isolation <dst>=<type>` is keyed by mount destination because destination is already the identity used by workspace upserts and removals. `<type>` uses the same canonical isolation enum as TOML (V1: `shared | worktree`). Keeping isolation out of the `--mount` string avoids overloading the existing `src:dst[:ro]` grammar and lets operators change only the isolation mode without retyping the mount source.
 
 CLI behavior:
 
-- `workspace create` accepts one `--mount-isolation` entry per destination present in the final mount plan. Unknown destinations are a hard error.
-- `workspace edit` can change isolation for an existing mount without also passing `--mount`. It can also set isolation for a mount being upserted in the same command.
+- `workspace create` accepts one `--mount-isolation` entry per destination present in the final mount plan. Unknown destinations are a hard error (the operator typed an isolation mode for a `dst` that no `--mount` declares — likely a typo, never silent fallthrough to `shared`).
+- `workspace edit` can change isolation for an existing mount without also passing `--mount`. It can also set isolation for a mount being upserted in the same command. The same unknown-destination rule applies — the `<dst>` must match either an existing mount on the workspace or one being upserted in the same invocation.
 - `workspace show` adds an **Isolation** column. Omitted TOML fields display as `shared`.
 - `shared` is the canonical CLI/config spelling. Do not document `share` as an alias in V1; exact copy-paste between CLI output, TOML, and docs is more valuable than a second spelling.
-- `clone` is recognized as part of the future enum vocabulary, but V1 rejects it before persistence/materialization with a precise "planned but not implemented yet" error.
+- `clone` is **not** part of V1's parser vocabulary. Passing `--mount-isolation /…=clone` falls through to the standard "invalid isolation `clone`; expected one of: shared, worktree" error. The keyword will be re-added when clone mode ships (V1.1) — V1 does not pre-add API for unimplemented modes.
 - `workspace list` may stay count-only for V1; detailed per-mount isolation belongs in `workspace show`.
 - `config mount add` and global/scoped Docker mounts do **not** gain an isolation flag in V1. Isolation remains a workspace-mount concept.
 - Ad-hoc `jackin load --mount` mounts do **not** gain isolation support. They always remain `shared`; operators who want isolated source mounts should create or edit a saved workspace.
@@ -327,7 +327,7 @@ Ship:
   - `workspace create --mount-isolation <dst>=<type>`
   - `workspace edit --mount-isolation <dst>=<type>`
   - `workspace show` displays each mount's effective isolation
-- A shared `MountIsolation` parser/model for TOML and CLI, with canonical values `shared | worktree | clone`; `clone` is reserved but rejected in V1 until implemented.
+- A shared `MountIsolation` parser/model for TOML and CLI, with V1 canonical values `shared | worktree`. `clone` is documented as a planned V1.1 mode but is not in V1's enum/parser — the keyword is re-added when clone mode ships.
 - `jackin load --force` dirty-host acknowledgement for non-interactive worktree materialization; `jackin launch` gets an interactive confirmation path.
 - Dirty-host checks include staged changes, unstaged tracked changes, and untracked files; ignored files do not require acknowledgement.
 - Branch naming hardcoded as `jackin/scratch/<container>` (ephemeral scratch ref, Model B — full container name verbatim; see "Branch naming" earlier and the dedicated V1 Scope bullet below). Base is always host `HEAD`. No configurable template or base in V1.

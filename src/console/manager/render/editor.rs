@@ -163,7 +163,7 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
                 items.push(FooterItem::Key("R"));
                 items.push(FooterItem::Text("toggle ro/rw"));
                 // `I` cycles the per-mount isolation strategy on the
-                // highlighted row (shared ↔ worktree; clone reserved for V2).
+                // highlighted row (shared ↔ worktree).
                 // Same gating as R: hidden on the `+ Add mount` sentinel.
                 items.push(FooterItem::Sep);
                 items.push(FooterItem::Key("I"));

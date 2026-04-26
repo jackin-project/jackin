@@ -12,11 +12,6 @@ fn parse_mount_isolation(s: &str) -> anyhow::Result<(String, MountIsolation)> {
         anyhow::bail!("mount destination cannot be empty in `{s}`");
     }
     let mode = MountIsolation::from_str(ty)?;
-    if matches!(mode, MountIsolation::Clone) {
-        anyhow::bail!(
-            "isolation mode `clone` is reserved for a future release but not implemented yet"
-        );
-    }
     Ok((dst.into(), mode))
 }
 
@@ -531,8 +526,12 @@ mod tests {
 
     #[test]
     fn parse_mount_isolation_rejects_clone() {
+        // `clone` is documented in the roadmap as a planned future mode
+        // but is intentionally NOT in V1's enum vocabulary — it must
+        // fall through to the standard "invalid isolation" error so the
+        // CLI doesn't promise behavior the runtime can't deliver.
         let err = parse_mount_isolation("/workspace/jackin=clone").unwrap_err();
-        assert!(err.to_string().contains("not implemented yet"));
+        assert!(err.to_string().contains("invalid isolation `clone`"));
     }
 
     #[test]

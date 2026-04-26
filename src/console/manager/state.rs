@@ -591,18 +591,15 @@ impl EditorState<'_> {
     }
 
     /// Cycle the per-mount isolation strategy on the highlighted mount row.
-    /// Sequence: `Shared → Worktree → Shared`. `Clone` is reserved-but-rejected
-    /// in V1 of the per-mount-isolation feature, so the hotkey never enters
-    /// that variant — but if a saved workspace already uses `Clone`, the cycle
-    /// snaps back to `Shared` rather than getting stuck. Silent no-op when the
-    /// cursor is on the `+ Add mount` sentinel (i.e. past the last data row).
+    /// Sequence: `Shared → Worktree → Shared`. Silent no-op when the cursor
+    /// is on the `+ Add mount` sentinel (i.e. past the last data row).
     pub fn cycle_isolation_for_selected_mount(&mut self) {
-        use crate::isolation::MountIsolation::{Clone, Shared, Worktree};
+        use crate::isolation::MountIsolation::{Shared, Worktree};
         let FieldFocus::Row(n) = self.active_field;
         if let Some(m) = self.pending.mounts.get_mut(n) {
             m.isolation = match m.isolation {
                 Shared => Worktree,
-                Worktree | Clone => Shared,
+                Worktree => Shared,
             };
         }
     }
