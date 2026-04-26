@@ -2,20 +2,12 @@
 //! syntaxes (`op://`, `$NAME` / `${NAME}`, literal), and merging onto
 //! the manifest-resolved env at launch.
 
-/// Test seam for the `op` CLI subprocess.
-///
-/// Production code uses [`OpCli`] which shells out to `op read`; tests
-/// use a mock implementation that captures inputs and returns canned
-/// responses.
 pub trait OpRunner {
-    /// Resolve a single `op://...` reference to its secret value.
     fn read(&self, reference: &str) -> anyhow::Result<String>;
 
-    /// Verify the 1Password CLI is available on this host. Called
-    /// once per launch before any `op://` reference is resolved so
-    /// the operator sees a single, clear "install op" error rather
-    /// than one-per-key noise. Default is a no-op so mock runners
-    /// used in unit tests do not need to implement it.
+    /// Probed once per launch so a missing `op` surfaces as a single
+    /// install-link error rather than one-per-key noise. Default no-op
+    /// keeps mock runners trivial.
     fn probe(&self) -> anyhow::Result<()> {
         Ok(())
     }
@@ -23,13 +15,9 @@ pub trait OpRunner {
 
 /// Dispatch a single env value string to the appropriate resolver.
 ///
-/// * `op://...`              → `op_runner.read(value)`
-/// * `$NAME` or `${NAME}`    → `host_env(name)`
-/// * anything else           → returned verbatim as a literal
-///
-/// `layer_label` and `var_name` are used only for error messages so
-/// operators can locate the offending config line (e.g. `"workspace
-/// \"big-monorepo\" env var \"API_TOKEN\""`).
+/// `op://...` → `op_runner.read`, `$NAME` / `${NAME}` → `host_env`,
+/// otherwise verbatim. `layer_label` / `var_name` only feed error
+/// messages.
 pub fn dispatch_value<R>(
     layer_label: &str,
     var_name: &str,
@@ -59,10 +47,8 @@ where
     Ok(value.to_string())
 }
 
-/// Parse `$NAME` or `${NAME}` and return the name. Returns `None` for
-/// any other string (including bare `$`, `${}`, partially braced like
-/// `${NAME`, and anything containing whitespace or non-identifier
-/// characters after the sigil).
+/// Parse `$NAME` or `${NAME}` and return the name. Rejects bare `$`,
+/// unmatched braces, and non-identifier characters.
 fn parse_host_ref(value: &str) -> Option<&str> {
     if let Some(rest) = value.strip_prefix("${")
         && let Some(name) = rest.strip_suffix('}')
@@ -81,50 +67,25 @@ fn parse_host_ref(value: &str) -> Option<&str> {
     None
 }
 
-/// True when `value` is an `op://` 1Password reference.
-///
-/// Single source of truth for the prefix check used by `dispatch_value`
-/// (resolution), the workspace-editor render path (breadcrumb display),
-/// and the editor input handler (Enter-on-row no-op).
 #[must_use]
 pub fn is_op_reference(value: &str) -> bool {
     value.starts_with("op://")
 }
 
-/// Structured parts of an `op://...` reference, matching the official
-/// 1Password CLI secret-reference syntax:
+/// Structured parts of an `op://...` reference.
 ///
-/// ```text
-/// op://<vault>/<item>/[<section>/]<field>
-/// ```
-///
-/// (See <https://developer.1password.com/docs/cli/secret-reference-syntax/>.)
-///
-/// - 3 segments: `op://<vault>/<item>/<field>` — field is at the top
-///   level of the item.
-/// - 4 segments: `op://<vault>/<item>/<section>/<field>` — field lives
-///   inside a named section of the item.
-///
-/// Account scope is **not** encoded in the path. Multi-account picks
-/// are tracked separately on `OpPickerState::selected_account`; at
-/// launch time `op read` resolves against the operator's default
-/// account context. The render path uses the parsed parts to draw a
-/// breadcrumb so the path reads as a navigable trail rather than a
-/// dense URI.
+/// Syntax: `op://<vault>/<item>/[<section>/]<field>`. Account scope is
+/// not encoded in the path; multi-account picks live separately on
+/// `OpPickerState::selected_account`. See
+/// <https://developer.1password.com/docs/cli/secret-reference-syntax/>.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpReferenceParts {
     pub vault: String,
     pub item: String,
-    /// Section segment when the reference is 4-segment, else `None`.
-    /// Sections are 1Password's grouping construct inside an item;
-    /// fields living inside a section have a 4-segment reference.
     pub section: Option<String>,
     pub field: String,
 }
 
-/// Parse an `op://` reference into structured parts per the official
-/// 1Password CLI syntax. Returns `None` when the prefix is missing or
-/// the segment count is not 3 or 4.
 #[must_use]
 pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     let path = value.strip_prefix("op://")?;
@@ -146,8 +107,6 @@ pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     }
 }
 
-/// A valid POSIX-ish env name: ASCII letter or `_`, followed by ASCII
-/// alphanumeric or `_`. Empty names are rejected.
 fn is_valid_env_name(s: &str) -> bool {
     let mut chars = s.chars();
     match chars.next() {
@@ -157,34 +116,21 @@ fn is_valid_env_name(s: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Default production path for the 1Password CLI binary.
 const OP_DEFAULT_BIN: &str = "op";
-
-/// Default timeout for a single `op read` subprocess.
 const OP_DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
-/// Maximum bytes of subprocess stderr captured in error output.
-/// Larger outputs are truncated with a visible marker.
 const OP_STDERR_MAX: usize = 4 * 1024;
 
 /// Production `OpRunner` that shells out to the 1Password CLI.
 ///
-/// Tests replace this with a mock by constructing a different
-/// `OpRunner` implementation directly (e.g. `TestOpRunner`) or by
-/// pointing `OpCli` at an explicit binary path via `OpCli::with_binary`.
-/// No env-var-based test seam is used — the runner is always injected
-/// as a dependency, which keeps tests free of any process-env mutation
-/// and keeps the crate-level `unsafe_code = "forbid"` lint intact.
+/// Tests inject a different runner (e.g. `TestOpRunner`) rather than
+/// using an env-var seam — keeps the crate `unsafe_code = "forbid"`
+/// lint intact and tests free of process-env mutation.
 pub struct OpCli {
     binary: String,
     timeout: std::time::Duration,
 }
 
 impl OpCli {
-    /// Construct a runner that invokes the default `op` binary on `$PATH`.
-    /// Production code uses this via `OpCli::default()` inside
-    /// `resolve_operator_env`; tests construct a different runner
-    /// directly and pass it into `resolve_operator_env_with`.
     pub fn new() -> Self {
         Self {
             binary: OP_DEFAULT_BIN.to_string(),
@@ -192,9 +138,6 @@ impl OpCli {
         }
     }
 
-    /// Construct a runner that invokes an explicit binary path. Used
-    /// by integration tests to point `OpCli` at a tempfile-backed fake
-    /// `op` binary without touching the process env.
     pub const fn with_binary(binary: String) -> Self {
         Self {
             binary,
@@ -202,8 +145,6 @@ impl OpCli {
         }
     }
 
-    /// Test constructor: point at an explicit binary path with a
-    /// custom (usually shorter) timeout.
     #[cfg(test)]
     const fn with_binary_and_timeout(binary: String, timeout: std::time::Duration) -> Self {
         Self { binary, timeout }
@@ -216,29 +157,19 @@ impl Default for OpCli {
     }
 }
 
-/// Format a subprocess exit status for inclusion in an error message,
-/// falling back to `"signal"` if the process was terminated by a signal.
 fn format_exit_status(status: std::process::ExitStatus) -> String {
     status
         .code()
         .map_or_else(|| "signal".to_string(), |c| c.to_string())
 }
 
-/// Truncate a stderr string to roughly `OP_STDERR_MAX` bytes with a
-/// visible marker. Returns an owned `String` in either branch.
-///
-/// The slice is rounded down to the nearest UTF-8 char boundary at or
-/// before `OP_STDERR_MAX` so this never panics — the previous
-/// `&stderr[..OP_STDERR_MAX]` form would split a multi-byte codepoint
-/// (an `op` error in a non-ASCII locale, or any future output
-/// containing emoji / box-drawing) and crash on the error path.
+/// Truncate stderr to ~`OP_STDERR_MAX` bytes, rounding down to a UTF-8
+/// char boundary so a multi-byte codepoint at the cut point cannot
+/// panic on the error path.
 fn truncate_stderr(stderr: &str) -> String {
     if stderr.len() <= OP_STDERR_MAX {
         return stderr.to_owned();
     }
-    // Walk back from `OP_STDERR_MAX` until we land on a char boundary.
-    // The maximum walk is 3 bytes (UTF-8 codepoints are 1-4 bytes
-    // wide); `is_char_boundary(0)` is always true so this terminates.
     let mut end = OP_STDERR_MAX;
     while !stderr.is_char_boundary(end) {
         end -= 1;
@@ -246,9 +177,8 @@ fn truncate_stderr(stderr: &str) -> String {
     format!("{}… [truncated]", &stderr[..end])
 }
 
-/// Drain a child's stderr into a buffer capped at `OP_STDERR_MAX + 1`
-/// bytes. The extra byte lets the caller detect overflow; any further
-/// stderr output is drained into a sink so the child exits cleanly.
+/// Drain stderr capped at `OP_STDERR_MAX + 1` bytes; further output is
+/// sunk so the child exits cleanly.
 fn drain_bounded_stderr(mut stderr: std::process::ChildStderr) -> Vec<u8> {
     use std::io::Read;
 
@@ -270,12 +200,9 @@ fn drain_bounded_stderr(mut stderr: std::process::ChildStderr) -> Vec<u8> {
     buf
 }
 
-/// Spawn a background thread that polls `try_wait` on the shared child
-/// and forwards the exit status through `tx` when the child exits.
-///
-/// The poll loop releases the mutex between attempts so a concurrent
-/// timeout branch can `take` the child and call `kill` without waiting
-/// on a blocking `wait()`.
+/// Poll `try_wait` and forward the exit status, releasing the mutex
+/// between attempts so the timeout branch can `take` and `kill` the
+/// child without contending on a blocking `wait()`.
 fn spawn_wait_thread(
     child: std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>>,
     tx: std::sync::mpsc::Sender<std::io::Result<std::process::ExitStatus>>,
@@ -327,8 +254,9 @@ impl OpRunner for OpCli {
                 )
             })?;
 
-        // Wait with timeout using a channel-and-thread pattern so we
-        // don't pull in a new async dep.
+        // Channel-and-thread wait pattern so we avoid a new async dep,
+        // and the wait thread never holds the mutex across a blocking
+        // wait — see spawn_wait_thread.
         let (tx, rx) = std::sync::mpsc::channel();
         let mut stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
@@ -341,18 +269,6 @@ impl OpRunner for OpCli {
         });
         let stderr_handle = std::thread::spawn(move || drain_bounded_stderr(stderr));
 
-        // Share the Child handle across the wait thread (which polls
-        // `try_wait` and consumes the child on completion) and the
-        // timeout branch (which `take`s the child and calls `kill`).
-        // `Child::kill` sends SIGKILL on Unix per its documented
-        // behavior — no `unsafe` or libc dependency required.
-        //
-        // The wait thread must not hold the mutex across a blocking
-        // `wait()` call — that would deadlock the timeout branch,
-        // which needs the lock to perform the kill. Instead we poll
-        // `try_wait` on a short cadence and release the lock between
-        // polls so the timeout branch can take ownership the moment
-        // it needs to.
         let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
         spawn_wait_thread(std::sync::Arc::clone(&child), tx);
 
@@ -362,19 +278,13 @@ impl OpRunner for OpCli {
                 anyhow::bail!("1Password CLI wait failed for {reference:?}: {e}");
             }
             Err(_) => {
-                // Timeout: SIGKILL the child via the documented std API.
-                // `Child::kill` returns `io::Result<()>`; we ignore the
-                // result because the child may already have exited
-                // between `recv_timeout` expiring and us reaching here,
-                // which yields `Err(InvalidInput)` and is not a real
-                // failure for our purposes. Take the child out of the
-                // mutex in a short scope so no guard is held across the
-                // blocking `wait()` below.
+                // Child may have exited between recv_timeout expiring
+                // and the take below (yielding Err(InvalidInput) on
+                // kill), which is not a real failure. Reap so pipes
+                // close and reader threads exit.
                 let killed = child.lock().expect("child mutex poisoned").take();
                 if let Some(mut c) = killed {
                     let _ = c.kill();
-                    // Reap the killed child so its pipes close and the
-                    // stdout/stderr reader threads can exit.
                     let _ = c.wait();
                 }
                 anyhow::bail!(
@@ -388,12 +298,9 @@ impl OpRunner for OpCli {
         let stderr_bytes = stderr_handle.join().unwrap_or_default();
 
         if status.success() {
-            // `op read` appends a trailing newline as CLI convention.
-            // Strip exactly one — preserving any legitimate final newline
-            // that's actually part of the secret. Without this trim, the
-            // newline lands in the resolved env value and shows as a
-            // blank line after the var when the container shell exports
-            // it (visible in `env` output).
+            // `op read` appends a trailing newline as CLI convention;
+            // strip exactly one so a secret ending in a real newline
+            // (e.g. PEM block) survives.
             let mut stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
             if stdout.ends_with('\n') {
                 stdout.pop();
@@ -414,15 +321,10 @@ impl OpRunner for OpCli {
     }
 
     fn probe(&self) -> anyhow::Result<()> {
-        // Route through the shared spawn-and-timeout helper so a wedged
-        // `op` (network stall, biometric prompt held open, etc.) cannot
-        // freeze the caller indefinitely. The original implementation
-        // used plain `Command::output()`, which has no upper bound on
-        // wait time — every other entry point already routes through
-        // the channel-and-thread pattern; the probe is now consistent.
+        // Route through the timeout helper so a wedged `op` (network
+        // stall, biometric prompt held open) cannot freeze the caller.
         run_op_with_timeout(&self.binary, &["--version"], self.timeout).map_err(|e| {
-            // Preserve the install-link hint on the spawn-error path so
-            // operators see the same actionable error they did before.
+            // Preserve the install-link hint on spawn-error paths.
             let msg = e.to_string();
             if msg.contains("developer.1password.com") {
                 e
@@ -438,29 +340,17 @@ impl OpRunner for OpCli {
     }
 }
 
-/// Test seam for structural `op` queries used by the 1Password picker.
+/// Structural `op` queries used by the picker.
 ///
-/// Where [`OpRunner`] resolves a single `op://...` reference to its
-/// secret value, `OpStructRunner` enumerates *metadata* — accounts,
-/// vaults, items, and field shapes — without ever touching field
-/// values. The picker is a metadata browser; it must never deserialize
-/// a secret value into memory. The serde shapes used internally
-/// (`RawOpField` in particular) intentionally omit the `value` key.
+/// Distinct from [`OpRunner`] (single-value resolution): the picker is
+/// a metadata browser and must never deserialize a secret value — see
+/// [`RawOpField`].
 pub trait OpStructRunner {
-    /// `op account list --format json`. Used as a sign-in probe before
-    /// any subsequent call. Doesn't take an `account` parameter — it's
-    /// the probe that *discovers* signed-in accounts.
+    /// Doubles as the sign-in probe before any other call.
     fn account_list(&self) -> anyhow::Result<Vec<OpAccount>>;
-    /// `op vault list --format json` (optionally scoped to a single
-    /// account via `--account <id>`). Pass `None` on single-account
-    /// setups so `op` falls back to its default account context.
+    /// `account = None` lets `op` use its default-account context.
     fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>>;
-    /// `op item list --vault <vault_id> --format json` (optionally
-    /// scoped to a single account).
     fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>>;
-    /// `op item get <item_id> --vault <vault_id> --format json`
-    /// (optionally scoped to a single account). Returns the structural
-    /// `fields` array with values stripped.
     fn item_get(
         &self,
         item_id: &str,
@@ -469,11 +359,8 @@ pub trait OpStructRunner {
     ) -> anyhow::Result<Vec<OpField>>;
 }
 
-/// Identifier of a 1Password account as reported by `op account list`.
-///
 /// `id` is the `account_uuid` accepted by `op --account <id>`. `email`
-/// and `url` are populated for human-readable display in the picker's
-/// Account pane (e.g. `azhokhov@scentbird.com  (scentbird.1password.com)`).
+/// and `url` feed the picker's Account pane.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpAccount {
     pub id: String,
@@ -481,22 +368,15 @@ pub struct OpAccount {
     pub url: String,
 }
 
-/// Vault metadata as reported by `op vault list`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpVault {
     pub id: String,
     pub name: String,
 }
 
-/// Item metadata as reported by `op item list`.
-///
-/// The `name` field is mapped from the JSON `title` key, and `subtitle`
-/// is mapped from `additional_information` — 1Password populates the
-/// latter with the item's username (or another login-like identifier)
-/// and the picker renders it inline next to the title to disambiguate
-/// items that share a title (e.g., two `Google` logins for different
-/// accounts). For items without that subtitle (such as secure notes),
-/// `subtitle` is the empty string.
+/// `name` comes from JSON `title`; `subtitle` from
+/// `additional_information` (login username/email, empty on secure
+/// notes) — used to disambiguate items sharing a title.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpItem {
     pub id: String,
@@ -504,16 +384,12 @@ pub struct OpItem {
     pub subtitle: String,
 }
 
-/// Field metadata as reported by `op item get`. Notably absent: the
-/// field's value. The picker is a metadata browser only.
+/// Field metadata only — the value is intentionally absent.
 ///
-/// `reference` carries the authoritative `op://...` path that
-/// 1Password itself writes into each field's JSON output. The picker
-/// commits this string verbatim instead of synthesizing a path from
-/// display names — synthesis was wrong for fields inside sections,
-/// for items whose names contained `/` or whitespace, and for any
-/// case where 1Password's serializer differs from naive
-/// display-name concatenation.
+/// `reference` is the verbatim `op://...` 1Password emits per field;
+/// the picker commits this rather than synthesizing a path from
+/// display names (synthesis was wrong for sections, names containing
+/// `/`, or whitespace).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpField {
     pub id: String,
@@ -523,12 +399,9 @@ pub struct OpField {
     pub reference: String,
 }
 
-// `op account list --format json` reports accounts with an `account_uuid`
-// key, not `id`. We accept either via serde alias so the picker probe
-// works against current op CLI versions and any older shape. `email` and
-// `url` are defensively `#[serde(default)]` — older `op` versions might
-// omit them; the picker renders an empty string rather than failing the
-// parse.
+// Accept either `id` or `account_uuid` so the probe works against
+// current and older op CLI shapes. `email` / `url` default to empty
+// because older `op` versions may omit them.
 #[derive(serde::Deserialize)]
 struct RawOpAccount {
     #[serde(alias = "account_uuid")]
@@ -549,10 +422,7 @@ struct RawOpVault {
 struct RawOpItem {
     id: String,
     title: String,
-    // `additional_information` is the username/email subtitle 1Password
-    // surfaces for login items; it's missing on secure notes and other
-    // item types, so default to an empty string rather than failing the
-    // parse.
+    // Missing on secure notes and other non-login item types.
     #[serde(default)]
     additional_information: String,
 }
@@ -627,18 +497,9 @@ impl From<RawOpField> for OpField {
     }
 }
 
-/// Spawn an `op` subcommand and capture its stdout under a hard timeout.
-///
-/// Shared timeout primitive used by [`OpCli::probe`] (no JSON parse) and
-/// [`run_op_json`] (which serde-parses the bytes). Routes through the
-/// same channel-and-thread pattern as [`OpRunner::read`] so a wedged
-/// `op` invocation — network stall, biometric prompt held open, etc. —
-/// cannot freeze the caller indefinitely.
-///
-/// Returns the stdout bytes on a clean exit (status==success). All
-/// failure modes are surfaced as [`anyhow::Error`] without classifying
-/// stderr; callers that want the "not signed in" / "no accounts"
-/// classification do their own pattern match on the message string.
+/// Shared timeout primitive used by [`OpCli::probe`] and
+/// [`run_op_json`]. Returns stdout bytes on success; failure stderr is
+/// untouched so callers can pattern-match (see [`run_op_json`]).
 fn run_op_with_timeout(
     binary: &str,
     args: &[&str],
@@ -710,10 +571,9 @@ fn run_op_with_timeout(
     )
 }
 
-/// Run an `op` subcommand with `--format json` and return its stdout
-/// bytes. Wraps [`run_op_with_timeout`] and additionally classifies the
+/// Wraps [`run_op_with_timeout`] and additionally rewrites the
 /// "not signed in" / "no accounts" stderr signature into a dedicated
-/// error message that the picker pattern-matches on.
+/// error message the picker pattern-matches on.
 fn run_op_json(
     binary: &str,
     args: &[&str],
@@ -746,8 +606,6 @@ impl OpStructRunner for OpCli {
     }
 
     fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
-        // Inject `--account <id>` before `--format json` for readability;
-        // `op` itself doesn't care about flag order.
         let mut args: Vec<&str> = vec!["vault", "list"];
         if let Some(id) = account {
             args.push("--account");
@@ -792,12 +650,8 @@ impl OpStructRunner for OpCli {
     }
 }
 
-/// Tracks which layer supplied the currently-winning value for a key.
-///
-/// Used to produce precise error messages during reserved-name
-/// enforcement ("global [env] declares `DOCKER_HOST` which is reserved")
-/// and launch diagnostics ("`OPERATOR_X`: provided by workspace
-/// \"big-monorepo\" [agent override]").
+/// Source layer of an env value, attached to error messages and
+/// launch diagnostics so the operator can locate the offending entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvLayer {
     Global,
@@ -819,15 +673,8 @@ impl std::fmt::Display for EnvLayer {
     }
 }
 
-/// Merge four env layers with later-wins semantics. Keys present in a
-/// later layer overwrite values from earlier layers. Keys unique to any
-/// layer are preserved.
-///
-/// Order, low → high priority:
-///   1. `global`          — `[env]`
-///   2. `agent`           — `[agents.<agent>.env]`
-///   3. `workspace`       — `[workspaces.<ws>.env]`
-///   4. `workspace_agent` — `[workspaces.<ws>.agents.<agent>.env]`
+/// Later-wins merge. Order, low → high priority:
+/// global → agent → workspace → workspace-agent.
 pub fn merge_layers(
     global: &std::collections::BTreeMap<String, String>,
     agent: &std::collections::BTreeMap<String, String>,
@@ -851,16 +698,8 @@ pub fn merge_layers(
 }
 
 /// Reject operator env maps that declare any reserved runtime name.
-///
-/// The reserved names (`JACKIN_CLAUDE_ENV`, `JACKIN_DIND_HOSTNAME`,
-/// `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are fixed
-/// by jackin and cannot be overridden. Conflicts are collected across
-/// every layer and reported as a single aggregated error so operators
-/// see all problems at once.
-///
-/// This runs at config LOAD time (in `AppConfig::load_or_init`),
-/// before any launch path — so misconfigurations fail fast and the
-/// runtime never sees a resolved map with a reserved key.
+/// Runs at config-load time so misconfigurations fail before launch.
+/// Conflicts across every layer are aggregated into one error.
 pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Result<()> {
     let mut offenses: Vec<String> = Vec::new();
 
@@ -921,17 +760,9 @@ pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Res
     )
 }
 
-/// Walk the four env layers for a given `(agent, workspace)` pair and
-/// resolve every value. Returns a map of resolved `(key → value)`.
-///
-/// Resolution failures from every layer are collected and reported in
-/// a single aggregated error so operators see all problems at once
-/// (matching the policy of `validate_reserved_names`).
-///
-/// The `agent` and `workspace` selectors are optional. When they are
-/// `None`, only the global layer contributes; when only `agent` is set,
-/// the agent layer joins; when only `workspace` is set, the workspace
-/// layer joins; when both are set, all four layers are consulted.
+/// Walk the env layers for the given `(agent, workspace)` pair and
+/// resolve every value. Resolution failures across layers are
+/// aggregated into one error.
 pub fn resolve_operator_env(
     config: &crate::config::AppConfig,
     agent_selector: Option<&str>,
@@ -946,12 +777,8 @@ pub fn resolve_operator_env(
     )
 }
 
-/// Test-injectable version of [`resolve_operator_env`].
-///
-/// `R: OpRunner + ?Sized` so callers can pass either a concrete runner
-/// (`&OpCli`, `&TestOpRunner`) or a trait object (`&dyn OpRunner`) —
-/// the latter is how `LoadOptions::op_runner` flows through
-/// `src/runtime/launch.rs`.
+/// `?Sized` so callers can pass `&dyn OpRunner` (used by
+/// `LoadOptions::op_runner` in `src/runtime/launch.rs`).
 pub fn resolve_operator_env_with<R, H>(
     config: &crate::config::AppConfig,
     agent_selector: Option<&str>,
@@ -976,8 +803,8 @@ where
         .and_then(|(w, a)| w.agents.get(a))
         .map_or(&empty, |o| &o.env);
 
-    // Produce a (key → (layer, raw_value)) map so resolution errors can
-    // attribute which layer supplied each value.
+    // (key → (layer, raw_value)) so resolution errors can attribute
+    // which layer supplied each value.
     let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
         std::collections::BTreeMap::new();
 
@@ -1018,10 +845,8 @@ where
     let mut resolved = std::collections::BTreeMap::new();
     let mut errors: Vec<String> = Vec::new();
 
-    // If ANY value uses the op:// scheme, probe the op CLI once up
-    // front. This turns "op is not installed" from an N-failures
-    // aggregate into a single clear install-link error, which is the
-    // failure mode documented in the spec.
+    // Probe op CLI once up front when any value uses op://, so a
+    // missing op surfaces as one install-link error not N.
     let uses_op = attributed.values().any(|(_, v)| is_op_reference(v));
     if uses_op && let Err(e) = op_runner.probe() {
         anyhow::bail!("operator env resolution aborted: {e}");
@@ -1048,26 +873,9 @@ where
     );
 }
 
-/// Emit a single-line (normal) / multi-line (debug) launch diagnostic.
-///
-/// Summarises the operator env that was just resolved. Values are NEVER
-/// printed — only counts (normal) or reference strings (debug) and the
-/// layer that supplied each key.
-///
-/// Normal mode format:
-///
-/// ```text
-/// [jackin] operator env: 3 resolved (2 op://, 1 host ref, 0 literal)
-/// ```
-///
-/// Debug mode format:
-///
-/// ```text
-/// [jackin] operator env:
-///   OPERATOR_TOKEN        op://Personal/api/token   (workspace "big-monorepo" → agent "agent-smith" [env])
-///   CI_CACHE_DIR          ${HOME_CACHE}             (global [env])
-///   AGENT_VERSION         literal                   (agent "agent-smith" [env])
-/// ```
+/// Print a launch diagnostic to stderr. Values are NEVER printed —
+/// normal mode is counts only, debug mode is reference strings or the
+/// `literal` placeholder; the layer that supplied each key is shown.
 pub fn print_launch_diagnostic(
     config: &crate::config::AppConfig,
     agent_selector: Option<&str>,
@@ -1077,8 +885,6 @@ pub fn print_launch_diagnostic(
 ) {
     use std::io::Write;
     let mut out = Vec::new();
-    // write_launch_diagnostic writes into an in-memory buffer and
-    // cannot fail with an I/O error; unwrap is safe here.
     write_launch_diagnostic(
         &mut out,
         config,
@@ -1091,9 +897,6 @@ pub fn print_launch_diagnostic(
     let _ = std::io::stderr().write_all(&out);
 }
 
-/// Test-visible entry point that returns the diagnostic as a String.
-/// Production code uses [`print_launch_diagnostic`], which writes the
-/// same bytes to process stderr.
 #[cfg(test)]
 fn format_launch_diagnostic_for_test(
     config: &crate::config::AppConfig,
@@ -1123,8 +926,8 @@ fn write_launch_diagnostic<W: std::io::Write>(
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) -> std::io::Result<()> {
-    // Rebuild the (key → (layer, raw_value)) attribution using the same
-    // precedence rule as resolve_operator_env_with.
+    // Rebuild attribution using the same precedence as
+    // resolve_operator_env_with.
     let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
 
     let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
@@ -1168,14 +971,11 @@ fn write_launch_diagnostic<W: std::io::Write>(
         }
     }
 
-    // Restrict to keys actually in `resolved` (they were successfully
-    // dispatched); a key missing from `resolved` indicates a prior
-    // error path and should not show up here.
+    // Drop keys not in `resolved` — those failed to dispatch.
     attributed.retain(|k, _| resolved.contains_key(k));
 
     if debug {
         writeln!(w, "[jackin] operator env:")?;
-        // Compute a column width for nice alignment.
         let key_width = attributed
             .keys()
             .map(String::len)
@@ -1233,11 +1033,9 @@ impl ValueKind {
     }
 }
 
-/// Return a short, value-free label for a raw operator env entry:
-/// `op://...` references are returned verbatim (the reference string
-/// is not secret; only the resolved value is); `$NAME` / `${NAME}`
-/// references are returned verbatim; literals are labelled `"literal"`
-/// so the resolved value is never printed.
+/// Value-free label: `op://...` and `$NAME` returned verbatim (the
+/// reference is not secret, the resolved value is); literals collapse
+/// to `"literal"` so the value never reaches stderr.
 fn classify_value(raw: &str) -> String {
     match ValueKind::of(raw) {
         ValueKind::Op | ValueKind::Host => raw.to_string(),
@@ -1269,12 +1067,6 @@ mod tests {
         assert_eq!(parts.field, "field");
     }
 
-    /// 4-segment references are vault/item/section/field per the
-    /// official 1Password CLI syntax — see
-    /// <https://developer.1password.com/docs/cli/secret-reference-syntax/>.
-    /// (The previous "4 segments = account/vault/item/field" reading
-    /// was a jackin-specific extension that conflicted with `op` itself
-    /// and is removed.)
     #[test]
     fn parse_op_reference_handles_section_in_4_segment() {
         let parts = parse_op_reference("op://Personal/Item/Auth/password").unwrap();
@@ -1286,12 +1078,9 @@ mod tests {
 
     #[test]
     fn parse_op_reference_invalid_segment_count() {
-        // Fewer than 3 segments after the prefix → None.
         assert!(parse_op_reference("plain").is_none());
         assert!(parse_op_reference("op://only/two").is_none());
-        // More than 4 segments → None.
         assert!(parse_op_reference("op://a/b/c/d/e").is_none());
-        // Empty path after the prefix → splits into a single empty segment.
         assert!(parse_op_reference("op://").is_none());
     }
 
@@ -1340,11 +1129,10 @@ mod tests {
         assert_eq!(out, "braced");
     }
 
+    /// Set-but-empty (Unix semantics) passes through unchanged; only
+    /// `VarError::NotPresent` is a hard error.
     #[test]
     fn dispatch_host_ref_empty_string_passes_through() {
-        // Spec: empty string host-env result is "set but empty" and
-        // passes through unchanged (Unix semantics). Differentiates
-        // from VarError::NotPresent, which is a hard error.
         let out = dispatch_value(
             "global",
             "MAYBE_EMPTY",
@@ -1399,7 +1187,6 @@ mod tests {
         );
     }
 
-    /// Test seam: an `OpRunner` that captures the last `op read` argument.
     struct TestOpRunner {
         response: std::cell::RefCell<Option<anyhow::Result<String>>>,
         last_ref: std::cell::RefCell<Option<String>>,
@@ -1453,10 +1240,6 @@ mod tests {
 
     #[test]
     fn op_cli_strips_trailing_newline_from_op_read_output() {
-        // `op read` appends a trailing newline as CLI convention. The
-        // resolved env value must NOT include it — otherwise the shell
-        // exports the value-with-newline and `env` shows a blank line
-        // after the var.
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-newline");
         std::fs::write(&bin_path, "#!/bin/sh\nprintf 'tok-123\\n'\nexit 0\n").unwrap();
@@ -1470,11 +1253,11 @@ mod tests {
         );
     }
 
+    /// A secret legitimately ending in `\n` (e.g. a PEM block) is sent
+    /// by `op read` as value+\n; strip exactly one so inner newlines
+    /// survive.
     #[test]
     fn op_cli_strips_only_one_trailing_newline_preserves_value_newline() {
-        // A secret that legitimately ends with a newline (e.g. a PEM
-        // block) is sent by `op read` as value+\n. We must strip exactly
-        // one trailing \n so the inner newline survives.
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-double-newline");
         std::fs::write(&bin_path, "#!/bin/sh\nprintf 'line1\\nline2\\n'\nexit 0\n").unwrap();
@@ -1527,8 +1310,6 @@ mod tests {
     fn op_cli_large_stderr_is_truncated() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-big-stderr");
-        // Emit ~16 KiB of stderr then fail. The runner must cap the
-        // captured bytes so operator error output stays readable.
         std::fs::write(
             &bin_path,
             "#!/bin/sh\npython3 -c \"import sys; sys.stderr.write('X' * 16384)\" 2>&1 1>&2\nexit 1\n",
@@ -1539,8 +1320,6 @@ mod tests {
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let err = runner.read("op://Foo/bar").unwrap_err();
         let msg = err.to_string();
-        // OP_STDERR_MAX is 4 KiB; the error should be bounded to that plus a
-        // short truncation marker and the exit code framing.
         assert!(
             msg.len() < 6 * 1024,
             "expected bounded stderr in error; got {} bytes",
@@ -1555,7 +1334,6 @@ mod tests {
         std::fs::write(&bin_path, "#!/bin/sh\nsleep 60\n").unwrap();
         make_executable(&bin_path);
 
-        // Shorten the timeout for the test via the test-only constructor.
         let runner = OpCli::with_binary_and_timeout(
             bin_path.to_string_lossy().to_string(),
             std::time::Duration::from_millis(250),
@@ -1586,11 +1364,6 @@ mod tests {
         runner.probe().unwrap();
     }
 
-    /// `OpRunner::probe` must respect the runner's timeout — a wedged
-    /// `op --version` (network stall, biometric prompt held open, etc.)
-    /// would otherwise block forever via the old `Command::output()`
-    /// path. Routes through the same channel-and-thread pattern as
-    /// `read` and the JSON callers.
     #[cfg(unix)]
     #[test]
     fn op_cli_probe_times_out_when_binary_hangs() {
@@ -1642,24 +1415,14 @@ mod tests {
     }
 
     #[cfg(not(unix))]
-    fn make_executable(_path: &std::path::Path) {
-        // Tests that require fake binaries are cfg-gated to unix; on
-        // other platforms they are no-ops because the launch path
-        // itself is unix-only in this codebase.
-    }
+    fn make_executable(_path: &std::path::Path) {}
 
-    /// Regression — short input must be returned unchanged, no
-    /// allocation beyond the `to_owned`. This guards the early-exit
-    /// branch in `truncate_stderr`.
     #[test]
     fn truncate_stderr_returns_input_for_short_string() {
         let s = "short error message";
         assert_eq!(truncate_stderr(s), s);
     }
 
-    /// Regression — pure ASCII input that exceeds `OP_STDERR_MAX` is
-    /// truncated at exactly `OP_STDERR_MAX` bytes (every ASCII byte
-    /// is a char boundary, so the boundary walk-back never fires).
     #[test]
     fn truncate_stderr_truncates_long_ascii_at_boundary() {
         let s: String = "x".repeat(OP_STDERR_MAX + 100);
@@ -1671,19 +1434,14 @@ mod tests {
         assert!(out.ends_with("[truncated]"));
     }
 
-    /// Construct a string whose byte at `OP_STDERR_MAX` falls inside a
-    /// multi-byte UTF-8 character. Slicing on byte index would have
-    /// panicked; the new char-boundary path must round down and
-    /// produce a valid string.
+    /// Multi-byte UTF-8 char straddling `OP_STDERR_MAX` — naive byte
+    /// slicing would panic; the boundary walk-back must round down.
     #[test]
     fn truncate_stderr_does_not_panic_on_utf8_boundary() {
-        // Build a buffer of ASCII padding + a 4-byte emoji (`U+1F4A9`,
-        // pile-of-poo) such that the emoji straddles `OP_STDERR_MAX`.
+        // ASCII padding + 4-byte emoji (`U+1F4A9`) straddling the cap.
         let pad_len = OP_STDERR_MAX - 2;
         let mut s = String::with_capacity(pad_len + 16);
         s.push_str(&"a".repeat(pad_len));
-        // Append several emoji so total length is well over the cap;
-        // byte index `OP_STDERR_MAX` lands inside the first emoji.
         for _ in 0..10 {
             s.push('\u{1F4A9}');
         }
@@ -1693,9 +1451,6 @@ mod tests {
              got is_char_boundary == true"
         );
         let out = truncate_stderr(&s);
-        // The truncated head must still be valid UTF-8 (which it is by
-        // construction since `out: String`) and end on a char boundary
-        // before `OP_STDERR_MAX`.
         assert!(out.ends_with("[truncated]"));
         let head = out
             .strip_suffix("… [truncated]")
@@ -1980,9 +1735,6 @@ mod tests {
 
     #[test]
     fn resolve_probes_op_cli_once_when_any_op_ref_present() {
-        // Spec: check op presence once per launch by shelling
-        // `op --version`. Here we verify the probe fires for configs
-        // that use op://... and is skipped for configs that do not.
         struct ProbeCountingRunner {
             probe_calls: std::cell::Cell<u32>,
             read_calls: std::cell::Cell<u32>,
