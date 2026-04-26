@@ -196,7 +196,8 @@ impl Default for OpPickerState {
 }
 
 impl OpPickerState {
-    /// Production constructor. Boxes a fresh [`OpCli`] runner internally
+    /// Production constructor. Wraps a fresh [`OpCli`] runner in an
+    /// `Arc` (so spawned worker threads share the same trait object)
     /// and kicks off the probe + vault-list load on the spot so the
     /// picker is responsive on first frame. Allocates a fresh empty
     /// cache local to this picker — production callers should use
@@ -1525,16 +1526,16 @@ mod tests {
     /// Enter on the Account pane must:
     ///   - record the chosen account in `selected_account`,
     ///   - advance `stage = Vault`,
-    ///   - kick off `vault_list(Some(account_id))` (verified by the
-    ///     stub runner recording the last `vault_list` argument when the
-    ///     synchronous `vault_list` call from `start_vault_load`'s
-    ///     spawned thread runs through `runner_clone_for_thread`).
+    ///   - kick off `vault_list(Some(account_id))` on a worker thread.
     ///
-    /// Because `runner_clone_for_thread` builds a fresh `OpCli`, the
-    /// stub's recording can't be used directly for the spawned call.
-    /// Instead we directly invoke the synchronous helper that *would*
-    /// be the call site, mirroring what Enter does, and confirm the
-    /// stub records `Some(account_uuid)`.
+    /// This test pre-dates the `Box<dyn>` → `Arc<dyn>` runner switch
+    /// that made the spawned worker actually use the injected stub.
+    /// It still verifies the contract directly — invoking
+    /// `runner.vault_list(s.selected_account_id().as_deref())` the same
+    /// way `start_vault_load`'s worker would — to keep the assertion
+    /// independent of worker-thread timing. The async-worker tests
+    /// further down (`vault_list_uses_injected_runner_in_async_worker`)
+    /// cover the spawned-thread path through the same injected stub.
     #[test]
     fn enter_on_account_advances_to_vault_with_account_scope() {
         let runner = Arc::new(StubRunner {
@@ -1565,11 +1566,14 @@ mod tests {
         );
         // Direct-call verification of the account threading: invoke
         // the runner's `vault_list` the same way `start_vault_load`'s
-        // spawned thread would (the spawned thread itself uses a fresh
-        // OpCli, not our stub, so we re-create the stub-call here).
-        // The trait method passes `Some(account_id)` whenever
-        // `selected_account_id()` returns Some — this verifies that
-        // contract on the stub.
+        // spawned thread would. We use a fresh stub here (rather than
+        // racing the worker thread inside `s`) to keep the assertion
+        // independent of timing — the worker thread itself does drive
+        // the same injected `Arc<dyn OpStructRunner>`, which the
+        // `vault_list_uses_injected_runner_in_async_worker` test
+        // exercises end-to-end. The trait method passes
+        // `Some(account_id)` whenever `selected_account_id()` returns
+        // Some — this verifies that contract on the stub.
         let runner = Arc::new(StubRunner::default());
         runner.account_list().unwrap();
         let _ = runner.vault_list(s.selected_account_id().as_deref());
@@ -1641,12 +1645,13 @@ mod tests {
     // ── OpCache integration tests ─────────────────────────────────────
     //
     // These tests focus on the synchronous, single-threaded portion of
-    // the cache path: the constructor's `account_list` probe and any
-    // call site that consults the cache *before* spawning a worker
-    // thread. The worker thread itself uses the production
-    // `runner_clone_for_thread` helper (always `OpCli`), so we don't
-    // assert against runner counts after a thread-spawning miss — only
-    // after a synchronous hit.
+    // the cache path: any call site that consults the cache *before*
+    // spawning a worker thread. The worker thread itself runs through
+    // `runner_clone_for_thread`, which is now a thin `Arc::clone` over
+    // the injected runner — the async-worker tests at the bottom of
+    // this module assert against the same stub. The cache-hit tests
+    // here deliberately avoid worker-thread timing by checking only
+    // call sites that short-circuit before the spawn.
 
     /// Counting runner — increments a shared call counter on
     /// `account_list` so cache-hit tests can assert "subprocess not
