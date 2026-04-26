@@ -402,33 +402,27 @@ impl OpRunner for OpCli {
     }
 
     fn probe(&self) -> anyhow::Result<()> {
-        use std::process::{Command, Stdio};
-
-        let output = Command::new(&self.binary)
-            .arg("--version")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|e| {
+        // Route through the shared spawn-and-timeout helper so a wedged
+        // `op` (network stall, biometric prompt held open, etc.) cannot
+        // freeze the caller indefinitely. The original implementation
+        // used plain `Command::output()`, which has no upper bound on
+        // wait time — every other entry point already routes through
+        // the channel-and-thread pattern; the probe is now consistent.
+        run_op_with_timeout(&self.binary, &["--version"], self.timeout).map_err(|e| {
+            // Preserve the install-link hint on the spawn-error path so
+            // operators see the same actionable error they did before.
+            let msg = e.to_string();
+            if msg.contains("developer.1password.com") {
+                e
+            } else {
                 anyhow::anyhow!(
-                    "1Password CLI ({:?}) was not found on PATH: {e} — \
-                     install from https://developer.1password.com/docs/cli/",
+                    "1Password CLI probe (`{} --version`) failed: {msg} — \
+                     see https://developer.1password.com/docs/cli/",
                     self.binary
                 )
-            })?;
-        if output.status.success() {
-            return Ok(());
-        }
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stderr_trimmed = truncate_stderr(&stderr);
-        anyhow::bail!(
-            "1Password CLI probe (`{} --version`) exited with status {}: {} — \
-             see https://developer.1password.com/docs/cli/",
-            self.binary,
-            format_exit_status(output.status),
-            stderr_trimmed.trim()
-        )
+            }
+        })?;
+        Ok(())
     }
 }
 
@@ -621,12 +615,19 @@ impl From<RawOpField> for OpField {
     }
 }
 
-/// Run an `op` subcommand with `--format json` and return its stdout
-/// bytes. Uses the same spawn-and-channel timeout pattern as
-/// [`OpRunner::read`]. Non-zero exit codes are surfaced as
-/// [`anyhow::Error`]; the picker pattern-matches on the message to
-/// distinguish signed-out from generic failures.
-fn run_op_json(
+/// Spawn an `op` subcommand and capture its stdout under a hard timeout.
+///
+/// Shared timeout primitive used by [`OpCli::probe`] (no JSON parse) and
+/// [`run_op_json`] (which serde-parses the bytes). Routes through the
+/// same channel-and-thread pattern as [`OpRunner::read`] so a wedged
+/// `op` invocation — network stall, biometric prompt held open, etc. —
+/// cannot freeze the caller indefinitely.
+///
+/// Returns the stdout bytes on a clean exit (status==success). All
+/// failure modes are surfaced as [`anyhow::Error`] without classifying
+/// stderr; callers that want the "not signed in" / "no accounts"
+/// classification do their own pattern match on the message string.
+fn run_op_with_timeout(
     binary: &str,
     args: &[&str],
     timeout: std::time::Duration,
@@ -691,16 +692,33 @@ fn run_op_json(
     let stderr = String::from_utf8_lossy(&stderr_bytes);
     let stderr_trimmed = truncate_stderr(&stderr);
     let stderr_msg = stderr_trimmed.trim();
-    if stderr_msg.contains("not currently signed") || stderr_msg.contains("no accounts") {
-        anyhow::bail!(
-            "1Password CLI is not signed in (running `{cmd_label}` returned: {stderr_msg}). \
-             Run `op signin` in your shell, then retry."
-        );
-    }
     anyhow::bail!(
         "1Password CLI exited with status {} running `{cmd_label}`: {stderr_msg}",
         format_exit_status(status),
     )
+}
+
+/// Run an `op` subcommand with `--format json` and return its stdout
+/// bytes. Wraps [`run_op_with_timeout`] and additionally classifies the
+/// "not signed in" / "no accounts" stderr signature into a dedicated
+/// error message that the picker pattern-matches on.
+fn run_op_json(
+    binary: &str,
+    args: &[&str],
+    timeout: std::time::Duration,
+) -> anyhow::Result<Vec<u8>> {
+    let cmd_label = format!("op {}", args.join(" "));
+    run_op_with_timeout(binary, args, timeout).map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("not currently signed") || msg.contains("no accounts") {
+            anyhow::anyhow!(
+                "1Password CLI is not signed in (running `{cmd_label}` returned: {msg}). \
+                 Run `op signin` in your shell, then retry."
+            )
+        } else {
+            e
+        }
+    })
 }
 
 impl OpStructRunner for OpCli {
@@ -1554,6 +1572,38 @@ mod tests {
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         runner.probe().unwrap();
+    }
+
+    /// `OpRunner::probe` must respect the runner's timeout — a wedged
+    /// `op --version` (network stall, biometric prompt held open, etc.)
+    /// would otherwise block forever via the old `Command::output()`
+    /// path. Routes through the same channel-and-thread pattern as
+    /// `read` and the JSON callers.
+    #[cfg(unix)]
+    #[test]
+    fn op_cli_probe_times_out_when_binary_hangs() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-version-hang");
+        std::fs::write(&bin_path, "#!/bin/sh\nsleep 60\n").unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary_and_timeout(
+            bin_path.to_string_lossy().to_string(),
+            std::time::Duration::from_millis(250),
+        );
+        let start = std::time::Instant::now();
+        let err = runner.probe().unwrap_err();
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "probe must abort before 5s; actual={elapsed:?}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("timeout") || msg.contains("timed out"),
+            "expected timeout in error: {msg}"
+        );
     }
 
     #[test]

@@ -46,7 +46,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_widget_list::ListState;
@@ -120,6 +120,7 @@ pub enum OpPickerFatalState {
 /// `try_recv` drainer on `handle_key` / `tick` can update the right
 /// `Vec` without a separate "what was loading" tag.
 enum LoadResult {
+    Accounts(anyhow::Result<Vec<OpAccount>>),
     Vaults(anyhow::Result<Vec<OpVault>>),
     Items(anyhow::Result<Vec<OpItem>>),
     Fields(anyhow::Result<Vec<OpField>>),
@@ -147,9 +148,12 @@ pub struct OpPickerState {
 
     pub load_state: OpLoadState,
 
-    /// Production runner — boxed so tests can inject a fake via
+    /// Production runner — held in an `Arc` so the picker can clone the
+    /// handle into spawned worker threads (the constructor's
+    /// `account_list` probe in particular) while still keeping a
+    /// reference for cache-hit fast paths. Tests inject a fake via
     /// [`OpPickerState::new_with_runner`].
-    runner: Box<dyn OpStructRunner + Send>,
+    runner: Arc<dyn OpStructRunner + Send + Sync>,
     /// Receiver for the in-flight background call. `None` when no call
     /// is pending; drained by [`OpPickerState::poll_load`].
     rx: Option<mpsc::Receiver<LoadResult>>,
@@ -162,7 +166,7 @@ pub struct OpPickerState {
     op_cache: Rc<RefCell<OpCache>>,
 }
 
-// Manual `Debug` because `runner: Box<dyn OpStructRunner + Send>` and
+// Manual `Debug` because `runner: Arc<dyn OpStructRunner + Send + Sync>` and
 // `rx: Option<mpsc::Receiver<_>>` aren't `Debug` themselves. The skipped
 // fields contain zero operator-visible state — they're plumbing for the
 // background load — so dropping them from the formatter keeps debug
@@ -200,7 +204,7 @@ impl OpPickerState {
     /// picker open/close cycles work.
     pub fn new() -> Self {
         Self::new_with_runner_and_cache(
-            Box::new(OpCli::new()),
+            Arc::new(OpCli::new()),
             Rc::new(RefCell::new(OpCache::default())),
         )
     }
@@ -212,7 +216,7 @@ impl OpPickerState {
     /// `jackin console` invocation reuse the cached vault / item /
     /// field metadata.
     pub fn new_with_cache(op_cache: Rc<RefCell<OpCache>>) -> Self {
-        Self::new_with_runner_and_cache(Box::new(OpCli::new()), op_cache)
+        Self::new_with_runner_and_cache(Arc::new(OpCli::new()), op_cache)
     }
 
     /// Test seam — accepts an injected runner so unit / integration
@@ -220,7 +224,7 @@ impl OpPickerState {
     /// Allocates a fresh empty cache local to the picker (tests that
     /// care about cache behavior pass a shared one via
     /// [`OpPickerState::new_with_runner_and_cache`]).
-    pub fn new_with_runner(runner: Box<dyn OpStructRunner + Send>) -> Self {
+    pub fn new_with_runner(runner: Arc<dyn OpStructRunner + Send + Sync>) -> Self {
         Self::new_with_runner_and_cache(runner, Rc::new(RefCell::new(OpCache::default())))
     }
 
@@ -228,11 +232,17 @@ impl OpPickerState {
     /// so cache-hit / cache-miss tests can drive the picker against a
     /// pre-populated cache.
     pub fn new_with_runner_and_cache(
-        runner: Box<dyn OpStructRunner + Send>,
+        runner: Arc<dyn OpStructRunner + Send + Sync>,
         op_cache: Rc<RefCell<OpCache>>,
     ) -> Self {
         let mut s = Self {
-            stage: OpPickerStage::Vault,
+            // Stage starts on `Account` so the loading-panel descriptor
+            // says "loading accounts…" — we don't yet know the account
+            // count, so this is the most accurate breadcrumb until
+            // `account_list` resolves and `poll_load` routes us to
+            // either Vault (single-account) or stays on Account
+            // (multi-account).
+            stage: OpPickerStage::Account,
             filter_buf: String::new(),
             accounts: Vec::new(),
             account_list_state: ListState::default(),
@@ -245,63 +255,79 @@ impl OpPickerState {
             selected_item: None,
             fields: Vec::new(),
             field_list_state: ListState::default(),
-            load_state: OpLoadState::Idle,
+            // Initial render shows the spinner immediately; the
+            // constructor never blocks on `account_list`.
+            load_state: OpLoadState::Loading { spinner_tick: 0 },
             runner,
             rx: None,
             op_cache,
         };
-        s.probe_and_start_initial_load();
+        s.start_account_load();
         s
     }
 
-    /// Run the `account_list` probe synchronously, then route to either
-    /// the Account pane (≥2 accounts) or the Vault pane with the lone
-    /// account auto-selected (single-account setups).
+    /// Start the initial `account_list` probe.
     ///
-    /// The probe runs inline so a `spawn`-error on the `op` binary
-    /// surfaces as [`OpPickerFatalState::NotInstalled`] before any
-    /// user-facing pane appears. An empty account list — `op account
-    /// list` returning `[]` — is functionally equivalent to "not signed
-    /// in" and maps to that fatal state.
-    fn probe_and_start_initial_load(&mut self) {
-        // Cache hit on the accounts list short-circuits the synchronous
-        // `account_list` probe. Cache miss falls through to the runner
-        // and stores the result.
-        let accounts_result = if let Some(cached) = self.op_cache.borrow().get_accounts() {
-            Ok(cached)
-        } else {
-            let r = self.runner.account_list();
-            if let Ok(ref accounts) = r {
-                self.op_cache.borrow_mut().put_accounts(accounts.clone());
-            }
-            r
-        };
-        match accounts_result {
-            Ok(accounts) if accounts.is_empty() => {
-                self.load_state =
-                    OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotSignedIn));
-            }
-            Ok(accounts) if accounts.len() == 1 => {
-                // Single-account setup: skip the Account pane, auto-
-                // select the only account, and kick off the vault load
-                // scoped to it. `start_vault_load` advances the stage to
-                // `Vault` itself.
-                let account = accounts.into_iter().next().expect("len == 1");
-                let account_id = account.id.clone();
-                self.selected_account = Some(account);
-                self.start_vault_load(Some(account_id));
-            }
-            Ok(accounts) => {
-                // Multi-account setup: render the Account pane first.
-                self.accounts = accounts;
-                self.account_list_state.select(Some(0));
-                self.stage = OpPickerStage::Account;
-                self.load_state = OpLoadState::Ready;
-            }
-            Err(e) => {
-                self.load_state = OpLoadState::Error(classify_probe_error(&e));
-            }
+    /// Cache-hit fast path: route the cached vector through the same
+    /// `mpsc` channel `poll_load` consumes, so the rest of the routing
+    /// (single-vs-multi-account) lives in one place.
+    ///
+    /// Cache miss: spawn a worker thread that calls `account_list` on
+    /// the shared `Arc<dyn OpStructRunner>`. The picker renders the
+    /// "loading accounts…" spinner until `poll_load` drains the result.
+    /// Previously this call was synchronous in the constructor, which
+    /// blocked the TUI render loop on a cold cache (potentially several
+    /// seconds for an `op` invocation that needs network or to wait on
+    /// a held-open biometric prompt).
+    fn start_account_load(&mut self) {
+        self.load_state = OpLoadState::Loading { spinner_tick: 0 };
+        let (tx, rx) = mpsc::channel();
+        self.rx = Some(rx);
+        if let Some(cached) = self.op_cache.borrow().get_accounts() {
+            let _ = tx.send(LoadResult::Accounts(Ok(cached)));
+            return;
         }
+        let runner = Arc::clone(&self.runner);
+        std::thread::spawn(move || {
+            let _ = tx.send(LoadResult::Accounts(runner.account_list()));
+        });
+    }
+
+    /// Route a freshly-resolved `account_list` into the right next
+    /// state. Empty list → fatal "not signed in"; single account →
+    /// auto-select and chain into the vault load; ≥2 accounts → stay
+    /// on the Account stage and render the picker pane. Extracted from
+    /// [`OpPickerState::poll_load`] to keep that match arm short.
+    fn handle_accounts_loaded(&mut self, accounts: Vec<OpAccount>) {
+        // Populate the session cache so subsequent picker opens hit
+        // the cache fast-path and skip the subprocess.
+        self.op_cache.borrow_mut().put_accounts(accounts.clone());
+        if accounts.is_empty() {
+            // No signed-in accounts is functionally identical to "not
+            // signed in" — same instructional panel, same recovery
+            // path (`op signin` in the host shell).
+            self.load_state =
+                OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NotSignedIn));
+            return;
+        }
+        if accounts.len() == 1 {
+            // Single-account setup: skip the Account pane, auto-select
+            // the only account, and chain into the vault load.
+            // `start_vault_load` advances the stage to `Vault` and
+            // overwrites our Loading state with its own (with a fresh
+            // receiver).
+            let account = accounts.into_iter().next().expect("len == 1");
+            let account_id = account.id.clone();
+            self.selected_account = Some(account);
+            self.start_vault_load(Some(account_id));
+            return;
+        }
+        // Multi-account: stay on the Account stage and render the
+        // picker pane.
+        self.accounts = accounts;
+        self.account_list_state.select(Some(0));
+        self.stage = OpPickerStage::Account;
+        self.load_state = OpLoadState::Ready;
     }
 
     /// Spawn the vault-load worker, optionally scoped to `account_id`.
@@ -328,7 +354,7 @@ impl OpPickerState {
         }
         // `account_list` already proved the binary is reachable;
         // this thread can call vault_list directly.
-        let runner = Self::runner_clone_for_thread();
+        let runner = self.runner_clone_for_thread();
         std::thread::spawn(move || {
             let _ = tx.send(LoadResult::Vaults(runner.vault_list(account_id.as_deref())));
         });
@@ -355,7 +381,7 @@ impl OpPickerState {
             let _ = tx.send(LoadResult::Items(Ok(cached)));
             return;
         }
-        let runner = Self::runner_clone_for_thread();
+        let runner = self.runner_clone_for_thread();
         std::thread::spawn(move || {
             let _ = tx.send(LoadResult::Items(
                 runner.item_list(&vault_id, account_id.as_deref()),
@@ -385,7 +411,7 @@ impl OpPickerState {
             let _ = tx.send(LoadResult::Fields(Ok(cached)));
             return;
         }
-        let runner = Self::runner_clone_for_thread();
+        let runner = self.runner_clone_for_thread();
         std::thread::spawn(move || {
             let _ = tx.send(LoadResult::Fields(runner.item_get(
                 &item_id,
@@ -404,13 +430,17 @@ impl OpPickerState {
         self.selected_account.as_ref().map(|a| a.id.clone())
     }
 
-    /// `OpStructRunner` is not `Clone`, so each background call gets its
-    /// own fresh `OpCli`. Tests that inject a custom runner cannot use
-    /// this path — they're expected to drive the state machine
-    /// synchronously via `inject_load_result` and `tick`. (See commit 7
-    /// for the test integration.)
-    fn runner_clone_for_thread() -> Box<dyn OpStructRunner + Send> {
-        Box::new(OpCli::new())
+    /// Clone the runner handle for a background worker thread.
+    ///
+    /// The runner is held in an `Arc` (see [`OpPickerState::runner`]) so
+    /// every spawned worker shares the same trait object — including any
+    /// test-injected stub. Previously this returned a fresh `OpCli`
+    /// regardless of what `self.runner` was, which meant tests could
+    /// only drive the synchronous probe path; with the shared `Arc`,
+    /// tests can also assert on stub state captured by the spawned
+    /// thread.
+    fn runner_clone_for_thread(&self) -> Arc<dyn OpStructRunner + Send + Sync> {
+        Arc::clone(&self.runner)
     }
 
     /// Drain the in-flight receiver if a result is available, updating
@@ -426,6 +456,10 @@ impl OpPickerState {
             return;
         };
         match rx.try_recv() {
+            Ok(LoadResult::Accounts(Ok(accounts))) => {
+                self.rx = None;
+                self.handle_accounts_loaded(accounts);
+            }
             Ok(LoadResult::Vaults(Ok(vaults))) => {
                 self.rx = None;
                 if vaults.is_empty() {
@@ -443,7 +477,7 @@ impl OpPickerState {
                 self.vault_list_state.select(Some(0));
                 self.load_state = OpLoadState::Ready;
             }
-            Ok(LoadResult::Vaults(Err(e))) => {
+            Ok(LoadResult::Accounts(Err(e)) | LoadResult::Vaults(Err(e))) => {
                 self.rx = None;
                 self.load_state = OpLoadState::Error(classify_probe_error(&e));
             }
@@ -623,16 +657,16 @@ impl OpPickerState {
         match key.code {
             KeyCode::Esc => ModalOutcome::Cancel,
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Refresh: drop the cached account list and re-run the
-                // probe synchronously. Carrying out a fresh probe also
-                // re-routes single-vs-multi-account branching, so callers
-                // who add or sign out of accounts mid-session see the
-                // change without restarting `jackin console`.
+                // Refresh: drop the cached account list and re-fire the
+                // probe asynchronously. A fresh probe also re-routes
+                // single-vs-multi-account branching, so callers who add
+                // or sign out of accounts mid-session see the change
+                // without restarting `jackin console`.
                 self.op_cache.borrow_mut().invalidate_accounts();
                 self.accounts.clear();
                 self.account_list_state = ListState::default();
                 self.selected_account = None;
-                self.probe_and_start_initial_load();
+                self.start_account_load();
                 ModalOutcome::Continue
             }
             KeyCode::Up => {
@@ -1063,15 +1097,33 @@ mod tests {
         }
     }
 
-    /// Build a picker with a single seeded account (so the constructor
-    /// auto-selects it, jumps straight to the Vault stage, and never
-    /// shows the Account pane). Drop the in-flight receiver from the
-    /// constructor's background thread (so `poll_load` won't overwrite
-    /// our seeded state), and seed it `Ready` so key handling proceeds
-    /// normally. Most existing tests use this — single-account behavior
-    /// matches the pre-multi-account picker contract.
+    /// Drive `poll_load` until either the picker's `rx` clears (the
+    /// background thread published its result and `poll_load`
+    /// consumed it) or the budget runs out. The constructor's
+    /// `account_list` probe runs on a worker thread; tests that
+    /// inspect post-construction state need to wait for it to land
+    /// before asserting.
+    fn drain_initial_account_load(s: &mut OpPickerState) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while s.rx.is_some() && std::time::Instant::now() < deadline {
+            s.poll_load();
+            if s.rx.is_none() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    }
+
+    /// Build a picker with a single seeded account (so the post-probe
+    /// state auto-selects it, jumps straight to the Vault stage, and
+    /// never shows the Account pane). Wait for the async account_list
+    /// to publish, then bypass any further worker channels (notably
+    /// the chained vault load that returns `NoVaults` on the
+    /// stub) so the test drives state directly. Most existing tests
+    /// use this — single-account behavior matches the
+    /// pre-multi-account picker contract.
     fn picker_ready() -> OpPickerState {
-        let runner = Box::new(StubRunner {
+        let runner = Arc::new(StubRunner {
             accounts: Mutex::new(vec![account(
                 "acct1",
                 "single@example.com",
@@ -1080,11 +1132,14 @@ mod tests {
             last_vault_list_account: Mutex::new(None),
         });
         let mut s = OpPickerState::new_with_runner(runner);
-        // Discard the worker's channel so a delayed result (e.g. from
-        // the production `runner_clone_for_thread` builder running on a
-        // background thread) cannot stomp on the vectors the test seeds
-        // explicitly below.
+        drain_initial_account_load(&mut s);
+        // After the async account_list resolves the picker has
+        // auto-selected the single account and chained into the
+        // (downstream) vault load; bypass that channel and force
+        // Vault-stage Ready so tests can seed `vaults`/`items`/etc
+        // directly without racing the spawned thread.
         s.rx = None;
+        s.stage = OpPickerStage::Vault;
         s.load_state = OpLoadState::Ready;
         s
     }
@@ -1358,37 +1413,48 @@ mod tests {
     }
 
     /// Sanity: the stub-runner constructor doesn't classify a successful
-    /// `account_list` as a fatal `NotInstalled` state. (The seeded
-    /// constructor leaves `load_state = Loading` while the worker thread
-    /// runs; this just confirms it isn't an Error.)
+    /// `account_list` as a fatal `NotInstalled` or `NotSignedIn` state.
+    /// (The chain into `start_vault_load` may end on `NoVaults` because
+    /// the stub's `vault_list` returns an empty `Vec`; that's a
+    /// downstream concern, not a signal that the probe misidentified
+    /// the runner.)
     #[test]
     fn stub_runner_constructor_is_not_fatal() {
-        let runner = Box::new(StubRunner {
+        let runner = Arc::new(StubRunner {
             accounts: Mutex::new(vec![account("a", "a@example.com", "a.1password.com")]),
             last_vault_list_account: Mutex::new(None),
         });
-        let s = OpPickerState::new_with_runner(runner);
+        let mut s = OpPickerState::new_with_runner(runner);
+        drain_initial_account_load(&mut s);
+        let bad = matches!(
+            s.load_state,
+            OpLoadState::Error(OpPickerError::Fatal(
+                OpPickerFatalState::NotInstalled | OpPickerFatalState::NotSignedIn
+            ))
+        );
         assert!(
-            !matches!(s.load_state, OpLoadState::Error(OpPickerError::Fatal(_))),
-            "stub runner returning Ok must not produce a fatal state; got {:?}",
+            !bad,
+            "stub runner returning Ok must not produce NotInstalled / NotSignedIn; got {:?}",
             s.load_state
         );
     }
 
     // ── Multi-account picker tests ────────────────────────────────────
 
-    /// Two seeded accounts: the constructor must route to the Account
-    /// pane, populate `accounts`, and select index 0.
+    /// Two seeded accounts: after `account_list` resolves, the picker
+    /// must route to the Account pane, populate `accounts`, and select
+    /// index 0.
     #[test]
     fn picker_starts_at_account_when_multiple_accounts() {
-        let runner = Box::new(StubRunner {
+        let runner = Arc::new(StubRunner {
             accounts: Mutex::new(vec![
                 account("acct1", "a@example.com", "alpha.1password.com"),
                 account("acct2", "b@example.com", "beta.1password.com"),
             ]),
             last_vault_list_account: Mutex::new(None),
         });
-        let s = OpPickerState::new_with_runner(runner);
+        let mut s = OpPickerState::new_with_runner(runner);
+        drain_initial_account_load(&mut s);
         assert_eq!(
             s.stage,
             OpPickerStage::Account,
@@ -1402,12 +1468,12 @@ mod tests {
         );
     }
 
-    /// One seeded account: the constructor must skip the Account pane
-    /// entirely and auto-select that account, jumping straight to the
-    /// Vault stage.
+    /// One seeded account: after `account_list` resolves, the picker
+    /// must skip the Account pane entirely, auto-select that account,
+    /// and chain into the Vault stage.
     #[test]
     fn picker_starts_at_vault_when_single_account() {
-        let runner = Box::new(StubRunner {
+        let runner = Arc::new(StubRunner {
             accounts: Mutex::new(vec![account(
                 "solo",
                 "solo@example.com",
@@ -1415,7 +1481,8 @@ mod tests {
             )]),
             last_vault_list_account: Mutex::new(None),
         });
-        let s = OpPickerState::new_with_runner(runner);
+        let mut s = OpPickerState::new_with_runner(runner);
+        drain_initial_account_load(&mut s);
         assert_eq!(
             s.stage,
             OpPickerStage::Vault,
@@ -1436,7 +1503,7 @@ mod tests {
     /// case-insensitive).
     #[test]
     fn account_pane_filter_narrows_by_email() {
-        let runner = Box::new(StubRunner {
+        let runner = Arc::new(StubRunner {
             accounts: Mutex::new(vec![
                 account("a1", "alice@example.com", "alpha.1password.com"),
                 account("a2", "bob@example.com", "beta.1password.com"),
@@ -1444,6 +1511,10 @@ mod tests {
             last_vault_list_account: Mutex::new(None),
         });
         let mut s = OpPickerState::new_with_runner(runner);
+        // Wait for the async account_list to publish so `accounts` is
+        // populated, then bypass any further worker channels so the
+        // test drives the state machine directly.
+        drain_initial_account_load(&mut s);
         s.rx = None;
         s.load_state = OpLoadState::Ready;
         s.filter_buf = "alic".to_string();
@@ -1467,7 +1538,7 @@ mod tests {
     /// stub records `Some(account_uuid)`.
     #[test]
     fn enter_on_account_advances_to_vault_with_account_scope() {
-        let runner = Box::new(StubRunner {
+        let runner = Arc::new(StubRunner {
             accounts: Mutex::new(vec![
                 account("acct1", "a@example.com", "alpha.1password.com"),
                 account("acct2", "b@example.com", "beta.1password.com"),
@@ -1475,6 +1546,7 @@ mod tests {
             last_vault_list_account: Mutex::new(None),
         });
         let mut s = OpPickerState::new_with_runner(runner);
+        drain_initial_account_load(&mut s);
         s.rx = None;
         s.load_state = OpLoadState::Ready;
         // Select the second account.
@@ -1499,7 +1571,7 @@ mod tests {
         // The trait method passes `Some(account_id)` whenever
         // `selected_account_id()` returns Some — this verifies that
         // contract on the stub.
-        let runner = Box::new(StubRunner::default());
+        let runner = Arc::new(StubRunner::default());
         runner.account_list().unwrap();
         let _ = runner.vault_list(s.selected_account_id().as_deref());
         let recorded = runner.last_vault_list_account.lock().unwrap().clone();
@@ -1514,7 +1586,7 @@ mod tests {
     /// clearing vault state. Multi-account contract.
     #[test]
     fn esc_from_vault_with_multi_account_returns_to_account() {
-        let runner = Box::new(StubRunner {
+        let runner = Arc::new(StubRunner {
             accounts: Mutex::new(vec![
                 account("acct1", "a@example.com", "alpha.1password.com"),
                 account("acct2", "b@example.com", "beta.1password.com"),
@@ -1522,6 +1594,7 @@ mod tests {
             last_vault_list_account: Mutex::new(None),
         });
         let mut s = OpPickerState::new_with_runner(runner);
+        drain_initial_account_load(&mut s);
         s.rx = None;
         s.load_state = OpLoadState::Ready;
         // Pretend the operator already advanced from Account → Vault.
@@ -1603,8 +1676,9 @@ mod tests {
     }
 
     /// Building two pickers against the same shared cache — the second
-    /// constructor's synchronous `account_list` probe must short-circuit
-    /// to the cached vector instead of invoking the runner again.
+    /// constructor's `account_list` probe must short-circuit to the
+    /// cached vector instead of spawning a thread that invokes the
+    /// runner again.
     #[test]
     fn op_cache_hit_skips_account_list_subprocess() {
         use crate::console::op_cache::OpCache;
@@ -1614,29 +1688,32 @@ mod tests {
         let counter1: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
         let counter2: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 
-        // First picker — cache miss; runner invoked once and the cache
-        // is populated as a side effect.
-        let _ = OpPickerState::new_with_runner_and_cache(
-            Box::new(CounterRunner {
+        // First picker — cache miss; runner invoked once on the worker
+        // thread, populating the cache as a side effect.
+        let mut s1 = OpPickerState::new_with_runner_and_cache(
+            Arc::new(CounterRunner {
                 accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
                 counter: counter1.clone(),
             }),
             cache.clone(),
         );
+        drain_initial_account_load(&mut s1);
         assert_eq!(
             *counter1.lock().unwrap(),
             1,
             "first picker constructor must miss the empty cache"
         );
 
-        // Second picker — cache hit; runner must NOT be invoked.
-        let _ = OpPickerState::new_with_runner_and_cache(
-            Box::new(CounterRunner {
+        // Second picker — cache hit; the runner must NOT be invoked
+        // (the cache-hit fast path sends synchronously, no spawn).
+        let mut s2 = OpPickerState::new_with_runner_and_cache(
+            Arc::new(CounterRunner {
                 accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
                 counter: counter2.clone(),
             }),
             cache,
         );
+        drain_initial_account_load(&mut s2);
         assert_eq!(
             *counter2.lock().unwrap(),
             0,
@@ -1654,14 +1731,15 @@ mod tests {
         let cache = std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()));
         let counter: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 
-        // Empty cache → runner called once.
-        let _ = OpPickerState::new_with_runner_and_cache(
-            Box::new(CounterRunner {
+        // Empty cache → runner called once on the worker thread.
+        let mut s1 = OpPickerState::new_with_runner_and_cache(
+            Arc::new(CounterRunner {
                 accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
                 counter: counter.clone(),
             }),
             cache.clone(),
         );
+        drain_initial_account_load(&mut s1);
         assert_eq!(*counter.lock().unwrap(), 1, "first picker must miss");
         assert!(
             cache.borrow().get_accounts().is_some(),
@@ -1669,13 +1747,14 @@ mod tests {
         );
 
         // Same cache + new picker → no new runner call.
-        let _ = OpPickerState::new_with_runner_and_cache(
-            Box::new(CounterRunner {
+        let mut s2 = OpPickerState::new_with_runner_and_cache(
+            Arc::new(CounterRunner {
                 accounts: vec![account("acct1", "a@example.com", "alpha.1password.com")],
                 counter: counter.clone(),
             }),
             cache,
         );
+        drain_initial_account_load(&mut s2);
         assert_eq!(
             *counter.lock().unwrap(),
             1,
@@ -1694,7 +1773,7 @@ mod tests {
         let counter: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 
         // Two-account setup so the picker lands on the Account pane.
-        let r = Box::new(CounterRunner {
+        let r = Arc::new(CounterRunner {
             accounts: vec![
                 account("acct1", "a@example.com", "alpha.1password.com"),
                 account("acct2", "b@example.com", "beta.1password.com"),
@@ -1702,15 +1781,15 @@ mod tests {
             counter: counter.clone(),
         });
         let mut s = OpPickerState::new_with_runner_and_cache(r, cache);
-        // Discard the worker rx; the constructor's vault load (if any)
-        // is irrelevant to this test.
-        s.rx = None;
-        s.load_state = OpLoadState::Ready;
+        drain_initial_account_load(&mut s);
         assert_eq!(*counter.lock().unwrap(), 1, "constructor must miss once");
+        assert_eq!(s.accounts.len(), 2);
 
         // Press `r` on the Account pane — runner must be called again
-        // because refresh invalidated the accounts cache entry.
+        // because refresh invalidated the accounts cache entry. Drain
+        // the spawned thread before asserting on the counter.
         let _ = s.handle_key(key(KeyCode::Char('r')));
+        drain_initial_account_load(&mut s);
         assert_eq!(
             *counter.lock().unwrap(),
             2,
@@ -1719,6 +1798,118 @@ mod tests {
         // Accounts vec is repopulated.
         assert_eq!(s.accounts.len(), 2);
         assert_eq!(s.stage, OpPickerStage::Account);
+    }
+
+    // ── Async account_list constructor tests ─────────────────────────
+
+    /// Runner whose `account_list` blocks indefinitely on a `Condvar`
+    /// until `release()` is called. Used to prove the picker
+    /// constructor does not synchronously wait on `account_list`.
+    struct BlockingRunner {
+        gate: std::sync::Arc<(Mutex<bool>, std::sync::Condvar)>,
+    }
+
+    impl BlockingRunner {
+        fn new() -> Self {
+            Self {
+                gate: std::sync::Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            }
+        }
+        fn release(&self) {
+            let (lock, cv) = &*self.gate;
+            *lock.lock().unwrap() = true;
+            cv.notify_all();
+        }
+    }
+
+    impl OpStructRunner for BlockingRunner {
+        fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
+            let (lock, cv) = &*self.gate;
+            let mut released = lock.lock().unwrap();
+            while !*released {
+                released = cv.wait(released).unwrap();
+            }
+            Ok(Vec::new())
+        }
+        fn vault_list(&self, _: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
+            Ok(Vec::new())
+        }
+        fn item_list(&self, _: &str, _: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
+            Ok(Vec::new())
+        }
+        fn item_get(&self, _: &str, _: &str, _: Option<&str>) -> anyhow::Result<Vec<OpField>> {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Constructor must return promptly even when the runner's
+    /// `account_list` is wedged. Previously the call was synchronous;
+    /// a slow `op` (cold cache, network stall, biometric prompt held
+    /// open) blocked the TUI render loop before the spinner could
+    /// paint.
+    #[test]
+    fn picker_construction_does_not_block_on_account_list() {
+        let runner = Arc::new(BlockingRunner::new());
+        let runner_for_release = Arc::clone(&runner);
+
+        let start = std::time::Instant::now();
+        let _s = OpPickerState::new_with_runner(runner);
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_millis(500),
+            "constructor must not synchronously wait on account_list; elapsed={elapsed:?}"
+        );
+        // Release the worker so it can exit cleanly (avoids leaving
+        // a thread blocked on the Condvar after the picker is dropped;
+        // BlockingRunner's `Arc` is shared with the spawned thread).
+        runner_for_release.release();
+    }
+
+    /// Right after construction (before `account_list` resolves), the
+    /// picker's `load_state` must be `Loading` and rendering produces
+    /// a frame containing the Braille spinner glyph from the
+    /// `SPINNER_FRAMES` set, so the operator sees motion immediately.
+    #[test]
+    fn picker_loading_account_state_renders_spinner_immediately() {
+        use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+        let runner = Arc::new(BlockingRunner::new());
+        let runner_for_release = Arc::clone(&runner);
+        let s = OpPickerState::new_with_runner(runner);
+
+        // Loading state, not Ready or Error.
+        assert!(
+            matches!(s.load_state, OpLoadState::Loading { .. }),
+            "constructor must leave the picker in Loading; got {:?}",
+            s.load_state
+        );
+
+        // Render and verify a spinner frame appears in the buffer.
+        let area = Rect::new(0, 0, 60, 12);
+        let backend = TestBackend::new(area.width, area.height);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| crate::console::widgets::op_picker::render::render(f, area, &s))
+            .unwrap();
+        let buf = term.backend().buffer();
+
+        // Concatenate the rendered cells and search for any of the
+        // Braille spinner glyphs the loading panel cycles through.
+        let mut rendered = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        let braille_present = rendered
+            .chars()
+            .any(|c| ('\u{2800}'..='\u{28ff}').contains(&c));
+        assert!(
+            braille_present,
+            "rendered loading panel must contain a Braille spinner glyph; \
+             content was: {rendered:?}"
+        );
+
+        runner_for_release.release();
     }
 
     /// Compile-time guarantee: the cache stores `Vec<OpField>`, which
