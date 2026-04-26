@@ -522,3 +522,37 @@ User requested consolidation to single loop `88287a35` (every 30 min). Cancelled
 1. **§5 naming candidates — `ClassSelector` → `AgentClass`** — the rename candidate was proposed but the impact scope (how many files use `ClassSelector`) hasn't been counted. A grep would quantify how many call sites need updating.
 2. **§7.8 Lint configuration** — `Cargo.toml` `[lints.clippy]` section was read in iteration 1 but the full list of enabled/disabled lints hasn't been enumerated. The "cast truncation allowed for TUI" comment needs a specific line citation.
 3. **§4 `app/mod.rs` — `run()` function deep read** — only lines 39–130 were read in iteration 1. The full `run()` dispatch structure (how many Command arms, which ones are largest) hasn't been verified against the proposed `dispatch.rs` split.
+
+---
+
+## Iteration 12 — 2026-04-26
+
+### Improvements chosen
+
+1. **§5 row 5 — `ClassSelector` rename scope** — grepped production code: 138 call sites across 17 files. Top contributors: `runtime/launch.rs` (27), `console/state.rs` (16), `app/context.rs` (13), `selector.rs` (12), `runtime/repo_cache.rs` (10), `instance/naming.rs` (9), `config/agents.rs` (8), `workspace/resolve.rs` (7), `config/mounts.rs` (7), 8 more files. This is the highest-scope rename in the §5 table — 138 production call sites vs. `dispatch_value`'s 1. Multi-PR effort. Updated §5 row 5 with count and per-file breakdown.
+
+2. **§7.8 Lint configuration — full enumeration** — read `Cargo.toml:47–75` in full. Added complete lint table to §7.8: all 7 group settings, 3 restriction lints, 4 pedantic overrides, 4 cast allowances. Key finding: the cast allowances at lines 71–75 are project-wide global `allow` despite inline comment "Allow casting in TUI code where precision loss is acceptable" — the allows are broader than the comment suggests. No `clippy.toml` file exists.
+
+3. **§4 `app/mod.rs` — `run()` deep read** — read `app/mod.rs` lines 40–882 in full. `run()` is 843L (lines 40–882). 8 Command arms with very unequal sizes: `Command::Workspace` (lines 425–862, ~438L) and `Command::Config` (lines 204–423, ~220L) account for 78% of the function. Remaining 6 arms total only ~167L. Updated §4 4e with a refined three-way split: `dispatch.rs` (~167L routing), `workspace_cmd.rs` (~438L), `config_cmd.rs` (~220L).
+
+### What was read
+- `src/app/mod.rs:40–882` (full `run()` function — all 8 Command arms)
+- `Cargo.toml:47–75` (`[lints.rust]` + `[lints.clippy]` — full enumeration)
+- `grep` output for `ClassSelector` across all 17 files with per-file counts
+
+### What changed in the roadmap
+- §5 row 5: Added rename scope (138 prod call sites, 17 files, per-file breakdown)
+- §7.8: Replaced one-line description with full lint table enumeration; added cast-allowance precision note (global allow vs. TUI-scoped comment)
+- §4 4e: Replaced one-sentence description with full command-arm analysis; refined from "move run() to dispatch.rs" to three-way split (dispatch.rs + workspace_cmd.rs + config_cmd.rs)
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| §5 row 5 ClassSelector | High | Call site count grep-verified across 17 files |
+| §7.8 Lint config | High | Cargo.toml lines 47–75 read in full; table directly quoted |
+| §4 4e app/mod.rs split | High | run() read line-by-line; all 8 arms sized and named |
+
+### Weakest sections for iteration 13
+1. **§5 naming — `LoadWorkspaceInput` → `WorkspaceSource`** — the rename was proposed but the call sites haven't been counted. `LoadWorkspaceInput` is only used in `workspace/resolve.rs` and `app/mod.rs` — but this needs grep confirmation.
+2. **§7.12 `thiserror` upgrade to 2.0** — §7.12 recommends upgrading from thiserror 1.x to 2.0 but doesn't verify what version is currently in Cargo.toml or Cargo.lock. The upgrade diff between 1.x and 2.0 needs to be assessed.
+3. **§9 OQ4 — `console/manager/agent_allow.rs` scope** — this module has never been read. It was flagged as an open question in iteration 1 and has not been addressed.

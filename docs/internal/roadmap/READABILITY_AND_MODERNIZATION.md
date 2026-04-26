@@ -618,7 +618,7 @@ Each entry is a **candidate**, not a mandate. Confirmed present in the repositor
 | 2 | `LoadWorkspaceInput` | `src/workspace/resolve.rs:27` | "Load" has two meanings in jackin (loading an agent and loading a workspace from config); this is the latter | `WorkspaceLookupInput`, `WorkspaceSource` | `WorkspaceSource` — clearer intent |
 | 3 | `load_agent` | `src/runtime/launch.rs:533` | "load" is the user-facing verb (matches `jackin load`), but internally this function bootstraps a container — "load" undersells the complexity | `launch_agent`, `bootstrap_agent` | Leave as `load_agent` to match CLI verb; document in `//!` that it is the container bootstrap entry point |
 | 4 | `StepCounter` | `src/runtime/launch.rs:77` | Not obviously a UI step indicator; "counter" suggests a number, not a display concern | `LaunchProgress`, `BootstrapSteps` | `LaunchProgress` |
-| 5 | `ClassSelector` | `src/selector.rs` | "Class" is a Docker container label concept; a fresh contributor may confuse with OOP class or CSS class | `AgentClass`, `AgentSelector` | `AgentClass` aligns with the "agent class" concept in docs |
+| 5 | `ClassSelector` | `src/selector.rs` | "Class" is a Docker container label concept; a fresh contributor may confuse with OOP class or CSS class | `AgentClass`, `AgentSelector` | `AgentClass` aligns with the "agent class" concept in docs. **Rename scope:** 138 production call sites across 17 files — the highest-scope rename in this table. Top files: `runtime/launch.rs` (27), `console/state.rs` (16), `app/context.rs` (13), `selector.rs` (12), `runtime/repo_cache.rs` (10), `instance/naming.rs` (9), `config/agents.rs` (8), `workspace/resolve.rs` (7), `config/mounts.rs` (7), plus 8 more files. Requires touching 17 files minimum; the compiler catches all missed references so the rename is safe but spans many PRs if done incrementally. |
 | 6 | `dispatch_value` | `src/operator_env.rs:33` | "dispatch" suggests routing to a handler; what this actually does is resolve a single env value to its final string | `resolve_env_value`, `evaluate_env_value` | `resolve_env_value`. **Rename scope:** 1 production call site (`operator_env.rs:595`, inside `resolve_operator_env_with`) + 6 test call sites (all inside `mod tests` at line 812 of the same file). All callers are in a single file — this is the lowest-cost rename in the table. |
 | 7 | `parse_host_ref` | `src/operator_env.rs:66` | "host ref" — "host" means "host machine" (as opposed to Docker container), "ref" means `$NAME` or `${NAME}`. Not obvious. | `parse_host_env_ref`, `extract_env_var_name` | `extract_host_env_name` |
 | 8 | `OpRunner` | `src/operator_env.rs:10` | "Op" is ambiguous: "operation"? "operator"? "1Password op CLI"? In this context it's specifically the 1Password CLI. | `OnePasswordReader`, `OpCliRunner` | `OpCliRunner` — makes the 1Password CLI connection obvious |
@@ -851,7 +851,41 @@ Applicable to parsing functions (`src/selector.rs`, `src/workspace/mounts.rs`, `
 
 **What it is:** How clippy lints are configured.
 
-**What `jackin` does today:** `Cargo.toml [lints.clippy]` table — correctness + suspicious as `deny`, complexity + style + perf + pedantic + nursery as `warn`, several pedantic overrides as `allow` (e.g., `cast_possible_truncation`, `module_name_repetitions`). This is a mature, well-considered configuration. Source: `Cargo.toml` lines 55–79.
+**What `jackin` does today (full enumeration, `Cargo.toml:47–75`):**
+
+```
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+# Groups: bugs are errors, style is advisory
+correctness = "deny" (priority -1)
+suspicious  = "deny" (priority -1)
+complexity  = "warn" (priority -1)
+style       = "warn" (priority -1)
+perf        = "warn" (priority -1)
+pedantic    = "warn" (priority -1)
+nursery     = "warn" (priority -1)
+
+# Restriction lints
+dbg_macro     = "deny"
+todo          = "warn"
+unimplemented = "deny"
+
+# Pedantic overrides (allow — too noisy for a CLI)
+missing_errors_doc         = "allow"
+missing_panics_doc         = "allow"
+must_use_candidate         = "allow"
+module_name_repetitions    = "allow"
+
+# Cast allowances (Cargo.toml:71–75, comment: "Allow casting in TUI code where precision loss is acceptable")
+cast_possible_truncation   = "allow"
+cast_possible_wrap         = "allow"
+cast_sign_loss             = "allow"
+cast_precision_loss        = "allow"
+```
+
+This is a mature, well-considered configuration. One gap: the cast allowances at lines 71–75 are project-wide global allows, but the inline comment scopes them to "TUI code" — the comment is accurate in intent (ratatui area arithmetic requires u16 → usize casts and similar) but the allow applies everywhere in the codebase, including non-TUI modules. A future cleanup could scope the per-function suppression to TUI render functions rather than blanket-allowing globally. Currently there is no `clippy.toml` file.
 
 **The 2026-modern landscape:**
 
@@ -1216,7 +1250,11 @@ Ordering principle: *production-code-size × circular-dependency-risk, ascending
 
 4d. **`src/operator_env.rs` → `src/operator_env/` module directory** (~810L production, ~758L tests): Convert to module directory: `mod.rs` (~100L traits + dispatch), `client.rs` (~280L subprocess), `layers.rs` (~470L env resolution), `picker.rs` (~250L PR #171 additions). Dependency graph has no circularity (mod.rs ← client.rs, mod.rs ← layers.rs, mod.rs + client.rs ← picker.rs).
 
-4e. **`src/app/mod.rs` → `src/app/dispatch.rs`** (951L total, ~500L production): Move `run()` function out of `mod.rs`; `mod.rs` becomes a thin module + re-export file. High import count (nearly every module) but no circular risk since `app` is the top-level dispatcher.
+4e. **`src/app/mod.rs` → `src/app/` module split** (951L total, 843L of `run()` dispatch): `run()` spans lines 40–882. Read in full: 8 top-level Command arms with very unequal sizes. `Command::Workspace` (lines 425–862, ~438L) and `Command::Config` (lines 204–423, ~220L) together account for ~658L — 78% of the function. The remaining 6 arms (Load, Console/Launch, Hardline, Eject, Exile, Purge) total only ~167L. Refined split:
+  - `src/app/dispatch.rs` (~167L): the routing logic — `Load`, `Console/Launch`, `Hardline`, `Eject`, `Exile`, `Purge` arms (thin; mostly delegates to `runtime::*`). `mod.rs` becomes a thin module + re-exports.
+  - `src/app/workspace_cmd.rs` (~438L): entire `Command::Workspace` sub-dispatch (Create/List/Rename/Edit/Remove/Env arms) — self-contained, no cross-arm dependency.
+  - `src/app/config_cmd.rs` (~220L): entire `Command::Config` sub-dispatch (Mount/Trust/Auth/Env arms) — self-contained.
+  This three-way split reduces the largest file to ~438L (workspace_cmd.rs) and makes `dispatch.rs` small enough to read in one sitting. High import count across all files (nearly every module is imported) but no circular risk since `app` is the top-level dispatcher.
 
 4f. **`src/runtime/launch.rs` → 4 files** (2368L — most impactful, most complex test suite): Split into `launch.rs` (~120L public API), `launch_pipeline.rs` (~560L + ~1200L tests), `terminfo.rs` (~110L), `trust.rs` (~60L). Do last: the test suite is 1282L and depends on `FakeRunner` from `runtime/test_support.rs`; any test compilation failure here blocks all runtime changes.
 
