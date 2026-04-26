@@ -43,7 +43,7 @@ use fs2::FileExt;
 use crate::docker::CommandRunner;
 use crate::paths::JackinPaths;
 
-use super::naming::FILTER_KEEP_AWAKE;
+use super::naming::{FILTER_KEEP_AWAKE, FILTER_MANAGED};
 
 const PID_FILENAME: &str = "caffeinate.pid";
 const LOCK_FILENAME: &str = "caffeinate.lock";
@@ -114,13 +114,24 @@ fn reconcile_inner(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyh
             // the PID with the stack frame).
             let pid = spawn_caffeinate()?;
             if let Err(err) = write_pid_file(&pid_path, pid) {
-                stop_caffeinate(pid);
+                if let Err(stop_err) = stop_caffeinate(pid) {
+                    eprintln!(
+                        "[jackin] keep_awake: PID file write failed AND cleanup kill of newly-spawned caffeinate (PID {pid}) also failed: {stop_err}; manual `pkill caffeinate` may be required"
+                    );
+                }
                 return Err(err);
             }
         }
         (false, Liveness::Alive) => {
             if let Some(pid) = current_pid {
-                stop_caffeinate(pid);
+                // Surface kill failure rather than swallowing it:
+                // removing the PID file after a failed kill would
+                // orphan caffeinate (next reconcile reads no PID →
+                // `Gone` → no-op, and any later `(true, Gone)` arm
+                // would spawn a duplicate next to the orphan).
+                // Propagating with `?` keeps the PID file intact so
+                // the next reconcile retries the same PID.
+                stop_caffeinate(pid)?;
             }
             remove_pid_file_if_present(&pid_path)?;
         }
@@ -163,11 +174,21 @@ fn remove_pid_file_if_present(path: &Path) -> anyhow::Result<()> {
 /// Count agent containers carrying the `jackin.keep_awake=true` label.
 /// Stopped containers are excluded — only an actually-running agent
 /// justifies holding the assertion.
+///
+/// The `FILTER_MANAGED` co-filter scopes the count to containers
+/// owned by a jackin install (multiple `--filter` flags AND together
+/// in `docker ps`). Without it, a container labelled
+/// `jackin.keep_awake=true` from a stale or external source — for
+/// example, an old jackin install whose state was uninstalled but
+/// whose containers were left running — would pin our caffeinate
+/// indefinitely with no way to discover why.
 fn count_keep_awake_agents(runner: &mut impl CommandRunner) -> anyhow::Result<usize> {
     let output = runner.capture(
         "docker",
         &[
             "ps",
+            "--filter",
+            FILTER_MANAGED,
             "--filter",
             FILTER_KEEP_AWAKE,
             "--format",
@@ -285,13 +306,29 @@ fn classify_ps_comm_output(success: bool, stdout: &str) -> Liveness {
 
 /// Spawn `caffeinate -imsu` so it survives jackin exiting *and* the
 /// controlling terminal closing. We can't call `setsid(2)` directly
-/// without `unsafe` (forbidden crate-wide), so we shell out via
-/// `nohup`, which sets `SIG_IGN` on `SIGHUP` for the child. The
-/// wrapper shell exits immediately after backgrounding caffeinate,
-/// which is then reparented to launchd — that orphan-reparenting is
-/// what actually frees caffeinate from the terminal, not nohup
-/// itself (POSIX `nohup` only ignores SIGHUP; it does not call
-/// `setsid`).
+/// without `unsafe` (forbidden crate-wide), and `setsid(1)` is not
+/// installed on stock macOS, so we shell out via `nohup`, which sets
+/// `SIG_IGN` on `SIGHUP` for the child. The wrapper shell exits
+/// immediately after backgrounding caffeinate, which is then
+/// reparented to launchd.
+///
+/// ## Caveat: process group is not escaped
+///
+/// `nohup` only ignores SIGHUP; it does not start a new session, and
+/// neither does the wrapper shell. The detached caffeinate inherits
+/// jackin's process group ID. Two practical consequences:
+///
+/// 1. Closing the controlling terminal is safe — SIGHUP is ignored
+///    by the child and the terminal-driven SIGHUP would land on a
+///    process group whose only foreground member (jackin) has
+///    already exited.
+/// 2. A *group-targeted* signal (e.g. `kill -TERM -<pgid>`, or some
+///    process-supervisor tooling) sent to jackin's original PGID
+///    after jackin has exited will also reach the orphaned
+///    caffeinate. In typical interactive shell use this never fires
+///    (Ctrl-C targets the foreground PGID, and there is no
+///    foreground process in the original PGID once jackin exits),
+///    but we cannot guarantee group isolation without `unsafe`.
 fn spawn_caffeinate() -> anyhow::Result<u32> {
     let output = Command::new("sh")
         .arg("-c")
@@ -320,33 +357,37 @@ fn spawn_caffeinate() -> anyhow::Result<u32> {
     Ok(pid)
 }
 
-/// SIGTERM the caffeinate process. Non-success results are surfaced
-/// via stderr rather than dropped: ESRCH (process exited between our
-/// comm check and the kill) is harmless, but EPERM means the PID
-/// flipped to a process owned by someone else — the very TOCTOU the
-/// comm check exists to prevent — and the operator should at least
-/// see a breadcrumb if it ever fires.
-fn stop_caffeinate(pid: u32) {
-    let result = Command::new("kill")
+/// SIGTERM the caffeinate process.
+///
+/// Returns `Err` on any failure (kill exit nonzero, kill itself fails
+/// to spawn). The error carries the PID and the kill stderr so the
+/// outer `reconcile()` breadcrumb is actionable. Callers that hold a
+/// PID file MUST decide what to do with it on failure: removing the
+/// PID file when the kill failed orphans caffeinate (we lose the
+/// only handle to the live process), so the `(false, Alive)` arm
+/// propagates the error and leaves the PID file intact for the next
+/// reconcile to retry against the same PID.
+///
+/// ESRCH (process exited between our comm check and the kill) and
+/// EPERM (PID flipped to a process owned by someone else — the very
+/// TOCTOU the comm check exists to prevent) both surface here so the
+/// operator sees a breadcrumb when the rare race fires.
+fn stop_caffeinate(pid: u32) -> anyhow::Result<()> {
+    let output = Command::new("kill")
         .arg(pid.to_string())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .output();
-    match result {
-        Ok(out) if out.status.success() => {}
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            let trimmed = stderr.trim();
-            if trimmed.is_empty() {
-                eprintln!("[jackin] keep_awake: kill {pid} exited {}", out.status);
-            } else {
-                eprintln!("[jackin] keep_awake: kill {pid}: {trimmed}");
-            }
-        }
-        Err(err) => {
-            eprintln!("[jackin] keep_awake: failed to spawn kill({pid}): {err}");
-        }
+        .output()
+        .with_context(|| format!("spawning kill({pid})"))?;
+    if output.status.success() {
+        return Ok(());
     }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let trimmed = stderr.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("kill {pid} exited {}", output.status);
+    }
+    anyhow::bail!("kill {pid}: {trimmed}")
 }
 
 /// Path helper exported for tests of higher-level integrations.
@@ -368,7 +409,7 @@ mod tests {
         assert_eq!(count, 0);
         assert_eq!(
             runner.recorded.last().unwrap(),
-            "docker ps --filter label=jackin.keep_awake=true --format {{.Names}}"
+            "docker ps --filter label=jackin.managed=true --filter label=jackin.keep_awake=true --format {{.Names}}"
         );
     }
 

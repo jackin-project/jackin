@@ -1,6 +1,6 @@
 pub mod context;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::io::ErrorKind;
 use std::path::Path;
 
@@ -196,13 +196,16 @@ pub fn run(cli: Cli) -> Result<()> {
                     println!("No matching agents found.");
                 } else {
                     for container in &containers {
-                        runtime::eject_agent(container, &mut runner)?;
+                        runtime::eject_agent(container, &mut runner)
+                            .with_context(|| format!("ejecting {container}"))?;
                         if purge {
                             crate::isolation::cleanup::purge_isolated_for_container(
                                 &paths.data_dir.join(container),
                                 &mut runner,
-                            )?;
-                            remove_data_dir_if_exists(&paths.data_dir.join(container))?;
+                            )
+                            .with_context(|| format!("purging isolated state for {container}"))?;
+                            remove_data_dir_if_exists(&paths.data_dir.join(container))
+                                .with_context(|| format!("removing data dir for {container}"))?;
                             println!("Ejected and purged {container}.");
                         } else {
                             println!("Ejected {container}.");
@@ -221,7 +224,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     println!("No agents running.");
                 } else {
                     for name in &names {
-                        runtime::eject_agent(name, &mut runner)?;
+                        runtime::eject_agent(name, &mut runner)
+                            .with_context(|| format!("ejecting {name}"))?;
                         println!("Ejected {name}.");
                     }
                 }
