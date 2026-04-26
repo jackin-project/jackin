@@ -115,9 +115,12 @@ fn finalize_clean_exit(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<FinalizeDecision> {
     let records = read_records(container_state_dir)?;
-    let mut all_cleaned = true;
-    let mut needs_prompt: Option<IsolationRecord> = None;
+    let mut preserved_records: Vec<IsolationRecord> = Vec::new();
 
+    // First pass: assess each record. Auto-clean safe ones; collect every
+    // preserved record so the prompt loop below can address them all (a
+    // workspace can have multiple isolated mounts on different host repos
+    // and each may need an independent decision).
     for record in records {
         let assessment = assess_cleanup(&record, runner)?;
         debug_log!(
@@ -133,8 +136,7 @@ fn finalize_clean_exit(
             }
             CleanupAssessment::PreservedDirty => {
                 mark_preserved(container_state_dir, &record, CleanupStatus::PreservedDirty)?;
-                all_cleaned = false;
-                needs_prompt.get_or_insert(record);
+                preserved_records.push(record);
             }
             CleanupAssessment::PreservedUnpushed => {
                 mark_preserved(
@@ -142,37 +144,54 @@ fn finalize_clean_exit(
                     &record,
                     CleanupStatus::PreservedUnpushed,
                 )?;
-                all_cleaned = false;
-                needs_prompt.get_or_insert(record);
+                preserved_records.push(record);
             }
         }
     }
 
-    if all_cleaned {
+    if preserved_records.is_empty() {
         return Ok(FinalizeDecision::Cleaned);
     }
 
-    let Some(rec) = needs_prompt else {
-        return Ok(FinalizeDecision::Preserved);
-    };
-
     if !is_interactive {
-        eprintln!(
-            "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: see cleanup status\n         run `jackin hardline {short}` to return, inspect the path above directly, or `jackin purge {short}` to discard",
-            wt = rec.worktree_path,
-            short = container_name.trim_start_matches("jackin-"),
-        );
+        // Non-interactive: print one warning per preserved record so the
+        // operator sees every worktree path that survived, not just the
+        // first one.
+        for rec in &preserved_records {
+            eprintln!(
+                "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: see cleanup status\n         run `jackin hardline {short}` to return, inspect the path above directly, or `jackin purge {short}` to discard",
+                wt = rec.worktree_path,
+                short = container_name.trim_start_matches("jackin-"),
+            );
+        }
         return Ok(FinalizeDecision::Preserved);
     }
 
-    match prompt.ask_unsafe_cleanup(container_name, &rec.worktree_path)? {
-        0 => Ok(FinalizeDecision::ReturnToAgent),
-        1 => Ok(FinalizeDecision::Preserved),
-        2 => {
-            force_cleanup_isolated(&rec, container_state_dir, runner)?;
-            Ok(FinalizeDecision::Cleaned)
+    // Interactive: prompt for each preserved record. "Return to agent"
+    // applies to the whole container (we restart it) so it short-circuits
+    // immediately. "Preserve" and "Force delete" are per-record decisions.
+    // The container teardown only happens (`Cleaned`) when *every*
+    // preserved record was force-deleted.
+    let mut any_preserved_after_prompt = false;
+    for rec in preserved_records {
+        match prompt.ask_unsafe_cleanup(container_name, &rec.worktree_path)? {
+            0 => return Ok(FinalizeDecision::ReturnToAgent),
+            1 => {
+                // Already marked PreservedDirty / PreservedUnpushed above;
+                // nothing more to write.
+                any_preserved_after_prompt = true;
+            }
+            2 => {
+                force_cleanup_isolated(&rec, container_state_dir, runner)?;
+            }
+            other => anyhow::bail!("unexpected prompt choice {other}"),
         }
-        other => anyhow::bail!("unexpected prompt choice {other}"),
+    }
+
+    if any_preserved_after_prompt {
+        Ok(FinalizeDecision::Preserved)
+    } else {
+        Ok(FinalizeDecision::Cleaned)
     }
 }
 
@@ -183,63 +202,115 @@ enum CleanupAssessment {
     PreservedUnpushed,
 }
 
-#[allow(clippy::unnecessary_wraps)] // capture failures fall back to unpushed
+/// Assess whether `record`'s worktree is safe to auto-clean on a clean
+/// container exit. The contract: on **any** ambiguity — including a
+/// transient git failure that prevents us from answering the question —
+/// fall through to a `Preserved*` assessment so the operator can recover
+/// the worktree manually. We must never return `SafeToDelete` from a
+/// state we couldn't observe; doing so would garbage-collect unpushed
+/// commits the operator made inside the container.
+///
+/// Each `runner.capture` failure is matched explicitly and routed to
+/// `PreservedUnpushed` (the "I don't know, keep it" outcome) with a
+/// `debug_log!` of the underlying error so `--debug` shows what went
+/// wrong. The empty-string outputs that git itself can produce
+/// (no upstream, no commits ahead) keep their natural meaning.
+#[allow(clippy::unnecessary_wraps)] // Result lets us propagate from inner ? if a future revision adds Err arms
 fn assess_cleanup(
     record: &IsolationRecord,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<CleanupAssessment> {
-    let porcelain = runner
-        .capture(
-            "git",
-            &["-C", &record.worktree_path, "status", "--porcelain"],
-            None,
-        )
-        .unwrap_or_default();
+    let porcelain = match runner.capture(
+        "git",
+        &["-C", &record.worktree_path, "status", "--porcelain"],
+        None,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            debug_log!(
+                "isolation",
+                "finalize assess: status --porcelain failed for {wt}: {e}; preserving as unpushed (cannot observe state)",
+                wt = record.worktree_path,
+            );
+            return Ok(CleanupAssessment::PreservedUnpushed);
+        }
+    };
     if !porcelain.trim().is_empty() {
         return Ok(CleanupAssessment::PreservedDirty);
     }
-    let head = runner
-        .capture(
-            "git",
-            &["-C", &record.worktree_path, "rev-parse", "HEAD"],
-            None,
-        )
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let head = match runner.capture(
+        "git",
+        &["-C", &record.worktree_path, "rev-parse", "HEAD"],
+        None,
+    ) {
+        Ok(s) => s.trim().to_string(),
+        Err(e) => {
+            debug_log!(
+                "isolation",
+                "finalize assess: rev-parse HEAD failed for {wt}: {e}; preserving as unpushed (cannot compare to base)",
+                wt = record.worktree_path,
+            );
+            return Ok(CleanupAssessment::PreservedUnpushed);
+        }
+    };
+    // Defense in depth: even on Ok, refuse to compare empty HEAD to
+    // empty base_commit (both unlikely, but the comparison would yield
+    // SafeToDelete which is exactly the wrong answer).
+    if head.is_empty() {
+        debug_log!(
+            "isolation",
+            "finalize assess: rev-parse HEAD returned empty for {wt}; preserving as unpushed",
+            wt = record.worktree_path,
+        );
+        return Ok(CleanupAssessment::PreservedUnpushed);
+    }
     if head == record.base_commit {
         return Ok(CleanupAssessment::SafeToDelete);
     }
-    let upstream = runner
-        .capture(
-            "git",
-            &[
-                "-C",
-                &record.worktree_path,
-                "for-each-ref",
-                "--format=%(upstream:short)",
-                &format!("refs/heads/{}", record.scratch_branch),
-            ],
-            None,
-        )
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let upstream = match runner.capture(
+        "git",
+        &[
+            "-C",
+            &record.worktree_path,
+            "for-each-ref",
+            "--format=%(upstream:short)",
+            &format!("refs/heads/{}", record.scratch_branch),
+        ],
+        None,
+    ) {
+        Ok(s) => s.trim().to_string(),
+        Err(e) => {
+            debug_log!(
+                "isolation",
+                "finalize assess: for-each-ref failed for {wt}: {e}; preserving as unpushed (cannot resolve upstream)",
+                wt = record.worktree_path,
+            );
+            return Ok(CleanupAssessment::PreservedUnpushed);
+        }
+    };
     if upstream.is_empty() {
         return Ok(CleanupAssessment::PreservedUnpushed);
     }
-    let branch_minus_upstream = runner
-        .capture(
-            "git",
-            &[
-                "-C",
-                &record.worktree_path,
-                "rev-list",
-                &format!("{upstream}..{}", record.scratch_branch),
-            ],
-            None,
-        )
-        .unwrap_or_default();
+    let branch_minus_upstream = match runner.capture(
+        "git",
+        &[
+            "-C",
+            &record.worktree_path,
+            "rev-list",
+            &format!("{upstream}..{}", record.scratch_branch),
+        ],
+        None,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            debug_log!(
+                "isolation",
+                "finalize assess: rev-list failed for {wt}: {e}; preserving as unpushed (cannot verify all commits pushed)",
+                wt = record.worktree_path,
+            );
+            return Ok(CleanupAssessment::PreservedUnpushed);
+        }
+    };
     if branch_minus_upstream.trim().is_empty() {
         Ok(CleanupAssessment::SafeToDelete)
     } else {
@@ -561,5 +632,300 @@ mod tests {
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
+    }
+
+    /// Build a runner whose git captures will fail at a specific stage.
+    /// `fail_pattern` is matched as substring against the recorded command.
+    /// Anything before the failing capture comes from `outputs`.
+    fn fake_failing_capture(outputs: &[&str], fail_pattern: &str) -> FakeRunner {
+        FakeRunner {
+            capture_queue: VecDeque::from(
+                outputs.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            ),
+            fail_on: vec![fail_pattern.into()],
+            ..FakeRunner::default()
+        }
+    }
+
+    // The block of tests below pins the safety contract from the docstring
+    // on `assess_cleanup`: any git capture failure must route to
+    // `PreservedUnpushed` (not `SafeToDelete`) so a transient git error
+    // never garbage-collects unpushed scratch-branch commits.
+
+    #[test]
+    fn assess_cleanup_status_capture_failure_preserves_unpushed() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // status --porcelain errors → must NOT be treated as clean tree.
+        let mut runner = fake_failing_capture(&[], "status --porcelain");
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+        // Critically: no git worktree remove / branch -D should have run.
+        assert!(
+            !runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree remove --force")),
+            "must not delete worktree when status capture failed; recorded={:?}",
+            runner.run_recorded,
+        );
+    }
+
+    #[test]
+    fn assess_cleanup_rev_parse_failure_preserves_unpushed() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // status returns clean (empty), then rev-parse HEAD errors.
+        let mut runner = fake_failing_capture(&[""], "rev-parse HEAD");
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+        assert!(
+            !runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree remove --force"))
+        );
+    }
+
+    #[test]
+    fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // status clean, HEAD differs from base, then for-each-ref errors.
+        let mut runner = fake_failing_capture(&["", "newhead\n"], "for-each-ref");
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+        assert!(
+            !runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree remove --force"))
+        );
+    }
+
+    #[test]
+    fn assess_cleanup_rev_list_failure_preserves_unpushed() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // Make it all the way to rev-list, then fail. Without this fix the
+        // empty-string fallback would have returned SafeToDelete here and
+        // the unpushed commits would have been garbage-collected.
+        let mut runner =
+            fake_failing_capture(&["", "newhead\n", "origin/jackin/scratch/x\n"], "rev-list");
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+        assert!(
+            !runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree remove --force")),
+            "rev-list failure must not auto-delete; recorded={:?}",
+            runner.run_recorded,
+        );
+    }
+
+    fn rec_at(container_dir: &Path, mount_dst: &str, scratch_branch: &str) -> IsolationRecord {
+        let rel = mount_dst.trim_matches('/');
+        let wt = container_dir.join(format!("isolated/{rel}"));
+        std::fs::create_dir_all(&wt).unwrap();
+        IsolationRecord {
+            workspace: "ws".into(),
+            mount_dst: mount_dst.into(),
+            original_src: container_dir.join("repo").to_string_lossy().into(),
+            isolation: MountIsolation::Worktree,
+            worktree_path: wt.to_string_lossy().into(),
+            scratch_branch: scratch_branch.into(),
+            base_commit: "abc".into(),
+            selector_key: "x".into(),
+            container_name: "jackin-x".into(),
+            cleanup_status: CleanupStatus::Active,
+        }
+    }
+
+    /// Multi-mount workspace with two preserved records, operator picks
+    /// "force delete" on both. Both worktrees must be cleaned and the
+    /// caller signaled `Cleaned` so the container teardown proceeds.
+    #[test]
+    fn multi_mount_force_delete_on_each_cleans_all_records() {
+        let dir = TempDir::new().unwrap();
+        let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
+        let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
+        std::fs::create_dir_all(&r1.original_src).unwrap();
+        write_records(dir.path(), &[r1.clone(), r2.clone()]).unwrap();
+        // Both records assess to PreservedDirty (status returns dirty for each).
+        let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
+        // Operator chooses option 2 (force delete) for both.
+        let mut p = ScriptedPrompt(VecDeque::from([2, 2]));
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert!(
+            read_records(dir.path()).unwrap().is_empty(),
+            "both records should be removed after force-delete on both",
+        );
+        let removes = runner
+            .run_recorded
+            .iter()
+            .filter(|c| c.contains("worktree remove --force"))
+            .count();
+        assert_eq!(
+            removes, 2,
+            "must run worktree-remove for BOTH preserved mounts; recorded={:?}",
+            runner.run_recorded
+        );
+    }
+
+    /// Multi-mount workspace where the operator force-deletes one and
+    /// preserves the other. The container must NOT be torn down (only one
+    /// of two records was actually cleaned), and the second worktree must
+    /// remain on disk with its preserved status.
+    #[test]
+    fn multi_mount_mixed_decision_signals_preserved() {
+        let dir = TempDir::new().unwrap();
+        let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
+        let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
+        std::fs::create_dir_all(&r1.original_src).unwrap();
+        write_records(dir.path(), &[r1.clone(), r2.clone()]).unwrap();
+        let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
+        // First record force-deleted, second preserved.
+        let mut p = ScriptedPrompt(VecDeque::from([2, 1]));
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(
+            dec,
+            FinalizeDecision::Preserved,
+            "must NOT signal Cleaned when any record was preserved — the \
+             container would be torn down and the preserved worktree's only \
+             reconnection path (jackin hardline) would be lost",
+        );
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].mount_dst, "/workspace/b");
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
+    }
+
+    /// Non-interactive multi-mount: every preserved record's path is
+    /// printed to stderr so the operator sees all of them, not just the
+    /// first.
+    #[test]
+    fn multi_mount_non_interactive_marks_all_preserved() {
+        let dir = TempDir::new().unwrap();
+        let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
+        let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
+        std::fs::create_dir_all(&r1.original_src).unwrap();
+        write_records(dir.path(), &[r1.clone(), r2.clone()]).unwrap();
+        let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs.len(), 2);
+        assert!(
+            recs.iter()
+                .all(|r| r.cleanup_status == CleanupStatus::PreservedDirty),
+            "every record must be marked preserved, not just the first",
+        );
+    }
+
+    #[test]
+    fn assess_cleanup_empty_head_does_not_compare_equal_to_empty_base() {
+        // Defense in depth: even if both `head` and `base_commit` are
+        // somehow empty strings (corrupted record + degraded git),
+        // the assessment must NOT return SafeToDelete via "" == "".
+        let dir = TempDir::new().unwrap();
+        let mut r = rec(dir.path());
+        r.base_commit = String::new();
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // status clean, then rev-parse returns empty (not an error, but
+        // empty stdout — pathological but possible with broken git wrappers).
+        let mut runner = fake_with_outputs(&["", ""]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
 }

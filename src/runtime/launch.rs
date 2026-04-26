@@ -603,29 +603,39 @@ fn launch_agent_runtime(
 /// Returns `AttachOutcome::still_running` when the container is still running
 /// (terminal closed / detach), `AttachOutcome::oom_killed` when the kernel
 /// killed the container OOM, otherwise `AttachOutcome::stopped(exit_code)`.
-/// Capture failures are treated as `stopped(0)` (the safe default that lets
-/// the finalizer assess records but never erroneously mark a crash as clean).
-// The `Result` return is intentional: it gives us room to surface errors
-// once we tighten up the capture-failure handling (today we swallow them
-// with `unwrap_or_default`, but call sites already use `?`).
-#[allow(clippy::unnecessary_wraps)]
+///
+/// Capture failures (docker daemon hiccup, container removed mid-inspect)
+/// are mapped to `still_running()` — the **conservative** default. Returning
+/// `stopped(0)` here would route the call through `finalize_clean_exit`,
+/// which combined with any concurrent git failure inside `assess_cleanup`
+/// could auto-delete worktrees of containers that may actually still be
+/// running. `still_running()` instead skips the auto-cleanup path entirely
+/// and preserves records for `jackin hardline` to recover.
+#[allow(clippy::unnecessary_wraps)] // Result preserved so callers' `?` keeps working without a churn-y signature change
 pub fn inspect_attach_outcome(
     runner: &mut impl crate::docker::CommandRunner,
     container: &str,
 ) -> anyhow::Result<crate::isolation::finalize::AttachOutcome> {
     use crate::isolation::finalize::AttachOutcome;
-    let state = runner
-        .capture(
-            "docker",
-            &[
-                "inspect",
-                "-f",
-                "{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}",
-                container,
-            ],
-            None,
-        )
-        .unwrap_or_default();
+    let state = match runner.capture(
+        "docker",
+        &[
+            "inspect",
+            "-f",
+            "{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}",
+            container,
+        ],
+        None,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            crate::debug_log!(
+                "isolation",
+                "inspect_attach_outcome: docker inspect failed for {container}: {e}; treating as still_running (conservative — finalize_clean_exit's auto-cleanup never fires)",
+            );
+            return Ok(AttachOutcome::still_running());
+        }
+    };
     let parts: Vec<&str> = state.trim().split('|').collect();
     let status = parts.first().copied().unwrap_or("");
     let exit_code = parts.get(1).and_then(|s| s.parse::<i32>().ok());
@@ -1396,6 +1406,90 @@ mod tests {
 
         let strings = build_workspace_mount_strings(&mat);
         assert_eq!(strings, vec!["/host/shared:/workspace/shared".to_string()]);
+    }
+
+    #[test]
+    fn build_workspace_mount_strings_two_isolated_mounts_emits_eight_distinct_strings() {
+        // A workspace with two isolated mounts on different host repos
+        // (allowed by validate_isolation_layout) must emit a clean
+        // 4-bind grouping per mount with no path collisions. This is
+        // the production multi-mount path; finalize.rs's prompt loop
+        // also handles this case (see multi_mount_force_delete_on_each_*).
+        let mat = MaterializedWorkspace {
+            workdir: "/workspace".into(),
+            mounts: vec![
+                MaterializedMount {
+                    bind_src: "/data/jackin-x/git/worktree/repo/workspace/a/jackin-x".into(),
+                    dst: "/workspace/a".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Worktree,
+                    worktree_aux: Some(crate::isolation::materialize::WorktreeAuxMounts {
+                        host_git_dir: "/host/repo-a/.git".into(),
+                        host_git_target: "/jackin/host/workspace/a/.git".into(),
+                        git_file_override: "/data/jackin-x/git/overrides/workspace/a/.git".into(),
+                        git_file_target: "/workspace/a/.git".into(),
+                        gitdir_back_override: "/data/jackin-x/git/overrides/workspace/a/gitdir"
+                            .into(),
+                        gitdir_back_target:
+                            "/jackin/host/workspace/a/.git/worktrees/jackin-x/gitdir".into(),
+                    }),
+                },
+                MaterializedMount {
+                    bind_src: "/data/jackin-x/git/worktree/repo/workspace/b/jackin-x".into(),
+                    dst: "/workspace/b".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Worktree,
+                    worktree_aux: Some(crate::isolation::materialize::WorktreeAuxMounts {
+                        host_git_dir: "/host/repo-b/.git".into(),
+                        host_git_target: "/jackin/host/workspace/b/.git".into(),
+                        git_file_override: "/data/jackin-x/git/overrides/workspace/b/.git".into(),
+                        git_file_target: "/workspace/b/.git".into(),
+                        gitdir_back_override: "/data/jackin-x/git/overrides/workspace/b/gitdir"
+                            .into(),
+                        gitdir_back_target:
+                            "/jackin/host/workspace/b/.git/worktrees/jackin-x/gitdir".into(),
+                    }),
+                },
+            ],
+        };
+
+        let strings = build_workspace_mount_strings(&mat);
+        assert_eq!(
+            strings.len(),
+            8,
+            "two isolated mounts → eight bind specs (4 per mount); got {strings:?}"
+        );
+
+        // No two emitted strings may be identical — distinct dsts
+        // throughout, which is the disambiguation guarantee under
+        // /jackin/host/<dst-tree>/.
+        let mut sorted = strings.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            strings.len(),
+            "no duplicate bind specs across mounts; got {strings:?}"
+        );
+
+        // Each mount's 4 bind specs reference its own dst tree.
+        let mount_a_count = strings
+            .iter()
+            .filter(|s| s.contains("/workspace/a") || s.contains("/jackin/host/workspace/a/"))
+            .count();
+        let mount_b_count = strings
+            .iter()
+            .filter(|s| s.contains("/workspace/b") || s.contains("/jackin/host/workspace/b/"))
+            .count();
+        assert_eq!(mount_a_count, 4, "mount A should have 4 bind specs");
+        assert_eq!(mount_b_count, 4, "mount B should have 4 bind specs");
+
+        // Both override files for both mounts must remain :ro.
+        let ro_count = strings.iter().filter(|s| s.ends_with(":ro")).count();
+        assert_eq!(
+            ro_count, 4,
+            ":ro hardening must apply to both override files of both mounts; got {strings:?}"
+        );
     }
 
     #[test]
@@ -2801,5 +2895,20 @@ plugins = []
             msg.contains("[env]"),
             "error should point the operator at the [env] manifest table; got: {msg}"
         );
+    }
+
+    #[test]
+    fn inspect_attach_outcome_capture_failure_returns_still_running() {
+        // A docker daemon hiccup or a container removed mid-inspect must
+        // NOT route through finalize_clean_exit's auto-cleanup path —
+        // returning still_running keeps the records preserved for
+        // `jackin hardline` to recover.
+        use crate::isolation::finalize::AttachOutcome;
+        let mut runner = crate::runtime::test_support::FakeRunner {
+            fail_on: vec!["docker inspect".into()],
+            ..Default::default()
+        };
+        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        assert_eq!(outcome, AttachOutcome::still_running());
     }
 }

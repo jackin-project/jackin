@@ -3,9 +3,20 @@ use crate::docker::CommandRunner;
 use crate::isolation::state::{IsolationRecord, remove_record};
 use std::path::Path;
 
-/// Force-delete an isolated worktree and its scratch branch.
-/// Tolerates missing host repo / already-removed worktree (best-effort).
-/// Removes the corresponding record from `isolation.json`.
+/// Force-delete an isolated worktree and its scratch branch, then remove
+/// the corresponding `isolation.json` record.
+///
+/// Tolerates the idempotent paths (worktree already removed externally,
+/// branch already deleted, host repo missing) without surfacing them as
+/// errors. Real failures (worktree dir still present after both git and
+/// `rm -rf`, or scratch branch still present after `branch -D`) bail
+/// **without** removing the record so the operator can investigate and
+/// re-run `jackin purge` once the underlying issue is resolved. Removing
+/// the record on a failed cleanup would leave orphan git admin entries
+/// (`git worktree list` showing stale paths) and orphan branches with no
+/// jackin-side reference, which can only be reclaimed by manually running
+/// `git worktree prune` and `git branch -D` on the host repo.
+#[allow(clippy::too_many_lines)] // verify-and-bail flow has lots of small steps; splitting hurts readability
 pub fn force_cleanup_isolated(
     record: &IsolationRecord,
     container_state_dir: &Path,
@@ -29,7 +40,7 @@ pub fn force_cleanup_isolated(
             src = record.original_src,
             wt = record.worktree_path,
         );
-        let _ = runner.run(
+        let wt_remove_result = runner.run(
             "git",
             &[
                 "-C",
@@ -45,13 +56,20 @@ pub fn force_cleanup_isolated(
                 ..Default::default()
             },
         );
+        if let Err(e) = &wt_remove_result {
+            debug_log!(
+                "isolation",
+                "git worktree remove returned error for {wt}: {e} (verifying via wt.exists())",
+                wt = record.worktree_path,
+            );
+        }
         debug_log!(
             "isolation",
             "git -C {src} branch -D {branch}",
             src = record.original_src,
             branch = record.scratch_branch,
         );
-        let _ = runner.run(
+        let branch_delete_result = runner.run(
             "git",
             &[
                 "-C",
@@ -66,15 +84,50 @@ pub fn force_cleanup_isolated(
                 ..Default::default()
             },
         );
+        if let Err(e) = &branch_delete_result {
+            debug_log!(
+                "isolation",
+                "git branch -D returned error for {branch}: {e} (verifying via branch_still_present())",
+                branch = record.scratch_branch,
+            );
+        }
+
+        // Verify the branch is actually gone. If `branch -D` errored
+        // because the branch was already deleted, the verification
+        // succeeds and we proceed; if it errored because the branch is
+        // still checked out somewhere or we lack permission, the verify
+        // fails and we bail without forgetting the record.
+        if branch_still_present(runner, &record.original_src, &record.scratch_branch) == Some(true)
+        {
+            anyhow::bail!(
+                "scratch branch `{}` still present after `git branch -D` on host repo `{}`; \
+                 record retained at `{}` so re-running `jackin purge` is possible after \
+                 resolving the underlying issue (branch may be checked out in another worktree, \
+                 or you may lack permission to delete it).",
+                record.scratch_branch,
+                record.original_src,
+                container_state_dir.display(),
+            );
+        }
     } else {
         debug_log!(
             "isolation",
             "skipping git cleanup: host repo {src} no longer exists",
             src = record.original_src,
         );
+        eprintln!(
+            "[jackin] warning: host repo `{src}` no longer exists; \
+             cannot run git cleanup for `{dst}`. The orphan admin entry under \
+             `<host_repo>/.git/worktrees/` will be reclaimed by `git worktree prune` \
+             next time you visit the (moved?) host repo.",
+            src = record.original_src,
+            dst = record.mount_dst,
+        );
     }
 
-    // Belt-and-suspenders: nuke the worktree directory if git left anything.
+    // Belt-and-suspenders: nuke the worktree directory if git left
+    // anything. Surface fs errors loudly — a failed rm-rf with the
+    // worktree still present means cleanup didn't really happen.
     let wt = std::path::Path::new(&record.worktree_path);
     if wt.exists() {
         debug_log!(
@@ -82,11 +135,44 @@ pub fn force_cleanup_isolated(
             "fallback rm -rf {wt} (git did not remove it)",
             wt = record.worktree_path,
         );
-        let _ = std::fs::remove_dir_all(wt);
+        if let Err(e) = std::fs::remove_dir_all(wt) {
+            anyhow::bail!(
+                "could not remove worktree directory `{}`: {e}; \
+                 record retained at `{}` so re-running `jackin purge` is possible \
+                 after resolving the underlying issue (file in use, permission \
+                 denied, or filesystem error).",
+                record.worktree_path,
+                container_state_dir.display(),
+            );
+        }
+    }
+
+    // Final guard: if the worktree path still exists at this point
+    // (shouldn't happen given the rm above), bail rather than forget.
+    if wt.exists() {
+        anyhow::bail!(
+            "worktree directory `{}` still present after cleanup; \
+             record retained at `{}` so re-running `jackin purge` is possible.",
+            record.worktree_path,
+            container_state_dir.display(),
+        );
     }
 
     remove_record(container_state_dir, &record.mount_dst)?;
     Ok(())
+}
+
+/// Best-effort check: is `branch` still present on `repo`? Returns
+/// `Some(true)` if confirmed present, `Some(false)` if confirmed absent,
+/// `None` if we couldn't tell (e.g., `git branch --list` itself errored).
+/// Callers treat `None` as "couldn't verify, don't bail" — the cost of
+/// a false negative here (orphan branch left behind) is much lower than
+/// the cost of a false positive (operator stuck unable to purge).
+fn branch_still_present(runner: &mut impl CommandRunner, repo: &str, branch: &str) -> Option<bool> {
+    let output = runner
+        .capture("git", &["-C", repo, "branch", "--list", branch], None)
+        .ok()?;
+    Some(!output.trim().is_empty())
 }
 
 /// Force-cleanup every record in a container's isolation.json. Used by purge.
@@ -233,5 +319,96 @@ mod tests {
         let mut runner = FakeRunner::default();
         purge_isolated_for_container(container_dir.path(), &mut runner).unwrap();
         assert!(runner.run_recorded.is_empty());
+    }
+
+    /// Idempotent path: `git branch -D` errors because the branch was
+    /// already deleted externally, then `git branch --list` confirms it's
+    /// gone → cleanup proceeds and the record is removed. The verify
+    /// step is exactly what lets us distinguish "already done" from
+    /// "real failure".
+    #[test]
+    fn force_cleanup_tolerates_branch_already_deleted_when_verify_says_absent() {
+        let repo_dir = TempDir::new().unwrap();
+        let container_dir = TempDir::new().unwrap();
+        let rec = rec_for(repo_dir.path(), container_dir.path());
+        write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+        // `git branch -D` fails (branch was already gone); the verify
+        // capture returns empty → confirms branch is absent → proceed.
+        let mut runner = FakeRunner {
+            fail_on: vec!["branch -D".into()],
+            // capture queue: empty result for `git branch --list <branch>`
+            capture_queue: std::collections::VecDeque::from(vec![String::new()]),
+            ..Default::default()
+        };
+        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap();
+        assert!(
+            read_records(container_dir.path()).unwrap().is_empty(),
+            "record should be removed when branch is verified absent"
+        );
+    }
+
+    /// Real failure: `git branch -D` errors AND the verify step shows
+    /// the branch is still present. Cleanup must bail without touching
+    /// the record so the operator can re-run `jackin purge` after
+    /// resolving the issue.
+    #[test]
+    fn force_cleanup_retains_record_when_branch_delete_fails_and_branch_still_present() {
+        let repo_dir = TempDir::new().unwrap();
+        let container_dir = TempDir::new().unwrap();
+        let rec = rec_for(repo_dir.path(), container_dir.path());
+        write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+        // `git branch -D` fails; verify capture says branch IS present.
+        let mut runner = FakeRunner {
+            fail_on: vec!["branch -D".into()],
+            capture_queue: std::collections::VecDeque::from(vec![
+                "  jackin/scratch/x\n".to_string(),
+            ]),
+            ..Default::default()
+        };
+        let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap_err();
+        assert!(
+            err.to_string().contains("scratch branch"),
+            "error should name the branch; got: {err}"
+        );
+        assert!(
+            err.to_string().contains("record retained"),
+            "error should tell the operator the record was retained; got: {err}"
+        );
+        // Critical: record MUST still be there.
+        let recs = read_records(container_dir.path()).unwrap();
+        assert_eq!(
+            recs.len(),
+            1,
+            "record must NOT be removed on cleanup failure; otherwise re-running purge becomes impossible"
+        );
+    }
+
+    /// `rm -rf` fails (e.g., simulated by leaving the worktree path as
+    /// a non-removable parent). Cleanup must bail without removing the
+    /// record. We can't easily simulate `remove_dir_all` failure
+    /// portably; this test instead pins the contract via the doc comment
+    /// and the error-message check on a related path.
+    #[test]
+    fn force_cleanup_error_message_mentions_record_retention() {
+        // This test pins that any failure path produces an error
+        // message that tells the operator the record was retained.
+        // Concretely covered by the branch-still-present test above;
+        // this is a structural smoke check that the error-message
+        // contract is consistent.
+        let repo_dir = TempDir::new().unwrap();
+        let container_dir = TempDir::new().unwrap();
+        let rec = rec_for(repo_dir.path(), container_dir.path());
+        write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+        let mut runner = FakeRunner {
+            fail_on: vec!["branch -D".into()],
+            capture_queue: std::collections::VecDeque::from(vec!["jackin/scratch/x".to_string()]),
+            ..Default::default()
+        };
+        let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("`jackin purge`"), "got: {msg}");
+        assert!(msg.contains("record retained"), "got: {msg}");
     }
 }

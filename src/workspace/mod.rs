@@ -478,4 +478,33 @@ isolation = "worktree"
         let err = validate_isolation_layout(&mounts).unwrap_err().to_string();
         assert!(err.contains("/workspace/proj"));
     }
+
+    /// Pin the wiring: `validate_workspace_config` must call
+    /// `validate_isolation_layout` so isolation rejections actually
+    /// propagate through the public validation entrypoint. If the call
+    /// site at L174 is ever refactored away, every isolation rejection
+    /// would silently become a no-op (only catchable at materialize
+    /// time, after the operator has already saved a broken config).
+    #[test]
+    fn validate_workspace_config_surfaces_isolation_layout_errors() {
+        use std::collections::BTreeMap;
+        let workspace = WorkspaceConfig {
+            workdir: "/workspace/proj".into(),
+            mounts: vec![
+                worktree_mount("/tmp/a", "/workspace/proj"),
+                worktree_mount("/tmp/b", "/workspace/proj/sub"),
+            ],
+            allowed_agents: Vec::new(),
+            default_agent: None,
+            last_agent: None,
+            env: BTreeMap::new(),
+            agents: BTreeMap::new(),
+        };
+        let err = validate_workspace_config("ws", &workspace).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("nested inside"),
+            "validate_workspace_config must surface the nested-worktrees error from validate_isolation_layout; got: {msg}",
+        );
+    }
 }

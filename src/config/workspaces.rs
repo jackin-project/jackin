@@ -552,5 +552,91 @@ mod tests {
             assert!(det.running_containers.is_empty());
             assert!(det.stopped_records.is_empty());
         }
+
+        /// Documents a known V1 limitation: flipping the isolation mode
+        /// from `worktree` to `shared` on the same `dst`+`src` does NOT
+        /// fire drift detection today. The existing isolation.json
+        /// record + materialized worktree become stranded silently;
+        /// they're only reclaimed by `jackin purge`. Pinning this here
+        /// so a future change that extends the drift predicate
+        /// (proposed in code review of PR #177) updates this test in
+        /// the same change instead of accidentally regressing on it.
+        #[test]
+        fn detect_drift_does_not_currently_flag_isolation_mode_flips() {
+            let data = TempDir::new().unwrap();
+            let cdir = data.path().join("jackin-x");
+            std::fs::create_dir_all(&cdir).unwrap();
+            write_records(
+                &cdir,
+                std::slice::from_ref(&record_for(
+                    "jackin",
+                    "jackin-x",
+                    "/workspace/jackin",
+                    "/same/src",
+                )),
+            )
+            .unwrap();
+
+            let paths = paths_for(data.path());
+            // Same src+dst as the recorded mount, but isolation flipped.
+            let edited = vec![mount(
+                "/same/src",
+                "/workspace/jackin",
+                MountIsolation::Shared,
+            )];
+            let mut runner = FakeRunner::default();
+            runner.capture_queue.push_back(String::new());
+            runner.capture_queue.push_back(String::new());
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &mut runner).unwrap();
+            // Current behavior — known gap. If this test starts failing
+            // because drift now correctly flags the flip, update it to
+            // assert `det.stopped_records.len() == 1` and remove this
+            // explanatory note.
+            assert!(
+                det.stopped_records.is_empty(),
+                "current V1 behavior: isolation-mode flips don't fire drift; \
+                 update this test when the predicate is extended"
+            );
+        }
+
+        /// Operator removes the mount entirely from the workspace edit
+        /// (or renames its dst). The existing record's dst is no longer
+        /// in `edited_mounts`, so drift fires — operator must
+        /// acknowledge with `--delete-isolated-state`.
+        #[test]
+        fn detect_drift_flags_record_when_dst_removed_from_edit() {
+            let data = TempDir::new().unwrap();
+            let cdir = data.path().join("jackin-x");
+            std::fs::create_dir_all(&cdir).unwrap();
+            write_records(
+                &cdir,
+                std::slice::from_ref(&record_for(
+                    "jackin",
+                    "jackin-x",
+                    "/workspace/jackin",
+                    "/old/src",
+                )),
+            )
+            .unwrap();
+
+            let paths = paths_for(data.path());
+            // Edited mount list omits /workspace/jackin entirely.
+            let edited = vec![mount(
+                "/some/other/src",
+                "/workspace/other",
+                MountIsolation::Shared,
+            )];
+            let mut runner = FakeRunner::default();
+            runner.capture_queue.push_back(String::new());
+            runner.capture_queue.push_back(String::new());
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &mut runner).unwrap();
+            assert!(det.running_containers.is_empty());
+            assert_eq!(
+                det.stopped_records.len(),
+                1,
+                "removing the dst from the workspace must surface the existing record as drift",
+            );
+            assert_eq!(det.stopped_records[0].mount_dst, "/workspace/jackin");
+        }
     }
 }
