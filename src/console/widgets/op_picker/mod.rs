@@ -28,7 +28,7 @@ use tui_widget_list::ListState;
 use crate::console::op_cache::OpCache;
 use crate::operator_env::{OpAccount, OpCli, OpField, OpItem, OpStructRunner, OpVault};
 
-use super::ModalOutcome;
+use super::{ModalOutcome, cycle_select};
 
 pub mod render;
 
@@ -481,12 +481,12 @@ impl OpPickerState {
             }
             KeyCode::Up => {
                 let n = self.filtered_accounts().len();
-                Self::step_selection(&mut self.account_list_state, n, -1);
+                cycle_select(&mut self.account_list_state, n, -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down => {
                 let n = self.filtered_accounts().len();
-                Self::step_selection(&mut self.account_list_state, n, 1);
+                cycle_select(&mut self.account_list_state, n, 1);
                 ModalOutcome::Continue
             }
             KeyCode::Backspace => {
@@ -545,12 +545,12 @@ impl OpPickerState {
             }
             KeyCode::Up => {
                 let n = self.filtered_vaults().len();
-                Self::step_selection(&mut self.vault_list_state, n, -1);
+                cycle_select(&mut self.vault_list_state, n, -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down => {
                 let n = self.filtered_vaults().len();
-                Self::step_selection(&mut self.vault_list_state, n, 1);
+                cycle_select(&mut self.vault_list_state, n, 1);
                 ModalOutcome::Continue
             }
             KeyCode::Backspace => {
@@ -605,12 +605,12 @@ impl OpPickerState {
             }
             KeyCode::Up => {
                 let n = self.filtered_items().len();
-                Self::step_selection(&mut self.item_list_state, n, -1);
+                cycle_select(&mut self.item_list_state, n, -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down => {
                 let n = self.filtered_items().len();
-                Self::step_selection(&mut self.item_list_state, n, 1);
+                cycle_select(&mut self.item_list_state, n, 1);
                 ModalOutcome::Continue
             }
             KeyCode::Backspace => {
@@ -676,12 +676,12 @@ impl OpPickerState {
             }
             KeyCode::Up => {
                 let n = self.filtered_fields().len();
-                Self::step_selection(&mut self.field_list_state, n, -1);
+                cycle_select(&mut self.field_list_state, n, -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down => {
                 let n = self.filtered_fields().len();
-                Self::step_selection(&mut self.field_list_state, n, 1);
+                cycle_select(&mut self.field_list_state, n, 1);
                 ModalOutcome::Continue
             }
             KeyCode::Backspace => {
@@ -722,23 +722,6 @@ impl OpPickerState {
             }
             _ => ModalOutcome::Continue,
         }
-    }
-
-    /// Wrap-around cursor move for any pane's `ListState`.
-    /// Up = -1, Down = +1; no-op if `count == 0`.
-    fn step_selection(list_state: &mut ListState, count: usize, delta: i32) {
-        if count == 0 {
-            return;
-        }
-        let cur = list_state.selected.unwrap_or(0);
-        let next = if delta < 0 {
-            if cur == 0 { count - 1 } else { cur - 1 }
-        } else if cur + 1 >= count {
-            0
-        } else {
-            cur + 1
-        };
-        list_state.select(Some(next));
     }
 
     fn reset_selection_for_filter(&mut self, stage: OpPickerStage) {
