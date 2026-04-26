@@ -358,6 +358,48 @@ User requested consolidation to single loop `88287a35` (every 30 min). Cancelled
 
 ---
 
+## Iteration 9 — 2026-04-26
+
+### Improvements chosen
+
+1. **§7.14 structured logging — `eprintln!` count** — grep-verified: 96 production `eprintln!` calls across 16 files (zero in test-only files). Top contributors: `tui/animation.rs` (21), `runtime/launch.rs` (20), `tui/output.rs` (16), `app/mod.rs` (8), `runtime/repo_cache.rs` (7). The `animation.rs` and `output.rs` calls are the TUI rendering layer itself — `step_*` functions are thin `eprintln!` wrappers. The `docker.rs` (3) and `runtime/image.rs` (3) calls are `--debug`-gated developer traces — already filtered. Verdict: no rogue debug calls found; the flip condition has not triggered. §7.14 updated with count breakdown and explicit no-rogue-calls verdict.
+
+2. **§2 concept 8 — 4-hop chain content** — traced the full call chain with exact line numbers. Key finding: the `__` separator in `runtime_slug()` (at `src/instance/naming.rs:3`) is load-bearing — it ensures `"chainargos/the-architect"` → `"jackin-chainargos__the-architect"` is distinct from a flat class `"chainargos-the-architect"` → `"jackin-chainargos-the-architect"`. Verified by `instance/naming.rs` test `image_name_distinguishes_namespaced_and_flat_classes`. The CODE_TOUR.md recommendation column updated to specify exactly what the tour entry must explain: the `/` → `__` naming conversion and its invariant.
+
+3. **§10 step 4a — serde Deserialize note** — verified `src/config/mod.rs:74–87`: `AuthForwardMode` serde impl is a hand-written `impl<'de> serde::Deserialize<'de>` block, NOT a `#[derive(Deserialize)]`. As a plain `impl` block, it moves with the type to `config/types.rs` without any additional considerations. Added explicit note to step 4a so the executor doesn't search for a missing derive attribute.
+
+### What was read
+- `src/tui/animation.rs` (`eprintln!` lines — full list, confirmed 21)
+- `src/runtime/launch.rs:225–255,526,630,731,801–815` (`eprintln!` lines confirmed; 20 total, all intentional operator output)
+- `src/tui/output.rs:22–146` (16 `eprintln!` calls — TUI rendering layer itself)
+- `src/docker.rs:52–57,192` (3 debug-gated `eprintln!` — behind `runner.debug`)
+- `src/runtime/image.rs` (full, 111L — 3 `eprintln!` calls behind `debug` param)
+- `src/app/context.rs:337–344` (2 warning `eprintln!` calls — closest to `log::warn!()`)
+- `src/instance/naming.rs` (full — `runtime_slug`, `image_name_distinguishes_namespaced_and_flat_classes` test)
+- `src/selector.rs:1–80` (`ClassSelector::parse` + validation logic)
+- `src/app/mod.rs:67` (`ClassSelector::parse(&sel)?` — hop 1 of load chain)
+- `src/config/mod.rs:74–87` (hand-written `impl<'de> serde::Deserialize<'de>` for `AuthForwardMode` confirmed)
+
+### What changed in the roadmap
+- §0: Iteration count bumped to 9
+- §7.14: Added grep-verified `eprintln!` distribution paragraph with per-file counts and no-rogue-calls verdict
+- §2 concept 8: Replaced 4-hop stub with exact line citations, `ClassSelector::parse` entry point, `runtime_slug` `__`-separator explanation, and CODE_TOUR column clarified with what the entry must explain
+- §10 step 4a: Added serde Deserialize note confirming plain `impl` block moves with type automatically
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| §7.14 Structured logging | High | `eprintln!` distribution now grep-verified; verdict grounded |
+| §2 concept 8 | High | Full call chain traced with line numbers and naming invariant |
+| §10 step 4a | High | Serde impl type confirmed; move risk documented |
+
+### Weakest sections for iteration 10
+1. **§5 naming candidates — `dispatch_value`** — the rename candidate to `resolve_env_value` was proposed in iteration 4 but the function's callers haven't been counted. How many call sites need updating? A grep would quantify the scope.
+2. **§6 Renovate `automerge` scope** — §7.13 recommends enabling `automerge` for Renovate but doesn't specify which `packageRules` pattern to use in `renovate.json`. The existing `renovate.json` was read in iteration 1 but not quoted. What's the minimal rule addition?
+3. **§4 Rule 7 — `//!` exemplars** — `src/env_model.rs` is named as an exemplar of good `//!` module docs. But what does the doc say, and why is it exemplary? A direct quote would make the rule concrete for engineers applying it.
+
+---
+
 ## Iteration 2 — 2026-04-26
 
 ### Improvements chosen
