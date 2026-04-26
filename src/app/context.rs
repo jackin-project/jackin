@@ -209,14 +209,9 @@ pub(crate) fn resolve_agent_from_context(
             ));
         }
 
-        match eligible.len() {
-            0 => anyhow::bail!("no agents configured; add one with jackin load <agent>"),
-            1 => {
-                return Ok((
-                    eligible.into_iter().next().unwrap(),
-                    LoadWorkspaceInput::Saved(name.to_string()),
-                ));
-            }
+        let chosen = match eligible.as_slice() {
+            [] => anyhow::bail!("no agents configured; add one with jackin load <agent>"),
+            [only] => only.clone(),
             _ => {
                 let options: Vec<String> = eligible.iter().map(ClassSelector::key).collect();
                 let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
@@ -224,12 +219,10 @@ pub(crate) fn resolve_agent_from_context(
                     &format!("Workspace {name:?} has multiple agents. Select one:"),
                     &option_refs,
                 )?;
-                return Ok((
-                    eligible[choice].clone(),
-                    LoadWorkspaceInput::Saved(name.to_string()),
-                ));
+                eligible[choice].clone()
             }
-        }
+        };
+        return Ok((chosen, LoadWorkspaceInput::Saved(name.to_string())));
     }
 
     anyhow::bail!(
@@ -292,19 +285,19 @@ pub(crate) fn resolve_running_container_from_context(
         }
     }
 
-    match candidates.len() {
-        0 => anyhow::bail!(
+    match candidates.as_slice() {
+        [] => anyhow::bail!(
             "no running agents found for workspace {name:?}.\n\
              Start one with jackin load, or run jackin hardline <agent> to target explicitly."
         ),
-        1 => Ok(candidates.into_iter().next().unwrap()),
+        [only] => Ok(only.clone()),
         _ => {
             let option_refs: Vec<&str> = candidates.iter().map(String::as_str).collect();
             let choice = tui::prompt_choice(
                 &format!("Workspace {name:?} has multiple running agents. Select one:"),
                 &option_refs,
             )?;
-            Ok(candidates.into_iter().nth(choice).unwrap())
+            Ok(candidates.swap_remove(choice))
         }
     }
 }

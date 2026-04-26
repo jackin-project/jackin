@@ -36,7 +36,7 @@ impl ConsoleState {
             // Workspace was deleted between keypress and dispatch.
             return Ok(None);
         };
-        let agents = choice.allowed_agents.clone();
+        let mut agents = choice.allowed_agents.clone();
         let default_agent = choice.default_agent.clone();
 
         if let Some(default_key) = default_agent.as_deref()
@@ -63,7 +63,7 @@ impl ConsoleState {
                 Ok(None)
             }
             1 => {
-                let agent = agents.into_iter().next().unwrap();
+                let agent = agents.swap_remove(0);
                 let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &agent)?;
                 self.pending_launch = None;
                 Ok(Some((agent, workspace)))
