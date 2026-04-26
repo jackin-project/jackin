@@ -105,14 +105,14 @@ Here, `--no-workdir-mount` disables the automatic workdir mount, and you provide
 
 By default, every workspace mount is `shared` — the host directory is bind-mounted as-is, and any agent that loads the workspace edits the same files you do on the host. That is the right default for most workflows, but it stops working as soon as you want two agents to work on the same project at the same time without stepping on each other.
 
-Setting `isolation = "worktree"` on a source mount tells jackin' to materialize a per-container `git worktree add` of the host repo and bind-mount that worktree into the container instead of the original `src`. Each container gets its own checkout, its own scratch branch (`jackin/scratch/<branch-instance>`), and its own working tree — so concurrent agents no longer share a `.git` directory.
+Setting `isolation = "worktree"` on a source mount tells jackin' to materialize a per-container `git worktree add` of the host repo and bind-mount that worktree into the container instead of the original `src`. Each container gets its own checkout, its own scratch branch (`jackin/scratch/<container>` — full container name verbatim), and its own working tree — so concurrent agents no longer share a `.git` directory.
 
 ### Modes
 
 | Mode | Status | Behavior |
 |---|---|---|
 | `shared` | Default | Host path bind-mounted as-is. Today's behavior. |
-| `worktree` | V1 | Materialize a `git worktree` per container; bind-mount the worktree path. Branch defaults to `jackin/scratch/<selector>`, base is host `HEAD`. |
+| `worktree` | V1 | Materialize a `git worktree` per container; bind-mount the worktree path. Branch defaults to `jackin/scratch/<container>`, base is host `HEAD`. |
 | `clone` | Reserved | Recognized in the enum vocabulary but rejected with a "planned but not implemented yet" error. |
 
 ### Validation
