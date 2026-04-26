@@ -28,11 +28,19 @@ pub enum BorderStyle {
 /// `forbidden_label` is a human-readable scope hint (e.g. `"workspace
 /// env"` or `"agent agent-smith"`) appended to the inline warning so
 /// the operator knows where the collision lives. Empty by default.
+///
+/// `allow_empty` decides whether an empty trimmed value is considered
+/// valid. The widget defaults to `false` (matching the original
+/// `EnvKey` / `Name` / `Workdir` semantics: non-empty required), but
+/// callers that legitimately accept empty input — `EnvValue` modals,
+/// where POSIX env semantics distinguish `VAR=""` (set to empty) from
+/// `unset VAR` — opt in via [`TextInputState::new_allow_empty`].
 pub struct TextInputState<'a> {
     pub label: String,
     pub textarea: TextArea<'a>,
     pub forbidden: Vec<String>,
     pub forbidden_label: String,
+    pub allow_empty: bool,
 }
 
 impl std::fmt::Debug for TextInputState<'_> {
@@ -41,6 +49,7 @@ impl std::fmt::Debug for TextInputState<'_> {
             .field("label", &self.label)
             .field("forbidden", &self.forbidden)
             .field("forbidden_label", &self.forbidden_label)
+            .field("allow_empty", &self.allow_empty)
             .finish()
     }
 }
@@ -48,6 +57,20 @@ impl std::fmt::Debug for TextInputState<'_> {
 impl TextInputState<'_> {
     pub fn new(label: impl Into<String>, initial: impl Into<String>) -> Self {
         Self::new_with_forbidden(label, initial, Vec::new())
+    }
+
+    /// Construct a text-input state that treats an empty trimmed value
+    /// as valid. Used by the `EnvValue` modal: POSIX env semantics
+    /// distinguish `VAR=""` (set to empty string) from `unset VAR`,
+    /// and some workloads use empty values to clear an inherited
+    /// default — so the widget must let the operator commit `""`.
+    /// Other targets (`EnvKey`, `Name`, `Workdir`) keep using
+    /// [`TextInputState::new`] / [`TextInputState::new_with_forbidden`]
+    /// and retain the non-empty rule.
+    pub fn new_allow_empty(label: impl Into<String>, initial: impl Into<String>) -> Self {
+        let mut s = Self::new(label, initial);
+        s.allow_empty = true;
+        s
     }
 
     /// Construct a text-input state with a populated forbidden list. The
@@ -66,6 +89,7 @@ impl TextInputState<'_> {
             textarea,
             forbidden,
             forbidden_label: String::new(),
+            allow_empty: false,
         }
     }
 
@@ -92,14 +116,21 @@ impl TextInputState<'_> {
         !v.is_empty() && self.forbidden.iter().any(|f| f == &v)
     }
 
-    /// Whether Enter would commit the current input (non-empty AND not
-    /// in the forbidden list). Drives both the commit gate and the
-    /// footer-hint visibility — when this is false, the modal hides
-    /// the `Enter confirm` hint to avoid telling the operator a key
-    /// will work that won't.
+    /// Whether Enter would commit the current input. Drives both the
+    /// commit gate and the footer-hint visibility — when this is
+    /// false, the modal hides the `Enter confirm` hint to avoid
+    /// telling the operator a key will work that won't.
+    ///
+    /// Validity is target-specific:
+    ///   - `allow_empty == false` (default, used by `EnvKey` / `Name`
+    ///     / `Workdir`): non-empty AND not in the forbidden list.
+    ///   - `allow_empty == true` (used by `EnvValue` so POSIX `VAR=""`
+    ///     can be expressed): any value not in the forbidden list,
+    ///     including empty.
     pub fn is_valid(&self) -> bool {
         let v = self.trimmed_value();
-        !v.is_empty() && !self.forbidden.iter().any(|f| f == &v)
+        let empty_ok = self.allow_empty || !v.is_empty();
+        empty_ok && !self.forbidden.iter().any(|f| f == &v)
     }
 
     /// Border style key — `Default` for empty/valid, `Error` for
@@ -559,6 +590,57 @@ mod tests {
         assert!(
             matches!(outcome, ModalOutcome::Continue),
             "Enter on an empty value must not commit; got {outcome:?}"
+        );
+    }
+
+    // ── allow_empty: target-specific validity (EnvValue) ─────────────
+
+    /// `new_allow_empty` flips the validity rule so an empty trimmed
+    /// value is acceptable — required for the EnvValue modal where
+    /// POSIX env semantics distinguish `VAR=""` from `unset VAR`.
+    #[test]
+    fn text_input_allow_empty_is_valid_for_empty_value() {
+        let s = TextInputState::new_allow_empty("Value for FOO", "");
+        assert!(
+            s.is_valid(),
+            "allow_empty=true must report empty value as valid"
+        );
+    }
+
+    /// `allow_empty` does NOT relax the duplicate guard. A forbidden
+    /// match still blocks commit even though emptiness is permitted.
+    #[test]
+    fn text_input_allow_empty_still_rejects_duplicates() {
+        let mut s = TextInputState::new_allow_empty("Value", "foo");
+        s.forbidden = vec!["foo".into()];
+        assert!(
+            !s.is_valid(),
+            "allow_empty must still reject values present in `forbidden`"
+        );
+    }
+
+    /// Regression — `TextInputState::new` (the default constructor
+    /// used by EnvKey / Name / Workdir targets) keeps the non-empty
+    /// rule. Switching `EnvValue` to `new_allow_empty` must not have
+    /// affected the default.
+    #[test]
+    fn text_input_default_constructor_still_rejects_empty() {
+        let s = TextInputState::new("Key", "");
+        assert!(
+            !s.is_valid(),
+            "default constructor must keep the non-empty validity rule"
+        );
+    }
+
+    /// Allow-empty path commits cleanly on Enter when the value is
+    /// empty (no forbidden collision).
+    #[test]
+    fn text_input_allow_empty_enter_commits_empty() {
+        let mut s = TextInputState::new_allow_empty("Value", "");
+        let outcome = s.handle_key(key(KeyCode::Enter));
+        assert!(
+            matches!(&outcome, ModalOutcome::Commit(v) if v.is_empty()),
+            "Enter on empty value must commit empty string when allow_empty; got {outcome:?}"
         );
     }
 }

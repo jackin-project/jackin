@@ -478,7 +478,12 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
                     scope: SecretsScopeTag::Workspace,
                     key: key.clone(),
                 },
-                state: TextInputState::new(format!("Edit {key}"), current),
+                // EnvValue allows empty input — POSIX env semantics
+                // distinguish `VAR=""` (set to empty) from `unset
+                // VAR`, and some workloads use empty values to clear
+                // an inherited default. See `TextInputState::is_valid`
+                // for the target-specific rule.
+                state: TextInputState::new_allow_empty(format!("Edit {key}"), current),
             });
         }
         SecretsRow::WorkspaceAddSentinel => {
@@ -519,7 +524,9 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
                     scope: SecretsScopeTag::Agent(agent),
                     key,
                 },
-                state: TextInputState::new(label, current),
+                // EnvValue allows empty input — see WorkspaceKeyRow
+                // above for the POSIX semantic justification.
+                state: TextInputState::new_allow_empty(label, current),
             });
         }
         SecretsRow::AgentAddSentinel(agent) => {
@@ -967,7 +974,14 @@ pub(super) fn handle_editor_modal(
                             scope,
                             key: key.clone(),
                         },
-                        state: TextInputState::new(format!("Value for {key}"), String::new()),
+                        // EnvValue allows empty input so the operator
+                        // can express POSIX `VAR=""` (set-to-empty,
+                        // distinct from `unset VAR`); other targets
+                        // keep the non-empty rule.
+                        state: TextInputState::new_allow_empty(
+                            format!("Value for {key}"),
+                            String::new(),
+                        ),
                     });
                 }
                 ModalOutcome::Commit(SourceChoice::Op) => {

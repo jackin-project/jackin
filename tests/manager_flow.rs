@@ -959,6 +959,63 @@ fn enter_on_sentinel_opens_envkey_then_sourcepicker_then_value_modal() -> Result
     Ok(())
 }
 
+/// EnvValue accepts an empty value: drive the same EnvKey →
+/// SourcePicker(Plain) → EnvValue flow, but commit Enter on an empty
+/// textarea. Previously the widget's global `is_valid` rule rejected
+/// empty input for every target, swallowing the commit. POSIX env
+/// semantics distinguish `VAR=""` from `unset VAR`, so the EnvValue
+/// modal must land an empty string in `pending.env`.
+#[test]
+fn env_value_modal_allows_empty_commit() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = drive_to_source_picker(&mut config, &paths, cwd, "EMPTY_OK")?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::SourcePicker { .. })),
+        "expected SourcePicker; got {:?}",
+        editor(&state).modal
+    );
+
+    // Plain branch → EnvValue modal opens.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(
+            editor(&state).modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::EnvValue { .. },
+                ..
+            })
+        ),
+        "expected EnvValue modal; got {:?}",
+        editor(&state).modal
+    );
+
+    // Press Enter immediately on an empty textarea — must commit `""`
+    // into pending.env. With the previous global non-empty validity
+    // rule this Enter was swallowed.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    assert_eq!(
+        editor(&state)
+            .pending
+            .env
+            .get("EMPTY_OK")
+            .map(String::as_str),
+        Some(""),
+        "EnvValue modal must allow committing an empty string \
+         (POSIX VAR=\"\" semantics)"
+    );
+    assert!(
+        editor(&state).modal.is_none(),
+        "EnvValue commit must close the modal; got {:?}",
+        editor(&state).modal
+    );
+    Ok(())
+}
+
 /// SourcePicker → 1Password branch: when op is available and the
 /// operator picks the Op choice, the OpPicker modal opens with
 /// `pending_picker_target = (scope, Some(key))` so its commit handler
