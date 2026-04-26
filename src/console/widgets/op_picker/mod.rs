@@ -1009,21 +1009,22 @@ fn classify_probe_error(e: &anyhow::Error) -> OpPickerError {
 mod tests {
     //! Picker state-machine unit tests.
     //!
-    //! Strategy (Option Z from the plan): tests construct the picker via
-    //! `new_with_runner` with a no-op mock runner so the synchronous probe
-    //! in `start_vault_load` returns instantly. The constructor still
-    //! spawns a worker thread (via the production `runner_clone_for_thread`
-    //! helper that builds a fresh `OpCli`) — but tests **never** wait for
-    //! that thread to publish a result. Instead, we manually overwrite
-    //! `vaults` / `items` / `fields` / `load_state` / `stage` / selection
-    //! before driving `handle_key`. This skips the threading model
-    //! entirely and exercises the state machine in isolation.
+    //! Strategy (Option Z from the plan): most tests construct the picker
+    //! via `new_with_runner` with a no-op mock runner. Worker threads
+    //! spawned by the picker share the same `Arc<dyn OpStructRunner +
+    //! Send + Sync>` that was injected — `runner_clone_for_thread` is
+    //! just an `Arc::clone` — so the stub drives both the synchronous
+    //! probe and any background `vault_list` / `item_list` / `item_get`
+    //! calls. State-machine tests skip the threading model entirely by
+    //! manually overwriting `vaults` / `items` / `fields` / `load_state`
+    //! / `stage` / selection before driving `handle_key`; the
+    //! `*_uses_injected_runner_in_async_worker` tests at the end of the
+    //! module exercise the worker path end-to-end through the stub.
     //!
-    //! `poll_load` is called from `handle_key`; if the worker thread has
-    //! published a real result we'd see it overwrite our seeded `vaults`.
-    //! In practice the synthetic `op` binary doesn't exist in CI / dev
-    //! env, so the worker errors out fast and is harmless once we've
-    //! re-set `load_state = Ready` before each key event.
+    //! `poll_load` is called from `handle_key`; the worker thread is
+    //! benign for the state-machine tests because the no-op stub
+    //! returns empty `Vec`s instantly, and the `Ready` re-set happens
+    //! before each key event in those tests.
     use super::*;
     use crate::operator_env::{OpAccount, OpField, OpItem, OpVault};
     use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -1031,18 +1032,16 @@ mod tests {
 
     /// In-process mock — `account_list` succeeds (so the constructor's
     /// probe doesn't immediately classify the picker as `NotInstalled`),
-    /// every other method returns an empty `Vec`. We don't use the
-    /// vault/item/field methods in tests because the worker thread uses
-    /// the production `runner_clone_for_thread` helper.
+    /// every other method returns an empty `Vec`.
     ///
     /// `last_vault_list_account` records the `account` argument passed
     /// to the most recent `vault_list` call so the multi-account flow
     /// test can assert that the chosen account's UUID was threaded
-    /// through. The mod-level worker thread uses
-    /// `runner_clone_for_thread` rather than this stub, so the assertion
-    /// is on the *synchronous* probe-and-route path, which tests
-    /// directly exercise via `start_vault_load` after constructor
-    /// invocation.
+    /// through. Worker threads spawned by `start_*_load` share the same
+    /// `Arc<dyn OpStructRunner>` as the constructor (since commit 55
+    /// switched the field to `Arc + Send + Sync`), so the recorded
+    /// argument reflects what the thread observed when it called the
+    /// stub directly.
     #[derive(Default)]
     struct StubRunner {
         accounts: Mutex<Vec<OpAccount>>,
@@ -1933,5 +1932,205 @@ mod tests {
             concealed: _,
             reference: _,
         } = f;
+    }
+
+    // ── Async-worker runner-injection tests ─────────────────────────
+    //
+    // Commit 55 switched `OpPickerState::runner` from
+    // `Box<dyn OpStructRunner + Send>` to `Arc<dyn OpStructRunner + Send
+    // + Sync>` and made `runner_clone_for_thread` a thin `Arc::clone`.
+    // Before that change the worker threads were unreachable from tests
+    // — they built a fresh `OpCli` via the helper, so an injected stub
+    // was silently bypassed. These regression tests exercise that
+    // newly-reachable surface: each one drives a `start_*_load` call,
+    // waits for the worker thread to publish, and asserts the injected
+    // runner's call counter incremented with the expected argument.
+
+    /// Runner that records every call to `vault_list` / `item_list` /
+    /// `item_get` along with the arguments it received. The recorded
+    /// `account` argument is `Option<Option<String>>` to distinguish
+    /// "never called" (outer `None`) from "called with `None`" (outer
+    /// `Some`, inner `None`) — the same shape as `StubRunner`'s
+    /// `last_vault_list_account` for the same reason.
+    #[allow(clippy::option_option)]
+    #[derive(Default)]
+    struct RecorderRunner {
+        accounts: Mutex<Vec<OpAccount>>,
+        vault_list_calls: Mutex<usize>,
+        last_vault_list_account: Mutex<Option<Option<String>>>,
+        item_list_calls: Mutex<usize>,
+        last_item_list_args: Mutex<Option<(String, Option<String>)>>,
+        item_get_calls: Mutex<usize>,
+        last_item_get_args: Mutex<Option<(String, String, Option<String>)>>,
+    }
+
+    impl OpStructRunner for RecorderRunner {
+        fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
+            Ok(self.accounts.lock().unwrap().clone())
+        }
+        fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
+            *self.vault_list_calls.lock().unwrap() += 1;
+            *self.last_vault_list_account.lock().unwrap() = Some(account.map(String::from));
+            Ok(Vec::new())
+        }
+        fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
+            *self.item_list_calls.lock().unwrap() += 1;
+            *self.last_item_list_args.lock().unwrap() =
+                Some((vault_id.to_string(), account.map(String::from)));
+            Ok(Vec::new())
+        }
+        fn item_get(
+            &self,
+            item_id: &str,
+            vault_id: &str,
+            account: Option<&str>,
+        ) -> anyhow::Result<Vec<OpField>> {
+            *self.item_get_calls.lock().unwrap() += 1;
+            *self.last_item_get_args.lock().unwrap() = Some((
+                item_id.to_string(),
+                vault_id.to_string(),
+                account.map(String::from),
+            ));
+            Ok(Vec::new())
+        }
+    }
+
+    /// Drive `poll_load` until the worker thread publishes its result
+    /// and `rx` clears, or the budget runs out (~500ms). Mirrors
+    /// `drain_initial_account_load` but is kept as a separate helper to
+    /// document intent at the call sites: these tests are exercising
+    /// the post-construction `start_*_load` worker path, not the
+    /// constructor's `account_list` probe.
+    fn drain_worker_load(s: &mut OpPickerState) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        while s.rx.is_some() && std::time::Instant::now() < deadline {
+            s.poll_load();
+            if s.rx.is_none() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(
+            s.rx.is_none(),
+            "worker did not publish within 500ms; load_state={:?}",
+            s.load_state
+        );
+    }
+
+    /// `start_vault_load` worker thread must call the *injected* runner,
+    /// not a freshly-built `OpCli`. The stub's call counter is at 0
+    /// after construction (the constructor's `account_list` already
+    /// resolved via `drain_initial_account_load`); after
+    /// `start_vault_load(Some("acct1"))` and a worker drain, it must
+    /// be 1 with the expected `account` argument.
+    #[test]
+    fn vault_list_uses_injected_runner_in_async_worker() {
+        let runner = Arc::new(RecorderRunner {
+            accounts: Mutex::new(vec![account(
+                "acct1",
+                "single@example.com",
+                "single.1password.com",
+            )]),
+            ..Default::default()
+        });
+        // Hold a clone for inspection before the picker takes ownership.
+        let runner_for_assert: Arc<RecorderRunner> = Arc::clone(&runner);
+        let mut s = OpPickerState::new_with_runner(runner);
+        // Constructor auto-routes through the single-account fast path,
+        // which itself fires a vault_list. Drain that first so the
+        // counter reads exactly what the *new* call below produced.
+        drain_initial_account_load(&mut s);
+        // Reset the recorder counters so the assertion below isolates
+        // the upcoming explicit `start_vault_load` call.
+        *runner_for_assert.vault_list_calls.lock().unwrap() = 0;
+        *runner_for_assert.last_vault_list_account.lock().unwrap() = None;
+
+        s.start_vault_load(Some("acct1".into()));
+        drain_worker_load(&mut s);
+
+        assert_eq!(
+            *runner_for_assert.vault_list_calls.lock().unwrap(),
+            1,
+            "worker thread must call the injected runner exactly once"
+        );
+        assert_eq!(
+            *runner_for_assert.last_vault_list_account.lock().unwrap(),
+            Some(Some("acct1".to_string())),
+            "worker thread must thread the explicit account UUID through"
+        );
+    }
+
+    /// `start_item_load` worker thread must call the injected runner's
+    /// `item_list` with the supplied `vault_id` / `account_id`.
+    #[test]
+    fn item_list_uses_injected_runner_in_async_worker() {
+        let runner = Arc::new(RecorderRunner {
+            accounts: Mutex::new(vec![account(
+                "acct1",
+                "single@example.com",
+                "single.1password.com",
+            )]),
+            ..Default::default()
+        });
+        let runner_for_assert: Arc<RecorderRunner> = Arc::clone(&runner);
+        let mut s = OpPickerState::new_with_runner(runner);
+        drain_initial_account_load(&mut s);
+        // The single-account fast path also fires a vault_list; drain
+        // it so the picker is in a quiescent state before we kick off
+        // an item load.
+        drain_worker_load(&mut s);
+
+        s.start_item_load("v-personal".into(), Some("acct1".into()));
+        drain_worker_load(&mut s);
+
+        assert_eq!(
+            *runner_for_assert.item_list_calls.lock().unwrap(),
+            1,
+            "worker thread must call item_list on the injected runner"
+        );
+        assert_eq!(
+            *runner_for_assert.last_item_list_args.lock().unwrap(),
+            Some(("v-personal".to_string(), Some("acct1".to_string()))),
+            "worker thread must forward (vault_id, account_id) verbatim"
+        );
+    }
+
+    /// `start_field_load` worker thread must call the injected runner's
+    /// `item_get` with the supplied `item_id` / `vault_id` /
+    /// `account_id`. (Field loading goes through `item_get`, not a
+    /// dedicated field method — see the trait definition in
+    /// `operator_env.rs`.)
+    #[test]
+    fn item_get_uses_injected_runner_in_async_worker() {
+        let runner = Arc::new(RecorderRunner {
+            accounts: Mutex::new(vec![account(
+                "acct1",
+                "single@example.com",
+                "single.1password.com",
+            )]),
+            ..Default::default()
+        });
+        let runner_for_assert: Arc<RecorderRunner> = Arc::clone(&runner);
+        let mut s = OpPickerState::new_with_runner(runner);
+        drain_initial_account_load(&mut s);
+        drain_worker_load(&mut s);
+
+        s.start_field_load("i-aws".into(), "v-personal".into(), Some("acct1".into()));
+        drain_worker_load(&mut s);
+
+        assert_eq!(
+            *runner_for_assert.item_get_calls.lock().unwrap(),
+            1,
+            "worker thread must call item_get on the injected runner"
+        );
+        assert_eq!(
+            *runner_for_assert.last_item_get_args.lock().unwrap(),
+            Some((
+                "i-aws".to_string(),
+                "v-personal".to_string(),
+                Some("acct1".to_string())
+            )),
+            "worker thread must forward (item_id, vault_id, account_id) verbatim"
+        );
     }
 }
