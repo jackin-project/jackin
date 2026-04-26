@@ -159,7 +159,7 @@ jackin/
 | `console/manager/input/mouse.rs` | 689 | — | mouse event handling for manager | manager/* |
 | `console/manager/render/mod.rs` | — | `render` | render dispatch for manager stages | manager/render/* |
 | `console/manager/render/list.rs` | 1122 | — | list view drawing | ratatui |
-| `console/manager/render/editor.rs` | 782 | — | editor tabs drawing | ratatui |
+| `console/manager/render/editor.rs` | 1666 | — | editor tabs drawing (General, Mounts, Agents, Secrets) | ratatui |
 | `console/manager/render/modal.rs` | — | — | modal overlay rendering | ratatui |
 | `console/manager/mount_info.rs` | 745 | — | mount-info formatting for TUI rows | workspace |
 | `console/manager/create.rs` | — | — | create-workspace wizard state machine | manager/* |
@@ -230,7 +230,7 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/console/manager/input/save.rs` | 1418 | **567** | 850 | 2× `too_many_lines` | **Medium** — ConfirmSave pipeline |
 | `src/console/manager/input/editor.rs` | 1304 | **547** | 756 | 3× `too_many_lines` | **Medium** — editor key bindings |
 | `src/app/context.rs` | 800 | **347** | 452 | 0 | Low — tests dominate |
-| `src/console/manager/render/editor.rs` | 782 | ~782 (no test section found) | ~0 | 0 | **Medium** — all production (render functions, no tests) |
+| `src/console/manager/render/editor.rs` | 1666 | **~736** | ~930 (4 interspersed `#[cfg(test)]` blocks at lines 737, 923, 1055, 1574) | 0 | **Medium-High** — production grew with PR #171 (Secrets/Environments tab added); split by tab is now justified |
 | `src/workspace/planner.rs` | 718 | **235** | 482 | 0 | Low — tests dominate |
 | `src/console/manager/input/mouse.rs` | 689 | **206** | 482 | 0 | Low — tests dominate |
 | `src/console/manager/render/list.rs` | 1122 | **404** | 718 | 0 | Low-medium — multiple interspersed test blocks |
@@ -599,15 +599,42 @@ Violators:
   **Priority note**: `config/editor.rs`'s production code is only 503L — a reasonable size. The file is "large" primarily because of its 963L test suite. The split is still worthwhile for navigability (18 methods in one `impl` block is hard to scan), but it is *lower priority* than splitting `runtime/launch.rs` (1083L production code) or `operator_env.rs` (810L production code).
 
 **Rule 3: File names match dominant concern.**
-No current violators found (names are descriptive), but two edge cases:
+No current violators found (names are descriptive), but three edge cases:
 - `src/app/context.rs` (800L) — a better name might be `src/app/resolver.rs` (it resolves agents/workspaces from context). The current name is fine but slightly vague.
 - `src/console/manager/input/prelude.rs` (533L) — "prelude" implies re-exports; this file actually handles the workspace-create wizard input. Better: `src/console/manager/input/create_wizard.rs`.
+- `src/docker.rs` — `CommandRunner` trait is defined here alongside `ShellRunner`, its primary production implementation. Rule 3 is satisfied: trait + primary implementation are co-located. `FakeRunner` (test double) correctly lives in `runtime/test_support.rs` — it's a test concern, not the trait's primary implementation.
 
 **Rule 4: `pub` discipline.**
 Currently most items use bare `pub`. A pass to replace `pub` with `pub(crate)` or `pub(super)` where cross-crate visibility is not needed would improve encapsulation signalling without behavior change. Estimated scope: moderate (50–100 items across the codebase).
 
 **Rule 5: No god files (>500 lines) without justification.**
 The 24 files above the 500-line threshold (§1 hot-spot list) should each have an explicit justification in a `//!` module comment. If no justification exists, the file should be split per Rule 2. `src/runtime/launch.rs` at 2368L has no `//!` module comment — this is the clearest violation.
+
+**New Rule 5 violator (post-PR #171): `src/console/manager/render/editor.rs` (1666L, ~736L production)**
+
+The hotspot table previously listed this as 782L with no tests. PR #171 added the Secrets/Environments tab, growing it to 1666L. Structure (verified by reading function signatures):
+
+| Lines | Function | Tab |
+|---|---|---|
+| 23–104 | `render_editor` | Coordinator (calls all tabs) |
+| 105–268 | `contextual_row_items` | Footer row builder |
+| 269–291 | `render_tab_strip` | Shared tab navigation UI |
+| 292–332 | `render_general_tab` | General settings tab |
+| 333–354 | `render_editor_row` | Shared row rendering helper |
+| 355–412 | `render_mounts_tab` | Mounts tab |
+| 413–544 | `render_agents_tab` | Agents tab |
+| 545–736 | `render_secrets_tab` + `render_secrets_key_line` | Secrets/Environments tab (PR #171) |
+| 737–1666 | 4× `#[cfg(test)]` blocks | Tests interspersed at lines 737, 923, 1055, 1574 |
+
+**Proposed split** — convert to `render/editor/` module directory:
+- `editor.rs` → `editor/mod.rs` (~85L): `render_editor` (coordinator), `render_tab_strip`, `render_editor_row`; re-exports `render_editor`
+- `editor/footer.rs` (~170L): `contextual_row_items` + its tests
+- `editor/general.rs` (~45L): `render_general_tab` + its tests
+- `editor/mounts.rs` (~65L): `render_mounts_tab` + its tests
+- `editor/agents.rs` (~140L): `render_agents_tab` + its tests
+- `editor/secrets.rs` (~250L): `render_secrets_tab` + `render_secrets_key_line` + its tests
+
+**Auditability gain:** To audit "did the AI correctly implement the Secrets tab?", a reviewer reads only `editor/secrets.rs` (~250L) including its tests. Today they must scan 1666L. This split is especially valuable given the Secrets tab handles 1Password references — a security-adjacent concern warranting focused review.
 
 **Rule 6: Rustdoc on every `pub` and `pub(crate)` item.**
 Current coverage = 41% (37/90 files have `//!` module docs — exact count). Adding `#![warn(missing_docs)]` to `Cargo.toml` or `src/lib.rs` would surface the gap as compiler warnings. The gate should be CI-enforced once the initial coverage pass is done. The 53 undocumented files are concentrated in `src/app/`, `src/cli/`, `src/instance/`, `src/runtime/`, and root helpers — see §1 for the breakdown.
@@ -813,7 +840,7 @@ Applicable to parsing functions (`src/selector.rs`, `src/workspace/mounts.rs`, `
 
 **Cost (A):** Low — add `insta` + write ~10 snapshot tests. One-time setup; ongoing maintenance at each visual change.
 
-**Gain (A):** jackin's TUI has complex multi-tab rendering with 13+ `#[allow(clippy::too_many_lines)]` suppressions. Any refactor touching `render/list.rs` (1122L) or `render/editor.rs` (782L) currently has no automated regression net. Snapshot tests would provide one.
+**Gain (A):** jackin's TUI has complex multi-tab rendering with 13+ `#[allow(clippy::too_many_lines)]` suppressions. Any refactor touching `render/list.rs` (1122L) or `render/editor.rs` (1666L — grew with PR #171's Secrets tab) currently has no automated regression net. Snapshot tests would provide one.
 
 **Recommendation:**
 - `adopt` `insta` + `TestBackend` snapshot testing (approach A) — clear gain, low cost.
@@ -1297,6 +1324,8 @@ mod workspaces;
 **Serde note:** `AuthForwardMode` has a hand-written `impl<'de> serde::Deserialize<'de>` block (lines 74–87) — a plain `impl` block, NOT a derive macro. It moves with the type; no derive paths to update.
 
 **Auditability gain:** After this split, an engineer auditing AI-generated env-resolution behavior reads `operator_env/` without wading through struct definitions. An engineer auditing the config schema reads `config/types.rs` without wading through load/save or workspace-query logic. Each file has one job.
+
+**Execution order note — 4a and 4c are independent:** `src/config/editor.rs` imports `AppConfig` via `use crate::config::AppConfig`, which resolves through `config/mod.rs` re-exports regardless of whether 4a has run. After 4a, the re-export line `pub use types::AppConfig` in `mod.rs` makes the resolution identical. 4c sub-files (`editor/env_ops.rs` etc.) will use the same `use crate::config::AppConfig` path — unchanged. Either split can be done first, or in parallel PRs.
 
 4b. **`src/manifest/mod.rs` split** (~200L production): Split `AgentManifest` structs → `src/manifest/schema.rs`; move `load()` + `display_name()` → `src/manifest/loader.rs`. Self-contained; no coupling to console or runtime.
 

@@ -669,3 +669,39 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 Rule 3 — trait definitions co-location** — Rule 3 says "trait definitions live with their primary implementation". `OpRunner` trait is in `operator_env.rs` but its primary implementation is `OpCli`. After the split, `OpRunner` goes to `mod.rs` and `OpCli` to `client.rs` — these are in the same module directory, which is fine. But `CommandRunner` trait is in `docker.rs` — verify this is where it should stay.
 2. **§1 hot-spot list — `console/manager/render/editor.rs` (782L, ~all production)** — this file was listed as "Medium — all production (render functions, no tests)" but its internal structure hasn't been read. It has ~782L of render-only code with no test section. Does it have one dominant concern or should it be split?
 3. **§10 execution order — should 4a precede 4c?** — 4a (config/types.rs) and 4c (config/editor.rs module dir) are both in `config/`. The 4a split creates `config/types.rs` which 4c's sub-files would then import. The execution order matters: do 4a before 4c, or they interfere.
+
+---
+
+## Iteration 16 — 2026-04-26
+
+### Improvements chosen
+
+1. **§4 Rule 3 — `CommandRunner` trait co-location verified** — read `src/docker.rs` structure. `CommandRunner` trait is defined in `docker.rs` alongside `ShellRunner`, its primary production implementation. `FakeRunner` (the test double) lives in `runtime/test_support.rs`. This satisfies Rule 3: trait + primary implementation are co-located; test double is correctly separated into a test-support module. Added as the third edge-case bullet to the Rule 3 section (no violation, just a note that the pattern is correct here).
+
+2. **§4 Rule 5 — `render/editor.rs` corrected line count and split proposal** — the hot-spot table listed this file as 782L with no tests. Reading the file (checking the actual line count and function structure via grep) revealed it is **1666L** — PR #171 added the full Secrets/Environments tab. The extra 884L are: production render functions (`render_secrets_tab`, `render_secrets_key_line`) plus 4 `#[cfg(test)]` blocks interspersed at lines 737, 923, 1055, and 1574. Added as a "New Rule 5 violator" with a complete 6-file tab-by-tab split proposal (`editor/mod.rs`, `footer.rs`, `general.rs`, `mounts.rs`, `agents.rs`, `secrets.rs`). The secrets split is especially valuable — it isolates 1Password-adjacent code into a reviewable ~250L file.
+
+3. **§10 — 4a/4c execution order independence verified** — `src/config/editor.rs` imports `AppConfig` via `use crate::config::AppConfig`, which resolves through `config/mod.rs` re-exports. After 4a runs, `mod.rs` will contain `pub use types::AppConfig` — the resolution path for editor.rs and its sub-files is unchanged. Added an execution-order note after the 4a spec confirming 4a and 4c are independent and can be done in either order or in parallel PRs.
+
+4. **§4 Rule 3 duplicate fix** — an earlier edit accidentally duplicated the Rule 3 section (the replacement text included Rule 3 content + Rule 5 content, while Rule 3 already existed above). Removed the duplicate. Corrected "two edge cases" → "three edge cases" after adding the `docker.rs` bullet to the original section.
+
+### What was read
+- `src/docker.rs` (structure confirmed via grep — `CommandRunner` trait at top, `ShellRunner` primary impl, `FakeRunner` absent confirming it's in test_support)
+- `src/console/manager/render/editor.rs` (line count + function signatures confirmed: 1666L total; 4 `#[cfg(test)]` blocks; function list: `render_editor`, `contextual_row_items`, `render_tab_strip`, `render_general_tab`, `render_editor_row`, `render_mounts_tab`, `render_agents_tab`, `render_secrets_tab`, `render_secrets_key_line`)
+- `src/config/editor.rs:1` (confirmed `use crate::config::AppConfig` import — resolves through mod.rs re-exports regardless of 4a execution order)
+
+### What changed in the roadmap
+- §4 Rule 3: Changed "two edge cases" → "three edge cases"; added `docker.rs` bullet; removed duplicate Rule 3 section
+- §4 Rule 5: Added "New Rule 5 violator (post-PR #171): `render/editor.rs` (1666L)" with function table, 6-file split proposal, and auditability note on the security-adjacent Secrets tab
+- §10 Step 4: Added execution-order note between 4a and 4b confirming 4a/4c independence
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| §4 Rule 3 `docker.rs` | High | CommandRunner placement confirmed; FakeRunner in test_support confirmed |
+| §4 Rule 5 `render/editor.rs` | High | 1666L confirmed; 4 test blocks located; function list verified |
+| §10 4a/4c independence | High | `use crate::config::AppConfig` path confirmed in editor.rs; resolves through re-exports |
+
+### Weakest sections for iteration 17
+1. **§4 `src/instance/auth.rs` (796L) split** — not yet analyzed. This is the auth-forward module; it likely maps cleanly to 3 files (types, apply, test). Needs reading.
+2. **§4 `src/console/manager/` overall structure** — the manager module is the TUI's core. Beyond `render/editor.rs`, there are other large files (`list.rs` 1122L, `state.rs` ~large) that haven't been split-analyzed.
+3. **§9 OQ2 — `agent_allow.rs` scope** — `src/console/manager/agent_allow.rs` responsibility not yet verified. Relevant to the TUI structural analysis.
