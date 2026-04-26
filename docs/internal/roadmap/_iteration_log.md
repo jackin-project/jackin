@@ -556,3 +556,45 @@ User requested consolidation to single loop `88287a35` (every 30 min). Cancelled
 1. **§5 naming — `LoadWorkspaceInput` → `WorkspaceSource`** — the rename was proposed but the call sites haven't been counted. `LoadWorkspaceInput` is only used in `workspace/resolve.rs` and `app/mod.rs` — but this needs grep confirmation.
 2. **§7.12 `thiserror` upgrade to 2.0** — §7.12 recommends upgrading from thiserror 1.x to 2.0 but doesn't verify what version is currently in Cargo.toml or Cargo.lock. The upgrade diff between 1.x and 2.0 needs to be assessed.
 3. **§9 OQ4 — `console/manager/agent_allow.rs` scope** — this module has never been read. It was flagged as an open question in iteration 1 and has not been addressed.
+
+---
+
+## Iteration 13 — 2026-04-26
+
+### Context shift
+PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **primary goal is code readability and restructuring for verifiability** — specifically, the codebase contains significant AI-generated code and the operator needs a logical structure to audit and catch potential issues. All subsequent iterations prioritise §4 structural splits and §4 module-shape rules over docs-site TypeScript, Renovate, or AI-workflow topics.
+
+### Improvements chosen
+
+1. **§0 meta — primary goal statement** — replaced the generic "analysis roadmap" framing with an explicit statement of why structure matters for AI-generated code: module contracts, localised concerns, separation of types from behaviour, consistent naming. This gives every subsequent reviewer the lens to evaluate the proposals.
+
+2. **§4 intro — "audit units" framing** — added new section "Why structure matters for AI-generated code" with a table mapping each proposed post-split file to the single question it answers. Showed the concrete reviewer benefit: to audit workspace validation, you read 2 files instead of 3 files totaling 3285 lines. This framing is the architecture rationale that was missing.
+
+3. **§4 4a — fully executable config/types.rs spec** — deepened from a description to a complete execution spec:
+   - Exact list of types that move (6 types + private `is_false` helper)
+   - Post-split `config/mod.rs` shown in full (~10 lines of re-exports)
+   - **Zero-change guarantee for submodules**: verified by reading `agents.rs`, `persist.rs`, `workspaces.rs` — all use `use super::TypeName` which resolves through mod.rs re-exports unchanged
+   - Documented the existing impl-extension pattern: `AppConfig` methods are already split across domain submodules (agents.rs, persist.rs, workspaces.rs) — the struct definition move is the final step to make this architecture explicit
+
+### What was read
+- `src/config/mod.rs` (full — 867L; production code is lines 1–134)
+- `src/config/agents.rs` (line 1 — `use super::{AgentSource, AppConfig, AuthForwardMode, ClaudeAgentConfig}`)
+- `src/config/persist.rs` (lines 1–10 — `use super::AppConfig`, `impl AppConfig { pub fn load_or_init` )
+- `src/config/workspaces.rs` (lines 1–10 — `use super::AppConfig`, `impl AppConfig { pub fn require_workspace`)
+- All type definitions in config/mod.rs verified against grep of external callers
+
+### What changed in the roadmap
+- §0: Replaced generic description with primary goal statement (AI-generated code verifiability)
+- §4 intro: Added "Why structure matters for AI-generated code" section with audit-units table
+- §4 4a: Expanded to full execution spec (types list, post-split mod.rs content, zero-change submodule guarantee, impl-extension pattern observation)
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| §4 4a config/types.rs | High (execution-ready) | All submodule imports verified; zero-change guarantee confirmed |
+| §4 intro audit framing | High | Reviewer benefit is concrete and measured |
+
+### Weakest sections for iteration 14
+1. **§4 4c `config/editor.rs` method-to-file mapping** — 18 methods across `impl ConfigEditor` need to be mapped to 5 domain files (env_ops, mount_ops, agent_ops, workspace_ops, io_ops). The proposed split is directional; the exact method assignment hasn't been verified for cross-method dependencies (does `create_workspace` call `set_env_var`? does `save` call other methods?).
+2. **§4 4e `app/mod.rs` — helper function inventory** — the 3-way split (dispatch.rs + workspace_cmd.rs + config_cmd.rs) identified the main arms but the private helper functions at lines 884–951 haven't been read. Which helpers belong with which command file?
+3. **§4 module-shape Rule 7 — `//!` priority queue** — which 10 files should get `//!` docs first (highest reviewer-value order), and what should each say? A priority queue with draft content would make Step 5 in §10 immediately executable.

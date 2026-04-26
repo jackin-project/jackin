@@ -4,7 +4,14 @@
 
 **Last updated:** 2026-04-26
 
-This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` now merged). Recommendations are inputs to a future, separate execution effort — no code has been touched.
+This roadmap has one primary goal: **make the `jackin` Rust codebase verifiable, auditable, and easy to maintain** — especially given that significant portions are AI-generated. When code is produced by an AI agent, the reader cannot rely on "I recognize this author's style" as a trust signal. Instead, trust comes from:
+
+1. **Module contracts** — each file has a `//!` doc that states exactly what it does and what invariants it maintains. A reviewer can check whether the code matches its stated contract.
+2. **Localised concerns** — each file has one dominant responsibility. A bug in env resolution is in `operator_env/layers.rs`, not buried in a 1569-line monolith.
+3. **Separation of types from behaviour** — struct definitions separate from `impl` blocks, so the shape of the data is auditable without reading the logic.
+4. **Consistent naming** — names that match the domain language, so anomalies stand out.
+
+Everything in this document serves that goal. Recommendations are inputs to a future execution effort — no code has been changed by this analysis.
 
 Revision history: [`_iteration_log.md`](./_iteration_log.md).
 Research sources: [`_research_notes.md`](./_research_notes.md).
@@ -12,8 +19,7 @@ Research sources: [`_research_notes.md`](./_research_notes.md).
 **Stack constraints (immovable):**
 - Application code: Rust only.
 - Docs site: TypeScript strict mode + Astro Starlight only. No migration to other frameworks.
-- "Strict TS" means: `tsconfig.json` extends `astro/tsconfigs/strict`; must add `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` — see §7 Astro Starlight.
-- Everything else (crate selection, tooling, CI structure, AI workflow) is open and is researched and recommended in this document.
+- Everything else (crate selection, tooling, CI structure) is open and is researched and recommended in this document.
 
 ---
 
@@ -423,6 +429,25 @@ graph TD
 ---
 
 ## §4 — Source-Code Structural Diagnosis & Proposal
+
+### Why structure matters for AI-generated code
+
+AI agents produce correct-looking code that can contain subtle invariant violations — wrong error propagation, missing validation at a boundary, a type used in a context it was not designed for. The structural changes in this section are not cosmetic: they create **audit units** — files small enough and focused enough that a human reviewer can check a single file against its stated contract in under 10 minutes.
+
+The key principle: **each file should answer one question.** A file that mixes type definitions, I/O logic, and business rules cannot be audited in one reading. The following splits create files where the question is clear:
+
+| File (post-split) | The one question it answers |
+|---|---|
+| `config/types.rs` | What is the shape of the config data? |
+| `config/persist.rs` | How is config loaded from and saved to disk? |
+| `config/agents.rs` | How are agent sources and auth modes resolved? |
+| `operator_env/client.rs` | How does the binary call the `op` CLI subprocess? |
+| `operator_env/layers.rs` | How are the 4 env layers merged and resolved? |
+| `runtime/launch_pipeline.rs` | What is the full container bootstrap sequence? |
+| `runtime/trust.rs` | How is agent trust determined? |
+| `app/workspace_cmd.rs` | How are workspace CLI subcommands dispatched? |
+
+A reviewer auditing "did the AI correctly implement workspace validation?" reads only `config/persist.rs` + `app/workspace_cmd.rs`. Today they must read `app/mod.rs` (951L) + `config/mod.rs` (867L) + `config/editor.rs` (1467L) without any structural signal about which lines are relevant.
 
 ### Workspace vs single-crate decision
 
@@ -1229,7 +1254,42 @@ Add `rust-toolchain.toml` (1.95.0) for local `rustup` users and IDE toolchain se
 
 Ordering principle: *production-code-size × circular-dependency-risk, ascending*. Safe type moves first, large single-file pipelines last.
 
-4a. **`src/config/mod.rs` types extraction** (~100L type move): Move `AppConfig`, `AuthForwardMode`, `ClaudeConfig`, `AgentSource`, `DockerConfig` → `src/config/types.rs`. Pure struct/enum move with no logic; `mod.rs` becomes a thin re-export file. No circular risk — these types have no intra-crate dependencies that point back. **Serde note:** `AuthForwardMode` has a hand-written `impl<'de> serde::Deserialize<'de>` block at `src/config/mod.rs:74–87` — this is a plain `impl` block, NOT a `#[derive(Deserialize)]` attribute. It moves with the type to `types.rs` without any additional steps: no derive attribute paths to update, no proc-macro invocations, no implicit cross-module path assumptions. The compiler will surface any missed `use` paths as errors on `cargo check`.
+4a. **`src/config/mod.rs` types extraction** (~100L type move): Move `AppConfig`, `AuthForwardMode`, `ClaudeConfig`, `ClaudeAgentConfig`, `AgentSource`, `DockerConfig` → `src/config/types.rs`. Pure struct/enum move with no logic; `mod.rs` becomes a thin re-export file.
+
+**Full execution spec (verified by reading all config submodules):**
+
+*What moves to `config/types.rs`:*
+- `is_false` const fn (lines 17–21) — private serde helper; keep private in types.rs
+- `AuthForwardMode` enum + `Display` + `FromStr` + hand-written `Deserialize` impl (lines 24–83)
+- `ClaudeConfig` struct (lines 86–90)
+- `ClaudeAgentConfig` struct (lines 93–97)
+- `AgentSource` struct (lines 99–111)
+- `DockerConfig` struct (lines 113–117)
+- `AppConfig` struct definition only (lines 119–133) — NOT its `impl` blocks, which are already in submodules
+
+*What `config/mod.rs` becomes post-split:*
+```rust
+mod types;
+pub use types::{AppConfig, AgentSource, AuthForwardMode, ClaudeAgentConfig, ClaudeConfig, DockerConfig};
+
+pub use crate::workspace::{MountConfig, WorkspaceAgentOverride};
+pub use editor::{ConfigEditor, EnvScope};
+pub use mounts::{DockerMounts, MountEntry};
+
+mod agents;
+pub mod editor;
+mod mounts;
+mod persist;
+mod workspaces;
+```
+
+*Impact on submodules — zero changes required:* `agents.rs` uses `use super::{AgentSource, AppConfig, AuthForwardMode, ClaudeAgentConfig}`. After the split, `mod.rs` re-exports all four names — `super::AppConfig` still resolves identically. `persist.rs` and `workspaces.rs` use `use super::AppConfig` — same. **No changes to any submodule file.**
+
+*Pattern already in use:* `config/` already uses the Rust impl-extension pattern correctly — `AppConfig`'s methods are spread across three domain files (`agents.rs` for agent resolution, `persist.rs` for I/O, `workspaces.rs` for workspace lookups). The type extraction makes this architecture visible: anyone reading `config/types.rs` sees the data shapes; anyone reading `agents.rs` sees the agent-query behavior; neither file is cluttered with the other's concerns.
+
+**Serde note:** `AuthForwardMode` has a hand-written `impl<'de> serde::Deserialize<'de>` block (lines 74–87) — a plain `impl` block, NOT a derive macro. It moves with the type; no derive paths to update.
+
+**Auditability gain:** After this split, an engineer auditing AI-generated env-resolution behavior reads `operator_env/` without wading through struct definitions. An engineer auditing the config schema reads `config/types.rs` without wading through load/save or workspace-query logic. Each file has one job.
 
 4b. **`src/manifest/mod.rs` split** (~200L production): Split `AgentManifest` structs → `src/manifest/schema.rs`; move `load()` + `display_name()` → `src/manifest/loader.rs`. Self-contained; no coupling to console or runtime.
 
