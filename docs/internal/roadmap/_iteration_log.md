@@ -327,6 +327,37 @@ See §9 of the roadmap for the canonical list. Key items:
 
 ---
 
+## Iteration 8 — 2026-04-26
+
+### Active loop status
+User requested consolidation to single loop `88287a35` (every 30 min). Cancelled `c0a5d054`, `5801e660`, `f272af6a`. Only `88287a35` remains.
+
+### Improvements chosen
+
+1. **§8.1 lychee.toml verification** — read `docs/lychee.toml` in full. Finding: only `exclude_path = ["(^|/)404\.html$"]`; no draft-page exclusion. Starlight draft pages ARE built into `dist/` and ARE scanned by `lychee 'dist/**/*.html'`. Broken links in draft specs fail CI. Updated §8.1 with two fix options (keep specs link-free; add exclude pattern to `docs/lychee.toml`). Added Astro sidebar requirement: sidebar is manually configured at `astro.config.ts:50–103`; `autogenerate: { directory: 'specs' }` pattern is sufficient.
+
+2. **§2 concept 18 `AuthForwardMode` error** — the iteration 7 proposed move to `instance/auth.rs` was wrong. Verified: `AuthForwardMode` is a config type (field at `config/mod.rs:89,96`, serde Deserialize at line 74), used in 9 files. Moving to `instance/auth.rs` would create circular dep (`config → instance` which already uses `config`). Corrected concept 18 to "type is correctly placed; will move to `config/types.rs` in §10 step 4a (intra-module)".
+
+3. **§4 AuthForwardMode false alarm resolved** — iteration 7 flagged this as a potential §4 violation. Iteration 8 confirms it is NOT a violation — the type is correctly in `config` because it IS a config value. The concern is closed.
+
+### What was read
+- `docs/lychee.toml` (full — confirmed no draft exclusion pattern)
+- `docs/astro.config.ts:50–103` (sidebar structure — confirmed manual config)
+- `src/config/mod.rs:26,74,89,96` (AuthForwardMode definition and field usage)
+- `grep -l AuthForwardMode src/` — 9-file usage spread confirmed
+
+### What changed in the roadmap
+- §0: Iteration count bumped to 8
+- §8.1: Draft-page caveat expanded with lychee.toml findings and Astro sidebar autogenerate detail
+- §2 concept 18: Corrected from wrong proposed move to accurate analysis
+
+### Weakest sections for iteration 9
+1. **§7.14 structured logging `defer`** — rationale is sound but doesn't count actual `eprintln!` calls in production code vs `tui::step_*` calls. A grep-based count would quantify the gap.
+2. **§2 concept 8 (agent → Docker image resolution)** — described as "requires-grep / 4-hop chain" but the CODE_TOUR.md recommendation in the post-refactor column is only a stub. What exactly should that tour section say?
+3. **§10 step 4a note** — says to move `AuthForwardMode` to `config/types.rs` but doesn't warn about dragging the serde `Deserialize` impl (lines 74–87 of `config/mod.rs`). Confirm: since the impl is inline (not a derive), it moves with the type automatically. No risk but worth documenting.
+
+---
+
 ## Iteration 2 — 2026-04-26
 
 ### Improvements chosen
