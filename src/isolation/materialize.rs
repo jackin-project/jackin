@@ -1084,7 +1084,10 @@ mod tests {
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].cleanup_status, CleanupStatus::Active);
         assert_eq!(recs[0].base_commit, "deadbeef");
-        assert_eq!(recs[0].scratch_branch, "jackin/scratch/jackin-the-architect");
+        assert_eq!(
+            recs[0].scratch_branch,
+            "jackin/scratch/jackin-the-architect"
+        );
     }
 
     #[test]
