@@ -1,24 +1,24 @@
 //! Editor-stage dispatch: tab navigation, field focus, per-tab key
 //! handling, and the editor-level modal dispatcher.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::super::widgets::{
-    ModalOutcome, file_browser::FileBrowserState, workdir_pick::WorkdirPickState,
+    ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
+    workdir_pick::WorkdirPickState,
 };
+use super::super::render::editor::{SecretsRow, secrets_flat_rows};
 use super::super::state::{
-    EditorMode, EditorSaveFlow, EditorState, ExitIntent, FieldFocus, FileBrowserTarget,
-    ManagerStage, ManagerState, Modal, Toast, ToastKind,
+    ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
+    FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget, Toast,
+    ToastKind,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
-// Central keymap dispatch for the editor view: one giant match on
-// `key.code` with per-tab guards. Extracting each arm into a helper would
-// just scatter the keymap across a dozen tiny functions without making
-// the dispatch easier to read — the table-like structure here is the
-// point. Accept the length over an awkward split.
+// Central keymap dispatch — table-like layout makes the keymap
+// readable at a glance; extracting per-key helpers just scatters it.
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_editor_key(
     state: &mut ManagerState<'_>,
@@ -27,31 +27,24 @@ pub(super) fn handle_editor_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    // Handle s and Esc outside the editor borrow to avoid re-borrow
-    // conflicts (both need to call back into state or config).
+    // s and Esc handled outside the editor borrow — both need to
+    // call back into state/config.
     match key.code {
         KeyCode::Char('s' | 'S') => {
-            if let ManagerStage::Editor(editor) = &state.stage {
-                // No-op when there's nothing to save — avoid putting up
-                // an empty ConfirmSave dialog.
-                if editor.change_count() == 0 {
-                    return Ok(InputOutcome::Continue);
-                }
+            if let ManagerStage::Editor(editor) = &state.stage
+                && editor.change_count() == 0
+            {
+                return Ok(InputOutcome::Continue);
             }
             if matches!(&state.stage, ManagerStage::Editor(_)) {
-                // Direct `s` press: stay in the editor after a successful
-                // save. The `ExitIntent::Save` path in the outer dispatcher
-                // passes `true` so that path exits to the list on success.
-                super::save::begin_editor_save(state, config, false)?;
+                super::save::begin_editor_save(state, config, true)?;
             }
-            // `paths` is not needed until the operator actually commits
-            // in the ConfirmSave dialog; silence the unused binding until
-            // the reborrow for commit happens in handle_editor_modal.
+            // `paths` is consumed by the commit path in
+            // handle_editor_modal, not here.
             let _ = paths;
             return Ok(InputOutcome::Continue);
         }
         KeyCode::Esc => {
-            // Re-borrow pattern — immutable read first, then mutate.
             if let ManagerStage::Editor(editor) = &state.stage {
                 let dirty = editor.is_dirty();
                 if dirty {
@@ -63,7 +56,14 @@ pub(super) fn handle_editor_key(
                         });
                     }
                 } else {
-                    *state = ManagerState::from_config(config, cwd);
+                    let cache = state.op_cache.clone();
+                    let op_available = state.op_available;
+                    *state = ManagerState::from_config_with_cache_and_op(
+                        config,
+                        cwd,
+                        cache,
+                        op_available,
+                    );
                 }
             }
             return Ok(InputOutcome::Continue);
@@ -71,88 +71,171 @@ pub(super) fn handle_editor_key(
         _ => {}
     }
 
+    // Capture before the editor borrow (separate fields, but explicit is cleaner).
+    let op_cache = state.op_cache.clone();
+    let op_available = state.op_available;
+
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(InputOutcome::Continue);
     };
 
     match key.code {
         KeyCode::Tab | KeyCode::Right => {
+            // Secrets tab `AgentHeader` absorbs `→` in both states
+            // (expand or no-op) — falling through to tab-cycle on an
+            // expanded header would surprise the operator. See
+            // RULES.md "TUI Keybindings → Contextual key absorption".
+            // `Tab` never absorbs.
+            if key.code == KeyCode::Right && editor.active_tab == EditorTab::Secrets {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = secrets_flat_rows(editor);
+                if let Some(SecretsRow::AgentHeader { agent, expanded }) = rows.get(n).cloned() {
+                    if !expanded {
+                        editor.secrets_expanded.insert(agent);
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
+            }
+            let was_secrets = editor.active_tab == EditorTab::Secrets;
             editor.active_tab = match editor.active_tab {
-                super::super::state::EditorTab::General => super::super::state::EditorTab::Mounts,
-                super::super::state::EditorTab::Mounts => super::super::state::EditorTab::Agents,
-                super::super::state::EditorTab::Agents => super::super::state::EditorTab::Secrets,
-                super::super::state::EditorTab::Secrets => super::super::state::EditorTab::General,
+                EditorTab::General => EditorTab::Mounts,
+                EditorTab::Mounts => EditorTab::Agents,
+                EditorTab::Agents => EditorTab::Secrets,
+                EditorTab::Secrets => EditorTab::General,
             };
             editor.active_field = FieldFocus::Row(0);
+            if was_secrets {
+                reset_secrets_view(editor);
+            }
         }
-        KeyCode::BackTab | KeyCode::Left => {
+        KeyCode::Left => {
+            // Mirror of Tab/Right above — `AgentHeader` absorbs `←`
+            // in both states (collapse or no-op).
+            if editor.active_tab == EditorTab::Secrets {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = secrets_flat_rows(editor);
+                if let Some(SecretsRow::AgentHeader { agent, expanded }) = rows.get(n).cloned() {
+                    if expanded {
+                        editor.secrets_expanded.remove(&agent);
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
+            }
+            let was_secrets = editor.active_tab == EditorTab::Secrets;
             editor.active_tab = match editor.active_tab {
-                super::super::state::EditorTab::General => super::super::state::EditorTab::Secrets,
-                super::super::state::EditorTab::Mounts => super::super::state::EditorTab::General,
-                super::super::state::EditorTab::Agents => super::super::state::EditorTab::Mounts,
-                super::super::state::EditorTab::Secrets => super::super::state::EditorTab::Agents,
+                EditorTab::General => EditorTab::Secrets,
+                EditorTab::Mounts => EditorTab::General,
+                EditorTab::Agents => EditorTab::Mounts,
+                EditorTab::Secrets => EditorTab::Agents,
             };
             editor.active_field = FieldFocus::Row(0);
+            if was_secrets {
+                reset_secrets_view(editor);
+            }
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             let FieldFocus::Row(n) = editor.active_field;
-            editor.active_field = FieldFocus::Row(n.saturating_sub(1));
+            let candidate = n.saturating_sub(1);
+            // Skip Secrets-tab spacer rows so the cursor never lands
+            // on a blank line.
+            let next = if editor.active_tab == EditorTab::Secrets {
+                let rows = secrets_flat_rows(editor);
+                step_secrets_cursor_up(&rows, candidate)
+            } else {
+                candidate
+            };
+            editor.active_field = FieldFocus::Row(next);
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             let FieldFocus::Row(n) = editor.active_field;
-            let max = max_row_for_tab(editor, config);
-            editor.active_field = FieldFocus::Row((n + 1).min(max));
-        }
-        KeyCode::Enter => {
-            match editor.active_tab {
-                super::super::state::EditorTab::General => open_editor_field_modal(editor),
-                super::super::state::EditorTab::Mounts => {
-                    // Enter on the "+ Add mount" sentinel row triggers add flow.
-                    let FieldFocus::Row(n) = editor.active_field;
-                    if n == editor.pending.mounts.len() {
-                        editor.modal = Some(Modal::FileBrowser {
-                            target: FileBrowserTarget::EditAddMountSrc,
-                            state: FileBrowserState::new_from_home()?,
-                        });
-                    }
-                    // Enter on an existing mount row: no-op for now.
-                }
-                _ => {}
+            if editor.active_tab == EditorTab::Secrets {
+                let rows = secrets_flat_rows(editor);
+                let max = rows.len().saturating_sub(1);
+                let candidate = (n + 1).min(max);
+                editor.active_field =
+                    FieldFocus::Row(step_secrets_cursor_down(&rows, candidate, max));
+            } else {
+                let max = max_row_for_tab(editor, config);
+                editor.active_field = FieldFocus::Row((n + 1).min(max));
             }
         }
-        KeyCode::Char(' ') if editor.active_tab == super::super::state::EditorTab::Agents => {
+        KeyCode::Enter => match editor.active_tab {
+            EditorTab::General => open_editor_field_modal(editor),
+            EditorTab::Mounts => {
+                let FieldFocus::Row(n) = editor.active_field;
+                if n == editor.pending.mounts.len() {
+                    editor.modal = Some(Modal::FileBrowser {
+                        target: FileBrowserTarget::EditAddMountSrc,
+                        state: FileBrowserState::new_from_home()?,
+                    });
+                }
+            }
+            EditorTab::Secrets => {
+                open_secrets_enter_modal(editor);
+            }
+            EditorTab::Agents => {}
+        },
+        KeyCode::Char(' ') if editor.active_tab == EditorTab::Agents => {
             toggle_agent_allowed_at_cursor(editor, config);
         }
-        KeyCode::Char('D' | 'd') if editor.active_tab == super::super::state::EditorTab::Agents => {
-            set_default_agent_at_cursor(editor, config);
+        KeyCode::Char('*') if editor.active_tab == EditorTab::Agents => {
+            toggle_default_agent_at_cursor(editor, config);
         }
-        KeyCode::Char('a' | 'A') if editor.active_tab == super::super::state::EditorTab::Mounts => {
+        KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
             editor.modal = Some(Modal::FileBrowser {
                 target: FileBrowserTarget::EditAddMountSrc,
                 state: FileBrowserState::new_from_home()?,
             });
         }
-        KeyCode::Char('d' | 'D') if editor.active_tab == super::super::state::EditorTab::Mounts => {
+        KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
         }
+        // M toggles per-row masking on the focused Secrets-tab key row.
+        // Operator feedback (commit 32): the global mask flag was too
+        // blunt — it revealed every value at once when an operator just
+        // wanted to peek at one. Now M flips membership of `(scope, key)`
+        // in `editor.unmasked_rows`. Header / sentinel / op:// rows are
+        // no-ops (op:// rows render as breadcrumbs, not masked values).
+        //
+        // SHIFT modifier tolerated for Caps-Lock parity (see prior
+        // commits); Ctrl/Alt/Cmd still bypass the arm.
+        KeyCode::Char('m' | 'M')
+            if editor.active_tab == EditorTab::Secrets
+                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
+        {
+            toggle_focused_row_mask(editor);
+        }
+        // P sits at row level (not inside the EnvValue modal) so it
+        // doesn't collide with text input. SHIFT tolerated per the
+        // `m|M` arm above.
+        KeyCode::Char('p' | 'P')
+            if editor.active_tab == EditorTab::Secrets
+                && (key.modifiers - KeyModifiers::SHIFT).is_empty()
+                && op_available =>
+        {
+            open_secrets_picker_modal(editor, op_cache);
+        }
+        KeyCode::Char('d' | 'D')
+            if editor.active_tab == EditorTab::Secrets
+                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
+        {
+            open_secrets_delete_confirm(editor);
+        }
+        KeyCode::Char('a' | 'A')
+            if editor.active_tab == EditorTab::Secrets
+                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
+        {
+            open_secrets_add_modal(editor);
+        }
         KeyCode::Char('r' | 'R') if editor.active_tab == super::super::state::EditorTab::Mounts => {
-            // Flip the `readonly` flag on the highlighted mount row. Silent
-            // no-op on the `+ Add mount` sentinel. The change propagates
-            // through `change_count`/`is_dirty` via the standard diff-based
-            // path (no extra plumbing — a flipped `readonly` makes the
-            // pending mount non-equal to the original, so the mount counts
-            // as removed + added and nets a +2 delta until flipped back).
             let FieldFocus::Row(n) = editor.active_field;
             if let Some(m) = editor.pending.mounts.get_mut(n) {
                 m.readonly = !m.readonly;
             }
         }
         KeyCode::Char('o' | 'O') if editor.active_tab == super::super::state::EditorTab::Mounts => {
-            // Open the highlighted mount's GitHub URL in the system browser.
-            // Silent no-op when the cursor is on the `+ Add mount` sentinel,
-            // or when the row's MountKind doesn't expose a resolvable URL
-            // (non-GitHub remotes, repos without `origin`, plain folders).
-            // On non-GitHub mounts we emit a toast so the hint is discoverable.
+            // Open in browser; toast for non-GitHub mounts so the
+            // binding stays discoverable.
             let FieldFocus::Row(n) = editor.active_field;
             if let Some(m) = editor.pending.mounts.get(n) {
                 let kind = super::super::mount_info::inspect(&m.src);
@@ -162,7 +245,6 @@ pub(super) fn handle_editor_key(
                         web_url: Some(url),
                         ..
                     } => {
-                        // End the editor borrow before we set `state.toast`.
                         if let Err(e) = open::that_detached(&url) {
                             state.toast = Some(Toast {
                                 message: format!("failed to open URL: {e}"),
@@ -182,42 +264,107 @@ pub(super) fn handle_editor_key(
                     }
                 }
             }
-            // Sentinel row (n == mounts.len()): silent no-op.
         }
         _ => {}
     }
     Ok(InputOutcome::Continue)
 }
 
-/// Returns the highest valid `FieldFocus::Row` index for the current tab.
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
-    use super::super::state::EditorTab;
     match editor.active_tab {
-        EditorTab::General => match editor.mode {
-            // Edit: name (0), workdir (1), default_agent (2), last_used (3)
-            EditorMode::Edit { .. } => 3,
-            // Create: name read-only (0), workdir (1)
-            EditorMode::Create => 1,
-        },
-        EditorTab::Mounts => editor.pending.mounts.len(), // mounts fill 0..N-1, sentinel at N
-        EditorTab::Agents => config.agents.len().saturating_sub(1), // 0-based into agents
+        EditorTab::General => 1,
+        EditorTab::Mounts => editor.pending.mounts.len(),
+        EditorTab::Agents => config.agents.len().saturating_sub(1),
+        // Secrets tab is handled inline in the Down key arm; never reached here.
         EditorTab::Secrets => 0,
+    }
+}
+
+/// Walks forward past spacer rows. Defensive fallback to `candidate`
+/// if every row through `max` is a spacer (currently impossible).
+fn step_secrets_cursor_down(
+    rows: &[super::super::render::editor::SecretsRow],
+    candidate: usize,
+    max: usize,
+) -> usize {
+    use super::super::render::editor::SecretsRow;
+    let mut idx = candidate;
+    while idx <= max {
+        match rows.get(idx) {
+            Some(SecretsRow::SectionSpacer) => idx += 1,
+            _ => return idx,
+        }
+    }
+    candidate
+}
+
+/// Walks backward past spacers; index 0 is always focusable.
+fn step_secrets_cursor_up(
+    rows: &[super::super::render::editor::SecretsRow],
+    candidate: usize,
+) -> usize {
+    use super::super::render::editor::SecretsRow;
+    let mut idx = candidate;
+    loop {
+        match rows.get(idx) {
+            Some(SecretsRow::SectionSpacer) => {
+                if idx == 0 {
+                    return 0;
+                }
+                idx -= 1;
+            }
+            _ => return idx,
+        }
+    }
+}
+
+fn reset_secrets_view(editor: &mut EditorState<'_>) {
+    editor.unmasked_rows.clear();
+    editor.secrets_expanded.clear();
+}
+
+/// No-op on header/sentinel/op:// rows.
+fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = secrets_flat_rows(editor);
+    let Some(row) = rows.get(n).cloned() else {
+        return;
+    };
+    let key = match row {
+        SecretsRow::WorkspaceKeyRow(key) => {
+            // Op:// rows render as breadcrumbs and ignore mask state.
+            let value = editor.pending.env.get(&key).cloned().unwrap_or_default();
+            if crate::operator_env::is_op_reference(&value) {
+                return;
+            }
+            (SecretsScopeTag::Workspace, key)
+        }
+        SecretsRow::AgentKeyRow { agent, key } => {
+            let value = editor
+                .pending
+                .agents
+                .get(&agent)
+                .and_then(|o| o.env.get(&key))
+                .cloned()
+                .unwrap_or_default();
+            if crate::operator_env::is_op_reference(&value) {
+                return;
+            }
+            (SecretsScopeTag::Agent(agent), key)
+        }
+        _ => return,
+    };
+    if !editor.unmasked_rows.remove(&key) {
+        editor.unmasked_rows.insert(key);
     }
 }
 
 fn open_editor_field_modal(editor: &mut EditorState<'_>) {
     use super::super::super::widgets::text_input::TextInputState;
-    use super::super::state::EditorTab;
     if editor.active_tab == EditorTab::General {
         let FieldFocus::Row(n) = editor.active_field;
         match n {
             0 => {
-                // Name — editable in both Edit and Create modes. The
-                // TextInput is pre-filled with the current pending name
-                // (in Create mode that's the value captured by the
-                // create-prelude; in Edit mode it's the workspace's
-                // current on-disk name unless the operator has already
-                // staged a rename).
                 let current = match &editor.mode {
                     EditorMode::Edit { name } => {
                         editor.pending_name.clone().unwrap_or_else(|| name.clone())
@@ -225,12 +372,11 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
                     EditorMode::Create => editor.pending_name.clone().unwrap_or_default(),
                 };
                 editor.modal = Some(Modal::TextInput {
-                    target: super::super::state::TextInputTarget::Name,
+                    target: TextInputTarget::Name,
                     state: TextInputState::new("Rename workspace", current),
                 });
             }
             1 if !editor.pending.mounts.is_empty() => {
-                // workdir — use WorkdirPick if mounts exist
                 editor.modal = Some(Modal::WorkdirPick {
                     state: WorkdirPickState::from_mounts(&editor.pending.mounts),
                 });
@@ -238,6 +384,150 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
             _ => {}
         }
     }
+}
+
+fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
+    use super::super::super::widgets::text_input::TextInputState;
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = secrets_flat_rows(editor);
+    let Some(row) = rows.get(n).cloned() else {
+        return;
+    };
+    match row {
+        SecretsRow::WorkspaceKeyRow(key) => {
+            let current = editor.pending.env.get(&key).cloned().unwrap_or_default();
+            // Op:// rows are not text-editable — operator deletes via
+            // D and re-adds via the source picker.
+            if crate::operator_env::is_op_reference(&current) {
+                return;
+            }
+            editor.modal = Some(Modal::TextInput {
+                target: TextInputTarget::EnvValue {
+                    scope: SecretsScopeTag::Workspace,
+                    key: key.clone(),
+                },
+                state: TextInputState::new_allow_empty(format!("Edit {key}"), current),
+            });
+        }
+        SecretsRow::WorkspaceAddSentinel => {
+            // Workspace sentinel asks the scope question first; the
+            // per-agent sentinel fast-path stays direct.
+            use crate::console::widgets::scope_picker::ScopePickerState;
+            editor.modal = Some(Modal::ScopePicker {
+                state: ScopePickerState::new(),
+            });
+        }
+        SecretsRow::AgentHeader { agent, expanded } => {
+            if !expanded {
+                editor.secrets_expanded.insert(agent);
+            }
+        }
+        SecretsRow::AgentKeyRow { agent, key } => {
+            let current = editor
+                .pending
+                .agents
+                .get(&agent)
+                .and_then(|o| o.env.get(&key))
+                .cloned()
+                .unwrap_or_default();
+            if crate::operator_env::is_op_reference(&current) {
+                return;
+            }
+            let label = format!("Edit {key}");
+            editor.modal = Some(Modal::TextInput {
+                target: TextInputTarget::EnvValue {
+                    scope: SecretsScopeTag::Agent(agent),
+                    key,
+                },
+                state: TextInputState::new_allow_empty(label, current),
+            });
+        }
+        SecretsRow::AgentAddSentinel(agent) => {
+            // In-section fast-path — already viewing the agent, don't
+            // re-ask the scope question.
+            let label = format!("New {agent} environment key");
+            let scope = SecretsScopeTag::Agent(agent);
+            let state = env_key_input_state(editor, &scope, label, String::new());
+            editor.modal = Some(Modal::TextInput {
+                target: TextInputTarget::EnvKey { scope },
+                state,
+            });
+        }
+        // Spacer rows are skipped on `↑`/`↓`; defensive no-op.
+        SecretsRow::SectionSpacer => {}
+    }
+}
+
+/// Listing rules: workspace-allowed list when non-empty, otherwise
+/// every agent in `config.agents`. Agents already carrying an
+/// override are NOT filtered out — operator may want to add more
+/// keys.
+fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
+    use super::super::super::widgets::agent_picker::AgentPickerState;
+    use crate::selector::ClassSelector;
+    let eligible: Vec<ClassSelector> =
+        super::super::render::editor::eligible_agents_for_override(editor, config)
+            .into_iter()
+            .filter_map(|name| ClassSelector::parse(&name).ok())
+            .collect();
+    if eligible.is_empty() {
+        return;
+    }
+    editor.modal = Some(Modal::AgentOverridePicker {
+        state: AgentPickerState::with_confirm_label(eligible, "select"),
+    });
+}
+
+fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
+    use crate::console::widgets::confirm::ConfirmState;
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = secrets_flat_rows(editor);
+    let Some(row) = rows.get(n).cloned() else {
+        return;
+    };
+    let (scope, key) = match row {
+        SecretsRow::WorkspaceKeyRow(key) => (SecretsScopeTag::Workspace, key),
+        SecretsRow::AgentKeyRow { agent, key } => (SecretsScopeTag::Agent(agent), key),
+        _ => return,
+    };
+    let prompt = format!("Delete environment variable {key}?");
+    editor.modal = Some(Modal::Confirm {
+        target: ConfirmTarget::DeleteEnvVar { scope, key },
+        state: ConfirmState::new(prompt),
+    });
+}
+
+/// `A` commits to the row's contextual scope without asking — unlike
+/// the workspace-sentinel `Enter` path, which routes through
+/// `ScopePicker`. Operator already chose a row with unambiguous
+/// scope; an extra prompt would be a regression.
+fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = secrets_flat_rows(editor);
+    let Some(row) = rows.get(n).cloned() else {
+        return;
+    };
+    let (scope, label) = match row {
+        SecretsRow::WorkspaceKeyRow(_) | SecretsRow::WorkspaceAddSentinel => (
+            SecretsScopeTag::Workspace,
+            "New workspace environment key".to_string(),
+        ),
+        SecretsRow::AgentHeader { agent, .. }
+        | SecretsRow::AgentKeyRow { agent, .. }
+        | SecretsRow::AgentAddSentinel(agent) => (
+            SecretsScopeTag::Agent(agent.clone()),
+            format!("New {agent} environment key"),
+        ),
+        // Cursor never lands on `SectionSpacer` (skipped on `↑`/`↓`),
+        // but keep the match exhaustive — silently no-op on the
+        // pathological case.
+        SecretsRow::SectionSpacer => return,
+    };
+    let state = env_key_input_state(editor, &scope, label, String::new());
+    editor.modal = Some(Modal::TextInput {
+        target: TextInputTarget::EnvKey { scope },
+        state,
+    });
 }
 
 /// Space on an agent row toggles its **effective** allow-state.
@@ -264,16 +554,14 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
         return;
     };
 
-    // Read the "all" state via the shared helper before taking the mutable
-    // borrow on `allowed_agents` below — Rust borrow rules bar the call
-    // otherwise. See `super::agent_allow` for the shorthand rule.
+    // Read "all" state before the mutable borrow on `allowed_agents`.
     let is_all_mode = super::super::agent_allow::allows_all_agents(&editor.pending);
     let list = &mut editor.pending.allowed_agents;
     let in_list = list.iter().position(|a| a == agent);
 
     if is_all_mode {
-        // "all" mode → effective-allowed. Demote to "custom" without this
-        // agent by enumerating the full roster minus the current row.
+        // Demote "all" to "custom" without this row by enumerating
+        // the full roster minus the current agent.
         *list = agent_names
             .iter()
             .filter(|a| a.as_str() != agent.as_str())
@@ -283,18 +571,14 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
             editor.pending.default_agent = None;
         }
     } else if let Some(pos) = in_list {
-        // "custom" mode, row is present → remove it. A resulting empty
-        // list reverts to "all" shorthand on the next render tick.
         list.remove(pos);
         if editor.pending.default_agent.as_deref() == Some(agent.as_str()) {
             editor.pending.default_agent = None;
         }
     } else {
-        // "custom" mode, row absent → add it. If the addition fills in the
-        // complete roster, collapse back to the "all" shorthand (empty
-        // list) so the status badge reads `all` rather than
-        // `custom (N of N allowed)` — the two states are semantically
-        // identical and the shorthand is less noisy.
+        // Filling in the full roster collapses back to the "all"
+        // shorthand so the badge reads `all` rather than
+        // `custom (N of N)`.
         list.push(agent.clone());
         if list.len() == agent_names.len() && agent_names.iter().all(|a| list.contains(a)) {
             list.clear();
@@ -302,22 +586,25 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
     }
 }
 
-fn set_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
+/// On the current default → clear; on allowed → set; on disallowed
+/// → no-op (operator must `Space` to allow first).
+fn toggle_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
     let agent_names: Vec<String> = config.agents.keys().cloned().collect();
-    if let Some(agent) = agent_names.get(n) {
-        // In "all agents allowed" shorthand (empty list) the agent is
-        // already effectively allowed — don't collapse the shorthand into
-        // a single-agent allow list just because the operator picked a
-        // default. Only append when we're already in "custom" mode and
-        // the new default isn't in the list yet.
-        if !super::super::agent_allow::allows_all_agents(&editor.pending)
-            && !editor.pending.allowed_agents.contains(agent)
-        {
-            editor.pending.allowed_agents.push(agent.clone());
-        }
-        editor.pending.default_agent = Some(agent.clone());
+    let Some(agent) = agent_names.get(n) else {
+        return;
+    };
+
+    if editor.pending.default_agent.as_deref() == Some(agent.as_str()) {
+        editor.pending.default_agent = None;
+        return;
     }
+
+    if !super::super::agent_allow::agent_is_effectively_allowed(&editor.pending, agent) {
+        return;
+    }
+
+    editor.pending.default_agent = Some(agent.clone());
 }
 
 fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
@@ -327,23 +614,41 @@ fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
     }
 }
 
-#[allow(clippy::too_many_lines)]
-pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
+#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
+pub(super) fn handle_editor_modal(
+    editor: &mut EditorState<'_>,
+    key: KeyEvent,
+    op_available: bool,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+    config: &AppConfig,
+) {
     let Some(modal) = editor.modal.as_mut() else {
         return;
     };
     match modal {
-        Modal::TextInput { target, state } => match state.handle_key(key) {
-            ModalOutcome::Commit(value) => {
-                let target = *target;
-                editor.modal = None;
-                apply_text_input_to_pending(target, editor, &value);
+        Modal::TextInput { target, state } => {
+            match state.handle_key(key) {
+                ModalOutcome::Commit(value) => {
+                    let target = target.clone();
+                    editor.modal = None;
+                    apply_text_input_to_pending(&target, editor, &value, op_available);
+                }
+                ModalOutcome::Cancel => {
+                    // Cancel of EnvKey/EnvValue must drop both the
+                    // stashed key and any picker value — otherwise a
+                    // later sentinel-picker commit silently applies
+                    // the path to an unrelated key.
+                    if let TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } =
+                        target
+                    {
+                        editor.pending_env_key = None;
+                        editor.pending_picker_value = None;
+                    }
+                    editor.modal = None;
+                }
+                ModalOutcome::Continue => {}
             }
-            ModalOutcome::Cancel => {
-                editor.modal = None;
-            }
-            ModalOutcome::Continue => {}
-        },
+        }
         Modal::FileBrowser { target, state } => match state.handle_key(key) {
             ModalOutcome::Commit(path) => {
                 let target = *target;
@@ -365,11 +670,15 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             }
             ModalOutcome::Continue => {}
         },
-        Modal::Confirm { target: _, state } => match state.handle_key(key) {
-            // Editor-side Confirm only reaches here for non-destructive
-            // variants now that SaveCollapse folds into ConfirmSave.
-            // Treat Commit/Cancel identically — close the modal.
-            ModalOutcome::Commit(_) | ModalOutcome::Cancel => {
+        Modal::Confirm { target, state } => match state.handle_key(key) {
+            ModalOutcome::Commit(yes) => {
+                let target = target.clone();
+                editor.modal = None;
+                if yes {
+                    apply_editor_confirm(editor, &target);
+                }
+            }
+            ModalOutcome::Cancel => {
                 editor.modal = None;
             }
             ModalOutcome::Continue => {}
@@ -400,20 +709,39 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
                 ModalOutcome::Continue => {}
             }
         }
-        // GithubPicker is a list-view modal — the editor never opens it.
-        // If one somehow ends up here, treat any key as cancel so the
-        // operator isn't stuck.
-        Modal::GithubPicker { .. } => {
+        // List-view modals; defensive cancel if one lands here.
+        Modal::GithubPicker { .. } | Modal::AgentPicker { .. } => {
             editor.modal = None;
+        }
+        Modal::AgentOverridePicker { state: picker } => {
+            match picker.handle_key(key) {
+                ModalOutcome::Commit(agent) => {
+                    // The override section materializes organically on
+                    // the first value commit; we don't touch
+                    // `pending.agents` here, so a cancel mid-flow leaves
+                    // no empty placeholder.
+                    let agent_name = agent.key();
+                    let scope = SecretsScopeTag::Agent(agent_name.clone());
+                    let label = format!("New {agent_name} environment key");
+                    let state = env_key_input_state(editor, &scope, label, "");
+                    editor.modal = Some(Modal::TextInput {
+                        target: TextInputTarget::EnvKey { scope },
+                        state,
+                    });
+                }
+                ModalOutcome::Cancel => {
+                    editor.modal = None;
+                }
+                ModalOutcome::Continue => {}
+            }
         }
         Modal::ConfirmSave { state: modal_state } => {
             use crate::console::widgets::confirm_save::SaveChoice;
             match modal_state.handle_key(key) {
                 ModalOutcome::Commit(SaveChoice::Save) => {
-                    // Transition `Confirming → PendingCommit` atomically so
-                    // the plan and the originating `exit_on_success` flag
-                    // travel together. The outer handler (which has
-                    // `paths` / `cwd`) drains this and drives the write.
+                    // Confirming → PendingCommit atomically so plan +
+                    // exit_on_success travel together to the outer
+                    // handler that holds paths/cwd.
                     let plan = super::super::state::PendingSaveCommit {
                         effective_removals: modal_state.effective_removals.clone(),
                         final_mounts: modal_state.final_mounts.clone(),
@@ -444,39 +772,305 @@ pub(super) fn handle_editor_modal(editor: &mut EditorState<'_>, key: KeyEvent) {
             }
             ModalOutcome::Continue => {}
         },
-    }
-}
-
-pub(super) fn apply_text_input_to_pending(
-    target: super::super::state::TextInputTarget,
-    editor: &mut EditorState<'_>,
-    value: &str,
-) {
-    use super::super::state::TextInputTarget;
-    match target {
-        TextInputTarget::Name => {
-            // Both Edit and Create modes stash the pending name on the editor.
-            // Save-time plumbing distinguishes: Edit calls rename_workspace,
-            // Create passes it to create_workspace.
-            editor.pending_name = Some(value.to_string());
+        Modal::ScopePicker { state: scope_state } => {
+            use crate::console::widgets::scope_picker::ScopeChoice;
+            match scope_state.handle_key(key) {
+                ModalOutcome::Commit(ScopeChoice::AllAgents) => {
+                    let scope = SecretsScopeTag::Workspace;
+                    let state = env_key_input_state(
+                        editor,
+                        &scope,
+                        "New workspace environment key",
+                        String::new(),
+                    );
+                    editor.modal = Some(Modal::TextInput {
+                        target: TextInputTarget::EnvKey { scope },
+                        state,
+                    });
+                }
+                ModalOutcome::Commit(ScopeChoice::SpecificAgent) => {
+                    // Empty eligible set → `open_agent_override_picker`
+                    // is a no-op; we close the modal then.
+                    open_agent_override_picker(editor, config);
+                    if !matches!(editor.modal, Some(Modal::AgentOverridePicker { .. })) {
+                        editor.modal = None;
+                    }
+                }
+                ModalOutcome::Cancel => {
+                    editor.modal = None;
+                }
+                ModalOutcome::Continue => {}
+            }
         }
-        TextInputTarget::Workdir => editor.pending.workdir = value.to_string(),
-        TextInputTarget::MountDst => {
-            // Completing the add-mount flow: we stashed the src when the
-            // FileBrowser committed; see apply_file_browser_to_editor.
-            // At this point editor.pending.mounts already has a provisional
-            // entry with src == dst == default_path. Update its dst.
-            if let Some(last) = editor.pending.mounts.last_mut() {
-                last.dst = value.to_string();
+        Modal::SourcePicker { state: source } => {
+            use crate::console::widgets::source_picker::SourceChoice;
+            use crate::console::widgets::text_input::TextInputState;
+            match source.handle_key(key) {
+                ModalOutcome::Commit(SourceChoice::Plain) => {
+                    let Some((scope, key)) = editor.pending_env_key.clone() else {
+                        editor.modal = None;
+                        return;
+                    };
+                    editor.modal = Some(Modal::TextInput {
+                        target: TextInputTarget::EnvValue {
+                            scope,
+                            key: key.clone(),
+                        },
+                        state: TextInputState::new_allow_empty(
+                            format!("Value for {key}"),
+                            String::new(),
+                        ),
+                    });
+                }
+                ModalOutcome::Commit(SourceChoice::Op) => {
+                    let Some((scope, key)) = editor.pending_env_key.clone() else {
+                        editor.modal = None;
+                        return;
+                    };
+                    editor.pending_picker_target = Some((scope, Some(key)));
+                    // Clear pending_env_key — pending_picker_target
+                    // owns the (scope, key) pair now, and a stale
+                    // pending_env_key would confuse a later
+                    // sentinel-add commit.
+                    editor.pending_env_key = None;
+                    editor.modal = Some(Modal::OpPicker {
+                        state: Box::new(OpPickerState::new_with_cache(op_cache)),
+                    });
+                }
+                ModalOutcome::Cancel => {
+                    // Cancel: drop the in-flight key name and close
+                    // the modal. Operator returns to the Secrets tab
+                    // with no env entry added.
+                    editor.modal = None;
+                    editor.pending_env_key = None;
+                    editor.pending_picker_value = None;
+                }
+                ModalOutcome::Continue => {}
+            }
+        }
+        Modal::OpPicker { state: picker } => {
+            match picker.handle_key(key) {
+                ModalOutcome::Commit(path) => {
+                    // Operator picked a Vault → Item → Field path. The
+                    // dispatch depends on whether `P` was pressed on a
+                    // key row (write directly) or on an `+ Add` sentinel
+                    // (stash the path, ask for the key name first).
+                    let target = editor.pending_picker_target.take();
+                    match target {
+                        Some((scope, Some(key))) => {
+                            set_pending_env_value(editor, &scope, &key, &path);
+                            editor.modal = None;
+                        }
+                        Some((scope, None)) => {
+                            editor.pending_picker_value = Some(path);
+                            let label = format!("New environment key for {}", scope_label(&scope));
+                            let state = env_key_input_state(editor, &scope, label, "");
+                            editor.modal = Some(Modal::TextInput {
+                                target: TextInputTarget::EnvKey { scope },
+                                state,
+                            });
+                        }
+                        None => {
+                            editor.modal = None;
+                        }
+                    }
+                }
+                ModalOutcome::Cancel => {
+                    // Clear both scratch fields so a stale path/target
+                    // can't carry into a later interaction.
+                    editor.modal = None;
+                    editor.pending_picker_target = None;
+                    editor.pending_picker_value = None;
+                }
+                ModalOutcome::Continue => {}
             }
         }
     }
 }
 
-/// Dispatch the three outcomes of `MountDstChoiceState::handle_key` into
-/// concrete editor mutations. Only the `EditAddMountSrc` target is
-/// meaningful here — the prelude's `CreateFirstMountSrc` target is routed
-/// through `handle_prelude_modal` instead.
+/// `pending_picker_target` records `(scope, Some(key))` for key rows
+/// (commit replaces value) or `(scope, None)` for sentinels (commit
+/// stashes path, opens `EnvKey` modal). Headers / spacers are no-ops.
+fn open_secrets_picker_modal(
+    editor: &mut EditorState<'_>,
+    op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
+) {
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = secrets_flat_rows(editor);
+    let Some(row) = rows.get(n).cloned() else {
+        return;
+    };
+    let target = match row {
+        SecretsRow::WorkspaceKeyRow(key) => Some((SecretsScopeTag::Workspace, Some(key))),
+        SecretsRow::AgentKeyRow { agent, key } => Some((SecretsScopeTag::Agent(agent), Some(key))),
+        SecretsRow::WorkspaceAddSentinel => Some((SecretsScopeTag::Workspace, None)),
+        SecretsRow::AgentAddSentinel(agent) => Some((SecretsScopeTag::Agent(agent), None)),
+        SecretsRow::AgentHeader { .. } | SecretsRow::SectionSpacer => None,
+    };
+    let Some(target) = target else {
+        return;
+    };
+    editor.pending_picker_target = Some(target);
+    editor.modal = Some(Modal::OpPicker {
+        state: Box::new(OpPickerState::new_with_cache(op_cache)),
+    });
+}
+
+const fn scope_label(scope: &SecretsScopeTag) -> &str {
+    match scope {
+        SecretsScopeTag::Workspace => "workspace",
+        SecretsScopeTag::Agent(agent) => agent.as_str(),
+    }
+}
+
+/// From `editor.pending` (not on-disk config) so a same-session
+/// add blocks a follow-up duplicate.
+fn forbidden_keys_for_scope(editor: &EditorState<'_>, scope: &SecretsScopeTag) -> Vec<String> {
+    match scope {
+        SecretsScopeTag::Workspace => editor.pending.env.keys().cloned().collect(),
+        SecretsScopeTag::Agent(agent) => editor
+            .pending
+            .agents
+            .get(agent)
+            .map(|o| o.env.keys().cloned().collect())
+            .unwrap_or_default(),
+    }
+}
+
+fn forbidden_label_for_scope(scope: &SecretsScopeTag) -> String {
+    match scope {
+        SecretsScopeTag::Workspace => "workspace env".to_string(),
+        SecretsScopeTag::Agent(agent) => format!("agent {agent}"),
+    }
+}
+
+/// Centralises `EnvKey` construction so every opener (Enter on
+/// sentinel, A on row, P-on-sentinel fast-path, empty-key re-open)
+/// stays consistent.
+fn env_key_input_state<'a>(
+    editor: &EditorState<'_>,
+    scope: &SecretsScopeTag,
+    label: impl Into<String>,
+    initial: impl Into<String>,
+) -> super::super::super::widgets::text_input::TextInputState<'a> {
+    use super::super::super::widgets::text_input::TextInputState;
+    let mut state =
+        TextInputState::new_with_forbidden(label, initial, forbidden_keys_for_scope(editor, scope));
+    state.forbidden_label = forbidden_label_for_scope(scope);
+    state
+}
+
+/// Single source of truth for setting one env entry on the pending
+/// draft. Agent scope auto-creates the override entry and
+/// auto-expands the section so the operator sees the new value —
+/// same semantics as `ConfigEditor::set_env_var` on save.
+fn set_pending_env_value(
+    editor: &mut EditorState<'_>,
+    scope: &SecretsScopeTag,
+    key: &str,
+    value: &str,
+) {
+    match scope {
+        SecretsScopeTag::Workspace => {
+            editor
+                .pending
+                .env
+                .insert(key.to_string(), value.to_string());
+        }
+        SecretsScopeTag::Agent(agent) => {
+            let entry = editor.pending.agents.entry(agent.clone()).or_default();
+            entry.env.insert(key.to_string(), value.to_string());
+            editor.secrets_expanded.insert(agent.clone());
+        }
+    }
+}
+
+pub(super) fn apply_text_input_to_pending(
+    target: &TextInputTarget,
+    editor: &mut EditorState<'_>,
+    value: &str,
+    op_available: bool,
+) {
+    match target {
+        TextInputTarget::Name => {
+            editor.pending_name = Some(value.to_string());
+        }
+        TextInputTarget::Workdir => editor.pending.workdir = value.to_string(),
+        TextInputTarget::MountDst => {
+            // Provisional mount with src==dst was inserted at FileBrowser
+            // commit; update its dst now.
+            if let Some(last) = editor.pending.mounts.last_mut() {
+                last.dst = value.to_string();
+            }
+        }
+        TextInputTarget::EnvKey { scope } => {
+            // Empty key re-opens the EnvKey modal with the inline
+            // "cannot be empty" label instead of committing.
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                editor.pending_env_key = None;
+                let state =
+                    env_key_input_state(editor, scope, "Key cannot be empty", String::new());
+                editor.modal = Some(Modal::TextInput {
+                    target: TextInputTarget::EnvKey {
+                        scope: scope.clone(),
+                    },
+                    state,
+                });
+                return;
+            }
+            let key = trimmed.to_string();
+            // Sentinel-picker fast path: P committed a path before the
+            // key existed; both fields land here.
+            if let Some(stashed) = editor.pending_picker_value.take() {
+                set_pending_env_value(editor, scope, &key, &stashed);
+                editor.pending_env_key = None;
+                return;
+            }
+            editor.pending_env_key = Some((scope.clone(), key.clone()));
+            editor.modal = Some(Modal::SourcePicker {
+                state: crate::console::widgets::source_picker::SourcePickerState::new(
+                    key,
+                    op_available,
+                ),
+            });
+        }
+        TextInputTarget::EnvValue { scope, key } => {
+            set_pending_env_value(editor, scope, key, value);
+            editor.pending_env_key = None;
+        }
+    }
+}
+
+fn apply_editor_confirm(editor: &mut EditorState<'_>, target: &ConfirmTarget) {
+    match target {
+        ConfirmTarget::DeleteEnvVar { scope, key } => match scope {
+            SecretsScopeTag::Workspace => {
+                editor.pending.env.remove(key);
+            }
+            SecretsScopeTag::Agent(agent) => {
+                let mut drop_agent = false;
+                if let Some(ov) = editor.pending.agents.get_mut(agent) {
+                    ov.env.remove(key);
+                    // Drop empty override so change_count reports
+                    // clean when the agent's overrides are later
+                    // re-added.
+                    if ov.env.is_empty() {
+                        drop_agent = true;
+                    }
+                }
+                if drop_agent {
+                    editor.pending.agents.remove(agent);
+                }
+            }
+        },
+        // List-side target; never reaches the editor modal.
+        ConfirmTarget::DeleteWorkspace => {}
+    }
+}
+
+/// Only `EditAddMountSrc` is meaningful here; the prelude's
+/// `CreateFirstMountSrc` target routes through `handle_prelude_modal`.
 fn dispatch_editor_mount_dst_choice(
     editor: &mut EditorState<'_>,
     target: FileBrowserTarget,
@@ -552,27 +1146,41 @@ mod tests {
     //! bindings, and mount-row readonly toggle.
     use super::super::super::state::{
         EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal,
-        TextInputTarget,
+        SecretsScopeTag, TextInputTarget,
     };
     use super::super::test_support::{key, mount};
     use super::{apply_file_browser_to_editor, apply_text_input_to_pending, handle_editor_modal};
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
+    use crate::console::op_cache::OpCache;
     use crate::paths::JackinPaths;
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::KeyCode;
     use tempfile::TempDir;
 
+    /// Test helper: invoke `handle_editor_modal` with default plumbing
+    /// for the new `op_available` / `op_cache` parameters. Existing
+    /// editor-modal tests don't exercise the `SourcePicker` /
+    /// `OpPicker` branches that need real wiring; defaults are fine.
+    fn handle_modal(editor: &mut EditorState<'_>, k: crossterm::event::KeyEvent) {
+        handle_editor_modal(
+            editor,
+            k,
+            false,
+            std::rc::Rc::new(std::cell::RefCell::new(OpCache::default())),
+            &AppConfig::default(),
+        );
+    }
+
+    /// Test helper: invoke `apply_text_input_to_pending` with
+    /// `op_available = false`. Tests that don't open the `SourcePicker`
+    /// don't care about the flag.
+    fn apply_text_input(target: &TextInputTarget, editor: &mut EditorState<'_>, value: &str) {
+        apply_text_input_to_pending(target, editor, value, false);
+    }
+
     fn empty_ws() -> WorkspaceConfig {
-        WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
-        }
+        WorkspaceConfig::default()
     }
 
     fn config_with_agents(names: &[&str]) -> AppConfig {
@@ -610,17 +1218,12 @@ mod tests {
 
     fn ws_with_one_mount(readonly: bool) -> WorkspaceConfig {
         WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![MountConfig {
                 src: "/host/a".into(),
                 dst: "/host/a".into(),
                 readonly,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         }
     }
 
@@ -648,16 +1251,7 @@ mod tests {
     /// function is `apply_file_browser_to_editor`, which opens the new
     /// `MountDstChoice` modal instead of the old "push + TextInput" chain.
     fn editor_with_browser_committed(src: &str) -> EditorState<'static> {
-        let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: vec![],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
-        };
-        let mut editor = EditorState::new_edit("ws".into(), ws);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.active_tab = EditorTab::Mounts;
         editor.active_field = FieldFocus::Row(0);
         apply_file_browser_to_editor(
@@ -678,17 +1272,8 @@ mod tests {
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
         let config = AppConfig::default();
-        let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: vec![],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
-        };
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut editor = EditorState::new_edit("ws".into(), ws);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.active_tab = start_tab;
         state.stage = ManagerStage::Editor(editor);
         (state, config, paths, tmp)
@@ -726,7 +1311,7 @@ mod tests {
         };
         match &e.modal {
             Some(Modal::TextInput { target, state }) => {
-                assert_eq!(*target, TextInputTarget::Name);
+                assert_eq!(target, &TextInputTarget::Name);
                 assert_eq!(
                     state.value(),
                     "typo-name",
@@ -745,7 +1330,7 @@ mod tests {
         let mut editor = EditorState::new_create();
         editor.pending_name = Some("old-name".into());
 
-        apply_text_input_to_pending(TextInputTarget::Name, &mut editor, "new-name");
+        apply_text_input(&TextInputTarget::Name, &mut editor, "new-name");
 
         assert_eq!(editor.pending_name.as_deref(), Some("new-name"));
     }
@@ -757,11 +1342,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
@@ -785,7 +1366,7 @@ mod tests {
         };
         match &e.modal {
             Some(Modal::TextInput { target, state }) => {
-                assert_eq!(*target, TextInputTarget::Name);
+                assert_eq!(target, &TextInputTarget::Name);
                 assert_eq!(state.value(), "keep-me");
             }
             other => panic!("expected TextInput(Name); got {other:?}"),
@@ -817,7 +1398,7 @@ mod tests {
         // OK shortcut on the choice modal → push MountConfig with dst = src
         // and close the modal. No TextInput should appear.
         let mut editor = editor_with_browser_committed("/host/path");
-        handle_editor_modal(&mut editor, key(KeyCode::Char('o')));
+        handle_modal(&mut editor, key(KeyCode::Char('o')));
         assert!(
             editor.modal.is_none(),
             "OK must close the modal; got {:?}",
@@ -836,10 +1417,10 @@ mod tests {
         // the TextInput pre-filled with src. Mirrors today's flow so the
         // operator can edit dst in place.
         let mut editor = editor_with_browser_committed("/host/path");
-        handle_editor_modal(&mut editor, key(KeyCode::Char('e')));
+        handle_modal(&mut editor, key(KeyCode::Char('e')));
         match &editor.modal {
             Some(Modal::TextInput { target, .. }) => {
-                assert_eq!(*target, TextInputTarget::MountDst);
+                assert_eq!(target, &TextInputTarget::MountDst);
             }
             other => panic!("expected TextInput(MountDst); got {other:?}"),
         }
@@ -857,7 +1438,7 @@ mod tests {
     fn editor_cancel_does_not_push_mount() {
         // C / Esc dismisses the choice modal without touching pending.mounts.
         let mut editor = editor_with_browser_committed("/host/path");
-        handle_editor_modal(&mut editor, key(KeyCode::Esc));
+        handle_modal(&mut editor, key(KeyCode::Esc));
         assert!(editor.modal.is_none(), "Esc closes the modal");
         assert_eq!(
             editor.pending.mounts.len(),
@@ -866,7 +1447,7 @@ mod tests {
         );
 
         let mut editor = editor_with_browser_committed("/host/path");
-        handle_editor_modal(&mut editor, key(KeyCode::Char('c')));
+        handle_modal(&mut editor, key(KeyCode::Char('c')));
         assert!(editor.modal.is_none(), "`c` closes the modal");
         assert_eq!(editor.pending.mounts.len(), 0, "`c` must not push a mount");
     }
@@ -893,7 +1474,7 @@ mod tests {
 
     #[test]
     fn editor_left_arrow_rewinds_tab() {
-        // Left should match BackTab's reverse cycle: Mounts → General.
+        // Left implements the reverse tab cycle: Mounts → General.
         let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Mounts);
         handle_key(
             &mut state,
@@ -945,18 +1526,18 @@ mod tests {
         assert_eq!(e.active_tab, EditorTab::General);
     }
 
-    // ── Agents tab: D-key default binding ──────────────────────────────
+    // ── Agents tab: `*` default-toggle binding ───────────────────────
 
     #[test]
-    fn d_key_sets_default_agent_on_current_row() {
+    fn agents_tab_star_sets_default_on_allowed_agent() {
+        // Cursor on row 1 (agent "beta"), no default set yet. Workspace
+        // starts in "all agents allowed" shorthand, so beta is
+        // effectively allowed. Pressing `*` pins it as default while
+        // preserving the shorthand (empty allow list).
         let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
-        // Cursor on row 1 (agent "beta"), no default set yet. The
-        // workspace starts in the "all agents allowed" shorthand (empty
-        // `allowed_agents`), so picking a default must NOT collapse the
-        // shorthand into a single-agent allow list — see finding #1.
         let mut state = editor_on_agents_tab(empty_ws(), 1);
 
-        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
+        press(&mut state, &mut config, KeyCode::Char('*')).unwrap();
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
@@ -964,92 +1545,25 @@ mod tests {
         assert_eq!(
             e.pending.default_agent.as_deref(),
             Some("beta"),
-            "D on row 1 should pin agent `beta` as default",
+            "`*` on row 1 should pin agent `beta` as default",
         );
         assert!(
             e.pending.allowed_agents.is_empty(),
-            "default-agent pick must preserve the all-agents shorthand \
-             (empty allowed_agents); got {:?}",
+            "default-agent pick must preserve the all-agents shorthand; \
+             got {:?}",
             e.pending.allowed_agents,
         );
     }
 
     #[test]
-    fn d_key_preserves_all_agents_shorthand() {
-        // Explicit guard on the shorthand-preservation behavior: setting
-        // a default on a workspace in "all agents" mode must leave the
-        // allow list empty, not switch it to a one-agent custom list.
-        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
-        let mut state = editor_on_agents_tab(empty_ws(), 2);
-        {
-            let ManagerStage::Editor(e) = &state.stage else {
-                panic!("editor stage expected");
-            };
-            assert!(
-                e.pending.allowed_agents.is_empty(),
-                "precondition: workspace should start in all-agents mode",
-            );
-        }
-
-        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
-
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("editor stage expected");
-        };
-        assert!(
-            e.pending.allowed_agents.is_empty(),
-            "all-agents shorthand must survive D; got {:?}",
-            e.pending.allowed_agents,
-        );
-        assert_eq!(e.pending.default_agent.as_deref(), Some("gamma"));
-    }
-
-    #[test]
-    fn d_key_appends_to_custom_allow_list_when_missing() {
-        // Complementary case: when the workspace is already in "custom"
-        // mode (non-empty allow list) and the chosen default is NOT in
-        // the list, pressing D must append it — otherwise the config
-        // would reference a forbidden default.
-        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+    fn agents_tab_star_on_current_default_clears_it() {
+        // With default = "alpha" (effectively allowed under shorthand),
+        // pressing `*` on the same row clears the default. Toggle-off is
+        // symmetric with the Space allow/disallow toggle.
+        let mut config = config_with_agents(&["alpha", "beta"]);
         let mut ws = empty_ws();
-        ws.allowed_agents = vec!["alpha".into()];
-        // Cursor on row 1 (agent "beta"), which is NOT in the allow list.
-        let mut state = editor_on_agents_tab(ws, 1);
-
-        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
-
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("editor stage expected");
-        };
-        assert_eq!(e.pending.default_agent.as_deref(), Some("beta"));
-        assert_eq!(
-            e.pending.allowed_agents,
-            vec!["alpha".to_string(), "beta".to_string()],
-            "custom allow list must pick up the new default when missing",
-        );
-    }
-
-    #[test]
-    fn lowercase_d_key_sets_default_agent_on_current_row() {
-        // Operators often hit `d` without holding shift; the binding
-        // must accept both cases.
-        let mut config = config_with_agents(&["alpha", "beta"]);
-        let mut state = editor_on_agents_tab(empty_ws(), 0);
-
-        press(&mut state, &mut config, KeyCode::Char('d')).unwrap();
-
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("editor stage expected");
-        };
-        assert_eq!(e.pending.default_agent.as_deref(), Some("alpha"));
-    }
-
-    #[test]
-    fn star_key_no_longer_sets_default_agent() {
-        // Regression guard: the legacy `*` binding was removed in favour
-        // of `D`. Pressing `*` on an agent row must now be a no-op.
-        let mut config = config_with_agents(&["alpha", "beta"]);
-        let mut state = editor_on_agents_tab(empty_ws(), 1);
+        ws.default_agent = Some("alpha".into());
+        let mut state = editor_on_agents_tab(ws, 0);
 
         press(&mut state, &mut config, KeyCode::Char('*')).unwrap();
 
@@ -1058,7 +1572,84 @@ mod tests {
         };
         assert!(
             e.pending.default_agent.is_none(),
-            "`*` must no longer set the default agent",
+            "`*` on the current default must clear it; got {:?}",
+            e.pending.default_agent,
+        );
+    }
+
+    #[test]
+    fn agents_tab_star_on_unallowed_agent_is_noop() {
+        // Workspace in "custom" mode with only `alpha` allowed; cursor
+        // on row 1 (`beta`, NOT in the allow list). `*` must not set
+        // beta as default — defaults are meaningless on disallowed
+        // agents and the operator should `Space` to allow first.
+        let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into()];
+        let mut state = editor_on_agents_tab(ws, 1);
+
+        press(&mut state, &mut config, KeyCode::Char('*')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.pending.default_agent.is_none(),
+            "`*` on a disallowed agent must be a no-op; got {:?}",
+            e.pending.default_agent,
+        );
+        assert_eq!(
+            e.pending.allowed_agents,
+            vec!["alpha".to_string()],
+            "`*` must not silently extend the allow list; got {:?}",
+            e.pending.allowed_agents,
+        );
+    }
+
+    #[test]
+    fn agents_tab_disallow_default_clears_default() {
+        // With "alpha" pinned as default (custom allow list = [alpha]),
+        // pressing Space on alpha to disallow it must also clear the
+        // default — defaults are only meaningful on allowed agents.
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut ws = empty_ws();
+        ws.allowed_agents = vec!["alpha".into()];
+        ws.default_agent = Some("alpha".into());
+        let mut state = editor_on_agents_tab(ws, 0);
+
+        press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            !e.pending.allowed_agents.contains(&"alpha".to_string()),
+            "alpha must be removed from allowed_agents after Space; got {:?}",
+            e.pending.allowed_agents,
+        );
+        assert!(
+            e.pending.default_agent.is_none(),
+            "disallowing the current default must clear default_agent; got {:?}",
+            e.pending.default_agent,
+        );
+    }
+
+    #[test]
+    fn d_key_no_longer_sets_default_agent_on_agents_tab() {
+        // Regression guard: the `D` binding was removed in favour of `*`.
+        // Pressing `D` on an agent row must now be a no-op (no other
+        // Agents-tab binding listens for `D`).
+        let mut config = config_with_agents(&["alpha", "beta"]);
+        let mut state = editor_on_agents_tab(empty_ws(), 1);
+
+        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.pending.default_agent.is_none(),
+            "`D` must no longer set the default agent on the Agents tab",
         );
     }
 
@@ -1280,7 +1871,7 @@ mod tests {
         let backend = TestBackend::new(80, 10);
         let mut term = ratatui::Terminal::new(backend).unwrap();
         term.draw(|f| {
-            crate::console::manager::render::render_editor(f, editor, &config);
+            crate::console::manager::render::render_editor(f, editor, &config, true);
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -1299,6 +1890,460 @@ mod tests {
         assert!(
             found,
             "post-toggle render must show `ro` in the mode column"
+        );
+    }
+
+    // ── Caps-Lock parity: SHIFT-modified letter shortcuts ──────────────
+
+    /// Enter on an op:// key row must NOT open the EnvValue text-edit
+    /// modal. The breadcrumb is a path, not a credential, and hand-
+    /// editing the path is error-prone — the operator deletes via D
+    /// and re-adds via the source picker (`P`).
+    #[test]
+    fn enter_on_op_workspace_key_row_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env
+            .insert("DB_URL".into(), "op://Work/db/password".into());
+
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0); // the only key row
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Enter),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.modal.is_none(),
+            "Enter on an op:// row must not open any modal; got {:?}",
+            e.modal
+        );
+    }
+
+    /// Same guard for an agent-override row: Enter on an op:// value in
+    /// an expanded agent section is also a no-op.
+    #[test]
+    fn enter_on_op_agent_key_row_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        let mut ag_env = std::collections::BTreeMap::new();
+        ag_env.insert("API_TOKEN".into(), "op://acct/Personal/api/token".into());
+        ws.agents.insert(
+            "smith".into(),
+            crate::workspace::WorkspaceAgentOverride { env: ag_env },
+        );
+
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.secrets_expanded.insert("smith".into());
+        // Rows: WorkspaceAddSentinel(0), SectionSpacer(1), AgentHeader(2),
+        //       AgentKeyRow(3), AgentAddSentinel(4). Focus the key row.
+        editor.active_field = FieldFocus::Row(3);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Enter),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.modal.is_none(),
+            "Enter on an agent op:// row must not open any modal; got {:?}",
+            e.modal
+        );
+    }
+
+    /// Caps Lock causes terminals to send letter keys with the SHIFT
+    /// modifier set. The Secrets-tab `M` (mask toggle) and `P` (1Password
+    /// picker) bindings must accept SHIFT just like NONE — otherwise an
+    /// operator with Caps Lock on sees a silent no-op.
+    #[test]
+    fn secrets_tab_m_accepts_shift_modifier_for_caps_lock_parity() {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env.insert("DB_URL".into(), "literal-value".into());
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0); // the only key row
+        state.stage = ManagerStage::Editor(editor);
+
+        let shift_m = KeyEvent {
+            code: KeyCode::Char('M'),
+            modifiers: KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        handle_key(&mut state, &mut config, &paths, tmp.path(), shift_m).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.unmasked_rows
+                .contains(&(SecretsScopeTag::Workspace, "DB_URL".into())),
+            "M with SHIFT modifier (Caps Lock parity) must add the focused \
+             row to unmasked_rows; got {:?}",
+            e.unmasked_rows
+        );
+    }
+
+    /// `M` on a focused workspace key row toggles only that row's mask
+    /// state — sibling rows stay masked. This is the operator's core
+    /// commit-32 ask: never reveal an unintended row.
+    #[test]
+    fn m_on_focused_workspace_key_unmasks_only_that_row() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env.insert("ALPHA".into(), "first-value".into());
+        ws.env.insert("BETA".into(), "second-value".into());
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        // Rows are alphabetically ordered: ALPHA(0), BETA(1), Sentinel(2).
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.unmasked_rows
+                .contains(&(SecretsScopeTag::Workspace, "ALPHA".into())),
+            "ALPHA must be unmasked"
+        );
+        assert!(
+            !e.unmasked_rows
+                .contains(&(SecretsScopeTag::Workspace, "BETA".into())),
+            "BETA must remain masked"
+        );
+    }
+
+    /// Pressing M twice on the same row toggles the mask back on —
+    /// the per-row state is a flip, not a one-way reveal.
+    #[test]
+    fn m_on_already_unmasked_row_re_masks_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env.insert("ALPHA".into(), "first".into());
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        assert!(
+            e.unmasked_rows.is_empty(),
+            "second M must remove the row from unmasked_rows; got {:?}",
+            e.unmasked_rows
+        );
+    }
+
+    /// M on an op:// row is a no-op — those rows render as breadcrumbs
+    /// regardless of the mask state, so adding them to `unmasked_rows`
+    /// would be visually inert and confuse the operator.
+    #[test]
+    fn m_on_op_reference_row_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env
+            .insert("DB_URL".into(), "op://Work/db/password".into());
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        assert!(
+            e.unmasked_rows.is_empty(),
+            "M on an op:// row must not modify unmasked_rows; got {:?}",
+            e.unmasked_rows
+        );
+    }
+
+    /// Leaving and re-entering the Secrets tab clears `unmasked_rows`
+    /// — the all-masked baseline is restored each visit.
+    #[test]
+    fn tab_leave_resets_unmasked_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        ws.env.insert("ALPHA".into(), "first".into());
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        // Unmask ALPHA.
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+        // Tab to General → leaves Secrets.
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Tab),
+        )
+        .unwrap();
+        // Tab around the wheel back to Secrets (General → Mounts → Agents
+        // → Secrets is 3 more presses).
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Tab),
+        )
+        .unwrap();
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Tab),
+        )
+        .unwrap();
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Tab),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        assert_eq!(e.active_tab, EditorTab::Secrets);
+        assert!(
+            e.unmasked_rows.is_empty(),
+            "tab-leave must clear unmasked_rows; got {:?}",
+            e.unmasked_rows
+        );
+    }
+
+    /// Workspace and agent scopes have separate mask state. M on an
+    /// agent row unmasks only the agent row even when a workspace row
+    /// shares the same key name.
+    #[test]
+    fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        // Same key name in both scopes.
+        ws.env.insert("API_TOKEN".into(), "ws-value".into());
+        let mut ag_env = std::collections::BTreeMap::new();
+        ag_env.insert("API_TOKEN".into(), "agent-value".into());
+        ws.agents.insert(
+            "smith".into(),
+            crate::workspace::WorkspaceAgentOverride { env: ag_env },
+        );
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.secrets_expanded.insert("smith".into());
+        // Rows: WorkspaceKeyRow(0), WorkspaceAddSentinel(1),
+        // SectionSpacer(2), AgentHeader(3), AgentKeyRow(4),
+        // AgentAddSentinel(5). Focus the agent key row.
+        editor.active_field = FieldFocus::Row(4);
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('m')),
+        )
+        .unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        assert!(
+            e.unmasked_rows
+                .contains(&(SecretsScopeTag::Agent("smith".into()), "API_TOKEN".into())),
+            "agent-scope API_TOKEN must be unmasked"
+        );
+        assert!(
+            !e.unmasked_rows
+                .contains(&(SecretsScopeTag::Workspace, "API_TOKEN".into())),
+            "workspace-scope API_TOKEN with same key name must remain masked"
+        );
+    }
+
+    /// Pressing `↓` from the workspace `+ Add` sentinel must skip past
+    /// the `SectionSpacer` and land directly on the first focusable row
+    /// of the agent section (the `AgentHeader`). Same in reverse with
+    /// `↑`. Regression guard for the cursor-skip logic added with the
+    /// blank-line-between-sections layout polish.
+    #[test]
+    fn cursor_skips_section_spacer_on_down_arrow() {
+        use super::super::super::render::editor::{SecretsRow, secrets_flat_rows};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut ws = empty_ws();
+        let mut ag_env = std::collections::BTreeMap::new();
+        ag_env.insert("LOG_LEVEL".into(), "debug".into());
+        ws.agents.insert(
+            "agent-smith".into(),
+            crate::workspace::WorkspaceAgentOverride { env: ag_env },
+        );
+
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        // Rows with no workspace env keys + one collapsed agent section:
+        //   0 WorkspaceAddSentinel
+        //   1 SectionSpacer
+        //   2 AgentHeader
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        // Sanity-check the row layout matches the comment above before
+        // exercising the navigation.
+        if let ManagerStage::Editor(e) = &state.stage {
+            let rows = secrets_flat_rows(e);
+            assert!(matches!(
+                rows.first(),
+                Some(SecretsRow::WorkspaceAddSentinel)
+            ));
+            assert!(matches!(rows.get(1), Some(SecretsRow::SectionSpacer)));
+            assert!(matches!(rows.get(2), Some(SecretsRow::AgentHeader { .. })));
+        }
+
+        // ↓ from row 0 must land on row 2, skipping the spacer at row 1.
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Down),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            matches!(e.active_field, FieldFocus::Row(2)),
+            "↓ from sentinel(0) must skip spacer(1) and land on header(2); \
+             got {:?}",
+            e.active_field
+        );
+
+        // ↑ from row 2 must land back on row 0, skipping the spacer.
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Up),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            matches!(e.active_field, FieldFocus::Row(0)),
+            "↑ from header(2) must skip spacer(1) and land on sentinel(0); \
+             got {:?}",
+            e.active_field
         );
     }
 }

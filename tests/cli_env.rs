@@ -1,10 +1,7 @@
 #![cfg(unix)]
 
-//! Integration coverage for the `jackin config env` and
-//! `jackin workspace env` CLI verbs.
-//!
-//! These tests exercise the real binary end-to-end under a temp `$HOME`
-//! so the config file lives at `$HOME/.config/jackin/config.toml`.
+//! Integration coverage for the `jackin config env` /
+//! `jackin workspace env` CLI verbs against a temp `$HOME`.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -38,9 +35,8 @@ fn read_config(env: &Env) -> String {
     fs::read_to_string(config_path(env)).unwrap()
 }
 
-/// Seed an agent entry in the config file so `[agents.<name>.env]` writes
-/// sit underneath a fully-formed agent table (the `git` field is required
-/// by `AgentSource` serde parsing).
+/// `[agents.<name>]` needs the required `git` field for serde to
+/// accept the table.
 fn seed_agent(env: &Env, name: &str) {
     let path = config_path(env);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -50,7 +46,6 @@ fn seed_agent(env: &Env, name: &str) {
 }
 
 fn seed_workspace(env: &Env, name: &str, workdir: &str) {
-    // Use the create command itself so the config shape is authoritative.
     fs::create_dir_all(workdir).unwrap();
     jackin(env)
         .args(["workspace", "create", name, "--workdir", workdir])
@@ -265,4 +260,104 @@ fn workspace_env_list_unknown_workspace_exits_nonzero() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("no-such-ws"));
+}
+
+// ── brick-the-CLI regressions ───────────────────────────────────
+
+#[test]
+fn config_env_set_reserved_name_rejected_with_clear_error() {
+    let env = setup_env();
+    jackin(&env)
+        .args(["config", "env", "set", "DOCKER_HOST", "tcp://bad"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("reserved"));
+    let path = config_path(&env);
+    if path.exists() {
+        let contents = read_config(&env);
+        assert!(
+            !contents.contains("DOCKER_HOST"),
+            "rejected reserved-name set should not have written the entry; got:\n{contents}"
+        );
+    }
+}
+
+#[test]
+fn config_env_set_unknown_agent_rejected() {
+    let env = setup_env();
+    jackin(&env)
+        .args([
+            "config",
+            "env",
+            "set",
+            "FOO",
+            "bar",
+            "--agent",
+            "ghost-unknown",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ghost-unknown"))
+        .stderr(predicate::str::contains("not registered"));
+    let path = config_path(&env);
+    if path.exists() {
+        let contents = read_config(&env);
+        assert!(
+            !contents.contains("[agents.ghost-unknown]"),
+            "rejected unknown-agent set must not have created a stub agent table; got:\n{contents}"
+        );
+    }
+}
+
+/// Same protection for `workspace env set` reserved-name writes.
+#[test]
+fn workspace_env_set_reserved_name_rejected() {
+    let env = setup_env();
+    let workdir = env.home.join("Projects/prod");
+    seed_workspace(&env, "prod", workdir.to_str().unwrap());
+    jackin(&env)
+        .args([
+            "workspace",
+            "env",
+            "set",
+            "prod",
+            "DOCKER_HOST",
+            "tcp://bad",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("reserved"));
+    let contents = read_config(&env);
+    assert!(
+        !contents.contains("DOCKER_HOST"),
+        "rejected reserved-name workspace-env set must not have written the entry; got:\n{contents}"
+    );
+}
+
+/// Same protection for `workspace env set --agent <unknown>`.
+#[test]
+fn workspace_env_set_unknown_agent_rejected() {
+    let env = setup_env();
+    let workdir = env.home.join("Projects/prod");
+    seed_workspace(&env, "prod", workdir.to_str().unwrap());
+    jackin(&env)
+        .args([
+            "workspace",
+            "env",
+            "set",
+            "prod",
+            "FOO",
+            "bar",
+            "--agent",
+            "ghost-unknown",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ghost-unknown"))
+        .stderr(predicate::str::contains("not registered"));
+    let contents = read_config(&env);
+    assert!(
+        !contents.contains("ghost-unknown"),
+        "rejected unknown-agent workspace-env set must not have leaked the agent name on disk; got:\n{contents}"
+    );
 }

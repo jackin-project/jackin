@@ -50,15 +50,14 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
     frame.render_widget(ratatui::widgets::Clear, area);
 
     // Layout: [optional rejection banner][listing][nav hint].
-    let has_rejection = state.rejected_reason.is_some();
-    let constraints = render_constraints(has_rejection);
+    let rejection = state.rejected_reason.as_ref();
+    let constraints = render_constraints(rejection.is_some());
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(area);
 
-    let listing_idx = if has_rejection {
-        let reason = state.rejected_reason.as_ref().unwrap();
+    let listing_idx = rejection.map_or(0, |reason| {
         frame.render_widget(
             Paragraph::new(Span::styled(
                 format!("\u{2717} {reason}"),
@@ -68,9 +67,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &FileBrowserState) {
             chunks[0],
         );
         1
-    } else {
-        0
-    };
+    });
 
     render_listing(frame, chunks[listing_idx], state);
     render_footer_legend(frame, chunks[chunks.len() - 1], state);

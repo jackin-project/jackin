@@ -59,11 +59,7 @@ impl CreatePreludeState<'_> {
                 dst: dst.clone(),
                 readonly: self.pending_readonly,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::default(),
-            agents: std::collections::BTreeMap::default(),
+            ..WorkspaceConfig::default()
         })
     }
 

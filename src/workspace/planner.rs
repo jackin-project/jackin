@@ -249,11 +249,7 @@ mod tests {
         WorkspaceConfig {
             workdir: workdir.to_string(),
             mounts,
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         }
     }
 

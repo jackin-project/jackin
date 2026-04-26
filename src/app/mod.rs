@@ -374,6 +374,20 @@ pub fn run(cli: Cli) -> Result<()> {
                     if key.is_empty() {
                         anyhow::bail!("env var key cannot be empty");
                     }
+                    if crate::env_model::is_reserved(&key) {
+                        anyhow::bail!(
+                            "env name {key:?} is reserved by the jackin runtime and cannot be set"
+                        );
+                    }
+                    if let Some(ref agent_key) = agent
+                        && !config.agents.contains_key(agent_key)
+                    {
+                        anyhow::bail!(
+                            "agent {agent_key:?} is not registered; register it with \
+                             `jackin agent register` (or run a command that resolves it) \
+                             before setting agent-scoped env vars"
+                        );
+                    }
                     let scope = agent.map_or(config::EnvScope::Global, config::EnvScope::Agent);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.set_env_var(&scope, &key, &value);
@@ -814,7 +828,21 @@ pub fn run(cli: Cli) -> Result<()> {
                     if key.is_empty() {
                         anyhow::bail!("env var key cannot be empty");
                     }
+                    if crate::env_model::is_reserved(&key) {
+                        anyhow::bail!(
+                            "env name {key:?} is reserved by the jackin runtime and cannot be set"
+                        );
+                    }
                     config.require_workspace(&workspace)?;
+                    if let Some(ref agent_key) = agent
+                        && !config.agents.contains_key(agent_key)
+                    {
+                        anyhow::bail!(
+                            "agent {agent_key:?} is not registered; register it with \
+                             `jackin agent register` (or run a command that resolves it) \
+                             before setting agent-scoped env vars"
+                        );
+                    }
                     let scope = workspace_env_scope(workspace, agent);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.set_env_var(&scope, &key, &value);

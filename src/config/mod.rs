@@ -215,11 +215,7 @@ readonly = true
                 dst: "/workspace/src".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
 
         let error =
@@ -247,11 +243,7 @@ readonly = true
                         dst: "/workspace/project".to_string(),
                         readonly: false,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -410,11 +402,7 @@ auth_forward = "token"
                         dst: "/a".into(),
                         readonly: false,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -455,11 +443,7 @@ auth_forward = "token"
                         dst: "/a/b".into(),
                         readonly: true,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -507,11 +491,7 @@ auth_forward = "token"
                             readonly: false,
                         },
                     ],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -564,11 +544,7 @@ auth_forward = "token"
                         readonly: false,
                     },
                 ],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
 
@@ -611,11 +587,7 @@ auth_forward = "token"
                             readonly: false,
                         },
                     ],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap_err();
@@ -649,11 +621,7 @@ auth_forward = "token"
                             readonly: true,
                         },
                     ],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap_err();
@@ -676,11 +644,7 @@ auth_forward = "token"
                         dst: "/a".into(),
                         readonly: false,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();

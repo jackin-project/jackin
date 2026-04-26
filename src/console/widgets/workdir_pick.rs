@@ -84,25 +84,11 @@ impl WorkdirPickState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
         match key.code {
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                let n = self.choices.len();
-                if n > 0 {
-                    let next = self
-                        .list_state
-                        .selected
-                        .map_or(0, |i| if i == 0 { n - 1 } else { i - 1 });
-                    self.list_state.select(Some(next));
-                }
+                super::cycle_select(&mut self.list_state, self.choices.len(), -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                let n = self.choices.len();
-                if n > 0 {
-                    let next = self
-                        .list_state
-                        .selected
-                        .map_or(0, |i| if i + 1 >= n { 0 } else { i + 1 });
-                    self.list_state.select(Some(next));
-                }
+                super::cycle_select(&mut self.list_state, self.choices.len(), 1);
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {
@@ -173,6 +159,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
         .unwrap_or(0)
         .max(10);
 
+    // Scroll so the selected row is always in view.
+    let visible = rows[1].height as usize;
+    let selected = state.list_state.selected.unwrap_or(0);
+    let offset = selected.saturating_sub(visible.saturating_sub(1));
     let lines: Vec<Line> = state
         .choices
         .iter()
@@ -196,8 +186,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
                 ),
             ])
         })
+        .skip(offset)
+        .take(visible)
         .collect();
-
     frame.render_widget(Paragraph::new(lines), rows[1]);
 
     // Hint line — canonical list-modal hint (↑↓ navigate · Enter confirm · Esc cancel).

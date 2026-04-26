@@ -56,16 +56,12 @@ pub(super) fn footer_spans(items: &[FooterItem]) -> Vec<Span<'static>> {
     let dyn_style = Style::default().fg(PHOSPHOR_DIM);
 
     let mut spans: Vec<Span<'static>> = Vec::with_capacity(items.len() * 2);
-    for (i, item) in items.iter().enumerate() {
+    for item in items {
         match item {
             FooterItem::Key(k) => {
-                // Key glyph — precede with a space when the previous item was a
-                // Text/Dyn so the key stands apart from the preceding label.
                 spans.push(Span::styled((*k).to_string(), key_style));
             }
             FooterItem::Text(t) => {
-                // Label — precede with a single space so key and label are visually
-                // paired (e.g. "Enter launch" not "Enterlaunch").
                 spans.push(Span::styled(format!(" {t}"), text_style));
             }
             FooterItem::Dyn(t) => {
@@ -75,13 +71,9 @@ pub(super) fn footer_spans(items: &[FooterItem]) -> Vec<Span<'static>> {
                 spans.push(Span::styled(" \u{b7} ".to_string(), sep_style));
             }
             FooterItem::GroupSep => {
-                // Wider gap between logical groups.
                 spans.push(Span::raw("   "));
             }
         }
-        // Avoid trailing separator after the last item; loop logic handles this naturally
-        // because separators are explicit items.
-        let _ = i;
     }
     spans
 }
@@ -92,15 +84,16 @@ pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[FooterItem])
     frame.render_widget(p, area);
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn render(
     frame: &mut Frame,
-    state: &ManagerState<'_>,
+    state: &mut ManagerState<'_>,
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
     // Phase 1: render the base stage (Editor full-screen OR List chrome).
     if let ManagerStage::Editor(editor) = &state.stage {
-        editor::render_editor(frame, editor, config);
+        editor::render_editor(frame, editor, config, state.op_available);
     } else {
         // List / CreatePrelude / ConfirmDelete share the list-like chrome.
         let area = frame.area();
@@ -184,33 +177,40 @@ pub fn render(
     }
 
     // Phase 2: overlay any active modal.
-    match &state.stage {
-        ManagerStage::Editor(editor) => {
-            if let Some(modal) = &editor.modal {
-                modal::render_modal(frame, modal);
+    //
+    // The list-anchored modal lives on `ManagerState` itself rather
+    // than on a stage variant, so its borrow has to be split off
+    // separately from the stage-anchored modals to keep the borrow
+    // checker happy with the shared `state` argument.
+    let is_list_stage = matches!(state.stage, ManagerStage::List);
+    if is_list_stage {
+        if let Some(modal) = &mut state.list_modal {
+            modal::render_modal(frame, modal);
+        }
+    } else {
+        match &mut state.stage {
+            ManagerStage::Editor(editor) => {
+                if let Some(modal) = &mut editor.modal {
+                    modal::render_modal(frame, modal);
+                }
             }
-        }
-        ManagerStage::CreatePrelude(prelude) => {
-            if let Some(modal) = &prelude.modal {
-                modal::render_modal(frame, modal);
+            ManagerStage::CreatePrelude(prelude) => {
+                if let Some(modal) = &mut prelude.modal {
+                    modal::render_modal(frame, modal);
+                }
             }
-        }
-        ManagerStage::ConfirmDelete {
-            state: confirm_state,
-            ..
-        } => {
-            // ConfirmState is a top-level field on the variant, not wrapped
-            // in Modal::Confirm, so render it directly.
-            let area = frame.area();
-            let modal_area = centered_rect_fixed(area, 60, 7);
-            super::super::widgets::confirm::render(frame, modal_area, confirm_state);
-        }
-        ManagerStage::List => {
-            // List-level modals (e.g. Modal::GithubPicker opened via `o`
-            // on a workspace row) are anchored on ManagerState, not on a
-            // stage variant. Render them last so they overlay the list.
-            if let Some(modal) = &state.list_modal {
-                modal::render_modal(frame, modal);
+            ManagerStage::ConfirmDelete {
+                state: confirm_state,
+                ..
+            } => {
+                // ConfirmState is a top-level field on the variant, not wrapped
+                // in Modal::Confirm, so render it directly.
+                let area = frame.area();
+                let modal_area = centered_rect_fixed(area, 60, 7);
+                super::super::widgets::confirm::render(frame, modal_area, confirm_state);
+            }
+            ManagerStage::List => {
+                // Handled above via the `is_list_stage` early branch.
             }
         }
     }

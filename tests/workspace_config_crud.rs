@@ -47,11 +47,7 @@ fn workspace_create_resolves_relative_workdir_and_mounts() {
                 },
                 mount,
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         },
     );
 
@@ -97,11 +93,7 @@ fn workspace_create_resolves_dot_workdir_and_dotdot_mount() {
                 },
                 mount.clone(),
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         },
     );
 
@@ -152,11 +144,7 @@ fn workspace_create_auto_mounts_workdir_by_default() {
             WorkspaceConfig {
                 workdir: expanded_workdir.clone(),
                 mounts: all_mounts,
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -207,11 +195,7 @@ fn workspace_create_no_workdir_mount_skips_auto_mount() {
             WorkspaceConfig {
                 workdir: "/workspace".to_string(),
                 mounts: all_mounts,
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -263,11 +247,7 @@ fn workspace_create_skips_auto_mount_when_workdir_already_mounted() {
             WorkspaceConfig {
                 workdir: expanded_workdir.clone(),
                 mounts: all_mounts,
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -304,11 +284,7 @@ fn workspace_edit_resolves_relative_mount() {
                     dst: workdir_abs.clone(),
                     readonly: false,
                 }],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -373,11 +349,7 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
                         readonly: false,
                     },
                 ],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -428,11 +400,7 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
                     dst: "/workspace".to_string(),
                     readonly: false,
                 }],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         )
         .unwrap();

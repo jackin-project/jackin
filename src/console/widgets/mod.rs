@@ -7,14 +7,18 @@
 //! exposes only a single shared `dir_style`). All are consumed by both
 //! the manager (PR 2) and the Secrets tab (PR 3).
 
+pub mod agent_picker;
 pub mod confirm;
 pub mod confirm_save;
 pub mod error_popup;
 pub mod file_browser;
 pub mod github_picker;
 pub mod mount_dst_choice;
+pub mod op_picker;
 pub mod panel_rain;
 pub mod save_discard;
+pub mod scope_picker;
+pub mod source_picker;
 pub mod text_input;
 pub mod workdir_pick;
 
@@ -29,6 +33,23 @@ pub enum ModalOutcome<T> {
     Commit(T),
     /// User cancelled (Esc).
     Cancel,
+}
+
+/// Wrap-around cursor move for any list-style picker. `delta` is `-1`
+/// for Up, `+1` for Down. No-op when `count == 0`.
+pub(crate) fn cycle_select(list_state: &mut tui_widget_list::ListState, count: usize, delta: i32) {
+    if count == 0 {
+        return;
+    }
+    let cur = list_state.selected.unwrap_or(0);
+    let next = if delta < 0 {
+        if cur == 0 { count - 1 } else { cur - 1 }
+    } else if cur + 1 >= count {
+        0
+    } else {
+        cur + 1
+    };
+    list_state.select(Some(next));
 }
 
 #[cfg(test)]
@@ -225,6 +246,18 @@ mod consistency_tests {
         (buf, area)
     }
 
+    fn render_agent_picker() -> (Buffer, Rect) {
+        use super::agent_picker::{AgentPickerState, render};
+        use crate::selector::ClassSelector;
+        let area = Rect::new(0, 0, 60, 10);
+        let state = AgentPickerState::new(vec![
+            ClassSelector::parse("chainargos/agent-smith").unwrap(),
+            ClassSelector::parse("chainargos/agent-brown").unwrap(),
+        ]);
+        let buf = draw(area.width, area.height, |f| render(f, area, &state));
+        (buf, area)
+    }
+
     fn render_confirm_save() -> (Buffer, Rect) {
         use super::confirm_save::{ConfirmSaveState, render};
         use ratatui::text::Line;
@@ -249,6 +282,7 @@ mod consistency_tests {
             ("TextInput", render_text_input()),
             ("WorkdirPick", render_workdir_pick()),
             ("GithubPicker", render_github_picker()),
+            ("AgentPicker", render_agent_picker()),
             ("ConfirmSave", render_confirm_save()),
         ] {
             let title = top_border_title(&buf);
@@ -273,6 +307,7 @@ mod consistency_tests {
             ("TextInput", render_text_input()),
             ("WorkdirPick", render_workdir_pick()),
             ("GithubPicker", render_github_picker()),
+            ("AgentPicker", render_agent_picker()),
             ("ConfirmSave", render_confirm_save()),
         ] {
             assert_border_is_phosphor_dark(&buf, area, name);
@@ -290,6 +325,7 @@ mod consistency_tests {
             ("TextInput", render_text_input()),
             ("WorkdirPick", render_workdir_pick()),
             ("GithubPicker", render_github_picker()),
+            ("AgentPicker", render_agent_picker()),
             ("ConfirmSave", render_confirm_save()),
         ] {
             assert_hint_row_present(&buf, area, name);

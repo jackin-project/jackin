@@ -29,31 +29,37 @@ The important distinction is:
 
 ## How it works
 
-The console presents a two-step selection flow:
+`jackin console` opens directly to the workspace manager list. Select a
+workspace with `↑`/`↓` and press `Enter` to launch. The manager list
+**is** the opening view — there is no separate workspace-picker stage.
 
-1. **Pick a workspace** — choose from saved workspaces or "Current directory"
-2. **Pick an agent** — choose which agent class to load
-
-The TUI shows a preview of the working directory and mounts before you
-confirm. Once you move to the agent step, that preview updates to the
-final resolved mount set for the highlighted agent, including
-selector-scoped global mounts.
+If agent disambiguation is needed, a compact picker appears as an
+overlay on the manager list. There is no separate full-screen
+agent-selection screen.
 
 ## Workspace selection
 
-The console shows two kinds of choices:
+The manager list shows two kinds of rows:
 
-- **Current directory** — a synthetic workspace that mounts your `cwd` at the same path inside the container
+- **Current directory** — a synthetic row that mounts your `cwd` at the same path inside the container
 - **Saved workspaces** — named definitions from `~/.config/jackin/config.toml`
 
 If your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace is preselected.
 
-## Agent selection
+## Agent disambiguation
 
-If the selected workspace has:
-- **A default agent** — it's preselected
-- **Allowed agents** — only those are shown
-- **No restrictions** — all known agents are listed
+Pressing `Enter` on a workspace row routes by eligible-agent count:
+
+- **`default_agent` set** on the workspace → launch immediately with that
+  agent. No picker.
+- **Exactly one eligible agent** (after the workspace's `allowed_agents`
+  filter) → launch immediately with it. No picker.
+- **Multiple eligible agents and no default** → an inline `Select Agent`
+  picker overlays the manager list. Type to filter, `↑`/`↓` to navigate,
+  `Enter` to commit, `Esc` to cancel.
+
+The picker is anchored on the manager list — cancelling drops you back
+on the same workspace row with the launch unchanged.
 
 ## When to use the console vs `load`
 
@@ -82,3 +88,121 @@ The older spelling `jackin launch` still works but is deprecated and
 emits a warning. It delegates to the same console handler as
 `jackin console`.
 </Aside>
+
+## Workspace editor — Agents tab
+
+The Agents tab controls which agents may launch in this workspace and
+which one (if any) is the default.
+
+- **Allow / disallow** — `Space` on an agent row toggles whether the
+  agent is allowed in this workspace. The `[x]` / `[ ]` glyph reflects
+  the *effective* allow-state: an empty `allowed_agents` list is the
+  shorthand for "all agents allowed", and every row reads `[x]` in that
+  mode.
+- **Default agent** — `*` on an allowed agent row pins it as the
+  workspace default; pressing `*` again on the same row clears the
+  default. The default agent carries a `★` marker in the rendered list.
+- **Disallowing the current default** clears the default automatically
+  — defaults are only meaningful on allowed agents.
+- `*` on an unallowed agent is a no-op; press `Space` to allow the
+  agent first.
+
+| Key | Action |
+|---|---|
+| `Space` on agent row | Toggle allow / disallow |
+| `*` on allowed agent | Set as default (or clear if already default) |
+
+The default-agent assignment used to live as a read-only row on the
+General tab; it is now editable here. The General tab now shows only
+`Name` and `Working dir`.
+
+## Workspace editor — Environments tab
+
+The Environments tab in the `jackin console` workspace editor manages
+environment variables at two scopes:
+
+- **Workspace environment** — applies to every agent launch in this
+  workspace, stored under `[workspaces.<name>.env]`.
+- **Per-agent overrides** — applies only when a specific agent is launched in
+  this workspace, stored under `[workspaces.<name>.agents.<agent>.env]`.
+
+Values are stored as-typed. Use `op://...` for 1Password references, `$VAR`
+or `${VAR}` for shell-variable substitution, or a literal string.
+jackin' resolves them at launch via `operator_env`.
+
+| Key | Action |
+|---|---|
+| `Enter` on key row | Edit the value in a modal text input |
+| `Enter` on `+ Add` row | Add a new key — opens the key-name modal, then a source picker (Plain text / 1Password) |
+| `D` on key row | Delete the key (single confirmation) |
+| `A` | Add a new key/value pair to the focused section (same flow as `Enter` on `+ Add`) |
+| `M` | Toggle value masking (masked by default; resets on tab exit) |
+| `P` on key row | Open 1Password picker; commits `op://...` directly to the key |
+| `P` on `+ Add` row | Open 1Password picker; on commit, prompt for key name |
+| `→` or `Enter` on section header | Expand an agent override section |
+| `←` on section header | Collapse an agent override section |
+
+### Adding a new environment variable
+
+Pressing `Enter` on a `+ Add` row (workspace or per-agent) walks you
+through the entry in two steps. First, a modal asks for the key name.
+After you commit the name, a small source picker opens with two
+buttons: **Plain text** and **1Password**. Pick Plain text to type
+the value verbatim in a follow-up text modal, or pick 1Password to
+drill the picker (Account → Vault → Item → Field) and store an
+`op://...` reference. The 1Password button is disabled if the `op`
+CLI isn't on `PATH` at console startup; install `op` and restart
+`jackin console` to enable it.
+
+`Esc` on the source picker (or any earlier step) cancels the entry —
+no key is added.
+
+If you type a name that's already used in the same scope (workspace
+env, or an agent's overrides), the modal flags it inline and won't
+accept Enter until you change it.
+
+### Adding per-agent overrides
+
+The `+ Add per-agent override for ...` sentinel at the bottom of the
+Environments tab opens an agent picker showing allowed agents that
+don't yet have overrides. Picking an agent drops you straight into the
+normal add flow (key name → source → value). The agent's override
+section appears once the first key/value commits — no empty
+placeholders. Cancelling at any modal step leaves the workspace
+unchanged.
+
+The sentinel hides itself when every workspace-allowed agent already
+has an override section — there's no action left to take.
+
+### 1Password picker
+
+Pressing `P` on an Environments-tab row opens a three-pane picker that browses
+your 1Password vaults and items. Navigate with `↑`/`↓`, type to filter,
+`Enter` to drill down, `Esc` to go back.
+
+The picker is a row-level action, not a sub-mode of the value editor:
+
+- **`P` on an existing key row** — selecting a field commits an
+  `op://Vault/Item/field` reference straight into that key's pending
+  value. No intermediate text modal.
+- **`P` on a `+ Add` sentinel row** — selecting a field stashes the
+  reference, then opens an `EnvKey` modal so you can name the new key.
+  Pressing `Enter` on the key name writes both at once.
+
+The picker shows what is available to reference, never what's stored. Field
+values are never read or displayed.
+
+If you have multiple 1Password accounts signed in, the picker opens with an
+Account pane first (`Enter` to drill into that account's vaults; `Esc` to
+choose a different account). Single-account setups skip straight to the
+vault list.
+
+**Requirements:** 1Password CLI (`op`) must be installed and signed in.
+
+- Not installed: `brew install 1password-cli` (macOS) or visit
+  `1password.com/downloads/command-line/`, then run `op signin`.
+- Not signed in: run `op signin` in your shell, then retry.
+- No vaults visible: check Settings → Developer → CLI integration in the
+  1Password app.
+
+jackin' uses your existing `op` session — there is no separate jackin' auth.

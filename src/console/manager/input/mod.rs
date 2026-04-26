@@ -27,11 +27,17 @@ pub enum InputOutcome {
     ExitJackin,
     /// Launch the named workspace — resolved by name in `run_console`.
     LaunchNamed(String),
-    /// Launch against the synthetic "Current directory" choice (row 0).
-    /// `run_console` routes this through the same agent-picker path as
-    /// `LaunchNamed`, using `ConsoleState::workspaces[0]` which is built
-    /// in `ConsoleState::new` from the current cwd.
+    /// Launch against the synthetic "Current directory" choice. The
+    /// `run_console` dispatcher builds the choice on demand from
+    /// `current_dir_workspace(cwd)` via [`build_workspace_choice`], so
+    /// there's no startup snapshot to grow stale.
     LaunchCurrentDir,
+    /// Operator just committed a choice in `Modal::AgentPicker`. The
+    /// outer `run_console` loop rebuilds the workspace choice from the
+    /// `LoadWorkspaceInput` pinned on `ConsoleState.pending_launch` (set
+    /// when the picker opened), resolves it against this agent, and
+    /// breaks with `Ok(Some((agent, ws)))`.
+    LaunchWithAgent(crate::selector::ClassSelector),
 }
 
 #[allow(clippy::too_many_lines)]
@@ -43,19 +49,28 @@ pub fn handle_key(
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
     // List-level modal precedence (e.g. GithubPicker opened from `o` on a
-    // workspace row). Handled before stage-specific modals so the dispatch
-    // stays uniform whatever stage the state thinks it's in.
+    // workspace row, or AgentPicker opened from Enter when the highlighted
+    // workspace has multiple eligible agents). Handled before stage-specific
+    // modals so the dispatch stays uniform whatever stage the state thinks
+    // it's in. Returns the modal's outcome directly — most arms produce
+    // `Continue`, but `AgentPicker` commit produces `LaunchWithAgent`.
     if state.list_modal.is_some() {
-        list::handle_list_modal(state, key);
-        return Ok(InputOutcome::Continue);
+        return Ok(list::handle_list_modal(state, key));
     }
     // Modal precedence: if a modal is open, it gets the event.
     // Use a discriminant check so we can take &mut without keeping an
     // immutable borrow alive across the call.
+    // Capture `op_available` and the session-scoped op_cache from
+    // the manager state before the editor borrow so the EnvKey commit
+    // path can build a SourcePicker (knows if 1Password is selectable)
+    // and the SourcePicker → OpPicker transition can construct a
+    // cache-sharing picker.
+    let op_available = state.op_available;
+    let op_cache = state.op_cache.clone();
     if let ManagerStage::Editor(editor) = &mut state.stage
         && editor.modal.is_some()
     {
-        editor::handle_editor_modal(editor, key);
+        editor::handle_editor_modal(editor, key, op_available, op_cache, config);
 
         // Drain the ConfirmSave → commit signal FIRST. The modal handler
         // only closes the modal and stashes the plan; this outer layer
@@ -101,7 +116,14 @@ pub fn handle_key(
                     save::begin_editor_save(state, config, true)?;
                 }
                 ExitIntent::Discard => {
-                    *state = ManagerState::from_config(config, cwd);
+                    let cache = state.op_cache.clone();
+                    let op_available = state.op_available;
+                    *state = ManagerState::from_config_with_cache_and_op(
+                        config,
+                        cwd,
+                        cache,
+                        op_available,
+                    );
                 }
             }
             return Ok(InputOutcome::Continue);
@@ -153,7 +175,14 @@ pub fn handle_key(
                     state.stage = ManagerStage::Editor(editor);
                 }
                 PreludeStatus::Cancelled => {
-                    *state = ManagerState::from_config(config, cwd);
+                    let cache = state.op_cache.clone();
+                    let op_available = state.op_available;
+                    *state = ManagerState::from_config_with_cache_and_op(
+                        config,
+                        cwd,
+                        cache,
+                        op_available,
+                    );
                 }
                 PreludeStatus::InProgress => {}
             }
@@ -207,7 +236,9 @@ fn handle_confirm_delete_key(
             let mut editor = crate::config::ConfigEditor::open(paths)?;
             editor.remove_workspace(&ws_name)?;
             *config = editor.save()?;
-            *state = ManagerState::from_config(config, cwd);
+            let cache = state.op_cache.clone();
+            let op_available = state.op_available;
+            *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
             state.toast = Some(Toast {
                 message: format!("deleted \"{ws_name}\""),
                 kind: ToastKind::Success,
