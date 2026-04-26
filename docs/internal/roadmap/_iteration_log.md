@@ -1404,3 +1404,57 @@ The roadmap itself has a readability problem: at 1865 lines, it violates its own
 1. **§10 execution plan — Phase 1 behavioral spec authoring not integrated** — §10 Step 2 (AI-agent workflow files) should explicitly include "create docs/internal/specs/ with behavioral specs for op_picker/, config/editor, runtime/launch" but currently it doesn't. The executive summary says Phase 1 includes this; §10 should match.
 2. **§3 documentation hierarchy — PROJECT_STRUCTURE.md staleness CI gate** — no CI check prevents PROJECT_STRUCTURE.md from drifting again. A `check:repo-structure` script (similar to existing `check:repo-links` in docs/) would catch new `.rs` files not listed in PROJECT_STRUCTURE.md.
 3. **§7 modernization — no comparison of large Rust TUI projects** — the documentation-first vs structure-first debate in §4 would be strengthened by examining how projects like `gitui` or `bottom` actually structure their TUI code. This requires external research.
+
+---
+
+## Iteration 34 — 2026-04-26
+
+### Critical challenge this iteration
+The roadmap listed `config/editor.rs` as equally prioritized for behavioral specs alongside `runtime/launch.rs` and `op_picker/mod.rs`. This was wrong. `config/editor.rs` has 963L of tests that already serve as its behavioral spec. And `runtime/launch.rs` (no `//!` doc at all, critical path) is clearly the highest-stakes unspecced file — not one of three equals.
+
+### What was improved
+
+1. **Prioritized `runtime/launch.rs` behavioral spec above the others; dropped `config/editor.rs` from Phase 1**
+   
+   Fresh read of `runtime/launch.rs` structure (grep on pub fns and step comments, lines 23–1078):
+   - Line 533: `pub fn load_agent` — public entry point
+   - Line 553: `fn load_agent_with` — the 4-step container bootstrap pipeline  
+   - Lines 584, 726, 827, 376: "Step 1:", "Step 2:", "Step 3:", "Step 4:" inline comments
+   - Line 1078: first `#[cfg(test)]` — production is ~1077L
+   
+   The inline step comments document STAGES but not INVARIANTS (e.g., "claim_container_name MUST run before Step 3"). No `//!` module-level contract exists. This is the exact gap behavioral specs address, and it's the highest-stakes file (all `jackin load` failures trace here).
+   
+   `config/editor.rs`: 963L of tests. Tests are the behavioral spec — each test is a behavioral example of what `create_workspace`, `rename_workspace`, `set_env_var` should do. Dropping it from Phase 1 reduces scope to 2 behavioral specs instead of 3. More honest: the test suite IS the spec.
+   
+   Updated in 2 locations: executive summary (§0) and Phase 1 text in §4 alternative thesis.
+
+2. **Updated §10 Step 2 to include behavioral spec authoring as a parallel track**
+   
+   §10 Step 2 previously described only tool setup (cc-sdd, Starlight sidebar, AGENTS.md). It never mentioned creating `docs/internal/specs/`. Added "Track B — Phase 1 behavioral specs" with:
+   - Explicit sequencing reason: spec must exist BEFORE structural splits (spec is the pre-condition for verifying split correctness)
+   - Specific INV entries to capture for `runtime/launch.rs` (container-name claim before network creation, trust before image build, render_exit on all paths) — grounded in reading the actual function structure
+   - Note that `docs/internal/specs/` must NOT be in Starlight's content collection
+
+### What was read (fresh scan)
+- `find src -name "*.rs" | wc -l` — 94 files, stable  
+- Top hot-spots: launch.rs 2368, input/editor.rs 2349, operator_env.rs 2130 — stable
+- `runtime/launch.rs` public API and step comments via grep — confirmed step structure, no `//!` doc
+- §10 Steps 1–4 read in full — confirmed Step 2 omission of spec authoring
+
+### What changed in the roadmap
+- §0 executive summary Phase 1: updated to 2-spec priority order with reasoning; config/editor.rs explicitly dropped with justification
+- §4 Phase 1 alternative thesis: same update (consistent with executive summary)
+- §10 Step 2: expanded to two parallel tracks; Track B adds behavioral spec authoring with specific INV invariants for runtime/launch.rs and sequencing rationale
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `runtime/launch.rs` has no `//!` doc | High | grep confirmed: no `^//!` lines at start of file |
+| `runtime/launch.rs` is highest-priority spec | High | No module contract, critical path, ~1077L production |
+| `config/editor.rs` dropped from Phase 1 | High | 963L test suite confirmed; tests are behavioral examples |
+| INV entries for runtime/launch.rs | Medium | Derived from reading function names and step comments; full verification requires reading `load_agent_with` body in detail |
+
+### Weakest sections for iteration 35
+1. **The INV entries for runtime/launch.rs** are based on function names and step comment positions, not on reading the actual load_agent_with body. Iteration 35 should read lines 553–900 of launch.rs and verify or correct the proposed INV entries.
+2. **§3 CI gate for PROJECT_STRUCTURE.md** — still not proposed despite being flagged in iterations 32, 33.
+3. **§7 external Rust TUI comparison** — still not done.

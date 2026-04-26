@@ -29,7 +29,7 @@ Research sources: [`_research_notes.md`](./_research_notes.md).
 
 **The recommended path (§4 Phase 1 → Phase 2 → Phase 3):**
 
-- **Phase 1 — Documentation sprint** (2–3 PRs, zero structural change, immediately applicable): Write `//!` module contracts for the 10 highest-priority files (§10 Step 5 //! queue). Author behavioral specs (`docs/internal/specs/`) for `op_picker/`, `config/editor`, and `runtime/launch` — the three most AI-generated, hardest-to-verify subsystems. Each spec follows the `INV-N` format with grep-executable "Verify by:" commands (§8.1 template).
+- **Phase 1 — Documentation sprint** (2–3 PRs, zero structural change, immediately applicable): Write `//!` module contracts for the 10 highest-priority files (§10 Step 5 //! queue). Author behavioral specs (`docs/internal/specs/`) in priority order: (1) `runtime/launch.rs` first — no `//!` doc at all, ~1077L production, inline "Step 1–4" comments exist but no module-level invariant contract; bugs here brick `jackin load` for all users; (2) `op_picker/mod.rs` — AI-generated, ~775L production, has a `//!` doc but no INV-format invariant contract. `config/editor.rs` is **removed from this list**: its 963L test suite already serves as a behavioral spec (each test is a behavioral example); dropping it to deferred reduces Phase 1 scope to 2 specs instead of 3. Each spec follows the `INV-N` format with grep-executable "Verify by:" commands (§8.1 template).
 - **Phase 2 — Targeted structural splits** (4 PRs, moderate risk): Split only the 4 files with >800L production code: `input/editor.rs` (~1141L), `runtime/launch.rs` (~1077L), `app/mod.rs` (~957L), `operator_env.rs` (~880L). The other 9 files above 500L total but below 800L production are deferred.
 - **Phase 3 — Workspace split** only if LOC exceeds 150K or a second binary needs its own semver identity. Current: 43,587L — well short.
 
@@ -540,7 +540,7 @@ Instead of splitting files, make each file self-verifiable through:
 
 The two approaches are not mutually exclusive. A stronger path than either alone:
 
-- **Phase 1 — documentation sprint** (low-risk, immediately applicable): Write `//!` module contracts and `///` function docs for the 10 files in the §10 //! priority queue. Add behavioral specs to `docs/internal/specs/` for the three hardest-to-verify subsystems: `op_picker/` (drill-down state machine), `config/editor.rs` (two-phase save invariants), `runtime/launch.rs` (container bootstrap sequence). This is 2–3 PRs, zero structural change.
+- **Phase 1 — documentation sprint** (low-risk, immediately applicable): Write `//!` module contracts and `///` function docs for the 10 files in the §10 //! priority queue. Add behavioral specs to `docs/internal/specs/` for the two highest-priority subsystems: (1) `runtime/launch.rs` — no `//!` doc, critical path (all `jackin load` failures trace here), inline Step 1–4 comments document stages but no INV-format invariants exist; (2) `op_picker/mod.rs` — AI-generated, ~775L production, has `//!` doc but no INV contract. `config/editor.rs` is **dropped from Phase 1**: its 963L test suite documents behavior exhaustively through examples; tests are the behavioral spec here. This is 2 PRs minimum, zero structural change.
 - **Phase 2 — targeted structural splits** (higher-risk, higher-payoff): Apply file splits only to files with >800L *production* code where the split boundary is unambiguous. By that criterion, exactly 4 files qualify: `input/editor.rs` (~1141L), `runtime/launch.rs` (~1077L), `app/mod.rs` (~957L), and `operator_env.rs` (~880L). All other files in the §10 Step 4f table (state.rs ~628L, render/editor.rs ~736L, render/list.rs ~668L, input/save.rs ~661L, op_picker/mod.rs ~775L) are below this threshold and drop from urgent to deferred. Production counts verified iteration 31 by `#[cfg(test)]` line position for all 9 candidate files.
 - **Phase 3 — workspace split** if LOC exceeds 150K or a second binary needs its own semver identity.
 
@@ -1600,11 +1600,20 @@ Move `CONTRIBUTING.md` → `docs/internal/CONTRIBUTING.md` (update AGENTS.md lin
 
 *What could go wrong:* Broken links in AGENTS.md if the grep-and-update step misses a reference. Mitigation: `grep -rn "TESTING.md\|CONTRIBUTING.md" .` before and after.
 
-**Step 2 — AI-agent workflow (§8)**
+**Step 2 — AI-agent workflow (§8) + Phase 1 behavioral specs**
 
-Install cc-sdd (`gotalab/cc-sdd`) to get spec/plan/execute `.claude/commands/` files out of the box. Create `docs/src/content/docs/specs/` directory in the Astro Starlight content collection for living feature specs (see §8.1 revised — specs are MDX pages on the public docs site, not internal artifacts). Update `docs/astro.config.ts` sidebar to add a "Specifications" section. Update `AGENTS.md` §Agent workflow to point to cc-sdd and the spec MDX convention. Remove superpowers plugin from Claude Code configuration.
+This step has two parallel tracks:
 
-*What could go wrong:* (1) Agent sessions pick up old superpowers skills if the plugin is not explicitly removed — test a new Claude Code session after removal. (2) Draft MDX spec pages (using Starlight's `draft: true` frontmatter) must be excluded from the link-checker CI (`lychee`) or the `docs-link-check` gate will fail on in-progress specs. Verify lychee config in `docs/lychee.toml` before creating draft pages.
+*Track A — Tooling setup:* Install cc-sdd (`gotalab/cc-sdd`) to get spec/plan/execute `.claude/commands/` files out of the box. Create `docs/src/content/docs/specs/` directory in the Astro Starlight content collection for living feature specs. Update `docs/astro.config.ts` sidebar to add a "Specifications" section. Update `AGENTS.md` §Agent workflow to point to cc-sdd and the spec MDX convention. Remove superpowers plugin from Claude Code configuration.
+
+*Track B — Phase 1 behavioral specs (must be done before Phase 2 structural splits):* Create `docs/internal/specs/` directory. Author two behavioral specs using the INV-N template from §8.1:
+
+1. `docs/internal/specs/runtime-launch.md` — Priority 1. Documents the 4-step container bootstrap sequence (`load_agent_with` Steps 1–4 at lines 584, 726, 827, 376) as behavioral invariants. Key invariants to capture: (INV-1) container name is claimed before Docker network creation (`claim_container_name` at line 918 runs before Step 3 at line 827); (INV-2) trust confirmation happens before image build, not after; (INV-3) `render_exit` is called regardless of success/failure path. Verify by: grep `load_agent_with` step ordering.
+2. `docs/internal/specs/op-picker.md` — Priority 2. Use the template from §8.1 verbatim as the starting point.
+
+*Why Phase 1 specs before Phase 2 splits:* A spec is the contract against which the post-split code is verified. If `runtime/launch.rs` is split into 4 files BEFORE the behavioral spec exists, there is no oracle to verify that the split preserved all invariants. The spec is the pre-condition, not an afterthought.
+
+*What could go wrong:* (1) Agent sessions pick up old superpowers skills if the plugin is not explicitly removed — test a new Claude Code session after removal. (2) Draft MDX spec pages must have broken links resolved before the `docs-link-check` CI gate fires. (3) The `docs/internal/specs/` directory must be excluded from Starlight's content collection (`src/content.config.ts`) — it's internal, not a docs page.
 
 **Step 3 — Toolchain and MSRV clarity (§7.7)**
 
