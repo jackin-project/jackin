@@ -1,0 +1,55 @@
+---
+title: "Greenfield workspace split"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Deferred — Phase 3 (trigger not yet met, but architecture is ready)
+
+## When to do this
+
+`jackin` today is ~43,587L — below the ~150K threshold where workspace benefits outweigh overhead. This item is not ready to execute. The trigger conditions are:
+
+- LOC exceeds ~150K, **or**
+- A sub-component needs external consumers for third-party agent manifest tooling, **or**
+- Compile times on the CI `check` job exceed 5 minutes cold cache
+
+## Target 6-crate structure
+
+Follows matklad's virtual manifest + flat `crates/` pattern:
+
+```
+jackin/
+├── Cargo.toml             ← virtual workspace manifest (no [package])
+├── crates/
+│   ├── jackin-core/       ← Tier 0: workspace types, manifest, selector, paths, docker trait
+│   ├── jackin-config/     ← Tier 1: TOML persistence (AppConfig, ConfigEditor)
+│   ├── jackin-tui/        ← Tier 1: terminal output, animation, prompts
+│   ├── jackin-runtime/    ← Tier 2: container bootstrap pipeline
+│   ├── jackin-console/    ← Tier 3: workspace manager TUI + operator_env
+│   └── jackin-shell/      ← ShellRunner (concrete subprocess impl)
+├── src/                   ← thin binary (CLI dispatch)
+└── validate/              ← jackin-validate binary
+```
+
+## Key structural insight
+
+`console/` has **zero imports from `runtime/`** — this pre-existing clean boundary is the most important structural asset. `jackin-console` and `jackin-runtime` can become separate crates without moving any logic.
+
+Starting point: extract just these two crates first. The Cargo workspace boundary makes the existing clean boundary enforced by the compiler rather than policed by convention.
+
+## Dependency tiers (verified)
+
+- **Tier 0** (no cross-module deps): `workspace/`, `manifest/`, `docker.rs`, `paths.rs`, `selector.rs`
+- **Tier 1**: `config/`, `tui/`, `instance/`, `env_resolver/`
+- **Tier 2**: `operator_env/`, `runtime/`, `repo/`
+- **Tier 3**: `console/` — no import from `runtime/`
+
+## Do Phase 2 file splits first
+
+The Phase 2 file splits (split-input-editor, split-operator-env, split-app-mod, split-runtime-launch) establish clean internal module boundaries that make the workspace migration easier.
+
+## Related files
+
+- <RepoFile path="Cargo.toml" /> — target: convert to virtual workspace manifest
+- <RepoFile path="src/console/mod.rs" /> — zero imports from `runtime/`
+- <RepoFile path="src/runtime/launch.rs" /> — the runtime entry point

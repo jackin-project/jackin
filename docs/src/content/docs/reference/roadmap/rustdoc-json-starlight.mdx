@@ -1,0 +1,41 @@
+---
+title: "rustdoc JSON → Starlight API pipeline"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Deferred — Phase 3
+
+## Problem
+
+`cargo doc` HTML output is never published, lives in `target/doc/`, and is hard to navigate. The `//!` module contracts (once written) deserve a browsable, searchable home that integrates with the rest of the docs site.
+
+## Goal
+
+Replace `cargo doc` with a bun TypeScript build script that consumes `rustdoc --output-format json` and generates Starlight MDX pages at `docs/src/content/docs/internal/api/`.
+
+## Pipeline
+
+```
+cargo +nightly rustdoc --output-format json -p jackin --document-private-items
+→ target/doc/jackin.json
+→ docs/scripts/gen-rust-api.ts  (new bun TypeScript script)
+→ docs/src/content/docs/internal/api/<module>/<Item>.mdx  (gitignored)
+```
+
+API docs become browsable at `jackin.tailrocks.com/internal/api/` — cross-linked to behavioral specs.
+
+## Key design decisions (to confirm)
+
+1. **What to include:** All `pub` items + private items with `//!` or `///` docs.
+2. **URL structure:** `jackin.tailrocks.com/internal/api/runtime/LoadOptions/`
+3. **Cross-links:** Hardcoded map in the script from type name → spec URL (e.g. `OpPickerState` → `/internal/specs/op-picker/`)
+4. **Nightly requirement:** CI adds a separate step with `dtolnay/rust-toolchain@nightly` — isolated from the stable `check` job.
+5. **Generated files:** `.gitignore`d — regenerated on each `bun run build`.
+
+## Connection to future project
+
+The `gen-rust-api.ts` script is the prototype for a generalized modern docs.rs alternative (see §11 in the research archive). Once it works for jackin, the processing layer can be extracted and applied to any crate's rustdoc JSON output — an AI-friendly alternative to cargo doc and docs.rs.
+
+## Do not do before
+
+Module contracts (`//!` docs) — the pipeline value scales with `//!` coverage. Do after the `//!` sprint.

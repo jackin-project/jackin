@@ -1,0 +1,42 @@
+---
+title: "Module contracts (//! docs)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 1, no confirmation needed
+
+## Problem
+
+41% of source files have `//!` orientation docs. The remaining 59% give AI agents and contributors no orientation when they open the file — purpose, scope, and key invariants must be reverse-engineered from the code.
+
+## Priority files (verified — zero `//!` docs)
+
+| File | Production LOC | Why urgent |
+|---|---|---|
+| <RepoFile path="src/runtime/launch.rs" /> | ~1077 | Largest production file, `jackin load` critical path |
+| <RepoFile path="src/app/mod.rs" /> | ~957 | CLI dispatch entry point |
+| <RepoFile path="src/operator_env.rs" /> | ~880 | 1Password + env layer composition |
+| <RepoFile path="src/instance/mod.rs" /> | — | `AgentState`, auth provisioning |
+| <RepoFile path="src/runtime/cleanup.rs" /> | ~220 | `gc_orphaned_resources`, container lifecycle |
+| <RepoFile path="src/runtime/image.rs" /> | — | Docker image build + naming |
+| <RepoFile path="src/docker.rs" /> | — | `CommandRunner` trait + `ShellRunner` |
+| <RepoFile path="src/derived_image.rs" /> | — | Agent image derivation |
+| <RepoFile path="src/tui/animation.rs" /> | — | 21 `eprintln!` calls, no docs |
+| <RepoFile path="src/app/context.rs" /> | — | App helper fns |
+
+## Steps
+
+1. For each file, read the first 50 lines and the public item list.
+2. Write a `//!` block at the top: purpose, scope claim, key invariants, what callers can assume.
+3. Model on `env_model.rs` (the 3-element exemplar: purpose + scope + history).
+4. Do not add `///` item-level docs in this pass — only `//!` module-level.
+
+## What a good `//!` block says
+
+- **Purpose:** What does this module do?
+- **Scope:** What is it NOT responsible for? (crucial for AI agents to know where not to look)
+- **Key invariants:** What must always be true when this module's public functions return?
+
+## Caveats
+
+Purely additive — no behavior change, no CI risk. Do before the behavioral specs (ITEM-002, 003) since the spec presupposes the module has a stated contract.
