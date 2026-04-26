@@ -88,7 +88,7 @@ pub(super) fn handle_editor_key(
             // `Tab` never absorbs.
             if key.code == KeyCode::Right && editor.active_tab == EditorTab::Secrets {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = secrets_flat_rows(editor, config);
+                let rows = secrets_flat_rows(editor);
                 if let Some(SecretsRow::AgentHeader { agent, expanded }) = rows.get(n).cloned() {
                     if !expanded {
                         editor.secrets_expanded.insert(agent);
@@ -113,7 +113,7 @@ pub(super) fn handle_editor_key(
             // in both states (collapse or no-op).
             if editor.active_tab == EditorTab::Secrets {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = secrets_flat_rows(editor, config);
+                let rows = secrets_flat_rows(editor);
                 if let Some(SecretsRow::AgentHeader { agent, expanded }) = rows.get(n).cloned() {
                     if expanded {
                         editor.secrets_expanded.remove(&agent);
@@ -139,7 +139,7 @@ pub(super) fn handle_editor_key(
             // Skip Secrets-tab spacer rows so the cursor never lands
             // on a blank line.
             let next = if editor.active_tab == EditorTab::Secrets {
-                let rows = secrets_flat_rows(editor, config);
+                let rows = secrets_flat_rows(editor);
                 step_secrets_cursor_up(&rows, candidate)
             } else {
                 candidate
@@ -149,7 +149,7 @@ pub(super) fn handle_editor_key(
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             let FieldFocus::Row(n) = editor.active_field;
             if editor.active_tab == EditorTab::Secrets {
-                let rows = secrets_flat_rows(editor, config);
+                let rows = secrets_flat_rows(editor);
                 let max = rows.len().saturating_sub(1);
                 let candidate = (n + 1).min(max);
                 editor.active_field =
@@ -171,7 +171,7 @@ pub(super) fn handle_editor_key(
                 }
             }
             EditorTab::Secrets => {
-                open_secrets_enter_modal(editor, config);
+                open_secrets_enter_modal(editor);
             }
             EditorTab::Agents => {}
         },
@@ -203,7 +203,7 @@ pub(super) fn handle_editor_key(
             if editor.active_tab == EditorTab::Secrets
                 && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
-            toggle_focused_row_mask(editor, config);
+            toggle_focused_row_mask(editor);
         }
         // P sits at row level (not inside the EnvValue modal) so it
         // doesn't collide with text input. SHIFT tolerated per the
@@ -213,19 +213,19 @@ pub(super) fn handle_editor_key(
                 && (key.modifiers - KeyModifiers::SHIFT).is_empty()
                 && op_available =>
         {
-            open_secrets_picker_modal(editor, config, op_cache);
+            open_secrets_picker_modal(editor, op_cache);
         }
         KeyCode::Char('d' | 'D')
             if editor.active_tab == EditorTab::Secrets
                 && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
-            open_secrets_delete_confirm(editor, config);
+            open_secrets_delete_confirm(editor);
         }
         KeyCode::Char('a' | 'A')
             if editor.active_tab == EditorTab::Secrets
                 && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
         {
-            open_secrets_add_modal(editor, config);
+            open_secrets_add_modal(editor);
         }
         KeyCode::Char('r' | 'R') if editor.active_tab == super::super::state::EditorTab::Mounts => {
             let FieldFocus::Row(n) = editor.active_field;
@@ -324,9 +324,9 @@ fn reset_secrets_view(editor: &mut EditorState<'_>) {
 }
 
 /// No-op on header/sentinel/op:// rows.
-fn toggle_focused_row_mask(editor: &mut EditorState<'_>, config: &AppConfig) {
+fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor, config);
+    let rows = secrets_flat_rows(editor);
     let Some(row) = rows.get(n).cloned() else {
         return;
     };
@@ -386,10 +386,10 @@ fn open_editor_field_modal(editor: &mut EditorState<'_>) {
     }
 }
 
-fn open_secrets_enter_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
+fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     use super::super::super::widgets::text_input::TextInputState;
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor, config);
+    let rows = secrets_flat_rows(editor);
     let Some(row) = rows.get(n).cloned() else {
         return;
     };
@@ -478,10 +478,10 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
     });
 }
 
-fn open_secrets_delete_confirm(editor: &mut EditorState<'_>, config: &AppConfig) {
+fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
     use crate::console::widgets::confirm::ConfirmState;
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor, config);
+    let rows = secrets_flat_rows(editor);
     let Some(row) = rows.get(n).cloned() else {
         return;
     };
@@ -501,9 +501,9 @@ fn open_secrets_delete_confirm(editor: &mut EditorState<'_>, config: &AppConfig)
 /// the workspace-sentinel `Enter` path, which routes through
 /// `ScopePicker`. Operator already chose a row with unambiguous
 /// scope; an extra prompt would be a regression.
-fn open_secrets_add_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
+fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor, config);
+    let rows = secrets_flat_rows(editor);
     let Some(row) = rows.get(n).cloned() else {
         return;
     };
@@ -893,11 +893,10 @@ pub(super) fn handle_editor_modal(
 /// stashes path, opens `EnvKey` modal). Headers / spacers are no-ops.
 fn open_secrets_picker_modal(
     editor: &mut EditorState<'_>,
-    config: &AppConfig,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
 ) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = secrets_flat_rows(editor, config);
+    let rows = secrets_flat_rows(editor);
     let Some(row) = rows.get(n).cloned() else {
         return;
     };
@@ -917,10 +916,10 @@ fn open_secrets_picker_modal(
     });
 }
 
-fn scope_label(scope: &SecretsScopeTag) -> String {
+const fn scope_label(scope: &SecretsScopeTag) -> &str {
     match scope {
-        SecretsScopeTag::Workspace => "workspace".to_string(),
-        SecretsScopeTag::Agent(agent) => agent.clone(),
+        SecretsScopeTag::Workspace => "workspace",
+        SecretsScopeTag::Agent(agent) => agent.as_str(),
     }
 }
 
@@ -2300,7 +2299,7 @@ mod tests {
         // Sanity-check the row layout matches the comment above before
         // exercising the navigation.
         if let ManagerStage::Editor(e) = &state.stage {
-            let rows = secrets_flat_rows(e, &config);
+            let rows = secrets_flat_rows(e);
             assert!(matches!(
                 rows.first(),
                 Some(SecretsRow::WorkspaceAddSentinel)

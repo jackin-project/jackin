@@ -54,7 +54,7 @@ pub fn render_editor(
 
     let mut items: Vec<FooterItem> = Vec::new();
 
-    let row_items = contextual_row_items(state, config, op_available);
+    let row_items = contextual_row_items(state, op_available);
     if !row_items.is_empty() {
         items.extend(row_items);
         items.push(FooterItem::GroupSep);
@@ -102,11 +102,7 @@ pub fn render_editor(
 /// Compute a row-specific hint fragment based on the active tab and cursor.
 /// Returns an empty vec when the current position has no action.
 #[allow(clippy::too_many_lines)]
-fn contextual_row_items(
-    state: &EditorState<'_>,
-    config: &AppConfig,
-    op_available: bool,
-) -> Vec<FooterItem> {
+fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<FooterItem> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
@@ -182,7 +178,7 @@ fn contextual_row_items(
             // is sitting on. Op:// rows are read-only at the value level —
             // the operator deletes and re-adds via the source picker — so
             // we drop `Enter edit` and `M mask/unmask` on those rows.
-            let rows = secrets_flat_rows(state, config);
+            let rows = secrets_flat_rows(state);
             // Determine if the focused key row carries an op:// reference.
             let focused_value_is_op_ref = match rows.get(cursor) {
                 Some(SecretsRow::WorkspaceKeyRow(key)) => state
@@ -501,10 +497,7 @@ pub(in crate::console::manager) enum SecretsRow {
     SectionSpacer,
 }
 
-pub(in crate::console::manager) fn secrets_flat_rows(
-    editor: &EditorState<'_>,
-    _config: &AppConfig,
-) -> Vec<SecretsRow> {
+pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
     let mut rows = Vec::new();
     for key in editor.pending.env.keys() {
         rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
@@ -555,7 +548,7 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
         .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
 
-    let rows = secrets_flat_rows(state, config);
+    let rows = secrets_flat_rows(state);
     let mut lines: Vec<Line> = Vec::with_capacity(rows.len());
 
     // Match General tab's label column for visual rhythm parity.
@@ -747,7 +740,6 @@ mod contextual_row_items_tests {
 
     use super::super::FooterItem;
     use super::contextual_row_items;
-    use crate::config::AppConfig;
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{MountConfig, WorkspaceConfig};
 
@@ -813,7 +805,7 @@ mod contextual_row_items_tests {
         .unwrap();
 
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor, &AppConfig::default(), true);
+        let hint = contextual_row_items(&editor, true);
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
@@ -834,7 +826,7 @@ mod contextual_row_items_tests {
         // Plain folder (no .git) — no GitHub URL, so `O` must not appear.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor, &AppConfig::default(), true);
+        let hint = contextual_row_items(&editor, true);
         let keys = key_glyphs(&hint);
         assert!(
             !keys.contains(&"O"),
@@ -852,7 +844,7 @@ mod contextual_row_items_tests {
         // hint composes alongside D/A even without the O extension.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor, &AppConfig::default(), true);
+        let hint = contextual_row_items(&editor, true);
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
@@ -872,7 +864,7 @@ mod contextual_row_items_tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         editor.active_field = FieldFocus::Row(editor.pending.mounts.len());
-        let hint = contextual_row_items(&editor, &AppConfig::default(), true);
+        let hint = contextual_row_items(&editor, true);
         let keys = key_glyphs(&hint);
         assert!(
             !keys.contains(&"R"),
@@ -891,19 +883,19 @@ mod contextual_row_items_tests {
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
 
         // Mounts data-row hint.
-        let mounts_row = contextual_row_items(&editor, &AppConfig::default(), true);
+        let mounts_row = contextual_row_items(&editor, true);
         assert_hint_hotkeys_uppercase(&mounts_row, "Mounts row 0");
 
         // Mounts sentinel "+ Add mount" row.
         let mut sentinel_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         sentinel_editor.active_field = FieldFocus::Row(sentinel_editor.pending.mounts.len());
-        let sentinel_row = contextual_row_items(&sentinel_editor, &AppConfig::default(), true);
+        let sentinel_row = contextual_row_items(&sentinel_editor, true);
         assert_hint_hotkeys_uppercase(&sentinel_row, "Mounts sentinel");
 
         // Agents tab uses Space + `*` — both multi-char / non-alpha.
         let mut agents_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         agents_editor.active_tab = EditorTab::Agents;
-        let agents_row = contextual_row_items(&agents_editor, &AppConfig::default(), true);
+        let agents_row = contextual_row_items(&agents_editor, true);
         assert_hint_hotkeys_uppercase(&agents_row, "Agents");
     }
 
@@ -1202,7 +1194,7 @@ mod secrets_tab_render_tests {
     #[test]
     fn secrets_tab_cursor_skips_workspace_header_label() {
         let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        let rows = super::secrets_flat_rows(&editor, &AppConfig::default());
+        let rows = super::secrets_flat_rows(&editor);
         assert!(
             !rows.is_empty(),
             "secrets_flat_rows must always include at least the WorkspaceAddSentinel"
@@ -1215,6 +1207,68 @@ mod secrets_tab_render_tests {
         assert!(
             matches!(editor.active_field, FieldFocus::Row(0)),
             "editor must open on row 0 = sentinel"
+        );
+    }
+
+    /// Pins the exact flat-row sequence for a workspace with env vars,
+    /// one expanded agent (with keys), and one collapsed agent. Cursor
+    /// arithmetic in `input/editor.rs` is derived directly from this
+    /// sequence, so a wrong order causes silent wrong-row selections.
+    #[test]
+    fn secrets_flat_rows_sequence_is_canonical() {
+        use crate::workspace::WorkspaceAgentOverride;
+
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("ALPHA".into(), "1".into());
+        env.insert("BETA".into(), "2".into());
+
+        let mut agent_env = std::collections::BTreeMap::new();
+        agent_env.insert("KEY".into(), "v".into());
+
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert("agent-a".into(), WorkspaceAgentOverride { env: agent_env });
+        agents.insert(
+            "agent-b".into(),
+            WorkspaceAgentOverride {
+                env: std::collections::BTreeMap::new(),
+            },
+        );
+
+        let ws = WorkspaceConfig {
+            env,
+            agents,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        // Expand agent-a, leave agent-b collapsed.
+        editor.secrets_expanded.insert("agent-a".into());
+
+        let rows = super::secrets_flat_rows(&editor);
+        // Expected sequence:
+        //  0  WorkspaceKeyRow("ALPHA")
+        //  1  WorkspaceKeyRow("BETA")
+        //  2  WorkspaceAddSentinel
+        //  3  SectionSpacer
+        //  4  AgentHeader { agent: "agent-a", expanded: true }
+        //  5  AgentKeyRow { agent: "agent-a", key: "KEY" }
+        //  6  AgentAddSentinel("agent-a")
+        //  7  SectionSpacer
+        //  8  AgentHeader { agent: "agent-b", expanded: false }
+        assert_eq!(rows.len(), 9, "unexpected row count: {:?}", rows);
+        assert!(matches!(&rows[0], super::SecretsRow::WorkspaceKeyRow(k) if k == "ALPHA"));
+        assert!(matches!(&rows[1], super::SecretsRow::WorkspaceKeyRow(k) if k == "BETA"));
+        assert!(matches!(&rows[2], super::SecretsRow::WorkspaceAddSentinel));
+        assert!(matches!(&rows[3], super::SecretsRow::SectionSpacer));
+        assert!(
+            matches!(&rows[4], super::SecretsRow::AgentHeader { agent, expanded: true } if agent == "agent-a")
+        );
+        assert!(
+            matches!(&rows[5], super::SecretsRow::AgentKeyRow { agent, key } if agent == "agent-a" && key == "KEY")
+        );
+        assert!(matches!(&rows[6], super::SecretsRow::AgentAddSentinel(a) if a == "agent-a"));
+        assert!(matches!(&rows[7], super::SecretsRow::SectionSpacer));
+        assert!(
+            matches!(&rows[8], super::SecretsRow::AgentHeader { agent, expanded: false } if agent == "agent-b")
         );
     }
 
@@ -1469,7 +1523,7 @@ mod secrets_tab_render_tests {
             ..WorkspaceConfig::default()
         };
         let editor = EditorState::new_edit("ws".into(), ws);
-        let rows = super::secrets_flat_rows(&editor, &AppConfig::default());
+        let rows = super::secrets_flat_rows(&editor);
         assert!(
             matches!(rows.get(2), Some(super::SecretsRow::SectionSpacer)),
             "row 2 must be a SectionSpacer between workspace section \
@@ -1501,7 +1555,7 @@ mod secrets_tab_render_tests {
             ..WorkspaceConfig::default()
         };
         let editor = EditorState::new_edit("ws".into(), ws);
-        let rows = super::secrets_flat_rows(&editor, &AppConfig::default());
+        let rows = super::secrets_flat_rows(&editor);
         assert!(
             matches!(rows.get(1), Some(super::SecretsRow::SectionSpacer)),
             "spacer expected before the first agent header; rows={rows:?}"
