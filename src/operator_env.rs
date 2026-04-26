@@ -138,6 +138,18 @@ impl OpCli {
         }
     }
 
+    /// Short-timeout variant for startup availability checks. A 3-second
+    /// ceiling prevents `jackin console` from hanging when `op` is installed
+    /// but biometric-blocked or network-stalled at launch time. A false
+    /// negative here is acceptable — the picker shows an error panel if `op`
+    /// later fails.
+    pub fn new_probe() -> Self {
+        Self {
+            binary: OP_DEFAULT_BIN.to_string(),
+            timeout: std::time::Duration::from_secs(3),
+        }
+    }
+
     pub const fn with_binary(binary: String) -> Self {
         Self {
             binary,

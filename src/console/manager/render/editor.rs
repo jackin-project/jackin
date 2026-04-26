@@ -20,7 +20,12 @@ use crate::operator_env::{is_op_reference, parse_op_reference};
 
 // ── Editor stage ────────────────────────────────────────────────────
 
-pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppConfig) {
+pub fn render_editor(
+    frame: &mut Frame,
+    state: &EditorState<'_>,
+    config: &AppConfig,
+    op_available: bool,
+) {
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -49,7 +54,7 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
 
     let mut items: Vec<FooterItem> = Vec::new();
 
-    let row_items = contextual_row_items(state, config);
+    let row_items = contextual_row_items(state, config, op_available);
     if !row_items.is_empty() {
         items.extend(row_items);
         items.push(FooterItem::GroupSep);
@@ -97,7 +102,11 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
 /// Compute a row-specific hint fragment based on the active tab and cursor.
 /// Returns an empty vec when the current position has no action.
 #[allow(clippy::too_many_lines)]
-fn contextual_row_items(state: &EditorState<'_>, config: &AppConfig) -> Vec<FooterItem> {
+fn contextual_row_items(
+    state: &EditorState<'_>,
+    config: &AppConfig,
+    op_available: bool,
+) -> Vec<FooterItem> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
@@ -208,22 +217,29 @@ fn contextual_row_items(state: &EditorState<'_>, config: &AppConfig) -> Vec<Foot
                         FooterItem::Text("exit"),
                     ]
                 }
-                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::AgentKeyRow { .. }) => vec![
-                    FooterItem::Key("Enter"),
-                    FooterItem::Text("edit"),
-                    FooterItem::Sep,
-                    FooterItem::Key("D"),
-                    FooterItem::Text("delete"),
-                    FooterItem::Sep,
-                    FooterItem::Key("A"),
-                    FooterItem::Text("add"),
-                    FooterItem::Sep,
-                    FooterItem::Key("M"),
-                    FooterItem::Text("mask/unmask"),
-                    FooterItem::Sep,
-                    FooterItem::Key("P"),
-                    FooterItem::Text("1Password"),
-                ],
+                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::AgentKeyRow { .. }) => {
+                    let mut items = vec![
+                        FooterItem::Key("Enter"),
+                        FooterItem::Text("edit"),
+                        FooterItem::Sep,
+                        FooterItem::Key("D"),
+                        FooterItem::Text("delete"),
+                        FooterItem::Sep,
+                        FooterItem::Key("A"),
+                        FooterItem::Text("add"),
+                        FooterItem::Sep,
+                        FooterItem::Key("M"),
+                        FooterItem::Text("mask/unmask"),
+                    ];
+                    if op_available {
+                        items.extend([
+                            FooterItem::Sep,
+                            FooterItem::Key("P"),
+                            FooterItem::Text("1Password"),
+                        ]);
+                    }
+                    items
+                }
                 Some(SecretsRow::AgentHeader { .. }) => vec![
                     FooterItem::Key("Enter"),
                     FooterItem::Text("expand"),
@@ -234,13 +250,17 @@ fn contextual_row_items(state: &EditorState<'_>, config: &AppConfig) -> Vec<Foot
                     FooterItem::Key("A"),
                     FooterItem::Text("add"),
                 ],
-                Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::AgentAddSentinel(_)) => vec![
-                    FooterItem::Key("Enter"),
-                    FooterItem::Text("add"),
-                    FooterItem::Sep,
-                    FooterItem::Key("P"),
-                    FooterItem::Text("1Password"),
-                ],
+                Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::AgentAddSentinel(_)) => {
+                    let mut items = vec![FooterItem::Key("Enter"), FooterItem::Text("add")];
+                    if op_available {
+                        items.extend([
+                            FooterItem::Sep,
+                            FooterItem::Key("P"),
+                            FooterItem::Text("1Password"),
+                        ]);
+                    }
+                    items
+                }
                 // Cursor never lands on `SectionSpacer` (skipped by the
                 // `↑`/`↓` handlers), but if anything ever queries the
                 // hint for that index we degrade to a no-op empty set.
@@ -793,7 +813,7 @@ mod contextual_row_items_tests {
         .unwrap();
 
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor, &AppConfig::default());
+        let hint = contextual_row_items(&editor, &AppConfig::default(), true);
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
@@ -814,7 +834,7 @@ mod contextual_row_items_tests {
         // Plain folder (no .git) — no GitHub URL, so `O` must not appear.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor, &AppConfig::default());
+        let hint = contextual_row_items(&editor, &AppConfig::default(), true);
         let keys = key_glyphs(&hint);
         assert!(
             !keys.contains(&"O"),
@@ -832,7 +852,7 @@ mod contextual_row_items_tests {
         // hint composes alongside D/A even without the O extension.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor, &AppConfig::default());
+        let hint = contextual_row_items(&editor, &AppConfig::default(), true);
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
@@ -852,7 +872,7 @@ mod contextual_row_items_tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         editor.active_field = FieldFocus::Row(editor.pending.mounts.len());
-        let hint = contextual_row_items(&editor, &AppConfig::default());
+        let hint = contextual_row_items(&editor, &AppConfig::default(), true);
         let keys = key_glyphs(&hint);
         assert!(
             !keys.contains(&"R"),
@@ -871,19 +891,19 @@ mod contextual_row_items_tests {
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
 
         // Mounts data-row hint.
-        let mounts_row = contextual_row_items(&editor, &AppConfig::default());
+        let mounts_row = contextual_row_items(&editor, &AppConfig::default(), true);
         assert_hint_hotkeys_uppercase(&mounts_row, "Mounts row 0");
 
         // Mounts sentinel "+ Add mount" row.
         let mut sentinel_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         sentinel_editor.active_field = FieldFocus::Row(sentinel_editor.pending.mounts.len());
-        let sentinel_row = contextual_row_items(&sentinel_editor, &AppConfig::default());
+        let sentinel_row = contextual_row_items(&sentinel_editor, &AppConfig::default(), true);
         assert_hint_hotkeys_uppercase(&sentinel_row, "Mounts sentinel");
 
         // Agents tab uses Space + `*` — both multi-char / non-alpha.
         let mut agents_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         agents_editor.active_tab = EditorTab::Agents;
-        let agents_row = contextual_row_items(&agents_editor, &AppConfig::default());
+        let agents_row = contextual_row_items(&agents_editor, &AppConfig::default(), true);
         assert_hint_hotkeys_uppercase(&agents_row, "Agents");
     }
 

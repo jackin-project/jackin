@@ -93,7 +93,7 @@ pub fn render(
 ) {
     // Phase 1: render the base stage (Editor full-screen OR List chrome).
     if let ManagerStage::Editor(editor) = &state.stage {
-        editor::render_editor(frame, editor, config);
+        editor::render_editor(frame, editor, config, state.op_available);
     } else {
         // List / CreatePrelude / ConfirmDelete share the list-like chrome.
         let area = frame.area();

@@ -73,9 +73,9 @@ pub(super) fn handle_editor_key(
         _ => {}
     }
 
-    // Clone before the editor borrow so the picker open site can
-    // hand it off without re-borrowing `state`.
+    // Capture before the editor borrow (separate fields, but explicit is cleaner).
     let op_cache = state.op_cache.clone();
+    let op_available = state.op_available;
 
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(InputOutcome::Continue);
@@ -212,7 +212,8 @@ pub(super) fn handle_editor_key(
         // `m|M` arm above.
         KeyCode::Char('p' | 'P')
             if editor.active_tab == EditorTab::Secrets
-                && (key.modifiers - KeyModifiers::SHIFT).is_empty() =>
+                && (key.modifiers - KeyModifiers::SHIFT).is_empty()
+                && op_available =>
         {
             open_secrets_picker_modal(editor, config, op_cache);
         }
@@ -1873,7 +1874,7 @@ mod tests {
         let backend = TestBackend::new(80, 10);
         let mut term = ratatui::Terminal::new(backend).unwrap();
         term.draw(|f| {
-            crate::console::manager::render::render_editor(f, editor, &config);
+            crate::console::manager::render::render_editor(f, editor, &config, true);
         })
         .unwrap();
         let buf = term.backend().buffer();

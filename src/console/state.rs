@@ -49,7 +49,7 @@ impl ConsoleState {
         let op_cache = Rc::new(RefCell::new(OpCache::default()));
         let op_available = {
             use crate::operator_env::OpRunner as _;
-            crate::operator_env::OpCli::new().probe().is_ok()
+            crate::operator_env::OpCli::new_probe().probe().is_ok()
         };
         Ok(Self {
             stage: ConsoleStage::Manager(

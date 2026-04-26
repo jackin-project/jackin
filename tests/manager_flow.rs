@@ -572,6 +572,7 @@ fn op_picker_opens_on_p_from_secrets_key_row() -> Result<()> {
     let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "postgres")])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
+    state.op_available = true;
 
     // Cursor opens directly on row 0 (the WorkspaceKeyRow for DB_URL —
     // no focusable header above it).
@@ -613,6 +614,7 @@ fn op_picker_cancel_closes_modal() -> Result<()> {
     let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "untouched")])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
+    state.op_available = true;
 
     // Cursor opens on the key row (row 0, no focusable header above);
     // press P to open the picker.
@@ -662,6 +664,7 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
     let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "old-value")])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
+    state.op_available = true;
 
     // Cursor opens on row 0 (DB_URL key row — no focusable header above);
     // P opens the picker.
@@ -750,6 +753,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
     let mut config = seed_config(&paths, temp.path())?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
+    state.op_available = true;
 
     // Cursor opens on row 0 (WorkspaceAddSentinel).
     assert!(matches!(editor(&state).active_field, FieldFocus::Row(0)));
@@ -1155,6 +1159,7 @@ fn op_picker_multi_account_flow() -> Result<()> {
     let mut config = seed_config_with_env(&paths, temp.path(), vec![("DB_URL", "old")])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
+    state.op_available = true;
 
     // Cursor opens on row 0 (DB_URL key row); P opens the picker.
     handle_key(
