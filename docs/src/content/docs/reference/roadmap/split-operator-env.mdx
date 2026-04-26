@@ -7,34 +7,37 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/operator_env.rs" /> is 2130L total, ~880L production (test section starts at line 881). It contains 4 distinct concerns: trait definitions, subprocess client, env layer composition, and 1Password picker integration. It is only used by `console/` (verified: no other module imports from `operator_env`).
+<RepoFile path="src/operator_env.rs" /> is 2133L total and has grown into a shared cross-cutting module. It now serves runtime launch, config validation/persistence, console widgets, and the console op-cache layer. The file mixes public traits/parsers, subprocess client logic, metadata parsing for the picker, env-layer composition, launch diagnostics, and tests.
 
 ## Proposed split
 
 ```
 src/operator_env/
-  mod.rs    ← re-exports, OpRunner trait, OpStructRunner trait, dispatch (~100L)
-  client.rs ← OpCli struct + subprocess helpers (~280L, lines 105–364)
-  layers.rs ← EnvLayer, merge_layers, validate_reserved_names, resolve_operator_env* (~470L, lines 365–808)
-  picker.rs ← PR #171 1Password picker integration (~250L)
+  mod.rs         ← re-exports, public traits/shared types, parser helpers
+  cli.rs         ← OpCli struct + subprocess / timeout / JSON helpers
+  resolve.rs     ← EnvLayer, merge_layers, validate_reserved_names, resolve_operator_env*
+  diagnostics.rs ← print_launch_diagnostic + classify_value helpers
+  picker.rs      ← OpStructRunner types + metadata parsing for the picker
 ```
 
-## Dependency graph — verified safe
+## Dependency graph — verified constraints
 
-- `layers.rs` imports both `mod.rs` (OpRunner trait) AND `client.rs` (OpCli) — creates a `layers → client` dep but NOT a `client → layers` dep. No circular risk.
-- `picker.rs` only uses types from `mod.rs` (`OpStructRunner`, `OpRunner`)
-- Zero external crate imports from `console/` into `operator_env` — dependency is one-way
+- runtime launch needs the env-resolution and diagnostic layers
+- config persistence/editor needs reserved-name validation
+- console widgets / op-cache need the picker metadata types and `OpStructRunner`
+- re-exports from `mod.rs` should preserve current call sites while the internals split
 
 ## Migration note
 
-After split, all callers doing `use crate::operator_env::resolve_operator_env` continue to work because `mod.rs` re-exports everything. No call-site changes outside the `operator_env/` directory.
+After split, existing callers such as `use crate::operator_env::resolve_operator_env` and `use crate::operator_env::OpField` should continue to work because `mod.rs` re-exports the public surface. The goal is an internal split, not a crate-wide rename churn.
 
 ## What needs confirmation
 
-- Whether `picker.rs` should be a separate file or merge with `mod.rs` (it's ~250L — borderline)
-- Whether `print_launch_diagnostic` belongs in `client.rs` or `layers.rs`
+- Whether `diagnostics.rs` is worth its own file or should stay with `resolve.rs`
+- Whether raw picker metadata structs (`RawOpField`, friends) belong beside `OpCli` or in the picker-facing layer
 
 ## Related files
 
 - <RepoFile path="src/operator_env.rs" /> — target file
-- <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — uses `OpStructRunner` from operator_env
+- <RepoFile path="src/runtime/launch.rs" /> — resolves operator env and emits launch diagnostics
+- <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — uses `OpStructRunner` / picker metadata
