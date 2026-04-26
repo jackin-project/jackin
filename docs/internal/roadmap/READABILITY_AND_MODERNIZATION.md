@@ -3,7 +3,7 @@
 ## §0 — Meta
 
 **Last updated:** 2026-04-26
-**Iteration:** 4
+**Iteration:** 5
 
 This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` treated as already merged per operator instruction). Recommendations are inputs to a future, separate execution effort — no code has been touched.
 
@@ -614,12 +614,12 @@ Each entry is a **candidate**, not a mandate. Confirmed present in the repositor
 | 7 | `parse_host_ref` | `src/operator_env.rs:66` | "host ref" — "host" means "host machine" (as opposed to Docker container), "ref" means `$NAME` or `${NAME}`. Not obvious. | `parse_host_env_ref`, `extract_env_var_name` | `extract_host_env_name` |
 | 8 | `OpRunner` | `src/operator_env.rs:10` | "Op" is ambiguous: "operation"? "operator"? "1Password op CLI"? In this context it's specifically the 1Password CLI. | `OnePasswordReader`, `OpCliRunner` | `OpCliRunner` — makes the 1Password CLI connection obvious |
 | 9 | `OpStructRunner` | `src/operator_env.rs:348` (PR #171) | Same ambiguity; "Struct" differentiates it from `OpRunner` but is an implementation detail | `OpMetadataClient`, `OnePasswordBrowser` | `OpMetadataClient` — "client" signals structured query, no secret value |
-| 10 | `format_agent_display` | `src/runtime/naming.rs` | Correct but verbose; "display" is redundant with "format" | `agent_display_name` | Minor; leave as is |
+| 10 | `provision_claude_auth` | `src/instance/auth.rs:17` (verified) | "Provision" is too generic a verb — it doesn't indicate this is about forwarding the host operator's credentials into the agent container state. The modes (`Ignore`, `Token`, `Sync`) are auth-forward strategies, not provisioning operations. | `apply_auth_forward`, `forward_credentials` | `apply_auth_forward` — aligns with the `auth_forward` config key name and signals the direction (host → container) |
 | 11 | `LoadOptions` | `src/runtime/launch.rs:23` | Fine for internal use, but `LoadOptions` and `LoadWorkspaceInput` share the "Load" prefix for unrelated concerns | `LaunchOptions` | `LaunchOptions` — aligns with the container launch concept |
-| 12 | `LaunchContext` | `src/runtime/launch.rs:272` | Private struct; name is fine. But as a struct it should be renamed if `LoadOptions` becomes `LaunchOptions` | `LaunchContext` | Keep — consistent with proposed `LaunchOptions` rename |
-| 13 | `hardline_agent` | `src/runtime/attach.rs:78` | "hardline" is a project-specific term well-documented in the CLI; function name is fine | — | Leave as is |
+| 12 | `AuthProvisionOutcome` | `src/instance/mod.rs` (imported as `use super::AuthProvisionOutcome` in `auth.rs:1`) | "Provision" is not the right verb (the operation is auth-forward, not provisioning); "Outcome" is fine but the type could simply be `AuthForwardOutcome` to match the domain language. | `AuthForwardOutcome`, `AuthOutcome` | `AuthForwardOutcome` — directly mirrors the `auth_forward` config key |
+| 13 | `hardline_agent` | `src/runtime/attach.rs:78` | "hardline" is a project-specific term well-documented in the CLI; the function name correctly mirrors the CLI verb | — | Leave as is — the CLI-to-function name alignment outweighs the naming concern |
 | 14 | `MountConfig` | `src/workspace/mod.rs:22` | "Config" is overloaded — `AppConfig` is the config file; `MountConfig` is a mount specification | `MountSpec`, `MountEntry` | `MountSpec` (note: `MountEntry` is already used for `DockerMounts`) |
-| 15 | `scan_interval` / `TICK_MS` | (PR #171 — TICK_MS constant) | The 20 Hz polling rate magic number becomes `TICK_MS`; the name is fine but the rationale (op_picker async results) should be in a doc comment | — | Confirm name after PR #171 merge; add inline comment |
+| 15 | `spawn_wait_thread` | `src/operator_env.rs:202` (verified) | "Thread" as a suffix names the implementation mechanism, not the purpose. The function spawns a background process-exit watcher. | `spawn_exit_watcher`, `watch_subprocess_exit` | `spawn_exit_watcher` — names the intent ("watching for exit") over the mechanism ("a thread") |
 
 ---
 
@@ -1029,10 +1029,41 @@ Heavy frameworks for multi-agent parallelism. Overkill for a single-maintainer p
 
 **Files and contracts:**
 - `docs/internal/agent-skills/README.md` — index of available skills, when to invoke each.
-- Each skill file follows the format: **Purpose** / **When to invoke** / **Steps** / **Outputs** / **Done when**.
+- Each skill file follows a standard 6-field format (see template below).
 - An agent invokes a skill by reading the file: `@docs/internal/agent-skills/brainstorm.md` or via a `.claude/commands/` shortcut (optional).
 - New skills are proposed in a PR, reviewed by the operator. Operator approval = the skill is "blessed."
 - `.claude/commands/*.md` can be thin wrappers that reference `docs/internal/agent-skills/*.md`.
+
+**Concrete example: `docs/internal/agent-skills/brainstorm.md`**
+
+```markdown
+# Skill: Brainstorm
+
+**Purpose**: Explore the problem space and design options before writing any code.
+
+**When to invoke**: Before implementing any feature or non-trivial fix. Triggered
+by operator requests like "add X", "change Y behavior", or "fix Z if it's not obvious".
+Do NOT skip for "simple" requests — unexamined assumptions cause the most waste.
+
+**Steps**:
+1. Read `AGENTS.md`, `RULES.md`, and the relevant section of `PROJECT_STRUCTURE.md`.
+2. Read the 3–5 source files most likely to be affected (no more than 5 at this stage).
+3. Write a 3–5 sentence problem statement: what does the operator want, and why?
+4. Propose 2–3 solution approaches with explicit trade-offs and a recommendation.
+5. Present to the operator and wait for approval before proceeding to code.
+6. Once approved, write a spec to `docs/internal/specs/YYYY-MM-DD-<topic>-design.md`
+   with `status: draft` front-matter. Commit the spec before writing any code.
+
+**Outputs**: A committed spec file with operator-approved approach documented.
+
+**Done when**: Spec is committed AND operator has explicitly approved the approach.
+Silence is not approval — ask if unclear.
+
+**Overlap guard**: Do not duplicate invariants from `RULES.md`. New product invariants
+discovered during brainstorm belong in `RULES.md` after the PR merges, not in the spec.
+```
+
+This template (17 lines) is intentionally short enough that an agent can read it in one context window slot without crowding out source code. The "Done when" and "Overlap guard" fields are the critical discipline gates missing from superpowers' default brainstorming skill.
 
 ---
 
@@ -1076,7 +1107,7 @@ Heavy frameworks for multi-agent parallelism. Overkill for a single-maintainer p
 
 **OQ4 — `src/console/manager/agent_allow.rs` scope:** Module not deeply read. Responsibility and coupling need verification before the §4 structural proposal is considered final.
 
-**OQ5 — `src/instance/auth.rs` (796L) split proposal:** Named in §4 as a large file needing attention, but the auth-forward design space wasn't read deeply enough to propose a confident split. Tracked for iteration 2.
+**OQ5 — ~~`src/instance/auth.rs` (796L) split proposal~~** *(resolved in iteration 5)*: Read in full. Production code is only 210L (lines 1–210): one `impl AgentState` method (`provision_claude_auth`, lines 5–77) and 5 private helpers (`copy_host_claude_json`, `read_host_credentials`, `reject_symlink`, `write_private_file`, `repair_permissions`). Tests are 585L (lines 211–796 — nearly 3× production). **No split needed** — the file is cohesive (all credential-provisioning helpers), appropriately sized in production code, and the 585L test suite is thorough. This is the pattern to emulate: small, focused production code with comprehensive tests. The hot-spot list entry at 796L was misleading without knowing the production/test split.
 
 **OQ6 — MSRV vs actual feature use:** Does the code use any Rust feature stabilised after 1.94? `let-else` (stable 1.65), `if let` chaining (1.64), `array::windows` — all fine. The `edition = "2024"` in `Cargo.toml` requires Rust ≥ 1.85. This means `rust-version = "1.94"` is correct (1.94 > 1.85) but `edition 2024` already implies ≥ 1.85, so the effective MSRV is max(1.85, 1.94) = 1.94. To be confirmed with `cargo +1.94.0 check`.
 
@@ -1117,15 +1148,21 @@ Add `rust-toolchain.toml` (1.95.0). Update `mise.toml` to reference it. Add MSRV
 
 **Step 4 — Source-code structural moves (§4), one module at a time**
 
-Suggested order within step 4:
-4a. Extract `AppConfig` types from `src/config/mod.rs` → `src/config/types.rs`. (Safest: no logic, just type moves.)
-4b. Move `run()` from `src/app/mod.rs` → `src/app/dispatch.rs`.
-4c. Split `src/manifest/mod.rs` → `src/manifest/schema.rs` + `src/manifest/loader.rs`.
-4d. Split `src/operator_env.rs` → `src/operator_env.rs` (env-layer logic) + `src/op/mod.rs` + `src/op/client.rs` (PR #171 additions).
-4e. Split `src/runtime/launch.rs` (2368L) — most impactful but most risk; do last within step 4.
-4f. Split `src/config/editor.rs` (1467L) into `editor/` subdirectory.
+Ordering principle (established in iterations 2–4 after reading each file in full): *production-code-size × circular-dependency-risk, ascending*. Safe type moves first, large single-file pipelines last.
 
-*What could go wrong:* Any of these splits can introduce circular dependencies or break test compilation. Mitigation: `cargo check` + `cargo nextest run` after each sub-step; each sub-step is a separate PR.
+4a. **`src/config/mod.rs` types extraction** (~100L type move): Move `AppConfig`, `AuthForwardMode`, `ClaudeConfig`, `AgentSource`, `DockerConfig` → `src/config/types.rs`. Pure struct/enum move with no logic; `mod.rs` becomes a thin re-export file. No circular risk — these types have no intra-crate dependencies that point back.
+
+4b. **`src/manifest/mod.rs` split** (~200L production): Split `AgentManifest` structs → `src/manifest/schema.rs`; move `load()` + `display_name()` → `src/manifest/loader.rs`. Self-contained; no coupling to console or runtime.
+
+4c. **`src/config/editor.rs` → `src/config/editor/` module directory** (~503L production, 963L tests): Convert to module directory using Rust's impl-extension pattern; 5 domain files + `tests.rs`. Lowest circular-dependency risk of any large file since all methods operate on the same `DocumentMut`. The `create_workspace`/`edit_workspace` validation-delegation pattern (lines 401–468) must be preserved as-is.
+
+4d. **`src/operator_env.rs` → `src/operator_env/` module directory** (~810L production, ~758L tests): Convert to module directory: `mod.rs` (~100L traits + dispatch), `client.rs` (~280L subprocess), `layers.rs` (~470L env resolution), `picker.rs` (~250L PR #171 additions). Dependency graph has no circularity (mod.rs ← client.rs, mod.rs ← layers.rs, mod.rs + client.rs ← picker.rs).
+
+4e. **`src/app/mod.rs` → `src/app/dispatch.rs`** (951L total, ~500L production): Move `run()` function out of `mod.rs`; `mod.rs` becomes a thin module + re-export file. High import count (nearly every module) but no circular risk since `app` is the top-level dispatcher.
+
+4f. **`src/runtime/launch.rs` → 4 files** (2368L — most impactful, most complex test suite): Split into `launch.rs` (~120L public API), `launch_pipeline.rs` (~560L + ~1200L tests), `terminfo.rs` (~110L), `trust.rs` (~60L). Do last: the test suite is 1282L and depends on `FakeRunner` from `runtime/test_support.rs`; any test compilation failure here blocks all runtime changes.
+
+*What could go wrong:* Each split can introduce circular `use` paths if the dependency graph is not sketched first. The `operator_env` split (4d) risks a circular dependency if `layers.rs` tries to import from `client.rs` — verify that `resolve_operator_env_with` only uses `OpRunner` (from `mod.rs`) not `OpCli` directly. Mitigation: `cargo check` + `cargo nextest run` after each sub-step; each sub-step is a separate PR with a green CI gate.
 
 **Step 5 — Module-shape rules (§4 Rules 1–7)**
 

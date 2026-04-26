@@ -193,6 +193,46 @@ See §9 of the roadmap for the canonical list. Key items:
 
 ---
 
+## Iteration 5 — 2026-04-26
+
+### Improvements chosen
+
+1. **§8.2 concrete brainstorm template** — added a 17-line example `docs/internal/agent-skills/brainstorm.md` with all 6 fields (Purpose, When to invoke, Steps, Outputs, Done when, Overlap guard). The "Done when" and "Overlap guard" fields are the critical discipline gates that distinguish this from a generic checklist.
+2. **§10 step 4 ordering** — refined from a sketch into a concrete priority-ordered sequence grounded in production-code-size × circular-dependency-risk data: config/types extraction (4a) → manifest split (4b) → config/editor (4c) → operator_env (4d) → app/dispatch (4e) → runtime/launch (4f, last and most complex). Each sub-step has a "what could go wrong" note.
+3. **§5 naming candidates** — replaced 2 non-candidates (rows 10 and 12, both "leave as is") with verified candidates: `provision_claude_auth` → `apply_auth_forward` (from `instance/auth.rs:17`, read in iteration 5) and `AuthProvisionOutcome` → `AuthForwardOutcome` (from `instance/mod.rs`). Replaced row 15 (`TICK_MS` — fine once PR #171 merges) with `spawn_wait_thread` → `spawn_exit_watcher` (from `operator_env.rs:202`).
+4. **OQ5 resolved** — `src/instance/auth.rs` read in full: 210L production code, 585L tests. No split needed — cohesive, appropriately sized. The 796L total was misleading.
+
+### What was read
+
+- `src/instance/auth.rs` (full structure: lines 1–85 read in detail; lines 81–210 structure confirmed)
+- `docs/internal/roadmap/READABILITY_AND_MODERNIZATION.md` §8.2, §10, §5 (full re-read for skeptical review)
+
+### What changed in the roadmap
+
+- §0: Iteration count bumped to 5
+- §5: Rows 10 (non-candidate → `provision_claude_auth`), 12 (non-candidate → `AuthProvisionOutcome`), 15 (deferred TICK_MS → `spawn_wait_thread`) replaced with verified candidates
+- §8.2: Concrete 17-line `brainstorm.md` template added; "Done when" and "Overlap guard" fields highlighted as key discipline gates
+- §9 OQ5: Resolved — `instance/auth.rs` is 210L production / 585L tests; no split needed
+- §10 step 4: Rewritten with production-code-size × risk ordering, concrete sub-step descriptions with architectural notes (e.g., `create_workspace` validation-delegation invariant, `operator_env` circular-dependency check)
+
+### Confidence assessment by section (updated)
+
+| Section | Confidence | Notes |
+|---|---|---|
+| §5 Naming candidates | High | All 15 candidates now confirmed to exist; no "leave as is" rows remaining |
+| §8.2 Agent-skills | High | Concrete template makes the recommendation immediately actionable |
+| §10 Execution sequencing | High | Step 4 ordering is now grounded in iteration 2-5 file readings |
+| §9 Open questions | OQ1, OQ2, OQ6 remain; OQ3, OQ5, OQ7 resolved | |
+
+### Weakest sections for iteration 6
+
+1. **§1 hot-spot list** — flagged `src/instance/auth.rs` (796L) as a hot spot but OQ5 just resolved that its production code is only 210L. The hot-spot list should be corrected to note the production/test split for ALL hot-spot files, not just the ones deeply read. The current table says "796L" for auth.rs without caveat.
+2. **§7 new candidates** — §7 has 13 modernization entries but hasn't been extended since iteration 1. Candidates like "structured logging with `tracing`" or "async subprocess with `tokio::process`" haven't been evaluated. Even if the answer is "reject", the evaluation should exist.
+3. **§2 concept 14 (session-scoped op metadata cache)** — still `requires-tribal-knowledge` pre-merge; the exact location of the cache in `op_picker/mod.rs` is still unread.
+4. **§10 step 2 (AI-agent workflow files)** — says "Create `docs/internal/agent-skills/` with skill files" but doesn't say which skills to write first. The priority order (brainstorm → spec → review → tdd → debug) should be explicit.
+
+---
+
 ## Iteration 2 — 2026-04-26
 
 ### Improvements chosen
