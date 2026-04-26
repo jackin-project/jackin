@@ -220,6 +220,27 @@ jackin workspace edit secure-api --default-agent neo
 jackin workspace edit secure-api --clear-default-agent
 ```
 
+## Keeping the host awake
+
+Long-running agent work — large builds, test suites, dataset pulls — can outlast your screen-saver and the host's idle-sleep timer. macOS will then suspend the machine and the agent stops making progress until you wake it up.
+
+Workspaces can opt in to a per-workspace keep-awake reconciler that prevents this:
+
+```toml
+[workspaces.my-app.keep_awake]
+enabled = true
+```
+
+When the flag is set, `jackin` keeps a single `caffeinate -imsu` process alive for as long as **any** agent in **any** keep-awake workspace is running. The reconciler runs at every command boundary (`load`, `console`, `hardline`, `eject`, `exile`), so the assertion turns on the moment a keep-awake agent starts and turns off the moment the last keep-awake agent stops.
+
+<Aside type="caution">
+This feature is **macOS-only** today. On Linux and Windows the flag is silently ignored — there is no equivalent system-wake assertion wired up yet. If you need it on another platform, please open an issue.
+</Aside>
+
+Other workspaces (those without the flag) are unaffected: their containers do not contribute to the keep-awake count, and the host is free to sleep if no opted-in agent is running.
+
+Editing the flag on an existing workspace requires editing `~/.config/jackin/config.toml` directly today; there is no `jackin workspace edit --keep-awake` shortcut yet.
+
 ## Workspace auto-detection
 
 When you open the operator console (`jackin console`), it checks whether your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths. If it does, that workspace is preselected — saving you a selection step and reinforcing the value of naming project boundaries once. Container-only `workdir` values like `/workspace` can still be auto-detected as long as one of the workspace's mounted host paths contains your current directory. You can always override the preselection by choosing a different workspace or "Current directory."
