@@ -1034,3 +1034,40 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 hot-spot table — `console/mod.rs`** — this file has a `too_many_lines` suppression but no entry in the hot-spot table. Need to verify its size and production/test breakdown.
 2. **§4 hot-spot table — `console/widgets/op_picker/render.rs`** — similarly has a suppression but no table entry. The op_picker was added in PR #171 and hasn't been analyzed.
 3. **§1 module map — `console/mod.rs`** — the file is listed but with "—" for line count. The TUI event loop entry point is important for navigability.
+
+---
+
+## Iteration 26 — 2026-04-26
+
+### Improvements chosen
+
+1. **`console/mod.rs` analysis — 406L, 307L production, no `//!` doc** — `wc -l` confirmed 406L, tests at line 308 → 307L production, 99L tests. File is below the 500L production threshold (Low priority). The block comment at lines 1–5 explains the `ConsoleStage` single-variant design ("collapsed to a single variant in PR #171's Modal::AgentPicker cleanup") — this architectural context should be a `//!` doc. Added to hot-spot table (Low priority) with a note about the `//!` promotion opportunity. Corrected module map: "~200" → "406L" with accurate key exports.
+
+2. **`op_picker/render.rs` analysis — 865L, 545L production, Medium priority** — `wc -l` confirmed 865L, tests at line 546 → 545L production, 320L tests. Above the 500L production threshold. Single concern (1Password picker rendering). Functions fall into two groups: (a) entry/helpers (`render`, `breadcrumb_title`, `viewport_offset`, `modal_block`, `footer_line`, `render_loading`, `render_fatal`, `display_label`) and (b) level-specific renderers (`render_pane`, `render_account_lines`, `render_vault_lines`, `render_item_lines`, `render_field_lines`, ~260L). A 2-file split (current `render.rs` as coordinator + `levels.rs` for level renderers) would isolate the AI-generated PR #171 level-rendering logic. Added to hot-spot table (Medium priority). The file already has a `//!` doc.
+
+3. **Stale `~200L` estimate for `console/mod.rs` corrected in 3 locations** — module map, `mod.rs` files section, and §4 intro concept bullet. All updated to "406L, ~307L production."
+
+### What was read
+- `src/console/mod.rs:1–15` (`//!` absence confirmed; `#![allow(irrefutable_let_patterns)]` + module declarations; `ConsoleStage` block comment at lines 1–5)
+- `src/console/mod.rs:25,92,153` (impl ConsoleState, quit_confirm_area, run_console — confirmed via grep)
+- `src/console/widgets/op_picker/render.rs:1–5` (`//!` doc confirmed)
+- `src/console/widgets/op_picker/render.rs` (full function list via grep — 14 functions identified)
+- `wc -l` for both files; `grep #[cfg(test)]` for test positions
+
+### What changed in the roadmap
+- §1 module map: `console/mod.rs` corrected (406L, key exports, architectural note about block comment)
+- §1 hot-spot table: Added `op_picker/render.rs` row (865L, 545L production, Medium) and `console/mod.rs` row (406L, 307L production, Low)
+- §1 `mod.rs` files section: "~200L" → "406L, ~307L production"
+- §4 intro `mod.rs` list: Same correction
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `console/mod.rs` 406L/307L production | High | `wc -l` + `grep #[cfg(test)]` confirmed |
+| `op_picker/render.rs` 865L/545L production | High | `wc -l` + `grep #[cfg(test)]` confirmed |
+| `op_picker/render.rs` level renderers group | High | grep shows 4 `render_*_lines` functions at lines 253, 282, 303, 336 |
+
+### Weakest sections for iteration 27
+1. **§4 Rule 5 — `op_picker/render.rs` split proposal** — the hot-spot entry notes a potential 2-file split but no formal split analysis exists. Needs the same treatment as render/editor.rs, render/list.rs etc.
+2. **`console/mod.rs` — `//!` doc priority queue** — confirmed no `//!` doc. The ConsoleStage design comment + 20 Hz loop contract + `is_on_main_screen`/`consumes_letter_input` helpers are all worth documenting. Should be added to the `//!` priority queue.
+3. **§4 Rule 5 breakdown table note** — the table says "The 24 files above the 500-line threshold" but the table has grown. The "24" count needs to be reverified.

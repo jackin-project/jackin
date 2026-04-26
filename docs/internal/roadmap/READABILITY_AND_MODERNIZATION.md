@@ -144,7 +144,7 @@ jackin/
 | `runtime/identity.rs` | — | `GitIdentity`, `load_git_identity`, `load_host_identity` | git/host identity for containers | — |
 | `runtime/repo_cache.rs` | 559 | `resolve_agent_repo` | agent repo lock + fetch | — |
 | `runtime/discovery.rs` | — | `list_managed_agent_names`, `list_running_agent_display_names` | list managed containers | docker |
-| `console/mod.rs` | ~200 | `run_console` | TUI entry point + event loop | ratatui, crossterm, console/* |
+| `console/mod.rs` | 406 | `run_console`, `ConsoleState`, re-exports `ConsoleStage`, `OpCache` | TUI event loop (20 Hz / `TICK_MS=50`); no `//!` doc (block comment at top explains ConsoleStage single-variant design — architectural context that should be promoted to `//!`) | ratatui, crossterm, console/* |
 | `console/state.rs` | 485 | `ConsoleStage`, `ConsoleState`, `WorkspaceChoice` | top-level console state | config, workspace |
 | `console/input.rs` | ~180 | `handle_event`, `EventOutcome` | console stage event routing | console/state |
 | `console/preview.rs` | — | `resolve_selected_workspace` | workspace preview detail lines | — |
@@ -247,6 +247,8 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/instance/auth.rs` | 796 | **210** | 585 | 0 | **Low** — not a god file; production code is only 210L |
 | `src/console/manager/mount_info.rs` | 745 | **277** | 468 | 0 | **Low** — tests dominate; has `//!` doc; single concern (mount classification) |
 | `src/console/manager/input/list.rs` | 614 | **~214** | ~400 | 0 | **Low** — tests dominate; has `//!` doc; two focused public functions |
+| `src/console/widgets/op_picker/render.rs` | 865 | **~545** | ~320 | 1× `too_many_lines` | **Medium** — PR #171 addition (AI-generated); 545L production with 4 level-specific renderers (`render_account_lines`, `render_vault_lines`, `render_item_lines`, `render_field_lines`, ~120L) that could move to `op_picker/levels.rs`; has `//!` doc; single concern (1Password picker rendering) |
+| `src/console/mod.rs` | 406 | **~307** | ~99 | 1× `too_many_lines` | **Low** — 307L production; `run_console` is the TUI event loop; no `//!` doc (block comment with ConsoleStage design rationale should be promoted to `//!`); fits in the `//!` priority queue |
 
 **Key insight:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `input/editor.rs` (1141L — updated post-PR #171), `runtime/launch.rs` (1085L), `app/mod.rs` (928L), and `operator_env.rs` (810L).
 
@@ -272,7 +274,7 @@ The iteration-1 count of "13 across 8 files" was outdated — PR #171 added supp
 - `src/app/mod.rs` (951L) — the entire `run()` dispatch function lives here.
 - `src/config/mod.rs` (867L) — all `AppConfig`, `AuthForwardMode`, `ClaudeConfig` structs are defined here, not in sub-files.
 - `src/manifest/mod.rs` (522L) — schema structs, `load()`, `display_name()` all here.
-- `src/console/mod.rs` (~200L) — `run_console()` entry point and TUI event loop.
+- `src/console/mod.rs` (406L, ~307L production) — `run_console()` entry point and TUI event loop.
 - `src/tui/mod.rs` — palette constants and `DEBUG_MODE` flag live here alongside `set_terminal_title`.
 
 Modules with ≥10 sibling files:
@@ -508,7 +510,7 @@ Violators:
 - `src/app/mod.rs` (951L) — defines the entire `run()` dispatch function (should be `src/app/dispatch.rs`).
 - `src/config/mod.rs` (867L) — defines `AppConfig`, `AuthForwardMode`, `ClaudeConfig`, `AgentSource`, `DockerConfig`, `require_workspace`. These types should live in `src/config/types.rs`.
 - `src/manifest/mod.rs` (522L) — defines `AgentManifest` structs AND `load()`. Types → `src/manifest/schema.rs`; loader → `src/manifest/loader.rs`.
-- `src/console/mod.rs` (~200L) — `run_console()` entry point + full TUI event loop. This is not just re-exports; it should be `src/console/runner.rs`.
+- `src/console/mod.rs` (406L, ~307L production) — `run_console()` entry point + full TUI event loop. This is not just re-exports; it should be `src/console/runner.rs`.
 
 **Rule 2: One dominant concern per file.**
 
