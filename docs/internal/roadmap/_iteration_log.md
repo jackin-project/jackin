@@ -1071,3 +1071,41 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 Rule 5 — `op_picker/render.rs` split proposal** — the hot-spot entry notes a potential 2-file split but no formal split analysis exists. Needs the same treatment as render/editor.rs, render/list.rs etc.
 2. **`console/mod.rs` — `//!` doc priority queue** — confirmed no `//!` doc. The ConsoleStage design comment + 20 Hz loop contract + `is_on_main_screen`/`consumes_letter_input` helpers are all worth documenting. Should be added to the `//!` priority queue.
 3. **§4 Rule 5 breakdown table note** — the table says "The 24 files above the 500-line threshold" but the table has grown. The "24" count needs to be reverified.
+
+---
+
+## Iteration 27 — 2026-04-26
+
+### Improvements chosen
+
+1. **`op_picker/mod.rs` discovered as major unanalyzed file** — `find src -name "*.rs" | xargs wc -l | sort -rn` revealed `op_picker/mod.rs` at 1712L (never in the hot-spot table). Tests at line 776 → **775L production, 937L tests**. Contains `OpPickerState` struct + 4 enums + `impl OpPickerState` state machine (~630L). Same types/behavior split opportunity as `state.rs`. Has a 7-line `//!` doc explaining the drill-down UI and the `op://` reference verbatim rationale. Added to hot-spot table (High priority). Module map updated: previous "—" entry replaced with two rows for `mod.rs` (1712L) and `render.rs` (865L).
+
+2. **`operator_env.rs` total line count corrected: 1569 → 2130** — `wc -l` confirmed 2130L (was 1569L at loop start — likely from subsequent PRs landing on main or a measurement error). Tests at line 881 → **880L production, 1250L tests**. Updated 4 occurrences in roadmap: hot-spot table, ASCII tree, §4 workspace argument, §4 operator_env structure note.
+
+3. **`op_picker/render.rs` formal 2-file split proposal** — read function signatures and line ranges for all 14 functions. Two natural groups with no cross-dependency: (a) coordinator/state-specific renderers/helpers (~300L), (b) `render_pane` + 4 level renderers + `display_label` (~260L). Proposed `render.rs` (state dispatch + helpers) + `render_pane.rs` (pane/level rendering). Auditability gain: "field-level display" → reads `render_pane.rs` (~260L) not 545L.
+
+### What was read
+- `find src -name "*.rs" | xargs wc -l | sort -rn` — confirmed 28+ files above 500L; `op_picker/mod.rs` at 1712L was missing from hot-spot table
+- `src/console/widgets/op_picker/mod.rs:1–8` (`//!` doc), `:78–106` (`OpPickerState` struct), `:133` (impl block start)
+- `grep #[cfg(test)]` in `op_picker/mod.rs` — tests at line 776
+- `grep #[cfg(test)]` in `operator_env.rs` — tests at lines 881, 983
+- `src/console/widgets/op_picker/render.rs:22–120` (function signatures for the first 6 functions read in detail)
+
+### What changed in the roadmap
+- §1 module map: `op_picker/` entry split into two rows (mod.rs + render.rs with line counts and key exports)
+- §1 hot-spot table: Added `op_picker/mod.rs` row (1712L, 775L production, High); corrected `operator_env.rs` row (1569→2130, 810→~880 production)
+- §1 ASCII tree: `operator_env.rs` (1569 lines) → (2130 lines)
+- §4 Rule 5: Added `op_picker/render.rs` 2-file split proposal with function table
+- §4 operator_env.rs split section and workspace argument: 1569 → 2130
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `op_picker/mod.rs` 1712L/775L production | High | `wc -l` + `grep #[cfg(test)]` confirmed |
+| `op_picker/render.rs` split proposal | High (directional) | Function groups confirmed by reading lines 22-120; no cross-dependency verified |
+| `operator_env.rs` 2130L | High | `wc -l` confirmed; test positions at 881 and 983 confirmed |
+
+### Weakest sections for iteration 28
+1. **§4 `op_picker/mod.rs` split proposal** — identified the types/behavior split opportunity but no formal proposal written yet. The `OpPickerState` struct (~28L) and 4 enum types (~35L) could move to `op_picker/types.rs`, leaving only `impl OpPickerState` in `mod.rs`.
+2. **§4 Rule 5 "24 files" note** — the preamble says "The 24 files above the 500-line threshold" — `find` shows 28+ files above 500L. Needs a targeted update.
+3. **§1 total LOC update** — the roadmap says "~40,664 lines" in §4 but `find | xargs wc` now shows 43,587L total. This is also stale.

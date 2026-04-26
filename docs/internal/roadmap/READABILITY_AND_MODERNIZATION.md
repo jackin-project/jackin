@@ -50,7 +50,7 @@ jackin/
 │   │   └── widgets/          Reusable TUI widgets (incl. op_picker/)
 │   ├── instance/             Per-container state preparation
 │   ├── tui/                  General terminal UI helpers
-│   ├── operator_env.rs       Operator env resolution — op://, $VAR, literals (1569 lines)
+│   ├── operator_env.rs       Operator env resolution — op://, $VAR, literals (2130 lines)
 │   ├── env_model.rs          Reserved env var policy, interpolation parsing
 │   ├── env_resolver.rs       Runtime env resolution with interactive prompts (560 lines)
 │   ├── selector.rs           Agent selector parsing
@@ -171,7 +171,8 @@ jackin/
 | `console/widgets/confirm.rs` | — | `ConfirmState`, `ConfirmTarget` | Y/N confirm modal | ratatui |
 | `console/widgets/confirm_save.rs` | — | `ConfirmSaveState` | save-confirm preview modal | ratatui |
 | `console/widgets/github_picker.rs` | — | `GithubPickerState` | GitHub URL picker | ratatui |
-| `console/widgets/op_picker/` | — | `OpPickerState` | 1Password vault browser modal | operator_env::OpStructRunner |
+| `console/widgets/op_picker/mod.rs` | 1712 | `OpPickerState`, `OpPickerStage`, `OpLoadState`, `OpPickerError` | 1Password picker state machine: drill-down Account→Vault→Item→Field; commits `op://...` reference verbatim | operator_env::OpStructRunner |
+| `console/widgets/op_picker/render.rs` | 865 | `render` | 1Password picker rendering: loading/fatal/pane states + 4 level renderers | ratatui |
 | `console/widgets/workdir_pick.rs` | — | `WorkdirPickState` | workdir-from-mounts picker | ratatui |
 | `console/widgets/mount_dst_choice.rs` | — | — | mount destination picker | ratatui |
 | `console/widgets/error_popup.rs` | — | — | error overlay | ratatui |
@@ -225,7 +226,7 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 |---|---|---|---|---|---|
 | `src/runtime/launch.rs` | 2368 | **1085** | 1282 | 3× `too_many_lines` | **Highest** — production code is genuinely large |
 | `src/app/mod.rs` | 951 | **928** | 22 | 1× `too_many_lines` | **High** — nearly all production; 928L dispatch function |
-| `src/operator_env.rs` | 1569 | **810** | 758 | 0 | **High** — production and tests roughly equal |
+| `src/operator_env.rs` | 2130 | **~880** | ~1250 | 0 | **High** — production code has grown (was 1569L at loop start; 2130L confirmed by wc -l); tests start at line 881 |
 | `src/console/manager/state.rs` | 992 | **~628** | ~363 | 0 | **High** — 26+ type definitions (Modal enum, EditorState, CreatePreludeState, etc.) mixed with impl behavior; prime candidate for types/behavior split |
 | `src/console/manager/input/editor.rs` | 2349 | **~1141** | ~1208 | 3× `too_many_lines` | **Critical** — PR #171 added Secrets-tab handlers, growing from ~547L to 1141L production; now the **largest production file** in the codebase; two major dispatch fns (`handle_editor_key` ~250L, `handle_editor_modal` ~276L) plus ~615L of tab-specific helpers |
 | `src/console/manager/input/save.rs` | 1472 | **~661** | ~811 | 2× `too_many_lines` | **Medium-High** — two-phase save: `begin_editor_save` (~118L Phase 1) + `commit_editor_save` (~149L Phase 2); 8 private helpers split cleanly into "preview text" vs "apply changes" groups; already has a `//!` doc |
@@ -247,7 +248,8 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/instance/auth.rs` | 796 | **210** | 585 | 0 | **Low** — not a god file; production code is only 210L |
 | `src/console/manager/mount_info.rs` | 745 | **277** | 468 | 0 | **Low** — tests dominate; has `//!` doc; single concern (mount classification) |
 | `src/console/manager/input/list.rs` | 614 | **~214** | ~400 | 0 | **Low** — tests dominate; has `//!` doc; two focused public functions |
-| `src/console/widgets/op_picker/render.rs` | 865 | **~545** | ~320 | 1× `too_many_lines` | **Medium** — PR #171 addition (AI-generated); 545L production with 4 level-specific renderers (`render_account_lines`, `render_vault_lines`, `render_item_lines`, `render_field_lines`, ~120L) that could move to `op_picker/levels.rs`; has `//!` doc; single concern (1Password picker rendering) |
+| `src/console/widgets/op_picker/mod.rs` | 1712 | **~775** | ~937 | 0 | **High** — PR #171 (AI-generated); 775L production with the full `OpPickerState` struct + `impl OpPickerState` state machine (~630L); same types/behavior split opportunity as `state.rs`; has 7-line `//!` doc explaining the drill-down UI and `op://` reference verbatim rationale |
+| `src/console/widgets/op_picker/render.rs` | 865 | **~545** | ~320 | 1× `too_many_lines` | **Medium** — PR #171 addition (AI-generated); 545L production with 4 level-specific renderers (`render_account_lines`, `render_vault_lines`, `render_item_lines`, `render_field_lines`, ~120L) that could move to `op_picker/pane.rs`; has `//!` doc; single concern (1Password picker rendering) |
 | `src/console/mod.rs` | 406 | **~307** | ~99 | 1× `too_many_lines` | **Low** — 307L production; `run_console` is the TUI event loop; no `//!` doc (block comment with ConsoleStage design rationale should be promoted to `//!`); fits in the `//!` priority queue |
 
 **Key insight:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `input/editor.rs` (1141L — updated post-PR #171), `runtime/launch.rs` (1085L), `app/mod.rs` (928L), and `operator_env.rs` (810L).
@@ -711,6 +713,25 @@ Production code is 668L (tests start at line 669). PR #171 added `render_environ
 **Import path note:** `agents_block_agent_count` (line 246 in the current file) calls `super::super::agent_allow::allows_all_agents`. After the split, `details.rs` is one directory deeper, so this path becomes `super::super::super::agent_allow::allows_all_agents`. Alternatively, add `use crate::console::manager::agent_allow::allows_all_agents;` for a path-stable import.
 
 **Auditability gain:** To audit "does the Environments subpanel correctly show per-agent env overrides?", a reviewer reads `list/subpanels.rs` (~280L) containing `render_environments_subpanel`, `struct EnvRow`, and `env_row_line`. Today they scan 668L of production code (plus 1320L of tests) to locate those three items. The split is especially valuable because PR #171 added the entire environments subpanel as AI-generated code — a focused audit of `subpanels.rs` is the fastest way to verify its correctness.
+
+**`src/console/widgets/op_picker/render.rs` Rule 5 analysis (865L, ~545L production)**
+
+PR #171 addition; already has a `//!` doc. Functions fall into two groups with no cross-dependency:
+
+| Function | Lines | Group |
+|---|---|---|
+| `pub fn render` | 22–33 | Coordinator — dispatches to loading/fatal/pane state renderers |
+| `fn render_loading`, `fn render_fatal` | 385–545 | State-specific renderers (non-normal states) |
+| `fn breadcrumb_title`, `fn viewport_offset`, `fn modal_block`, `fn footer_line` | 38–109 | Shared helpers used by `render_pane` |
+| `fn render_pane` | 112–252 | Pane coordinator (calls level renderers + helpers) |
+| `fn render_account_lines`, `render_vault_lines`, `render_item_lines`, `render_field_lines` | 253–376 | 4 level-specific line builders (~120L total) |
+| `fn display_label` | 377–384 | Label formatter used only by `render_field_lines` |
+
+**Proposed 2-file split** (simpler than a directory conversion):
+- `render.rs` (~300L): `pub fn render` + state-specific renderers (`render_loading`, `render_fatal`) + shared helpers (`breadcrumb_title`, `viewport_offset`, `modal_block`, `footer_line`). Answers: "How does the picker respond to loading/error/ready states?"
+- `render_pane.rs` (~260L): `render_pane` + 4 level renderers + `display_label`. Answers: "How does each 1Password level (account/vault/item/field) render its rows?" Tests follow their target function.
+
+**Auditability gain:** To audit "did the AI correctly implement the field-level display with label alignment?", a reviewer reads `render_pane.rs` (~260L) containing `render_field_lines` and `display_label`. Today they scan 545L with no structural separator between the two concerns.
 
 **Critical Rule 5 violator: `src/console/manager/input/editor.rs` (2349L, ~1141L production)**
 
