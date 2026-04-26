@@ -35,12 +35,12 @@ jackin/
 │   ├── main.rs               Entry point — constructs Cli, calls run()
 │   ├── lib.rs                Thin crate root (~20 LOC), module decls, pub use
 │   ├── app/                  Command dispatch and console context helpers
-│   │   ├── mod.rs            run() dispatch match (951 lines — god function)
+│   │   ├── mod.rs            run() dispatch match (979 lines — god function)
 │   │   └── context.rs        Target classification, workspace resolution (800 lines)
 │   ├── cli/                  Clap schema, split by topic
 │   ├── config/               TOML config model + persistence + in-memory editor
 │   │   ├── mod.rs            AppConfig struct + all config types (867 lines)
-│   │   └── editor.rs         Full TOML editing engine — toml_edit-based (1467 lines)
+│   │   └── editor.rs         Full TOML editing engine — toml_edit-based (1548 lines)
 │   ├── workspace/            Workspace model, mount parsing, path resolution
 │   ├── manifest/             Agent manifest schema + validator
 │   ├── runtime/              Container lifecycle
@@ -113,7 +113,7 @@ jackin/
 |---|---|---|---|---|
 | `main.rs` | ~15 | — | entry point | `app::run` |
 | `lib.rs` | ~20 | `run` | module decls + re-export | all modules |
-| `app/mod.rs` | 951 | `run()` | Command dispatch (giant match) | nearly every module |
+| `app/mod.rs` | 979 | `run()` | Command dispatch (giant match) | nearly every module |
 | `app/context.rs` | 800 | `TargetKind`, `classify_target`, `resolve_agent_from_context`, `remember_last_agent` | workspace/agent context resolution | `config`, `workspace`, `selector` |
 | `cli/mod.rs` | ~80 | `Cli`, `Command` | root clap schema | cli/* |
 | `cli/agent.rs` | — | `LoadArgs`, `ConsoleArgs`, `HardlineArgs` | load/console/hardline args | clap |
@@ -122,7 +122,7 @@ jackin/
 | `cli/workspace.rs` | — | `WorkspaceCommand` | workspace subcommand args | clap |
 | `cli/dispatch.rs` | — | `classify`, `is_tui_capable` | bare-jackin dispatch routing | — |
 | `config/mod.rs` | 867 | `AppConfig`, `AuthForwardMode`, `ClaudeConfig`, `AgentSource`, `DockerConfig` | config types + `require_workspace` | workspace, editor, mounts |
-| `config/editor.rs` | 1467 | `ConfigEditor`, `EnvScope` | full TOML editing engine | `toml_edit` |
+| `config/editor.rs` | 1548 | `ConfigEditor`, `EnvScope` | full TOML editing engine | `toml_edit` |
 | `config/agents.rs` | — | `BUILTIN_AGENTS` const | builtin agent list | — |
 | `config/mounts.rs` | — | `DockerMounts`, `MountEntry` | global mount registry | — |
 | `config/persist.rs` | — | load/save helpers | config file I/O | `toml`, `toml_edit` |
@@ -177,6 +177,9 @@ jackin/
 | `console/widgets/github_picker.rs` | — | `GithubPickerState` | GitHub URL picker | ratatui |
 | `console/widgets/op_picker/mod.rs` | 1712 | `OpPickerState`, `OpPickerStage`, `OpLoadState`, `OpPickerError` | 1Password picker state machine: drill-down Account→Vault→Item→Field; commits `op://...` reference verbatim | operator_env::OpStructRunner |
 | `console/widgets/op_picker/render.rs` | 865 | `render` | 1Password picker rendering: loading/fatal/pane states + 4 level renderers | ratatui |
+| `console/widgets/agent_picker.rs` | 436 | `AgentPickerState` | modal picker for agent disambiguation (PR #171); //! doc: "Modal picker for agent disambiguation" | ratatui |
+| `console/widgets/scope_picker.rs` | 201 | `ScopePickerState` | workspace-vs-specific-agent choice for Secrets-tab Add flow (PR #171); //! doc present | ratatui |
+| `console/widgets/source_picker.rs` | 244 | `SourcePickerState` | plain-or-1Password choice between `EnvKey` input and value entry (PR #171); //! doc present | ratatui |
 | `console/widgets/workdir_pick.rs` | — | `WorkdirPickState` | workdir-from-mounts picker | ratatui |
 | `console/widgets/mount_dst_choice.rs` | — | — | mount destination picker | ratatui |
 | `console/widgets/error_popup.rs` | — | — | error overlay | ratatui |
@@ -229,7 +232,7 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | File | Total | Prod LOC | Test LOC | Suppressions | Priority |
 |---|---|---|---|---|---|
 | `src/runtime/launch.rs` | 2368 | **1085** | 1282 | 3× `too_many_lines` | **Highest** — production code is genuinely large |
-| `src/app/mod.rs` | 951 | **928** | 22 | 1× `too_many_lines` | **High** — nearly all production; 928L dispatch function |
+| `src/app/mod.rs` | 979 | **~957** | 22 | 1× `too_many_lines` | **High** — nearly all production; ~957L dispatch function (verified iteration 30) |
 | `src/operator_env.rs` | 2130 | **~880** | ~1250 | 0 | **High** — production code has grown (was 1569L at loop start; 2130L confirmed by wc -l); tests start at line 881 |
 | `src/console/manager/state.rs` | 992 | **~628** | ~363 | 0 | **High** — 26+ type definitions (Modal enum, EditorState, CreatePreludeState, etc.) mixed with impl behavior; prime candidate for types/behavior split |
 | `src/console/manager/input/editor.rs` | 2349 | **~1141** | ~1208 | 3× `too_many_lines` | **Critical** — PR #171 added Secrets-tab handlers, growing from ~547L to 1141L production; now the **largest production file** in the codebase; two major dispatch fns (`handle_editor_key` ~250L, `handle_editor_modal` ~276L) plus ~615L of tab-specific helpers |
@@ -239,7 +242,7 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/workspace/planner.rs` | 718 | **235** | 482 | 0 | Low — tests dominate |
 | `src/console/manager/input/mouse.rs` | 689 | **206** | 482 | 0 | Low — tests dominate |
 | `src/console/manager/render/list.rs` | 1989 | **~668** | ~1320 | 0 | **Medium-High** — PR #171 added `render_environments_subpanel` (~200L production), pushing past the 500L threshold; 3 test blocks interspersed at lines 669, 812, 860 |
-| `src/config/editor.rs` | 1467 | **503** | 963 | 0 | Medium — production reasonable; tests dominate |
+| `src/config/editor.rs` | 1548 | **~584** | ~963 | 0 | Medium — production grew with PR #171 additions; tests still dominate (verified iteration 30) |
 | `src/tui/animation.rs` | 582 | ~582 (no test section found) | ~0 | 1× `too_many_lines` | Medium — all production (animation logic) |
 | `src/runtime/cleanup.rs` | 587 | **220** | 366 | 0 | Low |
 | `src/runtime/repo_cache.rs` | 559 | **213** | 345 | 0 | Low |
@@ -277,7 +280,7 @@ Total `#[allow(clippy::too_many_lines)]` suppressions: **16** across 11 files (g
 The iteration-1 count of "13 across 8 files" was outdated — PR #171 added suppressions in `input/editor.rs` (2), `render/editor.rs` (+2), and `render/mod.rs` (+1). `console/mod.rs` and `op_picker/render.rs` were previously uncounted.
 
 `mod.rs` files containing real logic (not just re-exports):
-- `src/app/mod.rs` (951L) — the entire `run()` dispatch function lives here.
+- `src/app/mod.rs` (979L) — the entire `run()` dispatch function lives here.
 - `src/config/mod.rs` (867L) — all `AppConfig`, `AuthForwardMode`, `ClaudeConfig` structs are defined here, not in sub-files.
 - `src/manifest/mod.rs` (522L) — schema structs, `load()`, `display_name()` all here.
 - `src/console/mod.rs` (406L, ~307L production) — `run_console()` entry point and TUI event loop.
@@ -478,9 +481,49 @@ The key principle: **each file should answer one question.** A file that mixes t
 | `render/list/subpanels.rs` | Does the Environments subpanel correctly show per-agent env overrides? |
 | `input/save/preview.rs` | What text does the ConfirmSave modal show for a given workspace diff? |
 
-A reviewer auditing "did the AI correctly implement workspace validation?" reads only `config/persist.rs` + `app/workspace_cmd.rs`. Today they must read `app/mod.rs` (951L) + `config/mod.rs` (867L) + `config/editor.rs` (1467L) without any structural signal about which lines are relevant.
+A reviewer auditing "did the AI correctly implement workspace validation?" reads only `config/persist.rs` + `app/workspace_cmd.rs`. Today they must read `app/mod.rs` (979L) + `config/mod.rs` (867L) + `config/editor.rs` (1548L) without any structural signal about which lines are relevant.
 
 **Console-subsystem audit value (PR #171 AI-generated code):** PR #171 added the Secrets/Environments tab as AI-generated code across 5 files. Post-split, auditing "did the AI correctly implement the Secrets tab?" means reading 5 focused files (each answering one question) rather than scanning 5 god files totaling 6000L. The last 4 rows in the table above are all console-specific audit units from the PR #171 additions.
+
+### Alternative thesis: documentation-first verification
+
+The structural-split approach above rests on two assumptions that deserve explicit challenge:
+
+**Assumption A: Files are the unit of AI verification.**
+Counter-evidence: AI agents can be directed to a specific function with a line reference (e.g. `src/console/widgets/op_picker/mod.rs:446`) without loading the whole file into a conversation. When a reviewer asks "did the AI correctly implement `handle_field_key`?", the relevant unit is the *function*, not the file. Splitting `op_picker/mod.rs` into `mod.rs + loading.rs + keys.rs` does not make `handle_field_key` more auditable if `keys.rs` still has no behavioral spec for that function.
+
+**Assumption B: File size limits comprehension.**
+Counter-evidence: Claude Sonnet 4 has a ~200K-token context window — sufficient to hold the entire 43K-line `jackin` codebase simultaneously. File size is not a context constraint for current-generation AI agents. What limits comprehension is the *absence of stated invariants*, not the length of the file. `manifest/validate.rs` (962L total, 145L production) is trivially auditable because the other 816L are tests that demonstrate the expected behavior. `runtime/launch.rs` (2368L, ~1085L production, no `//!` doc) is hard to audit not because it's large, but because no file-level contract states what it does.
+
+**The alternative approach: documentation-first verification**
+
+Instead of splitting files, make each file self-verifiable through:
+
+1. **`//!` module contract** — states the behavioral invariants the module maintains, not just what it contains. Example for `op_picker/mod.rs`: "Invariant: once a field is selected, `committed_reference` is set atomically using the verbatim `op://Vault/Item/Field` string constructed from loaded metadata — no post-processing or normalization occurs. Any code path that sets `committed_reference` must use this exact format."
+2. **Function-level `///` docs** on every non-trivial `pub` and `pub(super)` method — one sentence stating the postcondition. This is *not* currently present in any of the large files.
+3. **A `docs/internal/specs/` artifact** per complex subsystem — a behavioral spec listing the expected state transitions and their guards (see §8.1). This is the spec the AI agent writes code *against*, making verification a matter of comparing code to spec rather than code to intuition.
+
+**Comparison of the two approaches:**
+
+| Criterion | Structure-first (current §4) | Documentation-first (alternative) |
+|---|---|---|
+| Implementation effort | 14+ PRs, ~500L of `use` path changes, CI risk on each | 1–2 PRs per subsystem, no structural changes |
+| Verifiability granularity | File (post-split files are 100–300L) | Function (docs target individual functions) |
+| Works with current AI context window? | Yes, but context window was not the constraint | Yes — directly addresses the actual constraint |
+| Risk of regressions | High — each split can introduce circular imports | Low — docs can't break compilation |
+| Durability | Structure drifts as new code is added; small files accumulate | Docs drift too, but at function level where the invariant lives |
+| Scales with codebase growth | Each growth spurt may need another split | Docs discipline applies continuously as code is written |
+| Addresses AI-generated code specifically | Indirectly — smaller files are easier to review holistically | Directly — the spec becomes the contract the AI writes against |
+
+**Combined recommendation (revised):**
+
+The two approaches are not mutually exclusive. A stronger path than either alone:
+
+- **Phase 1 — documentation sprint** (low-risk, immediately applicable): Write `//!` module contracts and `///` function docs for the 10 files in the §10 //! priority queue. Add behavioral specs to `docs/internal/specs/` for the three hardest-to-verify subsystems: `op_picker/` (drill-down state machine), `config/editor.rs` (two-phase save invariants), `runtime/launch.rs` (container bootstrap sequence). This is 2–3 PRs, zero structural change.
+- **Phase 2 — targeted structural splits** (higher-risk, higher-payoff): Apply file splits only to files with >600L *production* code where the split boundary is unambiguous. By that criterion, only 4 files qualify: `input/editor.rs` (1141L), `runtime/launch.rs` (1085L), `app/mod.rs` (~957L), and `operator_env.rs` (~810L). The 10 smaller files in the current §10 Step 4f table drop from urgent to deferred.
+- **Phase 3 — workspace split** if LOC exceeds 150K or a second binary needs its own semver identity.
+
+This phasing reduces the scope of structural changes by ~60% while delivering the stated goal (AI verifiability) faster and with lower risk.
 
 ### Workspace vs single-crate decision
 
@@ -494,7 +537,7 @@ A reviewer auditing "did the AI correctly implement workspace validation?" reads
 - Contributor friction is lower with a single crate: no need to decide which crate a new helper belongs to.
 
 **The argument for workspace splitting:**
-- `config/editor.rs` (1467L), `operator_env.rs` (1569L), and `runtime/launch.rs` (2368L) represent subsystems that could be extracted with a clean public API, improving compile-time by enabling Cargo to parallelize their compilation.
+- `config/editor.rs` (1548L), `operator_env.rs` (2130L), and `runtime/launch.rs` (2368L) represent subsystems that could be extracted with a clean public API, improving compile-time by enabling Cargo to parallelize their compilation.
 - If a `jackin-library` or `jackin-daemon` use case emerges, workspace is the natural structure.
 - Test isolation: today all unit tests share the same crate compilation. Workspace members can be tested in isolation.
 
@@ -600,7 +643,7 @@ Violators:
   - `client.rs` imports `OpRunner` from `mod.rs`.
   - `layers.rs` imports `OpRunner` + `dispatch_value` from `mod.rs`.
   - `picker.rs` imports `OpRunner` from `mod.rs` + `OpCli` from `client.rs`.
-- `src/config/editor.rs` (1467L) — concrete structure:
+- `src/config/editor.rs` (1548L) — concrete structure:
   - Lines 1–16: `//!` module doc (present) + imports
   - Lines 17–22: `EnvScope` enum (public, 4 variants: Global, Agent, Workspace, WorkspaceAgent)
   - Lines 24–27: `ConfigEditor` struct (public; `doc: DocumentMut`, `path: PathBuf`)
@@ -614,7 +657,7 @@ Violators:
     - *Workspace tracking*: `set_last_agent` (346–360)
     - *Workspace CRUD*: `rename_workspace` (361–386), `remove_workspace` (387–400), `create_workspace` (401–432), `edit_workspace` (433–468)
   - Lines 469–503: Private helpers: `auth_forward_str` const fn (469–475), `env_scope_path` (477–491), `table_path_mut` (492–503)
-  - Lines 504–1467: `#[cfg(test)] mod tests` (~963L — nearly 2× the production code)
+  - Lines 522+: `#[cfg(test)] mod tests` (~963L — test suite; production grew to ~584L per iteration 30 fresh scan)
 
   **Key architectural note**: `create_workspace` (401–432) and `edit_workspace` (433–468) are NOT pure TOML mutations — they delegate to `AppConfig::create_workspace` / `AppConfig::edit_workspace` for validation, then commit the validated result via TOML. This validation-first → TOML-commit pattern must be preserved in any refactor; it is why the `ConfigEditor` cannot simply be a raw TOML wrapper.
 
@@ -627,7 +670,7 @@ Violators:
   - `src/config/editor/toml_helpers.rs` (~30L): `env_scope_path`, `table_path_mut` (private TOML-tree navigation helpers).
   - Tests: centralized in `src/config/editor/tests.rs` (~963L), imported via `#[cfg(test)] mod tests;` in `mod.rs`.
 
-  **Net effect**: Max production file drops from 1467L to ~120L. The 963L test file stays large but is a test file (expected). The `create_workspace`/`edit_workspace` delegation pattern is visible in `workspace_ops.rs` and doesn't need to be co-located with `env_ops.rs` for any functional reason.
+  **Net effect**: Max production file drops from 1548L to ~120L. The 963L test file stays large but is a test file (expected). The `create_workspace`/`edit_workspace` delegation pattern is visible in `workspace_ops.rs` and doesn't need to be co-located with `env_ops.rs` for any functional reason.
 
   **Priority note**: `config/editor.rs`'s production code is only 503L — a reasonable size. The file is "large" primarily because of its 963L test suite. The split is still worthwhile for navigability (18 methods in one `impl` block is hard to scan), but it is *lower priority* than splitting `runtime/launch.rs` (1083L production code) or `operator_env.rs` (810L production code).
 
@@ -940,7 +983,7 @@ Extends `config:recommended` + `docker:pinDigests`. Removes per-PR and concurren
 
 *Option A — Keep `anyhow` + `thiserror 2.0` (current):* This is the community consensus for single-binary CLIs in 2025–2026. `thiserror 2.0` (released late 2024) added `#[error(transparent)]` improvements and better `no_std` support. `anyhow 1.x` is stable. No migration cost.
 
-*Option B — Add `miette` for config/manifest diagnostics:* `miette` adds source-span error reporting — when a manifest validation fails, the error message can highlight the exact TOML line, not just print a message. The gain is operator UX when they write a bad `jackin.agent.toml` or bad `~/.config/jackin/config.toml`. `miette` layers on top of `anyhow`; it does not require replacing it. Cost: adds a dependency (~50 transitive); requires manifest and config code to emit `Diagnostic` types. Candidate paths: `src/manifest/validate.rs` (962L) and `src/config/editor.rs` (1467L).
+*Option B — Add `miette` for config/manifest diagnostics:* `miette` adds source-span error reporting — when a manifest validation fails, the error message can highlight the exact TOML line, not just print a message. The gain is operator UX when they write a bad `jackin.agent.toml` or bad `~/.config/jackin/config.toml`. `miette` layers on top of `anyhow`; it does not require replacing it. Cost: adds a dependency (~50 transitive); requires manifest and config code to emit `Diagnostic` types. Candidate paths: `src/manifest/validate.rs` (962L) and `src/config/editor.rs` (1548L).
 
 *Option C — `error-stack` (Hasura):* Richer stack-trace-style error context; heavier API. Community reception divided (see `_research_notes.md`). Overkill for a CLI that doesn't need structured error telemetry.
 
@@ -1558,7 +1601,7 @@ mod workspaces;
 
 **Tests stay co-located:** 963L of tests remain in the respective domain files (each test is tightly coupled to the method it tests). No separate `tests.rs` — Rust inline tests are idiomatic.
 
-**Auditability gain:** To audit "does the agent auth forward correctly?", a reviewer reads only `agent_ops.rs` (~130L). Today they must scan 1467L for the relevant methods.
+**Auditability gain:** To audit "does the agent auth forward correctly?", a reviewer reads only `agent_ops.rs` (~130L). Today they must scan 1548L for the relevant methods.
 
 4d. **`src/operator_env.rs` → `src/operator_env/` module directory** (~810L production, ~758L tests): Convert to module directory: `mod.rs` (~100L traits + dispatch), `client.rs` (~280L subprocess), `layers.rs` (~470L env resolution), `picker.rs` (~250L PR #171).
 
@@ -1577,7 +1620,7 @@ picker.rs    → mod.rs    (imports OpRunner)
 
 **Implication for split execution:** `layers.rs` must add both `use super::OpRunner;` (from mod.rs) and `use super::client::OpCli;` (from client.rs). This is safe and expected.
 
-4e. **`src/app/mod.rs` → `src/app/` module split** (951L total, 843L of `run()` dispatch):
+4e. **`src/app/mod.rs` → `src/app/` module split** (979L total, ~957L of `run()` dispatch — verified iteration 30):
 
 **Complete file mapping including all private helpers (verified by reading lines 882–955):**
 

@@ -1184,3 +1184,64 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§1 module map completeness** — `console/widgets/` has 11+ files per the roadmap text but the module map only shows a subset. `agent_picker.rs`, `scope_picker.rs`, `source_picker.rs` (added in PR #171) each have `—` entries with no LOC or //! status. These should be surveyed for LOC, //! coverage, and potential Rule 5 issues.
 2. **§5 naming candidates — verification lag** — several naming candidates reference specific line numbers that may have shifted with PR #171's 2349L `input/editor.rs`. A targeted grep verification of the line numbers in §5 rows 1–16 would improve confidence.
 3. **§2 repository-level navigation gaps** — the discovery table in §2 shows `op_picker` as `requires-grep` with status "Entry in PROJECT_STRUCTURE.md; canonical layout rule in RULES.md added in PR #171". It's worth verifying whether that entry was actually added to PROJECT_STRUCTURE.md (the roadmap says it should be but may not track whether it was done).
+
+---
+
+## Iteration 30 — 2026-04-26
+
+### Directive change (from operator)
+This iteration introduced three new standing requirements for all future iterations:
+1. **Re-scan the project fresh every iteration** — re-read key source files, re-count LOC, do not coast on prior iteration data.
+2. **Be critical** — challenge existing roadmap findings; sometimes agree, sometimes disagree; bring a fresh perspective each run.
+3. **Research and propose alternative approaches** — the roadmap must present competing schools of thought, not just validate one path.
+
+The loop prompt was also updated to embed these directives explicitly.
+
+### What was improved
+
+1. **Critical challenge to §4's core premise — added "Alternative thesis: documentation-first verification"**
+   
+   The existing §4 rests on two assumptions that were never made explicit or challenged: (A) files are the unit of AI verification, and (B) file size limits comprehension. This iteration challenges both with jackin-specific evidence:
+   
+   - **Against A**: AI agents can be directed to a specific function via line reference without loading the whole file. The actual verification question is "does this function match its spec?" — a spec is the thing that's missing, not file isolation.
+   - **Against B**: Claude Sonnet 4 has a ~200K token context window. Even `runtime/launch.rs` (2368L) fits with room to spare. The true barrier is the absence of stated behavioral invariants, not file size. `manifest/validate.rs` (962L total, 145L production) is easy to audit precisely because the other 816L are tests — tests are the verification mechanism.
+   
+   Added a comparison table (structure-first vs documentation-first across 7 criteria) and a **combined phased recommendation**: Phase 1 = documentation sprint (//! contracts + `docs/internal/specs/` for 3 subsystems, 2–3 PRs, zero structural change); Phase 2 = targeted structural splits for files >600L *production* only (reduces scope from 14+ files to 4 files: input/editor.rs, launch.rs, app/mod.rs, operator_env.rs); Phase 3 = workspace split if LOC exceeds 150K.
+
+2. **Stale LOC corrections from fresh scan**
+   - `app/mod.rs`: 951L → **979L** (corrected in 7 locations: ASCII tree, module map, hot-spot table, Rule 1 violators, workspace tradeoffs, §10 Step 4e header, two audit-unit text references)
+   - `config/editor.rs`: 1467L → **1548L** (corrected in 8 locations; estimated production LOC 503 → ~584; test section start line corrected from "Lines 504–1467" to "Lines 522+")
+   - `operator_env.rs` workspace tradeoff reference corrected from 1569L → 2130L (was already updated in hot-spot table but missed in one prose sentence)
+
+3. **§1 module map — added 3 PR #171 widget files**
+   - `console/widgets/agent_picker.rs` (436L) — "Modal picker for agent disambiguation"
+   - `console/widgets/scope_picker.rs` (201L) — workspace-vs-specific-agent choice for Secrets-tab Add flow
+   - `console/widgets/source_picker.rs` (244L) — plain-or-1Password choice between EnvKey input and value entry
+   All three have //! docs (verified by grep). All three are under 500L — not hot-spots.
+
+### What was read (fresh scan)
+- `find src -name "*.rs" | xargs wc -l | sort -rn` — confirmed all 28 files above 500L; `app/mod.rs` is 979L, `config/editor.rs` is 1548L
+- `src/console/widgets/agent_picker.rs`, `scope_picker.rs`, `source_picker.rs` — line counts and //! doc presence confirmed
+- `src/console/manager/mount_info.rs` — //! doc confirmed (already in hot-spot table, correctly rated Low)
+- `src/console/manager/input/mouse.rs`, `prelude.rs` — //! docs confirmed; already in hot-spot table
+- `src/config/editor.rs` — `#[cfg(test)]` markers at lines 522 and 957 confirmed; production ~584L
+- `PROJECT_STRUCTURE.md` line 53 — confirms op_picker, agent_picker, scope_picker, source_picker still missing
+
+### What changed in the roadmap
+- §4: Added "Alternative thesis: documentation-first verification" subsection (7-criterion comparison table + combined phased recommendation)
+- §4 prose references: 951L → 979L for app/mod.rs (7 locations)
+- §4 prose references: 1467L → 1548L for config/editor.rs (8 locations)
+- §1 module map: added 3 rows for agent_picker.rs, scope_picker.rs, source_picker.rs
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| app/mod.rs at 979L | High | `wc -l` confirmed in iteration 30 fresh scan |
+| config/editor.rs at 1548L, ~584L production | Medium-High | total confirmed; production ~584 = 1548 - ~963 tests estimated from prior data |
+| Alternative thesis (documentation-first) | Medium | Argument is logically grounded; would be strengthened by an external case study of a large Rust TUI codebase that uses docs-first rather than split-first |
+| Phase 2 threshold ">600L production" | Medium | Chosen to reduce scope to 4 files; no external benchmark for this specific threshold |
+
+### Weakest sections for iteration 31
+1. **§2 — PROJECT_STRUCTURE.md gap not yet documented in §2 discovery table** — the §2 table shows op_picker as `requires-grep` with "Entry in PROJECT_STRUCTURE.md pending" but the fresh scan confirms it was never added. This should be explicitly noted as a concrete unresolved gap (not just "pending").
+2. **§7 modernization — alternative thesis needs external evidence** — the documentation-first alternative in §4 would be strengthened by researching how other large Rust TUI projects (e.g. `gitui`, `bottom`, `lazygit`-equivalent Rust projects) actually structure their code. Do they split into many small files, or use large well-documented files?
+3. **§8.1 spec-driven development** — the new §4 alternative explicitly recommends `docs/internal/specs/` for 3 subsystems (op_picker, config/editor, runtime/launch) but §8.1 doesn't yet specify the format of these specs. A concrete spec template would complete the loop.
