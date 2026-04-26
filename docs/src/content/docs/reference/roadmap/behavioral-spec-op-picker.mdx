@@ -13,20 +13,20 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 | INV | Description | Verify by |
 |---|---|---|
-| INV-1 | `committed_reference` is 3-segment `op://Vault/Item/Field` — never 4-segment `op://Account/Vault/Item/Field` | grep `committed_reference` — must be `format!("op://{}/{}/{}"...)` |
+| INV-1 | Field selection commits `OpField::reference` verbatim when present; only fixtures missing `reference` use the synthesized `op://<vault>/<item>/<label>` fallback | selection path returns `field.reference.clone()` first, then falls back to `format!("op://{}/{}/{}"...)` |
 | INV-2 | No secret values in picker path — `RawOpField` struct has no `value` field; serde drops it silently | grep `value` in op_picker/mod.rs; exhaustive destructure test at `operator_env.rs:~2055` |
-| INV-3 | Loading is async (background worker + channel); key handlers are synchronous — no blocking I/O in key dispatch | key handler fns must not call `std::thread::spawn` or block on channel recv |
+| INV-3 | Loading is async (background worker + channel); key handlers stay synchronous and only advance UI state / `poll_load()` | background loaders use `std::thread::spawn`; key handlers do not call the CLI directly |
 
 ## State machine
 
-4 stages: `Accounts` → `Vaults` → `Items` → `Fields`. Each stage has a background loader and a key handler. Loaders post results via channel; `poll_*_load` drains them before each render.
+4 stages: `Accounts` → `Vaults` → `Items` → `Fields`. Each stage has a background loader and a key handler. Loaders post results via channel; `poll_load()` drains them before each render.
 
 ## Steps
 
 1. Create `docs/src/content/docs/internal/specs/op-picker.mdx` (once Developer Reference setup exists).
 2. Use INV-N template for the three invariants above.
 3. Add sidebar entry under Developer Reference → Specs.
-4. Link from the `op_picker/mod.rs` `//!` doc to the spec URL.
+4. Link from the `op_picker/mod.rs` `//!` doc to the spec URL once the internal docs section exists.
 
 ## Related files
 

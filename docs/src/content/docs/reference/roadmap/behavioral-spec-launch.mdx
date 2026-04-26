@@ -7,33 +7,35 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/runtime/launch.rs" /> is the `jackin load` critical path (~1077L production, no `//!` doc) and is targeted for a structural split. Without a behavioral spec, there is no oracle to verify the split preserved all invariants.
+<RepoFile path="src/runtime/launch.rs" /> is the `jackin load` critical path (~1319L production, ~3047L total, no `//!` doc) and is targeted for a structural split. Without a behavioral spec, there is no oracle to verify that a refactor preserved the launch pipeline, auth checks, workspace materialization, and post-attach cleanup rules.
 
-## Verified invariants (read from lines 553–892)
+## Verified invariants
 
 | INV | Description | Verify by |
 |---|---|---|
-| INV-1 | Trust gate (line 594) precedes image build (line 736) — untrusted agent cloned but NOT built until confirmed | `confirm_agent_trust` call before `build_agent_image` in `load_agent_with` |
-| INV-2 | Container name claimed (line 754) between image build and network creation (line 827) | `claim_container_name` between `build_agent_image` and `launch_agent_runtime` |
-| INV-3 | Token verified (line 763) before network creation — fail fast if auth token missing | `verify_token_env_present` before `launch_agent_runtime` |
-| INV-4 | `render_exit` called on ALL exit paths (lines 886 and 890) — both `Ok` and `Err` arms | both match arms call `render_exit` |
-| INV-5 | Cleanup disarm semantics: `Running` → disarm (hardline can restart), clean exit → cleanup, crash → disarm | `match inspect_container_state(...)` arm mapping |
+| INV-1 | Trust confirmation still happens before the image build — an untrusted third-party agent may be cloned/resolved, but not built or launched until confirmed | `confirm_agent_trust` closure runs before `build_agent_image` in `load_agent_with` |
+| INV-2 | Token mode still fails fast before runtime startup work — missing `CLAUDE_CODE_OAUTH_TOKEN` aborts before DinD/network launch | `verify_token_env_present` runs before `AgentState::prepare` / `launch_agent_runtime` |
+| INV-3 | Container slot claim still happens after image build and before runtime launch | `claim_container_name` stays between `build_agent_image` and `launch_agent_runtime` |
+| INV-4 | Foreground attach finalization still runs before teardown classification — isolated worktrees are finalized before deciding whether to preserve or clean the container | `finalize_foreground_session` happens before the `inspect_container_state(...)` cleanup match |
+| INV-5 | Cleanup classification still preserves restartable sessions and tears down clean exits | `Running` / crash paths disarm cleanup; clean exit runs cleanup |
+| INV-6 | `render_exit` still runs on both success and error exits from `load_agent_with` | both `Ok(_)` and `Err(error)` arms call `render_exit` |
 
 ## Pipeline overview
 
-`load_agent` (public API) → `load_agent_with` (4-step pipeline):
+`load_agent` (public API) → `load_agent_with` (current pipeline):
 
-1. **Trust gate** — confirm untrusted agents with the operator
-2. **Image build** — `build_agent_image()` with name claimed afterward
-3. **Token verification** — verify auth before network creation
-4. **Runtime launch** — `launch_agent_runtime()` with full render lifecycle
+1. **Resolve source + trust** — resolve repo state, then confirm untrusted agents
+2. **Resolve launch inputs** — manifest env, operator env, auth mode, and diagnostics
+3. **Build + claim slot** — build the image, then claim the container name/slot
+4. **Prepare state + materialize workspace** — auth state, isolated mounts, cache/state dirs
+5. **Launch + finalize** — start runtime, attach, finalize worktrees, classify teardown/preservation
 
 ## Steps
 
 1. Create `docs/src/content/docs/internal/specs/runtime-launch.mdx` (once Developer Reference setup exists).
 2. Frontmatter: `title: "runtime/launch.rs — Behavioral Spec"`, `spec_type: behavioral`, `subsystem: runtime`.
-3. Sections: Purpose, pipeline overview, behavioral invariants (INV-1 through INV-5), testing notes.
-4. Note injection seams: `LoadOptions.op_runner` and `LoadOptions.host_env` at lines 657–693 (test injection points).
+3. Sections: Purpose, pipeline overview, behavioral invariants (INV-1 through INV-6), testing notes.
+4. Note the current test seams: `LoadOptions.op_runner`, `LoadOptions.host_env`, and the injected `confirm_trust` closure passed into `load_agent_with`.
 
 ## Why this must come before the split
 
@@ -41,4 +43,4 @@ The spec is the verification oracle. If <RepoFile path="src/runtime/launch.rs" /
 
 ## Key file
 
-<RepoFile path="src/runtime/launch.rs" /> — specifically `fn load_agent_with` at line 553.
+<RepoFile path="src/runtime/launch.rs" /> — specifically the `load_agent_with` helper.

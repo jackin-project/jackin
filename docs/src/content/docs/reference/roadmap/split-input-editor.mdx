@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/console/manager/input/editor.rs" /> is the largest production file at ~1141L production (2349L total, tests start at line 1142). It handles keyboard dispatch for all 4 editor tabs (General, Mounts, Agents, Secrets). PR #171 added the Secrets tab, growing this file from ~547L to 1141L. A reviewer auditing "did the AI correctly implement the Secrets tab?" must scan 1141L of mixed-tab code.
+<RepoFile path="src/console/manager/input/editor.rs" /> is still one of the biggest concentrated editor-state files: ~1188L production, 2440L total, with tests starting at line 1189. It handles keyboard dispatch for all 4 editor tabs (General, Mounts, Agents, Secrets). A reviewer auditing "did the AI correctly implement the Secrets tab?" still has to scan well over a thousand lines of mixed-tab production code.
 
 ## Proposed split
 
@@ -22,10 +22,10 @@ src/console/manager/input/editor/
 
 ## Key technical details
 
-- `handle_editor_key` (line 22, ~250L) — main dispatcher; stays in `mod.rs`
-- `handle_editor_modal` (line 618, ~276L) — modal commit handling; stays in `mod.rs`
+- `handle_editor_key` — main dispatcher; stays in `mod.rs`
+- `handle_editor_modal` — modal commit handling; stays in `mod.rs`
 - Both functions dispatch to tab-specific helpers; the helpers move to per-tab files
-- After split, `agents_block_agent_count` at line 246 uses `super::super::agent_allow::allows_all_agents` — with `editor/` being one level deeper, use `crate::console::manager::agent_allow::allows_all_agents` for stability
+- After split, helper imports such as `super::super::agent_allow::allows_all_agents` should switch to a stable absolute path (`crate::console::manager::agent_allow::allows_all_agents`) because `editor/` becomes one level deeper
 
 ## What needs confirmation
 
@@ -33,7 +33,7 @@ Should `handle_editor_modal` stay in `mod.rs` or move to a `modal.rs` sub-file? 
 
 ## Auditability gain
 
-To audit "did the AI correctly implement the Secrets tab?", a reviewer reads only `secrets.rs` (~500L) instead of scanning 1141L of mixed-tab production code.
+To audit "did the AI correctly implement the Secrets tab?", a reviewer reads only `secrets.rs` (~500L) instead of scanning ~1188L of mixed-tab production code.
 
 ## Steps
 
