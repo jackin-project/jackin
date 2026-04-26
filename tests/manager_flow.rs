@@ -30,35 +30,21 @@ const fn key(code: KeyCode) -> KeyEvent {
 }
 
 fn seed_config(paths: &JackinPaths, temp_dir: &std::path::Path) -> Result<AppConfig> {
-    paths.ensure_base_dirs()?;
-
-    // Use a host path that actually exists (the tempdir) so
-    // WorkspaceConfig's workdir-must-equal-or-be-covered-by-mount-dst
-    // validation passes.
-    let host_path = temp_dir.display().to_string();
-    let ws = WorkspaceConfig {
-        workdir: host_path.clone(),
-        mounts: vec![MountConfig {
-            src: host_path.clone(),
-            dst: host_path,
-            readonly: false,
-        }],
-        ..Default::default()
-    };
-
-    let mut ce = ConfigEditor::open(paths)?;
-    ce.create_workspace("big-monorepo", ws)?;
-    ce.save()
+    seed_config_with_env(paths, temp_dir, vec![])
 }
 
 /// Seed a workspace with pre-populated `env` keys. Used by several Secrets
-/// integration tests that need existing env rows to navigate over.
+/// integration tests that need existing env rows to navigate over. Pass
+/// an empty `Vec` (or call `seed_config`) for the no-env case.
 fn seed_config_with_env(
     paths: &JackinPaths,
     temp_dir: &std::path::Path,
     env: Vec<(&str, &str)>,
 ) -> Result<AppConfig> {
     paths.ensure_base_dirs()?;
+    // Use a host path that actually exists (the tempdir) so
+    // WorkspaceConfig's workdir-must-equal-or-be-covered-by-mount-dst
+    // validation passes.
     let host_path = temp_dir.display().to_string();
     let env_map: std::collections::BTreeMap<String, String> = env
         .into_iter()
