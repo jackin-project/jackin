@@ -4,7 +4,7 @@
 
 **Last updated:** 2026-04-26
 
-This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` treated as already merged per operator instruction). Recommendations are inputs to a future, separate execution effort — no code has been touched.
+This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` now merged). Recommendations are inputs to a future, separate execution effort — no code has been touched.
 
 Revision history: [`_iteration_log.md`](./_iteration_log.md).
 Research sources: [`_research_notes.md`](./_research_notes.md).
@@ -41,7 +41,7 @@ jackin/
 │   │   └── launch.rs         Container bootstrap pipeline (2368 lines — largest file)
 │   ├── console/              Interactive operator-console TUI
 │   │   ├── manager/          Workspace-manager TUI subsystem (16 files, many large)
-│   │   └── widgets/          Reusable TUI widgets (incl. op_picker/ after PR #171)
+│   │   └── widgets/          Reusable TUI widgets (incl. op_picker/)
 │   ├── instance/             Per-container state preparation
 │   ├── tui/                  General terminal UI helpers
 │   ├── operator_env.rs       Operator env resolution — op://, $VAR, literals (1569 lines)
@@ -69,7 +69,7 @@ jackin/
 │   ├── superpowers/          Agent workflow artifacts — NOT shipped to public site
 │   │   ├── plans/            5 implementation plans (2026-04-22/23 dates)
 │   │   ├── specs/            6 design specs (2026-04-22/23 dates)
-│   │   └── reviews/          PR #171 code review docs (PR #171 branch only)
+│   │   └── reviews/          PR #171 code review docs (added with PR #171)
 │   └── astro.config.ts       Starlight config — sidebar, social, edit links
 ├── docker/
 │   └── construct/            Shared base image — Dockerfile, install-plugins.sh, zshrc
@@ -86,7 +86,7 @@ jackin/
 ├── README.md                 Public overview + install instructions (83 lines)
 ├── AGENTS.md                 AI agent rules — PR merging, attribution, code review scope
 ├── CLAUDE.md                 1 line: "@AGENTS.md"
-├── RULES.md                  Doc convention + deprecation rule (+ TUI Keybindings, TUI List Modals after PR #171)
+├── RULES.md                  Doc convention + deprecation rule (+ TUI Keybindings, TUI List Modals added in PR #171)
 ├── BRANCHING.md              Branch naming and PR policy
 ├── COMMITS.md                Conventional Commits, DCO, agent attribution trailers
 ├── TESTING.md                cargo-nextest commands + pre-commit requirements
@@ -99,7 +99,7 @@ jackin/
 └── NOTICE                    Attribution notice
 ```
 
-**Note:** `PROJECT_REVIEW.md`, `RUST_REVIEW_FINDINGS.md`, `SECURITY_REVIEW_FINDINGS.md`, `SECURITY_EXCEPTIONS.md` are NOT present in the repository. Security exceptions are tracked in the public docs at `docs/src/content/docs/reference/roadmap/open-review-findings.mdx`. PR #171 adds a `docs/superpowers/reviews/` subtree to the branch; it is not yet on main at time of this analysis.
+**Note:** `PROJECT_REVIEW.md`, `RUST_REVIEW_FINDINGS.md`, `SECURITY_REVIEW_FINDINGS.md`, `SECURITY_EXCEPTIONS.md` are NOT present in the repository. Security exceptions are tracked in the public docs at `docs/src/content/docs/reference/roadmap/open-review-findings.mdx`. PR #171 added `docs/superpowers/reviews/` to main.
 
 ### Module map of `src/`
 
@@ -165,7 +165,7 @@ jackin/
 | `console/widgets/confirm.rs` | — | `ConfirmState`, `ConfirmTarget` | Y/N confirm modal | ratatui |
 | `console/widgets/confirm_save.rs` | — | `ConfirmSaveState` | save-confirm preview modal | ratatui |
 | `console/widgets/github_picker.rs` | — | `GithubPickerState` | GitHub URL picker | ratatui |
-| `console/widgets/op_picker/` | — | `OpPickerState` (after PR #171) | 1Password vault browser modal | operator_env::OpStructRunner |
+| `console/widgets/op_picker/` | — | `OpPickerState` | 1Password vault browser modal | operator_env::OpStructRunner |
 | `console/widgets/workdir_pick.rs` | — | `WorkdirPickState` | workdir-from-mounts picker | ratatui |
 | `console/widgets/mount_dst_choice.rs` | — | — | mount destination picker | ratatui |
 | `console/widgets/error_popup.rs` | — | — | error overlay | ratatui |
@@ -175,7 +175,7 @@ jackin/
 | `instance/auth.rs` | 796 | — | auth-forward modes, credential handling, symlink safety | — |
 | `instance/naming.rs` | — | `primary_container_name` | container slug + clone naming | — |
 | `instance/plugins.rs` | — | — | plugin marketplace serialisation | serde |
-| `operator_env.rs` | 1569 | `OpRunner`, `dispatch_value`, `OpCli`, `EnvLayer`, `merge_layers`, `validate_reserved_names`, `resolve_operator_env`, `resolve_operator_env_with`, `print_launch_diagnostic`, `OpStructRunner` (PR #171), `OpAccount/Vault/Item/Field` (PR #171) | all operator env resolution | — |
+| `operator_env.rs` | 1569 | `OpRunner`, `dispatch_value`, `OpCli`, `EnvLayer`, `merge_layers`, `validate_reserved_names`, `resolve_operator_env`, `resolve_operator_env_with`, `print_launch_diagnostic`, `OpStructRunner`, `OpAccount/Vault/Item/Field` | all operator env resolution | — |
 | `env_model.rs` | — | `is_reserved`, `extract_interpolation_refs`, `topological_env_order` | reserved env policy | — |
 | `env_resolver.rs` | 560 | `resolve_env` | runtime env resolution + interactive prompts | operator_env, terminal_prompter |
 | `tui/mod.rs` | — | `DEBUG_MODE`, palette constants, `set_terminal_title`, `step_shimmer`, `step_quiet`, `set_debug_mode` | shared TUI palette + step helpers | owo-colors, crossterm |
@@ -199,7 +199,7 @@ jackin/
 | `README.md` (83L) | Public / new users | Install + quick start + ecosystem links | Links to docs site | PR #166 era |
 | `AGENTS.md` | AI agents (all tools) | PR merging rules, commit attribution, code-review scope, shared convention links | Links to RULES/BRANCHING/COMMITS/TESTING/PROJECT_STRUCTURE/DEPRECATED/TODO/CONTRIBUTING | Core stable; minor additions each PR |
 | `CLAUDE.md` (1L) | Claude Code tool | One-line pointer to AGENTS.md | — | Stable |
-| `RULES.md` | AI agents + contributors | Doc convention + deprecation rule (+ TUI Keybindings + TUI List Modals in PR #171) | Deprecation rule duplicates DEPRECATED.md entry format | Updated PR #171 |
+| `RULES.md` | AI agents + contributors | Doc convention + deprecation rule (+ TUI Keybindings + TUI List Modals in PR #171) | Deprecation rule duplicates DEPRECATED.md entry format | Current |
 | `BRANCHING.md` | All contributors | Branch naming + PR policy | Some overlap with COMMITS.md preamble | Stable |
 | `COMMITS.md` | All contributors | Conventional Commits, DCO sign-off, agent attribution | Agent attribution also in AGENTS.md | Stable |
 | `TESTING.md` | All contributors | nextest commands + pre-commit | Pre-commit requirements also in COMMITS.md | Stable |
@@ -253,9 +253,9 @@ Total `#[allow(clippy::too_many_lines)]` suppressions: **13** across 8 files.
 
 Modules with ≥10 sibling files:
 - `src/console/manager/` — 16 files across 3 subdirs (`input/`, `render/`, flat files).
-- `src/console/widgets/` — 11+ files after PR #171 (adds `op_picker/`, `agent_picker.rs`, `scope_picker.rs`, `source_picker.rs`).
+- `src/console/widgets/` — 11+ files (`op_picker/`, `agent_picker.rs`, `scope_picker.rs`, `source_picker.rs` added in PR #171).
 
-**Rustdoc `//!` coverage (exact count):** Of **90 `.rs` files** (72 on main + ~18 added by PR #171), **37 have `//!` module orientation docs** (41%). Coverage is strongly clustered: `src/console/manager/` and `src/console/widgets/` are the best-covered subsystems — PR #171 additions were written with docs discipline. The 53 files without `//!` docs are concentrated in the older codebase: all of `src/app/` (both files), all of `src/cli/` (5 files), all of `src/instance/` (4 files), most of `src/runtime/` (8 of 10), and all root-level helpers (`derived_image.rs`, `docker.rs`, `env_resolver.rs`, `paths.rs`, `repo.rs`, `repo_contract.rs`, `selector.rs`, `version_check.rs`, `terminal_prompter.rs`, `main.rs`, `lib.rs`, `bin/validate.rs`). The `src/console/manager/` family is the best-documented subsystem by ratio; `src/runtime/` is the worst. No `#![warn(missing_docs)]` gate is set anywhere in `Cargo.toml` or `src/lib.rs`.
+**Rustdoc `//!` coverage (exact count):** Of **90 `.rs` files** (90), **37 have `//!` module orientation docs** (41%). Coverage is strongly clustered: `src/console/manager/` and `src/console/widgets/` are the best-covered subsystems — PR #171 additions were written with docs discipline. The 53 files without `//!` docs are concentrated in the older codebase: all of `src/app/` (both files), all of `src/cli/` (5 files), all of `src/instance/` (4 files), most of `src/runtime/` (8 of 10), and all root-level helpers (`derived_image.rs`, `docker.rs`, `env_resolver.rs`, `paths.rs`, `repo.rs`, `repo_contract.rs`, `selector.rs`, `version_check.rs`, `terminal_prompter.rs`, `main.rs`, `lib.rs`, `bin/validate.rs`). The `src/console/manager/` family is the best-documented subsystem by ratio; `src/runtime/` is the worst. No `#![warn(missing_docs)]` gate is set anywhere in `Cargo.toml` or `src/lib.rs`.
 
 ### Astro / Starlight content inventory
 
@@ -264,7 +264,7 @@ Modules with ≥10 sibling files:
 - Slug groups: `getting-started/`, `guides/`, `commands/`, `developing/`, `reference/`, `reference/roadmap/`.
 - Public site URL: https://jackin.tailrocks.com/
 - TypeScript strictness: `docs/tsconfig.json` extends `"astro/tsconfigs/strict"`. However, this preset does NOT enable `noUncheckedIndexedAccess` or `exactOptionalPropertyTypes` by default — these must be added explicitly to satisfy the stack constraint (see §7 Astro Starlight).
-- `docs/superpowers/` subtree: lives outside `docs/src/content/docs/` and is NOT part of the Astro content collection — **does not ship to the public site**. Contains `plans/`, `specs/`, and (in PR #171 branch) `reviews/`.
+- `docs/superpowers/` subtree: lives outside `docs/src/content/docs/` and is NOT part of the Astro content collection — **does not ship to the public site**. Contains `plans/`, `specs/`, and `reviews/` (added in PR #171).
 - Custom components: `docs/src/components/overrides/` (Starlight overrides) and `docs/src/components/landing/` (React islands). TypeScript strictness state of these components needs per-iteration verification.
 
 ---
@@ -279,21 +279,21 @@ Post-refactor target: **zero** entries rated `requires-grep` or `requires-tribal
 
 | # | Concept | Current location | Rating today | Proposed location | Post-refactor rating |
 |---|---|---|---|---|---|
-| 1 | **`AgentPicker` modal** | `src/console/manager/state.rs:245` (Modal enum, `AgentPicker` variant, after PR #171); `src/console/widgets/agent_picker.rs` (state) | `requires-grep` — `Modal` enum is in state.rs, widget is flat at widgets root | `src/console/widgets/agent_picker/` — self-contained subdirectory with `mod.rs`, `state.rs`, `render.rs`; Modal enum documents where each variant's state type lives | `discoverable-in-2-hops` |
-| 2 | **`OpPicker` state machine** | `src/console/widgets/op_picker/mod.rs` + `render.rs` (after PR #171) | `requires-grep` — no entry in PROJECT_STRUCTURE.md yet | Entry in PROJECT_STRUCTURE.md; canonical layout rule in `RULES.md § TUI List Modals` already added in PR #171 | `discoverable-in-2-hops` |
+| 1 | **`AgentPicker` modal** | `src/console/manager/state.rs:245` (Modal enum, `AgentPicker` variant); `src/console/widgets/agent_picker.rs` (state) | `requires-grep` — `Modal` enum is in state.rs, widget is flat at widgets root | `src/console/widgets/agent_picker/` — self-contained subdirectory with `mod.rs`, `state.rs`, `render.rs`; Modal enum documents where each variant's state type lives | `discoverable-in-2-hops` |
+| 2 | **`OpPicker` state machine** | `src/console/widgets/op_picker/mod.rs` + `render.rs` | `requires-grep` — no entry in PROJECT_STRUCTURE.md yet | Entry in PROJECT_STRUCTURE.md; canonical layout rule in `RULES.md § TUI List Modals` already added in PR #171 | `discoverable-in-2-hops` |
 | 3 | **Workspace env diff (`change_count`)** | `src/console/manager/state.rs:517` — `EditorState::change_count()` method | `requires-grep` | Same file is fine; add `//!` to state.rs explaining it is the editor-state source of truth | `discoverable-in-2-hops` |
-| 4 | **Console event-loop polling (20 Hz / 50ms)** | PR #171 branch `src/console/mod.rs:90` — `const TICK_MS: u64 = 50;` with doc comment "20 Hz: spinner stays fluid and op results surface within ~50ms without hot-spinning. <16ms wastes cycles, >100ms stutters."; `ms.poll_picker_loads()` is called at line ~200 before each render to drain worker results; the non-blocking `event::poll(Duration::from_millis(TICK_MS))` at line ~217 replaces the main branch's blocking `event::read()`. The `is_on_main_screen` and `consumes_letter_input` helpers at lines ~111–130 gate the `Q` exit-confirmation flow introduced in the same PR. | `requires-tribal-knowledge` on main (no TICK_MS, no poll rationale); `discoverable-in-2-hops` once PR #171 merges (TICK_MS is named and documented inline) | Add `//!` to `console/mod.rs` summarising the 20 Hz loop contract; the constant and its doc comment already do the job once PR #171 merges — no structural change needed | `discoverable-in-2-hops` |
-| 5 | **`OpStructRunner` trait and threading contract** | `src/operator_env.rs:348` (after PR #171); doc comment "Distinct from OpRunner: picker is a metadata browser and must never deserialize a secret value" | `requires-grep` — nothing in PROJECT_STRUCTURE.md points here yet | Update PROJECT_STRUCTURE.md §operator_env; the threading contract belongs in a `//!` module doc or in a separate `src/op/` module if operator_env splits | `discoverable-in-2-hops` |
-| 6 | **`RawOpField` no-`value`-key trust invariant + compile-time safety test** | PR #171 branch `src/operator_env.rs:446` — `RawOpField` serde struct has no `value` field by design (serde silently drops any `value` key from `op item get` JSON). The compile-time guarantee is enforced by a regular `#[test]` at line ~2055 (`op_struct_runner_item_get_parses_fields_no_value`) that uses an **exhaustive struct destructure** pattern: `let OpField { id: _, label: _, field_type: _, concealed: _, reference: _ } = fields[1].clone();` — if anyone adds a `value` field to `OpField`, Rust's exhaustive match fails to compile before the test even runs. The comment explicitly states: "Compile-time guarantee: OpField has no `value` field. If a future refactor adds one, this struct-match will fail to compile and force an explicit re-review of the trust model." | `requires-tribal-knowledge` — the technique is not a trybuild compile-fail test (which reviewers would search for), it's an exhaustive destructure inside a runtime test | Add a `//!` section to `operator_env.rs` titled "Trust invariant: no secret values in the picker path" explaining the `RawOpField` design and pointing to the compile-time enforcement test | `discoverable-in-2-hops` |
+| 4 | **Console event-loop polling (20 Hz / 50ms)** | `src/console/mod.rs:90` — `const TICK_MS: u64 = 50;` with doc comment "20 Hz: spinner stays fluid and op results surface within ~50ms without hot-spinning. <16ms wastes cycles, >100ms stutters."; `ms.poll_picker_loads()` is called at line ~200 before each render to drain worker results; the non-blocking `event::poll(Duration::from_millis(TICK_MS))` at line ~217 replaced the old blocking `event::read()`. The `is_on_main_screen` and `consumes_letter_input` helpers at lines ~111–130 gate the `Q` exit-confirmation flow introduced in the same PR. | `discoverable-in-2-hops` — `TICK_MS` is named and documented inline at `console/mod.rs:90` | Add `//!` to `console/mod.rs` summarising the 20 Hz loop contract; the constant and its doc comment already capture the contract — no structural change needed | `discoverable-in-2-hops` |
+| 5 | **`OpStructRunner` trait and threading contract** | `src/operator_env.rs:348`; doc comment "Distinct from OpRunner: picker is a metadata browser and must never deserialize a secret value" | `requires-grep` — nothing in PROJECT_STRUCTURE.md points here yet | Update PROJECT_STRUCTURE.md §operator_env; the threading contract belongs in a `//!` module doc or in a separate `src/op/` module if operator_env splits | `discoverable-in-2-hops` |
+| 6 | **`RawOpField` no-`value`-key trust invariant + compile-time safety test** | `src/operator_env.rs:446` — `RawOpField` serde struct has no `value` field by design (serde silently drops any `value` key from `op item get` JSON). The compile-time guarantee is enforced by a regular `#[test]` at line ~2055 (`op_struct_runner_item_get_parses_fields_no_value`) that uses an **exhaustive struct destructure** pattern: `let OpField { id: _, label: _, field_type: _, concealed: _, reference: _ } = fields[1].clone();` — if anyone adds a `value` field to `OpField`, Rust's exhaustive match fails to compile before the test even runs. The comment explicitly states: "Compile-time guarantee: OpField has no `value` field. If a future refactor adds one, this struct-match will fail to compile and force an explicit re-review of the trust model." | `requires-tribal-knowledge` — the technique is not a trybuild compile-fail test (which reviewers would search for), it's an exhaustive destructure inside a runtime test | Add a `//!` section to `operator_env.rs` titled "Trust invariant: no secret values in the picker path" explaining the `RawOpField` design and pointing to the compile-time enforcement test | `discoverable-in-2-hops` |
 | 7 | **Agent → Docker image resolution path for `jackin load`** | `src/app/mod.rs:67` (`ClassSelector::parse(&sel)?` converts the CLI string `"chainargos/the-architect"` → `ClassSelector { namespace: Some("chainargos"), name: "the-architect" }`) → `src/workspace/resolve.rs:65` (`resolve_load_workspace` validates workspace config for that selector) → `src/runtime/launch.rs:533` (`load_agent` orchestrates full bootstrap) → `src/runtime/image.rs:43` (`image_name(selector)` calls `instance::runtime_slug(selector)` at `src/instance/naming.rs:3` which converts the namespace separator from `/` to `__` — producing `"chainargos__the-architect"` — then prepends `"jackin-"`, yielding Docker image tag `"jackin-chainargos__the-architect"`. The `__` separator is load-bearing: it makes `ClassSelector::new(Some("chainargos"), "the-architect")` produce a distinct image from `ClassSelector::new(None, "chainargos-the-architect")`. Verified by `instance/naming.rs` test `image_name_distinguishes_namespaced_and_flat_classes`.) | `requires-grep` — 4-hop chain across modules | `docs/internal/CODE_TOUR.md` — the CODE_TOUR entry for `jackin load` should trace this exact chain with the `__` naming invariant called out; PROJECT_STRUCTURE.md documents each hop individually but doesn't trace the sequence or explain the namespace separator convention | `discoverable-in-2-hops` |
 | 8 | **`construct` base image build invocation** | `Justfile` recipes `construct-build-local`, `construct-push-platform`, `construct-publish-manifest`; `docker-bake.hcl` targets `construct-local` and `construct-publish` | `requires-grep` — Justfile not linked from AGENTS.md | Add Justfile → CI workflow mapping to PROJECT_STRUCTURE.md §CI; Justfile top-comment currently explains only Docker construct, which is correct | `discoverable-in-2-hops` |
 | 9 | **Release automation flow** | `release.toml` (cargo-release config) + `.github/workflows/release.yml` + `CHANGELOG.md` next-header convention | `requires-grep` for first-timers | `docs/internal/CONTRIBUTING.md` (§ Cutting a release) | `discoverable-in-2-hops` |
-| 10 | **Candidate-config validation-before-rename invariant** | `src/config/editor.rs` — commit `f4487fa` in PR #171 adds pre-rename validation; the invariant is: validate the candidate WorkspaceConfig before applying a name change, so rename + invalid-config doesn't partially commit | `requires-tribal-knowledge` — only visible from PR #171 commit message | Add a named test (`fn rename_validates_candidate_before_applying`) with a doc comment explaining the invariant; once PR #171 merges this is at `src/config/editor.rs` | `discoverable-in-2-hops` |
-| 11 | **`op://` reference parsing (3-segment vs 4-segment)** | `src/operator_env.rs` — `dispatch_value` handles `op://` prefix; PR #171 commit `05c1866` adds 4-segment `vault/item/section/field` parsing in `OpCli::item_get` | `requires-grep` | The 4-segment rule belongs in a `//!` comment at the top of `operator_env.rs` and/or in `docs/src/content/docs/developing/agent-manifest.mdx` | `discoverable-in-2-hops` |
-| 12 | **Session-scoped op metadata cache** | PR #171 branch `src/console/op_cache.rs` (252L) — standalone module `OpCache` with `//!` module doc stating "Session-scoped cache for `op` structural-metadata calls. Stores only structural metadata (UUIDs, names, labels, types). Field values are never read." Keyed by `(account, vault_id, item_id)` tuples; `OpPickerState` holds a reference to the cache; the `OpCache` is separate from `OpPickerState` to allow sharing across picker reopens within a session. Invalidation methods: `invalidate_accounts()`, `invalidate_vaults()`. A `DEFAULT_ACCOUNT_KEY = ""` sentinel avoids `Option<String>` in BTreeMap keys. | `requires-tribal-knowledge` (pre-merge) — `op_cache.rs` is a new module not yet in PROJECT_STRUCTURE.md | After merge: add `src/console/op_cache.rs` entry to PROJECT_STRUCTURE.md with a one-line description of the trust invariant (metadata only, never field values) | `discoverable-in-2-hops` |
+| 10 | **Candidate-config validation-before-rename invariant** | `src/config/editor.rs` — the invariant is: validate the candidate WorkspaceConfig before applying a name change, so rename + invalid-config doesn't partially commit | `requires-tribal-knowledge` — only visible from PR #171 commit message | Add a named test (`fn rename_validates_candidate_before_applying`) with a doc comment explaining the invariant; the invariant is at `src/config/editor.rs` | `discoverable-in-2-hops` |
+| 11 | **`op://` reference parsing (3-segment vs 4-segment)** | `src/operator_env.rs` — `dispatch_value` handles `op://` prefix; PR #171 added 4-segment `vault/item/section/field` parsing in `OpCli::item_get` | `requires-grep` | The 4-segment rule belongs in a `//!` comment at the top of `operator_env.rs` and/or in `docs/src/content/docs/developing/agent-manifest.mdx` | `discoverable-in-2-hops` |
+| 12 | **Session-scoped op metadata cache** | `src/console/op_cache.rs` (252L) — standalone module `OpCache` with `//!` module doc stating "Session-scoped cache for `op` structural-metadata calls. Stores only structural metadata (UUIDs, names, labels, types). Field values are never read." Keyed by `(account, vault_id, item_id)` tuples; `OpPickerState` holds a reference to the cache; the `OpCache` is separate from `OpPickerState` to allow sharing across picker reopens within a session. Invalidation methods: `invalidate_accounts()`, `invalidate_vaults()`. A `DEFAULT_ACCOUNT_KEY = ""` sentinel avoids `Option<String>` in BTreeMap keys. | `requires-grep` — `op_cache.rs` is not yet in PROJECT_STRUCTURE.md | Add `src/console/op_cache.rs` entry to PROJECT_STRUCTURE.md with a one-line description of the trust invariant (metadata only, never field values) | `discoverable-in-2-hops` |
 | 13 | **Caps-lock SHIFT-modifier tolerance pattern** | `src/console/manager/input/editor.rs:1034` ("Operators often hit `d` without holding shift; the binding...") and `:1177` (same for `r`); `src/console/mod.rs:75` comment about Shift/Option for text selection bypass | `requires-grep` — scattered across three files | `RULES.md § TUI Keybindings` (already documents modifier-free approach) + inline comments are sufficient; no structural change needed | `discoverable-in-2-hops` once RULES.md updated |
-| 14 | **`Q` exit-confirmation gating** | Two layers: (1) main branch `src/console/manager/input/list.rs:26` — bare `q\|Q` exits from the list view; (2) PR #171 `src/console/mod.rs:111–130` adds `is_on_main_screen` and `consumes_letter_input` helper functions that gate whether `Q` exits silently (when on the main list with no modal) or opens a confirmation dialog (`state.quit_confirm`). The PR also adds a `quit_confirm_area()` layout helper at line ~92. The design intent: `Q` on the main screen is a "safe" exit because no unsaved work is possible; `Q` anywhere else (editor, picker) opens a confirm modal because unsaved changes may exist. | `requires-grep` — the two-layer design (main branch list.rs + PR #171 console/mod.rs) is not obvious from reading either file alone | Add `//!` to `console/mod.rs` explaining the `Q` routing contract; reference `is_on_main_screen` and `consumes_letter_input` | `discoverable-in-2-hops` |
-| 15 | **Workspace list refresh after manager save (b3c6998)** | PR #171 fix commit — after save, the console list state is rebuilt from config so the launch routing sees the updated workspace | `requires-tribal-knowledge` pre-merge | After merge: the fix is in the save path in `console/manager/input/save.rs`; a doc comment on the save function explaining "list state is rebuilt from config post-save" is sufficient | `discoverable-in-2-hops` |
+| 14 | **`Q` exit-confirmation gating** | Two layers: (1) main branch `src/console/manager/input/list.rs:26` — bare `q\|Q` exits from the list view; (2) `src/console/mod.rs:111–130` adds `is_on_main_screen` and `consumes_letter_input` helper functions that gate whether `Q` exits silently (when on the main list with no modal) or opens a confirmation dialog (`state.quit_confirm`). The PR also adds a `quit_confirm_area()` layout helper at line ~92. The design intent: `Q` on the main screen is a "safe" exit because no unsaved work is possible; `Q` anywhere else (editor, picker) opens a confirm modal because unsaved changes may exist. | `requires-grep` — the two-layer design (list.rs + console/mod.rs) is not obvious from reading either file alone | Add `//!` to `console/mod.rs` explaining the `Q` routing contract; reference `is_on_main_screen` and `consumes_letter_input` | `discoverable-in-2-hops` |
+| 15 | **Workspace list refresh after manager save (b3c6998)** | after save, the console list state is rebuilt from config so the launch routing sees the updated workspace | `requires-tribal-knowledge` | The fix is in the save path in `console/manager/input/save.rs`; a doc comment on the save function explaining "list state is rebuilt from config post-save" is sufficient | `discoverable-in-2-hops` |
 | 16 | **Auth-forward modes and credential provisioning** | `AuthForwardMode` defined at `src/config/mod.rs:26`; `AgentState::provision_claude_auth` (the dispatch that acts on the mode) at `src/instance/auth.rs:17` | `requires-grep` — the mode definition and the behavior that uses it are in different modules | `AuthForwardMode` is **correctly placed** in `config/mod.rs` — it appears as a config field in `ClaudeConfig:89` and `ClaudeAgentConfig:96`, has serde `Deserialize` at line 74, and is used in 9 files (`config/`, `instance/`, `app/`, `runtime/`). Moving it to `instance/auth.rs` would be wrong: `config` would then import from `instance`, creating a circular dependency. The proposed move in §10 step 4a (to `config/types.rs`) is correct — it stays within the `config` module, just in a sub-file. The navigation gap is addressed by the §10 step 4a type extraction. | `discoverable-in-2-hops` post-§10-4a |
 | 17 | **Agent manifest schema** | `src/manifest/mod.rs` (522L) — `AgentManifest` struct and sub-structs | `discoverable-in-2-hops` — PROJECT_STRUCTURE.md documents this | Split `AgentManifest` structs from `load()` function: `src/manifest/schema.rs` (types) + `src/manifest/loader.rs` (I/O) | `obvious` |
 | 18 | **Lint and clippy configuration** | `Cargo.toml` `[lints.clippy]` section — pedantic + nursery as warn, correctness + suspicious as deny, cast truncation allowed for TUI | `discoverable-in-2-hops` — `Cargo.toml` is top-level | No structural change; document rationale inline in Cargo.toml comments or a `docs/internal/decisions/` ADR | `discoverable-in-2-hops` |
@@ -319,7 +319,7 @@ The repository has two overlapping doc hierarchies that serve different audience
 - `CONTRIBUTING.md` and `TESTING.md` are contributor-facing but hidden at root level — contributors looking for contribution guidance often look in `docs/` or a `CONTRIBUTING.md` linked from README.md.
 - `docs/superpowers/` is stranded: it belongs conceptually in `docs/internal/` but lives at `docs/superpowers/` because that is where the superpowers toolchain writes it.
 - The files `PROJECT_REVIEW.md`, `RUST_REVIEW_FINDINGS.md`, `SECURITY_REVIEW_FINDINGS.md`, `SECURITY_EXCEPTIONS.md` mentioned in the loop prompt do NOT exist in the repository. Security exceptions are tracked in the public Starlight docs at `docs/src/content/docs/reference/roadmap/open-review-findings.mdx` per the `AGENTS.md` code-review instruction.
-- `RULES.md` is growing: it started as two rules (doc convention + deprecation), and PR #171 adds two more (TUI Keybindings, TUI List Modals). As it grows it risks becoming a rules-dump without clear audience. Each rule section has a distinct audience (deprecation is contributor-facing; TUI Keybindings is agent-facing for UI work).
+- `RULES.md` is growing: it started as two rules (doc convention + deprecation), and PR #171 added two more (TUI Keybindings, TUI List Modals). As it grows it risks becoming a rules-dump without clear audience. Each rule section has a distinct audience (deprecation is contributor-facing; TUI Keybindings is agent-facing for UI work).
 - There is no `docs/internal/` today. The operator's loop prompt targets `docs/internal/roadmap/` — this loop creates it.
 
 ### Target document shape
@@ -517,7 +517,7 @@ Violators:
   - Lines 780–808: `ValueKind` private enum + `classify_value` fn (Op/Host/Literal classification for diagnostic display)
   - Lines 811–1569: `#[cfg(test)] mod tests` (~758L — tests for all above)
 
-  **PR #171 additions** (at line ~348 in PR branch — not yet on main):
+  **PR #171 additions** (now on main, starting at `operator_env.rs:348`):
   - `OpStructRunner` trait (metadata browser; never deserializes secret values — the `RawOpField` invariant)
   - `OpAccount`, `OpVault`, `OpItem`, `OpField` structs
   - `RawOpField` deserialization struct (deliberately omits `value` field)
@@ -534,9 +534,9 @@ Violators:
   - `src/operator_env/mod.rs` (~100L): Public API — `OpRunner` trait (5–22), `dispatch_value` (24–65), `parse_host_ref` + `is_valid_env_name` (66–95), re-exports from sub-modules.
   - `src/operator_env/client.rs` (~280L production + tests): `OpCli` struct (105–152), subprocess helpers (154–231), `impl OpRunner for OpCli` (233–364).
   - `src/operator_env/layers.rs` (~470L production + tests): `EnvLayer` + `merge_layers` (365–413), `validate_reserved_names` (416–485), `resolve_operator_env*` (487–633), diagnostic output (634–808).
-  - `src/operator_env/picker.rs` (~250L production + tests — PR #171 additions): `OpStructRunner` trait, `OpAccount/Vault/Item/Field`, `RawOpField`, `impl OpStructRunner for OpCli`.
+  - `src/operator_env/picker.rs` (~250L production + tests, PR #171): `OpStructRunner` trait, `OpAccount/Vault/Item/Field`, `RawOpField`, `impl OpStructRunner for OpCli`.
 
-  **Net effect**: Max file size drops from 1569L to ~470L (`layers.rs`, excluding tests). The `picker.rs` module fully encapsulates the metadata-browser concern introduced by PR #171, and its `RawOpField` trust invariant is findable by module name alone. The `client.rs` / subprocess concern is isolated from all env-resolution logic.
+  **Net effect**: Max file size drops from 1569L to ~470L (`layers.rs`, excluding tests). The `picker.rs` module fully encapsulates the metadata-browser concern introduced in PR #171, and its `RawOpField` trust invariant is findable by module name alone. The `client.rs` / subprocess concern is isolated from all env-resolution logic.
 
   **Dependency graph for the split** (no circularity):
   - `client.rs` imports `OpRunner` from `mod.rs`.
@@ -604,7 +604,7 @@ A `//!` that only does item 1 is adequate. One that does all three eliminates a 
 
 ## §5 — Naming Pass Candidates
 
-Each entry is a **candidate**, not a mandate. Confirmed present in the repository (or in PR #171 branch where noted).
+Each entry is a **candidate**, not a mandate. Confirmed present in the repository .
 
 | # | Current name | Location | What's unclear | Alternative(s) | Recommendation |
 |---|---|---|---|---|---|
@@ -616,7 +616,7 @@ Each entry is a **candidate**, not a mandate. Confirmed present in the repositor
 | 6 | `dispatch_value` | `src/operator_env.rs:33` | "dispatch" suggests routing to a handler; what this actually does is resolve a single env value to its final string | `resolve_env_value`, `evaluate_env_value` | `resolve_env_value`. **Rename scope:** 1 production call site (`operator_env.rs:595`, inside `resolve_operator_env_with`) + 6 test call sites (all inside `mod tests` at line 812 of the same file). All callers are in a single file — this is the lowest-cost rename in the table. |
 | 7 | `parse_host_ref` | `src/operator_env.rs:66` | "host ref" — "host" means "host machine" (as opposed to Docker container), "ref" means `$NAME` or `${NAME}`. Not obvious. | `parse_host_env_ref`, `extract_env_var_name` | `extract_host_env_name` |
 | 8 | `OpRunner` | `src/operator_env.rs:10` | "Op" is ambiguous: "operation"? "operator"? "1Password op CLI"? In this context it's specifically the 1Password CLI. | `OnePasswordReader`, `OpCliRunner` | `OpCliRunner` — makes the 1Password CLI connection obvious |
-| 9 | `OpStructRunner` | `src/operator_env.rs:348` (PR #171) | Same ambiguity; "Struct" differentiates it from `OpRunner` but is an implementation detail | `OpMetadataClient`, `OnePasswordBrowser` | `OpMetadataClient` — "client" signals structured query, no secret value |
+| 9 | `OpStructRunner` | `src/operator_env.rs:348` | Same ambiguity; "Struct" differentiates it from `OpRunner` but is an implementation detail | `OpMetadataClient`, `OnePasswordBrowser` | `OpMetadataClient` — "client" signals structured query, no secret value |
 | 10 | `provision_claude_auth` | `src/instance/auth.rs:17` (verified) | "Provision" is too generic a verb — it doesn't indicate this is about forwarding the host operator's credentials into the agent container state. The modes (`Ignore`, `Token`, `Sync`) are auth-forward strategies, not provisioning operations. | `apply_auth_forward`, `forward_credentials` | `apply_auth_forward` — aligns with the `auth_forward` config key name and signals the direction (host → container) |
 | 11 | `LoadOptions` | `src/runtime/launch.rs:23` | Fine for internal use, but `LoadOptions` and `LoadWorkspaceInput` share the "Load" prefix for unrelated concerns | `LaunchOptions` | `LaunchOptions` — aligns with the container launch concept |
 | 12 | `AuthProvisionOutcome` | `src/instance/mod.rs` (imported as `use super::AuthProvisionOutcome` in `auth.rs:1`) | "Provision" is not the right verb (the operation is auth-forward, not provisioning); "Outcome" is fine but the type could simply be `AuthForwardOutcome` to match the domain language. | `AuthForwardOutcome`, `AuthOutcome` | `AuthForwardOutcome` — directly mirrors the `auth_forward` config key |
@@ -736,13 +736,13 @@ Extends `config:recommended` + `docker:pinDigests`. Removes per-PR and concurren
 
 **What it is:** Whether and how async Rust is used.
 
-**What `jackin` does today:** **Entirely synchronous.** No `tokio`, no `async-std`, no `futures`. All Docker CLI calls are `std::process::Command` (blocking). The operator env resolution uses a background thread (`std::thread::spawn`) to drain `stderr` from an `op` subprocess (`src/operator_env.rs:202`). PR #171 adds background threads for `op` CLI calls in the picker, via `std::thread` (inferred from the threading contract on `OpStructRunner`). Source: `Cargo.toml` has no `tokio` dependency.
+**What `jackin` does today:** **Entirely synchronous.** No `tokio`, no `async-std`, no `futures`. All Docker CLI calls are `std::process::Command` (blocking). The operator env resolution uses a background thread (`std::thread::spawn`) to drain `stderr` from an `op` subprocess (`src/operator_env.rs:202`). PR #171 added background threads for `op` CLI calls in the picker, via `std::thread` (inferred from the threading contract on `OpStructRunner`). Source: `Cargo.toml` has no `tokio` dependency.
 
 **The 2026-modern landscape:**
 
 *Option A — Stay synchronous + `std::thread` for concurrency (current):* For a CLI that shells out to Docker and op, `std::process::Command` + threads is correct. There is no I/O multiplexing problem that warrants an async executor.
 
-*Option B — Add `tokio` for the op_picker background workers:* PR #171 adds async-ish patterns (workers that fetch op data and post results back to the TUI loop via channel). These are currently `std::thread`-based. `tokio` would make the worker code more ergonomic (`async fn`) but adds a compile-time and binary-size cost.
+*Option B — Add `tokio` for the op_picker background workers:* PR #171 added async-ish patterns (workers that fetch op data and post results back to the TUI loop via channel). These are currently `std::thread`-based. `tokio` would make the worker code more ergonomic (`async fn`) but adds a compile-time and binary-size cost.
 
 **Recommendation:** `reject` tokio for now. The `std::thread` model is correct for the current scope. Flip condition: if jackin gains network-facing features (a server mode, a daemon, webhook handling) where multiplexed I/O is needed.
 
@@ -802,7 +802,7 @@ Applicable to parsing functions (`src/selector.rs`, `src/workspace/mounts.rs`, `
 
 **What it is:** Using `cargo doc` output as a navigable architecture map; enforcing doc coverage via CI.
 
-**What `jackin` does today:** No `#![warn(missing_docs)]` gate. 41% of source files (37/90) have `//!` module orientation docs (exact count). Coverage is uneven: `src/console/manager/` and `src/console/widgets/` (added with PR #171's docs discipline) are well-covered; `src/runtime/`, `src/app/`, and `src/cli/` are not. `src/env_model.rs` is the exemplar for the pattern the rest should follow. Public API surface is large (see §4 module map) with most items undocumented. `cargo doc` runs produce output but it is not published or gated.
+**What `jackin` does today:** No `#![warn(missing_docs)]` gate. 41% of source files (37/90) have `//!` module orientation docs (exact count). Coverage is uneven: `src/console/manager/` and `src/console/widgets/` (PR #171 added these with strong docs discipline) are well-covered; `src/runtime/`, `src/app/`, and `src/cli/` are not. `src/env_model.rs` is the exemplar for the pattern the rest should follow. Public API surface is large (see §4 module map) with most items undocumented. `cargo doc` runs produce output but it is not published or gated.
 
 **The 2026-modern landscape:**
 
@@ -1184,7 +1184,7 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 
 ### Open Questions
 
-**OQ1 — PR #171 `op_picker` session-scoped cache:** The cache design (where it lives, what invalidates it, how it handles op sign-in expiry) needs per-code reading after PR #171 merges to main. Deferred.
+**OQ1 — PR #171 `op_picker` session-scoped cache:** The cache design (where it lives, what invalidates it, how it handles op sign-in expiry) now readable on main — verify the cache invalidation strategy and add a `//!` module doc covering sign-in expiry handling.
 
 **OQ2 — `src/console/manager/agent_allow.rs` scope:** Module not deeply read. Responsibility and coupling need verification before the §4 structural proposal is considered final.
 
@@ -1209,7 +1209,7 @@ If the recommendations above were executed (in a *separate future loop*, not thi
 
 **Step 1 — Documentation hierarchy (§3 + §7 ADRs)**
 
-Move `CONTRIBUTING.md` → `docs/internal/CONTRIBUTING.md` (update AGENTS.md link). Move `TESTING.md` → `docs/internal/TESTING.md` (update AGENTS.md link). Create `docs/internal/` skeleton: `ARCHITECTURE.md`, `CODE_TOUR.md` (stub), `decisions/` (empty), `specs/` (migrate from `docs/superpowers/specs/`), `REVIEWS/` (migrate from `docs/superpowers/reviews/` once PR #171 merges). Write first three ADRs: single-crate decision, toolchain selection, ratatui selection.
+Move `CONTRIBUTING.md` → `docs/internal/CONTRIBUTING.md` (update AGENTS.md link). Move `TESTING.md` → `docs/internal/TESTING.md` (update AGENTS.md link). Create `docs/internal/` skeleton: `ARCHITECTURE.md`, `CODE_TOUR.md` (stub), `decisions/` (empty), `specs/` (migrate from `docs/superpowers/specs/`), `REVIEWS/` (migrate from `docs/superpowers/reviews/`). Write first three ADRs: single-crate decision, toolchain selection, ratatui selection.
 
 *What could go wrong:* Broken links in AGENTS.md if the grep-and-update step misses a reference. Mitigation: `grep -rn "TESTING.md\|CONTRIBUTING.md" .` before and after.
 
