@@ -682,17 +682,10 @@ pub fn merge_layers(
     workspace_agent: &std::collections::BTreeMap<String, String>,
 ) -> std::collections::BTreeMap<String, String> {
     let mut merged = std::collections::BTreeMap::new();
-    for (k, v) in global {
-        merged.insert(k.clone(), v.clone());
-    }
-    for (k, v) in agent {
-        merged.insert(k.clone(), v.clone());
-    }
-    for (k, v) in workspace {
-        merged.insert(k.clone(), v.clone());
-    }
-    for (k, v) in workspace_agent {
-        merged.insert(k.clone(), v.clone());
+    for layer in [global, agent, workspace, workspace_agent] {
+        for (k, v) in layer {
+            merged.insert(k.clone(), v.clone());
+        }
     }
     merged
 }
@@ -702,48 +695,30 @@ pub fn merge_layers(
 /// Conflicts across every layer are aggregated into one error.
 pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Result<()> {
     let mut offenses: Vec<String> = Vec::new();
-
-    for key in config.env.keys() {
-        if crate::env_model::is_reserved(key) {
-            offenses.push(format!(
-                "  - {key:?} is reserved by the jackin runtime; declared in {}",
-                EnvLayer::Global
-            ));
+    let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, String>| {
+        for key in env.keys() {
+            if crate::env_model::is_reserved(key) {
+                offenses.push(format!(
+                    "  - {key:?} is reserved by the jackin runtime; declared in {layer}"
+                ));
+            }
         }
-    }
+    };
 
+    record(EnvLayer::Global, &config.env);
     for (agent_name, agent_source) in &config.agents {
-        for key in agent_source.env.keys() {
-            if crate::env_model::is_reserved(key) {
-                offenses.push(format!(
-                    "  - {key:?} is reserved by the jackin runtime; declared in {}",
-                    EnvLayer::Agent(agent_name.clone())
-                ));
-            }
-        }
+        record(EnvLayer::Agent(agent_name.clone()), &agent_source.env);
     }
-
     for (ws_name, ws) in &config.workspaces {
-        for key in ws.env.keys() {
-            if crate::env_model::is_reserved(key) {
-                offenses.push(format!(
-                    "  - {key:?} is reserved by the jackin runtime; declared in {}",
-                    EnvLayer::Workspace(ws_name.clone())
-                ));
-            }
-        }
+        record(EnvLayer::Workspace(ws_name.clone()), &ws.env);
         for (agent_name, override_) in &ws.agents {
-            for key in override_.env.keys() {
-                if crate::env_model::is_reserved(key) {
-                    offenses.push(format!(
-                        "  - {key:?} is reserved by the jackin runtime; declared in {}",
-                        EnvLayer::WorkspaceAgent {
-                            workspace: ws_name.clone(),
-                            agent: agent_name.clone()
-                        }
-                    ));
-                }
-            }
+            record(
+                EnvLayer::WorkspaceAgent {
+                    workspace: ws_name.clone(),
+                    agent: agent_name.clone(),
+                },
+                &override_.env,
+            );
         }
     }
 
