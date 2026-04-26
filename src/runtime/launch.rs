@@ -156,26 +156,22 @@ const STANDARD_TERMS: &[&str] = &[
 /// files — can be unit-tested without docker mocks.
 ///
 /// For each mount, the worktree dir / shared bind goes first; when the
-/// mount is worktree-mode, five auxiliary entries follow:
+/// mount is worktree-mode, three auxiliary entries follow:
 ///
 /// 1. Host's `.git/` at `/jackin/host/<dst-stripped>/.git` (rw).
-/// 2. Per-worktree admin dir at `/jackin/admin/<dst-stripped>` (rw).
-///    Mounted at a separate top-level `/jackin/<category>/` so the
-///    override files (next three) sit on top of files inside this
-///    admin mount, not nested inside `/jackin/host/.../.git/`.
-/// 3. `.git` pointer override at `<dst>/.git` (`:ro`). Redirects
-///    gitdir to `/jackin/admin/...`.
-/// 4. `commondir` override at `/jackin/admin/.../commondir` (`:ro`).
-///    Absolute path to the host `.git/` mount (the on-disk default
-///    `../..` would resolve to `/jackin/` inside the container).
-/// 5. `gitdir` back-pointer override at `/jackin/admin/.../gitdir`
+///    Includes the per-worktree admin dir at `worktrees/<container>/`
+///    natively (no separate admin mount).
+/// 2. `.git` pointer override at `<dst>/.git` (`:ro`). Redirects gitdir
+///    to the admin entry inside the host `.git/` mount.
+/// 3. `gitdir` back-pointer override at
+///    `/jackin/host/<dst-stripped>/.git/worktrees/<container>/gitdir`
 ///    (`:ro`). Matches the worktree's `<dst>/.git` location so git's
 ///    verification check passes inside the container.
 ///
-/// `:ro` on the three override files is defensive hardening: git only
-/// reads them during normal agent work, and a misbehaving agent could
-/// otherwise rewrite the gitdir pointer or commondir to redirect
-/// operations at a different repo entirely.
+/// `:ro` on the override files is defensive hardening: git only reads
+/// them during normal agent work, and a misbehaving agent could
+/// otherwise rewrite the gitdir pointer to redirect operations at a
+/// different repo entirely.
 fn build_workspace_mount_strings(
     workspace: &crate::isolation::materialize::MaterializedWorkspace,
 ) -> Vec<String> {
@@ -185,14 +181,9 @@ fn build_workspace_mount_strings(
         out.push(format!("{}:{}{}", mount.bind_src, mount.dst, suffix));
         if let Some(aux) = &mount.worktree_aux {
             out.push(format!("{}:{}", aux.host_git_dir, aux.host_git_target));
-            out.push(format!("{}:{}", aux.admin_dir, aux.admin_target));
             out.push(format!(
                 "{}:{}:ro",
                 aux.git_file_override, aux.git_file_target
-            ));
-            out.push(format!(
-                "{}:{}:ro",
-                aux.commondir_override, aux.commondir_target
             ));
             out.push(format!(
                 "{}:{}:ro",
@@ -1305,15 +1296,15 @@ mod tests {
 
     #[test]
     fn build_workspace_mount_strings_marks_overrides_readonly() {
-        // One worktree-mode mount with all six bind sources populated.
-        // The host `.git/` and admin mounts MUST stay rw (git writes
-        // refs/objects/HEAD/index/logs); the three override files MUST
-        // be `:ro`-suppressed.
+        // One worktree-mode mount with all four bind sources populated.
+        // Host `.git/` mount MUST stay rw (git writes refs/objects/
+        // HEAD/index/logs all under it on every commit/branch/fetch).
+        // Both override files MUST be `:ro`-suppressed.
         let mat = MaterializedWorkspace {
             workdir: "/workspace/jackin".into(),
             mounts: vec![MaterializedMount {
                 bind_src:
-                    "/data/jackin-the-architect/isolated/Users/donbeave/Projects/jackin-project/jackin"
+                    "/data/jackin-the-architect/git/worktree/repo/Users/donbeave/Projects/jackin-project/jackin/jackin-the-architect"
                         .into(),
                 dst: "/Users/donbeave/Projects/jackin-project/jackin".into(),
                 readonly: false,
@@ -1322,42 +1313,32 @@ mod tests {
                     host_git_dir: "/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
                     host_git_target:
                         "/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
-                    admin_dir:
-                        "/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jackin"
-                            .into(),
-                    admin_target:
-                        "/jackin/admin/Users/donbeave/Projects/jackin-project/jackin".into(),
                     git_file_override:
-                        "/data/jackin-the-architect/git/Users/donbeave/Projects/jackin-project/jackin/overrides/.git"
+                        "/data/jackin-the-architect/git/overrides/Users/donbeave/Projects/jackin-project/jackin/.git"
                             .into(),
                     git_file_target: "/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
-                    commondir_override:
-                        "/data/jackin-the-architect/git/Users/donbeave/Projects/jackin-project/jackin/overrides/commondir"
-                            .into(),
-                    commondir_target:
-                        "/jackin/admin/Users/donbeave/Projects/jackin-project/jackin/commondir"
-                            .into(),
                     gitdir_back_override:
-                        "/data/jackin-the-architect/git/Users/donbeave/Projects/jackin-project/jackin/overrides/gitdir"
+                        "/data/jackin-the-architect/git/overrides/Users/donbeave/Projects/jackin-project/jackin/gitdir"
                             .into(),
                     gitdir_back_target:
-                        "/jackin/admin/Users/donbeave/Projects/jackin-project/jackin/gitdir".into(),
+                        "/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jackin-the-architect/gitdir"
+                            .into(),
                 }),
             }],
         };
 
         let strings = build_workspace_mount_strings(&mat);
-        assert_eq!(strings.len(), 6, "one worktree mount → six bind specs");
+        assert_eq!(strings.len(), 4, "one worktree mount → four bind specs");
 
         // 1: worktree at <dst>, no :ro (writable).
         assert_eq!(
             strings[0],
-            "/data/jackin-the-architect/isolated/Users/donbeave/Projects/jackin-project/jackin:/Users/donbeave/Projects/jackin-project/jackin"
+            "/data/jackin-the-architect/git/worktree/repo/Users/donbeave/Projects/jackin-project/jackin/jackin-the-architect:/Users/donbeave/Projects/jackin-project/jackin"
         );
         assert!(!strings[0].ends_with(":ro"));
 
-        // 2: host .git/, MUST stay rw — refs/objects are written by
-        // every commit/branch/fetch. Both ends terminate in `.git`.
+        // 2: host .git/, MUST stay rw — refs/objects/HEAD/index/logs
+        // are all written under it. Both ends terminate in `.git`.
         assert_eq!(
             strings[1],
             "/Users/donbeave/Projects/jackin-project/jackin/.git:/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git"
@@ -1367,66 +1348,35 @@ mod tests {
             "host .git mount must remain rw",
         );
 
-        // 3: per-worktree admin dir (HEAD/index/logs). Bind from a
-        // subdir of host's .git, mounted at /jackin/admin/. rw because
-        // git writes HEAD/index on commit/checkout.
-        assert_eq!(
+        // 3: .git pointer override at <dst>/.git. :ro hardening.
+        assert!(
+            strings[2].ends_with(":ro"),
+            "git-file override must be ro; got {}",
             strings[2],
-            "/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jackin:/jackin/admin/Users/donbeave/Projects/jackin-project/jackin"
         );
         assert!(
-            !strings[2].ends_with(":ro"),
-            "admin mount must remain rw — git writes HEAD/index on each commit",
+            strings[2]
+                .contains("/git/overrides/Users/donbeave/Projects/jackin-project/jackin/.git")
         );
+        assert!(strings[2].contains(":/Users/donbeave/Projects/jackin-project/jackin/.git:ro"));
 
-        // 4: .git pointer override at <dst>/.git, redirects gitdir to
-        // /jackin/admin/. :ro hardening — agent must not rewrite this.
+        // 4: gitdir back-pointer override at
+        // `/jackin/host/<dst-tree>/.git/worktrees/<container>/gitdir`.
+        // File-level overlay on top of the host `.git/` mount destination.
+        // :ro hardening.
         assert!(
             strings[3].ends_with(":ro"),
-            "git-file override must be ro; got {}",
+            "gitdir-back override must be ro; got {}",
             strings[3],
         );
         assert!(
             strings[3]
-                .contains("/git/Users/donbeave/Projects/jackin-project/jackin/overrides/.git")
-        );
-        assert!(strings[3].contains(":/Users/donbeave/Projects/jackin-project/jackin/.git:ro"));
-
-        // 5: commondir override at /jackin/admin/.../commondir, points
-        // at /jackin/host/.../.git absolute. :ro.
-        assert!(
-            strings[4].ends_with(":ro"),
-            "commondir override must be ro; got {}",
-            strings[4],
+                .contains("/git/overrides/Users/donbeave/Projects/jackin-project/jackin/gitdir")
         );
         assert!(
-            strings[4]
-                .contains("/git/Users/donbeave/Projects/jackin-project/jackin/overrides/commondir")
-        );
-        assert!(
-            strings[4].contains(
-                ":/jackin/admin/Users/donbeave/Projects/jackin-project/jackin/commondir:ro"
+            strings[3].contains(
+                ":/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jackin-the-architect/gitdir:ro"
             )
-        );
-
-        // 6: gitdir back-pointer override at /jackin/admin/.../gitdir.
-        // Lives under /jackin/admin/, NOT nested in /jackin/host/.../.git/. :ro.
-        assert!(
-            strings[5].ends_with(":ro"),
-            "gitdir-back override must be ro; got {}",
-            strings[5],
-        );
-        assert!(
-            strings[5]
-                .contains("/git/Users/donbeave/Projects/jackin-project/jackin/overrides/gitdir")
-        );
-        assert!(
-            strings[5]
-                .contains(":/jackin/admin/Users/donbeave/Projects/jackin-project/jackin/gitdir:ro")
-        );
-        assert!(
-            !strings[5].contains("/jackin/host/"),
-            "gitdir-back override must NOT live under /jackin/host/.../.git/ — that's the visual nesting we explicitly avoid",
         );
     }
 

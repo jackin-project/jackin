@@ -102,51 +102,35 @@ fn materialize_then_clean_exit_removes_record_and_branch() {
 
     // Override files were written alongside the materialized worktree
     // and the MaterializedMount carries the auxiliary mount metadata
-    // for all five extra bind mounts.
+    // for the three extra bind mounts (host .git/, .git pointer
+    // override, gitdir back-pointer override). No commondir override:
+    // the admin entry lives natively inside the host .git/ mount, so
+    // git's on-disk default `commondir = ../..` resolves correctly.
     let m = &mat.mounts[0];
     let aux = m
         .worktree_aux
         .as_ref()
         .expect("worktree mount must carry aux mount metadata");
 
-    // Container-side targets follow the new /jackin/{host,admin}/<dst-stripped>/ scheme.
+    // Container-side targets all live under a single /jackin/host/<dst-tree>/ root.
     assert_eq!(
         aux.host_git_target, "/jackin/host/workspace/jackin/.git",
         "host .git mount mirrors host topology and ends in .git",
     );
-    assert_eq!(
-        aux.admin_target, "/jackin/admin/workspace/jackin",
-        "admin mount lives at /jackin/admin/, separate from /jackin/host/",
-    );
     assert_eq!(aux.git_file_target, "/workspace/jackin/.git");
     assert_eq!(
-        aux.commondir_target, "/jackin/admin/workspace/jackin/commondir",
-        "commondir override lives under /jackin/admin/, not nested in /jackin/host/",
-    );
-    assert_eq!(
-        aux.gitdir_back_target, "/jackin/admin/workspace/jackin/gitdir",
-        "gitdir back-pointer override lives under /jackin/admin/, not nested in /jackin/host/",
+        aux.gitdir_back_target,
+        "/jackin/host/workspace/jackin/.git/worktrees/jackin-the-architect/gitdir",
+        "gitdir back-pointer override lives natively inside the host .git/ mount",
     );
     assert_eq!(aux.host_git_dir, format!("{}/.git", repo.path().display()));
-    assert_eq!(
-        aux.admin_dir,
-        format!(
-            "{}/.git/worktrees/jackin-the-architect",
-            repo.path().display()
-        ),
-        "admin entry name = container name → globally unique per (host_repo, container)",
-    );
 
     // Override file contents.
     let git_file_content = std::fs::read_to_string(&aux.git_file_override).unwrap();
     assert_eq!(
-        git_file_content, "gitdir: /jackin/admin/workspace/jackin\n",
-        "replacement .git pointer redirects gitdir to /jackin/admin/, away from /jackin/host/",
-    );
-    let commondir_content = std::fs::read_to_string(&aux.commondir_override).unwrap();
-    assert_eq!(
-        commondir_content, "/jackin/host/workspace/jackin/.git\n",
-        "commondir override resolves the shared .git mount at /jackin/host/.../.git",
+        git_file_content,
+        "gitdir: /jackin/host/workspace/jackin/.git/worktrees/jackin-the-architect\n",
+        "replacement .git pointer redirects gitdir to the admin entry inside the host .git/ mount",
     );
     let gitdir_back_content = std::fs::read_to_string(&aux.gitdir_back_override).unwrap();
     assert_eq!(
@@ -154,27 +138,26 @@ fn materialize_then_clean_exit_removes_record_and_branch() {
         "back-pointer matches the worktree's <dst>/.git location inside the container",
     );
 
-    // Host layout: all git artifacts grouped under <state>/git/<dst-tree>/.
-    // The fake runner doesn't actually run `git worktree add` so the
-    // worktree subdir itself isn't materialized; assert via the
-    // recorded `bind_src` instead. Override files DO land on disk
-    // because `write_git_overrides` writes them via std::fs.
-    let mount_root = cdir.join("git/workspace/jackin");
-    assert!(
-        mount_root.is_dir(),
-        "mount root created at <state>/git/<dst-tree>/"
-    );
+    // Host layout: worktree under <state>/git/worktree/repo/<dst-tree>/<container>/,
+    // overrides under <state>/git/overrides/<dst-tree>/. The fake
+    // runner doesn't actually run `git worktree add` so the worktree
+    // subdir itself isn't materialized; assert via the recorded
+    // `bind_src` instead. Override files DO land on disk because
+    // `write_git_overrides` writes them via std::fs.
     assert!(
         m.bind_src
-            .ends_with("/git/workspace/jackin/jackin-the-architect"),
+            .ends_with("/git/worktree/repo/workspace/jackin/jackin-the-architect"),
         "worktree subdir basename = container name; got {}",
         m.bind_src
     );
-    let overrides_dir = mount_root.join("overrides");
+    let overrides_dir = cdir.join("git/overrides/workspace/jackin");
     assert!(overrides_dir.is_dir());
     assert!(overrides_dir.join(".git").is_file());
-    assert!(overrides_dir.join("commondir").is_file());
     assert!(overrides_dir.join("gitdir").is_file());
+    assert!(
+        !overrides_dir.join("commondir").exists(),
+        "commondir override removed in V1 final design",
+    );
 
     // Now finalize a clean exit with HEAD == base.
     // Capture queue: status --porcelain (clean), rev-parse HEAD (== base)
