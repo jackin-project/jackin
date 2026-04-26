@@ -81,7 +81,7 @@ fn materialize_then_clean_exit_removes_record_and_branch() {
     //   rev-parse HEAD
     let mut runner =
         ScriptedRunner::new(&[&repo.path().to_string_lossy(), "", "", "0", "deadbeef\n"]);
-    let _mat = materialize_workspace(
+    let mat = materialize_workspace(
         &resolved,
         &cdir,
         "the-architect",
@@ -99,6 +99,42 @@ fn materialize_then_clean_exit_removes_record_and_branch() {
     let recs = read_records(&cdir).unwrap();
     assert_eq!(recs.len(), 1);
     assert_eq!(recs[0].cleanup_status, CleanupStatus::Active);
+
+    // Override files were written alongside the materialized worktree
+    // and the MaterializedMount carries the auxiliary mount metadata.
+    let m = &mat.mounts[0];
+    let aux = m
+        .worktree_aux
+        .as_ref()
+        .expect("worktree mount must carry aux mount metadata");
+    assert_eq!(
+        aux.host_git_target, "/jackin-isolation/jackin-the-architect-git",
+        "container .git mount path is hardcoded per container",
+    );
+    assert_eq!(aux.git_file_target, "/workspace/jackin/.git");
+    assert_eq!(
+        aux.gitdir_back_target,
+        "/jackin-isolation/jackin-the-architect-git/worktrees/jackin/gitdir"
+    );
+    assert_eq!(aux.host_git_dir, format!("{}/.git", repo.path().display()));
+
+    // Override file content shape is what the design doc promises.
+    let git_file_content = std::fs::read_to_string(&aux.git_file_override).unwrap();
+    assert_eq!(
+        git_file_content, "gitdir: /jackin-isolation/jackin-the-architect-git/worktrees/jackin\n",
+        "replacement .git pointer must target the container-side gitdir admin path",
+    );
+    let gitdir_back_content = std::fs::read_to_string(&aux.gitdir_back_override).unwrap();
+    assert_eq!(
+        gitdir_back_content, "/workspace/jackin/.git\n",
+        "replacement back-pointer must point at <dst>/.git inside the container",
+    );
+
+    // Override files live where the design doc says they live.
+    let overrides_dir = cdir.join(".git-overrides");
+    assert!(overrides_dir.is_dir());
+    assert!(overrides_dir.join("workspace_jackin.git-file").is_file());
+    assert!(overrides_dir.join("workspace_jackin.gitdir-back").is_file());
 
     // Now finalize a clean exit with HEAD == base.
     // Capture queue: status --porcelain (clean), rev-parse HEAD (== base)

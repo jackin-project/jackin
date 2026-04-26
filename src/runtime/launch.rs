@@ -511,6 +511,20 @@ fn launch_agent_runtime(
     for mount in crate::isolation::materialize::mount_order_for_docker(workspace) {
         let suffix = if mount.readonly { ":ro" } else { "" };
         mount_strings.push(format!("{}:{}{}", mount.bind_src, mount.dst, suffix));
+        // Worktree-mode auxiliary mounts: host .git, replacement .git
+        // pointer, replacement gitdir back-pointer. Order matters:
+        // each container path must be created by an earlier mount
+        // before its file-level override sits on top. The worktree
+        // mount above has already created `<dst>/`; the host_git_dir
+        // mount creates `/jackin-isolation/.../worktrees/<n>/`.
+        if let Some(aux) = &mount.worktree_aux {
+            mount_strings.push(format!("{}:{}", aux.host_git_dir, aux.host_git_target));
+            mount_strings.push(format!("{}:{}", aux.git_file_override, aux.git_file_target));
+            mount_strings.push(format!(
+                "{}:{}",
+                aux.gitdir_back_override, aux.gitdir_back_target
+            ));
+        }
     }
     for ms in &mount_strings {
         run_args.push("-v");

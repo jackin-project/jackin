@@ -19,6 +19,41 @@ pub struct MaterializedMount {
     pub dst: String,
     pub readonly: bool,
     pub isolation: MountIsolation,
+    /// Auxiliary docker bind mounts required so git can operate on this
+    /// worktree from inside the container. `None` for `Shared` mounts.
+    /// See the per-mount-isolation roadmap entry "Container-side mount
+    /// layout" and "Design Decision: Worktree Materialization Layout"
+    /// for the rationale and topology.
+    pub worktree_aux: Option<WorktreeAuxMounts>,
+}
+
+/// Three extra bind mounts the container needs so a worktree's
+/// gitdir relationship resolves consistently inside the container.
+///
+/// All three sources are jackin-owned (under the container's state
+/// dir or the host repo's `.git/`); host-side worktree files are
+/// never modified.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorktreeAuxMounts {
+    /// Host source: `<host_repo>/.git`. Container target:
+    /// `/jackin-isolation/<container>-git`. Read-write — git needs to
+    /// write refs/HEAD/etc on agent commits.
+    pub host_git_dir: String,
+    pub host_git_target: String,
+    /// Host source: jackin-owned override `.git` file containing
+    /// `gitdir: <host_git_target>/worktrees/<wt-name>`. Container
+    /// target: `<dst>/.git`. Overrides the worktree's host-side `.git`
+    /// pointer file with one resolvable inside the container.
+    pub git_file_override: String,
+    pub git_file_target: String,
+    /// Host source: jackin-owned override file containing `<dst>/.git`.
+    /// Container target:
+    /// `<host_git_target>/worktrees/<wt-name>/gitdir`. Overrides git's
+    /// admin-dir back-pointer so its verification check (back-pointer
+    /// must match the worktree's `.git` location) passes inside the
+    /// container, where `<dst>` differs from the host worktree path.
+    pub gitdir_back_override: String,
+    pub gitdir_back_target: String,
 }
 
 /// Compute the host-side worktree path for an isolated mount.
@@ -27,6 +62,86 @@ pub struct MaterializedMount {
 pub fn worktree_path_for(container_state_dir: &Path, dst: &str) -> PathBuf {
     let rel = dst.trim_matches('/');
     container_state_dir.join("isolated").join(rel)
+}
+
+/// Stable container-side path where the host repo's `.git/` is bind-
+/// mounted for an isolated worktree. Hardcoded prefix; the variable
+/// part is the container name so concurrent agents don't collide.
+fn container_git_dir_path(container_name: &str) -> String {
+    format!("/jackin-isolation/{container_name}-git")
+}
+
+/// Filesystem-safe identifier derived from `dst` for naming override
+/// files. `/workspace/jackin` → `workspace_jackin`. Strip leading and
+/// trailing `/` first so the result has no awkward leading underscore.
+fn override_id_for_dst(dst: &str) -> String {
+    dst.trim_matches('/').replace('/', "_")
+}
+
+/// Write the two jackin-owned override files alongside the materialized
+/// worktree. Idempotent: rewrites both files on every call so reused
+/// worktrees pick up any topology changes (rare, but cheap).
+///
+/// Returns the [`WorktreeAuxMounts`] needed to wire up the three
+/// auxiliary bind mounts at docker-run time.
+fn write_git_overrides(
+    container_state_dir: &Path,
+    container_name: &str,
+    mount_dst: &str,
+    worktree_path: &Path,
+    host_repo_src: &str,
+) -> anyhow::Result<WorktreeAuxMounts> {
+    let overrides_dir = container_state_dir.join(".git-overrides");
+    std::fs::create_dir_all(&overrides_dir)
+        .with_context(|| format!("create git-overrides dir at {}", overrides_dir.display()))?;
+
+    let wt_name = worktree_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| {
+            anyhow::anyhow!("worktree path has no basename: {}", worktree_path.display())
+        })?;
+    let id = override_id_for_dst(mount_dst);
+    let host_git_target = container_git_dir_path(container_name);
+
+    // Override 1: replacement `.git` text file at `<dst>/.git` inside
+    // the container. Points to the container-side gitdir admin path.
+    let git_file_override_path = overrides_dir.join(format!("{id}.git-file"));
+    let git_file_content = format!("gitdir: {host_git_target}/worktrees/{wt_name}\n");
+    std::fs::write(&git_file_override_path, &git_file_content).with_context(|| {
+        format!(
+            "write git-file override {}",
+            git_file_override_path.display()
+        )
+    })?;
+
+    // Override 2: replacement back-pointer at
+    // `<host_git_target>/worktrees/<wt_name>/gitdir` inside the
+    // container. Tells git "the worktree's `.git` file is at <dst>/.git"
+    // so its verification check passes (the host's absolute path stored
+    // in the on-disk gitdir back-pointer would NOT match `<dst>` inside
+    // the container, hence the override).
+    let gitdir_back_override_path = overrides_dir.join(format!("{id}.gitdir-back"));
+    let gitdir_back_content = format!("{mount_dst}/.git\n");
+    std::fs::write(&gitdir_back_override_path, &gitdir_back_content).with_context(|| {
+        format!(
+            "write gitdir-back override {}",
+            gitdir_back_override_path.display()
+        )
+    })?;
+
+    let host_git_dir = format!("{host_repo_src}/.git");
+    let git_file_target = format!("{mount_dst}/.git");
+    let gitdir_back_target = format!("{host_git_target}/worktrees/{wt_name}/gitdir");
+
+    Ok(WorktreeAuxMounts {
+        host_git_dir,
+        host_git_target,
+        git_file_override: git_file_override_path.to_string_lossy().into(),
+        git_file_target,
+        gitdir_back_override: gitdir_back_override_path.to_string_lossy().into(),
+        gitdir_back_target,
+    })
 }
 
 /// Enable `extensions.worktreeConfig` on a host repo if not already set.
@@ -277,6 +392,7 @@ pub fn materialize_workspace(
                     dst: mount.dst.clone(),
                     readonly: mount.readonly,
                     isolation: MountIsolation::Shared,
+                    worktree_aux: None,
                 }
             }
             MountIsolation::Worktree => materialize_one(
@@ -376,11 +492,28 @@ fn materialize_one(
                 "mount {dst}: reusing existing worktree (record matches and .git present)",
                 dst = mount.dst,
             );
+            // Re-write override files on every load — idempotent and
+            // cheap, ensures any topology refresh (e.g., container
+            // rename hypothetically) lands without manual cleanup.
+            let aux = write_git_overrides(
+                container_state_dir,
+                container_name,
+                &mount.dst,
+                &worktree_path,
+                &mount.src,
+            )?;
+            debug_log!(
+                "isolation",
+                "mount {dst}: refreshed git overrides (host_git_target={target})",
+                dst = mount.dst,
+                target = aux.host_git_target,
+            );
             return Ok(MaterializedMount {
                 bind_src: worktree_path.to_string_lossy().into(),
                 dst: mount.dst.clone(),
                 readonly: mount.readonly,
                 isolation: MountIsolation::Worktree,
+                worktree_aux: Some(aux),
             });
         }
         debug_log!(
@@ -474,11 +607,28 @@ fn materialize_one(
         },
     )?;
 
+    let aux = write_git_overrides(
+        container_state_dir,
+        container_name,
+        &mount.dst,
+        &worktree_path,
+        &mount.src,
+    )?;
+    debug_log!(
+        "isolation",
+        "mount {dst}: wrote git overrides (host_git_target={t}, git_file_target={gft}, gitdir_back_target={gbt})",
+        dst = mount.dst,
+        t = aux.host_git_target,
+        gft = aux.git_file_target,
+        gbt = aux.gitdir_back_target,
+    );
+
     Ok(MaterializedMount {
         bind_src: worktree_path.to_string_lossy().into(),
         dst: mount.dst.clone(),
         readonly: mount.readonly,
         isolation: MountIsolation::Worktree,
+        worktree_aux: Some(aux),
     })
 }
 
@@ -503,6 +653,7 @@ mod tests {
             dst: "/workspace/a".into(),
             readonly: false,
             isolation: MountIsolation::Worktree,
+            worktree_aux: None,
         };
         assert_eq!(m.isolation, MountIsolation::Worktree);
     }
@@ -523,6 +674,100 @@ mod tests {
             worktree_path_for(&base, "/workspace/jackin/"),
             PathBuf::from("/data/jackin-x/isolated/workspace/jackin")
         );
+    }
+
+    #[test]
+    fn override_id_strips_slashes_and_trims() {
+        assert_eq!(override_id_for_dst("/workspace/jackin"), "workspace_jackin");
+        assert_eq!(
+            override_id_for_dst("/workspace/jackin/"),
+            "workspace_jackin"
+        );
+        assert_eq!(override_id_for_dst("//a/b//"), "a_b");
+        assert_eq!(override_id_for_dst("/"), "");
+    }
+
+    #[test]
+    fn container_git_dir_path_namespaces_by_container_name() {
+        // Two parallel agents must not share the host-.git mount path.
+        assert_eq!(
+            container_git_dir_path("jackin-the-architect"),
+            "/jackin-isolation/jackin-the-architect-git"
+        );
+        assert_eq!(
+            container_git_dir_path("jackin-the-architect-clone-1"),
+            "/jackin-isolation/jackin-the-architect-clone-1-git"
+        );
+    }
+
+    #[test]
+    fn write_git_overrides_writes_both_files_with_correct_content() {
+        let cdir = tempfile::TempDir::new().unwrap();
+        let wt = cdir.path().join("isolated/workspace/jackin");
+        std::fs::create_dir_all(&wt).unwrap();
+
+        let aux = write_git_overrides(
+            cdir.path(),
+            "jackin-the-architect",
+            "/workspace/jackin",
+            &wt,
+            "/host/jackin",
+        )
+        .unwrap();
+
+        // Auxiliary mount metadata reflects the design doc topology.
+        assert_eq!(aux.host_git_dir, "/host/jackin/.git");
+        assert_eq!(
+            aux.host_git_target,
+            "/jackin-isolation/jackin-the-architect-git"
+        );
+        assert_eq!(aux.git_file_target, "/workspace/jackin/.git");
+        assert_eq!(
+            aux.gitdir_back_target,
+            "/jackin-isolation/jackin-the-architect-git/worktrees/jackin/gitdir"
+        );
+
+        // File content matches the docs in the roadmap MDX.
+        let git_file = std::fs::read_to_string(&aux.git_file_override).unwrap();
+        assert_eq!(
+            git_file,
+            "gitdir: /jackin-isolation/jackin-the-architect-git/worktrees/jackin\n"
+        );
+        let gitdir_back = std::fs::read_to_string(&aux.gitdir_back_override).unwrap();
+        assert_eq!(gitdir_back, "/workspace/jackin/.git\n");
+
+        // Override files live under .git-overrides with the dst-derived id.
+        assert!(aux.git_file_override.ends_with("workspace_jackin.git-file"));
+        assert!(
+            aux.gitdir_back_override
+                .ends_with("workspace_jackin.gitdir-back")
+        );
+    }
+
+    #[test]
+    fn write_git_overrides_is_idempotent() {
+        let cdir = tempfile::TempDir::new().unwrap();
+        let wt = cdir.path().join("isolated/workspace/jackin");
+        std::fs::create_dir_all(&wt).unwrap();
+
+        let first = write_git_overrides(
+            cdir.path(),
+            "jackin-x",
+            "/workspace/jackin",
+            &wt,
+            "/host/jackin",
+        )
+        .unwrap();
+        let second = write_git_overrides(
+            cdir.path(),
+            "jackin-x",
+            "/workspace/jackin",
+            &wt,
+            "/host/jackin",
+        )
+        .unwrap();
+        // Same paths, same content — re-running on a reused worktree is safe.
+        assert_eq!(first, second);
     }
 
     use crate::runtime::test_support::FakeRunner;
@@ -1011,12 +1256,14 @@ mod tests {
                     dst: "/workspace/proj/target".into(),
                     readonly: false,
                     isolation: MountIsolation::Shared,
+                    worktree_aux: None,
                 },
                 MaterializedMount {
                     bind_src: "/wt".into(),
                     dst: "/workspace/proj".into(),
                     readonly: false,
                     isolation: MountIsolation::Worktree,
+                    worktree_aux: None,
                 },
             ],
         };
@@ -1035,12 +1282,14 @@ mod tests {
                     dst: "/workspace/aa".into(),
                     readonly: false,
                     isolation: MountIsolation::Shared,
+                    worktree_aux: None,
                 },
                 MaterializedMount {
                     bind_src: "/b".into(),
                     dst: "/workspace/bb".into(),
                     readonly: false,
                     isolation: MountIsolation::Shared,
+                    worktree_aux: None,
                 },
             ],
         };
