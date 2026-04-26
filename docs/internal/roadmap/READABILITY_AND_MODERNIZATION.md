@@ -419,41 +419,48 @@ The proposed shape below addresses the problems above. URLs on the public docs s
 ```
 # Public-facing (root)
 README.md           → install, overview, ecosystem, link to docs site
-CHANGELOG.md        → version history (keep-a-changelog)
-LICENSE, NOTICE     → legal
 
 # Agent-facing (root — loaded in every AI agent session)
-CLAUDE.md           → "@AGENTS.md" (1 line, stays terse)
+CLAUDE.md           → "@AGENTS.md" (1 line ONLY — never add content here)
 AGENTS.md           → agent-only rules: PR merging, commit attribution, code review scope, shared convention links
-RULES.md            → product invariants for AI agents: doc convention, deprecation rule, TUI rules; stays terse
+RULES.md            → product invariants: doc convention, deprecation rule, TUI rules; stays terse
 
-# Contributor-facing (root — human contributor entry points)
-BRANCHING.md        → branch naming + PR policy
-COMMITS.md          → conventional commits + DCO + agent attribution
-DEPRECATED.md       → active deprecations ledger
+# Contributor-facing (root)
+BRANCHING.md, COMMITS.md, DEPRECATED.md, CHANGELOG.md, LICENSE, NOTICE
 
-# Navigation / map (root — also agent-usable)
-PROJECT_STRUCTURE.md → module/file map; candidate for migration to docs/internal/ in a future pass
+# Navigation / map
+PROJECT_STRUCTURE.md → module/file map; augmented (not replaced) by per-directory README.md
+
+# Per-directory README.md (AI-native context, operator-directed — see §7.9)
+src/README.md                      → top-level module map + entry points
+src/runtime/README.md              → bootstrap pipeline orientation + spec pointer
+src/console/README.md              → TUI subsystem orientation
+src/console/manager/README.md      → workspace manager layers
+src/console/widgets/README.md      → widget library + exemplar pointer (file_browser/)
+docs/README.md                     → site orientation + internal/ layout
+docs/internal/README.md            → contributor reference index
 
 # Internal contributor reference (does not ship to public site)
 docs/internal/
-  ARCHITECTURE.md             → ADR-style decisions that shaped the current structure; NOT duplicate of docs site reference/architecture.mdx
-  CODE_TOUR.md                → walk-through of key call chains (load, console launch, hardline)
-  CONTRIBUTING.md             → contribution flow, DCO, release process (currently at root)
+  ARCHITECTURE.md             → ADR-style decisions
+  CODE_TOUR.md                → walk-through of key call chains
+  CONTRIBUTING.md             → contribution flow, DCO (currently at root)
   TESTING.md                  → test runner + pre-commit (currently at root)
-  REVIEWS/                    → historical PR review docs; dated, indexed, never deleted
-  decisions/                  → ADRs (NNN-title.md); see §7 ADRs
+  REVIEWS/                    → historical PR review docs
+  decisions/                  → ADRs (NNN-title.md)
+  specs/                      → behavioral specs (runtime-launch.md, op-picker.md)
   roadmap/                    → this file + iteration log + research notes
-  # (no specs/ dir — specs live in the public docs site as MDX; see §8.1)
 
-# Public docs site (URLs invariant + new specs section)
+# Public docs site (URLs invariant)
 docs/src/content/docs/        → 47 pages; Starlight build output
-docs/src/content/docs/specs/  → living feature specs as Starlight MDX (draft: true while in-progress); see §8.1
+docs/src/content/docs/specs/  → living feature specs as Starlight MDX
 ```
 
+**`CLAUDE.md` design principle (operator-directed):** `CLAUDE.md` must remain a single-line `@AGENTS.md` pointer. All agent instructions live in `AGENTS.md` only. Adding content to `CLAUDE.md` creates a two-file maintenance problem where instructions can contradict each other. The `@` syntax is Claude Code's mechanism for including one file from another — use it, don't fight it.
+
 **Files to move (future execution loop, not this one):**
-- `CONTRIBUTING.md` → `docs/internal/CONTRIBUTING.md` + README.md link to new location
-- `TESTING.md` → `docs/internal/TESTING.md` + AGENTS.md link to new location
+- `CONTRIBUTING.md` → `docs/internal/CONTRIBUTING.md` + link from root README.md
+- `TESTING.md` → `docs/internal/TESTING.md` + link from AGENTS.md
 
 **Files to leave in place (invariant or intentionally root-level):**
 - `AGENTS.md`, `CLAUDE.md`, `RULES.md`, `BRANCHING.md`, `COMMITS.md`, `DEPRECATED.md`, `PROJECT_STRUCTURE.md` — agent-session loading requires root-level location.
@@ -1378,17 +1385,44 @@ This is a mature, well-considered configuration. One gap: the cast allowances at
 
 ### 7.9 Per-directory `README.md` in `src/` subtrees
 
-**What it is:** Small orientation files at the top of each major `src/` module directory.
+**What it is:** Small orientation files at the top of each major `src/` module directory (and at the repo root and `docs/` root).
 
-**What `jackin` does today:** No per-directory `README.md` files in `src/`. `PROJECT_STRUCTURE.md` at the root provides the navigation map.
+**What `jackin` does today:** No per-directory `README.md` files in `src/`. `PROJECT_STRUCTURE.md` at the root provides the navigation map. `CLAUDE.md` at the root already contains only `@AGENTS.md` — it is already a thin pointer, not a duplicate.
 
 **The 2026-modern landscape:**
 
-*For A — Per-dir `README.md`:* Discoverable without reading `PROJECT_STRUCTURE.md`. Shown by GitHub in the directory browser. Maintenance burden: each file can become stale when modules change.
+*For A — Per-dir `README.md`:* Discoverable without reading `PROJECT_STRUCTURE.md`. Shown by GitHub in the directory browser. **AI-native**: Claude Code, GitHub Copilot, Cursor, and similar tools load `README.md` automatically when they enter a directory context — this is the primary mechanism by which an AI agent receives orientation about a folder's purpose. Maintenance: each file can become stale, but the same is true of `PROJECT_STRUCTURE.md` (already confirmed stale). The staleness risk is lower per-directory because the author of a change to `src/runtime/` is directly in that directory and sees the README.md.
 
-*For B — `//!` module doc in `mod.rs` (or top-level file):* Already the Rustdoc standard. Surfaced by `cargo doc`. Maintained alongside the code. Less discoverable from GitHub UI but more reliable.
+*For B — `//!` module doc in `mod.rs`:* Already the Rustdoc standard. Surfaced by `cargo doc`. Maintained alongside the code. However, it is only visible when the AI agent is already reading a specific `.rs` file — it does not orient the agent at directory-entry time. An agent exploring `src/runtime/` without knowing which file to open first gets no orientation from `//!` docs.
 
-**Recommendation:** `reject` per-directory `README.md` for `src/`. Instead, `adopt` `//!` module docs in all `mod.rs` files (Rule 7 in §4). The `//!` approach has zero staleness gap — it compiles with the code. The GitHub UI concern is minor: `PROJECT_STRUCTURE.md` and the module map serve that navigation role.
+**Revised recommendation: `adopt` per-directory `README.md` at the major module level, combined with `//!` docs (not as a replacement).**
+
+The previous recommendation (`reject`) was based on maintenance burden and the assumption that `PROJECT_STRUCTURE.md` serves navigation. That assumption has been falsified: `PROJECT_STRUCTURE.md` is confirmed stale and has no enforcement mechanism to stay current. Per-directory `README.md` has a natural staleness check: a developer modifying files in a directory sees the README and can update it. AI agents changing code in a directory are prompted to update it too.
+
+**Three-layer documentation model (operator-directed):**
+
+| Layer | File | Audience | Scope | When read |
+|---|---|---|---|---|
+| Directory orientation | `README.md` | Humans + AI agents | "What is this folder for?" | On directory entry (GitHub UI, AI context loading) |
+| Agent instructions | `AGENTS.md` (root) | AI agents only | Workflow rules, PR rules, commit attribution | At session start |
+| Agent config shortcut | `CLAUDE.md` (root) | Claude Code only | `@AGENTS.md` pointer — already correct | At Claude Code session start |
+| File contract | `//!` in `.rs` files | Rust tooling + humans | "What does this module do and what invariants must it maintain?" | When reading/editing a file |
+
+**`CLAUDE.md` → `@AGENTS.md` is already the right structure.** Do not add content to `CLAUDE.md` — it should remain a single-line pointer. This keeps agent instructions in one canonical place (`AGENTS.md`) and avoids the drift that comes from maintaining two files.
+
+**Proposed README.md targets (where they add the most navigational value):**
+
+| Directory | README.md content |
+|---|---|
+| `src/` | "Rust application source. Top-level modules: cli (Clap schema), app (dispatch), runtime (container bootstrap), console (TUI), config (TOML persistence), workspace (domain model). See PROJECT_STRUCTURE.md for the full map." |
+| `src/runtime/` | "Container bootstrap pipeline. Entry point: `load_agent()` in `launch.rs`. Four-step sequence: agent identity → image build → container name claim → network + DinD. See behavioral spec at `docs/internal/specs/runtime-launch.md`." |
+| `src/console/` | "Operator console TUI. Entry point: `run_console()` in `mod.rs`. Two subsystems: `manager/` (workspace manager) and `widgets/` (reusable modal components). No import from `runtime/` — the console and runtime are independently compilable." |
+| `src/console/manager/` | "Workspace manager TUI. Three-layer architecture: `state.rs` (data), `input/` (key/mouse dispatch), `render/` (drawing). Widgets in `../widgets/`." |
+| `src/console/widgets/` | "Reusable TUI widget library. Each widget is a self-contained state machine. `op_picker/` is the 1Password drill-down picker (see behavioral spec). `file_browser/` is an exemplar of the target module shape." |
+| `docs/` | "Astro Starlight documentation site (public, deployed to jackin.tailrocks.com). Internal/contributor docs under `docs/internal/`. Agent workflow artifacts under `docs/superpowers/` (to be migrated)." |
+| `docs/internal/` | "Contributor and AI-agent internal documentation. Not published to the docs site. `roadmap/` contains the readability analysis. `specs/` (proposed) will contain behavioral specs." |
+
+**Staleness gate:** README.md files in `src/` subdirectories should be added to the `check:project-structure` CI gate proposed in §3 — if a new `.rs` module is added to a directory, the CI check verifies the directory's `README.md` was also updated (by checking its `git diff` modification date relative to the new file).
 
 ---
 
