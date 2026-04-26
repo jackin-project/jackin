@@ -1293,15 +1293,46 @@ mod workspaces;
 
 4b. **`src/manifest/mod.rs` split** (~200L production): Split `AgentManifest` structs → `src/manifest/schema.rs`; move `load()` + `display_name()` → `src/manifest/loader.rs`. Self-contained; no coupling to console or runtime.
 
-4c. **`src/config/editor.rs` → `src/config/editor/` module directory** (~503L production, 963L tests): Convert to module directory using Rust's impl-extension pattern; 5 domain files + `tests.rs`. Lowest circular-dependency risk of any large file since all methods operate on the same `DocumentMut`. The `create_workspace`/`edit_workspace` validation-delegation pattern (lines 401–468) must be preserved as-is.
+4c. **`src/config/editor.rs` → `src/config/editor/` module directory** (~503L production, 963L tests):
+
+**Complete method-to-file mapping (verified by reading all 18 methods and 3 private helpers):**
+
+| File | Contents | ~LOC |
+|---|---|---|
+| `mod.rs` | Sub-module declarations; re-export `ConfigEditor`, `EnvScope`; `pub(super) fn table_path_mut` (shared TOML helper, line 510) | ~30 |
+| `io.rs` | `ConfigEditor` struct def; `open`; `save` + `validate_candidate` (line 504 — called only from `save`; validates candidate TOML before the tmp→real rename to prevent bricking the config) | ~65 |
+| `env_ops.rs` | `set_env_var`; `set_env_comment`; `remove_env_var`; `env_scope_path` helper (line 484 — used only by env methods) | ~100 |
+| `mount_ops.rs` | `add_mount`; `remove_mount` | ~80 |
+| `agent_ops.rs` | `set_agent_trust`; `set_agent_auth_forward`; `set_global_auth_forward`; `upsert_builtin_agent`; `upsert_agent_source`; `normalize_deprecated_copy`; `auth_forward_str` helper (line 476 — used only by auth_forward methods) | ~130 |
+| `workspace_ops.rs` | `set_last_agent`; `rename_workspace`; `remove_workspace`; `create_workspace`; `edit_workspace` | ~120 |
+
+**Key pattern — `create_workspace` and `edit_workspace` delegate validation to `AppConfig`:** These methods (lines 408–473) re-parse the `DocumentMut` into an `AppConfig` in-memory, call `in_memory.create_workspace()` / `in_memory.edit_workspace()` to apply validated logic, then splice the result back into the `DocumentMut`. They do NOT call `validate_candidate` — that's called only in `save()`. This delegation chain must be preserved as-is.
+
+**`table_path_mut` is a shared dependency:** Used by `set_env_var`, `set_env_comment`, `remove_env_var` (env_ops) AND `set_last_agent`, `create_workspace`, `edit_workspace` (workspace_ops). Lives in `mod.rs` as `pub(super) fn table_path_mut` so both domain files can access it via `use super::table_path_mut`.
+
+**Tests stay co-located:** 963L of tests remain in the respective domain files (each test is tightly coupled to the method it tests). No separate `tests.rs` — Rust inline tests are idiomatic.
+
+**Auditability gain:** To audit "does the agent auth forward correctly?", a reviewer reads only `agent_ops.rs` (~130L). Today they must scan 1467L for the relevant methods.
 
 4d. **`src/operator_env.rs` → `src/operator_env/` module directory** (~810L production, ~758L tests): Convert to module directory: `mod.rs` (~100L traits + dispatch), `client.rs` (~280L subprocess), `layers.rs` (~470L env resolution), `picker.rs` (~250L PR #171 additions). Dependency graph has no circularity (mod.rs ← client.rs, mod.rs ← layers.rs, mod.rs + client.rs ← picker.rs).
 
-4e. **`src/app/mod.rs` → `src/app/` module split** (951L total, 843L of `run()` dispatch): `run()` spans lines 40–882. Read in full: 8 top-level Command arms with very unequal sizes. `Command::Workspace` (lines 425–862, ~438L) and `Command::Config` (lines 204–423, ~220L) together account for ~658L — 78% of the function. The remaining 6 arms (Load, Console/Launch, Hardline, Eject, Exile, Purge) total only ~167L. Refined split:
-  - `src/app/dispatch.rs` (~167L): the routing logic — `Load`, `Console/Launch`, `Hardline`, `Eject`, `Exile`, `Purge` arms (thin; mostly delegates to `runtime::*`). `mod.rs` becomes a thin module + re-exports.
-  - `src/app/workspace_cmd.rs` (~438L): entire `Command::Workspace` sub-dispatch (Create/List/Rename/Edit/Remove/Env arms) — self-contained, no cross-arm dependency.
-  - `src/app/config_cmd.rs` (~220L): entire `Command::Config` sub-dispatch (Mount/Trust/Auth/Env arms) — self-contained.
-  This three-way split reduces the largest file to ~438L (workspace_cmd.rs) and makes `dispatch.rs` small enough to read in one sitting. High import count across all files (nearly every module is imported) but no circular risk since `app` is the top-level dispatcher.
+4e. **`src/app/mod.rs` → `src/app/` module split** (951L total, 843L of `run()` dispatch):
+
+**Complete file mapping including all private helpers (verified by reading lines 882–955):**
+
+| File | Contents |
+|---|---|
+| `mod.rs` | `pub mod context;` + declare `dispatch`, `config_cmd`, `workspace_cmd`; re-export `run` |
+| `dispatch.rs` | `run()` routing skeleton; `Load`, `Console/Launch`, `Hardline`, `Eject`, `Exile`, `Purge` arms (~167L); `remove_data_dir_if_exists` fn (line 949 — used by Eject and Purge only) |
+| `config_cmd.rs` | `Command::Config` sub-dispatch (~220L); `parse_auth_forward_mode_from_cli` fn (line 33 — used only by Config::Auth arm) |
+| `workspace_cmd.rs` | `Command::Workspace` sub-dispatch (~438L); `workspace_env_scope` fn (line 912 — used only by workspace env arms); `EnvRow` struct + `print_env_table` fn (lines 922–947 — also used by Config::Env::List — see note) |
+| `context.rs` | Already exists; `classify_target`, `remember_last_agent`, `resolve_agent_from_context`, `resolve_running_container_from_context`, `resolve_target_name` — unchanged |
+
+**Note on `print_env_table`:** Used by both `Config::Env::List` and `Workspace::Env::List`. Options: (a) extract to `app/display.rs` (~20L) as `pub(super)`; (b) put in `workspace_cmd.rs` and make `pub(super)` for `config_cmd` to import. Option (a) is cleaner but adds a fifth file. The split can defer the decision — place in `workspace_cmd.rs` initially and move later.
+
+**`app/context.rs` already implements the impl-extension pattern** for `app::` helpers. The three-way `dispatch`/`config_cmd`/`workspace_cmd` split follows the same pattern.
+
+**Auditability gain:** To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` (~438L) plus `config/editor.rs::workspace_ops` (~120L). Today they must scan the entire 951L `app/mod.rs` to find the relevant code.
 
 4f. **`src/runtime/launch.rs` → 4 files** (2368L — most impactful, most complex test suite): Split into `launch.rs` (~120L public API), `launch_pipeline.rs` (~560L + ~1200L tests), `terminfo.rs` (~110L), `trust.rs` (~60L). Do last: the test suite is 1282L and depends on `FakeRunner` from `runtime/test_support.rs`; any test compilation failure here blocks all runtime changes.
 
@@ -1310,6 +1341,109 @@ mod workspaces;
 **Step 5 — Module-shape rules (§4 Rules 1–7)**
 
 Add `//!` orientation comments to all 50+ files lacking them. Add `#![warn(missing_docs)]` to `Cargo.toml` lints table. Enable intra-doc link checking in CI. Add `clippy.toml` with `too-many-lines-threshold = 150`.
+
+**`//!` priority queue — first 10 files, all confirmed missing (verified by checking first line of each):**
+
+The ordering is: files most likely to be opened cold, most likely to contain AI-generated logic bugs, or most critical for understanding invariants.
+
+1. **`src/app/mod.rs`** (opened by every contributor first; describes the command routing contract):
+   ```rust
+   //! CLI command dispatch.
+   //!
+   //! Entry point from `main.rs`. Receives the parsed `Cli` struct, resolves
+   //! the subcommand, and delegates to `runtime::`, `console::`, or `config::`.
+   //! Contains no business logic — each arm calls out to a domain module.
+   //!
+   //! Large sub-dispatches live in [`config_cmd`] and [`workspace_cmd`].
+   ```
+
+2. **`src/runtime/launch.rs`** (the bootstrap pipeline; most complex; highest AI-generated risk):
+   ```rust
+   //! Container bootstrap pipeline for `jackin load`.
+   //!
+   //! Public API: [`load_agent`]. Everything else is internal.
+   //! Pipeline: GC orphans → git clone/pull → image build → container name
+   //! claim → auth mode → operator env → [`launch_agent_runtime`].
+   //!
+   //! Trust gate: [`confirm_agent_trust`] is injected as a `FnOnce` so tests
+   //! can skip interactive prompts without mocking the Docker layer.
+   ```
+
+3. **`src/docker.rs`** (the test seam; must be understood before any testing work):
+   ```rust
+   //! Docker CLI wrapper and test seam.
+   //!
+   //! [`CommandRunner`] is the trait all Docker calls go through.
+   //! [`ShellRunner`] is the production implementation.
+   //! [`FakeRunner`] (in `runtime::test_support`) is the test double.
+   //! This indirection means unit tests never spawn Docker processes.
+   ```
+
+4. **`src/workspace/mod.rs`** (central concept; used everywhere):
+   ```rust
+   //! Workspace model — named associations of workdir, mounts, and agents.
+   //!
+   //! A workspace is stored under `[workspaces.<name>]` in the config file.
+   //! Key types: [`WorkspaceConfig`], [`MountConfig`].
+   //! Key operations: path resolution ([`resolve_path`]),
+   //! mount deduplication ([`planner`]), lookup ([`resolve`]).
+   ```
+
+5. **`src/selector.rs`** (the `ClassSelector` type is in 17 files; the `/`→`__` invariant is not obvious):
+   ```rust
+   //! Agent selector parsing — the string passed to `jackin load` or `jackin eject`.
+   //!
+   //! Two forms: class (`agent-name` or `namespace/agent-name`) and
+   //! container (a running container name). Namespace separator is `/` in
+   //! user input but `__` in Docker image tags — these are NOT equivalent:
+   //! `ns/agent` and `ns-agent` produce different image names.
+   ```
+
+6. **`src/instance/mod.rs`** (naming conventions; the `__` separator invariant):
+   ```rust
+   //! Per-container naming and state conventions.
+   //!
+   //! Converts a [`ClassSelector`] into Docker-compatible image names,
+   //! container names, and volume names. The `__` separator in image names
+   //! distinguishes namespaced classes from flat ones:
+   //! `chainargos/agent` → `jackin-chainargos__agent` (not `jackin-chainargos-agent`).
+   ```
+
+7. **`src/paths.rs`** (XDG layout; needed to understand where data lives):
+   ```rust
+   //! XDG-compliant data and config directory resolution.
+   //!
+   //! [`JackinPaths::detect`] resolves all paths from `$XDG_CONFIG_HOME`
+   //! (default `~/.config/jackin`) and `$XDG_DATA_HOME` (default `~/.local/share/jackin`).
+   //! Every module that reads or writes persistent state receives a `&JackinPaths`.
+   ```
+
+8. **`src/env_resolver.rs`** (interactive env prompting; the prompting contract is invisible from callsites):
+   ```rust
+   //! Runtime operator-env resolution with interactive prompts.
+   //!
+   //! When an env var references `$HOST_VAR` that is unset on the host,
+   //! and the operator has not pre-populated it, this module prompts
+   //! interactively. The prompt is skipped in non-TTY environments.
+   ```
+
+9. **`src/tui/mod.rs`** (palette constants; DEBUG_MODE flag; shared across all TUI code):
+   ```rust
+   //! Terminal UI palette, helpers, and global debug flag.
+   //!
+   //! Defines the phosphor-green colour constants, `set_debug_mode` / `DEBUG_MODE`,
+   //! and the `step_*` family of operator-facing output functions (delegating to
+   //! `output.rs`). All TUI code imports from here — keep it thin.
+   ```
+
+10. **`src/repo.rs`** (agent repo validation; the contract between `jackin` and agent repos):
+    ```rust
+    //! Agent repository validation.
+    //!
+    //! Validates that a cloned agent repo meets the contract required by jackin:
+    //! a `Dockerfile` that extends the construct base image. Called during
+    //! `jackin load` before the image build step.
+    ```
 
 *What could go wrong:* `missing_docs` surfaces hundreds of warnings; the CI gate must be added after the initial coverage pass, not before. The threshold change in `clippy.toml` may remove some intentional suppressions — review each one.
 

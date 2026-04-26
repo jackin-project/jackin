@@ -598,3 +598,39 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 4c `config/editor.rs` method-to-file mapping** — 18 methods across `impl ConfigEditor` need to be mapped to 5 domain files (env_ops, mount_ops, agent_ops, workspace_ops, io_ops). The proposed split is directional; the exact method assignment hasn't been verified for cross-method dependencies (does `create_workspace` call `set_env_var`? does `save` call other methods?).
 2. **§4 4e `app/mod.rs` — helper function inventory** — the 3-way split (dispatch.rs + workspace_cmd.rs + config_cmd.rs) identified the main arms but the private helper functions at lines 884–951 haven't been read. Which helpers belong with which command file?
 3. **§4 module-shape Rule 7 — `//!` priority queue** — which 10 files should get `//!` docs first (highest reviewer-value order), and what should each say? A priority queue with draft content would make Step 5 in §10 immediately executable.
+
+---
+
+## Iteration 14 — 2026-04-26
+
+### Improvements chosen
+
+1. **§4 4c `config/editor.rs` complete method-to-file mapping** — read all 18 public methods, 3 private helpers, and their inter-dependencies. Key findings: (a) `validate_candidate` is called ONLY from `save()`, not from workspace methods — it belongs with `io.rs`; (b) `table_path_mut` is a shared TOML navigation utility used by both env_ops and workspace_ops — lives in `mod.rs` as `pub(super)`; (c) `auth_forward_str` is used only by auth_forward methods — belongs in `agent_ops.rs`; (d) `create_workspace`/`edit_workspace` delegate validation to `AppConfig` in-memory, not to `validate_candidate`. Complete 6-file split table added to §4 4c.
+
+2. **§4 4e `app/mod.rs` private helper inventory** — read lines 882–955. Private functions outside `run()`: `parse_auth_forward_mode_from_cli` (used only by Config::Auth arm → config_cmd.rs), `workspace_env_scope` (used only by Workspace::Env arms → workspace_cmd.rs), `EnvRow`+`print_env_table` (used by BOTH Config::Env::List AND Workspace::Env::List — note added about optional `app/display.rs` extraction), `remove_data_dir_if_exists` (used by Eject+Purge → dispatch.rs). Complete file mapping table added to §4 4e.
+
+3. **§10 Step 5 — `//!` priority queue with draft content** — verified 10 specific files are missing `//!` docs (checked first line of each). Added priority queue with draft `//!` content for all 10 files. Prioritisation rationale: cold-landing impact, AI-generated code audit risk, invariant complexity. The draft content for `selector.rs` and `instance/mod.rs` specifically calls out the `/`→`__` separator invariant as it's the most non-obvious fact in the codebase.
+
+### What was read
+- `src/config/editor.rs` (all 18 public methods, 3 private helpers, lines 59–530)
+- `src/app/mod.rs:882–955` (all private helpers outside `run()`)
+- `src/app/mod.rs:1–37` (imports and `parse_auth_forward_mode_from_cli`)
+- `src/app/context.rs:1–30` (context module structure confirmed)
+- First line of 10 priority files (all confirmed missing `//!` docs)
+
+### What changed in the roadmap
+- §4 4c: Replaced description with complete 6-file split table + private helper placement + `create_workspace` delegation pattern explanation
+- §4 4e: Added complete file mapping table with all private helpers + print_env_table note
+- §10 Step 5: Added 10-file `//!` priority queue with draft content for each file
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| §4 4c config/editor.rs split | High (execution-ready) | All 18 methods mapped; private helper placement verified |
+| §4 4e app/mod.rs split | High (execution-ready) | All private helpers mapped to destination files |
+| §10 Step 5 //! queue | High | All 10 files confirmed missing; draft content is verifiable against code |
+
+### Weakest sections for iteration 15
+1. **§4 4d `operator_env.rs` — cross-cluster dependency verification** — the split proposes `layers.rs` imports `OpRunner` from `mod.rs` but not `OpCli` from `client.rs`. This needs to be verified by reading `resolve_operator_env_with` (line 512–633) to confirm it only calls `op_runner: &R: OpRunner` and never reaches into `OpCli` internals.
+2. **§4 4f `runtime/launch.rs` — `trust.rs` split safety** — `confirm_agent_trust` (lines 216–271) is injected as a `FnOnce` into `load_agent`. After splitting to `trust.rs`, it needs to be importable by both `launch_pipeline.rs` (which calls the injection point) and the test module. Verify the import chain.
+3. **§2 concept index — OQ1 resolution** — the `op_picker` session-scoped cache (now on main) can be read to verify the invalidation strategy and close OQ1 with a finding.
