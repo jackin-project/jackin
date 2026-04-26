@@ -745,12 +745,16 @@ fn render_secrets_tab(
 /// `S save workspace (N changes)` is the canonical unsaved-state signal.
 ///
 /// `op://` references skip masking entirely and render as a styled
-/// breadcrumb (`<email>/<vault>/<item> → <field>` or, for 3-segment paths,
-/// `<vault>/<item> → <field>`). The breadcrumb isn't a secret — it's a
-/// navigable path to one — so masking would be misleading. `op_accounts`
-/// is consulted to translate an account UUID/URL segment into an email
-/// address; if the lookup misses (cache cold, account no longer signed
-/// in), the raw account string is rendered.
+/// breadcrumb following the official 1Password CLI syntax:
+/// - 3-segment: `<vault> / <item> → <field>`
+/// - 4-segment: `<vault> / <item> / <section> → <field>` (the field
+///   lives inside a named section of the item)
+///
+/// Account scope is **not** encoded in `op://` — see the picker
+/// docstring for the multi-account model — so the breadcrumb does not
+/// prepend an account-derived email. `op_accounts` is retained on the
+/// signature for compatibility with other render-call sites; the
+/// breadcrumb itself does not consult it.
 #[allow(clippy::too_many_arguments)]
 fn render_secrets_key_line(
     selected: bool,
@@ -771,6 +775,13 @@ fn render_secrets_key_line(
     const OP_MARKER: &str = "[op] ";
     const NO_MARKER: &str = "     ";
     const MASK: &str = "●●●●●●●●●●●";
+
+    // `op_accounts` is unused by the breadcrumb after the parser
+    // change (4-segment is now `vault/item/section/field`, not
+    // `account/vault/item/field`). The argument stays on the
+    // signature so the call sites in this module aren't churned in
+    // the same commit, but mark it consumed to silence the warning.
+    let _ = op_accounts;
 
     let label_style = if selected {
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
@@ -796,15 +807,16 @@ fn render_secrets_key_line(
         let green_bold = Style::default()
             .fg(PHOSPHOR_GREEN)
             .add_modifier(Modifier::BOLD);
-        if let Some(account_seg) = parts.account.as_ref() {
-            let display = lookup_account_email(op_accounts, account_seg)
-                .unwrap_or_else(|| account_seg.clone());
-            spans.push(Span::styled(display, dim));
-            spans.push(Span::styled(" / ", dim));
-        }
         spans.push(Span::styled(parts.vault, white_style));
         spans.push(Span::styled(" / ", dim));
         spans.push(Span::styled(parts.item, green));
+        if let Some(section) = parts.section.as_ref() {
+            // 4-segment reference: the field lives inside a named
+            // section of the item. Render the section between the
+            // item and the field.
+            spans.push(Span::styled(" / ", dim));
+            spans.push(Span::styled(section.clone(), green));
+        }
         spans.push(Span::styled(" \u{2192} ", dim));
         spans.push(Span::styled(parts.field, green_bold));
         return Line::from(spans);
@@ -840,18 +852,6 @@ fn render_secrets_key_line(
     };
     spans.push(Span::styled(rendered_value, value_style));
     Line::from(spans)
-}
-
-/// Translate an `op://` account segment into an email for breadcrumb
-/// display. The picker stores either the sign-in URL (e.g.
-/// `my.1password.com`) or the account UUID; we match URL first, then
-/// `id`. Returns `None` on a miss so the caller can fall back to the
-/// raw segment.
-fn lookup_account_email(accounts: &[OpAccount], segment: &str) -> Option<String> {
-    accounts
-        .iter()
-        .find(|a| a.url == segment || a.id == segment)
-        .map(|a| a.email.clone())
 }
 
 #[cfg(test)]
@@ -1461,67 +1461,18 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Four-segment op:// reference with an account prefix renders the
-    /// account email when the cache contains a matching `OpAccount`.
-    /// Falls back to the raw segment when the cache is cold.
+    /// Four-segment op:// references render the section component
+    /// between the item and the field, per the official 1Password CLI
+    /// syntax (`op://<vault>/<item>/<section>/<field>`). Earlier
+    /// revisions interpreted 4-segment as `account/vault/item/field`
+    /// and prepended an account-derived email; that branch is removed
+    /// and the section is shown instead.
     #[test]
-    fn op_row_breadcrumb_render_four_segment_with_account_lookup() {
-        use crate::operator_env::OpAccount;
+    fn op_row_breadcrumb_render_four_segment_with_section() {
         let mut env = std::collections::BTreeMap::new();
         env.insert(
-            "DB_URL".into(),
-            "op://my.1password.com/Work/db/password".into(),
-        );
-        let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
-            env,
-            agents: std::collections::BTreeMap::new(),
-        };
-        let mut editor = EditorState::new_edit("ws".into(), ws);
-        editor.active_tab = EditorTab::Secrets;
-        editor.active_field = FieldFocus::Row(0);
-
-        let accounts = vec![OpAccount {
-            id: "ACCT-UUID".into(),
-            email: "alexey@example.com".into(),
-            url: "my.1password.com".into(),
-        }];
-        let config = AppConfig::default();
-        let backend = TestBackend::new(80, 15);
-        let mut term = Terminal::new(backend).unwrap();
-        term.draw(|f| {
-            render_secrets_tab(f, Rect::new(0, 0, 80, 15), &editor, &config, &accounts);
-        })
-        .unwrap();
-        let buf = term.backend().buffer();
-        let mut dump = String::new();
-        for y in 0..buf.area.height {
-            for x in 0..buf.area.width {
-                dump.push_str(buf[(x, y)].symbol());
-            }
-            dump.push('\n');
-        }
-        assert!(
-            dump.contains("alexey@example.com"),
-            "account URL must resolve to email via account list; dump:\n{dump}"
-        );
-        assert!(
-            !dump.contains("my.1password.com"),
-            "raw account URL must not appear when lookup succeeded; dump:\n{dump}"
-        );
-    }
-
-    /// Cold cache: the raw account segment is rendered as a fallback.
-    #[test]
-    fn op_row_breadcrumb_falls_back_to_raw_account_segment() {
-        let mut env = std::collections::BTreeMap::new();
-        env.insert(
-            "DB_URL".into(),
-            "op://unknown.1password.com/Work/db/password".into(),
+            "API_KEY".into(),
+            "op://Personal/API Keys/auth/secret_key".into(),
         );
         let ws = WorkspaceConfig {
             workdir: String::new(),
@@ -1537,9 +1488,30 @@ mod secrets_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
 
         let dump = render_to_dump(&editor);
+        // All four components must appear, in order, with the arrow
+        // glyph between the section and the field.
         assert!(
-            dump.contains("unknown.1password.com"),
-            "cold cache → raw segment fallback; dump:\n{dump}"
+            dump.contains("Personal"),
+            "vault must render; dump:\n{dump}"
+        );
+        assert!(dump.contains("API Keys"), "item must render; dump:\n{dump}");
+        assert!(
+            dump.contains("auth"),
+            "section must render between item and field; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("secret_key"),
+            "field must render; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("\u{2192}"),
+            "arrow glyph must precede the field; dump:\n{dump}"
+        );
+        // The account-prefix branch is dead — no email-style rendering
+        // for 4-segment refs.
+        assert!(
+            !dump.contains('@'),
+            "4-segment refs must not render an account email prefix; dump:\n{dump}"
         );
     }
 

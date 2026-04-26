@@ -91,45 +91,55 @@ pub fn is_op_reference(value: &str) -> bool {
     value.starts_with("op://")
 }
 
-/// Structured parts of an `op://...` reference.
+/// Structured parts of an `op://...` reference, matching the official
+/// 1Password CLI secret-reference syntax:
 ///
-/// The 1Password picker writes references in two shapes today:
+/// ```text
+/// op://<vault>/<item>/[<section>/]<field>
+/// ```
 ///
-/// - 4 segments: `op://<account>/<vault>/<item>/<field>` — multi-account
-///   storage (account-prefixed).
-/// - 3 segments: `op://<vault>/<item>/<field>` — legacy / single-account
-///   storage (no `--account` flag).
+/// (See <https://developer.1password.com/docs/cli/secret-reference-syntax/>.)
 ///
-/// The render path uses the parsed parts to draw a breadcrumb so the
-/// path reads as a navigable trail rather than a dense URI.
+/// - 3 segments: `op://<vault>/<item>/<field>` — field is at the top
+///   level of the item.
+/// - 4 segments: `op://<vault>/<item>/<section>/<field>` — field lives
+///   inside a named section of the item.
+///
+/// Account scope is **not** encoded in the path. Multi-account picks
+/// are tracked separately on `OpPickerState::selected_account`; at
+/// launch time `op read` resolves against the operator's default
+/// account context. The render path uses the parsed parts to draw a
+/// breadcrumb so the path reads as a navigable trail rather than a
+/// dense URI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpReferenceParts {
-    /// Account segment when the reference is 4-segment, else `None`.
-    /// Holds whatever the picker stored — typically the sign-in URL or
-    /// account UUID. Render lookups translate it to an email address.
-    pub account: Option<String>,
     pub vault: String,
     pub item: String,
+    /// Section segment when the reference is 4-segment, else `None`.
+    /// Sections are 1Password's grouping construct inside an item;
+    /// fields living inside a section have a 4-segment reference.
+    pub section: Option<String>,
     pub field: String,
 }
 
-/// Parse an `op://` reference into structured parts. Returns `None`
-/// when the prefix is missing or the segment count is not 3 or 4.
+/// Parse an `op://` reference into structured parts per the official
+/// 1Password CLI syntax. Returns `None` when the prefix is missing or
+/// the segment count is not 3 or 4.
 #[must_use]
 pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     let path = value.strip_prefix("op://")?;
     let parts: Vec<&str> = path.split('/').collect();
     match parts.as_slice() {
         [vault, item, field] => Some(OpReferenceParts {
-            account: None,
             vault: (*vault).to_string(),
             item: (*item).to_string(),
+            section: None,
             field: (*field).to_string(),
         }),
-        [account, vault, item, field] => Some(OpReferenceParts {
-            account: Some((*account).to_string()),
+        [vault, item, section, field] => Some(OpReferenceParts {
             vault: (*vault).to_string(),
             item: (*item).to_string(),
+            section: Some((*section).to_string()),
             field: (*field).to_string(),
         }),
         _ => None,
@@ -490,12 +500,21 @@ pub struct OpItem {
 
 /// Field metadata as reported by `op item get`. Notably absent: the
 /// field's value. The picker is a metadata browser only.
+///
+/// `reference` carries the authoritative `op://...` path that
+/// 1Password itself writes into each field's JSON output. The picker
+/// commits this string verbatim instead of synthesizing a path from
+/// display names — synthesis was wrong for fields inside sections,
+/// for items whose names contained `/` or whitespace, and for any
+/// case where 1Password's serializer differs from naive
+/// display-name concatenation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpField {
     pub id: String,
     pub label: String,
     pub field_type: String,
     pub concealed: bool,
+    pub reference: String,
 }
 
 // `op account list --format json` reports accounts with an `account_uuid`
@@ -541,6 +560,12 @@ struct RawOpItemDetail {
 // SAFETY: 'value' is intentionally absent from this struct. The picker is a
 // metadata browser; serde must not deserialize secret values into memory.
 // Any change adding a `value` field here breaks the picker's trust model.
+//
+// `reference` IS deserialized: the string `op://...` that 1Password's
+// CLI emits per field is metadata, not a credential, and the picker
+// commits it verbatim instead of synthesizing a path from display
+// names (which mishandled section nesting and `/`/whitespace in
+// names).
 #[derive(serde::Deserialize)]
 struct RawOpField {
     id: String,
@@ -550,6 +575,8 @@ struct RawOpField {
     field_type: String,
     #[serde(default)]
     purpose: String,
+    #[serde(default)]
+    reference: String,
 }
 
 impl From<RawOpAccount> for OpAccount {
@@ -589,6 +616,7 @@ impl From<RawOpField> for OpField {
             label: raw.label,
             field_type: raw.field_type,
             concealed,
+            reference: raw.reference,
         }
     }
 }
@@ -1205,25 +1233,33 @@ mod tests {
     #[test]
     fn parse_op_reference_three_segments() {
         let parts = parse_op_reference("op://Vault/Item/field").unwrap();
-        assert_eq!(parts.account, None);
         assert_eq!(parts.vault, "Vault");
         assert_eq!(parts.item, "Item");
+        assert_eq!(parts.section, None);
         assert_eq!(parts.field, "field");
     }
 
+    /// 4-segment references are vault/item/section/field per the
+    /// official 1Password CLI syntax — see
+    /// <https://developer.1password.com/docs/cli/secret-reference-syntax/>.
+    /// (The previous "4 segments = account/vault/item/field" reading
+    /// was a jackin-specific extension that conflicted with `op` itself
+    /// and is removed.)
     #[test]
-    fn parse_op_reference_four_segments() {
-        let parts = parse_op_reference("op://acct/Vault/Item/field").unwrap();
-        assert_eq!(parts.account, Some("acct".to_string()));
-        assert_eq!(parts.vault, "Vault");
+    fn parse_op_reference_handles_section_in_4_segment() {
+        let parts = parse_op_reference("op://Personal/Item/Auth/password").unwrap();
+        assert_eq!(parts.vault, "Personal");
         assert_eq!(parts.item, "Item");
-        assert_eq!(parts.field, "field");
+        assert_eq!(parts.section, Some("Auth".to_string()));
+        assert_eq!(parts.field, "password");
     }
 
     #[test]
-    fn parse_op_reference_invalid() {
+    fn parse_op_reference_invalid_segment_count() {
+        // Fewer than 3 segments after the prefix → None.
         assert!(parse_op_reference("plain").is_none());
         assert!(parse_op_reference("op://only/two").is_none());
+        // More than 4 segments → None.
         assert!(parse_op_reference("op://a/b/c/d/e").is_none());
         // Empty path after the prefix → splits into a single empty segment.
         assert!(parse_op_reference("op://").is_none());
@@ -2031,6 +2067,7 @@ mod tests {
             label: "password".to_string(),
             field_type: "CONCEALED".to_string(),
             purpose: String::new(),
+            reference: String::new(),
         };
         assert!(OpField::from(raw_concealed).concealed);
 
@@ -2040,6 +2077,7 @@ mod tests {
             label: "pw".to_string(),
             field_type: String::new(),
             purpose: "PASSWORD".to_string(),
+            reference: String::new(),
         };
         assert!(OpField::from(raw_purpose).concealed);
 
@@ -2049,6 +2087,7 @@ mod tests {
             label: "username".to_string(),
             field_type: "STRING".to_string(),
             purpose: "USERNAME".to_string(),
+            reference: String::new(),
         };
         assert!(!OpField::from(raw_text).concealed);
     }
@@ -2149,8 +2188,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-item-get");
         let json = r#"{"id":"i1","title":"API Keys","fields":[
-            {"id":"username","label":"username","type":"STRING","purpose":"USERNAME","value":"alice"},
-            {"id":"password","label":"password","type":"CONCEALED","purpose":"PASSWORD","value":"super-secret"}
+            {"id":"username","label":"username","type":"STRING","purpose":"USERNAME","value":"alice","reference":"op://Personal/API Keys/username"},
+            {"id":"password","label":"password","type":"CONCEALED","purpose":"PASSWORD","value":"super-secret","reference":"op://Personal/API Keys/password"}
         ]}"#;
         let script = format!(
             "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"get\" ]; then \
@@ -2169,12 +2208,51 @@ mod tests {
         // Compile-time guarantee: OpField has no `value` field. If a
         // future refactor adds one, this struct-match will fail to
         // compile and force an explicit re-review of the trust model.
+        // The destructure also names `reference` — drop it from
+        // `OpField` and this fails to compile, forcing a re-review of
+        // the picker's commit path (which depends on `reference`
+        // being the authoritative `op://` string from the CLI rather
+        // than a synthesized one).
         let OpField {
             id: _,
             label: _,
             field_type: _,
             concealed: _,
+            reference: _,
         } = fields[1].clone();
+    }
+
+    /// `op item get --format json` emits a `reference` key on every
+    /// field carrying the authoritative `op://...` string. The picker
+    /// commits this verbatim instead of synthesizing a path from
+    /// display names, so verify it round-trips into `OpField`.
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_item_get_captures_reference_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-item-get-reference");
+        // `auth/secret_key` is the sectioned shape: 4-segment reference
+        // where the 3rd segment is a section name. The picker must be
+        // able to commit this verbatim.
+        let json = r#"{"id":"i1","title":"X","fields":[
+            {"id":"f1","label":"top","type":"STRING","reference":"op://X/Y/Z"},
+            {"id":"f2","label":"key","type":"CONCEALED","reference":"op://Personal/API Keys/auth/secret_key"}
+        ]}"#;
+        let script = format!(
+            "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"get\" ]; then \
+             cat <<'JSON'\n{json}\nJSON\nexit 0; fi\nexit 99\n"
+        );
+        std::fs::write(&bin_path, script).unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let fields = runner.item_get("i1", "v1", None).unwrap();
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].reference, "op://X/Y/Z");
+        assert_eq!(
+            fields[1].reference,
+            "op://Personal/API Keys/auth/secret_key"
+        );
     }
 
     #[cfg(unix)]

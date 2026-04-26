@@ -733,6 +733,7 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
                     label: "password".into(),
                     field_type: "concealed".into(),
                     concealed: true,
+                    reference: String::new(),
                 }];
                 picker.field_list_state.select(Some(0));
                 picker.stage = OpPickerStage::Field;
@@ -825,6 +826,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
                     label: "credential".into(),
                     field_type: "concealed".into(),
                     concealed: true,
+                    reference: String::new(),
                 }];
                 picker.field_list_state.select(Some(0));
                 picker.stage = OpPickerStage::Field;
@@ -1218,6 +1220,7 @@ fn op_picker_multi_account_flow() -> Result<()> {
                     label: "password".into(),
                     field_type: "concealed".into(),
                     concealed: true,
+                    reference: String::new(),
                 }];
                 picker.field_list_state.select(Some(0));
                 picker.stage = OpPickerStage::Field;

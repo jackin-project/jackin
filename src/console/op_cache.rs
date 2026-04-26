@@ -188,6 +188,7 @@ mod tests {
             label: label.to_string(),
             field_type: "STRING".to_string(),
             concealed: false,
+            reference: String::new(),
         }
     }
 
@@ -291,6 +292,7 @@ mod tests {
                 label: _,
                 field_type: _,
                 concealed: _,
+                reference: _,
             } = f;
         }
     }

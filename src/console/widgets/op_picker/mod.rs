@@ -8,20 +8,35 @@
 //! only when `op account list` reports two or more signed-in accounts;
 //! single-account setups skip directly to the Vault pane.
 //!
-//! Selecting a field commits an `op://Vault/Item/field` reference; the
-//! editor's modal handler then writes that reference directly into the
-//! focused row's pending value (key row) or stashes it on
-//! `EditorState::pending_picker_value` for the follow-up `EnvKey` modal
-//! (sentinel row). The picker never resolves or stores secret values.
+//! Selecting a field commits the authoritative `op://...` reference
+//! that 1Password's `op item get --format json` emits for that field
+//! (`OpField::reference`). The path follows the official
+//! 1Password CLI syntax — `op://<vault>/<item>/[<section>/]<field>`,
+//! see <https://developer.1password.com/docs/cli/secret-reference-syntax/>.
+//! The editor's modal handler then writes that reference directly
+//! into the focused row's pending value (key row) or stashes it on
+//! `EditorState::pending_picker_value` for the follow-up `EnvKey`
+//! modal (sentinel row). The picker never resolves or stores secret
+//! values.
+//!
+//! Earlier revisions synthesized the path from display names with
+//! `format!("op://{vault}/{item}/{field}", …)`. That was wrong for
+//! sectioned fields (the section component was dropped), for items
+//! whose names contained `/` or whitespace, and any time
+//! 1Password's serializer disagreed with naive concatenation. Using
+//! the CLI-provided string sidesteps every escaping bug.
 //!
 //! On multi-account setups, the chosen account's `account_uuid` is
-//! threaded through every downstream `op` call as `--account <id>` so
-//! cross-account drilling works correctly. The committed `op://` path
-//! itself is account-agnostic — at launch time the resolver layer falls
-//! back to the operator's default `op` account context. (TODO: revisit
-//! once the launch-time resolver gains explicit per-reference account
-//! scoping; cross-account references currently rely on the default
-//! account also being the one signed-in to the reference's vault.)
+//! threaded through every downstream `op` call as `--account <id>`
+//! so cross-account drilling inside the picker works correctly.
+//! Account scope is **not** encoded in the committed `op://` path
+//! itself — it is tracked separately as `selected_account` on this
+//! state and is not persisted. Cross-account resolution at launch
+//! time is the operator's responsibility: ensure the chosen field's
+//! vault is reachable through `op`'s default account context (run
+//! `op signin` against that account, or set it as default), or the
+//! launch-time `op read` will fail with "item not found". A future
+//! PR may add a per-value account override in the on-disk format.
 //!
 //! The runner ([`OpStructRunner`] from `crate::operator_env`) is invoked
 //! on a background thread; the picker stages the load via an `mpsc`
@@ -876,14 +891,29 @@ impl OpPickerState {
                 let visible = self.filtered_fields();
                 let cur = self.field_list_state.selected.unwrap_or(0);
                 if let Some(field) = visible.get(cur) {
-                    let label = if field.label.is_empty() {
-                        field.id.clone()
+                    // Prefer the authoritative `op://...` string that
+                    // `op item get --format json` emits per field.
+                    // Synthesizing from display names mishandled
+                    // sectioned fields (4-segment paths), items
+                    // containing `/` or whitespace, and anything else
+                    // where 1Password's serializer disagrees with
+                    // naive concatenation. Fall back to a synthesized
+                    // path only as a defensive measure for older `op`
+                    // versions / fixtures that omit `reference`.
+                    let path = if field.reference.is_empty() {
+                        let label = if field.label.is_empty() {
+                            field.id.clone()
+                        } else {
+                            field.label.clone()
+                        };
+                        let vault_name =
+                            self.selected_vault.as_ref().map_or("", |v| v.name.as_str());
+                        let item_name = self.selected_item.as_ref().map_or("", |i| i.name.as_str());
+                        format!("op://{vault_name}/{item_name}/{label}")
                     } else {
-                        field.label.clone()
+                        field.reference.clone()
                     };
-                    let vault_name = self.selected_vault.as_ref().map_or("", |v| v.name.as_str());
-                    let item_name = self.selected_item.as_ref().map_or("", |i| i.name.as_str());
-                    return ModalOutcome::Commit(format!("op://{vault_name}/{item_name}/{label}"));
+                    return ModalOutcome::Commit(path);
                 }
                 ModalOutcome::Continue
             }
@@ -1088,6 +1118,21 @@ mod tests {
             label: label.to_string(),
             field_type: ty.to_string(),
             concealed,
+            reference: String::new(),
+        }
+    }
+
+    /// Build a field carrying an explicit `reference` string. Used by
+    /// the picker-commit test that asserts the CLI-provided reference
+    /// is used verbatim instead of a path synthesized from display
+    /// names.
+    fn field_with_reference(label: &str, reference: &str) -> OpField {
+        OpField {
+            id: label.to_string(),
+            label: label.to_string(),
+            field_type: "STRING".to_string(),
+            concealed: false,
+            reference: reference.to_string(),
         }
     }
 
@@ -1250,6 +1295,11 @@ mod tests {
 
     #[test]
     fn enter_on_field_commits_op_path() {
+        // Backward-compat: when `OpField::reference` is empty (older
+        // `op` versions / fixtures that omit the key), the picker
+        // falls back to synthesizing a path from display names. The
+        // production path uses the `reference` directly — see
+        // `picker_commit_uses_op_provided_reference_not_synthesized`.
         let mut s = picker_ready();
         s.selected_vault = Some(vault("Personal"));
         s.selected_item = Some(OpItem {
@@ -1268,6 +1318,40 @@ mod tests {
         match outcome {
             ModalOutcome::Commit(path) => {
                 assert_eq!(path, "op://Personal/API Keys/password");
+            }
+            other => panic!("expected Commit, got {other:?}"),
+        }
+    }
+
+    /// Production path: when `OpField::reference` is non-empty, the
+    /// picker commits that string verbatim. Display names that
+    /// contain whitespace, slashes, or live inside a section would
+    /// produce a wrong synthesized path; using the CLI-provided
+    /// reference sidesteps the entire class of bugs.
+    #[test]
+    fn picker_commit_uses_op_provided_reference_not_synthesized() {
+        let mut s = picker_ready();
+        s.selected_vault = Some(vault("Personal"));
+        s.selected_item = Some(OpItem {
+            id: "i-test".into(),
+            // Display name contains whitespace — naive synthesis
+            // would produce `op://Personal/name with spaces/api`.
+            name: "name with spaces".into(),
+            subtitle: String::new(),
+        });
+        // Field's display label is also distinct from its
+        // section-aware reference.
+        s.fields = vec![field_with_reference("api", "op://Personal/test/auth/api")];
+        s.field_list_state.select(Some(0));
+        s.stage = OpPickerStage::Field;
+
+        let outcome = s.handle_key(key(KeyCode::Enter));
+        match outcome {
+            ModalOutcome::Commit(path) => {
+                assert_eq!(
+                    path, "op://Personal/test/auth/api",
+                    "picker must commit `field.reference` verbatim, not a synthesized path"
+                );
             }
             other => panic!("expected Commit, got {other:?}"),
         }
@@ -1648,6 +1732,7 @@ mod tests {
             label: "password".into(),
             field_type: "concealed".into(),
             concealed: true,
+            reference: "op://Personal/API Keys/password".into(),
         };
         // Exhaustive destructure — every field of `OpField` listed here.
         let OpField {
@@ -1655,6 +1740,7 @@ mod tests {
             label: _,
             field_type: _,
             concealed: _,
+            reference: _,
         } = f;
     }
 }
