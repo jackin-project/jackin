@@ -34,7 +34,7 @@ Add a step to the `check` job in <RepoFile path=".github/workflows/ci.yml" />:
 ## Design decisions
 
 - **Scoped to PR diff only** — checks only files added in the current PR, not all 94 existing files. Avoids requiring retroactive fixes before the gate can be enabled.
-- **Greps for basename** (e.g., `op_picker` for `src/console/widgets/op_picker/mod.rs`) — PROJECT_STRUCTURE.md uses prose descriptions containing the module name.
+- **Greps for basename** (e.g., `op_picker` for <RepoFile path="src/console/widgets/op_picker/mod.rs" />) — PROJECT_STRUCTURE.md uses prose descriptions containing the module name.
 - **False negative risk**: a file named `mod.rs` won't be caught (too generic). Only named modules are checked.
 
 ## Steps

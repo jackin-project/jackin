@@ -39,7 +39,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 ## What stays `pub`
 
 - `pub fn load_agent` / `pub fn run_console` — binary entry points from `main.rs`
-- All items in `src/bin/validate.rs` — the validate binary's public interface
+- All items in <RepoFile path="src/bin/validate.rs" /> — the validate binary's public interface
 - CLI structs derived from `clap::Parser` — clap requires `pub`
 
 ## Caveats

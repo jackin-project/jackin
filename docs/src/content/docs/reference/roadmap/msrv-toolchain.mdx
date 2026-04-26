@@ -18,7 +18,7 @@ Three files each assert a Rust version independently — <RepoFile path="mise.to
    ```
    `rust-analyzer` reads this automatically for IDE toolchain selection.
 
-2. Update `mise.toml` to add a comment cross-referencing `rust-toolchain.toml`.
+2. Update <RepoFile path="mise.toml" /> to add a comment cross-referencing `rust-toolchain.toml`.
 
 3. Add MSRV check step to <RepoFile path=".github/workflows/ci.yml" />:
    ```yaml
@@ -31,5 +31,5 @@ Three files each assert a Rust version independently — <RepoFile path="mise.to
 ## Caveats
 
 - `dtolnay/rust-toolchain` does NOT read `rust-toolchain.toml` — its version is encoded in the action SHA. The SHA in `ci.yml` and `release.yml` must be manually kept in sync with `rust-toolchain.toml`.
-- If `cargo +1.94.0 check` fails, code uses features stabilized after 1.94 — update `rust-version` in `Cargo.toml` to the correct floor.
+- If `cargo +1.94.0 check` fails, code uses features stabilized after 1.94 — update `rust-version` in <RepoFile path="Cargo.toml" /> to the correct floor.
 - `u64::is_multiple_of` (used in <RepoFile path="src/tui/animation.rs" /> lines 70, 264, 432, 437) was stabilized in 1.86 — safely within the 1.94 MSRV.
