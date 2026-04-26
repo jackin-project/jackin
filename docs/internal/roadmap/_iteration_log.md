@@ -107,6 +107,53 @@ See §9 of the roadmap for the canonical list. Key items:
 
 ---
 
+## Iteration 2 — 2026-04-26
+
+### Improvements chosen
+
+1. **§4 launch.rs split** — deep-read all of `src/runtime/launch.rs`, mapped every function to its exact line range, traced internal dependency graph, produced concrete split proposal with 4 files and justified line estimates.
+2. **§7.11 Astro TypeScript strictness** — discovered `docs/AGENTS.md` documents both blockers (`rainEngine` indexed access + `astro-og-canvas` optional properties); verified `rainEngine.ts` at 5 specific line locations; rewrote §7.11 recommendation from a vague "adopt" to a concrete 4-step fix plan.
+3. **§6 `preview.yml`** — read in full; identified the Homebrew tap rolling-preview pipeline as the most complex workflow; flagged the missing contributor documentation as a gap; resolved OQ3.
+4. **§2 concepts 4 & 6** — replaced iteration 1 guesses with exact PR #171 branch data: TICK_MS constant at `console/mod.rs:90`, `is_on_main_screen`/`consumes_letter_input` helpers at lines 111–130, `op_struct_runner_item_get_parses_fields_no_value` test at ~2055 with exhaustive struct destructure pattern.
+
+### What was read
+
+- `docs/AGENTS.md` (full — discovered the documented blockers for TypeScript strictness upgrade)
+- `src/runtime/launch.rs` (full structure traced; lines 530–894 read in detail)
+- `.github/workflows/preview.yml` (full)
+- PR #171 `src/console/mod.rs` (lines 88–230 read — TICK_MS, poll loop, is_on_main_screen, consumes_letter_input, quit_confirm_area)
+- PR #171 `src/operator_env.rs:2055–2110` (compile-time destructure test read in full)
+- `docs/src/components/landing/rainEngine.ts` (first 60L — indexed access blocker confirmed)
+
+### What changed in the roadmap
+
+- §0: Iteration count bumped to 2
+- §2 concept 4: Replaced "requires-tribal-knowledge" guess with exact TICK_MS line citation and rationale
+- §2 concept 6: Replaced vague "compile-fail test" claim with exact test name, line, and technique description (exhaustive struct destructure, not trybuild)
+- §2 concept 16: Expanded Q-exit gating to include PR #171's two-layer design (list.rs + console/mod.rs `is_on_main_screen`)
+- §4: `src/runtime/launch.rs` split proposal rewritten with exact line ranges, dependency graph, test-module observation, and 4-file split
+- §6: `preview.yml` row populated; documentation gap recommendation added; OQ3 resolved
+- §7.11: Completely rewritten — `docs/AGENTS.md` finding, both blockers verified in source, 4-step fix plan, OQ7 added
+- §9: OQ3 closed; OQ7 added
+
+### Confidence assessment by section (updated)
+
+| Section | Confidence | Notes |
+|---|---|---|
+| §4 Source code structural diagnosis | High for launch.rs; medium for operator_env.rs and config/editor.rs | launch.rs split is now fully grounded; operator_env split still directional only |
+| §6 Tooling / CI | High | preview.yml now fully read and documented |
+| §7.11 Astro TS | High | Both blockers verified from source; fix path is concrete |
+| §2 Concept-to-location | High for all except concepts 14 (session cache) and 12 (config editor invariant post-merge) | |
+
+### Weakest sections for iteration 3
+
+1. **§4 operator_env.rs split** — 1569L file has not been read as carefully as launch.rs. The proposed `src/op/` extraction needs the same line-range analysis.
+2. **§7 testing candidates** — `insta` snapshot test recommendation names the ratatui `TestBackend` approach but doesn't cite a specific function to start with. A concrete "here are the first 3 snapshot tests to write" would make this actionable.
+3. **OQ7 (astro-og-canvas)** — `docs/package.json` not yet read; exact version and failing type signatures unknown.
+4. **§8.2 comparison table** — superpowers feature → recommended equivalent mapping is thorough but the "How the agent invokes them" section is vague (says "reading the file" but doesn't specify prompt convention or `.claude/commands/` template).
+
+---
+
 ## Iteration 3 — 2026-04-26
 
 ### Improvements chosen
@@ -327,44 +374,6 @@ See §9 of the roadmap for the canonical list. Key items:
 
 ---
 
-## Iteration 10 — 2026-04-26
-
-### Active loop status
-`88287a35` (every 30 min) is the only active loop. User re-invoked `/loop` but requested keeping only the oldest; new CronCreate was skipped.
-
-### Improvements chosen
-
-1. **§5 row 6 — `dispatch_value` rename scope** — grep-verified: 1 production call site (`operator_env.rs:595`, inside `resolve_operator_env_with`) + 6 test call sites (lines 817–904, all inside `mod tests` at line 812). All 7 callers are in one file. This makes `dispatch_value → resolve_env_value` the lowest-cost rename in the §5 table. Added scope note to the recommendation column.
-
-2. **§7.13 Renovate — `automerge` pattern** — read `renovate.json` in full (iteration 10): current file has no `packageRules` key. Added the minimal safe automerge pattern: `matchUpdateTypes: ["lockFileMaintenance"]` only. `lockFileMaintenance` PRs refresh `Cargo.lock`/`bun.lock` without bumping declared versions — always safe, DCO sign-off already in commit. Explicitly documented NOT to automerge patch/minor Cargo bumps (Rust semver inconsistency) or SHA-pinned Actions (need human review of new digest).
-
-3. **§4 Rule 7 — `//!` exemplar content** — read `src/env_model.rs:1–17` in full. Extracted the three-element pattern that makes it exemplary: (1) one-line scannable purpose, (2) explicit "source of truth" scope claims, (3) consolidation history naming previous locations. Highlighted element 3 as the most commonly missing piece — it makes design decisions visible without `git blame`.
-
-### What was read
-- `renovate.json` (full — confirmed no `packageRules`; `prConcurrentLimit = 20`, no `automerge`)
-- `src/operator_env.rs` line counts at: 595 (production dispatch_value call), 812 (mod tests start), 817–904 (6 test call sites); function definition at line 33
-- `src/env_model.rs:1–17` (full `//!` module doc — quoted in §4 Rule 7 analysis)
-
-### What changed in the roadmap
-- §0: Iteration count bumped to 10
-- §5 row 6: Added verified rename scope (1 prod + 6 test call sites, single file)
-- §7.13: Recommendation expanded from 2 to 3 points; added exact `packageRules` JSON for lockFileMaintenance automerge with rationale
-- §4 Rule 7: Expanded from 2 sentences to a structured 3-element analysis with direct quotes from `env_model.rs:1–17`
-
-### Confidence assessment (updated)
-| Section | Confidence | Notes |
-|---|---|---|
-| §5 row 6 `dispatch_value` | High | Call sites grep-counted; all in one file |
-| §7.13 Renovate automerge | High | `renovate.json` read in full; automerge scope and risks grounded |
-| §4 Rule 7 `//!` exemplar | High | `env_model.rs` lines 1–17 read and quoted directly |
-
-### Weakest sections for iteration 11
-1. **§6 CI — `ci.yml` step-level detail** — §6 documents each workflow at a high level but `ci.yml` is the most important (it gates every PR). What exactly do the `check` and `build-validator` jobs do? The exact job steps and their order would sharpen the CI modernization recommendations.
-2. **§7.9 `insta` snapshot test — first targets depth** — iteration 3 named three concrete first targets (`render_sentinel_description_pane`, `render_tab_strip`, `render_mounts_subpanel`) but didn't verify those function names exist in the current codebase. A grep would confirm or correct.
-3. **§2 concept 25 — toolchain version pinning** — `rust-toolchain.toml` is recommended as the canonical source but the roadmap doesn't verify whether `dtolnay/rust-toolchain` in CI automatically reads `rust-toolchain.toml` (it does — but this should be cited).
-
----
-
 ## Iteration 8 — 2026-04-26
 
 ### Active loop status
@@ -438,47 +447,40 @@ User requested consolidation to single loop `88287a35` (every 30 min). Cancelled
 
 ---
 
-## Iteration 2 — 2026-04-26
+## Iteration 10 — 2026-04-26
+
+### Active loop status
+`88287a35` (every 30 min) is the only active loop. User re-invoked `/loop` but requested keeping only the oldest; new CronCreate was skipped.
 
 ### Improvements chosen
 
-1. **§4 launch.rs split** — deep-read all of `src/runtime/launch.rs`, mapped every function to its exact line range, traced internal dependency graph, produced concrete split proposal with 4 files and justified line estimates.
-2. **§7.11 Astro TypeScript strictness** — discovered `docs/AGENTS.md` documents both blockers (`rainEngine` indexed access + `astro-og-canvas` optional properties); verified `rainEngine.ts` at 5 specific line locations; rewrote §7.11 recommendation from a vague "adopt" to a concrete 4-step fix plan.
-3. **§6 `preview.yml`** — read in full; identified the Homebrew tap rolling-preview pipeline as the most complex workflow; flagged the missing contributor documentation as a gap; resolved OQ3.
-4. **§2 concepts 4 & 6** — replaced iteration 1 guesses with exact PR #171 branch data: TICK_MS constant at `console/mod.rs:90`, `is_on_main_screen`/`consumes_letter_input` helpers at lines 111–130, `op_struct_runner_item_get_parses_fields_no_value` test at ~2055 with exhaustive struct destructure pattern.
+1. **§5 row 6 — `dispatch_value` rename scope** — grep-verified: 1 production call site (`operator_env.rs:595`, inside `resolve_operator_env_with`) + 6 test call sites (lines 817–904, all inside `mod tests` at line 812). All 7 callers are in one file. This makes `dispatch_value → resolve_env_value` the lowest-cost rename in the §5 table. Added scope note to the recommendation column.
+
+2. **§7.13 Renovate — `automerge` pattern** — read `renovate.json` in full: current file has no `packageRules` key. Added the minimal safe automerge pattern: `matchUpdateTypes: ["lockFileMaintenance"]` only. `lockFileMaintenance` PRs refresh `Cargo.lock`/`bun.lock` without bumping declared versions — always safe, DCO sign-off already in commit. Explicitly documented NOT to automerge patch/minor Cargo bumps (Rust semver inconsistency) or SHA-pinned Actions (need human review of new digest).
+
+3. **§4 Rule 7 — `//!` exemplar content** — read `src/env_model.rs:1–17` in full. Extracted the three-element pattern that makes it exemplary: (1) one-line scannable purpose, (2) explicit "source of truth" scope claims, (3) consolidation history naming previous locations. Highlighted element 3 as the most commonly missing piece — it makes design decisions visible without `git blame`.
+
+4. **Roadmap and log housekeeping** — stripped all iteration-number annotations from `READABILITY_AND_MODERNIZATION.md` (was cluttering the final view); reordered `_iteration_log.md` chronologically (was: 1, 3, 4, 5, 6, 7, 10, 8, 9, 2; now: 1–10 in order).
 
 ### What was read
-
-- `docs/AGENTS.md` (full — discovered the documented blockers for TypeScript strictness upgrade)
-- `src/runtime/launch.rs` (full structure traced; lines 530–894 read in detail)
-- `.github/workflows/preview.yml` (full)
-- PR #171 `src/console/mod.rs` (lines 88–230 read — TICK_MS, poll loop, is_on_main_screen, consumes_letter_input, quit_confirm_area)
-- PR #171 `src/operator_env.rs:2055–2110` (compile-time destructure test read in full)
-- `docs/src/components/landing/rainEngine.ts` (first 60L — indexed access blocker confirmed)
+- `renovate.json` (full — confirmed no `packageRules`; `prConcurrentLimit = 20`, no `automerge`)
+- `src/operator_env.rs` line counts at: 595 (production dispatch_value call), 812 (mod tests start), 817–904 (6 test call sites); function definition at line 33
+- `src/env_model.rs:1–17` (full `//!` module doc — quoted in §4 Rule 7 analysis)
 
 ### What changed in the roadmap
+- §5 row 6: Added verified rename scope (1 prod + 6 test call sites, single file)
+- §7.13: Recommendation expanded from 2 to 3 points; added exact `packageRules` JSON for lockFileMaintenance automerge with rationale
+- §4 Rule 7: Expanded from 2 sentences to a structured 3-element analysis with direct quotes from `env_model.rs:1–17`
+- All iteration-number annotations removed from roadmap body; iteration log reordered chronologically
 
-- §0: Iteration count bumped to 2
-- §2 concept 4: Replaced "requires-tribal-knowledge" guess with exact TICK_MS line citation and rationale
-- §2 concept 6: Replaced vague "compile-fail test" claim with exact test name, line, and technique description (exhaustive struct destructure, not trybuild)
-- §2 concept 16: Expanded Q-exit gating to include PR #171's two-layer design (list.rs + console/mod.rs `is_on_main_screen`)
-- §4: `src/runtime/launch.rs` split proposal rewritten with exact line ranges, dependency graph, test-module observation, and 4-file split
-- §6: `preview.yml` row populated; documentation gap recommendation added; OQ3 resolved
-- §7.11: Completely rewritten — `docs/AGENTS.md` finding, both blockers verified in source, 4-step fix plan, OQ7 added
-- §9: OQ3 closed; OQ7 added
-
-### Confidence assessment by section (updated)
-
+### Confidence assessment (updated)
 | Section | Confidence | Notes |
 |---|---|---|
-| §4 Source code structural diagnosis | High for launch.rs; medium for operator_env.rs and config/editor.rs | launch.rs split is now fully grounded; operator_env split still directional only |
-| §6 Tooling / CI | High | preview.yml now fully read and documented |
-| §7.11 Astro TS | High | Both blockers verified from source; fix path is concrete |
-| §2 Concept-to-location | High for all except concepts 14 (session cache) and 12 (config editor invariant post-merge) | |
+| §5 row 6 `dispatch_value` | High | Call sites grep-counted; all in one file |
+| §7.13 Renovate automerge | High | `renovate.json` read in full; automerge scope and risks grounded |
+| §4 Rule 7 `//!` exemplar | High | `env_model.rs` lines 1–17 read and quoted directly |
 
-### Weakest sections for iteration 3
-
-1. **§4 operator_env.rs split** — 1569L file has not been read as carefully as launch.rs. The proposed `src/op/` extraction needs the same line-range analysis.
-2. **§7 testing candidates** — `insta` snapshot test recommendation names the ratatui `TestBackend` approach but doesn't cite a specific function to start with. A concrete "here are the first 3 snapshot tests to write" would make this actionable.
-3. **OQ7 (astro-og-canvas)** — `docs/package.json` not yet read; exact version and failing type signatures unknown.
-4. **§8.2 comparison table** — superpowers feature → recommended equivalent mapping is thorough but the "How the agent invokes them" section is vague (says "reading the file" but doesn't specify prompt convention or `.claude/commands/` template).
+### Weakest sections for iteration 11
+1. **§6 CI — `ci.yml` step-level detail** — §6 documents each workflow at a high level but `ci.yml` is the most important (it gates every PR). What exactly do the `check` and `build-validator` jobs do? The exact job steps and their order would sharpen the CI modernization recommendations.
+2. **§7.9 `insta` snapshot test — first targets depth** — the three concrete first targets (`render_sentinel_description_pane`, `render_tab_strip`, `render_mounts_subpanel`) were named after reading render function signatures but not grep-confirmed to exist in the current codebase. A grep would confirm or correct.
+3. **§2 concept 25 — toolchain version pinning** — `rust-toolchain.toml` is recommended as the canonical source but the roadmap doesn't verify whether `dtolnay/rust-toolchain` in CI automatically reads `rust-toolchain.toml` (it does — but this should be cited).

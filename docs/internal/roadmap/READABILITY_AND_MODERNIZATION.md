@@ -3,7 +3,6 @@
 ## §0 — Meta
 
 **Last updated:** 2026-04-26
-**Iteration:** 10
 
 This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` treated as already merged per operator instruction). Recommendations are inputs to a future, separate execution effort — no code has been touched.
 
@@ -214,7 +213,7 @@ jackin/
 
 ### Hot-spot list
 
-Files with >500 lines (verified counts). **Production LOC** is the critical metric — files large due to test suites are less urgent to split than files with large production logic. Test section start confirmed by `grep -n "#\[cfg(test)\]"` for each file (iteration 6).
+Files with >500 lines (verified counts). **Production LOC** is the critical metric — files large due to test suites are less urgent to split than files with large production logic. Test section start confirmed by `grep -n "#\[cfg(test)\]"` for each file.
 
 | File | Total | Prod LOC | Test LOC | Suppressions | Priority |
 |---|---|---|---|---|---|
@@ -241,7 +240,7 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/config/mod.rs` | 867 | **134** | 732 | 0 | **Low** — 134L production; tests are comprehensive |
 | `src/instance/auth.rs` | 796 | **210** | 585 | 0 | **Low** — resolved OQ5; not a god file |
 
-**Key insight from iteration 6 analysis:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `runtime/launch.rs` (1085L), `app/mod.rs` (928L), and `operator_env.rs` (810L).
+**Key insight:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `runtime/launch.rs` (1085L), `app/mod.rs` (928L), and `operator_env.rs` (810L).
 
 Total `#[allow(clippy::too_many_lines)]` suppressions: **13** across 8 files.
 
@@ -256,7 +255,7 @@ Modules with ≥10 sibling files:
 - `src/console/manager/` — 16 files across 3 subdirs (`input/`, `render/`, flat files).
 - `src/console/widgets/` — 11+ files after PR #171 (adds `op_picker/`, `agent_picker.rs`, `scope_picker.rs`, `source_picker.rs`).
 
-**Rustdoc `//!` coverage (exact count, iteration 4):** Of **90 `.rs` files** (72 on main + ~18 added by PR #171), **37 have `//!` module orientation docs** (41%). Coverage is strongly clustered: `src/console/manager/` and `src/console/widgets/` are the best-covered subsystems — PR #171 additions were written with docs discipline. The 53 files without `//!` docs are concentrated in the older codebase: all of `src/app/` (both files), all of `src/cli/` (5 files), all of `src/instance/` (4 files), most of `src/runtime/` (8 of 10), and all root-level helpers (`derived_image.rs`, `docker.rs`, `env_resolver.rs`, `paths.rs`, `repo.rs`, `repo_contract.rs`, `selector.rs`, `version_check.rs`, `terminal_prompter.rs`, `main.rs`, `lib.rs`, `bin/validate.rs`). The `src/console/manager/` family is the best-documented subsystem by ratio; `src/runtime/` is the worst. No `#![warn(missing_docs)]` gate is set anywhere in `Cargo.toml` or `src/lib.rs`.
+**Rustdoc `//!` coverage (exact count):** Of **90 `.rs` files** (72 on main + ~18 added by PR #171), **37 have `//!` module orientation docs** (41%). Coverage is strongly clustered: `src/console/manager/` and `src/console/widgets/` are the best-covered subsystems — PR #171 additions were written with docs discipline. The 53 files without `//!` docs are concentrated in the older codebase: all of `src/app/` (both files), all of `src/cli/` (5 files), all of `src/instance/` (4 files), most of `src/runtime/` (8 of 10), and all root-level helpers (`derived_image.rs`, `docker.rs`, `env_resolver.rs`, `paths.rs`, `repo.rs`, `repo_contract.rs`, `selector.rs`, `version_check.rs`, `terminal_prompter.rs`, `main.rs`, `lib.rs`, `bin/validate.rs`). The `src/console/manager/` family is the best-documented subsystem by ratio; `src/runtime/` is the worst. No `#![warn(missing_docs)]` gate is set anywhere in `Cargo.toml` or `src/lib.rs`.
 
 ### Astro / Starlight content inventory
 
@@ -293,11 +292,11 @@ Post-refactor target: **zero** entries rated `requires-grep` or `requires-tribal
 | 11 | **Release automation flow** | `release.toml` (cargo-release config) + `.github/workflows/release.yml` + `CHANGELOG.md` next-header convention | `requires-grep` for first-timers | `docs/internal/CONTRIBUTING.md` (§ Cutting a release) | `discoverable-in-2-hops` |
 | 12 | **Candidate-config validation-before-rename invariant** | `src/config/editor.rs` — commit `f4487fa` in PR #171 adds pre-rename validation; the invariant is: validate the candidate WorkspaceConfig before applying a name change, so rename + invalid-config doesn't partially commit | `requires-tribal-knowledge` — only visible from PR #171 commit message | Add a named test (`fn rename_validates_candidate_before_applying`) with a doc comment explaining the invariant; once PR #171 merges this is at `src/config/editor.rs` | `discoverable-in-2-hops` |
 | 13 | **`op://` reference parsing (3-segment vs 4-segment)** | `src/operator_env.rs` — `dispatch_value` handles `op://` prefix; PR #171 commit `05c1866` adds 4-segment `vault/item/section/field` parsing in `OpCli::item_get` | `requires-grep` | The 4-segment rule belongs in a `//!` comment at the top of `operator_env.rs` and/or in `docs/src/content/docs/developing/agent-manifest.mdx` | `discoverable-in-2-hops` |
-| 14 | **Session-scoped op metadata cache** | PR #171 branch `src/console/op_cache.rs` (252L, verified iteration 6) — standalone module `OpCache` with `//!` module doc stating "Session-scoped cache for `op` structural-metadata calls. Stores only structural metadata (UUIDs, names, labels, types). Field values are never read." Keyed by `(account, vault_id, item_id)` tuples; `OpPickerState` holds a reference to the cache; the `OpCache` is separate from `OpPickerState` to allow sharing across picker reopens within a session. Invalidation methods: `invalidate_accounts()`, `invalidate_vaults()`. A `DEFAULT_ACCOUNT_KEY = ""` sentinel avoids `Option<String>` in BTreeMap keys. | `requires-tribal-knowledge` (pre-merge) — `op_cache.rs` is a new module not yet in PROJECT_STRUCTURE.md | After merge: add `src/console/op_cache.rs` entry to PROJECT_STRUCTURE.md with a one-line description of the trust invariant (metadata only, never field values) | `discoverable-in-2-hops` |
+| 14 | **Session-scoped op metadata cache** | PR #171 branch `src/console/op_cache.rs` (252L) — standalone module `OpCache` with `//!` module doc stating "Session-scoped cache for `op` structural-metadata calls. Stores only structural metadata (UUIDs, names, labels, types). Field values are never read." Keyed by `(account, vault_id, item_id)` tuples; `OpPickerState` holds a reference to the cache; the `OpCache` is separate from `OpPickerState` to allow sharing across picker reopens within a session. Invalidation methods: `invalidate_accounts()`, `invalidate_vaults()`. A `DEFAULT_ACCOUNT_KEY = ""` sentinel avoids `Option<String>` in BTreeMap keys. | `requires-tribal-knowledge` (pre-merge) — `op_cache.rs` is a new module not yet in PROJECT_STRUCTURE.md | After merge: add `src/console/op_cache.rs` entry to PROJECT_STRUCTURE.md with a one-line description of the trust invariant (metadata only, never field values) | `discoverable-in-2-hops` |
 | 15 | **Caps-lock SHIFT-modifier tolerance pattern** | `src/console/manager/input/editor.rs:1034` ("Operators often hit `d` without holding shift; the binding...") and `:1177` (same for `r`); `src/console/mod.rs:75` comment about Shift/Option for text selection bypass | `requires-grep` — scattered across three files | `RULES.md § TUI Keybindings` (already documents modifier-free approach) + inline comments are sufficient; no structural change needed | `discoverable-in-2-hops` once RULES.md updated |
 | 16 | **`Q` exit-confirmation gating** | Two layers: (1) main branch `src/console/manager/input/list.rs:26` — bare `q\|Q` exits from the list view; (2) PR #171 `src/console/mod.rs:111–130` adds `is_on_main_screen` and `consumes_letter_input` helper functions that gate whether `Q` exits silently (when on the main list with no modal) or opens a confirmation dialog (`state.quit_confirm`). The PR also adds a `quit_confirm_area()` layout helper at line ~92. The design intent: `Q` on the main screen is a "safe" exit because no unsaved work is possible; `Q` anywhere else (editor, picker) opens a confirm modal because unsaved changes may exist. | `requires-grep` — the two-layer design (main branch list.rs + PR #171 console/mod.rs) is not obvious from reading either file alone | Add `//!` to `console/mod.rs` explaining the `Q` routing contract; reference `is_on_main_screen` and `consumes_letter_input` | `discoverable-in-2-hops` |
 | 17 | **Workspace list refresh after manager save (b3c6998)** | PR #171 fix commit — after save, the console list state is rebuilt from config so the launch routing sees the updated workspace | `requires-tribal-knowledge` pre-merge | After merge: the fix is in the save path in `console/manager/input/save.rs`; a doc comment on the save function explaining "list state is rebuilt from config post-save" is sufficient | `discoverable-in-2-hops` |
-| 18 | **Auth-forward modes and credential provisioning** | `AuthForwardMode` defined at `src/config/mod.rs:26`; `AgentState::provision_claude_auth` (the dispatch that acts on the mode) at `src/instance/auth.rs:17` | `requires-grep` — the mode definition and the behavior that uses it are in different modules | `AuthForwardMode` is **correctly placed** in `config/mod.rs` — verified iteration 8: it appears as a config field in `ClaudeConfig:89` and `ClaudeAgentConfig:96`, has serde `Deserialize` at line 74, and is used in 9 files (`config/`, `instance/`, `app/`, `runtime/`). Moving it to `instance/auth.rs` would be wrong: `config` would then import from `instance`, creating a circular dependency. The proposed move in §10 step 4a (to `config/types.rs`) is correct — it stays within the `config` module, just in a sub-file. The navigation gap is addressed by the §10 step 4a type extraction. | `discoverable-in-2-hops` post-§10-4a |
+| 18 | **Auth-forward modes and credential provisioning** | `AuthForwardMode` defined at `src/config/mod.rs:26`; `AgentState::provision_claude_auth` (the dispatch that acts on the mode) at `src/instance/auth.rs:17` | `requires-grep` — the mode definition and the behavior that uses it are in different modules | `AuthForwardMode` is **correctly placed** in `config/mod.rs` — it appears as a config field in `ClaudeConfig:89` and `ClaudeAgentConfig:96`, has serde `Deserialize` at line 74, and is used in 9 files (`config/`, `instance/`, `app/`, `runtime/`). Moving it to `instance/auth.rs` would be wrong: `config` would then import from `instance`, creating a circular dependency. The proposed move in §10 step 4a (to `config/types.rs`) is correct — it stays within the `config` module, just in a sub-file. The navigation gap is addressed by the §10 step 4a type extraction. | `discoverable-in-2-hops` post-§10-4a |
 | 19 | **Workspace mount planning (plan_collapse)** | `src/workspace/planner.rs:195` — `plan_collapse` function | `discoverable-in-2-hops` — PROJECT_STRUCTURE.md names the file | Stable | `discoverable-in-2-hops` |
 | 20 | **`XDG` config/data path resolution** | `src/paths.rs` — `JackinPaths::detect()` | `obvious` — PROJECT_STRUCTURE.md documents `paths.rs` | Stable | `obvious` |
 | 21 | **Docker command builder / test seam** | `src/docker.rs` — `CommandRunner` trait + `ShellRunner`; `FakeRunner` in `runtime/test_support.rs` | `discoverable-in-2-hops` | Stable; `FakeRunner` location noted in PROJECT_STRUCTURE.md | `discoverable-in-2-hops` |
@@ -470,7 +469,7 @@ Violators:
 **Rule 2: One dominant concern per file.**
 
 Violators:
-- `src/runtime/launch.rs` (2368L) — read in full for iteration 2; concrete structure:
+- `src/runtime/launch.rs` (2368L) — concrete structure:
   - Lines 1–22: `use` imports
   - Lines 23–75: `LoadOptions` struct + 2 `impl` blocks + `Default` (public API type)
   - Lines 77–139: `StepCounter` struct + `impl` (internal UI progress indicator)
@@ -496,14 +495,14 @@ Violators:
   - `launch_agent_runtime` → `resolve_terminal_setup`, `export_host_terminfo` (via `resolve_terminal_setup`)
   - `LoadCleanup::run` → `run_cleanup_command` (imported from `super::cleanup`)
 
-  **Proposed split** (refined from iteration 1, grounded in the dependency graph):
+  **Proposed split** (grounded in the dependency graph):
   - `src/runtime/launch.rs` (~120L): public API only — `LoadOptions` (lines 23–75) + `pub fn load_agent` (lines 533–550) + re-exports. Tests for `load_agent`'s public contract stay here.
   - `src/runtime/launch_pipeline.rs` (~560L production + ~1,200L tests): `fn load_agent_with` (lines 553–894) + `LaunchContext` (272–288) + `StepCounter` (77–139) + `LoadCleanup` (1030–1085) + `render_exit` (896–917) + `claim_container_name` (918–957) + `verify_token_env_present` (959–992) + `auth_token_source_reference`/`lookup_operator_env_raw` (993–1029) + all current tests.
   - `src/runtime/terminfo.rs` (~110L): `STANDARD_TERMS` const (107–139) + `resolve_terminal_setup` (141–165) + `export_host_terminfo` (167–214). Self-contained; no external deps beyond `std`.
   - `src/runtime/trust.rs` (~60L): `confirm_agent_trust` (216–271). Self-contained; depends only on `tui` and `config`. Test-injectable via the `FnOnce` parameter in `load_agent`.
 
   **Net effect**: `launch.rs` shrinks from 2368L to ~120L (public API only). The pipeline logic is readable from `launch_pipeline.rs` without terminfo or trust noise. Terminfo and trust become independently testable units.
-- `src/operator_env.rs` (1569L) — read in full for iteration 3; concrete structure:
+- `src/operator_env.rs` (1569L) — concrete structure:
   - Lines 1–3: `//!` module doc (present — one of the few files with it)
   - Lines 5–22: `OpRunner` trait (public, 2 methods: `read`, `probe`)
   - Lines 24–65: `dispatch_value` fn (public, dispatches op:// vs $NAME vs literal)
@@ -549,7 +548,7 @@ Violators:
   - `client.rs` imports `OpRunner` from `mod.rs`.
   - `layers.rs` imports `OpRunner` + `dispatch_value` from `mod.rs`.
   - `picker.rs` imports `OpRunner` from `mod.rs` + `OpCli` from `client.rs`.
-- `src/config/editor.rs` (1467L) — read in full for iteration 4; concrete structure:
+- `src/config/editor.rs` (1467L) — concrete structure:
   - Lines 1–16: `//!` module doc (present) + imports
   - Lines 17–22: `EnvScope` enum (public, 4 variants: Global, Agent, Workspace, WorkspaceAgent)
   - Lines 24–27: `ConfigEditor` struct (public; `doc: DocumentMut`, `path: PathBuf`)
@@ -592,12 +591,12 @@ Currently most items use bare `pub`. A pass to replace `pub` with `pub(crate)` o
 The 24 files above the 500-line threshold (§1 hot-spot list) should each have an explicit justification in a `//!` module comment. If no justification exists, the file should be split per Rule 2. `src/runtime/launch.rs` at 2368L has no `//!` module comment — this is the clearest violation.
 
 **Rule 6: Rustdoc on every `pub` and `pub(crate)` item.**
-Current coverage = 41% (37/90 files have `//!` module docs — exact count from iteration 4). Adding `#![warn(missing_docs)]` to `Cargo.toml` or `src/lib.rs` would surface the gap as compiler warnings. The gate should be CI-enforced once the initial coverage pass is done. The 53 undocumented files are concentrated in `src/app/`, `src/cli/`, `src/instance/`, `src/runtime/`, and root helpers — see §1 for the breakdown.
+Current coverage = 41% (37/90 files have `//!` module docs — exact count). Adding `#![warn(missing_docs)]` to `Cargo.toml` or `src/lib.rs` would surface the gap as compiler warnings. The gate should be CI-enforced once the initial coverage pass is done. The 53 undocumented files are concentrated in `src/app/`, `src/cli/`, `src/instance/`, `src/runtime/`, and root helpers — see §1 for the breakdown.
 
 **Rule 7: Top-of-module `//!` orientation comments.**
 `src/env_model.rs` is the exemplar — it has a full `//!` module doc explaining what the module is, what it provides, and what invariants it maintains. This pattern should be adopted for all 50+ files currently lacking it, starting with the largest (see hot-spot list).
 
-**Why `env_model.rs` is the model (verified iteration 10, lines 1–17):**
+**Why `env_model.rs` is the model (lines 1–17):**
 
 The doc does three things, in order, that every good `//!` should do:
 
@@ -620,7 +619,7 @@ Each entry is a **candidate**, not a mandate. Confirmed present in the repositor
 | 3 | `load_agent` | `src/runtime/launch.rs:533` | "load" is the user-facing verb (matches `jackin load`), but internally this function bootstraps a container — "load" undersells the complexity | `launch_agent`, `bootstrap_agent` | Leave as `load_agent` to match CLI verb; document in `//!` that it is the container bootstrap entry point |
 | 4 | `StepCounter` | `src/runtime/launch.rs:77` | Not obviously a UI step indicator; "counter" suggests a number, not a display concern | `LaunchProgress`, `BootstrapSteps` | `LaunchProgress` |
 | 5 | `ClassSelector` | `src/selector.rs` | "Class" is a Docker container label concept; a fresh contributor may confuse with OOP class or CSS class | `AgentClass`, `AgentSelector` | `AgentClass` aligns with the "agent class" concept in docs |
-| 6 | `dispatch_value` | `src/operator_env.rs:33` | "dispatch" suggests routing to a handler; what this actually does is resolve a single env value to its final string | `resolve_env_value`, `evaluate_env_value` | `resolve_env_value`. **Rename scope (verified iteration 10):** 1 production call site (`operator_env.rs:595`, inside `resolve_operator_env_with`) + 6 test call sites (all inside `mod tests` at line 812 of the same file). All callers are in a single file — this is the lowest-cost rename in the table. |
+| 6 | `dispatch_value` | `src/operator_env.rs:33` | "dispatch" suggests routing to a handler; what this actually does is resolve a single env value to its final string | `resolve_env_value`, `evaluate_env_value` | `resolve_env_value`. **Rename scope:** 1 production call site (`operator_env.rs:595`, inside `resolve_operator_env_with`) + 6 test call sites (all inside `mod tests` at line 812 of the same file). All callers are in a single file — this is the lowest-cost rename in the table. |
 | 7 | `parse_host_ref` | `src/operator_env.rs:66` | "host ref" — "host" means "host machine" (as opposed to Docker container), "ref" means `$NAME` or `${NAME}`. Not obvious. | `parse_host_env_ref`, `extract_env_var_name` | `extract_host_env_name` |
 | 8 | `OpRunner` | `src/operator_env.rs:10` | "Op" is ambiguous: "operation"? "operator"? "1Password op CLI"? In this context it's specifically the 1Password CLI. | `OnePasswordReader`, `OpCliRunner` | `OpCliRunner` — makes the 1Password CLI connection obvious |
 | 9 | `OpStructRunner` | `src/operator_env.rs:348` (PR #171) | Same ambiguity; "Struct" differentiates it from `OpRunner` but is an implementation detail | `OpMetadataClient`, `OnePasswordBrowser` | `OpMetadataClient` — "client" signals structured query, no secret value |
@@ -773,7 +772,7 @@ Extends `config:recommended` + `docker:pinDigests`. Removes per-PR and concurren
 *Testing approach A — `insta` snapshot tests for TUI rendering:*
 ratatui provides `TestBackend` which captures rendered cells to a `Buffer`. `insta` can snapshot the buffer as a string (one line per terminal row). This catches accidental layout regressions — e.g., when a column header shifts after a refactor. The approach is documented at ratatui.rs/recipes/testing/snapshots/ and is the community-endorsed path. Cost: add `insta` to `[dev-dependencies]`; write one snapshot test per major render function.
 
-**Concrete first 3 snapshot tests** (verified by reading the render modules — iteration 3):
+**Concrete first 3 snapshot tests** (verified by reading the render modules):
 
 1. **`render_sentinel_description_pane`** (`src/console/manager/render/list.rs:306`) — takes only `&mut Frame` and `Rect`; zero state input; renders the static "+ New workspace" description panel. Simplest possible snapshot test — no fixture construction. Terminal size 80×10 suffices. Approx 10 lines of test code including the `TestBackend` setup.
 
@@ -808,7 +807,7 @@ Applicable to parsing functions (`src/selector.rs`, `src/workspace/mounts.rs`, `
 
 **What it is:** Using `cargo doc` output as a navigable architecture map; enforcing doc coverage via CI.
 
-**What `jackin` does today:** No `#![warn(missing_docs)]` gate. 41% of source files (37/90) have `//!` module orientation docs (exact count, iteration 4). Coverage is uneven: `src/console/manager/` and `src/console/widgets/` (added with PR #171's docs discipline) are well-covered; `src/runtime/`, `src/app/`, and `src/cli/` are not. `src/env_model.rs` is the exemplar for the pattern the rest should follow. Public API surface is large (see §4 module map) with most items undocumented. `cargo doc` runs produce output but it is not published or gated.
+**What `jackin` does today:** No `#![warn(missing_docs)]` gate. 41% of source files (37/90) have `//!` module orientation docs (exact count). Coverage is uneven: `src/console/manager/` and `src/console/widgets/` (added with PR #171's docs discipline) are well-covered; `src/runtime/`, `src/app/`, and `src/cli/` are not. `src/env_model.rs` is the exemplar for the pattern the rest should follow. Public API surface is large (see §4 module map) with most items undocumented. `cargo doc` runs produce output but it is not published or gated.
 
 **The 2026-modern landscape:**
 
@@ -968,7 +967,7 @@ This is required by the stack constraint. `docs/AGENTS.md` already names this as
 
 1. **Lower `prConcurrentLimit`** from 20 to 5 in `renovate.json` — a single-maintainer repo doesn't benefit from 20 simultaneous open PRs.
 2. **Lower `LOG_LEVEL`** from `debug` to `info` in `.github/workflows/renovate.yml` — `debug` produces very long logs that obscure real issues.
-3. **Add `automerge` for `lockFileMaintenance`** — the minimal safe pattern (verified against current `renovate.json` in iteration 10; current file has no `packageRules` key):
+3. **Add `automerge` for `lockFileMaintenance`** — the minimal safe pattern (current `renovate.json` has no `packageRules` key):
    ```json
    "packageRules": [
      {
@@ -987,7 +986,7 @@ This is required by the stack constraint. `docs/AGENTS.md` already names this as
 
 **What `jackin` does today:** No logging framework. Operator-facing output uses `tui::step_shimmer`, `tui::step_quiet`, `tui::step_fail`, `tui::auth_mode_notice` (in `src/tui/output.rs`) and direct `eprintln!()` calls. Developer-facing debug output is gated by `--debug` which passes raw Docker command output via `runner.debug = true` (`src/docker.rs`). There is no `RUST_LOG`-based filtering, no structured fields, and no span-style tracing. Source: `Cargo.toml` has neither `log` nor `tracing` in dependencies.
 
-**Grep-verified `eprintln!` distribution (iteration 9):** 96 production `eprintln!` calls across 16 files (zero in test-only files). Breakdown by file: `tui/animation.rs` (21), `runtime/launch.rs` (20), `tui/output.rs` (16), `app/mod.rs` (8), `runtime/repo_cache.rs` (7), `workspace/sensitive.rs` (4), `runtime/image.rs` (3), `main.rs` (3), `docker.rs` (3), `bin/validate.rs` (3), `tui/prompt.rs` (2), `app/context.rs` (2), and 5 files with 1 each. Interpretation: the 37 calls in `tui/animation.rs` + `tui/output.rs` are the TUI rendering layer itself — `step_*` functions are thin wrappers over `eprintln!`. The 20 calls in `runtime/launch.rs` are operator-facing trust warnings and update notifications (all intentional, styled). The 3 calls in `docker.rs` and 3 in `runtime/image.rs` are developer-debug traces behind `runner.debug` and `debug` boolean gates — already filtered. The 2 calls in `app/context.rs` (`"warning: failed to open config..."`, `"warning: failed to save last-used agent..."`) are the closest to what a `log::warn!()` would express. **Verdict: no rogue debug `eprintln!` calls found. The flip condition for adopting `log` + `env_logger` has not yet been triggered.**
+**Grep-verified `eprintln!` distribution:** 96 production `eprintln!` calls across 16 files (zero in test-only files). Breakdown by file: `tui/animation.rs` (21), `runtime/launch.rs` (20), `tui/output.rs` (16), `app/mod.rs` (8), `runtime/repo_cache.rs` (7), `workspace/sensitive.rs` (4), `runtime/image.rs` (3), `main.rs` (3), `docker.rs` (3), `bin/validate.rs` (3), `tui/prompt.rs` (2), `app/context.rs` (2), and 5 files with 1 each. Interpretation: the 37 calls in `tui/animation.rs` + `tui/output.rs` are the TUI rendering layer itself — `step_*` functions are thin wrappers over `eprintln!`. The 20 calls in `runtime/launch.rs` are operator-facing trust warnings and update notifications (all intentional, styled). The 3 calls in `docker.rs` and 3 in `runtime/image.rs` are developer-debug traces behind `runner.debug` and `debug` boolean gates — already filtered. The 2 calls in `app/context.rs` (`"warning: failed to open config..."`, `"warning: failed to save last-used agent..."`) are the closest to what a `log::warn!()` would express. **Verdict: no rogue debug `eprintln!` calls found. The flip condition for adopting `log` + `env_logger` has not yet been triggered.**
 
 **The 2026-modern landscape:**
 
@@ -1037,7 +1036,7 @@ The approach works. The gap is: (a) the artifacts live under `docs/superpowers/`
 | `/loop` compatible | ✓ | ✓ (designed for it) | ✓ |
 | Lifecycle enforcement | No | Yes (phase gates) | Optional |
 
-**Recommendation (updated iteration 7 — operator direction: specs as Astro Starlight MDX, source of truth as features evolve):**
+**Recommendation:**
 
 The operator requirement is: specs must be easily updatable without special tooling, and must remain accurate as the feature changes. The best way to enforce this is to make the spec the same document as the public user-facing documentation — a Starlight MDX page.
 
@@ -1055,11 +1054,11 @@ The operator requirement is: specs must be easily updatable without special tool
 
 **Migration of existing specs:** The 6 `docs/superpowers/specs/` design files should be reviewed. Those describing features that have already shipped should be converted to Starlight MDX reference pages (or merged into existing docs); those describing in-progress work become draft pages.
 
-**Draft page caveat (verified iteration 8):** Starlight `draft: true` pages ARE built into `dist/` — they're excluded from the sitemap and navigation, but the HTML files exist. The PR-time link checker (`docs.yml`) runs `lychee 'dist/**/*.html'` which scans ALL HTML including draft pages. `docs/lychee.toml` (read in full, iteration 8) has only one `exclude_path` pattern: `["(^|/)404\.html$"]` — no pattern for draft pages. **Consequence:** any broken links in a draft spec page will fail CI on the `docs-link-check` gate.
+**Draft page caveat:** Starlight `draft: true` pages ARE built into `dist/` — they're excluded from the sitemap and navigation, but the HTML files exist. The PR-time link checker (`docs.yml`) runs `lychee 'dist/**/*.html'` which scans ALL HTML including draft pages. `docs/lychee.toml` has only one `exclude_path` pattern: `["(^|/)404\.html$"]` — no pattern for draft pages. **Consequence:** any broken links in a draft spec page will fail CI on the `docs-link-check` gate.
 
 **Practical constraint for draft specs:** Links within a draft MDX spec page must point to things that actually exist (existing docs pages, existing source files, existing GitHub issues). Placeholder links like "will be implemented in PR #200" (where PR #200 doesn't exist) will fail lychee. Options: (1) keep draft specs link-free until resources exist; (2) add an exclude pattern to `docs/lychee.toml` (e.g., `exclude_path = ["(^|/)specs/draft-"]`) — this is a one-line change to an existing file, not a hard architectural constraint.
 
-**Astro sidebar requirement (verified iteration 8):** `docs/astro.config.ts` sidebar is manually configured (not auto-detected from directory structure). Adding `docs/src/content/docs/specs/` requires adding an explicit sidebar section to `astro.config.ts`. The existing sidebar sections are at lines 50–103 of `astro.config.ts`. A new `{ label: 'Specifications', items: [...], autogenerate: { directory: 'specs' } }` entry is sufficient — Starlight supports `autogenerate` for draft-excluded sections.
+**Astro sidebar requirement:** `docs/astro.config.ts` sidebar is manually configured (not auto-detected from directory structure). Adding `docs/src/content/docs/specs/` requires adding an explicit sidebar section to `astro.config.ts`. The existing sidebar sections are at lines 50–103 of `astro.config.ts`. A new `{ label: 'Specifications', items: [...], autogenerate: { directory: 'specs' } }` entry is sufficient — Starlight supports `autogenerate` for draft-excluded sections.
 
 ---
 
@@ -1088,7 +1087,7 @@ These files are committed to the repo, reviewed by the operator when changed, an
 *Category 4 — claude-flow / agent-OS style orchestrators:*
 Heavy frameworks for multi-agent parallelism. Overkill for a single-maintainer project. `claude-flow` is more relevant for teams running many parallel agent instances.
 
-**Recommendation (updated iteration 6 — operator prefers existing tools):** Adopt cc-sdd (option B from §8.1) as the primary replacement. cc-sdd already provides the spec/plan/execute discipline that superpowers' `brainstorming` + `writing-plans` + `executing-plans` skills deliver — without authoring custom skill files.
+**Recommendation:** Adopt cc-sdd (option B from §8.1) as the primary replacement. cc-sdd already provides the spec/plan/execute discipline that superpowers' `brainstorming` + `writing-plans` + `executing-plans` skills deliver — without authoring custom skill files.
 
 For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle, debugging protocol, review gates), the revised approach is:
 
@@ -1112,7 +1111,7 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 
 **What it is:** The boundary between internal agent workflow artifacts and the public-facing docs site.
 
-**Revised contract (iteration 7 — operator direction: specs as public Starlight MDX):**
+**Contract:**
 
 - **Specs** (`docs/src/content/docs/specs/*.mdx`) answer *what this feature does and why it works this way* — the living source of truth, updated in the same PR as code changes. Lifecycle: `draft: true` while in-progress → `draft: false` when the feature ships → stays permanently as reference documentation. Specs are **public** on the docs site.
 - **ADRs** (`docs/internal/decisions/`) answer *what we decided and why* — durable architectural decision records. Internal, not published. Lifecycle: proposed → accepted → superseded.
@@ -1135,7 +1134,7 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 
 ### Risks
 
-**R1 — `mod.rs` surgery breaks compilation at a distance.** The proposed splits in §4 (e.g., moving `AppConfig` types from `config/mod.rs` → `config/types.rs`) do NOT risk circular imports — verified in iteration 7 by grepping dependencies: `src/config/mod.rs` imports from `crate::workspace` (lines 1, 5, 6), but `src/workspace/` does NOT import from `crate::config` (workspace module imports are self-contained within `crate::workspace::*`). The dependency is one-way: `config → workspace`. The actual risk is different: roughly 30+ files across the codebase import `AppConfig` via `use crate::config::AppConfig` or `use crate::config`. Any missed `use` path update after a type move causes a compilation error. Mitigation: let the compiler find all usages (`cargo check` fails on the first missed reference); do the type move in a single commit so the compiler's error list is complete.
+**R1 — `mod.rs` surgery breaks compilation at a distance.** The proposed splits in §4 (e.g., moving `AppConfig` types from `config/mod.rs` → `config/types.rs`) do NOT risk circular imports — verified by grepping dependencies: `src/config/mod.rs` imports from `crate::workspace` (lines 1, 5, 6), but `src/workspace/` does NOT import from `crate::config` (workspace module imports are self-contained within `crate::workspace::*`). The dependency is one-way: `config → workspace`. The actual risk is different: roughly 30+ files across the codebase import `AppConfig` via `use crate::config::AppConfig` or `use crate::config`. Any missed `use` path update after a type move causes a compilation error. Mitigation: let the compiler find all usages (`cargo check` fails on the first missed reference); do the type move in a single commit so the compiler's error list is complete.
 
 **R2 — Renaming `LoadOptions` → `LaunchOptions` breaks existing tests.** The type is used in test code (`tests/manager_flow.rs`, inline tests in `runtime/launch.rs`). Mitigation: rename is mechanical; `cargo fix` handles `use` path updates. Risk is low if the rename is done as a single committed step.
 
@@ -1147,19 +1146,19 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 
 ### Open Questions
 
-**OQ1 — PR #171 `op_picker` session-scoped cache:** The cache design (where it lives, what invalidates it, how it handles op sign-in expiry) needs per-code reading after PR #171 merges to main. Tracked for iteration 2.
+**OQ1 — PR #171 `op_picker` session-scoped cache:** The cache design (where it lives, what invalidates it, how it handles op sign-in expiry) needs per-code reading after PR #171 merges to main. Deferred.
 
-**OQ2 — `docs/src/components/` TypeScript strictness:** Custom Starlight overrides (`overrides/`) and landing React islands (`landing/`) — do they currently pass `noUncheckedIndexedAccess`? Needs a focused `tsc --noEmit` run with the flag enabled. Tracked for iteration 2.
+**OQ2 — `docs/src/components/` TypeScript strictness:** Custom Starlight overrides (`overrides/`) and landing React islands (`landing/`) — do they currently pass `noUncheckedIndexedAccess`? Needs a focused `tsc --noEmit` run with the flag enabled. Deferred.
 
-**OQ3 — ~~`preview.yml` workflow~~** *(resolved in iteration 2)*: Publishes rolling preview Homebrew formula to `jackin-project/homebrew-tap`. Full analysis in §6.
+**OQ3 — ~~`preview.yml` workflow~~** *(resolved)*: Publishes rolling preview Homebrew formula to `jackin-project/homebrew-tap`. Full analysis in §6.
 
 **OQ4 — `src/console/manager/agent_allow.rs` scope:** Module not deeply read. Responsibility and coupling need verification before the §4 structural proposal is considered final.
 
-**OQ5 — ~~`src/instance/auth.rs` (796L) split proposal~~** *(resolved in iteration 5)*: Read in full. Production code is only 210L (lines 1–210): one `impl AgentState` method (`provision_claude_auth`, lines 5–77) and 5 private helpers (`copy_host_claude_json`, `read_host_credentials`, `reject_symlink`, `write_private_file`, `repair_permissions`). Tests are 585L (lines 211–796 — nearly 3× production). **No split needed** — the file is cohesive (all credential-provisioning helpers), appropriately sized in production code, and the 585L test suite is thorough. This is the pattern to emulate: small, focused production code with comprehensive tests. The hot-spot list entry at 796L was misleading without knowing the production/test split.
+**OQ5 — ~~`src/instance/auth.rs` (796L) split proposal~~** *(resolved)*: Read in full. Production code is only 210L (lines 1–210): one `impl AgentState` method (`provision_claude_auth`, lines 5–77) and 5 private helpers (`copy_host_claude_json`, `read_host_credentials`, `reject_symlink`, `write_private_file`, `repair_permissions`). Tests are 585L (lines 211–796 — nearly 3× production). **No split needed** — the file is cohesive (all credential-provisioning helpers), appropriately sized in production code, and the 585L test suite is thorough. This is the pattern to emulate: small, focused production code with comprehensive tests. The hot-spot list entry at 796L was misleading without knowing the production/test split.
 
 **OQ6 — MSRV vs actual feature use:** Does the code use any Rust feature stabilised after 1.94? `let-else` (stable 1.65), `if let` chaining (1.64), `array::windows` — all fine. The `edition = "2024"` in `Cargo.toml` requires Rust ≥ 1.85. This means `rust-version = "1.94"` is correct (1.94 > 1.85) but `edition 2024` already implies ≥ 1.85, so the effective MSRV is max(1.85, 1.94) = 1.94. To be confirmed with `cargo +1.94.0 check`.
 
-**OQ7 — ~~`astro-og-canvas` exact version and failing types~~** *(resolved in iteration 3)*: Version is `^0.11.1` (from `docs/package.json`). Usage is in `docs/src/pages/og/[...slug].png.ts` via `OGImageRoute({ getImageOptions: ... })`. The concrete `exactOptionalPropertyTypes` conflict is in the `getImageOptions` callback return value at line ~35: `logo: undefined` — this pattern is forbidden under `exactOptionalPropertyTypes` because it explicitly assigns `undefined` to an optional property. The fix is one-line: remove `logo: undefined` entirely (omit it from the options object). A `bunx tsc --noEmit` run with the flag enabled would reveal any additional conflicts in the library's own type definitions, but the user-code fix is confirmed. See §7.11 for the updated recommendation.
+**OQ7 — ~~`astro-og-canvas` exact version and failing types~~** *(resolved)*: Version is `^0.11.1` (from `docs/package.json`). Usage is in `docs/src/pages/og/[...slug].png.ts` via `OGImageRoute({ getImageOptions: ... })`. The concrete `exactOptionalPropertyTypes` conflict is in the `getImageOptions` callback return value at line ~35: `logo: undefined` — this pattern is forbidden under `exactOptionalPropertyTypes` because it explicitly assigns `undefined` to an optional property. The fix is one-line: remove `logo: undefined` entirely (omit it from the options object). A `bunx tsc --noEmit` run with the flag enabled would reveal any additional conflicts in the library's own type definitions, but the user-code fix is confirmed. See §7.11 for the updated recommendation.
 
 ### Out of Scope for This Roadmap
 
@@ -1182,7 +1181,7 @@ Move `CONTRIBUTING.md` → `docs/internal/CONTRIBUTING.md` (update AGENTS.md lin
 
 *What could go wrong:* Broken links in AGENTS.md if the grep-and-update step misses a reference. Mitigation: `grep -rn "TESTING.md\|CONTRIBUTING.md" .` before and after.
 
-**Step 2 — AI-agent workflow (§8, revised iteration 7)**
+**Step 2 — AI-agent workflow (§8)**
 
 Install cc-sdd (`gotalab/cc-sdd`) to get spec/plan/execute `.claude/commands/` files out of the box. Create `docs/src/content/docs/specs/` directory in the Astro Starlight content collection for living feature specs (see §8.1 revised — specs are MDX pages on the public docs site, not internal artifacts). Update `docs/astro.config.ts` sidebar to add a "Specifications" section. Update `AGENTS.md` §Agent workflow to point to cc-sdd and the spec MDX convention. Remove superpowers plugin from Claude Code configuration.
 
@@ -1196,9 +1195,9 @@ Add `rust-toolchain.toml` (1.95.0). Update `mise.toml` to reference it. Add MSRV
 
 **Step 4 — Source-code structural moves (§4), one module at a time**
 
-Ordering principle (established in iterations 2–4 after reading each file in full): *production-code-size × circular-dependency-risk, ascending*. Safe type moves first, large single-file pipelines last.
+Ordering principle: *production-code-size × circular-dependency-risk, ascending*. Safe type moves first, large single-file pipelines last.
 
-4a. **`src/config/mod.rs` types extraction** (~100L type move): Move `AppConfig`, `AuthForwardMode`, `ClaudeConfig`, `AgentSource`, `DockerConfig` → `src/config/types.rs`. Pure struct/enum move with no logic; `mod.rs` becomes a thin re-export file. No circular risk — these types have no intra-crate dependencies that point back. **Serde note (verified iteration 9):** `AuthForwardMode` has a hand-written `impl<'de> serde::Deserialize<'de>` block at `src/config/mod.rs:74–87` — this is a plain `impl` block, NOT a `#[derive(Deserialize)]` attribute. It moves with the type to `types.rs` without any additional steps: no derive attribute paths to update, no proc-macro invocations, no implicit cross-module path assumptions. The compiler will surface any missed `use` paths as errors on `cargo check`.
+4a. **`src/config/mod.rs` types extraction** (~100L type move): Move `AppConfig`, `AuthForwardMode`, `ClaudeConfig`, `AgentSource`, `DockerConfig` → `src/config/types.rs`. Pure struct/enum move with no logic; `mod.rs` becomes a thin re-export file. No circular risk — these types have no intra-crate dependencies that point back. **Serde note:** `AuthForwardMode` has a hand-written `impl<'de> serde::Deserialize<'de>` block at `src/config/mod.rs:74–87` — this is a plain `impl` block, NOT a `#[derive(Deserialize)]` attribute. It moves with the type to `types.rs` without any additional steps: no derive attribute paths to update, no proc-macro invocations, no implicit cross-module path assumptions. The compiler will surface any missed `use` paths as errors on `cargo check`.
 
 4b. **`src/manifest/mod.rs` split** (~200L production): Split `AgentManifest` structs → `src/manifest/schema.rs`; move `load()` + `display_name()` → `src/manifest/loader.rs`. Self-contained; no coupling to console or runtime.
 
