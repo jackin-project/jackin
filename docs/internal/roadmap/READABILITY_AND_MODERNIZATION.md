@@ -1332,7 +1332,7 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 - **Coupling**: one import only (`use crate::workspace::WorkspaceConfig`). No dependency on console state.
 - **Architectural conclusion:** design is correct and the module is already a well-bounded audit unit. No changes needed. The existing `//!` doc can be used as a template when writing docs for larger modules.
 
-**OQ3 — MSRV vs actual feature use:** Does the code use any Rust feature stabilised after 1.94? `let-else` (stable 1.65), `if let` chaining (1.64), `array::windows` — all fine. The `edition = "2024"` in `Cargo.toml` requires Rust ≥ 1.85. This means `rust-version = "1.94"` is correct (1.94 > 1.85) but `edition 2024` already implies ≥ 1.85, so the effective MSRV is max(1.85, 1.94) = 1.94. To be confirmed with `cargo +1.94.0 check`.
+**OQ3 — MSRV vs actual feature use:** Does the code use any Rust feature stabilised after 1.94? `let-else` (stable 1.65), `if let` chaining (1.64), `array::windows` — all fine. The `edition = "2024"` in `Cargo.toml` requires Rust ≥ 1.85. This means `rust-version = "1.94"` is correct (1.94 > 1.85) but `edition 2024` already implies ≥ 1.85, so the effective MSRV is max(1.85, 1.94) = 1.94. **Partial verification:** `u64::is_multiple_of` is used in `src/tui/animation.rs` (lines 70, 264, 432, 437) — this method was stabilized in Rust 1.86. Since 1.86 < 1.94, it's within the declared MSRV. No feature use above 1.94 has been found by inspection. Definitive closure requires `cargo +1.94.0 check`, which cannot run in this environment (toolchain not installed; `mise trust` required). OQ3 remains open — but confidence is high that the MSRV is correctly declared.
 
 **OQ4 — `docs/src/components/` TypeScript strictness:** Custom Starlight overrides (`overrides/`) and landing React islands (`landing/`) — do they currently pass `noUncheckedIndexedAccess`? Needs a focused `tsc --noEmit` run with the flag enabled. Deferred until §7.11 TypeScript strictness step is executed.
 
@@ -1470,7 +1470,19 @@ picker.rs    → mod.rs    (imports OpRunner)
 
 **Auditability gain:** To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` (~438L) plus `config/editor.rs::workspace_ops` (~120L). Today they must scan the entire 951L `app/mod.rs` to find the relevant code.
 
-4f. **`src/runtime/launch.rs` → 4 files** (2368L — most impactful, most complex test suite): Split into `launch.rs` (~120L public API), `launch_pipeline.rs` (~560L + ~1200L tests), `terminfo.rs` (~110L), `trust.rs` (~60L). Do last: the test suite is 1282L and depends on `FakeRunner` from `runtime/test_support.rs`; any test compilation failure here blocks all runtime changes.
+4f. **`console/manager/` module splits** — five independent PRs; no cross-dependency between them. The console subsystem is wholly isolated from the runtime (no `console` → `runtime` import), so all five can proceed while runtime work is pending. Do in any order; suggested priority (highest production-LOC impact first):
+
+| Sub-step | File | Production LOC | Proposed output | See §4 |
+|---|---|---|---|---|
+| 4f-i | `input/editor.rs` | **1141L** (largest file) | `input/editor/` (5 files: mod.rs + secrets.rs + agents.rs + mounts.rs + general.rs) | Critical violator |
+| 4f-ii | `state.rs` | ~628L | `state/` (5 files: mod.rs + types.rs + manager.rs + editor.rs + create.rs) | Rule 5 violator |
+| 4f-iii | `render/editor.rs` | ~736L | `render/editor/` (6 files: mod.rs + footer.rs + general.rs + mounts.rs + agents.rs + secrets.rs) | Rule 5 violator |
+| 4f-iv | `render/list.rs` | ~668L | `render/list/` (3 files: mod.rs + details.rs + subpanels.rs) | Rule 5 violator |
+| 4f-v | `input/save.rs` | ~661L | Optional — file already has `//!` doc and a clear single concern | Medium-High |
+
+*What could go wrong (console splits):* (1) `state.rs` split — `ManagerStage` holds `EditorState` and `CreatePreludeState` as enum variants; all three must move to `types.rs` together to avoid circular imports between `manager.rs` and `editor.rs`. (2) `input/editor.rs` split — `handle_editor_key` and `handle_editor_modal` both read and mutate `EditorState`; they must import from the same `state/types.rs` path after the state split. Sequencing: 4f-ii (state) before 4f-i (input/editor) is the safe order if both are being done, but they can be done in either order since state.rs keeps its `pub use` re-exports throughout.
+
+4g. **`src/runtime/launch.rs` → 4 files** (2368L — most impactful, most complex test suite): Split into `launch.rs` (~120L public API), `launch_pipeline.rs` (~560L + ~1200L tests), `terminfo.rs` (~110L), `trust.rs` (~60L). Do last: the test suite is 1282L and depends on `FakeRunner` from `runtime/test_support.rs`; any test compilation failure here blocks all runtime changes.
 
 **`trust.rs` split import chain — verified safe (read lines 216–270, 533–560):**
 - `confirm_agent_trust` (lines 216–270) is a standalone fn with imports only from `std`, `owo_colors`, `dialoguer`, and `crate::config`. No dependency on `launch_pipeline.rs`.

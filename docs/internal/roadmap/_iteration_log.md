@@ -817,3 +817,40 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 Rule 5 — `tui/animation.rs` (582L, ~all production)** — listed as "Medium — all production (animation logic)" with 1× too_many_lines suppression. Not analyzed. May be worth a split or just a `//!` doc.
 2. **§10 execution order — where does `input/editor.rs` split fit?** — the execution order in §10 Step 4 does not yet include `input/editor.rs`. Given it's now the largest file, it should probably be step 4g or inserted between 4e and 4f.
 3. **§9 OQ3 — MSRV vs actual feature use** — `cargo +1.94.0 check` not yet run; open since iteration 1.
+
+---
+
+## Iteration 20 — 2026-04-26
+
+### Improvements chosen
+
+1. **§10 Step 4 — console module splits added as 4f group** — inserted all five `console/manager/` splits as step 4f (with sub-steps 4f-i through 4f-v), renaming the existing `runtime/launch.rs` step from 4f → 4g. Priority order within the group: `input/editor.rs` first (1141L production, largest file), then `state.rs` (628L, types/behavior split needed first for import stability), then the three render/list and render/editor splits. Added "what could go wrong" note about the `ManagerStage`/`EditorState`/`CreatePreludeState` circular-import risk when splitting state.rs.
+
+2. **`tui/animation.rs` analysis — no split needed** — read the full function structure (14 named items: 3 public, 11 private). Key finding: `banner_grid` (lines 138–407, ~270L) is a single contiguous rendering algorithm that interleaves the banner-reveal logic with the rain-cell simulation step — splitting it would scatter a tightly-coupled loop. The 1× `#[allow(clippy::too_many_lines)]` suppression is intentional. No `//!` doc (the file has none). Verdict: no split warranted; `//!` doc is the only actionable improvement. The file already has good internal section comments ("Color palette", "Skippable sleep", "Intro / outro animation") compensating for the missing module doc.
+
+3. **§9 OQ3 — partial MSRV evidence** — identified `u64::is_multiple_of` usage in `animation.rs` (lines 70, 264, 432, 437). This method was stabilized in Rust 1.86. Since 1.86 < 1.94 (declared MSRV), no violation. No feature above 1.94 found by inspection. Cannot run `cargo +1.94.0 check` (toolchain not installed, `mise trust` required in this environment). OQ3 remains open with high confidence the MSRV is correctly declared.
+
+### What was read
+- `src/tui/animation.rs:1–15` (imports, no `//!` doc confirmed)
+- `src/tui/animation.rs:408–454` (`type_text`, `glitch_text` — text effect functions)
+- `src/tui/animation.rs:56–140` (skippable_sleep end, `RainState` start, RAIN_CHARS, `banner_grid` start)
+- All top-level items via grep (14 named items identified)
+- `grep -rn "is_multiple_of" src/` — confirmed 4 uses in `animation.rs` only
+- `Cargo.toml` confirmed `edition = "2024"`
+- `rustup toolchain list` — 1.94.0 not installed; MSRV check deferred
+
+### What changed in the roadmap
+- §10 Step 4: Inserted `console/manager/` splits as step 4f (5 sub-steps in priority order); renamed runtime/launch.rs step from 4f → 4g
+- §9 OQ3: Expanded with `is_multiple_of` (1.86) positive signal; noted environment constraint; confidence assessment added
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| §10 Step 4 console group ordering | High | Dependency analysis: state.rs before input/editor.rs if both in same sprint; otherwise independent |
+| `tui/animation.rs` no-split verdict | High | Read banner_grid structure; tightly-coupled loop confirmed; section comments compensate for missing //! |
+| OQ3 MSRV partial evidence | Medium-High | is_multiple_of (1.86) confirmed within MSRV; full check requires cargo +1.94.0 |
+
+### Weakest sections for iteration 21
+1. **§4 Rule 5 — `tui/animation.rs` `//!` doc** — confirmed missing; should be added to the priority queue. Currently at position ~12 (below the 11 already queued). Lower urgency than the large split proposals.
+2. **§10 Step 5 — `//!` queue now has 11 entries** — the preamble says "first 10 files"; needs updating to "first 11 files".
+3. **§4 — console/manager/input/save.rs analysis** — the ConfirmSave pipeline (661L production) has complex diff rendering helpers (`env_diff_lines`, `collapse_section_lines`, `apply_env_diff`) that are AI-generated candidates for audit. Not yet analyzed for a split proposal.
