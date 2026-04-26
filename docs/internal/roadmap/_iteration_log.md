@@ -745,3 +745,35 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 `render/list.rs` split proposal** — now confirmed 668L production code (Medium-High priority); deserves the same treatment as `render/editor.rs` — a function-by-panel split. Not yet in roadmap as a proposed split.
 2. **§9 OQ2 — `agent_allow.rs` scope** — still unread; needed to complete the TUI structural picture.
 3. **§4 `console/manager/input/save.rs` (567L production)** — second-largest input handler; not analyzed. Likely handles the ConfirmSave multi-step modal which is AI-generated logic with complex state transitions.
+
+---
+
+## Iteration 18 — 2026-04-26
+
+### Improvements chosen
+
+1. **OQ2 resolution — `agent_allow.rs` read in full** — 55L total; two functions (`allows_all_agents`, `agent_is_effectively_allowed`); already has a correct `//!` doc (lines 1–6) naming the business rule and three consumers. One import only (`WorkspaceConfig`). Design is correct. Closed OQ2 with a positive finding: this file is a model of the `//!` priority queue pattern applied correctly from the start, and its `//!` can serve as a template for larger modules.
+
+2. **`render/list.rs` split proposal — complete 3-file analysis** — mapped all 668L of production code by function range. Three clean concerns: (a) `render_list_body` + `render_toast` = entry point and overlay, (b) right-pane coordinators + height helpers + synthetic-row panes = `details.rs`, (c) the four subpanel functions + `struct EnvRow` + `env_row_line` = `subpanels.rs`. Noted the import-path change for `agents_block_agent_count` → `agent_allow::allows_all_agents` after the extra directory level. The `render_environments_subpanel` (PR #171, AI-generated) is the primary audit target — isolated in `subpanels.rs`.
+
+3. **Module map update for `agent_allow.rs`** — updated the §1 module map row from "—" to accurate description: two function names, actual line count (55), and coupling (workspace only).
+
+### What was read
+- `src/console/manager/agent_allow.rs` (full — 55L): both functions, the `//!` doc (lines 1–6), tests (lines 24–55)
+- `src/console/manager/render/list.rs` (selective): `render_details_pane` (lines 192–222), `agents_block_agent_count` (246–256) confirming `agent_allow::allows_all_agents` call, `render_general_subpanel` (397–424), structure of all 5 production sections via grep
+
+### What changed in the roadmap
+- §1 module map: `agent_allow.rs` row updated with size (55L) and public API
+- §4 Rule 5: Added `render/list.rs` as new violator with 5-row production table and 3-file split proposal
+- §9 OQ2: Replaced "not deeply read" with full resolution — design correct, `//!` exemplary
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| §9 OQ2 `agent_allow.rs` | Closed — High | Full file read; design confirmed sound |
+| §4 Rule 5 `render/list.rs` split | High | All function line numbers verified by grep; import path change identified |
+
+### Weakest sections for iteration 19
+1. **§4 `console/manager/input/save.rs` (567L production, 1418L total)** — the ConfirmSave pipeline; not yet analyzed. At 567L production it's the third-largest production file in `console/manager/`. Likely contains the most complex AI-generated state-machine logic (multi-step save flow, env diff rendering, mount summary).
+2. **§4 `console/manager/input/editor.rs` (547L production)** — editor keybindings; not analyzed. Should be mappable to a tab-by-tab split matching the `render/editor.rs` split.
+3. **§1 hot-spot table — `console/manager/mount_info.rs` (745L)** — listed but not read; no production/test breakdown recorded.

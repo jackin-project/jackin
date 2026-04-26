@@ -163,7 +163,7 @@ jackin/
 | `console/manager/render/modal.rs` | — | — | modal overlay rendering | ratatui |
 | `console/manager/mount_info.rs` | 745 | — | mount-info formatting for TUI rows | workspace |
 | `console/manager/create.rs` | — | — | create-workspace wizard state machine | manager/* |
-| `console/manager/agent_allow.rs` | — | — | allowed-agents tab logic | — |
+| `console/manager/agent_allow.rs` | 55 | `allows_all_agents`, `agent_is_effectively_allowed` | centralises "empty list = all allowed" shorthand so editor, details pane, and save-confirm all agree | workspace |
 | `console/manager/github_mounts.rs` | — | — | GitHub mount listing for picker | — |
 | `console/widgets/mod.rs` | — | re-exports | widget re-export hub | widgets/* |
 | `console/widgets/text_input.rs` | — | `TextInputState`, `TextInputTarget` | single-line text input modal | ratatui |
@@ -662,6 +662,28 @@ Production code is 628L (tests start at line 629). The file mixes 26+ type defin
 **Auditability gain:** To audit "does the editor dirty-detection correctly count environment variable changes?", a reviewer reads `editor.rs` (~130L) containing `impl EditorState::change_count` and `env_change_count`. Today they scan the entire 992L file to find those two functions. The type/behavior separation is especially valuable here because `Modal` (10+ variants) visually dominates the file and is irrelevant to the dirty-detection question.
 
 **Key structural note:** `ManagerStage` (line 84) holds `EditorState` and `CreatePreludeState` as enum variants — these types must be in `types.rs` together to avoid circular imports. The `impl` blocks for each struct then live in separate files importing from `types.rs`. This is the same impl-extension pattern already used in `config/`.
+
+**New Rule 5 violator: `src/console/manager/render/list.rs` (1989L, ~668L production)**
+
+Production code is 668L (tests start at line 669). PR #171 added `render_environments_subpanel` (~200L) and `struct EnvRow` + `env_row_line` helpers, pushing the file well past the 500L threshold. The production code splits cleanly into three concerns:
+
+| Lines | Content | File in proposed split |
+|---|---|---|
+| 1–96 | `render_list_body` — entry point; left-column list layout; delegates right-pane by row type | `list/mod.rs` |
+| 97–191 | `render_toast` — toast notification overlay | `list/mod.rs` |
+| 192–266 | `render_details_pane` (right-pane coordinator); height helpers (`workspace_has_any_env`, `mount_block_height`, `env_block_height`, `agents_block_agent_count`, `agents_block_height`) | `list/details.rs` |
+| 267–396 | `render_current_dir_details_pane`; `render_sentinel_description_pane` — right-pane renderers for the two synthetic rows | `list/details.rs` |
+| 397–668 | `render_general_subpanel`, `render_mounts_subpanel`, `struct EnvRow`, `render_environments_subpanel`, `env_row_line`, `render_agents_subpanel`, `SUBPANEL_CONTENT_INDENT` constant | `list/subpanels.rs` |
+| 669–1989 | 3 `#[cfg(test)]` blocks (at lines 669, 812, 860) | Redistributed by target fn |
+
+**Proposed split — convert to `render/list/` module directory:**
+- `list/mod.rs` (~120L): `render_list_body`, `render_toast`; declares `details` and `subpanels` sub-modules; re-exports `render_list_body` as `pub(super)`.
+- `list/details.rs` (~200L): `render_details_pane` + 5 height helpers + `render_current_dir_details_pane` + `render_sentinel_description_pane`. Answers: "What does the right pane show for any selected row?"
+- `list/subpanels.rs` (~280L): `render_general_subpanel`, `render_mounts_subpanel`, `struct EnvRow`, `render_environments_subpanel`, `env_row_line`, `render_agents_subpanel`, `SUBPANEL_CONTENT_INDENT`. Answers: "What does each block within the details right pane look like?"
+
+**Import path note:** `agents_block_agent_count` (line 246 in the current file) calls `super::super::agent_allow::allows_all_agents`. After the split, `details.rs` is one directory deeper, so this path becomes `super::super::super::agent_allow::allows_all_agents`. Alternatively, add `use crate::console::manager::agent_allow::allows_all_agents;` for a path-stable import.
+
+**Auditability gain:** To audit "does the Environments subpanel correctly show per-agent env overrides?", a reviewer reads `list/subpanels.rs` (~280L) containing `render_environments_subpanel`, `struct EnvRow`, and `env_row_line`. Today they scan 668L of production code (plus 1320L of tests) to locate those three items. The split is especially valuable because PR #171 added the entire environments subpanel as AI-generated code — a focused audit of `subpanels.rs` is the fastest way to verify its correctness.
 
 **Rule 6: Rustdoc on every `pub` and `pub(crate)` item.**
 Current coverage = 41% (37/90 files have `//!` module docs — exact count). Adding `#![warn(missing_docs)]` to `Cargo.toml` or `src/lib.rs` would surface the gap as compiler warnings. The gate should be CI-enforced once the initial coverage pass is done. The 53 undocumented files are concentrated in `src/app/`, `src/cli/`, `src/instance/`, `src/runtime/`, and root helpers — see §1 for the breakdown.
@@ -1272,7 +1294,13 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 - **Action**: `op_cache.rs` already has a `//!` doc (lines 1–5) but it is incomplete — missing the sign-in expiry note and the invalidation-scope behaviour. Add those two points to the existing `//!`. Separately, add `src/console/op_cache.rs` to `PROJECT_STRUCTURE.md`.
 - **No architectural concern**: the design is sound. The cache is purely a read-through store; the picker drives all state transitions.
 
-**OQ2 — `src/console/manager/agent_allow.rs` scope:** Module not deeply read. Responsibility and coupling need verification before the §4 structural proposal is considered final.
+**OQ2 — `src/console/manager/agent_allow.rs` scope** *(resolved by reading the full 55L file)*:
+
+- **55L total** — the smallest non-test module in the console tree.
+- **Two functions**: `allows_all_agents` (const fn — pure predicate) and `agent_is_effectively_allowed` (covers both explicit membership and the empty=all shorthand).
+- **Already has a `//!` doc** (lines 1–6) that correctly names the rule and its three consumers (editor, details pane, save-confirmation summary). This is the model for what the `//!` priority queue is trying to achieve — it was written correctly from the start.
+- **Coupling**: one import only (`use crate::workspace::WorkspaceConfig`). No dependency on console state.
+- **Architectural conclusion:** design is correct and the module is already a well-bounded audit unit. No changes needed. The existing `//!` doc can be used as a template when writing docs for larger modules.
 
 **OQ3 — MSRV vs actual feature use:** Does the code use any Rust feature stabilised after 1.94? `let-else` (stable 1.65), `if let` chaining (1.64), `array::windows` — all fine. The `edition = "2024"` in `Cargo.toml` requires Rust ≥ 1.85. This means `rust-version = "1.94"` is correct (1.94 > 1.85) but `edition 2024` already implies ≥ 1.85, so the effective MSRV is max(1.85, 1.94) = 1.94. To be confirmed with `cargo +1.94.0 check`.
 
