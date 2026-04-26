@@ -1,0 +1,27 @@
+---
+title: "Move CONTRIBUTING + TESTING to Starlight"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 1, confirmation needed
+
+## Problem
+
+<RepoFile path="CONTRIBUTING.md" /> and <RepoFile path="TESTING.md" /> are contributor-facing files at the repo root. They belong in the `docs/internal/` Starlight section where contributors find them browsable at `jackin.tailrocks.com/internal/contributing/` and `jackin.tailrocks.com/internal/testing/`.
+
+## Steps
+
+1. Move <RepoFile path="CONTRIBUTING.md" /> → `docs/src/content/docs/internal/contributing.mdx` (add MDX frontmatter).
+2. Move <RepoFile path="TESTING.md" /> → `docs/src/content/docs/internal/testing.mdx`.
+3. Update <RepoFile path="AGENTS.md" /> link: `[TESTING.md](TESTING.md)` → new Starlight URL.
+4. Add a one-liner at the old root paths for backward compatibility (GitHub UI shows `CONTRIBUTING.md` from root automatically).
+5. Verify `bun run check:links:fresh` passes.
+
+## What needs confirmation
+
+- Whether to keep root-level `CONTRIBUTING.md` as a redirect (preserves GitHub UI behavior) or delete it entirely.
+- Recommended: keep a one-liner at root: "See the full contribution guide at [docs/src/content/docs/internal/contributing.mdx](docs/src/content/docs/internal/contributing.mdx)."
+
+## Risk note
+
+<RepoFile path="AGENTS.md" /> explicitly links to `TESTING.md` at root. Running `grep -rn "TESTING.md\|CONTRIBUTING.md" .` before moving will find all references.

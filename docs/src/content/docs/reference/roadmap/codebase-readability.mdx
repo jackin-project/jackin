@@ -1,0 +1,68 @@
+---
+title: "Codebase readability & restructuring"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — active program (Phase 1 → Phase 3)
+
+## Goal
+
+Make AI-generated code verifiable. 59% of source files have no `//!` module contracts; no behavioral specs exist; no systematic way to answer "did the AI implement this correctly?" PR review is hard because files are large and concerns are mixed.
+
+The work is organized in three phases. Each item below links to its dedicated page with steps, file references, and confirmation requirements.
+
+## Phase 1 — Documentation & setup (low risk)
+
+These items require no structural code changes and can be done in any order within the phase (with the dependency notes below):
+
+| Item | Purpose | Depends on |
+|---|---|---|
+| [Module contracts](/reference/roadmap/module-contracts/) | Write `//!` docs for 10 priority files | — |
+| [Behavioral spec: launch.rs](/reference/roadmap/behavioral-spec-launch/) | Verified invariants for the `jackin load` critical path | Module contracts first |
+| [Behavioral spec: op_picker](/reference/roadmap/behavioral-spec-op-picker/) | Invariants for the 1Password picker state machine | — |
+| [Per-directory README](/reference/roadmap/per-directory-readme/) | AI-native orientation files + per-crate AGENTS.md | — |
+| [Developer Reference setup](/reference/roadmap/developer-reference-setup/) | `jackin.tailrocks.com/internal/` Starlight section | — |
+| [Update PROJECT_STRUCTURE.md](/reference/roadmap/project-structure-update/) | Add PR #171 widgets to the navigation map | — |
+| [CI gate: PROJECT_STRUCTURE.md](/reference/roadmap/ci-project-structure-gate/) | Fail PRs that add modules without updating the map | Project structure update first |
+| [pub(crate) visibility pass](/reference/roadmap/pub-crate-visibility/) | Convert 257 bare `pub` to `pub(crate)` in this binary crate | — |
+| [MSRV & toolchain pin](/reference/roadmap/msrv-toolchain/) | `rust-toolchain.toml` + verified MSRV CI step | — |
+| [Architecture Decision Records](/reference/roadmap/architecture-decision-records/) | ADRs for single-crate, toolchain, ratatui decisions | Developer Reference setup |
+| [Snapshot tests for TUI](/reference/roadmap/snapshot-tests-tui/) | Regression net before Phase 2 file splits | — |
+| [Agent workflow: cc-sdd](/reference/roadmap/agent-workflow-cc-sdd/) | Replace superpowers plugin with in-repo spec workflow | Developer Reference setup |
+| [Move CONTRIBUTING + TESTING](/reference/roadmap/move-contributing-testing/) | Put contributor docs in the browsable Starlight section | Developer Reference setup |
+
+## Phase 2 — File splits (confirmation required)
+
+Split the four largest files. Do snapshot tests (Phase 1) first — they are the regression net.
+
+Do the behavioral spec for `launch.rs` before splitting it.
+
+| Item | Production LOC | Benefit |
+|---|---|---|
+| [Split input/editor.rs](/reference/roadmap/split-input-editor/) | ~1141L | One file per editor tab; audit secrets tab independently |
+| [Split app/mod.rs](/reference/roadmap/split-app-mod/) | ~957L | Separate dispatch, workspace, and config command handlers |
+| [Split operator_env.rs](/reference/roadmap/split-operator-env/) | ~880L | Separate trait, client, env layers, 1Password picker |
+| [Split runtime/launch.rs](/reference/roadmap/split-runtime-launch/) | ~1077L | Separate trust, terminfo, pipeline, and public API |
+
+## Phase 3 — Future (deferred)
+
+| Item | Trigger |
+|---|---|
+| [Greenfield workspace split](/reference/roadmap/greenfield-workspace/) | LOC > 150K or external consumers |
+| [rustdoc JSON → Starlight pipeline](/reference/roadmap/rustdoc-json-starlight/) | After `//!` coverage sprint |
+
+## Execution order (recommended)
+
+1. **PR #177** — merge what's in flight first
+2. **Phase 2 file splits** — biggest readability gain per effort; do before workspace split
+3. **Per-directory README + AGENTS.md** — orient AI agents in the new structure
+4. **Greenfield workspace split** — enforce the existing clean `console/`↔`runtime/` boundary with the compiler
+5. **Phase 1 documentation items** — `//!` docs, behavioral specs, ADRs become authoritative against the clean structure
+
+## Key structural insight
+
+`console/` has **zero imports from `runtime/`** — this pre-existing clean boundary is the most important structural asset. The greenfield workspace split can enforce this boundary with the Rust compiler without moving any logic, only directories.
+
+## Research archive
+
+Full research document (2343L, 40 iterations) archived in git at commit `b7e9fc2` on `analysis/code-readability`. Summary at <RepoFile path="docs/internal/roadmap/READABILITY_AND_MODERNIZATION.md" />.
