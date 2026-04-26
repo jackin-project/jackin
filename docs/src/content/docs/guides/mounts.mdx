@@ -155,7 +155,7 @@ dst = "/workspace/my-app"
 isolation = "worktree"
 ```
 
-Omitting the field is equivalent to `isolation = "shared"` and `shared` values are not written back on save (the default stays implicit in stored TOML).
+Omitting the field is equivalent to `isolation = "shared"`. On save, jackin' always writes the field explicitly — even when it's `shared` — so the stored TOML names the isolation level for every mount. Old configs that predate the field are migrated to the explicit form on first save.
 
 <Aside type="note">
 Isolation is a workspace-mount concept only. Global mounts (`[[mounts]]` and `jackin config mount add`) reject the `isolation` field at parse time — global mounts are typically non-repo system paths where `shared` is the only sensible answer.

@@ -24,10 +24,12 @@ pub struct MountConfig {
     pub dst: String,
     #[serde(default)]
     pub readonly: bool,
-    #[serde(
-        default,
-        skip_serializing_if = "crate::isolation::MountIsolation::is_shared"
-    )]
+    /// Old configs without this field deserialize to `MountIsolation::Shared`
+    /// (the enum default). On save we always write the field — even when it's
+    /// the default — so the stored TOML is explicit and old configs migrate to
+    /// the new shape on first save instead of silently retaining their
+    /// pre-isolation form.
+    #[serde(default)]
     pub isolation: crate::isolation::MountIsolation,
 }
 
@@ -336,7 +338,11 @@ isolation = "worktree"
     }
 
     #[test]
-    fn mount_config_omits_isolation_field_when_shared_on_serialize() {
+    fn mount_config_writes_isolation_field_even_when_shared_on_serialize() {
+        // Old configs without `isolation` deserialize to Shared (the default);
+        // on save we re-emit the field explicitly so the stored TOML always
+        // names the isolation level. No surprises for operators reading the
+        // config — every mount shows what it is.
         let mount = MountConfig {
             src: "/tmp/src".into(),
             dst: "/workspace/x".into(),
@@ -344,7 +350,10 @@ isolation = "worktree"
             isolation: MountIsolation::Shared,
         };
         let serialized = toml::to_string(&mount).unwrap();
-        assert!(!serialized.contains("isolation"));
+        assert!(
+            serialized.contains(r#"isolation = "shared""#),
+            "serialized = {serialized:?}"
+        );
     }
 
     #[test]
