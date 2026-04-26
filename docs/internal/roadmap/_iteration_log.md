@@ -157,6 +157,42 @@ See §9 of the roadmap for the canonical list. Key items:
 
 ---
 
+## Iteration 4 — 2026-04-26
+
+### Improvements chosen
+
+1. **§4 `config/editor.rs` deep read** — mapped all 18 public methods with exact line ranges, confirmed the file's 503L production code vs 963L test code (tests nearly double production), identified `create_workspace`/`edit_workspace` validation-first architectural pattern, proposed 6-file module-directory split.
+2. **§1 rustdoc coverage correction** — replaced "~28%" estimate with exact count: 37/90 files = 41%. Identified the distribution pattern: `console/manager/` well-covered; `runtime/`, `app/`, `cli/` lag. Updated §1, §4 Rule 6, and §7.6 all with the corrected figure.
+
+### What was read
+
+- `src/config/editor.rs` (full structure traced; lines 24–96 read; lines 361–475 read; tests start confirmed at line 504)
+- `find src/ -name "*.rs" | xargs grep -l "^//!"` — exact file list (37 files) confirmed
+
+### What changed in the roadmap
+
+- §0: Iteration count bumped to 4
+- §1: Rustdoc coverage corrected from "~28%" to "41% (37/90)" with cluster analysis
+- §4: `config/editor.rs` split proposal rewritten with exact line ranges, 18-method group analysis, architectural note about `create_workspace`/`edit_workspace` validation delegation, priority note (lower than launch.rs/operator_env.rs because production code is only 503L)
+- §4 Rule 6: Updated from "≈28%" to exact "41% (37/90)"
+- §7.6: Updated from "~28%" to "41%" with cluster breakdown
+
+### Confidence assessment by section (updated)
+
+| Section | Confidence | Notes |
+|---|---|---|
+| §4 Source code structural diagnosis | High for launch.rs, operator_env.rs, config/editor.rs | All three major god files now have line-range split proposals. `app/context.rs` (800L) and `instance/auth.rs` (796L) still directional only |
+| §1 Rustdoc coverage | High | Exact count from grep, not estimate |
+
+### Weakest sections for iteration 5
+
+1. **§8.2 agent invocation convention** — still says "reading the file" without showing what `docs/internal/agent-skills/brainstorm.md` actually looks like. A 10-15 line example template would be the difference between "interesting proposal" and "immediately actionable."
+2. **§5 naming candidates** — candidates 6–15 have thin rationale (some don't cite why the current name is a problem). Example: candidate 12 (`LaunchContext` — "Name is fine") is not a useful candidate and should be removed or replaced with something genuinely suboptimal.
+3. **§10 Execution sequencing** — the step descriptions are directional but don't name which subsystem to do first within step 4 (source-code moves). Given that split proposals now exist for launch.rs, operator_env.rs, and config/editor.rs, step 4 can now be ordered by production-code-size × risk: operator_env → config/editor → launch → app/mod.rs → manifest.
+4. **OQ5 `instance/auth.rs` (796L)** — flagged 4 iterations ago, still unread.
+
+---
+
 ## Iteration 2 — 2026-04-26
 
 ### Improvements chosen

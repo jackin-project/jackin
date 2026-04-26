@@ -3,7 +3,7 @@
 ## §0 — Meta
 
 **Last updated:** 2026-04-26
-**Iteration:** 3
+**Iteration:** 4
 
 This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` treated as already merged per operator instruction). Recommendations are inputs to a future, separate execution effort — no code has been touched.
 
@@ -256,7 +256,7 @@ Modules with ≥10 sibling files:
 - `src/console/manager/` — 16 files across 3 subdirs (`input/`, `render/`, flat files).
 - `src/console/widgets/` — 11+ files after PR #171 (adds `op_picker/`, `agent_picker.rs`, `scope_picker.rs`, `source_picker.rs`).
 
-**Rustdoc `//!` coverage estimate:** Of 72 `.rs` files, approximately 20 have top-of-module `//!` orientation comments (confirmed: `env_model.rs`, `cli/dispatch.rs`, `config/editor.rs`, `console/manager/input/mod.rs`, and others in the `console/manager/input/` subtree). ~50 files have NO module-level doc comment. Coverage ≈ 28%. No `#![warn(missing_docs)]` gate is set anywhere in `Cargo.toml` or `src/lib.rs`.
+**Rustdoc `//!` coverage (exact count, iteration 4):** Of **90 `.rs` files** (72 on main + ~18 added by PR #171), **37 have `//!` module orientation docs** (41%). Coverage is strongly clustered: `src/console/manager/` and `src/console/widgets/` are the best-covered subsystems — PR #171 additions were written with docs discipline. The 53 files without `//!` docs are concentrated in the older codebase: all of `src/app/` (both files), all of `src/cli/` (5 files), all of `src/instance/` (4 files), most of `src/runtime/` (8 of 10), and all root-level helpers (`derived_image.rs`, `docker.rs`, `env_resolver.rs`, `paths.rs`, `repo.rs`, `repo_contract.rs`, `selector.rs`, `version_check.rs`, `terminal_prompter.rs`, `main.rs`, `lib.rs`, `bin/validate.rs`). The `src/console/manager/` family is the best-documented subsystem by ratio; `src/runtime/` is the worst. No `#![warn(missing_docs)]` gate is set anywhere in `Cargo.toml` or `src/lib.rs`.
 
 ### Astro / Starlight content inventory
 
@@ -549,11 +549,36 @@ Violators:
   - `client.rs` imports `OpRunner` from `mod.rs`.
   - `layers.rs` imports `OpRunner` + `dispatch_value` from `mod.rs`.
   - `picker.rs` imports `OpRunner` from `mod.rs` + `OpCli` from `client.rs`.
-- `src/config/editor.rs` (1467L) — a single file for the entire TOML editing engine. The file is cohesive (all about `toml_edit` mutations) but too long. Proposed split:
-  - `src/config/editor/mod.rs` → `ConfigEditor` struct, `EnvScope`, public API surface
-  - `src/config/editor/workspace_ops.rs` → workspace CRUD methods
-  - `src/config/editor/env_ops.rs` → env var set/get methods
-  - `src/config/editor/toml_helpers.rs` → `env_scope_path`, `table_path_mut`
+- `src/config/editor.rs` (1467L) — read in full for iteration 4; concrete structure:
+  - Lines 1–16: `//!` module doc (present) + imports
+  - Lines 17–22: `EnvScope` enum (public, 4 variants: Global, Agent, Workspace, WorkspaceAgent)
+  - Lines 24–27: `ConfigEditor` struct (public; `doc: DocumentMut`, `path: PathBuf`)
+  - Lines 29–468: `impl ConfigEditor` block (~440L) with 18 public methods grouped by domain:
+    - *I/O*: `open` (33–46), `save` (63–89, atomic write to tmp → rename, returns fresh `AppConfig`)
+    - *Env*: `set_env_var` (91–96), `set_env_comment` (97–128), `remove_env_var` (331–345)
+    - *Mounts*: `add_mount` (129–181), `remove_mount` (182–203)
+    - *Agent trust/auth*: `set_agent_trust` (204–217), `set_agent_auth_forward` (218–233), `set_global_auth_forward` (234–238)
+    - *Agent sources*: `upsert_builtin_agent` (239–258), `upsert_agent_source` (259–306)
+    - *Migration*: `normalize_deprecated_copy` (307–330)
+    - *Workspace tracking*: `set_last_agent` (346–360)
+    - *Workspace CRUD*: `rename_workspace` (361–386), `remove_workspace` (387–400), `create_workspace` (401–432), `edit_workspace` (433–468)
+  - Lines 469–503: Private helpers: `auth_forward_str` const fn (469–475), `env_scope_path` (477–491), `table_path_mut` (492–503)
+  - Lines 504–1467: `#[cfg(test)] mod tests` (~963L — nearly 2× the production code)
+
+  **Key architectural note**: `create_workspace` (401–432) and `edit_workspace` (433–468) are NOT pure TOML mutations — they delegate to `AppConfig::create_workspace` / `AppConfig::edit_workspace` for validation, then commit the validated result via TOML. This validation-first → TOML-commit pattern must be preserved in any refactor; it is why the `ConfigEditor` cannot simply be a raw TOML wrapper.
+
+  **Proposed split** (convert to module directory — Rust supports `impl SomeStruct` blocks across multiple files within the same crate):
+  - `src/config/editor/mod.rs` (~100L): `EnvScope` enum, `ConfigEditor` struct, `open()`, `save()`. The type definition and the two I/O methods that justify its existence.
+  - `src/config/editor/env_ops.rs` (~80L): `impl ConfigEditor` for env operations — `set_env_var`, `set_env_comment`, `remove_env_var`.
+  - `src/config/editor/mount_ops.rs` (~80L): `impl ConfigEditor` for mount operations — `add_mount`, `remove_mount`.
+  - `src/config/editor/agent_ops.rs` (~120L): `impl ConfigEditor` for agent operations — `set_agent_trust`, `set_agent_auth_forward`, `set_global_auth_forward`, `upsert_builtin_agent`, `upsert_agent_source`, `normalize_deprecated_copy`, `auth_forward_str`.
+  - `src/config/editor/workspace_ops.rs` (~120L): `impl ConfigEditor` for workspace operations — `create_workspace`, `edit_workspace`, `rename_workspace`, `remove_workspace`, `set_last_agent`.
+  - `src/config/editor/toml_helpers.rs` (~30L): `env_scope_path`, `table_path_mut` (private TOML-tree navigation helpers).
+  - Tests: centralized in `src/config/editor/tests.rs` (~963L), imported via `#[cfg(test)] mod tests;` in `mod.rs`.
+
+  **Net effect**: Max production file drops from 1467L to ~120L. The 963L test file stays large but is a test file (expected). The `create_workspace`/`edit_workspace` delegation pattern is visible in `workspace_ops.rs` and doesn't need to be co-located with `env_ops.rs` for any functional reason.
+
+  **Priority note**: `config/editor.rs`'s production code is only 503L — a reasonable size. The file is "large" primarily because of its 963L test suite. The split is still worthwhile for navigability (18 methods in one `impl` block is hard to scan), but it is *lower priority* than splitting `runtime/launch.rs` (1083L production code) or `operator_env.rs` (810L production code).
 
 **Rule 3: File names match dominant concern.**
 No current violators found (names are descriptive), but two edge cases:
@@ -567,7 +592,7 @@ Currently most items use bare `pub`. A pass to replace `pub` with `pub(crate)` o
 The 24 files above the 500-line threshold (§1 hot-spot list) should each have an explicit justification in a `//!` module comment. If no justification exists, the file should be split per Rule 2. `src/runtime/launch.rs` at 2368L has no `//!` module comment — this is the clearest violation.
 
 **Rule 6: Rustdoc on every `pub` and `pub(crate)` item.**
-Current coverage ≈ 28% (`//!` module docs). Adding `#![warn(missing_docs)]` to `Cargo.toml` or `src/lib.rs` would surface the gap as compiler warnings. The gate should be CI-enforced once the initial coverage pass is done.
+Current coverage = 41% (37/90 files have `//!` module docs — exact count from iteration 4). Adding `#![warn(missing_docs)]` to `Cargo.toml` or `src/lib.rs` would surface the gap as compiler warnings. The gate should be CI-enforced once the initial coverage pass is done. The 53 undocumented files are concentrated in `src/app/`, `src/cli/`, `src/instance/`, `src/runtime/`, and root helpers — see §1 for the breakdown.
 
 **Rule 7: Top-of-module `//!` orientation comments.**
 `src/env_model.rs` is the exemplar — it has a full `//!` module doc explaining what the module is, what it provides, and what invariants it maintains. This pattern should be adopted for all 50+ files currently lacking it, starting with the largest (see hot-spot list).
@@ -773,7 +798,7 @@ Applicable to parsing functions (`src/selector.rs`, `src/workspace/mounts.rs`, `
 
 **What it is:** Using `cargo doc` output as a navigable architecture map; enforcing doc coverage via CI.
 
-**What `jackin` does today:** No `#![warn(missing_docs)]` gate. ~28% of files have `//!` module orientation docs (only `src/env_model.rs` is an exemplar). Public API surface is large (see §4 module map) with most items undocumented. `cargo doc` runs produce output but it is not published or gated.
+**What `jackin` does today:** No `#![warn(missing_docs)]` gate. 41% of source files (37/90) have `//!` module orientation docs (exact count, iteration 4). Coverage is uneven: `src/console/manager/` and `src/console/widgets/` (added with PR #171's docs discipline) are well-covered; `src/runtime/`, `src/app/`, and `src/cli/` are not. `src/env_model.rs` is the exemplar for the pattern the rest should follow. Public API surface is large (see §4 module map) with most items undocumented. `cargo doc` runs produce output but it is not published or gated.
 
 **The 2026-modern landscape:**
 
