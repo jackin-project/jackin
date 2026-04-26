@@ -1654,6 +1654,7 @@ mod tests {
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
+            keep_awake: Default::default(),
         };
         let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
 

@@ -106,6 +106,11 @@ pub fn run(cli: Cli) -> Result<()> {
 
             let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
             opts.force = force;
+            // Pre-launch reconcile: if a previous agent in a keep_awake
+            // workspace already runs, ensure caffeinate is up before we
+            // build/launch (so a long Docker build doesn't see the host
+            // sleep). Post-launch reconcile below catches the new agent.
+            runtime::reconcile_keep_awake(&paths, &mut runner);
             let result = runtime::load_agent(
                 &paths,
                 &mut config,
@@ -121,6 +126,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 &class,
                 &result,
             );
+            runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
         Command::Console(ConsoleArgs { debug }) | Command::Launch(ConsoleArgs { debug }) => {
@@ -141,9 +147,11 @@ pub fn run(cli: Cli) -> Result<()> {
             }
 
             let opts = runtime::LoadOptions::for_launch(debug);
+            runtime::reconcile_keep_awake(&paths, &mut runner);
             let result =
                 runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts);
             remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
+            runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
         Command::Hardline(HardlineArgs { selector }) => {
@@ -156,7 +164,10 @@ pub fn run(cli: Cli) -> Result<()> {
                 let cwd = std::env::current_dir()?;
                 resolve_running_container_from_context(&config, &cwd, &mut runner)?
             };
-            runtime::hardline_agent(&paths, &container, &mut runner)
+            runtime::reconcile_keep_awake(&paths, &mut runner);
+            let result = runtime::hardline_agent(&paths, &container, &mut runner);
+            runtime::reconcile_keep_awake(&paths, &mut runner);
+            result
         }
         Command::Eject(EjectArgs {
             selector,
@@ -193,6 +204,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     }
                 }
             }
+            runtime::reconcile_keep_awake(&paths, &mut runner);
             Ok(())
         }
         Command::Exile => {
@@ -205,6 +217,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     println!("Ejected {name}.");
                 }
             }
+            runtime::reconcile_keep_awake(&paths, &mut runner);
             Ok(())
         }
         Command::Config(config_cmd) => match config_cmd {
@@ -491,6 +504,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     last_agent: None,
                     env: std::collections::BTreeMap::new(),
                     agents: std::collections::BTreeMap::new(),
+                    keep_awake: crate::workspace::KeepAwakeConfig::default(),
                 };
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
                 editor.create_workspace(&name, ws)?;
@@ -1100,6 +1114,7 @@ mod auth_set_tests {
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
+            keep_awake: Default::default(),
         };
         let out = render_workspace_show("jackin", &ws);
         assert!(out.contains("Isolation"));

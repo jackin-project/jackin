@@ -32,6 +32,11 @@ pub struct ResolvedWorkspace {
     pub label: String,
     pub workdir: String,
     pub mounts: Vec<MountConfig>,
+    /// Whether this workspace opted into the keep-awake reconciler.
+    /// Carried through to `launch_agent_runtime` so the container can
+    /// be tagged with `jackin.keep_awake=true` without a config
+    /// re-lookup.
+    pub keep_awake_enabled: bool,
 }
 
 fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
@@ -171,6 +176,7 @@ pub fn resolve_load_workspace(
         label,
         workdir: workspace.workdir,
         mounts,
+        keep_awake_enabled: workspace.keep_awake.enabled,
     })
 }
 

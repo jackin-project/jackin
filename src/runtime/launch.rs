@@ -15,8 +15,8 @@ use super::discovery::list_running_agent_display_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
 use super::image::build_agent_image;
 use super::naming::{
-    LABEL_MANAGED, LABEL_ROLE_AGENT, LABEL_ROLE_DIND, dind_certs_volume, format_agent_display,
-    image_name,
+    LABEL_KEEP_AWAKE, LABEL_MANAGED, LABEL_ROLE_AGENT, LABEL_ROLE_DIND, dind_certs_volume,
+    format_agent_display, image_name,
 };
 use super::repo_cache::resolve_agent_repo;
 
@@ -502,6 +502,13 @@ fn launch_agent_runtime(
         &display_label,
         "--workdir",
         &workspace.workdir,
+    ];
+
+    if workspace.keep_awake_enabled {
+        run_args.extend_from_slice(&["--label", LABEL_KEEP_AWAKE]);
+    }
+
+    run_args.extend_from_slice(&[
         // JACKIN_* runtime metadata is injected by jackin, not declared in agent manifests.
         "-e",
         &docker_host,
@@ -517,7 +524,7 @@ fn launch_agent_runtime(
         &git_author_email,
         "-e",
         &container_term,
-    ];
+    ]);
     if *debug {
         run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
     }
@@ -1362,6 +1369,7 @@ mod tests {
                             .into(),
                 }),
             }],
+            keep_awake_enabled: false,
         };
 
         let strings = build_workspace_mount_strings(&mat);
@@ -1429,6 +1437,7 @@ mod tests {
                 isolation: MountIsolation::Shared,
                 worktree_aux: None,
             }],
+            keep_awake_enabled: false,
         };
 
         let strings = build_workspace_mount_strings(&mat);
@@ -1478,6 +1487,7 @@ mod tests {
                     }),
                 },
             ],
+            keep_awake_enabled: false,
         };
 
         let strings = build_workspace_mount_strings(&mat);
@@ -1533,6 +1543,7 @@ mod tests {
                 isolation: MountIsolation::Shared,
                 worktree_aux: None,
             }],
+            keep_awake_enabled: false,
         };
 
         let strings = build_workspace_mount_strings(&mat);
@@ -1549,6 +1560,7 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
+            keep_awake_enabled: false,
         }
     }
 
@@ -1781,6 +1793,7 @@ trusted = true
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
+            keep_awake_enabled: false,
         };
 
         load_agent(
@@ -1915,6 +1928,7 @@ plugins = []
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
+            keep_awake_enabled: false,
         };
 
         load_agent(
@@ -1983,6 +1997,7 @@ plugins = []
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
+            keep_awake_enabled: false,
         };
 
         load_agent(

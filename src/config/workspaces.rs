@@ -256,6 +256,7 @@ mod tests {
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
+            keep_awake: crate::workspace::KeepAwakeConfig::default(),
         };
         config
             .create_workspace("big-monorepo", original.clone())
