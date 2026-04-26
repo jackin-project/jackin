@@ -45,7 +45,7 @@ impl SaveDiscardState {
                 };
                 ModalOutcome::Continue
             }
-            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            KeyCode::Left | KeyCode::Char('h' | 'H') => {
                 self.focus = match self.focus {
                     SaveDiscardFocus::Save => SaveDiscardFocus::Cancel,
                     SaveDiscardFocus::Discard => SaveDiscardFocus::Save,

@@ -18,7 +18,9 @@ pub(super) fn handle_prelude_key(
     key: KeyEvent,
 ) -> InputOutcome {
     if key.code == KeyCode::Esc {
-        *state = ManagerState::from_config(config, cwd);
+        let cache = state.op_cache.clone();
+        let op_available = state.op_available;
+        *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
     }
     InputOutcome::Continue
 }
@@ -347,8 +349,8 @@ mod tests {
         match &prelude.modal {
             Some(Modal::TextInput { target, .. }) => {
                 assert_eq!(
-                    *target,
-                    super::super::super::state::TextInputTarget::MountDst
+                    target,
+                    &super::super::super::state::TextInputTarget::MountDst
                 );
             }
             other => panic!("expected TextInput(MountDst); got {other:?}"),
@@ -475,8 +477,8 @@ mod tests {
         match &prelude.modal {
             Some(Modal::TextInput { target, .. }) => {
                 assert_eq!(
-                    *target,
-                    super::super::super::state::TextInputTarget::MountDst
+                    target,
+                    &super::super::super::state::TextInputTarget::MountDst
                 );
             }
             other => panic!("expected TextInput(MountDst); got {other:?}"),

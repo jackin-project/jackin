@@ -41,25 +41,11 @@ impl GithubPickerState {
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
         match key.code {
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                let n = self.choices.len();
-                if n > 0 {
-                    let next = self
-                        .list_state
-                        .selected
-                        .map_or(0, |i| if i == 0 { n - 1 } else { i - 1 });
-                    self.list_state.select(Some(next));
-                }
+                super::cycle_select(&mut self.list_state, self.choices.len(), -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                let n = self.choices.len();
-                if n > 0 {
-                    let next = self
-                        .list_state
-                        .selected
-                        .map_or(0, |i| if i + 1 >= n { 0 } else { i + 1 });
-                    self.list_state.select(Some(next));
-                }
+                super::cycle_select(&mut self.list_state, self.choices.len(), 1);
                 ModalOutcome::Continue
             }
             KeyCode::Enter => {

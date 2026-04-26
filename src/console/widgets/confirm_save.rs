@@ -72,11 +72,10 @@ impl ConfirmSaveState {
         match key.code {
             KeyCode::Char('s' | 'S') => ModalOutcome::Commit(SaveChoice::Save),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
-            // Tab / Right / l-h / BackTab / Left — only two buttons, so
-            // every "move focus" key just toggles between them.
+            // Tab / Right / l-h / Left — only two buttons, so every
+            // "move focus" key just toggles between them.
             KeyCode::Tab
             | KeyCode::Right
-            | KeyCode::BackTab
             | KeyCode::Left
             | KeyCode::Char('l' | 'L' | 'h' | 'H') => {
                 self.focus = match self.focus {
@@ -96,11 +95,11 @@ impl ConfirmSaveState {
 
 /// Total rows the `ConfirmSave` modal wants given its current line count.
 /// Layout: top border + blank + N content lines + blank + buttons + blank
-/// + hint + bottom border.
+/// + hint + bottom border = N + 7.
 #[must_use]
 pub fn required_height(state: &ConfirmSaveState) -> u16 {
     let lines = u16::try_from(state.lines.len()).unwrap_or(u16::MAX);
-    lines.saturating_add(6)
+    lines.saturating_add(7)
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
@@ -233,11 +232,11 @@ mod tests {
     }
 
     #[test]
-    fn confirm_save_backtab_cycles_reverse() {
+    fn confirm_save_left_cycles_reverse() {
         let mut s = sample_state();
-        s.handle_key(key(KeyCode::BackTab));
+        s.handle_key(key(KeyCode::Left));
         assert_eq!(s.focus, ConfirmSaveFocus::Cancel);
-        s.handle_key(key(KeyCode::BackTab));
+        s.handle_key(key(KeyCode::Left));
         assert_eq!(s.focus, ConfirmSaveFocus::Save);
     }
 
@@ -308,7 +307,8 @@ mod tests {
             Line::from("two"),
             Line::from("three"),
         ]);
-        // 3 content lines + 6 chrome rows
-        assert_eq!(required_height(&s), 9);
+        // 3 content lines + 7 chrome rows (2 borders + top blank + after-content blank
+        // + buttons + after-buttons blank + hint)
+        assert_eq!(required_height(&s), 10);
     }
 }

@@ -279,3 +279,71 @@ The manager follows jackin's existing visual language, using tokens from `docs/s
 ## Open questions
 
 None. All design decisions settled during brainstorming: entry model (separate manager screen on `m`), tab set (General + Mounts + Agents + Secrets-stub), text-edit UX (modal push), staging semantics (explicit save with `s`, discard/save/cancel on Esc), create flow (mounts-first, file-browser-driven, auto-derived dst, workdir-from-dst-list, name last), delete UX (single Y/N modal), Agents tab scope (allowed + default only; env overrides deferred to PR 3), visual style (jackin landing-page palette + existing animation facilities).
+
+---
+
+## Amendment — 2026-04-25 (PR #171 cleanup pass)
+
+The Stage 3 implementation diverged from the original spec on several points. Rather than rewriting the historical record, this amendment captures the corrections.
+
+### Manager-as-default landing
+
+The original Goals §2 promised:
+
+> Today's launch path stays keystroke-identical. `jackin` → Workspace picker → Enter → Agent picker → Enter → launch. The manager is an excursion, not a gate.
+
+This is now inverted. **The manager IS the default landing view.** `jackin console` opens directly to the workspace manager list (with launch / edit / new / delete affordances visible from the start). Pressing `Enter` on a workspace launches; the manager is the home screen, not an excursion reached via `m`.
+
+### State machine
+
+Original:
+
+```rust
+pub enum LaunchStage { Workspace, Agent, Manager(ManagerState) }
+```
+
+Implemented (post-cleanup):
+
+```rust
+pub enum ConsoleStage { Manager(ManagerState<'static>) }
+// Single variant. The legacy `Agent` full-screen stage is removed entirely.
+```
+
+The full-screen agent picker stage is replaced by `Modal::AgentPicker`, an overlay that opens on the manager list when launch needs disambiguation.
+
+### Three-branch launch logic
+
+When the operator presses `Enter` on a workspace row in the manager list:
+
+1. If `default_agent` is set on the workspace → launch immediately with that agent.
+2. If exactly one eligible agent (after `eligible_agents_for_workspace` filtering) → launch with it.
+3. Otherwise → open `Modal::AgentPicker`. Operator picks; the picker commits a launch.
+
+### Keybinding philosophy
+
+All TUI keybindings use plain letters, numbers, `Enter`, `Esc`, `Tab`, or arrow keys. `Ctrl`/`Alt`/`Cmd`/`Shift` modifiers are prohibited. See `RULES.md § TUI Keybindings`.
+
+Concrete consequences during the cleanup:
+
+- The Stage 3 `Ctrl+M` mask toggle became plain `M`.
+- The Stage 3 `Ctrl+O` 1Password picker invocation moved to a row-level `P` action — the picker is no longer a sub-mode of the EnvValue text input modal but a sibling action on a Secrets-tab row.
+- `Shift+Tab` (which `crossterm` reports as `KeyCode::BackTab`) was dropped from every alternation; arrow keys cover the same navigation without a chord.
+
+### 1Password picker invocation
+
+Original Stage 3 design had `Ctrl+O` open the picker from inside the EnvValue text modal, with the picker's commit pre-filling the textarea. The cleanup pass moved this to a row-level `P` action:
+
+- `P` on a Secrets-tab key row opens the picker directly. Commit writes the chosen `op://Vault/Item/field` reference straight to that key's pending value — no intermediate text modal.
+- `P` on the `+ Add` sentinel opens the picker first; on commit, the EnvKey modal collects the key name with the path pre-stashed on `EditorState`.
+
+This makes the picker discoverable from the Secrets tab footer hints (operators don't have to enter the text modal first to learn the binding exists).
+
+### Out of scope, still
+
+The amendment explicitly does not change:
+
+- Tab set on the editor (still General / Mounts / Agents / Secrets).
+- Save flow (`s` → ConfirmSave → write).
+- Create flow (mounts-first wizard).
+- Visual palette (phosphor green, brand tokens).
+- Dependency set (the same three crates from the original Third-party dependencies section).

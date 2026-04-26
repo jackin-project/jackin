@@ -15,11 +15,7 @@ pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
             dst: path,
             readonly: false,
         }],
-        allowed_agents: vec![],
-        default_agent: None,
-        last_agent: None,
-        env: std::collections::BTreeMap::new(),
-        agents: std::collections::BTreeMap::new(),
+        ..Default::default()
     })
 }
 
@@ -102,11 +98,7 @@ pub fn resolve_load_workspace(
                     },
                     readonly: false,
                 }],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             };
             let label = ws.workdir.clone();
             (ws, label)
@@ -210,11 +202,7 @@ mod tests {
                     readonly: false,
                 },
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
 
         assert_eq!(
@@ -237,11 +225,7 @@ mod tests {
                 dst: "/workspace".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
 
         assert_eq!(
@@ -273,9 +257,7 @@ mod tests {
                 }],
                 allowed_agents: vec!["agent-smith".to_string()],
                 default_agent: Some("agent-smith".to_string()),
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
 
@@ -317,11 +299,7 @@ mod tests {
                     dst: "/workspace/project".to_string(),
                     readonly: false,
                 }],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
 
@@ -425,11 +403,7 @@ mod tests {
                     dst: "/workspace/project".to_string(),
                     readonly: false,
                 }],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
 
@@ -472,11 +446,7 @@ mod tests {
                     dst: "/workspace/project".to_string(),
                     readonly: false,
                 }],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
 

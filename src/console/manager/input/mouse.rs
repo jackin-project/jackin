@@ -370,11 +370,7 @@ mod mouse_drag_tests {
                 dst: "/w".into(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         // Ensure the helper signature compiles (guards against future refactors).
         let _ = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
@@ -407,11 +403,7 @@ mod mouse_drag_tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         state.stage = ManagerStage::Editor(EditorState::new_edit("x".into(), ws));
 
@@ -590,11 +582,7 @@ mod mouse_drag_tests {
                 WorkspaceConfig {
                     workdir: format!("/w/{i}"),
                     mounts: vec![],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             );
         }

@@ -10,30 +10,36 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus};
+use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::list::{MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width, render_mount_header};
 use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
 };
 use crate::config::AppConfig;
+use crate::operator_env::{is_op_reference, parse_op_reference};
 
 // ── Editor stage ────────────────────────────────────────────────────
 
-pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppConfig) {
+pub fn render_editor(
+    frame: &mut Frame,
+    state: &EditorState<'_>,
+    config: &AppConfig,
+    op_available: bool,
+) {
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // header
-            Constraint::Length(2), // tab strip
-            Constraint::Min(8),    // tab body
-            Constraint::Length(2), // footer
+            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Min(8),
+            Constraint::Length(2),
         ])
         .split(area);
 
     let title = match &state.mode {
-        EditorMode::Edit { name } => format!("edit · {name}"),
-        EditorMode::Create => "new workspace".to_string(),
+        EditorMode::Edit { name } => format!("edit workspace · {name}"),
+        EditorMode::Create => "create workspace".to_string(),
     };
     render_header(frame, chunks[0], &title);
 
@@ -43,20 +49,17 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
         EditorTab::General => render_general_tab(frame, chunks[2], state),
         EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state),
         EditorTab::Agents => render_agents_tab(frame, chunks[2], state, config),
-        EditorTab::Secrets => render_secrets_stub(frame, chunks[2]),
+        EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config),
     }
 
-    // Contextual footer: row-specific hints + base stage hints.
     let mut items: Vec<FooterItem> = Vec::new();
 
-    // Row-specific group (may be empty).
-    let row_items = contextual_row_items(state);
+    let row_items = contextual_row_items(state, op_available);
     if !row_items.is_empty() {
         items.extend(row_items);
         items.push(FooterItem::GroupSep);
     }
 
-    // Save group — label varies with dirty/clean.
     items.push(FooterItem::Key("S"));
     items.push(FooterItem::Text("save workspace"));
     if state.is_dirty() {
@@ -66,10 +69,6 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
         )));
     }
 
-    // Tab-for-next-tab and ↑↓-for-cursor-move are universal across every
-    // editor tab — they don't need to be advertised in the base footer.
-
-    // Exit group — discard if dirty, back if clean.
     items.push(FooterItem::GroupSep);
     items.push(FooterItem::Key("Esc"));
     if state.is_dirty() {
@@ -80,11 +79,7 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
 
     render_footer(frame, chunks[3], &items);
 
-    // Error banner overlay — top line of the body. Only rendered when
-    // `save_flow` is in the `Error` state AND no ErrorPopup modal is up
-    // (the popup is the commit-time error surface; the banner is the
-    // pre-commit validation surface — they share the `Error` variant but
-    // present differently).
+    // Pre-commit validation surface; the popup handles commit errors.
     if state.modal.is_none()
         && let Some(err) = state.save_flow.error_message()
     {
@@ -106,19 +101,24 @@ pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppCon
 
 /// Compute a row-specific hint fragment based on the active tab and cursor.
 /// Returns an empty vec when the current position has no action.
-fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
+#[allow(clippy::too_many_lines)]
+fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<FooterItem> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
-            // Row indices are uniform across both modes for Enter-affordance
-            // purposes. Create mode has rows 0-1; Edit mode also has 2-3
-            // (default agent, last used) which are read-only and surface no
-            // Enter action either way.
-            //   row 0 = Name        (editable in both modes — Enter opens rename)
+            // The General tab now has only two editable rows in both
+            // Edit and Create modes. The former read-only rows
+            // (`Default agent`, `Last used`) were removed — `Default
+            // agent` moved to the Agents tab, `Last used` was deleted as
+            // informational clutter.
+            //   row 0 = Name        (editable — Enter opens rename)
             //   row 1 = Working dir (editable — Enter opens workdir picker)
             match cursor {
                 0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
-                1 => vec![
+                // WorkdirPick requires at least one mount to choose from;
+                // suppress the hint when there are none so the key isn't
+                // advertised as available when Enter would be a no-op.
+                1 if !state.pending.mounts.is_empty() => vec![
                     FooterItem::Key("Enter"),
                     FooterItem::Text("pick working directory"),
                 ],
@@ -168,12 +168,101 @@ fn contextual_row_items(state: &EditorState<'_>) -> Vec<FooterItem> {
         }
         EditorTab::Agents => vec![
             FooterItem::Key("Space"),
-            FooterItem::Text("toggle"),
+            FooterItem::Text("allow/disallow"),
             FooterItem::Sep,
-            FooterItem::Key("D"),
-            FooterItem::Text("default"),
+            FooterItem::Key("*"),
+            FooterItem::Text("set/unset default"),
         ],
-        EditorTab::Secrets => Vec::new(),
+        EditorTab::Secrets => {
+            // Row-specific hints depend on which SecretsRow kind the cursor
+            // is sitting on. Op:// rows are read-only at the value level —
+            // the operator deletes and re-adds via the source picker — so
+            // we drop `Enter edit` and `M mask/unmask` on those rows.
+            let rows = secrets_flat_rows(state);
+            // Determine if the focused key row carries an op:// reference.
+            let focused_value_is_op_ref = match rows.get(cursor) {
+                Some(SecretsRow::WorkspaceKeyRow(key)) => state
+                    .pending
+                    .env
+                    .get(key)
+                    .is_some_and(|v| is_op_reference(v)),
+                Some(SecretsRow::AgentKeyRow { agent, key }) => state
+                    .pending
+                    .agents
+                    .get(agent)
+                    .and_then(|ov| ov.env.get(key))
+                    .is_some_and(|v| is_op_reference(v)),
+                _ => false,
+            };
+            match rows.get(cursor) {
+                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::AgentKeyRow { .. })
+                    if focused_value_is_op_ref =>
+                {
+                    // Op:// rows: only D delete · A add · Q exit.
+                    // Per operator preference, mask/unmask and Enter edit
+                    // are suppressed because the breadcrumb isn't a
+                    // credential and isn't text-editable.
+                    vec![
+                        FooterItem::Key("D"),
+                        FooterItem::Text("delete"),
+                        FooterItem::Sep,
+                        FooterItem::Key("A"),
+                        FooterItem::Text("add"),
+                        FooterItem::Sep,
+                        FooterItem::Key("Q"),
+                        FooterItem::Text("exit"),
+                    ]
+                }
+                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::AgentKeyRow { .. }) => {
+                    let mut items = vec![
+                        FooterItem::Key("Enter"),
+                        FooterItem::Text("edit"),
+                        FooterItem::Sep,
+                        FooterItem::Key("D"),
+                        FooterItem::Text("delete"),
+                        FooterItem::Sep,
+                        FooterItem::Key("A"),
+                        FooterItem::Text("add"),
+                        FooterItem::Sep,
+                        FooterItem::Key("M"),
+                        FooterItem::Text("mask/unmask"),
+                    ];
+                    if op_available {
+                        items.extend([
+                            FooterItem::Sep,
+                            FooterItem::Key("P"),
+                            FooterItem::Text("1Password"),
+                        ]);
+                    }
+                    items
+                }
+                Some(SecretsRow::AgentHeader { .. }) => vec![
+                    FooterItem::Key("Enter"),
+                    FooterItem::Text("expand"),
+                    FooterItem::Sep,
+                    FooterItem::Key("←/→"),
+                    FooterItem::Text("collapse/expand"),
+                    FooterItem::Sep,
+                    FooterItem::Key("A"),
+                    FooterItem::Text("add"),
+                ],
+                Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::AgentAddSentinel(_)) => {
+                    let mut items = vec![FooterItem::Key("Enter"), FooterItem::Text("add")];
+                    if op_available {
+                        items.extend([
+                            FooterItem::Sep,
+                            FooterItem::Key("P"),
+                            FooterItem::Text("1Password"),
+                        ]);
+                    }
+                    items
+                }
+                // Cursor never lands on `SectionSpacer` (skipped by the
+                // `↑`/`↓` handlers), but if anything ever queries the
+                // hint for that index we degrade to a no-op empty set.
+                Some(SecretsRow::SectionSpacer) | None => vec![],
+            }
+        }
     }
 }
 
@@ -182,7 +271,7 @@ fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
         (EditorTab::General, "General"),
         (EditorTab::Mounts, "Mounts"),
         (EditorTab::Agents, "Agents"),
-        (EditorTab::Secrets, "Secrets ⏳"),
+        (EditorTab::Secrets, "Environments"),
     ];
     let mut spans = Vec::new();
     for (tab, label) in labels {
@@ -191,10 +280,6 @@ fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
                 .bg(PHOSPHOR_GREEN)
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD)
-        } else if tab == EditorTab::Secrets {
-            Style::default()
-                .fg(Color::Rgb(90, 90, 90))
-                .add_modifier(Modifier::ITALIC)
         } else {
             Style::default().fg(PHOSPHOR_DIM)
         };
@@ -211,77 +296,41 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
 
     let FieldFocus::Row(cursor) = state.active_field;
 
-    let is_edit = matches!(&state.mode, EditorMode::Edit { .. });
-
-    let name_dirty = match &state.mode {
-        EditorMode::Edit { name } => state.pending_name.as_deref().is_some_and(|n| n != name),
-        EditorMode::Create => false,
-    };
     let name_value = match &state.mode {
         EditorMode::Edit { name } => state.pending_name.as_deref().unwrap_or(name.as_str()),
         EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
     };
 
-    // In Create mode the row numbering is:
-    //   0 = name (editable — Enter opens rename TextInput, pre-filled from prelude)
-    //   1 = workdir
-    // In Edit mode:
-    //   0 = name (editable), 1 = workdir, 2 = default agent (ro), 3 = last used (ro)
+    // Both Edit and Create modes show the same two rows:
+    //   0 = Name        (editable; Enter opens rename TextInput)
+    //   1 = Working dir (editable; Enter opens workdir picker)
+    //
+    // The former `Default agent` (ro) and `Last used` (ro) rows have been
+    // removed from the General tab. `Default agent` is now editable on the
+    // Agents tab (see `*` keybinding); `Last used` was informational
+    // clutter and has no place here. The underlying schema fields
+    // (`default_agent`, `last_agent`) still live on `WorkspaceConfig` —
+    // we just don't surface them on the General tab anymore.
+    //
+    // Per-row dirty markers were removed for consistency with the other
+    // tabs; the footer's `S save workspace (N changes)` is the canonical
+    // unsaved-state indicator.
     let mut rows: Vec<Line> = Vec::new();
 
-    if is_edit {
-        // Edit mode: name is an editable row at index 0.
-        rows.push(render_editor_row(0, cursor, "Name", name_value, name_dirty));
-        let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
-        rows.push(render_editor_row(
-            1,
-            cursor,
-            "Working dir",
-            &workdir_display,
-            state.pending.workdir != state.original.workdir,
-        ));
-        // Default agent — read-only here; set via Agents tab.
-        rows.push(render_editor_readonly_row(
-            2,
-            cursor,
-            "Default agent",
-            state.pending.default_agent.as_deref().unwrap_or("(none)"),
-        ));
-        // Last used — read-only.
-        rows.push(render_editor_readonly_row(
-            3,
-            cursor,
-            "Last used",
-            state.original.last_agent.as_deref().unwrap_or("(none)"),
-        ));
-    } else {
-        // Create mode: name is editable (Enter opens the rename TextInput)
-        // but we don't show an `● unsaved` marker because there's no
-        // "original" workspace to diff against — the save_count already
-        // tracks field-level changes.
-        rows.push(render_editor_row(0, cursor, "Name", name_value, false));
-        let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
-        rows.push(render_editor_row(
-            1,
-            cursor,
-            "Working dir",
-            &workdir_display,
-            false,
-        ));
-        // Hide "Default agent" and "Last used" in Create mode — they have no meaning yet.
-    }
+    rows.push(render_editor_row(0, cursor, "Name", name_value));
+    let workdir_display = crate::tui::shorten_home(&state.pending.workdir);
+    rows.push(render_editor_row(
+        1,
+        cursor,
+        "Working dir",
+        &workdir_display,
+    ));
 
     frame.render_widget(Paragraph::new(rows).block(block), area);
 }
 
 /// Render a field row with cursor highlight when `row == cursor`.
-fn render_editor_row(
-    row: usize,
-    cursor: usize,
-    label: &str,
-    value: &str,
-    dirty: bool,
-) -> Line<'static> {
+fn render_editor_row(row: usize, cursor: usize, label: &str, value: &str) -> Line<'static> {
     let selected = row == cursor;
     let prefix = if selected { "▸ " } else { "  " };
     // Labels stay white regardless of focus — focus is signalled by the
@@ -300,41 +349,7 @@ fn render_editor_row(
         Style::default().fg(PHOSPHOR_GREEN)
     };
     spans.push(Span::styled(value.to_string(), value_style));
-    if dirty {
-        spans.push(Span::styled(
-            "    ● unsaved",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
-    }
     Line::from(spans)
-}
-
-fn render_editor_readonly_row(
-    row: usize,
-    cursor: usize,
-    label: &str,
-    value: &str,
-) -> Line<'static> {
-    let selected = row == cursor;
-    let prefix = if selected { "▸ " } else { "  " };
-    // Read-only rows: label stays white (bold when focused) like editable
-    // rows; value + `(read-only)` suffix render in dim phosphor so the
-    // operator can visually skim editable vs fixed fields.
-    let label_style = if selected {
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(WHITE)
-    };
-    Line::from(vec![
-        Span::styled(format!("{prefix}{label:15}"), label_style),
-        Span::styled(value.to_string(), Style::default().fg(PHOSPHOR_DIM)),
-        Span::styled(
-            " (read-only)",
-            Style::default()
-                .fg(PHOSPHOR_DIM)
-                .add_modifier(Modifier::ITALIC),
-        ),
-    ])
 }
 
 fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
@@ -464,20 +479,259 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-fn render_secrets_stub(frame: &mut Frame, area: Rect) {
+/// Flat row model for the Secrets tab; cursor is a single index.
+#[derive(Debug, Clone)]
+pub(in crate::console::manager) enum SecretsRow {
+    WorkspaceKeyRow(String),
+    WorkspaceAddSentinel,
+    AgentHeader {
+        agent: String,
+        expanded: bool,
+    },
+    AgentKeyRow {
+        agent: String,
+        key: String,
+    },
+    AgentAddSentinel(String),
+    /// Non-focusable; cursor `↑`/`↓` skip over it.
+    SectionSpacer,
+}
+
+pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -> Vec<SecretsRow> {
+    let mut rows = Vec::new();
+    for key in editor.pending.env.keys() {
+        rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
+    }
+    rows.push(SecretsRow::WorkspaceAddSentinel);
+    for agent in editor.pending.agents.keys() {
+        rows.push(SecretsRow::SectionSpacer);
+        let expanded = editor.secrets_expanded.contains(agent);
+        rows.push(SecretsRow::AgentHeader {
+            agent: agent.clone(),
+            expanded,
+        });
+        if expanded {
+            if let Some(ov) = editor.pending.agents.get(agent) {
+                for key in ov.env.keys() {
+                    rows.push(SecretsRow::AgentKeyRow {
+                        agent: agent.clone(),
+                        key: key.clone(),
+                    });
+                }
+            }
+            rows.push(SecretsRow::AgentAddSentinel(agent.clone()));
+        }
+    }
+    rows
+}
+
+/// Mirrors launch-time semantics from
+/// [`crate::app::context::eligible_agents_for_workspace`]. Agents
+/// already carrying an override are NOT filtered — operators may add
+/// more keys to an existing override.
+pub(in crate::console::manager) fn eligible_agents_for_override(
+    editor: &EditorState<'_>,
+    config: &AppConfig,
+) -> Vec<String> {
+    if editor.pending.allowed_agents.is_empty() {
+        config.agents.keys().cloned().collect()
+    } else {
+        editor.pending.allowed_agents.clone()
+    }
+}
+
+// Linear match per row kind reads better than scattered helpers.
+#[allow(clippy::too_many_lines)]
+fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
-    let body = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "  Secrets management lands in PR 3 of this series.",
-            Style::default()
-                .fg(PHOSPHOR_DIM)
-                .add_modifier(Modifier::ITALIC),
-        )),
+    let FieldFocus::Row(cursor) = state.active_field;
+
+    let rows = secrets_flat_rows(state);
+    let mut lines: Vec<Line> = Vec::with_capacity(rows.len());
+
+    // Match General tab's label column for visual rhythm parity.
+    let label_width: usize = 22;
+
+    for (i, row) in rows.iter().enumerate() {
+        let selected = i == cursor;
+        // 7-char prefix: 2-char cursor col + 5-char op-marker col.
+        // The marker col is blank on non-op rows so [op] keys line up.
+        let cursor_col = if selected { "▸ " } else { "  " };
+        match row {
+            SecretsRow::WorkspaceKeyRow(key) => {
+                let value = state.pending.env.get(key).cloned().unwrap_or_default();
+                let masked = !state
+                    .unmasked_rows
+                    .contains(&(SecretsScopeTag::Workspace, key.clone()));
+                lines.push(render_secrets_key_line(
+                    selected,
+                    cursor_col,
+                    key,
+                    &value,
+                    masked,
+                    area.width,
+                    label_width,
+                ));
+            }
+            SecretsRow::WorkspaceAddSentinel => {
+                let style = if selected {
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(WHITE)
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("{cursor_col}     + Add environment variable"),
+                    style,
+                )));
+            }
+            SecretsRow::AgentHeader { agent, expanded } => {
+                let arrow = if *expanded { "▼" } else { "▶" };
+                let in_registry = config.agents.contains_key(agent);
+                let count = state.pending.agents.get(agent).map_or(0, |o| o.env.len());
+                let mut spans = vec![Span::styled(
+                    format!("{cursor_col}     {arrow} Agent: {agent}  ({count} vars)"),
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                )];
+                if !in_registry {
+                    spans.push(Span::styled(
+                        "  (not in registry)",
+                        Style::default()
+                            .fg(PHOSPHOR_DIM)
+                            .add_modifier(Modifier::ITALIC),
+                    ));
+                }
+                lines.push(Line::from(spans));
+            }
+            SecretsRow::AgentKeyRow { agent, key } => {
+                let empty = std::collections::BTreeMap::<String, String>::new();
+                let pend_env = state.pending.agents.get(agent).map_or(&empty, |o| &o.env);
+                let value = pend_env.get(key).cloned().unwrap_or_default();
+                let masked = !state
+                    .unmasked_rows
+                    .contains(&(SecretsScopeTag::Agent(agent.clone()), key.clone()));
+                lines.push(render_secrets_key_line(
+                    selected,
+                    cursor_col,
+                    key,
+                    &value,
+                    masked,
+                    area.width,
+                    label_width,
+                ));
+            }
+            SecretsRow::AgentAddSentinel(agent) => {
+                let style = if selected {
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(WHITE)
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("{cursor_col}     + Add {agent} environment variable"),
+                    style,
+                )));
+            }
+            SecretsRow::SectionSpacer => {
+                lines.push(Line::from(""));
+            }
+        }
+    }
+
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+/// `op://` rows skip masking and render as a breadcrumb (3-segment:
+/// `vault / item → field`, 4-segment adds `section`). Account scope
+/// isn't part of the `op://` path — see the picker docstring.
+fn render_secrets_key_line(
+    selected: bool,
+    cursor_col: &str,
+    key: &str,
+    value: &str,
+    masked: bool,
+    area_width: u16,
+    label_width: usize,
+) -> Line<'static> {
+    const OP_MARKER: &str = "[op] ";
+    const NO_MARKER: &str = "     ";
+    const MASK: &str = "●●●●●●●●●●●";
+
+    let label_style = if selected {
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(WHITE)
+    };
+    let dim = Style::default().fg(PHOSPHOR_DIM);
+
+    // parse_op_reference doubles as the is-op check: Some → op://,
+    // None → plain. One scan instead of two.
+    let op_parts = parse_op_reference(value);
+    let marker = if op_parts.is_some() {
+        OP_MARKER
+    } else {
+        NO_MARKER
+    };
+    let mut spans = vec![
+        Span::raw(cursor_col.to_string()),
+        Span::styled(marker.to_string(), dim),
+        Span::styled(format!("{key:label_width$}"), label_style),
     ];
-    frame.render_widget(Paragraph::new(body).block(block), area);
+
+    // Op:// references render as a breadcrumb regardless of `masked` —
+    // the path is not the credential, so masking it makes the row a
+    // less informative version of itself.
+    if let Some(parts) = op_parts {
+        let white_style = Style::default().fg(WHITE);
+        let green = Style::default().fg(PHOSPHOR_GREEN);
+        let green_bold = Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD);
+        spans.push(Span::styled(parts.vault, white_style));
+        spans.push(Span::styled(" / ", dim));
+        spans.push(Span::styled(parts.item, green));
+        if let Some(section) = parts.section.as_ref() {
+            // 4-segment reference: the field lives inside a named
+            // section of the item. Render the section between the
+            // item and the field.
+            spans.push(Span::styled(" / ", dim));
+            spans.push(Span::styled(section.clone(), green));
+        }
+        spans.push(Span::styled(" \u{2192} ", dim));
+        spans.push(Span::styled(parts.field, green_bold));
+        return Line::from(spans);
+    }
+
+    let value_style = if masked {
+        Style::default().fg(PHOSPHOR_DIM)
+    } else if selected {
+        Style::default()
+            .fg(PHOSPHOR_GREEN)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(PHOSPHOR_GREEN)
+    };
+
+    let rendered_value: String = if masked {
+        MASK.to_string()
+    } else {
+        // Truncate with `…` when the value exceeds the remaining width.
+        // Gap budget: prefix(2) + label_width + some breathing room + dirty
+        // marker. Approximate with `area_width - label_width - 8`.
+        let budget = (area_width as usize)
+            .saturating_sub(label_width)
+            .saturating_sub(8)
+            .max(1);
+        if value.chars().count() > budget {
+            let mut s: String = value.chars().take(budget.saturating_sub(1)).collect();
+            s.push('…');
+            s
+        } else {
+            value.to_string()
+        }
+    };
+    spans.push(Span::styled(rendered_value, value_style));
+    Line::from(spans)
 }
 
 #[cfg(test)]
@@ -521,17 +775,12 @@ mod contextual_row_items_tests {
     /// pointing at `src`. The cursor is on row 0 (the mount we just added).
     fn editor_at_mounts_row0(src: &str) -> EditorState<'static> {
         let ws = WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![MountConfig {
                 src: src.to_string(),
                 dst: src.to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Mounts;
@@ -556,7 +805,7 @@ mod contextual_row_items_tests {
         .unwrap();
 
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor);
+        let hint = contextual_row_items(&editor, true);
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
@@ -577,7 +826,7 @@ mod contextual_row_items_tests {
         // Plain folder (no .git) — no GitHub URL, so `O` must not appear.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor);
+        let hint = contextual_row_items(&editor, true);
         let keys = key_glyphs(&hint);
         assert!(
             !keys.contains(&"O"),
@@ -595,7 +844,7 @@ mod contextual_row_items_tests {
         // hint composes alongside D/A even without the O extension.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor);
+        let hint = contextual_row_items(&editor, true);
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
@@ -615,7 +864,7 @@ mod contextual_row_items_tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         editor.active_field = FieldFocus::Row(editor.pending.mounts.len());
-        let hint = contextual_row_items(&editor);
+        let hint = contextual_row_items(&editor, true);
         let keys = key_glyphs(&hint);
         assert!(
             !keys.contains(&"R"),
@@ -634,19 +883,19 @@ mod contextual_row_items_tests {
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
 
         // Mounts data-row hint.
-        let mounts_row = contextual_row_items(&editor);
+        let mounts_row = contextual_row_items(&editor, true);
         assert_hint_hotkeys_uppercase(&mounts_row, "Mounts row 0");
 
         // Mounts sentinel "+ Add mount" row.
         let mut sentinel_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         sentinel_editor.active_field = FieldFocus::Row(sentinel_editor.pending.mounts.len());
-        let sentinel_row = contextual_row_items(&sentinel_editor);
+        let sentinel_row = contextual_row_items(&sentinel_editor, true);
         assert_hint_hotkeys_uppercase(&sentinel_row, "Mounts sentinel");
 
         // Agents tab uses Space + `*` — both multi-char / non-alpha.
         let mut agents_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         agents_editor.active_tab = EditorTab::Agents;
-        let agents_row = contextual_row_items(&agents_editor);
+        let agents_row = contextual_row_items(&agents_editor, true);
         assert_hint_hotkeys_uppercase(&agents_row, "Agents");
     }
 
@@ -673,10 +922,8 @@ mod contextual_row_items_tests {
 
 #[cfg(test)]
 mod agents_tab_render_tests {
-    //! Pins the `[x]` / `[ ]` glyph on each agent row to the
-    //! *effectively allowed* state, not literal `allowed_agents` list
-    //! membership. An empty list is the shorthand for "all allowed",
-    //! and every row must render `[x]` in that mode.
+    //! Pins `[x]`/`[ ]` to the *effectively allowed* state — empty
+    //! `allowed_agents` is the "all allowed" shorthand.
     use super::render_agents_tab;
     use crate::config::{AgentSource, AppConfig};
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
@@ -687,13 +934,8 @@ mod agents_tab_render_tests {
 
     fn ws_with_allowed(names: &[&str]) -> WorkspaceConfig {
         WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
             allowed_agents: names.iter().map(|s| (*s).into()).collect(),
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         }
     }
 
@@ -752,6 +994,35 @@ mod agents_tab_render_tests {
         }
     }
 
+    /// The default-agent row carries the `★` marker; non-default rows
+    /// render a plain space in the marker column. Pins the glyph that
+    /// the `*` keybinding produces in the rendered list.
+    #[test]
+    fn default_agent_row_carries_star_marker() {
+        let cfg = config_with_agents(&["alpha", "beta", "gamma"]);
+        let mut ws = ws_with_allowed(&[]);
+        ws.default_agent = Some("beta".into());
+        let dump = render_to_dump(ws, &cfg);
+
+        let beta_line = dump
+            .lines()
+            .find(|l| l.contains("beta"))
+            .expect("beta must render");
+        assert!(
+            beta_line.contains('\u{2605}'),
+            "default agent row must carry the `★` marker; got `{beta_line}`"
+        );
+
+        let alpha_line = dump
+            .lines()
+            .find(|l| l.contains("alpha"))
+            .expect("alpha must render");
+        assert!(
+            !alpha_line.contains('\u{2605}'),
+            "non-default rows must not carry `★`; got `{alpha_line}`"
+        );
+    }
+
     #[test]
     fn in_custom_mode_only_listed_agents_show_checked() {
         // Non-empty list ⇒ "custom" mode ⇒ only listed rows are `[x]`.
@@ -778,5 +1049,618 @@ mod agents_tab_render_tests {
                 "unlisted agent `{name}` must render `[ ]` in 'custom' mode; got `{line}`"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod secrets_tab_render_tests {
+    //! Render-buffer tests for the Secrets tab. Verifies the masking
+    //! default, the unmasked literal-value path, and that the flat-row
+    //! builder honours `secrets_expanded` for per-agent override sections.
+    use super::render_secrets_tab;
+    use crate::config::AppConfig;
+    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus, SecretsScopeTag};
+    use crate::workspace::{WorkspaceAgentOverride, WorkspaceConfig};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+
+    /// Build an editor sitting on the Secrets tab with a single
+    /// workspace-level env key (`DB_URL = postgres://localhost/db`).
+    fn editor_with_workspace_env() -> EditorState<'static> {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "postgres://localhost/db".into());
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        editor
+    }
+
+    /// Build an editor sitting on the Secrets tab with one agent override
+    /// carrying a single env key (`agent-smith`: `LOG_LEVEL = debug`).
+    fn editor_with_agent_override() -> EditorState<'static> {
+        let mut agent_env = std::collections::BTreeMap::new();
+        agent_env.insert("LOG_LEVEL".into(), "debug".into());
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert(
+            "agent-smith".into(),
+            WorkspaceAgentOverride { env: agent_env },
+        );
+        let ws = WorkspaceConfig {
+            agents,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        editor
+    }
+
+    /// Render the Secrets tab to a 80x15 `TestBackend`, return the raw
+    /// buffer as newline-delimited rows so tests can search for glyphs.
+    fn render_to_dump(editor: &EditorState<'_>) -> String {
+        let config = AppConfig::default();
+        let backend = TestBackend::new(80, 15);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_secrets_tab(f, Rect::new(0, 0, 80, 15), editor, &config);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn secrets_tab_defaults_to_masked() {
+        // `new_edit` leaves `unmasked_rows` empty, so every plain-text
+        // value renders masked by default.
+        let editor = editor_with_workspace_env();
+        assert!(
+            editor.unmasked_rows.is_empty(),
+            "new_edit must leave unmasked_rows empty (default = all masked)"
+        );
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("●●●●●●●●●●●"),
+            "masked-default render must show the mask glyph; got:\n{dump}"
+        );
+        assert!(
+            !dump.contains("postgres://localhost/db"),
+            "masked-default render must hide the literal value; got:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn secrets_tab_unmasked_shows_literal_value() {
+        let mut editor = editor_with_workspace_env();
+        editor
+            .unmasked_rows
+            .insert((SecretsScopeTag::Workspace, "DB_URL".into()));
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("postgres://localhost/db"),
+            "unmasked render must show literal value; got:\n{dump}"
+        );
+        assert!(
+            !dump.contains("●●●●●●●●●●●"),
+            "unmasked render must not show the mask glyph; got:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn secrets_tab_collapsed_agent_omits_key_rows() {
+        // `secrets_expanded` is empty by default (set by `new_edit`), so
+        // the agent section header renders but its `LOG_LEVEL` key row
+        // does not.
+        let editor = editor_with_agent_override();
+        assert!(editor.secrets_expanded.is_empty());
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("agent-smith"),
+            "agent header must render; got:\n{dump}"
+        );
+        assert!(
+            !dump.contains("LOG_LEVEL"),
+            "collapsed agent section must omit key rows; got:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn secrets_tab_expanded_agent_shows_key_rows() {
+        let mut editor = editor_with_agent_override();
+        editor.secrets_expanded.insert("agent-smith".into());
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("agent-smith"),
+            "agent header must still render when expanded; got:\n{dump}"
+        );
+        assert!(
+            dump.contains("LOG_LEVEL"),
+            "expanded agent section must show its key rows; got:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn secrets_tab_cursor_skips_workspace_header_label() {
+        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        let rows = super::secrets_flat_rows(&editor);
+        assert!(
+            !rows.is_empty(),
+            "secrets_flat_rows must always include at least the WorkspaceAddSentinel"
+        );
+        assert!(
+            matches!(rows.first(), Some(super::SecretsRow::WorkspaceAddSentinel)),
+            "row 0 must be the focusable `+ Add` sentinel, not a header; got {:?}",
+            rows.first()
+        );
+        assert!(
+            matches!(editor.active_field, FieldFocus::Row(0)),
+            "editor must open on row 0 = sentinel"
+        );
+    }
+
+    /// Pins the exact flat-row sequence for a workspace with env vars,
+    /// one expanded agent (with keys), and one collapsed agent. Cursor
+    /// arithmetic in `input/editor.rs` is derived directly from this
+    /// sequence, so a wrong order causes silent wrong-row selections.
+    #[test]
+    fn secrets_flat_rows_sequence_is_canonical() {
+        use crate::workspace::WorkspaceAgentOverride;
+
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("ALPHA".into(), "1".into());
+        env.insert("BETA".into(), "2".into());
+
+        let mut agent_env = std::collections::BTreeMap::new();
+        agent_env.insert("KEY".into(), "v".into());
+
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert("agent-a".into(), WorkspaceAgentOverride { env: agent_env });
+        agents.insert(
+            "agent-b".into(),
+            WorkspaceAgentOverride {
+                env: std::collections::BTreeMap::new(),
+            },
+        );
+
+        let ws = WorkspaceConfig {
+            env,
+            agents,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        // Expand agent-a, leave agent-b collapsed.
+        editor.secrets_expanded.insert("agent-a".into());
+
+        let rows = super::secrets_flat_rows(&editor);
+        // Expected sequence:
+        //  0  WorkspaceKeyRow("ALPHA")
+        //  1  WorkspaceKeyRow("BETA")
+        //  2  WorkspaceAddSentinel
+        //  3  SectionSpacer
+        //  4  AgentHeader { agent: "agent-a", expanded: true }
+        //  5  AgentKeyRow { agent: "agent-a", key: "KEY" }
+        //  6  AgentAddSentinel("agent-a")
+        //  7  SectionSpacer
+        //  8  AgentHeader { agent: "agent-b", expanded: false }
+        assert_eq!(rows.len(), 9, "unexpected row count: {:?}", rows);
+        assert!(matches!(&rows[0], super::SecretsRow::WorkspaceKeyRow(k) if k == "ALPHA"));
+        assert!(matches!(&rows[1], super::SecretsRow::WorkspaceKeyRow(k) if k == "BETA"));
+        assert!(matches!(&rows[2], super::SecretsRow::WorkspaceAddSentinel));
+        assert!(matches!(&rows[3], super::SecretsRow::SectionSpacer));
+        assert!(
+            matches!(&rows[4], super::SecretsRow::AgentHeader { agent, expanded: true } if agent == "agent-a")
+        );
+        assert!(
+            matches!(&rows[5], super::SecretsRow::AgentKeyRow { agent, key } if agent == "agent-a" && key == "KEY")
+        );
+        assert!(matches!(&rows[6], super::SecretsRow::AgentAddSentinel(a) if a == "agent-a"));
+        assert!(matches!(&rows[7], super::SecretsRow::SectionSpacer));
+        assert!(
+            matches!(&rows[8], super::SecretsRow::AgentHeader { agent, expanded: false } if agent == "agent-b")
+        );
+    }
+
+    #[test]
+    fn secrets_tab_empty_renders_only_sentinel() {
+        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        let dump = render_to_dump(&editor);
+
+        assert!(
+            dump.contains("+ Add environment variable"),
+            "the `+ Add environment variable` sentinel must render; dump:\n{dump}"
+        );
+        assert!(
+            !dump.contains("Workspace env"),
+            "the `Workspace env` preamble label must NOT render; dump:\n{dump}"
+        );
+        assert!(
+            !dump.contains("(no env vars)"),
+            "the `(no env vars)` placeholder must NOT render; dump:\n{dump}"
+        );
+        assert!(
+            !dump.contains("env var"),
+            "TUI text must say `environment variable`, not `env var`; dump:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn op_row_breadcrumb_render_three_segment() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "op://Work/db/password".into());
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("Work"),
+            "breadcrumb must render vault segment; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("db"),
+            "breadcrumb must render item segment; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("password"),
+            "breadcrumb must render field segment; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("\u{2192}"),
+            "breadcrumb must include the → glyph between item and field; dump:\n{dump}"
+        );
+        assert!(
+            !dump.contains("op://"),
+            "op:// scheme prefix must not appear in the breadcrumb; dump:\n{dump}"
+        );
+        // Mask glyph must not appear on op:// rows even though
+        // editor defaults to all-masked.
+        assert!(
+            editor.unmasked_rows.is_empty(),
+            "default state is all-masked; op:// rows must still bypass masking"
+        );
+        assert!(
+            !dump.contains("●●●"),
+            "op:// rows must never render the mask glyph; dump:\n{dump}"
+        );
+    }
+
+    /// 4-segment is `vault/item/section/field` per the 1Password CLI
+    /// syntax — not the earlier `account/vault/item/field` reading.
+    #[test]
+    fn op_row_breadcrumb_render_four_segment_with_section() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "API_KEY".into(),
+            "op://Personal/API Keys/auth/secret_key".into(),
+        );
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        // All four components must appear, in order, with the arrow
+        // glyph between the section and the field.
+        assert!(
+            dump.contains("Personal"),
+            "vault must render; dump:\n{dump}"
+        );
+        assert!(dump.contains("API Keys"), "item must render; dump:\n{dump}");
+        assert!(
+            dump.contains("auth"),
+            "section must render between item and field; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("secret_key"),
+            "field must render; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("\u{2192}"),
+            "arrow glyph must precede the field; dump:\n{dump}"
+        );
+        // The account-prefix branch is dead — no email-style rendering
+        // for 4-segment refs.
+        assert!(
+            !dump.contains('@'),
+            "4-segment refs must not render an account email prefix; dump:\n{dump}"
+        );
+    }
+
+    /// Text marker (not glyph) — `⚿` rendered inconsistently across
+    /// terminals; `[op]` reads as "1Password" at a glance.
+    #[test]
+    fn op_row_renders_with_op_text_marker() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "op://Work/db/password".into());
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("[op]"),
+            "op:// row must render the `[op]` text marker; dump:\n{dump}"
+        );
+        assert!(
+            !dump.contains("\u{26BF}"),
+            "the legacy `⚿` glyph must not appear after the marker swap; dump:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn plain_row_renders_without_op_marker() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DEBUG".into(), "1".into());
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        assert!(
+            !dump.contains("[op]"),
+            "plain-text row must not render the `[op]` marker; dump:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn op_row_marker_column_is_5_chars_wide_with_brackets() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "op://Work/db/password".into());
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        assert!(
+            dump.contains("[op] "),
+            "op:// row must render the marker as exactly `[op] ` (5 chars \
+             including trailing space); dump:\n{dump}"
+        );
+    }
+
+    #[test]
+    fn plain_row_marker_column_is_5_blank_chars_for_alignment() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DEBUG".into(), "1".into());
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        // 7-char prefix region = cursor (1..3) + marker (3..8); on
+        // a plain row, cells 3..8 are all blanks.
+        let backend = TestBackend::new(80, 15);
+        let mut term = Terminal::new(backend).unwrap();
+        let config = AppConfig::default();
+        term.draw(|f| {
+            render_secrets_tab(f, Rect::new(0, 0, 80, 15), &editor, &config);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let mut cells = String::new();
+        for x in 3..8 {
+            cells.push_str(buf[(x, 1)].symbol());
+        }
+        assert_eq!(
+            cells, "     ",
+            "plain row marker column (cells 3..8 of row 1) must be 5 \
+             blank spaces for alignment; got {cells:?}"
+        );
+    }
+
+    #[test]
+    fn secrets_tab_renders_keys_in_alphabetical_order() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("ZULU".into(), "z".into());
+        env.insert("ALPHA".into(), "a".into());
+        env.insert("MIKE".into(), "m".into());
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        let alpha = dump.find("ALPHA").expect("ALPHA must appear");
+        let mike = dump.find("MIKE").expect("MIKE must appear");
+        let zulu = dump.find("ZULU").expect("ZULU must appear");
+        assert!(
+            alpha < mike && mike < zulu,
+            "keys must render alphabetically (ALPHA < MIKE < ZULU); offsets {alpha}/{mike}/{zulu}\n{dump}"
+        );
+    }
+
+    #[test]
+    fn section_spacer_appears_between_workspace_and_first_agent_section() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "postgres://localhost/db".into());
+        let mut agent_env = std::collections::BTreeMap::new();
+        agent_env.insert("LOG_LEVEL".into(), "debug".into());
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert(
+            "agent-smith".into(),
+            WorkspaceAgentOverride { env: agent_env },
+        );
+        let ws = WorkspaceConfig {
+            env,
+            agents,
+            ..WorkspaceConfig::default()
+        };
+        let editor = EditorState::new_edit("ws".into(), ws);
+        let rows = super::secrets_flat_rows(&editor);
+        assert!(
+            matches!(rows.get(2), Some(super::SecretsRow::SectionSpacer)),
+            "row 2 must be a SectionSpacer between workspace section \
+             and first agent header; got {:?}",
+            rows.get(2)
+        );
+        assert!(
+            matches!(rows.get(3), Some(super::SecretsRow::AgentHeader { .. })),
+            "row 3 must be the agent header right after the spacer; \
+             got {:?}",
+            rows.get(3)
+        );
+    }
+
+    #[test]
+    fn section_spacer_appears_between_consecutive_agent_sections() {
+        let mut a_env = std::collections::BTreeMap::new();
+        a_env.insert("LEVEL_A".into(), "1".into());
+        let mut b_env = std::collections::BTreeMap::new();
+        b_env.insert("LEVEL_B".into(), "2".into());
+        let mut agents = std::collections::BTreeMap::new();
+        agents.insert(
+            "agent-architect".into(),
+            WorkspaceAgentOverride { env: a_env },
+        );
+        agents.insert("agent-smith".into(), WorkspaceAgentOverride { env: b_env });
+        let ws = WorkspaceConfig {
+            agents,
+            ..WorkspaceConfig::default()
+        };
+        let editor = EditorState::new_edit("ws".into(), ws);
+        let rows = super::secrets_flat_rows(&editor);
+        assert!(
+            matches!(rows.get(1), Some(super::SecretsRow::SectionSpacer)),
+            "spacer expected before the first agent header; rows={rows:?}"
+        );
+        assert!(
+            matches!(rows.get(3), Some(super::SecretsRow::SectionSpacer)),
+            "spacer expected between consecutive agent sections; rows={rows:?}"
+        );
+        assert!(
+            !matches!(rows.last(), Some(super::SecretsRow::SectionSpacer)),
+            "no trailing spacer after the final section; rows={rows:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod eligible_agents_for_override_tests {
+    //! Agents already carrying an override are NOT filtered — the
+    //! picker can add more keys to an existing override.
+    use super::eligible_agents_for_override;
+    use crate::config::{AgentSource, AppConfig};
+    use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
+    use crate::workspace::{WorkspaceAgentOverride, WorkspaceConfig};
+
+    fn config_with_agents(names: &[&str]) -> AppConfig {
+        let mut config = AppConfig::default();
+        for name in names {
+            config.agents.insert((*name).into(), AgentSource::default());
+        }
+        config
+    }
+
+    fn ws_with_overrides(allowed: &[&str], override_agents: &[&str]) -> WorkspaceConfig {
+        let mut agents = std::collections::BTreeMap::new();
+        for a in override_agents {
+            let mut env = std::collections::BTreeMap::new();
+            env.insert("LOG_LEVEL".into(), "debug".into());
+            agents.insert((*a).into(), WorkspaceAgentOverride { env });
+        }
+        WorkspaceConfig {
+            allowed_agents: allowed.iter().map(|s| (*s).into()).collect(),
+            agents,
+            ..WorkspaceConfig::default()
+        }
+    }
+
+    fn editor_for(ws: WorkspaceConfig) -> EditorState<'static> {
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        editor
+    }
+
+    #[test]
+    fn eligible_agents_returns_allowed_when_list_non_empty() {
+        // Non-empty `allowed_agents` is taken at face value — the
+        // result matches the workspace's allowed list verbatim.
+        let cfg = config_with_agents(&["agent-smith", "agent-brown", "agent-architect"]);
+        let editor = editor_for(ws_with_overrides(&["agent-smith"], &[]));
+        let eligible = eligible_agents_for_override(&editor, &cfg);
+        assert_eq!(eligible, vec!["agent-smith".to_string()]);
+    }
+
+    #[test]
+    fn eligible_agents_returns_all_registered_when_allowed_empty() {
+        // Empty `allowed_agents` is the "all agents allowed" shorthand —
+        // every globally-registered agent is eligible.
+        let cfg = config_with_agents(&["agent-smith", "agent-brown"]);
+        let editor = editor_for(ws_with_overrides(&[], &[]));
+        let mut eligible = eligible_agents_for_override(&editor, &cfg);
+        eligible.sort();
+        assert_eq!(
+            eligible,
+            vec!["agent-brown".to_string(), "agent-smith".to_string()]
+        );
+    }
+
+    #[test]
+    fn eligible_agents_does_not_filter_by_existing_overrides() {
+        // Operators may want to add additional keys to an agent that
+        // already carries some — the picker must therefore include
+        // every allowed agent regardless of whether `pending.agents`
+        // already lists them.
+        let cfg = config_with_agents(&["agent-smith", "agent-brown"]);
+        let editor = editor_for(ws_with_overrides(
+            &["agent-smith", "agent-brown"],
+            &["agent-smith"],
+        ));
+        let mut eligible = eligible_agents_for_override(&editor, &cfg);
+        eligible.sort();
+        assert_eq!(
+            eligible,
+            vec!["agent-brown".to_string(), "agent-smith".to_string()],
+            "agent-smith already has overrides but must still appear so the operator can add another key to it"
+        );
+    }
+
+    #[test]
+    fn eligible_agents_returns_empty_when_no_allowed_and_no_registered() {
+        // Empty `allowed_agents` shorthand AND no registered agents:
+        // the picker would be empty, so the caller is expected to
+        // short-circuit and not open the modal.
+        let cfg = config_with_agents(&[]);
+        let editor = editor_for(ws_with_overrides(&[], &[]));
+        let eligible = eligible_agents_for_override(&editor, &cfg);
+        assert!(eligible.is_empty());
     }
 }

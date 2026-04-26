@@ -45,21 +45,17 @@ impl ConfigEditor {
         })
     }
 
-    /// Writes the mutated document atomically. Returns a freshly-deserialized
-    /// `AppConfig` parsed directly from the written content so callers that
-    /// still need the in-memory shape get it without a second manual
-    /// `load_or_init`.
+    /// Atomic write + return a fresh `AppConfig` parsed from the
+    /// written content.
     ///
-    /// Note: this deliberately bypasses `AppConfig::load_or_init`'s
-    /// builtin-agent sync to avoid clobbering the just-written document with
-    /// a serde round-trip. Because it uses `toml::from_str` directly, it
-    /// also skips `load_or_init`'s `validate_workspaces` and
-    /// `validate_reserved_names` checks. The invariant this relies on is
-    /// that validation runs once at load time (via `ConfigEditor::open` →
-    /// `AppConfig::load_or_init` for first-run / `AppConfig::edit_workspace`
-    /// for structural workspace edits) and that the editor's typed setters
-    /// preserve validity — they write keys/values into known scopes and
-    /// cannot construct a workspace or reserved-name violation on their own.
+    /// Validates the candidate before renaming over the real config —
+    /// otherwise a setter that produced an unloadable shape (e.g.
+    /// stub agent missing `git`) would brick every subsequent CLI
+    /// command until the operator hand-edits TOML to recover.
+    ///
+    /// Skips `load_or_init`'s builtin-agent sync — the invariant is
+    /// that `load_or_init` ran once at `open` time, so builtins are
+    /// already in place.
     pub fn save(self) -> anyhow::Result<AppConfig> {
         let contents = self.doc.to_string();
         let tmp = self.path.with_extension("tmp");
@@ -81,10 +77,21 @@ impl ConfigEditor {
         #[cfg(not(unix))]
         std::fs::write(&tmp, &contents)?;
 
-        std::fs::rename(&tmp, &self.path)?;
+        // Validate before rename so an invalid mutation can't brick
+        // subsequent CLI commands.
+        let config: AppConfig = match validate_candidate(&contents) {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                // Best-effort cleanup so the real error reaches caller.
+                let _ = std::fs::remove_file(&tmp);
+                return Err(err.context(format!(
+                    "rejecting candidate config (would have written to {})",
+                    self.path.display()
+                )));
+            }
+        };
 
-        let config: AppConfig = toml::from_str(&contents)
-            .with_context(|| format!("deserializing {}", self.path.display()))?;
+        std::fs::rename(&tmp, &self.path)?;
         Ok(config)
     }
 
@@ -487,6 +494,17 @@ fn env_scope_path(scope: &EnvScope) -> Vec<String> {
             "env".to_string(),
         ],
     }
+}
+
+/// Subset of `load_or_init` validations the editor's typed setters
+/// could plausibly violate: serde-required fields (catches stub
+/// agent missing `git`) and `validate_reserved_names`. Skips
+/// `validate_workspaces` — only `create_workspace`/`edit_workspace`
+/// mutate that geometry and they already validate.
+fn validate_candidate(contents: &str) -> anyhow::Result<AppConfig> {
+    let config: AppConfig = toml::from_str(contents).context("deserializing candidate config")?;
+    crate::operator_env::validate_reserved_names(&config)?;
+    Ok(config)
 }
 
 fn table_path_mut<'a>(doc: &'a mut DocumentMut, path: &[String]) -> &'a mut Table {
@@ -941,6 +959,77 @@ API_TOKEN = "op://Personal/api/token"
         assert!(!tmp.exists(), "expected .tmp to be renamed away");
     }
 
+    /// `save()` must reject before rename so an invalid mutation
+    /// can't brick subsequent CLI commands.
+    #[test]
+    fn save_rejects_invalid_candidate_and_preserves_on_disk_config() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        std::fs::write(&paths.config_file, "[env]\nVALID_KEY = \"valid-value\"\n").unwrap();
+        AppConfig::load_or_init(&paths).unwrap();
+        let baseline = std::fs::read_to_string(&paths.config_file).unwrap();
+
+        // Inject `[agents.ghost.env]` without the required
+        // `[agents.ghost].git` — fails serde parsing.
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let agents_table = table_path_mut(
+            &mut editor.doc,
+            &["agents".to_string(), "ghost".to_string(), "env".to_string()],
+        );
+        agents_table.insert("LOG_LEVEL", toml_edit::value("debug"));
+
+        let err = editor.save().unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("rejecting candidate config"),
+            "expected rejection message; got: {msg}"
+        );
+
+        let after = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert_eq!(
+            after, baseline,
+            "rejected save must leave the on-disk config byte-identical"
+        );
+
+        // No leftover .tmp file.
+        let tmp = paths.config_file.with_extension("tmp");
+        assert!(
+            !tmp.exists(),
+            "rejected save must clean up its temp file at {}",
+            tmp.display()
+        );
+    }
+
+    #[test]
+    fn save_rejects_reserved_name_candidate_and_preserves_on_disk_config() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        std::fs::write(&paths.config_file, "[env]\nVALID_KEY = \"v\"\n").unwrap();
+        AppConfig::load_or_init(&paths).unwrap();
+        let baseline = std::fs::read_to_string(&paths.config_file).unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        // Bypass the CLI pre-flight via the unchecked setter.
+        editor.set_env_var(&EnvScope::Global, "DOCKER_HOST", "tcp://bad");
+
+        let err = editor.save().unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("DOCKER_HOST") && msg.contains("reserved"),
+            "expected reserved-name rejection; got: {msg}"
+        );
+
+        let after = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert_eq!(
+            after, baseline,
+            "rejected save must not touch on-disk config"
+        );
+    }
+
     // ---- mount tests ----
 
     #[test]
@@ -1241,11 +1330,7 @@ auth_forward = "token"
                 dst: "/workspace/new".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
@@ -1276,11 +1361,7 @@ auth_forward = "token"
                 dst: "/workspace/unrelated".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
 
         let mut editor = ConfigEditor::open(&paths).unwrap();

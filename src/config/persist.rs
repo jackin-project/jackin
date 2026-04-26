@@ -21,6 +21,15 @@ impl AppConfig {
             None => Self::default(),
         };
 
+        // Run the reserved-name validation against the on-disk shape
+        // BEFORE the builtin-sync editor save below. `ConfigEditor::save`
+        // also runs this check as a safety net, but doing it here first
+        // means the operator gets the canonical
+        // `validate_reserved_names` error directly — without the
+        // "rejecting candidate config" wrapper that save() adds when it
+        // rolls back a write.
+        crate::operator_env::validate_reserved_names(&config)?;
+
         let builtins_changed = config.sync_builtin_agents();
 
         if deprecated_copy_seen {

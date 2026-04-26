@@ -2,27 +2,17 @@
 //! `ConfirmSave` preview modal, and `ConfigEditor`-driven writes.
 
 use super::super::state::{
-    EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, Toast, ToastKind,
+    EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
+    Toast, ToastKind,
 };
 use crate::config::AppConfig;
+use crate::config::editor::EnvScope;
 use crate::paths::JackinPaths;
 
-/// Phase 1 of the save flow: run pre-save validation, compute the
-/// plan, and open a `Modal::ConfirmSave` summarising the change set.
-///
-/// Validation failures (missing name, planner reject, pre-existing-only
-/// collapse) surface via `EditorSaveFlow::Error { message }` and render
-/// as an inline banner — NOT as an `ErrorPopup`. The popup is reserved
-/// for commit-time errors (phase 2). See `EditorSaveFlow` for the full
-/// state machine.
-///
-/// `exit_on_success` is remembered on the `Confirming` variant so that
-/// the commit phase can decide whether to bounce to the workspace list
-/// after a successful write.
-///
-/// On success, the function stashes the planner's `effective_removals`
-/// / `final_mounts` on the modal state so the commit path doesn't need
-/// to re-run `plan_edit`/`plan_create`.
+/// Phase 1: validate, plan, open `ConfirmSave`. Validation failures
+/// route to `EditorSaveFlow::Error` as an inline banner (popup is
+/// reserved for phase-2 commit errors). The plan is stashed on the
+/// modal so commit doesn't re-run `plan_edit`/`plan_create`.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 pub(super) fn begin_editor_save(
     state: &mut ManagerState<'_>,
@@ -32,11 +22,10 @@ pub(super) fn begin_editor_save(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
     };
-    // A stale banner from a previous cycle should clear now that the
-    // operator has kicked off a fresh save attempt.
+    // Clear any stale banner from a prior attempt.
     editor.save_flow = EditorSaveFlow::Idle;
 
-    // Classify once so mutating arms below don't keep editor.mode borrowed.
+    // Classify first so mutating arms don't keep editor.mode borrowed.
     #[allow(clippy::items_after_statements)]
     enum SaveMode {
         Edit { original_name: String },
@@ -127,9 +116,6 @@ pub(super) fn begin_editor_save(
         }
     };
 
-    // Build the display lines describing the plan. These pre-computed
-    // lines are what the ConfirmSave widget renders; the widget itself
-    // stays dumb.
     let lines = build_confirm_save_lines(editor, config, &collapse_lines);
     let mut confirm_state = crate::console::widgets::confirm_save::ConfirmSaveState::new(lines);
     confirm_state.effective_removals = effective_removals;
@@ -142,14 +128,9 @@ pub(super) fn begin_editor_save(
     Ok(())
 }
 
-/// Phase 2 of the save flow: the operator clicked Save in the `ConfirmSave`
-/// dialog. Actually write to the on-disk config via the internal
-/// `ConfigEditor` API (NO CLI subprocess).
-///
-/// On Err, transitions the editor's `save_flow` to `Error` and surfaces
-/// the failure as an `ErrorPopup`. On Ok, refreshes the editor's
-/// origin-of-truth snapshot and — if `exit_on_success` is set —
-/// transitions the whole manager back to the list view.
+/// Phase 2: write to disk via `ConfigEditor` (no CLI subprocess). On
+/// Err → `EditorSaveFlow::Error` + `ErrorPopup`. On Ok → refresh
+/// editor snapshot, optionally bounce to list.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 pub(super) fn commit_editor_save(
     state: &mut ManagerState<'_>,
@@ -163,8 +144,7 @@ pub(super) fn commit_editor_save(
         return Ok(());
     };
 
-    // Reuse the classify-first pattern from begin_editor_save so the
-    // mutating write arms don't keep editor.mode borrowed.
+    // Same classify-first pattern as begin_editor_save.
     #[allow(clippy::items_after_statements)]
     enum SaveMode {
         Edit { original_name: String },
@@ -177,8 +157,8 @@ pub(super) fn commit_editor_save(
         EditorMode::Create => SaveMode::Create,
     };
 
-    // If plan_create stashed a collapsed mount set, honour it now — the
-    // operator already saw + approved it in the confirm dialog.
+    // Operator already approved the collapsed mount set in
+    // ConfirmSave; honour it now.
     if let Some(final_mounts) = plan.final_mounts {
         editor.pending.mounts = final_mounts;
     }
@@ -192,12 +172,11 @@ pub(super) fn commit_editor_save(
         }
     };
 
-    // Track a pending rename across the inner match. Finding #4: the
-    // `editor.mode = EditorMode::Edit { name }` mutation is deferred
-    // until after `ce.save()` succeeds — otherwise a later
-    // `ce.edit_workspace` or `ce.save` failure would leave the editor UI
-    // advertising the new name while nothing has reached disk.
-    let pending_rename: Option<String> = match save_mode {
+    // Defer `editor.mode` rename until ce.save() succeeds — a later
+    // failure would otherwise leave the UI advertising a name that
+    // never reached disk. `current_name` carries the post-rename name
+    // for the env-diff step.
+    let (pending_rename, current_name): (Option<String>, String) = match save_mode {
         SaveMode::Edit { original_name } => {
             let mut current_name = original_name.clone();
             let mut rename_to: Option<String> = None;
@@ -221,9 +200,7 @@ pub(super) fn commit_editor_save(
                 return Ok(());
             }
 
-            // Defer `editor.mode` mutation — only commit it in the
-            // `ce.save()` success arm below.
-            rename_to
+            (rename_to, current_name)
         }
         SaveMode::Create => {
             let Some(name) = editor.pending_name.clone() else {
@@ -234,9 +211,13 @@ pub(super) fn commit_editor_save(
                 open_save_error_popup(editor, &e.to_string());
                 return Ok(());
             }
-            None
+            (None, name)
         }
     };
+
+    // `create_workspace`/`edit_workspace` don't touch env — TUI
+    // manages env exclusively through this diff loop.
+    apply_env_diff(&mut ce, &current_name, &editor.original, &editor.pending);
 
     match ce.save() {
         Ok(fresh) => {
@@ -274,19 +255,21 @@ pub(super) fn commit_editor_save(
                     })
                 )
             {
-                // Create mode always exits to the list after a successful
-                // write; there's no persistent "edit" view for a freshly-
-                // created workspace until the operator picks it.
-                //
-                // `ManagerState::from_config` allocates a fresh state
-                // with `toast: None`, which would discard the success
-                // toast we just set above — leaving the two exit-to-list
-                // flows (create-save, Esc→Save) with no positive
-                // feedback while direct `s` saves (which stay on the
-                // editor) keep theirs. Carry the toast across the reset.
+                // Carry the toast across `from_config_with_cache_and_op`
+                // (which would otherwise discard it) so create-save and
+                // Esc→Save keep positive feedback parity with direct `s`.
                 let carry_toast = state.toast.take();
-                *state = ManagerState::from_config(config, cwd);
+                let cache = state.op_cache.clone();
+                let op_available = state.op_available;
+                *state =
+                    ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
                 state.toast = carry_toast;
+                // Land on the workspace that was just saved.
+                let saved_count = state.workspaces.len();
+                if let Some(idx) = state.workspaces.iter().position(|w| w.name == current_name) {
+                    state.selected =
+                        ManagerListRow::SavedWorkspace(idx).to_screen_index(saved_count);
+                }
             }
         }
         Err(e) => {
@@ -310,11 +293,6 @@ pub(super) fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str)
     };
 }
 
-/// Build the list of display lines shown inside the `ConfirmSave` modal.
-/// In Create mode we show a summary; in Edit mode a structured diff
-/// between `editor.original` and `editor.pending`. If the planner
-/// reports mount collapses, a final "Mount collapse required:" section
-/// is appended.
 #[allow(clippy::too_many_lines)]
 fn build_confirm_save_lines(
     editor: &EditorState<'_>,
@@ -378,6 +356,12 @@ fn build_confirm_save_lines(
                     value,
                 ),
             ]));
+            let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
+            if !env_lines.is_empty() {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Env vars:", heading)));
+                out.extend(env_lines);
+            }
         }
         EditorMode::Edit { name } => {
             let display_name = editor.pending_name.clone().unwrap_or_else(|| name.clone());
@@ -386,8 +370,6 @@ fn build_confirm_save_lines(
                 Span::styled(display_name, value),
             ]));
 
-            // Rename diff (a rename counts even though it's not a
-            // workspace-field change per se).
             if let Some(new_name) = &editor.pending_name
                 && new_name != name
             {
@@ -474,6 +456,13 @@ fn build_confirm_save_lines(
                     out.push(Line::from(Span::styled("  + (none)", value)));
                 }
             }
+
+            let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
+            if !env_lines.is_empty() {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Env vars:", heading)));
+                out.extend(env_lines);
+            }
         }
     }
 
@@ -489,8 +478,6 @@ fn build_confirm_save_lines(
     out
 }
 
-/// Summarise a mount as `<src>  (rw|ro, <label>)` where label is
-/// github/git/folder/missing from `mount_info::inspect`.
 fn mount_summary(m: &crate::workspace::MountConfig) -> String {
     let src = crate::tui::shorten_home(&m.src);
     let kind = super::super::mount_info::inspect(&m.src);
@@ -498,9 +485,6 @@ fn mount_summary(m: &crate::workspace::MountConfig) -> String {
     format!("{src}  ({rw}, {})", kind.label())
 }
 
-/// Summarise the allowed-agent selection — `any (N agents)` when the
-/// workspace lets every configured agent run, otherwise a comma-separated
-/// list.
 fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {
     if super::super::agent_allow::allows_all_agents(&editor.pending) {
         return format!("any ({} agents)", config.agents.len());
@@ -508,9 +492,70 @@ fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> Strin
     editor.pending.allowed_agents.join(", ")
 }
 
-/// Render each mount-collapse entry as `  <child> → <parent>`, to be
-/// appended to the `ConfirmSave` lines under a "Mount collapse required:"
-/// heading.
+/// Per-agent sections are prefixed with `  <agent>:` so a single
+/// "Env vars:" heading hosts both workspace and override deltas.
+fn env_diff_lines(
+    original: &crate::workspace::WorkspaceConfig,
+    pending: &crate::workspace::WorkspaceConfig,
+    value: ratatui::style::Style,
+    dim: ratatui::style::Style,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    let mut out: Vec<Line<'static>> = Vec::new();
+
+    append_env_map_diff_lines(&mut out, None, &original.env, &pending.env, value, dim);
+
+    let agent_keys: std::collections::BTreeSet<&String> = original
+        .agents
+        .keys()
+        .chain(pending.agents.keys())
+        .collect();
+    let empty = std::collections::BTreeMap::<String, String>::new();
+    for agent in agent_keys {
+        let orig_env = original.agents.get(agent).map_or(&empty, |o| &o.env);
+        let pend_env = pending.agents.get(agent).map_or(&empty, |p| &p.env);
+        // Pre-check if there are any deltas for this agent; only emit
+        // the agent header when there are.
+        let mut probe: Vec<Line<'static>> = Vec::new();
+        append_env_map_diff_lines(&mut probe, None, orig_env, pend_env, value, dim);
+        if !probe.is_empty() {
+            out.push(Line::from(Span::styled(format!("  agent {agent}:"), value)));
+            append_env_map_diff_lines(&mut out, Some("  "), orig_env, pend_env, value, dim);
+        }
+    }
+    out
+}
+
+/// Append `+ KEY = VALUE` / `- KEY` lines to `out` for the diff between
+/// two env maps. `indent` (`None` or `Some("  ")`) controls per-agent
+/// sub-indent — workspace-level lines use two spaces to match existing
+/// diff styling; per-agent lines nest one extra level.
+fn append_env_map_diff_lines(
+    out: &mut Vec<ratatui::text::Line<'static>>,
+    indent: Option<&str>,
+    original: &std::collections::BTreeMap<String, String>,
+    pending: &std::collections::BTreeMap<String, String>,
+    value: ratatui::style::Style,
+    dim: ratatui::style::Style,
+) {
+    use ratatui::text::{Line, Span};
+    let prefix = indent.unwrap_or("");
+    for (k, v) in pending {
+        match original.get(k) {
+            Some(ov) if ov == v => {}
+            _ => out.push(Line::from(Span::styled(
+                format!("{prefix}  + {k} = {v}"),
+                value,
+            ))),
+        }
+    }
+    for k in original.keys() {
+        if !pending.contains_key(k) {
+            out.push(Line::from(Span::styled(format!("{prefix}  - {k}"), dim)));
+        }
+    }
+}
+
 fn collapse_section_lines(
     collapses: &[crate::workspace::Removal],
 ) -> Vec<ratatui::text::Line<'static>> {
@@ -529,6 +574,55 @@ fn collapse_section_lines(
             ))
         })
         .collect()
+}
+
+/// Agents present only in `original` get all keys removed.
+fn apply_env_diff(
+    ce: &mut crate::config::ConfigEditor,
+    workspace_name: &str,
+    original: &crate::workspace::WorkspaceConfig,
+    pending: &crate::workspace::WorkspaceConfig,
+) {
+    let ws_scope = EnvScope::Workspace(workspace_name.to_string());
+    apply_env_map_diff(ce, &ws_scope, &original.env, &pending.env);
+
+    // Union so agents on only one side are caught.
+    let agent_keys: std::collections::BTreeSet<&String> = original
+        .agents
+        .keys()
+        .chain(pending.agents.keys())
+        .collect();
+    let empty = std::collections::BTreeMap::<String, String>::new();
+    for agent in agent_keys {
+        let orig_env = original.agents.get(agent).map_or(&empty, |o| &o.env);
+        let pend_env = pending.agents.get(agent).map_or(&empty, |p| &p.env);
+        let scope = EnvScope::WorkspaceAgent {
+            workspace: workspace_name.to_string(),
+            agent: agent.clone(),
+        };
+        apply_env_map_diff(ce, &scope, orig_env, pend_env);
+    }
+}
+
+fn apply_env_map_diff(
+    ce: &mut crate::config::ConfigEditor,
+    scope: &EnvScope,
+    original: &std::collections::BTreeMap<String, String>,
+    pending: &std::collections::BTreeMap<String, String>,
+) {
+    for (k, v) in pending {
+        match original.get(k) {
+            Some(ov) if ov == v => {}
+            _ => ce.set_env_var(scope, k, v),
+        }
+    }
+    for k in original.keys() {
+        if !pending.contains_key(k) {
+            // `remove_env_var` returns false when the path is already
+            // missing — treat as a no-op success.
+            let _ = ce.remove_env_var(scope, k);
+        }
+    }
 }
 
 pub(super) fn build_workspace_edit(
@@ -568,8 +662,6 @@ pub(super) fn build_workspace_edit(
 #[cfg(test)]
 #[allow(clippy::too_many_lines)]
 mod tests {
-    //! Save-flow tests: editor `s` press → planner validation →
-    //! `ConfirmSave` modal → commit → on-disk write or error popup.
     use super::super::super::state::{
         EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, ToastKind,
     };
@@ -590,7 +682,6 @@ mod tests {
         }
     }
 
-    /// Persist an `AppConfig` with one workspace to a test `JackinPaths`.
     fn setup_with_workspace(
         name: &str,
         ws: WorkspaceConfig,
@@ -608,8 +699,6 @@ mod tests {
         Ok((tmp, paths, reloaded))
     }
 
-    /// Press `s` in the editor. Convenience helper that routes through
-    /// the public `handle_key` to mirror real operator input.
     fn press_s(
         state: &mut ManagerState<'_>,
         config: &mut AppConfig,
@@ -621,17 +710,10 @@ mod tests {
 
     #[test]
     fn save_editor_opens_confirm_save_on_edit_driven_collapse() {
-        // Existing workspace with /work/sub; operator adds /work which
-        // subsumes the child. Expected: ConfirmSave modal opens with a
-        // "Mount collapse required" section; no write yet.
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
@@ -673,11 +755,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
@@ -693,18 +771,10 @@ mod tests {
         // commits the save.
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("editor stage expected");
-        };
         assert!(
-            e.modal.is_none(),
-            "modal should be closed after confirm; got {:?}",
-            e.modal
-        );
-        assert!(
-            !e.save_flow.is_error(),
-            "save should have succeeded: {:?}",
-            e.save_flow.error_message()
+            matches!(state.stage, ManagerStage::List),
+            "s + confirm should exit to list; got {:?}",
+            state.stage
         );
 
         // On-disk config now contains only the collapsed parent.
@@ -719,11 +789,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
@@ -775,11 +841,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![ro_mount("/work/sub", "/work/sub")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
@@ -817,11 +879,7 @@ mod tests {
                 mount("/work", "/work"),
                 mount("/work/sub", "/work/sub"), // already redundant
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) =
             setup_with_workspace("legacy-workspace", ws.clone()).unwrap();
@@ -861,11 +919,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("clean-ws", ws.clone()).unwrap();
 
@@ -891,11 +945,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("edit-me", ws.clone()).unwrap();
 
@@ -926,11 +976,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("exit-me", ws.clone()).unwrap();
 
@@ -950,6 +996,50 @@ mod tests {
     }
 
     #[test]
+    fn exit_on_success_selects_just_saved_workspace_on_return_to_list() {
+        // Two workspaces: "a-first" (index 0) and "z-second" (index 1) in
+        // BTreeMap order. Editing "z-second" and saving must land the cursor
+        // on "z-second" (screen index 2 = 1 + 1), not on "a-first" or the
+        // CWD row.
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            ..Default::default()
+        };
+        let (tmp, paths, mut config) = setup_with_workspace("z-second", ws.clone()).unwrap();
+        config.workspaces.insert(
+            "a-first".to_string(),
+            WorkspaceConfig {
+                workdir: "/a".into(),
+                mounts: vec![mount("/a", "/a")],
+                ..Default::default()
+            },
+        );
+        let toml = toml::to_string(&config).unwrap();
+        std::fs::write(&paths.config_file, toml).unwrap();
+        config = AppConfig::load_or_init(&paths).unwrap();
+
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("z-second".into(), ws);
+        editor.pending.workdir = "/w/sub".into();
+        state.stage = ManagerStage::Editor(editor);
+
+        begin_editor_save(&mut state, &config, true).unwrap();
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        assert!(matches!(state.stage, ManagerStage::List));
+        // BTreeMap order: ["a-first"=0, "z-second"=1]; screen index = i + 1.
+        // "z-second" is at saved_index 1, so screen index = 2.
+        assert_eq!(
+            state.selected, 2,
+            "cursor must land on the just-saved workspace; got selected={}",
+            state.selected
+        );
+        assert_eq!(state.workspaces[state.selected - 1].name, "z-second");
+    }
+
+    #[test]
     fn exit_on_success_save_preserves_success_toast_across_state_refresh() {
         // Finding #3: when `commit_editor_save` exits to the list view,
         // it reinitialises the whole `ManagerState` via
@@ -960,11 +1050,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("toast-me", ws.clone()).unwrap();
 
@@ -1011,11 +1097,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("original-name", ws.clone()).unwrap();
 
@@ -1106,35 +1188,30 @@ mod tests {
     }
 
     #[test]
-    fn confirm_save_save_stays_in_editor_on_success_from_direct_s() {
-        // Bare `s` press (not from SaveDiscardCancel) keeps the operator
-        // in the editor after a successful save.
+    fn confirm_save_s_exits_to_list_on_success() {
+        // `s` + Enter on ConfirmSave returns the operator to the list,
+        // consistent with the Esc→Save path.
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
-        let (tmp, paths, mut config) = setup_with_workspace("stay-here", ws.clone()).unwrap();
+        let (tmp, paths, mut config) = setup_with_workspace("save-me", ws.clone()).unwrap();
 
         let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
-        let mut editor = EditorState::new_edit("stay-here".into(), ws);
+        let mut editor = EditorState::new_edit("save-me".into(), ws);
         editor.pending.workdir = "/w/new".into();
         state.stage = ManagerStage::Editor(editor);
 
         press_s(&mut state, &mut config, &paths, cwd);
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("should stay in editor on direct `s` save");
-        };
-        assert!(e.modal.is_none());
-        // Origin-of-truth refreshed so the editor is clean again.
-        assert_eq!(e.change_count(), 0);
+        assert!(
+            matches!(state.stage, ManagerStage::List),
+            "s + confirm must return to the list; got {:?}",
+            state.stage
+        );
     }
 
     #[test]
@@ -1145,20 +1222,12 @@ mod tests {
         let ws_a = WorkspaceConfig {
             workdir: "/a".into(),
             mounts: vec![mount("/a", "/a")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let ws_b = WorkspaceConfig {
             workdir: "/b".into(),
             mounts: vec![mount("/b", "/b")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, _) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
         // Add the second workspace on disk.
@@ -1192,20 +1261,12 @@ mod tests {
         let ws_a = WorkspaceConfig {
             workdir: "/a".into(),
             mounts: vec![mount("/a", "/a")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let ws_b = WorkspaceConfig {
             workdir: "/b".into(),
             mounts: vec![mount("/b", "/b")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, _) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
         let mut config = {
@@ -1305,12 +1366,13 @@ mod tests {
 
         // Operator renames mid-edit.
         super::super::editor::apply_text_input_to_pending(
-            super::super::super::state::TextInputTarget::Name,
+            &super::super::super::state::TextInputTarget::Name,
             match &mut state.stage {
                 ManagerStage::Editor(e) => e,
                 _ => unreachable!(),
             },
             "edited-in-place",
+            false,
         );
 
         press_s(&mut state, &mut config, &paths, cwd);
@@ -1342,11 +1404,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/old".into(),
             mounts: vec![mount("/old", "/old")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("diff-me", ws.clone()).unwrap();
         let cwd = tmp.path();
@@ -1378,11 +1436,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("collapsy", ws.clone()).unwrap();
         let cwd = tmp.path();
