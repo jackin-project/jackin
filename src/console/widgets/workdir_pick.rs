@@ -159,6 +159,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
         .unwrap_or(0)
         .max(10);
 
+    // Scroll so the selected row is always in view.
+    let visible = rows[1].height as usize;
+    let selected = state.list_state.selected.unwrap_or(0);
+    let offset = selected.saturating_sub(visible.saturating_sub(1));
     let lines: Vec<Line> = state
         .choices
         .iter()
@@ -182,8 +186,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
                 ),
             ])
         })
+        .skip(offset)
+        .take(visible)
         .collect();
-
     frame.render_widget(Paragraph::new(lines), rows[1]);
 
     // Hint line — canonical list-modal hint (↑↓ navigate · Enter confirm · Esc cancel).
