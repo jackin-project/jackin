@@ -1145,3 +1145,42 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§10 Step 4 — `op_picker/` splits missing from execution order** — the §10 Step 4f console group has 5 sub-steps but doesn't include `op_picker/mod.rs` or `op_picker/render.rs`. These should be added as 4f-vi and 4f-vii.
 2. **§4 Rule 5 — file_browser/* files** — `git_prompt.rs` (576L) and `input.rs` (570L) are in the 28-file list but never analyzed. They may be above the 500L production threshold.
 3. **§1 module map — missing entries for `file_browser/*`** — the `console/widgets/file_browser/` directory has at least 3 files (git_prompt.rs, input.rs, and the main module) but the module map only shows "file_browser/" as a single entry.
+
+---
+
+## Iteration 29 — 2026-04-26
+
+### What was improved
+
+1. **§10 Step 4f — added `op_picker/` splits as 4f-vi and 4f-vii** — the execution table previously had 5 sub-steps (console manager splits only) and omitted the two `op_picker/` widget splits proposed in §4. Added 4f-vi (`op_picker/mod.rs` → mod.rs + loading.rs + keys.rs, ~775L production, AI-generated) and 4f-vii (`op_picker/render.rs` → render.rs + pane.rs, ~545L production, AI-generated). Updated the preamble from "five independent PRs" to "seven independent PRs". Expanded the "What could go wrong" caveats with entries (3) and (4) for the op_picker splits: (3) impl-extension pattern is safe — `OpPickerState` stays in mod.rs, impl blocks move using `use super::OpPickerState`; (4) pane.rs import path for `OpPickerState` must be `super::super::OpPickerState` or the crate-absolute path.
+
+2. **`file_browser/` subsystem — full analysis and classification as exemplar** — read all 5 file_browser files (mod.rs: 50L, state.rs: 479L, render.rs: 326L, git_prompt.rs: 576L, input.rs: 570L). Key finding: **file_browser is already at the target state** the roadmap is proposing. Every file has a `//!` doc; no file exceeds 350L production code; each file has a single dominant concern. `git_prompt.rs` (576L total, ~279L production) is the only total-LOC outlier — justified because the three concerns (state enum, geometry, rendering) are tightly coupled in a single modal flow. `input.rs` (570L total, ~144L production) is a false positive in the 28+ hot-spot list: it is test-heavy (418L tests). Added: (a) `file_browser/` exemplar analysis block to §4 //! coverage section; (b) expanded §1 module map from a single `file_browser/` row to 5 individual file rows with production LOC and concerns.
+
+3. **False positive clarification for the 28+ hot-spot list** — documented that `input.rs` is in the 28-file list by total LOC but not by production LOC (~144L). This mirrors the `manifest/validate.rs` / `config/mod.rs` clarification in the hot-spot table preamble ("total line count is a misleading metric"). The file_browser analysis now gives the 28+ list a concrete counter-example alongside the existing validate.rs/config/mod.rs note.
+
+### What was read
+- `src/console/widgets/file_browser/mod.rs` (50L) — //! doc confirms 9-line scope description
+- `src/console/widgets/file_browser/state.rs` (479L) — //! doc confirms 7-line scope; no tests
+- `src/console/widgets/file_browser/render.rs` (326L) — //! doc present; tests start at line 176 (~170L production)
+- `src/console/widgets/file_browser/git_prompt.rs` (576L) — //! doc 8-line; tests start at line 297 (~279L production)
+- `src/console/widgets/file_browser/input.rs` (570L) — //! doc 1-line; tests start at line 152 (~144L production, ~418L tests)
+- `pub fn` and `pub(super) fn` surface of git_prompt.rs confirmed: `GitPromptFocus` enum, `resolve_git_url`, `dismiss_git_prompt`, `handle_git_prompt_key`, `git_prompt_rect`, `git_prompt_url_row_rect`, `git_prompt_buttons`, `git_prompt_hint`, `render_git_prompt`
+- `pub fn` surface of input.rs confirmed: `handle_key`, `handle_enter` (pub(super)), `commit_or_reject` (pub(super)), `maybe_open_url_on_click`
+
+### What changed in the roadmap
+- §10 Step 4f: "five" → "seven", added 4f-vi and 4f-vii rows, expanded "What could go wrong" with entries (3) and (4)
+- §4 //! Positive exemplars: Added `file_browser/` subsystem analysis block (5-row table + 2 paragraphs)
+- §1 module map: Replaced single `file_browser/` row with 5 individual file rows
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| file_browser production LOC estimates | High | wc -l confirmed total; grep `#[cfg(test)]` confirmed test start lines |
+| `git_prompt.rs` justified as non-split | High | ~279L production; coupling density confirmed by reading pub API surface |
+| `input.rs` false-positive classification | High | ~144L production confirmed; 418L test block confirmed |
+| 4f-vi/vii import path analysis | Medium-High | impl-extension pattern verified from op_picker/mod.rs read; pane.rs path is structural inference |
+
+### Weakest sections for iteration 30
+1. **§1 module map completeness** — `console/widgets/` has 11+ files per the roadmap text but the module map only shows a subset. `agent_picker.rs`, `scope_picker.rs`, `source_picker.rs` (added in PR #171) each have `—` entries with no LOC or //! status. These should be surveyed for LOC, //! coverage, and potential Rule 5 issues.
+2. **§5 naming candidates — verification lag** — several naming candidates reference specific line numbers that may have shifted with PR #171's 2349L `input/editor.rs`. A targeted grep verification of the line numbers in §5 rows 1–16 would improve confidence.
+3. **§2 repository-level navigation gaps** — the discovery table in §2 shows `op_picker` as `requires-grep` with status "Entry in PROJECT_STRUCTURE.md; canonical layout rule in RULES.md added in PR #171". It's worth verifying whether that entry was actually added to PROJECT_STRUCTURE.md (the roadmap says it should be but may not track whether it was done).

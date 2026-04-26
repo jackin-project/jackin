@@ -167,7 +167,11 @@ jackin/
 | `console/manager/github_mounts.rs` | — | — | GitHub mount listing for picker | — |
 | `console/widgets/mod.rs` | — | re-exports | widget re-export hub | widgets/* |
 | `console/widgets/text_input.rs` | — | `TextInputState`, `TextInputTarget` | single-line text input modal | ratatui |
-| `console/widgets/file_browser/` | ~1700 total | `FileBrowserState` | file browser modal | ratatui |
+| `console/widgets/file_browser/mod.rs` | 50 | — | entry point + //! describes $HOME-scoped picker, sandbox policy, git-repo tagging | file_browser/* |
+| `console/widgets/file_browser/state.rs` | 479 | `FileBrowserState`, `FolderEntry` | listing/sandbox primitives; constructors + navigation | ratatui |
+| `console/widgets/file_browser/render.rs` | 326 | `render`, `listing_rect` | listing + footer rendering | ratatui |
+| `console/widgets/file_browser/git_prompt.rs` | 576 | `GitPromptFocus`, `render_git_prompt` | git-repo prompt modal: state enum + geometry + rendering | ratatui |
+| `console/widgets/file_browser/input.rs` | 570 | `handle_key`, `handle_enter`, `commit_or_reject` | keyboard + mouse dispatch (~144L prod; ~418L tests) | ratatui |
 | `console/widgets/confirm.rs` | — | `ConfirmState`, `ConfirmTarget` | Y/N confirm modal | ratatui |
 | `console/widgets/confirm_save.rs` | — | `ConfirmSaveState` | save-confirm preview modal | ratatui |
 | `console/widgets/github_picker.rs` | — | `GithubPickerState` | GitHub URL picker | ratatui |
@@ -835,6 +839,20 @@ A `//!` that only does item 1 is adequate. One that does all three eliminates a 
 | `src/console/manager/render/mod.rs` | 1-element | Present but minimal — only the one-line purpose; lacks scope claims and consolidation history |
 
 **Pattern observation:** The `console/manager/` subsystem has the best `//!` coverage in the codebase. PR #171 was written with docs discipline — every new file received a `//!` doc. The contrast with `src/app/`, `src/runtime/`, and `src/instance/` (which have almost none) is stark. The `//!` priority queue in §10 Step 5 targets the highest-impact gaps in those older subsystems.
+
+**`console/widgets/file_browser/` — a subsystem that already follows the proposed module-shape rules (verified iteration 29):**
+
+| File | Total L | Production L | `//!` doc | Single concern? |
+|---|---|---|---|---|
+| `file_browser/mod.rs` | 50 | ~45 | ✓ 9-line | Entry point + //! describes picker scope, $HOME root, sandbox policy, git-repo tagging |
+| `file_browser/state.rs` | 479 | ~350 | ✓ 7-line | `FileBrowserState`, `FolderEntry`, listing/sandbox primitives — constructors + navigation |
+| `file_browser/render.rs` | 326 | ~170 | ✓ 1-line | Listing + footer rendering only |
+| `file_browser/git_prompt.rs` | 576 | ~279 | ✓ 8-line | Git-prompt modal: `GitPromptFocus` enum + key handler + geometry helpers + rendering |
+| `file_browser/input.rs` | 570 | ~144 | ✓ 1-line | Keyboard + mouse event dispatch only; test-heavy (~418L tests) |
+
+`git_prompt.rs` (576L total, ~279L production) is the largest file and the only one above the Rule 5 total-LOC threshold. However, its 279L production count is well below the 500L production action threshold, and its `//!` doc ("Git-repo-detected prompt: state machine + geometry + render") honestly names all three concerns it combines. The three concerns (state enum, geometry rect calculation, overlay rendering) are tightly coupled — they're called together in a single prompt-display flow, and separating them would create a 3-file module for ~280L of code. This is a justified exception to Rule 2: coupling density outweighs file size. The file_browser subsystem is an **exemplar of the target state** — not a split candidate.
+
+`input.rs` (570L total, ~144L production) is a false-positive in the 28+ hot-spot list: the 570L figure is dominated by ~418L of tests. By production code it is firmly below the Rule 5 threshold.
 
 **The `render/mod.rs` minimal doc** is an example of a 1-element `//!` that could be upgraded. The two missing elements: (1) scope claim — "this is the canonical home for the phosphor-green palette constants; all render sub-files import from here"; (2) consolidation history — "FooterItem model was added in PR #166 (workspace manager TUI, PR 2 of 3) when the footer was refactored from plain strings" — PR verified by `git log --follow src/console/manager/render/mod.rs` (oldest commit is `a3ab1ab`, PR #166). A `//!` upgrade is lower priority than writing docs for undocumented files, but worth noting as the difference between "adequate" and "exemplary."
 
@@ -1577,7 +1595,7 @@ picker.rs    → mod.rs    (imports OpRunner)
 
 **Auditability gain:** To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` (~438L) plus `config/editor.rs::workspace_ops` (~120L). Today they must scan the entire 951L `app/mod.rs` to find the relevant code.
 
-4f. **`console/manager/` module splits** — five independent PRs; no cross-dependency between them. The console subsystem is wholly isolated from the runtime (no `console` → `runtime` import), so all five can proceed while runtime work is pending. Do in any order; suggested priority (highest production-LOC impact first):
+4f. **`console/manager/` module splits and `op_picker/` widget splits** — seven independent PRs; no cross-dependency between them. The console subsystem is wholly isolated from the runtime (no `console` → `runtime` import), so all seven can proceed while runtime work is pending. Do in any order; suggested priority (highest production-LOC impact first):
 
 | Sub-step | File | Production LOC | Proposed output | See §4 |
 |---|---|---|---|---|
@@ -1586,8 +1604,10 @@ picker.rs    → mod.rs    (imports OpRunner)
 | 4f-iii | `render/editor.rs` | ~736L | `render/editor/` (6 files: mod.rs + footer.rs + general.rs + mounts.rs + agents.rs + secrets.rs) | Rule 5 violator |
 | 4f-iv | `render/list.rs` | ~668L | `render/list/` (3 files: mod.rs + details.rs + subpanels.rs) | Rule 5 violator |
 | 4f-v | `input/save.rs` | ~661L | `input/save/` (3 files: mod.rs + flow.rs + preview.rs); flow vs preview split; no cross-dependency | Medium-High |
+| 4f-vi | `widgets/op_picker/mod.rs` | **~775L** (PR #171, AI-generated) | keep `mod.rs` (types + constructors + poll + views) + new `op_picker/loading.rs` (~120L async loaders) + new `op_picker/keys.rs` (~315L, 4 level-specific key handlers) | High — AI-generated |
+| 4f-vii | `widgets/op_picker/render.rs` | ~545L (PR #171, AI-generated) | keep `render.rs` (dispatch + loading/fatal states) + new `op_picker/pane.rs` (~120L, 4 level-specific `render_*_lines` fns) | Medium — AI-generated |
 
-*What could go wrong (console splits):* (1) `state.rs` split — `ManagerStage` holds `EditorState` and `CreatePreludeState` as enum variants; all three must move to `types.rs` together to avoid circular imports between `manager.rs` and `editor.rs`. (2) `input/editor.rs` split — `handle_editor_key` and `handle_editor_modal` both read and mutate `EditorState`; they must import from the same `state/types.rs` path after the state split. Sequencing: 4f-ii (state) before 4f-i (input/editor) is the safe order if both are being done, but they can be done in either order since state.rs keeps its `pub use` re-exports throughout.
+*What could go wrong (console splits):* (1) `state.rs` split — `ManagerStage` holds `EditorState` and `CreatePreludeState` as enum variants; all three must move to `types.rs` together to avoid circular imports between `manager.rs` and `editor.rs`. (2) `input/editor.rs` split — `handle_editor_key` and `handle_editor_modal` both read and mutate `EditorState`; they must import from the same `state/types.rs` path after the state split. Sequencing: 4f-ii (state) before 4f-i (input/editor) is the safe order if both are being done, but they can be done in either order since state.rs keeps its `pub use` re-exports throughout. (3) `op_picker/mod.rs` split (4f-vi) — `OpPickerState` struct stays in `mod.rs`; `impl` blocks move to `loading.rs` and `keys.rs` using `use super::OpPickerState` (the Rust impl-extension pattern). No circular import risk: `keys.rs` calls load methods (`super::loading::*` or just `self.*` if loaded into the same `impl` block), but `loading.rs` does not call key methods. (4) `op_picker/render.rs` split (4f-vii) — the 4 level renderers (`render_account_lines`, `render_vault_lines`, `render_item_lines`, `render_field_lines`) each take `&OpPickerState` and produce `Vec<Line<'static>>`; moving them to `pane.rs` requires `use super::super::OpPickerState` (pane.rs is a sibling of render.rs, not a child). Alternatively, `use crate::console::widgets::op_picker::OpPickerState` for path stability. Zero runtime behavior change either way.
 
 4g. **`src/runtime/launch.rs` → 4 files** (2368L — most impactful, most complex test suite): Split into `launch.rs` (~120L public API), `launch_pipeline.rs` (~560L + ~1200L tests), `terminfo.rs` (~110L), `trust.rs` (~60L). Do last: the test suite is 1282L and depends on `FakeRunner` from `runtime/test_support.rs`; any test compilation failure here blocks all runtime changes.
 
