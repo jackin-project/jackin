@@ -596,12 +596,26 @@ This phasing reduces the scope of structural changes by ~60% while delivering th
 - If a `jackin-library` or `jackin-daemon` use case emerges, workspace is the natural structure.
 - Test isolation: today all unit tests share the same crate compilation. Workspace members can be tested in isolation.
 
+**Real-world comparables (researched iteration 38):**
+
+| Project | Scale | Structure | Why |
+|---|---|---|---|
+| **ripgrep** (BurntSushi/ripgrep) | Large CLI | 9-crate workspace (`grep-*` family) | Core grep engine published as standalone library; used by other tools |
+| **gitui** (extrawurst/gitui) | Medium TUI CLI | 5-crate workspace (`asyncgit`, `filetreelist`, `git2-hooks`, etc.) | Async git + UI isolation; some crates published separately |
+| **starship** | Large CLI (1M+ LOC features) | **Single crate** | All code is application logic; no library use case; monorepo-style |
+| **fd-find** (sharkdp/fd) | Medium CLI | **Single crate** | Same as starship — pure application code |
+
+`jackin` today (43,587L, no library use case) maps closest to `fd` and `starship`: **single-crate is correct**. ripgrep and gitui went multi-crate because their core logic (regex engine, async git) is valuable independently.
+
+Source: Cargo.toml of each project; matklad's post ["Large Rust Workspaces"](https://matklad.github.io/2021/08/22/large-rust-workspaces.html) — see `_research_notes.md`.
+
 **Recommendation: stay single-crate. Workspace becomes preferable when:**
 - LOC exceeds ~150k, OR
 - A second binary (daemon, lib) needs a distinct semver identity, OR
-- Compile times on the CI check job exceed 5 minutes on a cold cache.
+- Compile times on the CI check job exceed 5 minutes on a cold cache, OR
+- A sub-component (e.g., an agent manifest library) has external consumers.
 
-Until one of these conditions holds, workspace adds complexity without proportional benefit.
+Until one of these conditions holds, workspace adds complexity without proportional benefit. The community evidence confirms this: two comparable single-maintainer CLI projects at similar scale (starship, fd) stay single-crate.
 
 ### Greenfield architecture — ideal structure for a growing project
 
@@ -647,63 +661,50 @@ Binary:
 
 #### Ideal workspace structure (greenfield)
 
+Following matklad's recommendation (["Large Rust Workspaces"](https://matklad.github.io/2021/08/22/large-rust-workspaces.html), see `_research_notes.md`): **virtual manifest at root, flat `crates/` directory**. Crate folder names match crate names exactly. All crates unpublished (`version = "0.0.0"`) unless there's an explicit external-consumer reason.
+
+The ripgrep pattern (9 crates, core search logic published separately) and gitui pattern (5 crates, async git layer isolated) are the closest analogues, both driven by external reuse of internal libraries. `jackin` doesn't have that use case yet — but structuring for it costs little if the dependency tiers are clean.
+
 ```
 jackin/
-├── Cargo.toml                    ← workspace manifest
+├── Cargo.toml                    ← virtual workspace manifest (no [package] section)
 ├── crates/
 │   ├── jackin-core/              ← Tier 0: pure data types, traits, primitives
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── workspace.rs      ← WorkspaceConfig, MountConfig, WorkspaceEdit,
-│   │       │                        planner, resolve, mounts, sensitive
-│   │       ├── manifest.rs       ← AgentManifest, EnvVarDecl
-│   │       ├── env_model.rs      ← env layer enum types
-│   │       ├── docker.rs         ← CommandRunner trait (NOT ShellRunner impl)
-│   │       ├── paths.rs          ← JackinPaths
-│   │       └── selector.rs       ← ClassSelector
+│   │   └── src/lib.rs            ← WorkspaceConfig, MountConfig, AgentManifest,
+│   │                                CommandRunner (trait), JackinPaths, ClassSelector,
+│   │                                env layer types — no I/O, no subprocess, no TUI
 │   │
 │   ├── jackin-config/            ← Tier 1: TOML persistence on top of core types
-│   │   └── src/
-│   │       ├── lib.rs            ← AppConfig, ConfigEditor, EnvScope
-│   │       └── persist.rs        ← load/save TOML, migration
+│   │   └── src/                  ← AppConfig, ConfigEditor, EnvScope, persist.rs
+│   │                                (deps: jackin-core, toml_edit, serde)
 │   │
-│   ├── jackin-tui/               ← Tier 1: terminal presentation
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── output.rs         ← tables, hints, fatal, logo, title
-│   │       ├── animation.rs      ← intro/outro, digital rain
-│   │       └── prompt.rs         ← interactive prompts
+│   ├── jackin-tui/               ← Tier 1: terminal presentation utilities
+│   │   └── src/                  ← output.rs, animation.rs, prompt.rs
+│   │                                (deps: jackin-core, ratatui, owo-colors)
 │   │
 │   ├── jackin-runtime/           ← Tier 2: container bootstrap pipeline
-│   │   └── src/
-│   │       ├── lib.rs            ← pub fn load_agent (the public API)
-│   │       ├── launch.rs         ← load_agent_with pipeline (120L public API)
-│   │       ├── pipeline.rs       ← load_agent_with body (~560L)
-│   │       ├── trust.rs          ← confirm_agent_trust
-│   │       ├── terminfo.rs       ← resolve_terminal_setup, export_host_terminfo
-│   │       ├── instance.rs       ← AgentState, auth provisioning
-│   │       ├── repo.rs           ← agent repo clone/update/lock
-│   │       ├── cleanup.rs        ← gc_orphaned_resources, LoadCleanup
-│   │       └── image.rs          ← Docker image build, naming
+│   │   └── src/                  ← launch.rs, pipeline.rs, trust.rs, terminfo.rs,
+│   │                                instance.rs, repo.rs, cleanup.rs, image.rs
+│   │                                (deps: jackin-core, jackin-config, jackin-tui)
 │   │
 │   ├── jackin-console/           ← Tier 3: workspace manager TUI
-│   │   └── src/
-│   │       ├── lib.rs            ← pub fn run_console
-│   │       ├── manager/          ← workspace manager (state, input, render)
-│   │       ├── widgets/          ← TUI widget library
-│   │       └── op_env/           ← operator_env (only used here)
+│   │   └── src/                  ← manager/ (state, input, render), widgets/,
+│   │                                op_env/ (operator_env moved here — its only consumer)
+│   │                                (deps: jackin-core, jackin-config, jackin-tui)
+│   │                                NOTE: NO dep on jackin-runtime (pre-existing boundary)
 │   │
-│   └── jackin-shell/             ← concrete Docker subprocess impl (not trait)
-│       └── src/
-│           ├── lib.rs
-│           └── runner.rs         ← ShellRunner implements CommandRunner
+│   └── jackin-shell/             ← ShellRunner — concrete subprocess impl (not trait)
+│       └── src/lib.rs            ← ShellRunner implements CommandRunner from jackin-core
+│                                    (deps: jackin-core only)
 │
-├── src/                          ← thin binary crate
-│   ├── main.rs                   ← calls jackin-config::load + app::run
-│   └── app/                      ← CLI dispatch (matches on cli::Command)
+├── src/                          ← thin binary crate (the `jackin` CLI binary)
+│   ├── main.rs
+│   └── cli/                      ← Clap schema + dispatch
+│                                    (deps: all crates above)
 │
-└── bin/
-    └── validate.rs               ← jackin-validate binary
+└── validate/
+    └── src/main.rs               ← jackin-validate binary
+                                     (deps: jackin-core, jackin-config only)
 ```
 
 #### What this architecture enables

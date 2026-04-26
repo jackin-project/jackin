@@ -179,3 +179,46 @@ Append new entries at the bottom; include retrieval date.
 - Supports `--shard k/n` for distributing large test suites across machines.
 - At 1046 tests, a full mutants run is expensive but feasible in CI as a periodic (not per-PR) gate.
 - **jackin verdict (iteration 1):** Defer mutation testing for now; adopt `insta` snapshot tests first to raise baseline coverage signal. Revisit when test count stabilises post-PR #171 merge. See §7 Testing.
+
+---
+
+## 2026-04-26 — Rust workspace structure: real-world CLI projects (iteration 38)
+
+**Research question:** How do successful Rust CLI projects structure their workspace? What does the Rust community / core team recommend?
+
+**Sources retrieved:**
+- ripgrep Cargo.toml: https://raw.githubusercontent.com/BurntSushi/ripgrep/master/Cargo.toml
+- starship Cargo.toml: https://raw.githubusercontent.com/starship/starship/master/Cargo.toml
+- gitui Cargo.toml: https://raw.githubusercontent.com/extrawurst/gitui/master/Cargo.toml
+- fd-find Cargo.toml: https://raw.githubusercontent.com/sharkdp/fd/master/Cargo.toml
+- Cargo Workspaces Reference: https://doc.rust-lang.org/cargo/reference/workspaces.html
+- matklad: "Large Rust Workspaces": https://matklad.github.io/2021/08/22/large-rust-workspaces.html
+
+**Key findings:**
+
+1. **No universal pattern across comparable CLI projects:**
+   - ripgrep: 9-crate workspace (`grep`, `globset`, `ignore`, `printer`, etc.) — because core search engine is published separately and used by other tools
+   - gitui: 5-crate workspace (`asyncgit`, `filetreelist`, `git2-hooks`, etc.) — async git layer isolated for independent testing and potential reuse
+   - starship: **single crate** (large, 1M+ features) — pure application code, no library use case
+   - fd-find: **single crate** — same rationale as starship
+
+2. **matklad's recommendation (authoritative — he maintains rust-analyzer):**
+   - Use a **virtual manifest at root** (no `[package]` section in root `Cargo.toml`)
+   - **Flat `crates/` directory** — not nested; flat lists are easier to scan than hierarchies
+   - Match folder name exactly to crate name
+   - Use `version = "0.0.0"` for internal unpublished crates
+   - Create a workspace when code has external consumers or clear domain isolation
+
+3. **Cargo official guidance:** Workspaces provide unified `Cargo.lock`, shared `target/`, and centralized profiles. Two forms: root package workspace (one primary + supporting crates) and virtual workspace (all crates equal — matklad prefers this for new projects).
+
+4. **When to go workspace (consensus):**
+   - Sub-component has external consumers (library use case)
+   - Clear domain boundary that benefits from compile-time isolation
+   - Compile times are painful (workspace allows parallelism)
+   - NOT: just because the codebase is large (starship/fd prove single-crate works at scale)
+
+**Application to jackin:**
+- At 43,587L with no library use case, jackin maps to starship/fd: **single-crate is correct today**
+- If `jackin-core` (domain types) develops external consumers (e.g., third-party agent manifest tooling), that's the trigger for workspace
+- The greenfield workspace structure in §4 follows matklad's virtual manifest + flat `crates/` recommendation
+

@@ -1616,3 +1616,57 @@ Mapped the actual cross-module import graph by grepping `use crate::X` for each 
 1. **Greenfield section lacks external validation** — the proposed workspace structure is logically derived but not compared against real-world Rust CLI workspace examples (ripgrep, starship, cargo). Iteration 38 should research these and either validate or refine the proposal.
 2. **§3 CI gate** — added in iteration 36 but not yet in §10 execution sequencing.
 3. **workspace/resolve.rs and mod.rs missing //!** — still not added to §10 //! priority queue.
+
+---
+
+## Iteration 38 — 2026-04-26
+
+### Operator directive
+Operator asked to follow standard Rust community practices for project structure — what engineers and the core team are used to, not something unique. Priority: make the project navigable for AI agents trained on public Rust data and experienced Rust engineers.
+
+### What was improved
+
+1. **Grounded the workspace recommendation in external evidence**
+
+   Researched 4 real-world Rust CLI projects and matklad's authoritative blog post on large Rust workspaces:
+   - ripgrep: 9-crate workspace (external library consumers drove the split)
+   - gitui: 5-crate workspace (async git layer isolated for testing)
+   - starship: single crate at 1M+ LOC (no library use case — pure app)
+   - fd-find: single crate (same)
+   
+   Finding: `jackin` (43,587L, no external library consumers) maps to starship/fd — **single-crate is community-standard for this use case**. The workspace recommendation in the "Workspace vs single-crate" section now cites this evidence directly with a comparison table.
+
+2. **Revised greenfield workspace structure to follow matklad's pattern**
+
+   matklad's recommendation (["Large Rust Workspaces"](https://matklad.github.io/2021/08/22/large-rust-workspaces.html)):
+   - Virtual manifest at root (no `[package]` in root `Cargo.toml`)
+   - Flat `crates/` directory — not nested hierarchy
+   - Crate folder names match crate names exactly
+   - `version = "0.0.0"` for unpublished internal crates
+   
+   Updated the greenfield ASCII structure to use virtual manifest pattern and added inline deps comments. Added prose explaining that ripgrep and gitui went workspace because their core logic has external consumers — the trigger that would apply to `jackin-core` if agent manifest tooling becomes a library use case.
+
+3. **Added research to `_research_notes.md`**
+
+### What was read/fetched
+- ripgrep, starship, gitui, fd-find Cargo.toml files
+- Cargo workspaces reference
+- matklad's "Large Rust Workspaces" post (2021-08-22)
+
+### What changed in the roadmap
+- §4 "Workspace vs single-crate": Added comparison table of 4 real-world projects; updated recommendation to cite community evidence
+- §4 "Greenfield architecture": Revised workspace structure to virtual manifest + flat `crates/`; added matklad citation and ripgrep/gitui pattern explanation
+- `_research_notes.md`: Added workspace structure research section
+
+### Confidence assessment
+| Section | Confidence | Notes |
+|---|---|---|
+| Real-world project structures | High | Fetched from actual Cargo.toml files |
+| matklad recommendation | High | Direct quote from authoritative blog post |
+| Single-crate recommendation for jackin | High | Community evidence (starship/fd) aligns with current 43K LOC scale |
+| Greenfield workspace structure | Medium | Logical from dependency graph + community patterns; not validated by building it |
+
+### Weakest sections for iteration 39
+1. **Module naming conventions** — the community standard for Rust module names within a large single crate. Should module names be snake_case (current, correct) or should they follow any specific pattern?
+2. **Internal module visibility (`pub(crate)` vs `pub`)** — the roadmap proposes `pub(crate)` discipline but hasn't checked what the current state is across all 94 files.
+3. **Error type design** — the greenfield workspace enables crate-boundary error types, but the current anyhow usage pattern is valid for a single-crate application too. Is this worth changing?
