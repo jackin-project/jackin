@@ -95,11 +95,11 @@ impl ConfirmSaveState {
 
 /// Total rows the `ConfirmSave` modal wants given its current line count.
 /// Layout: top border + blank + N content lines + blank + buttons + blank
-/// + hint + bottom border.
+/// + hint + bottom border = N + 7.
 #[must_use]
 pub fn required_height(state: &ConfirmSaveState) -> u16 {
     let lines = u16::try_from(state.lines.len()).unwrap_or(u16::MAX);
-    lines.saturating_add(6)
+    lines.saturating_add(7)
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
@@ -307,7 +307,8 @@ mod tests {
             Line::from("two"),
             Line::from("three"),
         ]);
-        // 3 content lines + 6 chrome rows
-        assert_eq!(required_height(&s), 9);
+        // 3 content lines + 7 chrome rows (2 borders + top blank + after-content blank
+        // + buttons + after-buttons blank + hint)
+        assert_eq!(required_height(&s), 10);
     }
 }
