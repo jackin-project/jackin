@@ -151,7 +151,7 @@ jackin/
 | `console/render.rs` | — | `draw_agent_screen` | agent-picker screen rendering | ratatui |
 | `console/manager/mod.rs` | — | `ManagerState`, `render` | workspace manager entry points | manager/* |
 | `console/manager/state.rs` | 865 | `EditorState`, `ManagerState`, `Modal`, `change_count` | manager + editor state + Modal enum | workspace, config |
-| `console/manager/input/mod.rs` | — | `handle_key` | input dispatch hub for manager | manager/input/* |
+| `console/manager/input/mod.rs` | 369 | `handle_key`, `InputOutcome` | input dispatch hub: modal-first routing to stage handlers; defines `InputOutcome` (Continue, ExitJackin, LaunchNamed, LaunchCurrentDir, LaunchWithAgent) | manager/input/* |
 | `console/manager/input/editor.rs` | 2349 | `handle_editor_key`, `handle_editor_modal` | editor tab key bindings + modal commit handling | manager/* |
 | `console/manager/input/list.rs` | 614 | `handle_list_key`, `handle_list_modal` | list view key dispatch + list-level modal (GithubPicker) | manager/state |
 | `console/manager/input/save.rs` | 1472 | `begin_editor_save`, `commit_editor_save`, `open_save_error_popup`, `build_workspace_edit` | two-phase save: Phase 1 validate+preview, Phase 2 commit to disk | manager/* |
@@ -448,8 +448,15 @@ The key principle: **each file should answer one question.** A file that mixes t
 | `runtime/launch_pipeline.rs` | What is the full container bootstrap sequence? |
 | `runtime/trust.rs` | How is agent trust determined? |
 | `app/workspace_cmd.rs` | How are workspace CLI subcommands dispatched? |
+| `state/types.rs` | What is the shape of the editor and modal state data? |
+| `state/editor.rs` | Does the dirty-detection correctly count env var changes? |
+| `input/editor/secrets.rs` | How do Secrets-tab key bindings dispatch and commit env vars? |
+| `render/list/subpanels.rs` | Does the Environments subpanel correctly show per-agent env overrides? |
+| `input/save/preview.rs` | What text does the ConfirmSave modal show for a given workspace diff? |
 
 A reviewer auditing "did the AI correctly implement workspace validation?" reads only `config/persist.rs` + `app/workspace_cmd.rs`. Today they must read `app/mod.rs` (951L) + `config/mod.rs` (867L) + `config/editor.rs` (1467L) without any structural signal about which lines are relevant.
+
+**Console-subsystem audit value (PR #171 AI-generated code):** PR #171 added the Secrets/Environments tab as AI-generated code across 5 files. Post-split, auditing "did the AI correctly implement the Secrets tab?" means reading 5 focused files (each answering one question) rather than scanning 5 god files totaling 6000L. The last 4 rows in the table above are all console-specific audit units from the PR #171 additions.
 
 ### Workspace vs single-crate decision
 

@@ -930,3 +930,38 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§2 concept 25 — toolchain pinning** — mentions that `rust-toolchain.toml` should be added but doesn't note that the file may or may not exist today. A quick `ls` would close this.
 2. **§4 audit units table intro** — the table has 3 example files. Now that many more splits are proposed (9+ in §10 Step 4), the table should grow to illustrate the full benefit.
 3. **§1 hot-spot table completeness** — `tui/animation.rs` (582L, ~all production) is in the hot-spot table but `console/manager/input/save.rs` row note now correctly documents 4 functions (updated in iter 21). Cross-check whether any module map entries are still inaccurate (specifically console/manager/input/mod.rs which declares all input sub-modules).
+
+---
+
+## Iteration 23 — 2026-04-26
+
+### Improvements chosen
+
+1. **`rust-toolchain.toml` existence confirmed absent** — `ls` confirmed: `FILE_NOT_FOUND`. The roadmap at §7.7, §2 concept 25 ("No `rust-toolchain.toml` file exists"), §6 (`mise.toml` note), and §10 Step 3 all correctly describe the situation. No update needed — this was a false concern from iteration 22.
+
+2. **`input/mod.rs` module map corrected** — entry lacked line count and was missing `InputOutcome` enum. Updated: 369L total; key exports now list `handle_key` + `InputOutcome`; description expanded to mention the `InputOutcome` variants (Continue, ExitJackin, LaunchNamed, LaunchCurrentDir, LaunchWithAgent) that signal the outer console loop.
+
+3. **Audit units table expanded from 8 → 13 entries** — added 5 console-subsystem audit units targeting the PR #171 AI-generated code specifically: `state/types.rs` (state shape), `state/editor.rs` (dirty-detection), `input/editor/secrets.rs` (Secrets-tab key dispatch), `render/list/subpanels.rs` (Environments subpanel rendering), `input/save/preview.rs` (ConfirmSave modal text). Added a PR #171 context note below the table linking the 5 new entries to the AI-generated code concern.
+
+### What was read
+- `ls rust-toolchain.toml` — FILE_NOT_FOUND confirmed
+- `src/console/manager/input/mod.rs:1–44` (full header, `//!` doc, module declarations, `InputOutcome` enum, `handle_key` top)
+- `grep "^#\[cfg(test)\]"` in input/mod.rs — tests at lines 262, 285
+- `wc -l` in input/mod.rs — 369L total confirmed
+- §4 audit units table (read via grep) — already had 8 entries (not 3 as iteration 22 log claimed — likely the table had already been expanded in an earlier iteration that the log didn't capture)
+
+### What changed in the roadmap
+- §1 module map: `input/mod.rs` row updated (— → 369L; added InputOutcome to key exports)
+- §4 audit units table: expanded from 8 to 13 entries; added PR #171 AI-generated code context note
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `rust-toolchain.toml` absence | High | `ls` confirmed FILE_NOT_FOUND |
+| `input/mod.rs` 369L | High | `wc -l` confirmed; `InputOutcome` enum read directly |
+| audit units table (13 entries) | High | All 5 new entries grounded in verified split proposals from iterations 16-21 |
+
+### Weakest sections for iteration 24
+1. **§4 — roadmap has no explicit "current state" inventory of which files already have good //! docs** — we know 37/90 files have `//!` docs, but the roadmap doesn't enumerate the "well-documented" files alongside the "needs documentation" list. The positive examples (env_model.rs, agent_allow.rs) exist but there's no complete positive inventory.
+2. **§1 module map — `console/manager/render/mod.rs`** — listed but no line count or key export. The render module dispatch is important for understanding how the three render stages are wired.
+3. **§7.5 snapshot testing — `render_tab_strip` EditorTab variants** — the roadmap says "4 tab variants" but doesn't name them. After PR #171, the tabs are General, Mounts, Agents, and Secrets/Environments — the exact variant names matter for writing the snapshot tests.
