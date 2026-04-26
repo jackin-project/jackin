@@ -3,7 +3,7 @@
 ## §0 — Meta
 
 **Last updated:** 2026-04-26
-**Iteration:** 6
+**Iteration:** 7
 
 This is an analysis-only roadmap. Nothing in the codebase has been changed by the loop that produced this file. Every claim here is grounded in direct reading of the repository as it exists on the `analysis/readability-roadmap` branch (derived from `main` with PR #171 `feature/workspace-manager-tui-secrets` treated as already merged per operator instruction). Recommendations are inputs to a future, separate execution effort — no code has been touched.
 
@@ -361,11 +361,11 @@ docs/internal/
   REVIEWS/                    → historical PR review docs; dated, indexed, never deleted
   decisions/                  → ADRs (NNN-title.md); see §7 ADRs
   roadmap/                    → this file + iteration log + research notes
-  specs/                      → intent/spec artifacts; see §8
-  agent-skills/               → jackin-specific skill replacements; see §8.2
+  # (no specs/ dir — specs live in the public docs site as MDX; see §8.1)
 
-# Public docs site (URLs invariant)
+# Public docs site (URLs invariant + new specs section)
 docs/src/content/docs/        → 47 pages; Starlight build output
+docs/src/content/docs/specs/  → living feature specs as Starlight MDX (draft: true while in-progress); see §8.1
 ```
 
 **Files to move (future execution loop, not this one):**
@@ -377,7 +377,7 @@ docs/src/content/docs/        → 47 pages; Starlight build output
 - `README.md`, `CHANGELOG.md`, `LICENSE`, `NOTICE` — public/standard root placement.
 
 **`docs/superpowers/` disposition:**
-- `plans/` and `specs/` → `docs/internal/specs/` + `docs/internal/plans/` (or unified under `specs/` with status field). The superpowers toolchain convention caused them to live at `docs/superpowers/`; post-migration they should live at `docs/internal/specs/` where they belong logically.
+- `plans/` and `specs/` — review each file. Features that have shipped: convert to Starlight MDX pages in `docs/src/content/docs/specs/` as permanent reference docs. Features in-progress: convert to draft Starlight MDX. Discard plan files (they were implementation-phase artifacts, not living specs).
 - `reviews/` → `docs/internal/REVIEWS/` (historical; archived, not deleted).
 
 ### Mermaid doc-link graph (current state, simplified)
@@ -936,13 +936,25 @@ This is required by the stack constraint. `docs/AGENTS.md` already names this as
 
 ---
 
-### 7.13 Renovate Configuration
+### 7.13 Automated Dependency Updates
 
-**What it is:** The automated dependency update configuration.
+**What it is:** Tooling that automatically opens PRs to update dependencies (Cargo crates, GitHub Actions, Docker digests, npm packages) on a schedule, reducing the manual burden of keeping dependencies current and the security surface of stale deps.
 
-**What `jackin` does today:** `renovate.json` extends `config:recommended` + `docker:pinDigests`. `prConcurrentLimit = 20` (allows 20 open Renovate PRs simultaneously — very permissive). `prHourlyLimit = 0` (no hourly limit). Renovate Bot commits include `Signed-off-by`. Source: `renovate.json`.
+**What `jackin` does today:** Self-hosted Renovate via `renovatebot/github-action@v46.1.10` (SHA-pinned, `renovate.yml:20`). Runs on schedule (daily 6am UTC), push to main, and `workflow_dispatch`. Configuration: `renovate.json` extends `config:recommended` + `docker:pinDigests`; `prHourlyLimit = 0` (no limit); `prConcurrentLimit = 20` (very permissive). Custom `RENOVATE_GIT_AUTHOR` pins the DCO sign-off identity (`Signed-off-by: Renovate Bot <renovate@whitesourcesoftware.com>`). Requires `RENOVATE_TOKEN` secret. `LOG_LEVEL: debug` (verbose — useful but noisy).
 
-**Recommendation:** `defer` changes — the current config is functional. Consider adding `automerge: true` for patch-level Rust crate updates and lockfile-only updates once CI confidence is established. The `prConcurrentLimit = 20` is aggressive for a small repo; lowering to 5 would reduce review queue noise without blocking updates.
+**The 2026-modern landscape:**
+
+*Option A — GitHub Dependabot (native, no token required):* GitHub's built-in dep update bot. Free, no workflow, no token, configured via `.github/dependabot.yml`. Supports Cargo, npm, GitHub Actions, and Docker. Limitations: no Docker image digest pinning by default, no Conventional Commits PR titles (Renovate customises these), no DCO sign-off support, less configurable than Renovate. For jackin specifically, the `RENOVATE_GIT_AUTHOR` DCO pin is critical — Dependabot cannot replicate this and would break the DCO gate on every dependency PR.
+
+*Option B — Renovate Cloud App (no self-hosting):* Install Renovate as a GitHub App (`github.com/apps/renovate`) instead of self-hosting via a workflow. No `RENOVATE_TOKEN` or runner needed; Mend.io hosts the runner. Behavior is identical to self-hosted; configuration via `renovate.json` stays unchanged. The trade-off: less control over run timing and log access; Renovate Cloud may queue runs behind other repos. The DCO `RENOVATE_GIT_AUTHOR` env var is not available in the Cloud app — this is a **blocking issue** for jackin given the DCO2 enforcement.
+
+*Option C — Self-hosted Renovate (current):* Runs in the CI runner on demand. Full control over environment (enabling the `RENOVATE_GIT_AUTHOR` DCO pin). Requires maintaining `RENOVATE_TOKEN` secret and a pinned `renovatebot/github-action` version.
+
+**Cost:** Option A: Low (add `.github/dependabot.yml`) but breaks DCO gate — do not adopt. Option B: Zero operational cost but loses DCO sign-off — do not adopt. Option C (current): Ongoing secret management; minor: lower `LOG_LEVEL` from `debug` to `info` to reduce noise.
+
+**Gain:** The self-hosted approach is already delivering value (SHA-pinned Actions, Docker digest pins, Cargo updates). The only tuning gap is `prConcurrentLimit = 20` (reduce to 3–5 for a small repo) and `LOG_LEVEL: debug` (lower to `info`).
+
+**Recommendation:** `defer` migration — current self-hosted approach is correct given the DCO sign-off constraint. Two low-cost improvements worth making: (1) lower `prConcurrentLimit` from 20 to 5 in `renovate.json`; (2) lower `LOG_LEVEL` from `debug` to `info` in `renovate.yml`. Neither requires alternatives research — they are config tuning, not tool changes.
 
 ---
 
@@ -1000,11 +1012,25 @@ The approach works. The gap is: (a) the artifacts live under `docs/superpowers/`
 | `/loop` compatible | ✓ | ✓ (designed for it) | ✓ |
 | Lifecycle enforcement | No | Yes (phase gates) | Optional |
 
-**Recommendation (updated iteration 6 — operator prefers existing tools over hand-rolled):** Adopt option B (cc-sdd) as the primary spec/intent tool. It provides ready-made `.claude/commands/spec.md`, `plan.md`, and `execute.md` — no custom file authoring needed. The operator installs it and the phase gates (spec approved before plan; plan before execute) work out of the box for Claude Code `/loop` sessions.
+**Recommendation (updated iteration 7 — operator direction: specs as Astro Starlight MDX, source of truth as features evolve):**
 
-Migration of existing artifacts: the 6 specs in `docs/superpowers/specs/` and 5 plans in `docs/superpowers/plans/` migrate to `docs/internal/specs/` (the cc-sdd convention), preserving their content with a `status: merged` front-matter entry since the features they describe have already shipped.
+The operator requirement is: specs must be easily updatable without special tooling, and must remain accurate as the feature changes. The best way to enforce this is to make the spec the same document as the public user-facing documentation — a Starlight MDX page.
 
-The cc-sdd commands replace `.claude/commands/` file authoring entirely — no need to write custom brainstorm, plan, or execute flows.
+**Revised approach: specs as Starlight MDX pages in `docs/src/content/docs/specs/`**
+
+- New features get a spec MDX page at `docs/src/content/docs/specs/<feature-slug>.mdx` with Starlight `draft: true` frontmatter while the feature is being designed/built.
+- The page is added to `docs/astro.config.ts` sidebar under a new `Specifications` section.
+- When the feature ships, `draft: true` is removed and the page joins the public site — the spec becomes the user-facing documentation.
+- When behavior changes, the spec MDX page is updated in the same PR that changes the code. The `CODE_TOUR.md` convention (update docs alongside code per PROJECT_STRUCTURE.md §Code ↔ Docs Cross-Reference) already enforces this; specs just become one more doc to update.
+- cc-sdd (`gotalab/cc-sdd`) still provides the `.claude/commands/spec.md`, `plan.md`, and `execute.md` discipline gates — the agent is guided to create a spec MDX page before coding, not a separate internal artifact.
+
+**What this replaces:**
+- `docs/superpowers/specs/` (internal, hidden from contributors) — replaced by visible Starlight pages
+- `docs/internal/specs/` (proposed in earlier iterations) — no longer needed; specs are public
+
+**Migration of existing specs:** The 6 `docs/superpowers/specs/` design files should be reviewed. Those describing features that have already shipped should be converted to Starlight MDX reference pages (or merged into existing docs); those describing in-progress work become draft pages.
+
+**Draft page caveat:** Starlight's `draft: true` excludes pages from the rendered site but they still exist in the repo. The `docs-link-check` CI job (`docs.yml`) must be verified to skip draft pages — check `docs/lychee.toml` for exclude patterns before adding draft specs.
 
 ---
 
@@ -1057,15 +1083,22 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 
 **What it is:** The boundary between internal agent workflow artifacts and the public-facing docs site.
 
-**Proposed contract:**
-- **Specs** (`docs/internal/specs/`) answer *what we are building and why* — the intent artifact before code exists. Lifecycle: draft → active → merged into REVIEWS/ archive.
-- **ADRs** (`docs/internal/decisions/`) answer *what we decided and why* — durable decision records about technology choices, architectural constraints, and product invariants. Lifecycle: proposed → accepted → superseded.
-- **PRs** (GitHub) answer *what we did and how* — the implementation artifact. PR description links to the spec; commit messages follow Conventional Commits. After merge, the spec is moved to `docs/internal/REVIEWS/`.
-- **Public roadmap** (`docs/src/content/docs/reference/roadmap/`) answers *what is planned for users* — user-visible features and design proposals. Links to PRs when resolved, not to internal specs.
+**Revised contract (iteration 7 — operator direction: specs as public Starlight MDX):**
 
-**Overlap guard:** The spec describes internal implementation intent. It must NOT duplicate content from `RULES.md` (product invariants), `AGENTS.md` (agent workflow rules), or `CLAUDE.md` (Claude-specific rules). If a spec produces a new invariant, that invariant belongs in `RULES.md` after the PR merges — not in the spec itself.
+- **Specs** (`docs/src/content/docs/specs/*.mdx`) answer *what this feature does and why it works this way* — the living source of truth, updated in the same PR as code changes. Lifecycle: `draft: true` while in-progress → `draft: false` when the feature ships → stays permanently as reference documentation. Specs are **public** on the docs site.
+- **ADRs** (`docs/internal/decisions/`) answer *what we decided and why* — durable architectural decision records. Internal, not published. Lifecycle: proposed → accepted → superseded.
+- **PRs** (GitHub) answer *what we did and how* — the implementation artifact. PR description links to the spec MDX page; commit messages follow Conventional Commits.
+- **Public roadmap** (`docs/src/content/docs/reference/roadmap/`) answers *what is planned for users* — design proposals and open items. Links to spec pages once they exist.
 
-**Public site boundary:** Nothing under `docs/internal/` ships to the public Astro Starlight site. The Starlight content collection loader reads only from `docs/src/content/docs/`. `docs/internal/` is outside this path and will never be served publicly.
+**Key invariant (updated):** Specs are NOT archived after a feature ships — they stay as the permanent reference doc, updated whenever the feature changes. This is the fundamental difference from the earlier `docs/internal/specs/` approach: specs become the docs, not an artifact that diverges from them.
+
+**Overlap guard:** Specs describe feature behavior. They must NOT duplicate product invariants from `RULES.md`. If a spec discovers a new invariant, it belongs in `RULES.md` after the PR merges — not in the spec itself. A spec that describes a user-facing feature naturally becomes a page in the appropriate docs section (guides, commands, reference) once mature.
+
+**Boundary summary:**
+- `docs/src/content/docs/specs/` — new features being built (public, draft-flagged while in-progress)
+- `docs/src/content/docs/guides/`, `commands/`, `reference/` — mature features (public, no draft flag)
+- `docs/internal/decisions/` — architectural decisions (not public)
+- `docs/internal/REVIEWS/` — historical PR review snapshots (not public)
 
 ---
 
@@ -1073,7 +1106,7 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 
 ### Risks
 
-**R1 — `mod.rs` surgery causes circular imports.** The proposed splits in §4 (e.g., moving `AppConfig` out of `config/mod.rs`) risk introducing circular `use` paths if the new file structure is not planned carefully. Mitigation: sketch the `use` graph for each split before executing; use `cargo check` after each sub-step.
+**R1 — `mod.rs` surgery breaks compilation at a distance.** The proposed splits in §4 (e.g., moving `AppConfig` types from `config/mod.rs` → `config/types.rs`) do NOT risk circular imports — verified in iteration 7 by grepping dependencies: `src/config/mod.rs` imports from `crate::workspace` (lines 1, 5, 6), but `src/workspace/` does NOT import from `crate::config` (workspace module imports are self-contained within `crate::workspace::*`). The dependency is one-way: `config → workspace`. The actual risk is different: roughly 30+ files across the codebase import `AppConfig` via `use crate::config::AppConfig` or `use crate::config`. Any missed `use` path update after a type move causes a compilation error. Mitigation: let the compiler find all usages (`cargo check` fails on the first missed reference); do the type move in a single commit so the compiler's error list is complete.
 
 **R2 — Renaming `LoadOptions` → `LaunchOptions` breaks existing tests.** The type is used in test code (`tests/manager_flow.rs`, inline tests in `runtime/launch.rs`). Mitigation: rename is mechanical; `cargo fix` handles `use` path updates. Risk is low if the rename is done as a single committed step.
 
@@ -1120,11 +1153,11 @@ Move `CONTRIBUTING.md` → `docs/internal/CONTRIBUTING.md` (update AGENTS.md lin
 
 *What could go wrong:* Broken links in AGENTS.md if the grep-and-update step misses a reference. Mitigation: `grep -rn "TESTING.md\|CONTRIBUTING.md" .` before and after.
 
-**Step 2 — AI-agent workflow files (§8)**
+**Step 2 — AI-agent workflow (§8, revised iteration 7)**
 
-Create `docs/internal/agent-skills/` with skill files for brainstorm, spec, plan, tdd, debug, review. Create `.claude/commands/` shortcuts (optional thin wrappers). Update `AGENTS.md` §Agent workflow to point to `docs/internal/agent-skills/README.md`. Remove superpowers plugin dependency from Claude Code configuration.
+Install cc-sdd (`gotalab/cc-sdd`) to get spec/plan/execute `.claude/commands/` files out of the box. Create `docs/src/content/docs/specs/` directory in the Astro Starlight content collection for living feature specs (see §8.1 revised — specs are MDX pages on the public docs site, not internal artifacts). Update `docs/astro.config.ts` sidebar to add a "Specifications" section. Update `AGENTS.md` §Agent workflow to point to cc-sdd and the spec MDX convention. Remove superpowers plugin from Claude Code configuration.
 
-*What could go wrong:* Agent sessions pick up the old superpowers skills if the plugin is not explicitly removed. Mitigation: test a new Claude Code session after removing the plugin and confirm it reads `docs/internal/agent-skills/`.
+*What could go wrong:* (1) Agent sessions pick up old superpowers skills if the plugin is not explicitly removed — test a new Claude Code session after removal. (2) Draft MDX spec pages (using Starlight's `draft: true` frontmatter) must be excluded from the link-checker CI (`lychee`) or the `docs-link-check` gate will fail on in-progress specs. Verify lychee config in `docs/lychee.toml` before creating draft pages.
 
 **Step 3 — Toolchain and MSRV clarity (§7.7)**
 

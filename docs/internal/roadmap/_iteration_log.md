@@ -277,6 +277,56 @@ See §9 of the roadmap for the canonical list. Key items:
 
 ---
 
+## Iteration 7 — 2026-04-26
+
+### Improvements chosen
+
+1. **§9 R1 risk correction** — verified dependency graph: `config/mod.rs` imports from `crate::workspace` (lines 1, 5, 6 confirmed by grep) but `src/workspace/` does NOT import from `crate::config`. One-way dependency: `config → workspace`. R1 rewritten from "circular import risk" to "compilation-at-distance risk" — the real issue is 30+ files that import `AppConfig` will each need a `use` path update, and a missed reference causes a compile error.
+
+2. **§10 Step 2** — rewritten to match §8.2's cc-sdd recommendation (was still describing the hand-rolled `docs/internal/agent-skills/` approach). Now correctly says: install cc-sdd, add `docs/src/content/docs/specs/` directory, update `astro.config.ts`, update `AGENTS.md`. Added caveat about draft pages and lychee link-checker.
+
+3. **§7.13 Renovate** — expanded from 2-sentence `defer` to full six-subheading entry. Key finding: `renovate.yml` uses self-hosted Renovate with `RENOVATE_GIT_AUTHOR` env var for DCO sign-off — this is a **blocking constraint** for both Dependabot and Renovate Cloud App alternatives (neither can replicate the DCO sign-off). Recommendation stays `defer migration` but two low-cost config tunings identified: `prConcurrentLimit` 20→5, `LOG_LEVEL` debug→info.
+
+4. **§8.1 MDX-as-spec direction (operator feedback)** — revised recommendation from cc-sdd + `docs/internal/specs/` to Astro Starlight MDX pages in `docs/src/content/docs/specs/`. Specs are now **public**, updated alongside code changes, and serve as living documentation rather than archived design artifacts.
+
+5. **§8.3 boundary contract** — completely rewritten. Specs are no longer internal artifacts; they're public MDX pages. The boundary is now: `docs/src/content/docs/specs/` (public, draft-flagged while in-progress) vs `docs/internal/decisions/` (ADRs, not public).
+
+6. **§3 proposed target shape** — updated to remove `specs/` from `docs/internal/` and add `docs/src/content/docs/specs/` to the public docs tree.
+
+### What was read
+
+- `src/config/mod.rs:1-10` — confirmed workspace imports (lines 1, 5, 6)
+- `src/workspace/mod.rs`, `workspace/planner.rs`, `workspace/resolve.rs` — confirmed NO config imports
+- `.github/workflows/renovate.yml` (full — confirmed RENOVATE_GIT_AUTHOR DCO constraint)
+- `renovate.json` (confirmed from iteration 1 reading)
+
+### What changed in the roadmap
+
+- §0: Iteration count bumped to 7
+- §3: Target shape: removed `specs/` from `docs/internal/`, added `docs/src/content/docs/specs/` to public docs tree
+- §7.13: Full six-subheading entry replacing 2-sentence stub; Dependabot and Renovate Cloud evaluated and rejected due to DCO constraint
+- §8.1: Recommendation pivoted to Starlight MDX specs
+- §8.3: Contract completely rewritten for public-spec model
+- §9 R1: Corrected from "circular import" to "compilation-at-distance" with dependency graph verification
+- §10 step 2: Updated to match cc-sdd + Starlight MDX approach
+
+### Confidence assessment (updated)
+
+| Section | Confidence | Notes |
+|---|---|---|
+| §8 AI-agent workflow | High | Now reflects two rounds of operator feedback (existing tools + MDX integration) |
+| §7.13 Renovate | High | DCO constraint verified from renovate.yml source |
+| §9 R1 | High | Dependency graph verified by grep |
+| §3 Doc hierarchy | High | Updated to match revised §8 spec location |
+
+### Weakest sections for iteration 8
+
+1. **§4 `AuthForwardMode` mislocation** — flagged but not yet addressed. `AuthForwardMode` is defined at `config/mod.rs:26` but implementing code is in `instance/auth.rs`. The §4 "Rule 3: trait definitions live with their domain" section doesn't call this out with a line citation. Need to assess: is this actually a violation, or is it correct because the mode IS a config value?
+2. **§8.1 Starlight `draft` caveat** — lychee.toml hasn't been read to verify whether draft pages are excluded from link-checking. This is a prerequisite for safely adding draft spec pages.
+3. **§2 superpowers → specs migration map** — the concept-to-location index doesn't reflect that specs are now moving to the public docs site. Concept 11 (Release automation flow) and concept 8 (agent → Docker image resolution path) could have corresponding spec pages created for them.
+
+---
+
 ## Iteration 2 — 2026-04-26
 
 ### Improvements chosen
