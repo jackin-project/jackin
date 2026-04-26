@@ -1670,3 +1670,42 @@ Operator asked to follow standard Rust community practices for project structure
 1. **Module naming conventions** — the community standard for Rust module names within a large single crate. Should module names be snake_case (current, correct) or should they follow any specific pattern?
 2. **Internal module visibility (`pub(crate)` vs `pub`)** — the roadmap proposes `pub(crate)` discipline but hasn't checked what the current state is across all 94 files.
 3. **Error type design** — the greenfield workspace enables crate-boundary error types, but the current anyhow usage pattern is valid for a single-crate application too. Is this worth changing?
+
+---
+
+## Iteration 39 — 2026-04-26
+
+### What was improved
+
+1. **§0 Executive Summary rewritten** — the previous summary (written at iteration 33) was significantly outdated, missing 6 major decisions made in iterations 34–38:
+   - The browsable internal docs model (all docs at `jackin.tailrocks.com/internal/`)
+   - The per-directory README.md adoption (§7.9 reversal)
+   - The CLAUDE.md = single-line @AGENTS.md design principle
+   - The greenfield workspace architecture (§4) following matklad's virtual manifest pattern
+   - The future project (§11) — modern Rust docs platform / Context7 alternative
+   - Updated document size ("1800+" → "2200+")
+
+2. **Stale path references corrected throughout** — after the browsable-docs decision (iteration 38's sed sweep), several references still pointed to the old `docs/internal/` filesystem paths:
+   - Mermaid diagram: `INTERNAL_ROADMAP["docs/internal/roadmap/"]` → `docs/src/content/docs/internal/roadmap/`
+   - Mermaid diagram: `INTERNAL_CODE_TOUR["docs/internal/CODE_TOUR.md"]` → `docs/src/content/docs/internal/code-tour.mdx`
+   - §7.10 ADRs recommendation: `docs/internal/decisions/NNN-title.md` → `docs/src/content/docs/internal/decisions/NNN-title.mdx`
+   - §7.10 ADRs landscape: updated to note browsable Starlight path
+   - §10 Track B item 2: `docs/internal/specs/op-picker.md` → `docs/src/content/docs/internal/specs/op-picker.mdx`
+
+### What was read
+- §0 in full — identified outdated summary
+- Mermaid diagrams in §3 — found stale paths
+- §7.10 — found stale ADR path
+- §10 Track B — found stale spec path
+- All remaining `docs/internal/` bare references — 2 structural fixes applied; ~20 others are correct `docs/src/content/docs/internal/` paths
+
+### What changed in the roadmap
+- §0: Executive summary rewritten with all major decisions from iterations 30-38
+- §3 Mermaid proposed-state diagram: 2 stale paths corrected
+- §7.10: ADR format path updated to Starlight MDX
+- §10 Track B item 2: op-picker spec path updated
+
+### Weakest sections for iteration 40
+1. **`pub(crate)` visibility audit** — the roadmap proposes `pub(crate)` discipline (Rule 4) but never verified the current state across all 94 files. How many items are `pub` that should be `pub(crate)`?
+2. **§7.15 is mentioned in the executive summary but doesn't exist yet** — the rustdoc JSON → Starlight pipeline is referenced in §0 as if it exists, but §7.15 has not been written.
+3. **§11 editor integration note** — user asked about fff.nvim; noted briefly in conversation but not added to §11.

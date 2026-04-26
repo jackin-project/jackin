@@ -23,24 +23,33 @@ Research sources: [`_research_notes.md`](./_research_notes.md).
 
 ### Executive Summary
 
-*This document is 1800+ lines. Read this summary first; navigate to sections by question.*
+*This document is 2200+ lines across 11 sections. Read this summary first; navigate to sections by question.*
 
 **The core problem:** Significant portions of `jackin` are AI-generated (PR #171 added ~2,600L of new code across 10+ files). AI-generated code can contain subtle invariant violations that look correct on inspection. The current codebase has no behavioral specs, no `//!` module contracts on 59% of files, and no systematic way to verify "did the AI implement this correctly?"
 
-**The recommended path (§4 Phase 1 → Phase 2 → Phase 3):**
+**Documentation model (operator-directed):**
+- **`README.md`** at every major directory — AI-native orientation (Claude Code and similar tools load this on directory entry). See §7.9 for proposed content per directory.
+- **`AGENTS.md`** (root only) — agent workflow rules. **`CLAUDE.md`** is a single-line `@AGENTS.md` pointer — never add content there.
+- **`//!` docs** in every `.rs` file — file-level contracts.
+- **`jackin.tailrocks.com/internal/`** — all implementation docs are browsable on the Starlight site (not hidden filesystem files). Internal docs are a distinct Starlight section ("Developer Reference"), not a separate site.
 
-- **Phase 1 — Documentation sprint** (2–3 PRs, zero structural change, immediately applicable): Write `//!` module contracts for the 10 highest-priority files (§10 Step 5 //! queue). Author behavioral specs (`docs/src/content/docs/internal/specs/`) in priority order: (1) `runtime/launch.rs` first — no `//!` doc at all, ~1077L production, inline "Step 1–4" comments exist but no module-level invariant contract; bugs here brick `jackin load` for all users; (2) `op_picker/mod.rs` — AI-generated, ~775L production, has a `//!` doc but no INV-format invariant contract. `config/editor.rs` is **removed from this list**: its 963L test suite already serves as a behavioral spec (each test is a behavioral example); dropping it to deferred reduces Phase 1 scope to 2 specs instead of 3. Each spec follows the `INV-N` format with grep-executable "Verify by:" commands (§8.1 template).
-- **Phase 2 — Targeted structural splits** (4 PRs, moderate risk): Split only the 4 files with >800L production code: `input/editor.rs` (~1141L), `runtime/launch.rs` (~1077L), `app/mod.rs` (~957L), `operator_env.rs` (~880L). The other 9 files above 500L total but below 800L production are deferred.
-- **Phase 3 — Workspace split** only if LOC exceeds 150K or a second binary needs its own semver identity. Current: 43,587L — well short.
+**The recommended execution path:**
 
-**Key counter-argument (§4 alternative thesis):** File splitting is not the only path. Documentation-first verification (//! contracts + specs) may be sufficient for most files — AI context windows (200K+ tokens) can hold entire codebases, so file size is not the constraint. Splitting adds PR risk (circular imports, 30+ use-path updates per split). Phase 1 alone may deliver 80% of the verifiability gain at 20% of the risk.
+- **Phase 1 — Documentation sprint** (2–3 PRs, zero structural change): Write `//!` module contracts for the 10 //!-queue files. Author behavioral specs at `docs/src/content/docs/internal/specs/` for (1) `runtime/launch.rs` — no `//!` doc, critical path, ~1077L production, 5 verified INVs (§10 Step 2 Track B); (2) `op_picker/mod.rs` — AI-generated, ~775L production. `config/editor.rs` dropped — its 963L test suite already serves as behavioral spec.
+- **Phase 2 — Targeted structural splits** (4 PRs): Split only the 4 files with >800L production code: `input/editor.rs` (~1141L), `runtime/launch.rs` (~1077L), `app/mod.rs` (~957L), `operator_env.rs` (~880L).
+- **Phase 3 — Workspace split** only if LOC exceeds 150K or a sub-component (e.g., `jackin-core`) needs external consumers. Current: 43,587L — well short. The greenfield workspace architecture (§4 Greenfield) follows matklad's virtual manifest + flat `crates/` pattern; ripgrep and gitui went workspace for external consumers — `jackin` does not yet have that trigger.
+
+**Key counter-argument:** Documentation-first verification may deliver 80% of the verifiability gain at 20% of the split risk. AI context windows (200K+ tokens) can hold entire codebases — file size is not the bottleneck. See §4 alternative thesis.
+
+**Future project (§11):** The `gen-rust-api.ts` pipeline being built for `jackin` is the prototype for a modern `docs.rs` alternative — rustdoc JSON → Astro Starlight with an MCP server for AI agent queries. A genuine Context7-for-Rust alternative, built on the same Starlight site.
 
 **Where to find what:**
-- `§2` — Where does feature X live in the codebase today? (25 concept locations)
-- `§4` — What structural changes are proposed? (module rules, split proposals, alternative thesis)
-- `§7` — Which modernization candidates are worth adopting in 2026?
-- `§8` — How to do spec-driven development? (tool comparison + spec template)
-- `§10` — In what order should changes be executed?
+- `§2` — Where does feature X live today? (25 concept locations, rated by discoverability)
+- `§4` — Structural proposals: module rules, split table, greenfield workspace architecture
+- `§7` — Modernization candidates, including §7.9 (per-directory README.md) and §7.15 (rustdoc JSON → Starlight pipeline)
+- `§8` — Spec-driven development workflow, tool comparison, behavioral spec template with INV-N format
+- `§10` — Execution sequencing with Track A (tooling) and Track B (behavioral specs before structural splits)
+- `§11` — Future project: modern Rust documentation platform (separate from `jackin`)
 
 ---
 
@@ -561,9 +570,9 @@ graph TD
   RULES --> DEPRECATED
   TODO --> ROADMAP_MDX["docs/…/roadmap.mdx (unchanged)"]
   INTERNAL_CONTRIB --> INTERNAL_TESTING
-  INTERNAL_SPECS["docs/internal/specs/"] --> INTERNAL_ROADMAP["docs/internal/roadmap/"]
-  INTERNAL_DECISIONS["docs/internal/decisions/"] --> INTERNAL_ARCH["docs/internal/ARCHITECTURE.md"]
-  INTERNAL_CODE_TOUR["docs/internal/CODE_TOUR.md"] --> PROJECT_STRUCTURE
+  INTERNAL_SPECS["docs/src/content/docs/internal/specs/"] --> INTERNAL_ROADMAP["docs/src/content/docs/internal/roadmap/"]
+  INTERNAL_DECISIONS["docs/src/content/docs/internal/decisions/"] --> INTERNAL_ARCH["docs/src/content/docs/internal/architecture.mdx"]
+  INTERNAL_CODE_TOUR["docs/src/content/docs/internal/code-tour.mdx"] --> PROJECT_STRUCTURE
 ```
 
 ---
@@ -1180,7 +1189,7 @@ Each entry is a **candidate**, not a mandate. Confirmed present in the repositor
 | `release.yml` | (tag push presumably) | cargo-release + artifact creation | dtolnay/rust-toolchain SHA `e081816…` = 1.95.0 — same SHA as `ci.yml` | Good: toolchain consistency across CI |
 | `renovate.yml` | scheduled | Renovate bot dependency updates | — | `commitBody` includes DCO sign-off for Renovate Bot — excellent practice |
 
-**`preview.yml` — documentation gap:** The Homebrew preview channel (`jackin@preview`) is described in `README.md` as an install option but the distribution mechanism (this workflow → `jackin-project/homebrew-tap`) is not documented anywhere in the contributor-facing docs. A contributor debugging a broken preview formula or adding the first alternative distribution channel would need to read this workflow cold. **Recommendation:** Add a `docs/internal/decisions/` ADR or a `docs/internal/ARCHITECTURE.md` section titled "Release and distribution channels" describing: (1) stable release flow (`release.yml` → Homebrew tap), (2) rolling preview flow (`preview.yml` → `jackin-preview.rb`), (3) the `HOMEBREW_TAP_TOKEN` secret requirement and what permissions it needs. This is pure documentation — zero code change.
+**`preview.yml` — documentation gap:** The Homebrew preview channel (`jackin@preview`) is described in `README.md` as an install option but the distribution mechanism (this workflow → `jackin-project/homebrew-tap`) is not documented anywhere in the contributor-facing docs. A contributor debugging a broken preview formula or adding the first alternative distribution channel would need to read this workflow cold. **Recommendation:** Add a `docs/internal/decisions/` ADR or a `docs/src/content/docs/internal/architecture.mdx` section titled "Release and distribution channels" describing: (1) stable release flow (`release.yml` → Homebrew tap), (2) rolling preview flow (`preview.yml` → `jackin-preview.rb`), (3) the `HOMEBREW_TAP_TOKEN` secret requirement and what permissions it needs. This is pure documentation — zero code change.
 
 **Observation:** All workflows use SHA-pinned action versions (`actions/checkout@de0fac…`, `Swatinem/rust-cache@e18b497…`) which is consistent with supply-chain security. The only exception is the lychee-action pin tracked in TODO.md.
 
@@ -1483,9 +1492,9 @@ The previous recommendation (`reject`) was based on maintenance burden and the a
 
 **The 2026-modern landscape:**
 
-Formats: MADR (Markdown Any Decision Records, `docs/adr/` convention), Nygard's original ADR format (`docs/architecture/decisions/`), or inline in `docs/internal/decisions/` (proposed in §3).
+Formats: MADR (Markdown Any Decision Records, `docs/adr/` convention), Nygard's original ADR format (`docs/architecture/decisions/`), or Starlight MDX at `docs/src/content/docs/internal/decisions/` (browsable — §3 revised model).
 
-**Recommendation:** `adopt` a simple ADR convention. Format: `docs/internal/decisions/NNN-title.md` with front-matter `status`, `date`, `context`, `decision`, `consequences`. The first ADR should document the single-crate vs workspace decision (§4). The second should document the Rust 1.95.0 toolchain choice. The third should document the `ratatui` selection (it was not obvious; tui-rs → ratatui migration history is worth capturing).
+**Recommendation:** `adopt` a simple ADR convention. Format: `docs/src/content/docs/internal/decisions/NNN-title.mdx` — browsable at `jackin.tailrocks.com/internal/decisions/`. Front-matter: `status`, `date`, `context`, `decision`, `consequences`. The first ADR should document the single-crate vs workspace decision (§4, with the ripgrep/starship/fd comparison as evidence). The second should document the Rust 1.95.0 toolchain choice. The third should document the `ratatui` selection (tui-rs → ratatui migration history is worth capturing).
 
 ---
 
@@ -1868,7 +1877,7 @@ This step has two parallel tracks:
    - **INV-4 — `render_exit` is called on ALL exit paths (success and error).** Lines 886 and 890 both call `render_exit`. There is no code path through `load_agent_with` that skips `render_exit`. *Verify by:* both arms of `match load_result { Ok(_) => ..., Err(_) => ... }` must call `render_exit`.
    - **INV-5 — Cleanup disarm semantics are state-dependent, not error-dependent.** `ContainerState::Running` → disarm (user detached; `jackin hardline` can restart). `Stopped { exit_code: 0, oom_killed: false }` → cleanup (clean exit). `Stopped { .. }` (crash) → disarm (hardline can restart). This is why `jackin hardline` works: disarmed cleanup leaves the container intact for restart. *Verify by:* the `match inspect_container_state(...)` arms must map Running → disarm, clean exit → cleanup, crash → disarm.
    - *(Dropped from iteration 34's draft)* **Line 918 for claim_container_name was wrong** — 918 is the function definition, not the call site. The call is at line 754. Corrected above.
-2. `docs/internal/specs/op-picker.md` — Priority 2. Use the template from §8.1 verbatim as the starting point.
+2. `docs/src/content/docs/internal/specs/op-picker.mdx` — Priority 2. Use the template from §8.1 verbatim as the starting point. Browsable at `jackin.tailrocks.com/internal/specs/op-picker/`.
 
 *Why Phase 1 specs before Phase 2 splits:* A spec is the contract against which the post-split code is verified. If `runtime/launch.rs` is split into 4 files BEFORE the behavioral spec exists, there is no oracle to verify that the split preserved all invariants. The spec is the pre-condition, not an afterthought.
 
