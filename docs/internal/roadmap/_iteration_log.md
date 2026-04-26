@@ -894,3 +894,39 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§2 concept map — completeness check** — §2 contains 25+ documented concepts but hasn't been read in full since iteration 8. Some may be stale given the structural analysis done in iterations 13-21.
 2. **§4 — `console/manager/input/list.rs` (614L)** — not analyzed; listed in §1 module map as "list view + list modal dispatch" but no production/test breakdown.
 3. **§1 hot-spot table — missing rows** — `mount_info.rs` (745L total, 277L production) was confirmed in iteration 19 but never added to the hot-spot table as a row. It's above the 500L total threshold.
+
+---
+
+## Iteration 22 — 2026-04-26
+
+### Improvements chosen
+
+1. **`input/list.rs` analysis — well-structured, no split needed** — read the file structure. 3 functions total: `handle_list_key` (pub(super), ~109L), `handle_list_open_in_github` (private, ~46L), `handle_list_modal` (pub(super), ~43L). Tests start at line 215 → **214L production, ~400L tests**. Already has a `//!` doc ("List-stage dispatch: workspace-picker key handling and the list-level modal (GithubPicker)"). Production at 214L is well below the 500L threshold. No split warranted. Corrected module map: added `handle_list_key` to the key exports (was listed as just `handle_list_modal`).
+
+2. **`mount_info.rs` added to hot-spot table** — 745L total, **277L production** (tests start at line 278), 468L tests. Already has a `//!` doc. Three public types (`MountKind`, `GitHost`, `GitBranch`) + one public function (`inspect`). Single clear concern (mount source classification for display). Priority: Low. Added row to hot-spot table after `instance/auth.rs`. Also corrected module map (was "—" for key exports; now lists `inspect`, `MountKind`, `GitHost`, `GitBranch`).
+
+3. **§2 spot-check — one outdated sentence corrected** — "There is no `docs/internal/` today" was stale; the loop has since created `docs/internal/roadmap/`. Updated to: "`docs/internal/roadmap/` now exists (created by this analysis loop). The broader `docs/internal/` hierarchy... does not yet exist." This is the only staleness found in §2 after reviewing the Diagnosis and Target shape sections.
+
+### What was read
+- `src/console/manager/input/list.rs:1–30` (imports, `//!` doc, `handle_list_key` top confirmed)
+- All top-level items via grep (3 functions confirmed)
+- `src/console/manager/mount_info.rs:1–12` (`//!` doc and MountKind start confirmed)
+- All top-level items via grep (3 enums, 1 pub fn, 6 private fns, impl block, tests at line 278)
+- §2 Diagnosis section (lines ~322–329) via roadmap read
+
+### What changed in the roadmap
+- §1 module map: `input/list.rs` entry corrected (added `handle_list_key`); `mount_info.rs` entry corrected (added `inspect`, `MountKind`, `GitHost`, `GitBranch`)
+- §1 hot-spot table: Added `mount_info.rs` row (745L total, 277L production, Low priority) and `input/list.rs` row (614L total, ~214L production, Low priority)
+- §2 Diagnosis: Updated stale "no docs/internal/ today" note
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `input/list.rs` 214L production | High | Tests at line 215 confirmed by grep; `//!` doc confirmed |
+| `mount_info.rs` 277L production | High | Tests at line 278 confirmed; all public exports verified |
+| §2 Diagnosis staleness | High | Confirmed the roadmap directory was created; rest of §2 still accurate |
+
+### Weakest sections for iteration 23
+1. **§2 concept 25 — toolchain pinning** — mentions that `rust-toolchain.toml` should be added but doesn't note that the file may or may not exist today. A quick `ls` would close this.
+2. **§4 audit units table intro** — the table has 3 example files. Now that many more splits are proposed (9+ in §10 Step 4), the table should grow to illustrate the full benefit.
+3. **§1 hot-spot table completeness** — `tui/animation.rs` (582L, ~all production) is in the hot-spot table but `console/manager/input/save.rs` row note now correctly documents 4 functions (updated in iter 21). Cross-check whether any module map entries are still inaccurate (specifically console/manager/input/mod.rs which declares all input sub-modules).

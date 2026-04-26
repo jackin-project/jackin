@@ -153,7 +153,7 @@ jackin/
 | `console/manager/state.rs` | 865 | `EditorState`, `ManagerState`, `Modal`, `change_count` | manager + editor state + Modal enum | workspace, config |
 | `console/manager/input/mod.rs` | — | `handle_key` | input dispatch hub for manager | manager/input/* |
 | `console/manager/input/editor.rs` | 2349 | `handle_editor_key`, `handle_editor_modal` | editor tab key bindings + modal commit handling | manager/* |
-| `console/manager/input/list.rs` | 614 | `handle_list_modal` | list view + list modal dispatch | manager/state |
+| `console/manager/input/list.rs` | 614 | `handle_list_key`, `handle_list_modal` | list view key dispatch + list-level modal (GithubPicker) | manager/state |
 | `console/manager/input/save.rs` | 1472 | `begin_editor_save`, `commit_editor_save`, `open_save_error_popup`, `build_workspace_edit` | two-phase save: Phase 1 validate+preview, Phase 2 commit to disk | manager/* |
 | `console/manager/input/prelude.rs` | 533 | — | workspace-create wizard input | manager/* |
 | `console/manager/input/mouse.rs` | 689 | — | mouse event handling for manager | manager/* |
@@ -161,7 +161,7 @@ jackin/
 | `console/manager/render/list.rs` | 1989 | — | list view drawing (left column, right-pane details, toast) | ratatui |
 | `console/manager/render/editor.rs` | 1666 | — | editor tabs drawing (General, Mounts, Agents, Secrets) | ratatui |
 | `console/manager/render/modal.rs` | — | — | modal overlay rendering | ratatui |
-| `console/manager/mount_info.rs` | 745 | — | mount-info formatting for TUI rows | workspace |
+| `console/manager/mount_info.rs` | 745 | `inspect`, `MountKind`, `GitHost`, `GitBranch` | classifies mount source (folder / git / GitHub) for display; no functional effect on config | workspace |
 | `console/manager/create.rs` | — | — | create-workspace wizard state machine | manager/* |
 | `console/manager/agent_allow.rs` | 55 | `allows_all_agents`, `agent_is_effectively_allowed` | centralises "empty list = all allowed" shorthand so editor, details pane, and save-confirm all agree | workspace |
 | `console/manager/github_mounts.rs` | — | — | GitHub mount listing for picker | — |
@@ -245,6 +245,8 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/manifest/validate.rs` | 962 | **145** | 816 | 0 | **Low** — 145L production, 816L tests; exemplary test discipline |
 | `src/config/mod.rs` | 867 | **134** | 732 | 0 | **Low** — 134L production; tests are comprehensive |
 | `src/instance/auth.rs` | 796 | **210** | 585 | 0 | **Low** — not a god file; production code is only 210L |
+| `src/console/manager/mount_info.rs` | 745 | **277** | 468 | 0 | **Low** — tests dominate; has `//!` doc; single concern (mount classification) |
+| `src/console/manager/input/list.rs` | 614 | **~214** | ~400 | 0 | **Low** — tests dominate; has `//!` doc; two focused public functions |
 
 **Key insight:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `input/editor.rs` (1141L — updated post-PR #171), `runtime/launch.rs` (1085L), `app/mod.rs` (928L), and `operator_env.rs` (810L).
 
@@ -326,7 +328,7 @@ The repository has two overlapping doc hierarchies that serve different audience
 - `docs/superpowers/` is stranded: it belongs conceptually in `docs/internal/` but lives at `docs/superpowers/` because that is where the superpowers toolchain writes it.
 - The files `PROJECT_REVIEW.md`, `RUST_REVIEW_FINDINGS.md`, `SECURITY_REVIEW_FINDINGS.md`, `SECURITY_EXCEPTIONS.md` mentioned in the loop prompt do NOT exist in the repository. Security exceptions are tracked in the public Starlight docs at `docs/src/content/docs/reference/roadmap/open-review-findings.mdx` per the `AGENTS.md` code-review instruction.
 - `RULES.md` is growing: it started as two rules (doc convention + deprecation), and PR #171 added two more (TUI Keybindings, TUI List Modals). As it grows it risks becoming a rules-dump without clear audience. Each rule section has a distinct audience (deprecation is contributor-facing; TUI Keybindings is agent-facing for UI work).
-- There is no `docs/internal/` today. The operator's loop prompt targets `docs/internal/roadmap/` — this loop creates it.
+- `docs/internal/roadmap/` now exists (created by this analysis loop). The broader `docs/internal/` hierarchy (ARCHITECTURE.md, CODE_TOUR.md, decisions/, REVIEWS/) does not yet exist and remains a target state.
 
 ### Target document shape
 
