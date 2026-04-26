@@ -777,3 +777,43 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 `console/manager/input/save.rs` (567L production, 1418L total)** — the ConfirmSave pipeline; not yet analyzed. At 567L production it's the third-largest production file in `console/manager/`. Likely contains the most complex AI-generated state-machine logic (multi-step save flow, env diff rendering, mount summary).
 2. **§4 `console/manager/input/editor.rs` (547L production)** — editor keybindings; not analyzed. Should be mappable to a tab-by-tab split matching the `render/editor.rs` split.
 3. **§1 hot-spot table — `console/manager/mount_info.rs` (745L)** — listed but not read; no production/test breakdown recorded.
+
+---
+
+## Iteration 19 — 2026-04-26
+
+### Improvements chosen
+
+1. **Critical correction: `input/editor.rs` is 2349L (not 1304L) with 1141L production** — the previous grep pattern `^pub fn` missed `pub(super) fn handle_editor_modal` at line 618. Actual file: 2349L total, 1141L production (tests at 1142), 1208L tests. PR #171 added the entire Secrets/Environments tab keyboard layer (~600L of new production code). This makes `input/editor.rs` the **largest production file in the codebase** (1141L), surpassing `runtime/launch.rs` (1085L). Priority upgraded from "Medium" to "Critical" in hot-spot table.
+
+2. **`input/save.rs` correction: 1472L total (not 1418L), 661L production** — tests confirmed to start at line 662. Table corrected: 567→661 production, 850→811 tests. Priority updated from "Medium" to "Medium-High". The file already has a `//!` doc and a clear single concern (save flow); no directory split warranted.
+
+3. **`input/editor.rs` split proposal — 5-file tab-by-tab split** — mapped all production functions with line ranges. Two entry-point dispatch functions (`handle_editor_key` ~250L, `handle_editor_modal` ~276L) plus ~615L of tab-specific helpers. Proposed split: `editor/mod.rs` (two dispatch fns), `editor/secrets.rs` (~500L, all Secrets-tab AI-generated code from PR #171), `editor/agents.rs` (~80L), `editor/mounts.rs` (~80L), `editor/general.rs` (~30L). Noted that `open_agent_override_picker` (line 465) is in Agents not Secrets despite its file position.
+
+### What was read
+- `src/console/manager/input/editor.rs:1–60` (imports, `handle_editor_key` top) to understand structure
+- `src/console/manager/input/editor.rs:610–650` (confirmed `remove_mount_at_cursor` is only 6L; `handle_editor_modal` starts at 618)
+- `src/console/manager/input/save.rs:1–50` (imports, `begin_editor_save` top; confirmed `//!` doc at lines 1–3)
+- All top-level items in both files via grep (corrected for `pub(super)` missing from pattern)
+- `wc -l` for both files confirming 2349L and 1472L
+- `grep "^#\[cfg(test)\]"` confirming test block positions (1142 in editor.rs, 662 in save.rs)
+- `mount_info.rs`: 745L total, tests at 278 → 277L production, 468L tests
+
+### What changed in the roadmap
+- §1 module map: `input/editor.rs` updated (1304→2349, added `handle_editor_modal` to key exports)
+- §1 hot-spot table: `input/editor.rs` row corrected (1304→2349, 547→~1141 production, 756→~1208 tests, Critical priority); `input/save.rs` row corrected (1418→1472, 567→~661 production, 850→~811 tests, Medium→Medium-High)
+- §1 Key insight: Updated to name `input/editor.rs` as the largest production file
+- §4 Rule 5: Added "Critical Rule 5 violator: input/editor.rs" with function table and 5-file split proposal
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `input/editor.rs` 2349L/1141L production | High | `wc -l` + `grep #[cfg(test)]` confirmed; handle_editor_modal confirmed at line 618 |
+| `input/editor.rs` split proposal | High (directional) | Function-to-file mapping verified by line ranges; `open_agent_override_picker` placement noted |
+| `input/save.rs` 1472L/661L production | High | `wc -l` + `grep #[cfg(test)]` confirmed |
+| `mount_info.rs` 277L production | High | Tests at line 278 confirmed |
+
+### Weakest sections for iteration 20
+1. **§4 Rule 5 — `tui/animation.rs` (582L, ~all production)** — listed as "Medium — all production (animation logic)" with 1× too_many_lines suppression. Not analyzed. May be worth a split or just a `//!` doc.
+2. **§10 execution order — where does `input/editor.rs` split fit?** — the execution order in §10 Step 4 does not yet include `input/editor.rs`. Given it's now the largest file, it should probably be step 4g or inserted between 4e and 4f.
+3. **§9 OQ3 — MSRV vs actual feature use** — `cargo +1.94.0 check` not yet run; open since iteration 1.

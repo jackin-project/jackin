@@ -152,7 +152,7 @@ jackin/
 | `console/manager/mod.rs` | — | `ManagerState`, `render` | workspace manager entry points | manager/* |
 | `console/manager/state.rs` | 865 | `EditorState`, `ManagerState`, `Modal`, `change_count` | manager + editor state + Modal enum | workspace, config |
 | `console/manager/input/mod.rs` | — | `handle_key` | input dispatch hub for manager | manager/input/* |
-| `console/manager/input/editor.rs` | 1304 | — | editor tab key bindings | manager/* |
+| `console/manager/input/editor.rs` | 2349 | `handle_editor_key`, `handle_editor_modal` | editor tab key bindings + modal commit handling | manager/* |
 | `console/manager/input/list.rs` | 614 | `handle_list_modal` | list view + list modal dispatch | manager/state |
 | `console/manager/input/save.rs` | 1418 | `build_confirm_save_lines` | ConfirmSave modal dispatch + rendering helpers | manager/* |
 | `console/manager/input/prelude.rs` | 533 | — | workspace-create wizard input | manager/* |
@@ -227,8 +227,8 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/app/mod.rs` | 951 | **928** | 22 | 1× `too_many_lines` | **High** — nearly all production; 928L dispatch function |
 | `src/operator_env.rs` | 1569 | **810** | 758 | 0 | **High** — production and tests roughly equal |
 | `src/console/manager/state.rs` | 992 | **~628** | ~363 | 0 | **High** — 26+ type definitions (Modal enum, EditorState, CreatePreludeState, etc.) mixed with impl behavior; prime candidate for types/behavior split |
-| `src/console/manager/input/save.rs` | 1418 | **567** | 850 | 2× `too_many_lines` | **Medium** — ConfirmSave pipeline |
-| `src/console/manager/input/editor.rs` | 1304 | **547** | 756 | 3× `too_many_lines` | **Medium** — editor key bindings |
+| `src/console/manager/input/editor.rs` | 2349 | **~1141** | ~1208 | 3× `too_many_lines` | **Critical** — PR #171 added Secrets-tab handlers, growing from ~547L to 1141L production; now the **largest production file** in the codebase; two major dispatch fns (`handle_editor_key` ~250L, `handle_editor_modal` ~276L) plus ~615L of tab-specific helpers |
+| `src/console/manager/input/save.rs` | 1472 | **~661** | ~811 | 2× `too_many_lines` | **Medium-High** — ConfirmSave pipeline; `begin_editor_save` is ~280L; already has a `//!` doc |
 | `src/app/context.rs` | 800 | **347** | 452 | 0 | Low — tests dominate |
 | `src/console/manager/render/editor.rs` | 1666 | **~736** | ~930 (4 interspersed `#[cfg(test)]` blocks at lines 737, 923, 1055, 1574) | 0 | **Medium-High** — production grew with PR #171 (Secrets/Environments tab added); split by tab is now justified |
 | `src/workspace/planner.rs` | 718 | **235** | 482 | 0 | Low — tests dominate |
@@ -246,7 +246,7 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/config/mod.rs` | 867 | **134** | 732 | 0 | **Low** — 134L production; tests are comprehensive |
 | `src/instance/auth.rs` | 796 | **210** | 585 | 0 | **Low** — not a god file; production code is only 210L |
 
-**Key insight:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `runtime/launch.rs` (1085L), `app/mod.rs` (928L), and `operator_env.rs` (810L).
+**Key insight:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `input/editor.rs` (1141L — updated post-PR #171), `runtime/launch.rs` (1085L), `app/mod.rs` (928L), and `operator_env.rs` (810L).
 
 Total `#[allow(clippy::too_many_lines)]` suppressions: **13** across 8 files.
 
@@ -684,6 +684,36 @@ Production code is 668L (tests start at line 669). PR #171 added `render_environ
 **Import path note:** `agents_block_agent_count` (line 246 in the current file) calls `super::super::agent_allow::allows_all_agents`. After the split, `details.rs` is one directory deeper, so this path becomes `super::super::super::agent_allow::allows_all_agents`. Alternatively, add `use crate::console::manager::agent_allow::allows_all_agents;` for a path-stable import.
 
 **Auditability gain:** To audit "does the Environments subpanel correctly show per-agent env overrides?", a reviewer reads `list/subpanels.rs` (~280L) containing `render_environments_subpanel`, `struct EnvRow`, and `env_row_line`. Today they scan 668L of production code (plus 1320L of tests) to locate those three items. The split is especially valuable because PR #171 added the entire environments subpanel as AI-generated code — a focused audit of `subpanels.rs` is the fastest way to verify its correctness.
+
+**Critical Rule 5 violator: `src/console/manager/input/editor.rs` (2349L, ~1141L production)**
+
+Previously listed at 1304L/547L-production. PR #171 added the entire Secrets/Environments tab keyboard handling (~600L of new production code), making this the **largest production file in the codebase** — surpassing `runtime/launch.rs` (1085L). The growth was missed because `pub(super) fn handle_editor_modal` (line 618) was invisible to `^pub fn` grep patterns.
+
+The file has two major entry-point functions plus tab-specific helpers:
+
+| Lines | Function | Tab / Concern |
+|---|---|---|
+| 23–272 | `pub(super) handle_editor_key` | Main key dispatch by EditorTab |
+| 273–284 | `max_row_for_tab` | Shared helper (all tabs) |
+| 285–388 | Secrets navigation helpers (step down/up, reset view, toggle mask, open field modal) | Secrets + General |
+| 389–548 | Secrets modal openers (enter, delete confirm, add env var) | Secrets |
+| 549–609 | `toggle_agent_allowed_at_cursor`, `toggle_default_agent_at_cursor` | Agents |
+| 610–617 | `remove_mount_at_cursor` | Mounts (~6L — tiny) |
+| 618–893 | `pub(super) handle_editor_modal` | Modal commit dispatch (~276L) |
+| 894–1073 | Secrets modal helpers (picker, scope_label, forbidden_keys, env_key_input_state, set_pending_env_value, apply_editor_confirm) | Secrets |
+| 1074–1141 | `dispatch_editor_mount_dst_choice` | Mounts |
+| 1142–2349 | Tests (~1208L) | — |
+
+**Proposed split — convert to `input/editor/` module directory:**
+- `editor/mod.rs` (~300L): `handle_editor_key` + `handle_editor_modal` (the two public dispatch entry points; stay together as they form the keyboard-input contract); `max_row_for_tab`; re-exports both functions
+- `editor/secrets.rs` (~500L): All Secrets-tab handlers: navigation, masking, env-var add/delete/commit, 1Password picker, scope helpers, `set_pending_env_value` — the entire AI-generated Secrets keyboard layer from PR #171
+- `editor/agents.rs` (~80L): `toggle_agent_allowed_at_cursor`, `toggle_default_agent_at_cursor`, `open_agent_override_picker` + their tests
+- `editor/mounts.rs` (~80L): `remove_mount_at_cursor`, `dispatch_editor_mount_dst_choice` + their tests
+- `editor/general.rs` (~30L): `open_editor_field_modal` (General tab text input) + its tests
+
+**Note:** `open_agent_override_picker` (line 465) is grouped with agents rather than with the Secrets-tab openers because it opens a picker for setting an agent auth-override, not an env-var operation. Its position in the file is between Secrets openers (artifact of PR #171 insertion order), not its logical affiliation.
+
+**Auditability gain:** To audit "does the Secrets tab correctly persist a new env var key when committed from the text input modal?", a reviewer reads `editor/secrets.rs` (~500L). Today they must scan 1141L of mixed-tab production code to find `open_secrets_enter_modal`, `set_pending_env_value`, and `apply_text_input_to_pending` (the commit chain). The Secrets-tab keyboard layer is the highest AI-generated-code-density section in the TUI — every key binding in it was written by PR #171.
 
 **Rule 6: Rustdoc on every `pub` and `pub(crate)` item.**
 Current coverage = 41% (37/90 files have `//!` module docs — exact count). Adding `#![warn(missing_docs)]` to `Cargo.toml` or `src/lib.rs` would surface the gap as compiler warnings. The gate should be CI-enforced once the initial coverage pass is done. The 53 undocumented files are concentrated in `src/app/`, `src/cli/`, `src/instance/`, `src/runtime/`, and root helpers — see §1 for the breakdown.
