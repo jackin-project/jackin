@@ -1,3 +1,4 @@
+use crate::debug_log;
 use crate::isolation::MountIsolation;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
@@ -84,6 +85,12 @@ pub fn write_records(
         .with_context(|| format!("write tmp isolation file {}", tmp.display()))?;
     std::fs::rename(&tmp, &path)
         .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
+    debug_log!(
+        "isolation",
+        "wrote {n} record(s) to {path}",
+        n = records.len(),
+        path = path.display(),
+    );
     Ok(())
 }
 
@@ -100,11 +107,21 @@ pub fn read_record(
 /// Replace one record (by `mount_dst`) or insert if missing.
 pub fn upsert_record(container_state_dir: &Path, record: IsolationRecord) -> anyhow::Result<()> {
     let mut records = read_records(container_state_dir)?;
-    if let Some(existing) = records.iter_mut().find(|r| r.mount_dst == record.mount_dst) {
-        *existing = record;
-    } else {
-        records.push(record);
-    }
+    let mount_dst = record.mount_dst.clone();
+    let action =
+        if let Some(existing) = records.iter_mut().find(|r| r.mount_dst == record.mount_dst) {
+            *existing = record;
+            "replaced"
+        } else {
+            records.push(record);
+            "inserted"
+        };
+    debug_log!(
+        "isolation",
+        "isolation.json upsert: {action} record for {dst} in {dir}",
+        dst = mount_dst,
+        dir = container_state_dir.display(),
+    );
     write_records(container_state_dir, &records)
 }
 
@@ -113,7 +130,20 @@ pub fn remove_record(container_state_dir: &Path, mount_dst: &str) -> anyhow::Res
     let mut records = read_records(container_state_dir)?;
     let before = records.len();
     records.retain(|r| r.mount_dst != mount_dst);
-    if records.len() != before {
+    if records.len() == before {
+        debug_log!(
+            "isolation",
+            "isolation.json remove: no record for {dst} in {dir} (no-op)",
+            dst = mount_dst,
+            dir = container_state_dir.display(),
+        );
+    } else {
+        debug_log!(
+            "isolation",
+            "isolation.json remove: dropped record for {dst} in {dir}",
+            dst = mount_dst,
+            dir = container_state_dir.display(),
+        );
         write_records(container_state_dir, &records)?;
     }
     Ok(())

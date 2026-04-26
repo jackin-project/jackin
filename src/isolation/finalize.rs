@@ -8,6 +8,7 @@
 // None require network access. The shared finalizer is safe to call
 // after a hardline-locked attach (offline lockdown).
 
+use crate::debug_log;
 use crate::docker::CommandRunner;
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
@@ -81,7 +82,20 @@ pub fn finalize_foreground_session(
     prompt: &mut impl FinalizerPrompt,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<FinalizeDecision> {
+    debug_log!(
+        "isolation",
+        "finalize_foreground_session: container={c} exit_code={ec:?} oom_killed={oom} interactive={i}",
+        c = container_name,
+        ec = outcome.exit_code,
+        oom = outcome.oom_killed,
+        i = is_interactive,
+    );
     if outcome.exit_code.is_none() || outcome.oom_killed || outcome.exit_code != Some(0) {
+        debug_log!(
+            "isolation",
+            "finalize: container={c} preserved (non-clean exit)",
+            c = container_name,
+        );
         return Ok(FinalizeDecision::Preserved);
     }
     finalize_clean_exit(
@@ -105,7 +119,15 @@ fn finalize_clean_exit(
     let mut needs_prompt: Option<IsolationRecord> = None;
 
     for record in records {
-        match assess_cleanup(&record, runner)? {
+        let assessment = assess_cleanup(&record, runner)?;
+        debug_log!(
+            "isolation",
+            "finalize assess: container={c} mount={d} → {a:?}",
+            c = record.container_name,
+            d = record.mount_dst,
+            a = assessment,
+        );
+        match assessment {
             CleanupAssessment::SafeToDelete => {
                 force_cleanup_isolated(&record, container_state_dir, runner)?;
             }

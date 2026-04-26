@@ -1,3 +1,4 @@
+use crate::debug_log;
 use crate::docker::CommandRunner;
 use crate::isolation::state::{IsolationRecord, remove_record};
 use std::path::Path;
@@ -11,8 +12,23 @@ pub fn force_cleanup_isolated(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let host_repo_exists = std::path::Path::new(&record.original_src).exists();
+    debug_log!(
+        "isolation",
+        "force_cleanup_isolated: container={c} mount={d} branch={b} worktree={w} host_repo_exists={exists}",
+        c = record.container_name,
+        d = record.mount_dst,
+        b = record.scratch_branch,
+        w = record.worktree_path,
+        exists = host_repo_exists,
+    );
 
     if host_repo_exists {
+        debug_log!(
+            "isolation",
+            "git -C {src} worktree remove --force {wt}",
+            src = record.original_src,
+            wt = record.worktree_path,
+        );
         let _ = runner.run(
             "git",
             &[
@@ -29,6 +45,12 @@ pub fn force_cleanup_isolated(
                 ..Default::default()
             },
         );
+        debug_log!(
+            "isolation",
+            "git -C {src} branch -D {branch}",
+            src = record.original_src,
+            branch = record.scratch_branch,
+        );
         let _ = runner.run(
             "git",
             &[
@@ -44,11 +66,22 @@ pub fn force_cleanup_isolated(
                 ..Default::default()
             },
         );
+    } else {
+        debug_log!(
+            "isolation",
+            "skipping git cleanup: host repo {src} no longer exists",
+            src = record.original_src,
+        );
     }
 
     // Belt-and-suspenders: nuke the worktree directory if git left anything.
     let wt = std::path::Path::new(&record.worktree_path);
     if wt.exists() {
+        debug_log!(
+            "isolation",
+            "fallback rm -rf {wt} (git did not remove it)",
+            wt = record.worktree_path,
+        );
         let _ = std::fs::remove_dir_all(wt);
     }
 
@@ -62,6 +95,12 @@ pub fn purge_isolated_for_container(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let records = crate::isolation::state::read_records(container_state_dir)?;
+    debug_log!(
+        "isolation",
+        "purge_isolated_for_container: {n} record(s) under {dir}",
+        n = records.len(),
+        dir = container_state_dir.display(),
+    );
     for rec in records {
         if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner) {
             eprintln!(

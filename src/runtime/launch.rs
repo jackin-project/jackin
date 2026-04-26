@@ -883,6 +883,11 @@ fn load_agent_with(
         let interactive = std::io::stdin().is_terminal();
         let workspace_label = workspace.label.as_str();
         let container_state = paths.data_dir.join(&container_name);
+        crate::debug_log!(
+            "isolation",
+            "load_agent: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
+            force = opts.force,
+        );
         let materialized = crate::isolation::materialize::materialize_workspace(
             workspace,
             &container_state,

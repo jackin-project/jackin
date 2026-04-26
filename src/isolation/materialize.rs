@@ -1,3 +1,4 @@
+use crate::debug_log;
 use crate::docker::CommandRunner;
 use crate::isolation::MountIsolation;
 use crate::isolation::branch::{branch_name, dst_to_branch_suffix};
@@ -49,6 +50,11 @@ pub fn ensure_worktree_config_enabled(
         )
         .unwrap_or_default();
     if current.trim() == "true" {
+        debug_log!(
+            "isolation",
+            "extensions.worktreeConfig already enabled at {}",
+            repo.display()
+        );
         return Ok(false);
     }
     let format_version = runner
@@ -65,6 +71,11 @@ pub fn ensure_worktree_config_enabled(
         )
         .unwrap_or_default();
     if format_version.trim() == "0" || format_version.trim().is_empty() {
+        debug_log!(
+            "isolation",
+            "bumping core.repositoryformatversion 0 -> 1 at {} (required for extensions.worktreeConfig)",
+            repo.display()
+        );
         runner.run(
             "git",
             &[
@@ -78,6 +89,11 @@ pub fn ensure_worktree_config_enabled(
             &crate::docker::RunOptions::default(),
         )?;
     }
+    debug_log!(
+        "isolation",
+        "enabling extensions.worktreeConfig at {} (per-worktree config from now on)",
+        repo.display()
+    );
     runner.run(
         "git",
         &[
@@ -222,6 +238,20 @@ pub fn materialize_workspace(
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedWorkspace> {
+    let isolated_count = resolved
+        .mounts
+        .iter()
+        .filter(|m| matches!(m.isolation, MountIsolation::Worktree))
+        .count();
+    debug_log!(
+        "isolation",
+        "materialize_workspace: workspace={workspace_name} container={container_name} selector={selector_key} mounts={total} isolated={isolated_count} state_dir={state_dir} force={force} interactive={interactive}",
+        total = resolved.mounts.len(),
+        state_dir = container_state_dir.display(),
+        force = ctx.force,
+        interactive = ctx.interactive,
+    );
+
     // Sort by dst length ascending so parents materialize before children
     // (depth ordering for the bind-mount stack).
     let mut indexed: Vec<(usize, &MountConfig)> = resolved.mounts.iter().enumerate().collect();
@@ -235,12 +265,20 @@ pub fn materialize_workspace(
 
     for (idx, mount) in indexed {
         let m = match mount.isolation {
-            MountIsolation::Shared => MaterializedMount {
-                bind_src: mount.src.clone(),
-                dst: mount.dst.clone(),
-                readonly: mount.readonly,
-                isolation: MountIsolation::Shared,
-            },
+            MountIsolation::Shared => {
+                debug_log!(
+                    "isolation",
+                    "mount {dst}: shared (passthrough bind from {src})",
+                    dst = mount.dst,
+                    src = mount.src,
+                );
+                MaterializedMount {
+                    bind_src: mount.src.clone(),
+                    dst: mount.dst.clone(),
+                    readonly: mount.readonly,
+                    isolation: MountIsolation::Shared,
+                }
+            }
             MountIsolation::Worktree => materialize_one(
                 mount,
                 container_state_dir,
@@ -289,7 +327,7 @@ fn count_isolated_per_repo(
     map
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn materialize_one(
     mount: &MountConfig,
     container_state_dir: &Path,
@@ -301,10 +339,24 @@ fn materialize_one(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedMount> {
     let worktree_path = worktree_path_for(container_state_dir, &mount.dst);
+    debug_log!(
+        "isolation",
+        "mount {dst}: worktree (src={src} → worktree_path={wt})",
+        dst = mount.dst,
+        src = mount.src,
+        wt = worktree_path.display(),
+    );
 
     // Drift guard: if a record exists, src must match.
     if let Some(record) = read_record(container_state_dir, &mount.dst)? {
         if record.original_src != mount.src {
+            debug_log!(
+                "isolation",
+                "mount {dst}: source drift detected (recorded={recorded} configured={configured})",
+                dst = mount.dst,
+                recorded = record.original_src,
+                configured = mount.src,
+            );
             anyhow::bail!(
                 "source drift on container `{}`, mount `{}`: recorded src `{}` differs from configured src `{}`; preserved worktree at `{}`. Restore the previous src, run `jackin cd {} {}` to inspect, or `jackin purge {}` to discard.",
                 container_name,
@@ -319,6 +371,11 @@ fn materialize_one(
         }
         // Reuse if worktree path looks alive (.git file or dir under it).
         if worktree_path.join(".git").exists() {
+            debug_log!(
+                "isolation",
+                "mount {dst}: reusing existing worktree (record matches and .git present)",
+                dst = mount.dst,
+            );
             return Ok(MaterializedMount {
                 bind_src: worktree_path.to_string_lossy().into(),
                 dst: mount.dst.clone(),
@@ -326,10 +383,20 @@ fn materialize_one(
                 isolation: MountIsolation::Worktree,
             });
         }
-        // Record exists but worktree is gone — fall through and re-create.
+        debug_log!(
+            "isolation",
+            "mount {dst}: record present but worktree directory missing — recreating",
+            dst = mount.dst,
+        );
     }
 
     // Pre-flight, then enable worktree-config, then create the worktree.
+    debug_log!(
+        "isolation",
+        "mount {dst}: running preflight checks on host repo {src}",
+        dst = mount.dst,
+        src = mount.src,
+    );
     preflight_worktree(mount, ctx, runner)?;
 
     let _ = ensure_worktree_config_enabled(std::path::Path::new(&mount.src), runner)?;
@@ -338,6 +405,12 @@ fn materialize_one(
         .capture("git", &["-C", &mount.src, "rev-parse", "HEAD"], None)?
         .trim()
         .to_string();
+    debug_log!(
+        "isolation",
+        "mount {dst}: base commit {commit} from host HEAD",
+        dst = mount.dst,
+        commit = base_commit,
+    );
 
     // Decide branch suffix: only when >1 isolated mount targets the same host repo.
     let canon = canonicalize_or_clone(&mount.src);
@@ -346,12 +419,29 @@ fn materialize_one(
         .filter(|dsts| dsts.len() > 1)
         .map(|_| dst_to_branch_suffix(&mount.dst));
     let scratch_branch = branch_name(selector_key, suffix.as_deref());
+    debug_log!(
+        "isolation",
+        "mount {dst}: scratch branch {branch} (selector={selector}, suffix={suffix})",
+        dst = mount.dst,
+        branch = scratch_branch,
+        selector = selector_key,
+        suffix = suffix.as_deref().unwrap_or("<none>"),
+    );
 
     if let Some(parent) = worktree_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create parent dir for worktree at {}", parent.display()))?;
     }
 
+    debug_log!(
+        "isolation",
+        "mount {dst}: git -C {src} worktree add -b {branch} {wt} {base}",
+        dst = mount.dst,
+        src = mount.src,
+        branch = scratch_branch,
+        wt = worktree_path.display(),
+        base = base_commit,
+    );
     runner.run(
         "git",
         &[
