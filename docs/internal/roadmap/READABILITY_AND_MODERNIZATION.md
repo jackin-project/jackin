@@ -1385,11 +1385,65 @@ The operator requirement is: specs must be easily updatable without special tool
 
 **OpenSpec complement (Option E):** OpenSpec's `/opsx:propose` + delta markers (`ADDED`/`MODIFIED`/`REMOVED`) add brownfield-specific value that cc-sdd lacks — particularly for the §4 structural refactoring work (module splits, type moves) where agreeing *what changes* before implementation begins prevents scope creep. The two can coexist: use `/opsx:propose` for the workflow artifact during a PR, then migrate the final stable spec content to a Starlight MDX page when the feature ships. OpenSpec's `openspec/specs/` living-docs layer would be a secondary, internal view; the Starlight MDX page would be the canonical public view. Cost: `npm install -g @fission-ai/openspec` (Node.js 20.19+ already satisfied via bun).
 
-**What this replaces:**
-- `docs/superpowers/specs/` (internal, hidden from contributors) — replaced by visible Starlight pages
-- `docs/internal/specs/` (proposed in earlier iterations) — no longer needed; specs are public
+**Two-tier spec architecture (resolving the §4 vs §8.1 tension):**
 
-**Migration of existing specs:** The 6 `docs/superpowers/specs/` design files should be reviewed. Those describing features that have already shipped should be converted to Starlight MDX reference pages (or merged into existing docs); those describing in-progress work become draft pages.
+§4's alternative thesis recommends `docs/internal/specs/` for "behavioral specs" of internal subsystems like `op_picker/`. §8.1 recommends public Starlight MDX pages for feature specs. These are not contradictory — they address different audiences:
+
+| Type | Audience | Location | Content | Lifecycle |
+|---|---|---|---|---|
+| **Feature spec** | Users + contributors | `docs/src/content/docs/specs/<feature>.mdx` | What the feature does, how to use it, operator workflow | Draft → shipped → updated with feature |
+| **Behavioral spec** | AI agents + code reviewers | `docs/internal/specs/<subsystem>.md` | Invariants the code must maintain, state machine description, verification guide for AI-generated code | Created before complex code is written; updated when invariants change |
+
+The confusion arose because §4 proposed `docs/internal/specs/` for three subsystems (`op_picker/`, `config/editor`, `runtime/launch`). These are *behavioral* specs — internal, not user-facing. The recommendation stands: these go in `docs/internal/specs/`. Feature specs like "how the Environments tab works for operators" belong in the public Starlight site.
+
+**Concrete behavioral spec template** (for `docs/internal/specs/op-picker.md`):
+
+```markdown
+---
+subsystem: console/widgets/op_picker/
+source: src/console/widgets/op_picker/mod.rs (1712L, ~775L production)
+last-verified: 2026-04-26
+---
+
+## Purpose
+
+4-level drill-down modal (Account→Vault→Item→Field) that produces a verbatim
+`op://Vault/Item/Field` reference string. Does NOT decrypt secrets.
+
+## State machine
+
+| Stage | Entry | Exit | Key types |
+|---|---|---|---|
+| `Accounts` | picker opened | account row selected | `OpPickerStage::Accounts` |
+| `Vaults` | account selected | vault row selected | `OpPickerStage::Vaults` |
+| `Items` | vault selected | item row selected | `OpPickerStage::Items` |
+| `Fields` | item selected | field row selected | `OpPickerStage::Fields` |
+
+## Behavioral invariants (for AI code verification)
+
+**INV-1 — Reference format is 3-segment, not 4:**
+`committed_reference` is `op://Vault/Item/Field` — never `op://Account/Vault/Item/Field`.
+*Verify by:* grep `committed_reference` — it must be set to a `format!("op://{}/{}/{}"...)` call.
+
+**INV-2 — No secret values in the picker path:**
+`OpPickerState` never calls any function that returns a decrypted `value` field.
+`RawOpField` struct has no `value` field (serde drops it silently; enforced by exhaustive
+destructure test at `src/operator_env.rs:~2055`).
+*Verify by:* `grep -n "value" src/console/widgets/op_picker/mod.rs` must return zero hits
+for field access or assignment involving secret content.
+
+**INV-3 — Loading is async; state machine is synchronous:**
+Background worker threads post results via channel; `poll_*_load` methods drain the
+channel. No blocking I/O inside key handlers.
+*Verify by:* key handler functions must not call `std::thread::spawn` or block on channel recv.
+```
+
+This template format answers the question an AI reviewer asks: "Did the AI-generated code maintain the invariants?" Each INV entry has a *verify by* line that can be executed as a grep or code-read command.
+
+**What this replaces:**
+- `docs/superpowers/specs/` (internal, hidden from contributors) — replaced by visible Starlight pages (feature specs) and `docs/internal/specs/` (behavioral specs)
+
+**Migration of existing specs:** The 6 `docs/superpowers/specs/` design files should be reviewed. Those describing features that have already shipped should be converted to Starlight MDX reference pages (or merged into existing docs); those describing in-progress work become draft pages. None of the 6 existing specs describes internal behavioral invariants — those are new artifacts to be authored.
 
 **Draft page caveat:** Starlight `draft: true` pages ARE built into `dist/` — they're excluded from the sitemap and navigation, but the HTML files exist. The PR-time link checker (`docs.yml`) runs `lychee 'dist/**/*.html'` which scans ALL HTML including draft pages. `docs/lychee.toml` has only one `exclude_path` pattern: `["(^|/)404\.html$"]` — no pattern for draft pages. **Consequence:** any broken links in a draft spec page will fail CI on the `docs-link-check` gate.
 

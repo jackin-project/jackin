@@ -1305,3 +1305,55 @@ The loop prompt was also updated to embed these directives explicitly.
 1. **render/list.rs and render/editor.rs production LOC** — both have multiple interspersed `#[cfg(test)]` blocks (3-4 per file), so the "first test at line 669/737" underestimates production LOC. The real production LOC could be significantly higher. Need to count all test blocks to get accurate production/test split.
 2. **§8.1 spec template** — the alternative thesis now references `docs/internal/specs/` as the home for behavioral specs, but §8.1 still doesn't provide a concrete spec template. A one-page template would let future agents produce specs in the right format.
 3. **§3 documentation hierarchy** — PROJECT_STRUCTURE.md is documented as stale in §2 but §3 (doc hierarchy) doesn't have a specific proposal for how to keep it current (e.g., a CI gate that fails if new `.rs` files have no corresponding PROJECT_STRUCTURE.md entry).
+
+---
+
+## Iteration 32 — 2026-04-26
+
+### What was improved
+
+1. **Confirmed render/editor.rs and render/list.rs production LOC — no correction needed**
+   
+   Iteration 31 flagged these as potentially underestimated due to interspersed test blocks. Verified by reading 3 lines before each `#[cfg(test)]` marker:
+   
+   - `render/editor.rs`: test blocks at 737, 923, 1055, 1574. Lines 923, 1055, 1574 are each preceded by `}\n}` — closing the previous test module. Conclusion: ALL test code follows the production section; production ends at line 736 (~736L). No interspersed production.
+   - `render/list.rs`: test blocks at 669, 812, 860. Lines 812, 860 are preceded by `}\n}` — consecutive test modules. Conclusion: production ends at line 668 (~668L). No interspersed production.
+   
+   Both files are below the 800L Phase 2 threshold. The iteration 31 correction (">800L → 4 files") is confirmed correct. No roadmap changes needed for LOC data.
+
+2. **Resolved §4 vs §8.1 contradiction — two-tier spec architecture**
+   
+   A contradiction existed: §4 alternative thesis (iteration 30) said behavioral specs go to `docs/internal/specs/`, while §8.1 said `docs/internal/specs/` was "no longer needed; specs are public." This was wrong — the two proposal address different spec types:
+   
+   - **Feature specs** (user-facing): `docs/src/content/docs/specs/<feature>.mdx` on the public Starlight site. Audience: operators and contributors. Content: what the feature does, how to use it.
+   - **Behavioral specs** (AI verification): `docs/internal/specs/<subsystem>.md`. Audience: AI agents and code reviewers. Content: invariants the code must maintain, state machine, verification guide.
+   
+   Added a two-tier table clarifying this distinction. Removed the erroneous "`docs/internal/specs/` no longer needed" claim.
+
+3. **Added concrete behavioral spec template**
+   
+   §8.1 now contains a worked example spec for `op_picker/` showing the exact format: subsystem metadata frontmatter, state machine table, and three `INV-N` invariant entries each with a *Verify by:* command. The template is directly usable for the three subsystems recommended in §4 Phase 1 (`op_picker/`, `config/editor`, `runtime/launch`). The INV format was designed to be executable (grep or code-read commands) rather than just descriptive.
+
+### What was read (fresh scan)
+- `src/console/manager/render/editor.rs` lines 734-740, 920-926, 1052-1058, 1571-1577 — confirmed all test blocks are consecutive modules, no interspersed production
+- `src/console/manager/render/list.rs` lines 666-672, 809-815, 857-863 — confirmed same pattern
+- `docs/internal/roadmap/READABILITY_AND_MODERNIZATION.md §8.1` — identified the internal contradiction with §4
+
+### What changed in the roadmap
+- §8.1: Added "Two-tier spec architecture" table clarifying feature specs (public) vs behavioral specs (internal)
+- §8.1: Added concrete behavioral spec template for `op_picker/` with 3 INV invariant entries
+- §8.1: Removed erroneous claim "`docs/internal/specs/` no longer needed; specs are public"
+- §8.1: Updated "What this replaces" to acknowledge both artifact types
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| render/editor.rs ~736L production | High | Context lines confirmed — all test blocks are consecutive, no interleaved production code |
+| render/list.rs ~668L production | High | Same confirmation |
+| Two-tier spec architecture | High | Logical distinction between feature specs and behavioral specs; directly resolves the §4/§8.1 contradiction |
+| Behavioral spec template (INV format) | Medium | Format is novel — no external validation that this specific format works well in practice with Rust/nextest projects; but the verify-by-grep pattern is directly grounded in the `RawOpField` example already in §2 row 6 |
+
+### Weakest sections for iteration 33
+1. **§3 documentation hierarchy — no CI gate proposed for PROJECT_STRUCTURE.md freshness** — PROJECT_STRUCTURE.md is confirmed stale (missing PR #171 additions) but §3 has no proposal for preventing future staleness (e.g., a CI check that fails if new `.rs` files have no corresponding entry, or a CONTRIBUTING.md rule requiring PROJECT_STRUCTURE.md updates with module changes).
+2. **§7 modernization — alternative thesis needs external Rust TUI project comparison** — the §4 "documentation-first vs structure-first" debate would be strengthened by examining how other large Rust TUI projects (`gitui`, `bottom`, `zellij`) structure their code. Do they split files, or use large well-documented files? This is external research that could validate or contradict the alternative thesis.
+3. **§10 execution plan — Phase 1 "documentation sprint" is underspecified** — §10 says "Step 5 — write //! module docs" but the new §4 Phase 1 includes not just //! docs but also behavioral specs for 3 subsystems. §10 Step 2 (AI-agent workflow files) is where behavioral spec authoring should fit, but the plan doesn't mention creating `docs/internal/specs/` files.
