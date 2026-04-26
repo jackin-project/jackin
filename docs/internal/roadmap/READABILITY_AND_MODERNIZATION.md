@@ -29,7 +29,7 @@ Research sources: [`_research_notes.md`](./_research_notes.md).
 
 **The recommended path (§4 Phase 1 → Phase 2 → Phase 3):**
 
-- **Phase 1 — Documentation sprint** (2–3 PRs, zero structural change, immediately applicable): Write `//!` module contracts for the 10 highest-priority files (§10 Step 5 //! queue). Author behavioral specs (`docs/internal/specs/`) in priority order: (1) `runtime/launch.rs` first — no `//!` doc at all, ~1077L production, inline "Step 1–4" comments exist but no module-level invariant contract; bugs here brick `jackin load` for all users; (2) `op_picker/mod.rs` — AI-generated, ~775L production, has a `//!` doc but no INV-format invariant contract. `config/editor.rs` is **removed from this list**: its 963L test suite already serves as a behavioral spec (each test is a behavioral example); dropping it to deferred reduces Phase 1 scope to 2 specs instead of 3. Each spec follows the `INV-N` format with grep-executable "Verify by:" commands (§8.1 template).
+- **Phase 1 — Documentation sprint** (2–3 PRs, zero structural change, immediately applicable): Write `//!` module contracts for the 10 highest-priority files (§10 Step 5 //! queue). Author behavioral specs (`docs/src/content/docs/internal/specs/`) in priority order: (1) `runtime/launch.rs` first — no `//!` doc at all, ~1077L production, inline "Step 1–4" comments exist but no module-level invariant contract; bugs here brick `jackin load` for all users; (2) `op_picker/mod.rs` — AI-generated, ~775L production, has a `//!` doc but no INV-format invariant contract. `config/editor.rs` is **removed from this list**: its 963L test suite already serves as a behavioral spec (each test is a behavioral example); dropping it to deferred reduces Phase 1 scope to 2 specs instead of 3. Each spec follows the `INV-N` format with grep-executable "Verify by:" commands (§8.1 template).
 - **Phase 2 — Targeted structural splits** (4 PRs, moderate risk): Split only the 4 files with >800L production code: `input/editor.rs` (~1141L), `runtime/launch.rs` (~1077L), `app/mod.rs` (~957L), `operator_env.rs` (~880L). The other 9 files above 500L total but below 800L production are deferred.
 - **Phase 3 — Workspace split** only if LOC exceeds 150K or a second binary needs its own semver identity. Current: 43,587L — well short.
 
@@ -440,20 +440,69 @@ src/console/widgets/README.md      → widget library + exemplar pointer (file_b
 docs/README.md                     → site orientation + internal/ layout
 docs/internal/README.md            → contributor reference index
 
-# Internal contributor reference (does not ship to public site)
-docs/internal/
-  ARCHITECTURE.md             → ADR-style decisions
-  CODE_TOUR.md                → walk-through of key call chains
-  CONTRIBUTING.md             → contribution flow, DCO (currently at root)
-  TESTING.md                  → test runner + pre-commit (currently at root)
-  REVIEWS/                    → historical PR review docs
-  decisions/                  → ADRs (NNN-title.md)
-  specs/                      → behavioral specs (runtime-launch.md, op-picker.md)
-  roadmap/                    → this file + iteration log + research notes
+# Starlight docs site — two audiences, one site (operator-directed)
+docs/src/content/docs/
+  # User-facing sections (today's 47 pages, URLs invariant)
+  getting-started/    → install, quickstart
+  guides/             → how-to guides (mounts, agents, env vars)
+  commands/           → CLI reference
+  reference/          → config schema, roadmap catalog
 
-# Public docs site (URLs invariant)
-docs/src/content/docs/        → 47 pages; Starlight build output
-docs/src/content/docs/specs/  → living feature specs as Starlight MDX
+  # Developer/internals section (NEW — same site, distinct sidebar group)
+  internal/
+    index.mdx                  → "Developer Reference" landing page
+    architecture.mdx           → high-level design: module tiers, workspace plan
+    code-tour.mdx              → guided walk through key call chains (load, console, hardline)
+    contributing.mdx           → contribution flow, DCO (moved from root)
+    testing.mdx                → test runner setup (moved from root)
+    decisions/                 → ADRs: NNN-title.mdx (browsable, searchable)
+    specs/                     → ALL specs live here — both user-facing feature specs
+                               │  and behavioral implementation specs
+                               │  (the "two-tier" distinction becomes a tag/frontmatter field,
+                               │   not a filesystem split)
+                               ├── op-picker.mdx         ← behavioral spec (INV-N format)
+                               ├── runtime-launch.mdx    ← behavioral spec (INV-N format)
+                               ├── environments-tab.mdx  ← feature spec (user + AI audience)
+                               └── ...
+    roadmap/                   → roadmap files (this analysis, iteration log)
+```
+
+**Why one site, not two:** Starlight's sidebar can group pages by section with distinct labels ("User Guide" vs "Developer Reference"). Having one site means one search index, one URL domain, one CI deploy. Contributors looking for architecture context find it at the same URL they use for user docs. AI agents can be pointed to a URL instead of a local file path — e.g. `jackin.tailrocks.com/internal/specs/runtime-launch/` — and the spec is always the latest deployed version.
+
+**The "internal" label is audience, not access control.** These pages are public — anyone can read them. The label signals: "this is implementation detail, not user documentation." This follows the pattern of many open-source projects (e.g., rustc's "Rustc Dev Guide", ratatui's contributor docs on their site).
+
+**Collapsing the two-tier spec distinction (§8.1 revision):** Previously §8.1 distinguished:
+- Feature specs → `docs/src/content/docs/specs/` (public)
+- Behavioral specs → `docs/src/content/docs/internal/specs/` (hidden files)
+
+This distinction is eliminated. All specs live at `docs/src/content/docs/internal/specs/`. The difference between a feature spec ("what the Environments tab does") and a behavioral spec ("what invariants `op_picker/mod.rs` must maintain") is expressed through frontmatter:
+
+```yaml
+---
+title: op_picker — Behavioral Spec
+spec_type: behavioral    # behavioral | feature
+title: op_picker — Behavioral Spec
+spec_type: behavioral
+subsystem: console/widgets/op_picker/
+source_file: src/console/widgets/op_picker/mod.rs
+---
+```
+
+**Sidebar config addition required in `docs/astro.config.ts`:**
+```typescript
+{
+  label: 'Developer Reference',
+  collapsed: true,   // collapsed by default so it doesn't crowd the user-facing nav
+  items: [
+    { label: 'Architecture', link: '/internal/architecture/' },
+    { label: 'Code Tour', link: '/internal/code-tour/' },
+    { label: 'Contributing', link: '/internal/contributing/' },
+    { label: 'Testing', link: '/internal/testing/' },
+    { autogenerate: { directory: 'internal/decisions', label: 'Decisions' } },
+    { autogenerate: { directory: 'internal/specs', label: 'Specs' } },
+    { autogenerate: { directory: 'internal/roadmap', label: 'Roadmap' } },
+  ]
+}
 ```
 
 **`CLAUDE.md` design principle (operator-directed):** `CLAUDE.md` must remain a single-line `@AGENTS.md` pointer. All agent instructions live in `AGENTS.md` only. Adding content to `CLAUDE.md` creates a two-file maintenance problem where instructions can contradict each other. The `@` syntax is Claude Code's mechanism for including one file from another — use it, don't fight it.
@@ -563,7 +612,7 @@ Instead of splitting files, make each file self-verifiable through:
 
 1. **`//!` module contract** — states the behavioral invariants the module maintains, not just what it contains. Example for `op_picker/mod.rs`: "Invariant: once a field is selected, `committed_reference` is set atomically using the verbatim `op://Vault/Item/Field` string constructed from loaded metadata — no post-processing or normalization occurs. Any code path that sets `committed_reference` must use this exact format."
 2. **Function-level `///` docs** on every non-trivial `pub` and `pub(super)` method — one sentence stating the postcondition. This is *not* currently present in any of the large files.
-3. **A `docs/internal/specs/` artifact** per complex subsystem — a behavioral spec listing the expected state transitions and their guards (see §8.1). This is the spec the AI agent writes code *against*, making verification a matter of comparing code to spec rather than code to intuition.
+3. **A `docs/src/content/docs/internal/specs/` artifact** per complex subsystem — a behavioral spec listing the expected state transitions and their guards (see §8.1). This is the spec the AI agent writes code *against*, making verification a matter of comparing code to spec rather than code to intuition.
 
 **Comparison of the two approaches:**
 
@@ -581,7 +630,7 @@ Instead of splitting files, make each file self-verifiable through:
 
 The two approaches are not mutually exclusive. A stronger path than either alone:
 
-- **Phase 1 — documentation sprint** (low-risk, immediately applicable): Write `//!` module contracts and `///` function docs for the 10 files in the §10 //! priority queue. Add behavioral specs to `docs/internal/specs/` for the two highest-priority subsystems: (1) `runtime/launch.rs` — no `//!` doc, critical path (all `jackin load` failures trace here), inline Step 1–4 comments document stages but no INV-format invariants exist; (2) `op_picker/mod.rs` — AI-generated, ~775L production, has `//!` doc but no INV contract. `config/editor.rs` is **dropped from Phase 1**: its 963L test suite documents behavior exhaustively through examples; tests are the behavioral spec here. This is 2 PRs minimum, zero structural change.
+- **Phase 1 — documentation sprint** (low-risk, immediately applicable): Write `//!` module contracts and `///` function docs for the 10 files in the §10 //! priority queue. Add behavioral specs to `docs/src/content/docs/internal/specs/` for the two highest-priority subsystems: (1) `runtime/launch.rs` — no `//!` doc, critical path (all `jackin load` failures trace here), inline Step 1–4 comments document stages but no INV-format invariants exist; (2) `op_picker/mod.rs` — AI-generated, ~775L production, has `//!` doc but no INV contract. `config/editor.rs` is **dropped from Phase 1**: its 963L test suite documents behavior exhaustively through examples; tests are the behavioral spec here. This is 2 PRs minimum, zero structural change.
 - **Phase 2 — targeted structural splits** (higher-risk, higher-payoff): Apply file splits only to files with >800L *production* code where the split boundary is unambiguous. By that criterion, exactly 4 files qualify: `input/editor.rs` (~1141L), `runtime/launch.rs` (~1077L), `app/mod.rs` (~957L), and `operator_env.rs` (~880L). All other files in the §10 Step 4f table (state.rs ~628L, render/editor.rs ~736L, render/list.rs ~668L, input/save.rs ~661L, op_picker/mod.rs ~775L) are below this threshold and drop from urgent to deferred. Production counts verified iteration 31 by `#[cfg(test)]` line position for all 9 candidate files.
 - **Phase 3 — workspace split** if LOC exceeds 150K or a second binary needs its own semver identity.
 
@@ -1415,12 +1464,12 @@ The previous recommendation (`reject`) was based on maintenance burden and the a
 | Directory | README.md content |
 |---|---|
 | `src/` | "Rust application source. Top-level modules: cli (Clap schema), app (dispatch), runtime (container bootstrap), console (TUI), config (TOML persistence), workspace (domain model). See PROJECT_STRUCTURE.md for the full map." |
-| `src/runtime/` | "Container bootstrap pipeline. Entry point: `load_agent()` in `launch.rs`. Four-step sequence: agent identity → image build → container name claim → network + DinD. See behavioral spec at `docs/internal/specs/runtime-launch.md`." |
+| `src/runtime/` | "Container bootstrap pipeline. Entry point: `load_agent()` in `launch.rs`. Four-step sequence: agent identity → image build → container name claim → network + DinD. See behavioral spec at `jackin.tailrocks.com/internal/specs/runtime-launch/`." |
 | `src/console/` | "Operator console TUI. Entry point: `run_console()` in `mod.rs`. Two subsystems: `manager/` (workspace manager) and `widgets/` (reusable modal components). No import from `runtime/` — the console and runtime are independently compilable." |
 | `src/console/manager/` | "Workspace manager TUI. Three-layer architecture: `state.rs` (data), `input/` (key/mouse dispatch), `render/` (drawing). Widgets in `../widgets/`." |
 | `src/console/widgets/` | "Reusable TUI widget library. Each widget is a self-contained state machine. `op_picker/` is the 1Password drill-down picker (see behavioral spec). `file_browser/` is an exemplar of the target module shape." |
 | `docs/` | "Astro Starlight documentation site (public, deployed to jackin.tailrocks.com). Internal/contributor docs under `docs/internal/`. Agent workflow artifacts under `docs/superpowers/` (to be migrated)." |
-| `docs/internal/` | "Contributor and AI-agent internal documentation. Not published to the docs site. `roadmap/` contains the readability analysis. `specs/` (proposed) will contain behavioral specs." |
+| `docs/internal/` | "Contributor and AI-agent internal documentation. Published at jackin.tailrocks.com/internal/ — implementation details, architecture, specs, ADRs. See §3." |
 
 **Staleness gate:** README.md files in `src/` subdirectories should be added to the `check:project-structure` CI gate proposed in §3 — if a new `.rs` module is added to a directory, the CI check verifies the directory's `README.md` was also updated (by checking its `git diff` modification date relative to the new file).
 
@@ -1570,7 +1619,7 @@ The approach works. The gap is: (a) the artifacts live under `docs/superpowers/`
 
 *Option B — cc-sdd harness (gotalab/cc-sdd):* Minimal SDD harness for Claude Code using `.claude/commands/spec.md`, `plan.md`, `execute.md`. `/loop`-compatible. Stores specs in `docs/` by convention. Does enforce a phase gate (spec must be approved before plan; plan before execute). Source: github.com/gotalab/cc-sdd.
 
-*Option C — Hand-rolled `docs/internal/specs/` lifecycle:* The jackin project's existing approach (superpowers-generated specs) plus a convention file (`docs/internal/specs/README.md`) describing the lifecycle: `draft/`, `active/`, `merged/` subdirectories or a front-matter `status` field. No external tooling.
+*Option C — Hand-rolled `docs/src/content/docs/internal/specs/` lifecycle:* The jackin project's existing approach (superpowers-generated specs) plus a convention file (`docs/internal/specs/README.md`) describing the lifecycle: `draft/`, `active/`, `merged/` subdirectories or a front-matter `status` field. No external tooling.
 
 *Option D — Kiro (AWS IDE):* Spec-first IDE with VS Code extension. Not compatible with Claude Code CLI `/loop` pattern. Rejected for tool incompatibility.
 
@@ -1606,21 +1655,25 @@ The operator requirement is: specs must be easily updatable without special tool
 
 **OpenSpec complement (Option E):** OpenSpec's `/opsx:propose` + delta markers (`ADDED`/`MODIFIED`/`REMOVED`) add brownfield-specific value that cc-sdd lacks — particularly for the §4 structural refactoring work (module splits, type moves) where agreeing *what changes* before implementation begins prevents scope creep. The two can coexist: use `/opsx:propose` for the workflow artifact during a PR, then migrate the final stable spec content to a Starlight MDX page when the feature ships. OpenSpec's `openspec/specs/` living-docs layer would be a secondary, internal view; the Starlight MDX page would be the canonical public view. Cost: `npm install -g @fission-ai/openspec` (Node.js 20.19+ already satisfied via bun).
 
-**Two-tier spec architecture (resolving the §4 vs §8.1 tension):**
+**Unified spec location (operator-directed — internal docs are browsable):**
 
-§4's alternative thesis recommends `docs/internal/specs/` for "behavioral specs" of internal subsystems like `op_picker/`. §8.1 recommends public Starlight MDX pages for feature specs. These are not contradictory — they address different audiences:
+All specs — both feature specs and behavioral implementation specs — live at `docs/src/content/docs/internal/specs/` and are browsable at `jackin.tailrocks.com/internal/specs/`. The earlier "two-tier" distinction (public feature specs vs hidden behavioral specs) is eliminated: "internal" describes audience (developers + AI agents), not access control.
 
-| Type | Audience | Location | Content | Lifecycle |
-|---|---|---|---|---|
-| **Feature spec** | Users + contributors | `docs/src/content/docs/specs/<feature>.mdx` | What the feature does, how to use it, operator workflow | Draft → shipped → updated with feature |
-| **Behavioral spec** | AI agents + code reviewers | `docs/internal/specs/<subsystem>.md` | Invariants the code must maintain, state machine description, verification guide for AI-generated code | Created before complex code is written; updated when invariants change |
+The difference between spec types is expressed in frontmatter, not filesystem location:
 
-The confusion arose because §4 proposed `docs/internal/specs/` for three subsystems (`op_picker/`, `config/editor`, `runtime/launch`). These are *behavioral* specs — internal, not user-facing. The recommendation stands: these go in `docs/internal/specs/`. Feature specs like "how the Environments tab works for operators" belong in the public Starlight site.
+| Type | `spec_type` frontmatter | Primary audience | Content |
+|---|---|---|---|
+| **Feature spec** | `feature` | Users + contributors | What the feature does, operator workflow, configuration |
+| **Behavioral spec** | `behavioral` | AI agents + code reviewers | Invariants the code must maintain, state machine, INV-N verification guide |
 
-**Concrete behavioral spec template** (for `docs/internal/specs/op-picker.md`):
+Both types use the same Starlight rendering, appear in the same sidebar section ("Developer Reference → Specs"), and benefit from Starlight's full-text search. An AI agent can be pointed to `jackin.tailrocks.com/internal/specs/runtime-launch/` rather than a local file path — the spec is always the latest deployed version.
+
+**Concrete behavioral spec template** (for `docs/src/content/docs/internal/specs/op-picker.mdx`):
 
 ```markdown
 ---
+title: op_picker — Behavioral Spec
+spec_type: behavioral
 subsystem: console/widgets/op_picker/
 source: src/console/widgets/op_picker/mod.rs (1712L, ~775L production)
 last-verified: 2026-04-26
@@ -1662,7 +1715,7 @@ channel. No blocking I/O inside key handlers.
 This template format answers the question an AI reviewer asks: "Did the AI-generated code maintain the invariants?" Each INV entry has a *verify by* line that can be executed as a grep or code-read command.
 
 **What this replaces:**
-- `docs/superpowers/specs/` (internal, hidden from contributors) — replaced by visible Starlight pages (feature specs) and `docs/internal/specs/` (behavioral specs)
+- `docs/superpowers/specs/` (internal, hidden from contributors) — replaced by visible Starlight pages (feature specs) and `docs/src/content/docs/internal/specs/` (behavioral specs)
 
 **Migration of existing specs:** The 6 `docs/superpowers/specs/` design files should be reviewed. Those describing features that have already shipped should be converted to Starlight MDX reference pages (or merged into existing docs); those describing in-progress work become draft pages. None of the 6 existing specs describes internal behavioral invariants — those are new artifacts to be authored.
 
@@ -1715,7 +1768,7 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 
 **What does NOT need to be authored from scratch:** brainstorming.md, writing-plans.md, executing-plans.md, tdd.md, debug.md, review.md — cc-sdd provides the spec/plan/execute trio; the remaining discipline (TDD, debugging, review) is covered by existing project docs. No `docs/internal/agent-skills/` directory is needed.
 
-**What DOES need to be authored:** a brief `AGENTS.md` section pointing to cc-sdd and the spec location (`docs/internal/specs/`). This is ~5 lines added to an existing file, not a new skill framework.
+**What DOES need to be authored:** a brief `AGENTS.md` section pointing to cc-sdd and the spec location (`docs/src/content/docs/internal/specs/`). This is ~5 lines added to an existing file, not a new skill framework.
 
 ---
 
@@ -1725,12 +1778,12 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 
 **Contract:**
 
-- **Specs** (`docs/src/content/docs/specs/*.mdx`) answer *what this feature does and why it works this way* — the living source of truth, updated in the same PR as code changes. Lifecycle: `draft: true` while in-progress → `draft: false` when the feature ships → stays permanently as reference documentation. Specs are **public** on the docs site.
-- **ADRs** (`docs/internal/decisions/`) answer *what we decided and why* — durable architectural decision records. Internal, not published. Lifecycle: proposed → accepted → superseded.
+- **Specs** (`docs/src/content/docs/internal/specs/*.mdx`) answer *what this feature does and why it works this way, and what invariants the implementation must maintain* — the living source of truth for both user behavior and code contracts. Browsable at `jackin.tailrocks.com/internal/specs/`. Lifecycle: `draft: true` while in-progress → `draft: false` when shipped → updated permanently as the feature evolves.
+- **ADRs** (`docs/src/content/docs/internal/decisions/*.mdx`) answer *what we decided and why* — browsable at `jackin.tailrocks.com/internal/decisions/`. Lifecycle: proposed → accepted → superseded.
 - **PRs** (GitHub) answer *what we did and how* — the implementation artifact. PR description links to the spec MDX page; commit messages follow Conventional Commits.
 - **Public roadmap** (`docs/src/content/docs/reference/roadmap/`) answers *what is planned for users* — design proposals and open items. Links to spec pages once they exist.
 
-**Key invariant (updated):** Specs are NOT archived after a feature ships — they stay as the permanent reference doc, updated whenever the feature changes. This is the fundamental difference from the earlier `docs/internal/specs/` approach: specs become the docs, not an artifact that diverges from them.
+**Key invariant (updated):** Specs are NOT archived after a feature ships — they stay as the permanent reference doc, updated whenever the feature changes. This is the fundamental difference from the earlier `docs/src/content/docs/internal/specs/` approach: specs become the docs, not an artifact that diverges from them.
 
 **Overlap guard:** Specs describe feature behavior. They must NOT duplicate product invariants from `RULES.md`. If a spec discovers a new invariant, it belongs in `RULES.md` after the PR merges — not in the spec itself. A spec that describes a user-facing feature naturally becomes a page in the appropriate docs section (guides, commands, reference) once mature.
 
@@ -1806,9 +1859,9 @@ This step has two parallel tracks:
 
 *Track A — Tooling setup:* Install cc-sdd (`gotalab/cc-sdd`) to get spec/plan/execute `.claude/commands/` files out of the box. Create `docs/src/content/docs/specs/` directory in the Astro Starlight content collection for living feature specs. Update `docs/astro.config.ts` sidebar to add a "Specifications" section. Update `AGENTS.md` §Agent workflow to point to cc-sdd and the spec MDX convention. Remove superpowers plugin from Claude Code configuration.
 
-*Track B — Phase 1 behavioral specs (must be done before Phase 2 structural splits):* Create `docs/internal/specs/` directory. Author two behavioral specs using the INV-N template from §8.1:
+*Track B — Phase 1 behavioral specs (must be done before Phase 2 structural splits):* Create `docs/src/content/docs/internal/specs/` directory. Author two behavioral specs using the INV-N template from §8.1:
 
-1. `docs/internal/specs/runtime-launch.md` — Priority 1. Documents the `load_agent_with` pipeline (lines 553–894, verified by reading in iteration 35). **Verified INV entries:**
+1. `jackin.tailrocks.com/internal/specs/runtime-launch/` — Priority 1. Documents the `load_agent_with` pipeline (lines 553–894, verified by reading in iteration 35). **Verified INV entries:**
    - **INV-1 — Trust gate precedes image build.** `confirm_trust(selector, &source)?` at line 594 (inside Step 1). `build_agent_image(...)` at line 736 (inside Step 2). An untrusted agent's repo is cloned and inspected, but its Docker image is NOT built until the operator confirms trust. *Verify by:* trust call must appear before `build_agent_image` call in `load_agent_with`.
    - **INV-2 — Container name claimed between image build and network creation.** `claim_container_name(paths, selector, runner)?` at line 754, between Step 2 (image, line 736) and Step 3 (network + DinD, line 827). If name claim fails, image exists but no network/container is created. *Verify by:* `claim_container_name` call must be between `build_agent_image` and `launch_agent_runtime` in `load_agent_with`.
    - **INV-3 — Token verified before network creation.** If `auth_mode == Token`, `verify_token_env_present(&operator_env)?` at line 763 runs before Step 3 (network). Fail fast — avoids spinning up Docker infrastructure if auth token is absent. *Verify by:* `verify_token_env_present` call must appear before `launch_agent_runtime` call.
@@ -1819,7 +1872,7 @@ This step has two parallel tracks:
 
 *Why Phase 1 specs before Phase 2 splits:* A spec is the contract against which the post-split code is verified. If `runtime/launch.rs` is split into 4 files BEFORE the behavioral spec exists, there is no oracle to verify that the split preserved all invariants. The spec is the pre-condition, not an afterthought.
 
-*What could go wrong:* (1) Agent sessions pick up old superpowers skills if the plugin is not explicitly removed — test a new Claude Code session after removal. (2) Draft MDX spec pages must have broken links resolved before the `docs-link-check` CI gate fires. (3) The `docs/internal/specs/` directory must be excluded from Starlight's content collection (`src/content.config.ts`) — it's internal, not a docs page.
+*What could go wrong:* (1) Agent sessions pick up old superpowers skills if the plugin is not explicitly removed — test a new Claude Code session after removal. (2) Draft MDX spec pages must have broken links resolved before the `docs-link-check` CI gate fires. (3) The `docs/src/content/docs/internal/specs/` directory must be excluded from Starlight's content collection (`src/content.config.ts`) — it's internal, not a docs page.
 
 **Step 3 — Toolchain and MSRV clarity (§7.7)**
 
