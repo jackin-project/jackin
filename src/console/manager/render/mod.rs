@@ -56,16 +56,12 @@ pub(super) fn footer_spans(items: &[FooterItem]) -> Vec<Span<'static>> {
     let dyn_style = Style::default().fg(PHOSPHOR_DIM);
 
     let mut spans: Vec<Span<'static>> = Vec::with_capacity(items.len() * 2);
-    for (i, item) in items.iter().enumerate() {
+    for item in items {
         match item {
             FooterItem::Key(k) => {
-                // Key glyph — precede with a space when the previous item was a
-                // Text/Dyn so the key stands apart from the preceding label.
                 spans.push(Span::styled((*k).to_string(), key_style));
             }
             FooterItem::Text(t) => {
-                // Label — precede with a single space so key and label are visually
-                // paired (e.g. "Enter launch" not "Enterlaunch").
                 spans.push(Span::styled(format!(" {t}"), text_style));
             }
             FooterItem::Dyn(t) => {
@@ -75,13 +71,9 @@ pub(super) fn footer_spans(items: &[FooterItem]) -> Vec<Span<'static>> {
                 spans.push(Span::styled(" \u{b7} ".to_string(), sep_style));
             }
             FooterItem::GroupSep => {
-                // Wider gap between logical groups.
                 spans.push(Span::raw("   "));
             }
         }
-        // Avoid trailing separator after the last item; loop logic handles this naturally
-        // because separators are explicit items.
-        let _ = i;
     }
     spans
 }

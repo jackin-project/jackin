@@ -110,7 +110,10 @@ fn contextual_row_items(state: &EditorState<'_>, config: &AppConfig) -> Vec<Foot
             //   row 1 = Working dir (editable — Enter opens workdir picker)
             match cursor {
                 0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
-                1 => vec![
+                // WorkdirPick requires at least one mount to choose from;
+                // suppress the hint when there are none so the key isn't
+                // advertised as available when Enter would be a no-op.
+                1 if !state.pending.mounts.is_empty() => vec![
                     FooterItem::Key("Enter"),
                     FooterItem::Text("pick working directory"),
                 ],
@@ -230,27 +233,18 @@ fn contextual_row_items(state: &EditorState<'_>, config: &AppConfig) -> Vec<Foot
                     FooterItem::Sep,
                     FooterItem::Key("A"),
                     FooterItem::Text("add"),
-                    FooterItem::Sep,
-                    FooterItem::Key("M"),
-                    FooterItem::Text("mask/unmask"),
                 ],
                 Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::AgentAddSentinel(_)) => vec![
                     FooterItem::Key("Enter"),
                     FooterItem::Text("add"),
-                    FooterItem::Sep,
-                    FooterItem::Key("M"),
-                    FooterItem::Text("mask/unmask"),
                     FooterItem::Sep,
                     FooterItem::Key("P"),
                     FooterItem::Text("1Password"),
                 ],
                 // Cursor never lands on `SectionSpacer` (skipped by the
                 // `↑`/`↓` handlers), but if anything ever queries the
-                // hint for that index we degrade to the same minimal
-                // hint as the `None` fallback.
-                Some(SecretsRow::SectionSpacer) | None => {
-                    vec![FooterItem::Key("M"), FooterItem::Text("mask/unmask")]
-                }
+                // hint for that index we degrade to a no-op empty set.
+                Some(SecretsRow::SectionSpacer) | None => vec![],
             }
         }
     }

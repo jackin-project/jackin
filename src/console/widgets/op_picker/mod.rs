@@ -204,6 +204,11 @@ impl OpPickerState {
             return;
         }
         if accounts.len() == 1 {
+            // Single-account fast path: skip the Account pane entirely.
+            // `self.accounts` is intentionally left empty; the Esc guard in
+            // `handle_vault_key` uses `accounts.len() > 1` as a proxy for
+            // "multi-account session", which holds because this branch never
+            // populates `self.accounts`.
             let account = accounts.into_iter().next().expect("len == 1");
             let account_id = account.id.clone();
             self.selected_account = Some(account);
@@ -529,8 +534,8 @@ impl OpPickerState {
                 ModalOutcome::Continue
             }
             KeyCode::Esc => {
-                // Multi-account back-up to Account; single-account has
-                // no Account pane to fall back to, so Esc closes.
+                // `self.accounts` is non-empty iff this is a multi-account
+                // session (see the invariant in `handle_accounts_loaded`).
                 if self.accounts.len() > 1 {
                     self.stage = OpPickerStage::Account;
                     self.filter_buf.clear();
