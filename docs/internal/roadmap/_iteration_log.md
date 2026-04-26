@@ -999,3 +999,38 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§7.5 snapshot test `render_mounts_subpanel` — `MountConfig` struct construction** — the test description says `MountConfig { src: ..., dst: ..., read_only: false }`. After reading `workspace/mod.rs` in iteration 1, the struct fields were confirmed. But `MountConfig` is being renamed to `MountSpec` in §5 #13. The snapshot test description should note this is the CURRENT name and will change.
 2. **Hot-spot table `too_many_lines` count** — `render/mod.rs` has `#[allow(clippy::too_many_lines)]` on `pub fn render` (line 88). The hot-spot table says "13 across 8 files" but this is a 14th. Need to recount.
 3. **§4 Rule 7 — `render/mod.rs` upgrade path** — the analysis says the consolidation history for `FooterItem` would reference "PR #165". This should be verified — what PR actually introduced the FooterItem model?
+
+---
+
+## Iteration 25 — 2026-04-26
+
+### Improvements chosen
+
+1. **`too_many_lines` suppression recount — 16 across 11 files** — `grep -rn "allow(clippy::too_many_lines)" src/` returned 16 results across 11 files. The roadmap said "13 across 8 files" (from iteration 1, before PR #171 additions were counted). Updated all three occurrences in the roadmap (hot-spot table footnote, §7.5 Gain(A) narrative, §7.3 clippy.toml recommendation). Added a full breakdown table showing all 11 files and their suppression counts, with a note that PR #171 added suppressions in `input/editor.rs` (+2), `render/editor.rs` (+2), and `render/mod.rs` (+1).
+
+2. **FooterItem PR reference corrected — PR #166** — `git log --follow src/console/manager/render/mod.rs` shows oldest commit is `a3ab1ab` (PR #166: "feat(launch): workspace manager TUI (PR 2 of 3)"). The §4 Rule 7 note said "PR #165" — corrected to "PR #166 (workspace manager TUI, PR 2 of 3)" with the commit SHA as evidence.
+
+3. **§7.5 MountConfig rename caveat added** — added a "Rename caveat" note to the `render_mounts_subpanel` snapshot test description: if §5 #13 (`MountConfig → MountSpec`) runs before the tests are written, the fixture changes to `MountSpec { ... }`. The note specifies this is a mechanical find-replace, not a semantic change.
+
+### What was read
+- `grep -rn "allow(clippy::too_many_lines)" src/` — 16 results across 11 files (complete list)
+- `git log --follow src/console/manager/render/mod.rs` — two commits: `7c0a4f8` (PR #171) and `a3ab1ab` (PR #166); PR #166 is the file's creation commit
+
+### What changed in the roadmap
+- §1 hot-spot table: "13 across 8" → "16 across 11" + full breakdown table added
+- §7.3 clippy.toml section: "13" → "16" (2 occurrences)
+- §7.5 Gain(A): "13+" → "16"
+- §4 Rule 7: "PR #165" → "PR #166 (workspace manager TUI, PR 2 of 3) — PR verified by git log"
+- §7.5 render_mounts_subpanel: Added rename caveat for MountConfig → MountSpec
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `too_many_lines` count (16 across 11) | High | grep -rn confirmed; all 16 results enumerated in breakdown table |
+| FooterItem in PR #166 | High | git log --follow confirmed oldest commit is PR #166 |
+| MountConfig rename caveat | High | §5 #13 proposes MountSpec; struct fields unchanged by rename |
+
+### Weakest sections for iteration 26
+1. **§4 hot-spot table — `console/mod.rs`** — this file has a `too_many_lines` suppression but no entry in the hot-spot table. Need to verify its size and production/test breakdown.
+2. **§4 hot-spot table — `console/widgets/op_picker/render.rs`** — similarly has a suppression but no table entry. The op_picker was added in PR #171 and hasn't been analyzed.
+3. **§1 module map — `console/mod.rs`** — the file is listed but with "—" for line count. The TUI event loop entry point is important for navigability.

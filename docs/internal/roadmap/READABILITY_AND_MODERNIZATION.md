@@ -250,7 +250,23 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 
 **Key insight:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `input/editor.rs` (1141L — updated post-PR #171), `runtime/launch.rs` (1085L), `app/mod.rs` (928L), and `operator_env.rs` (810L).
 
-Total `#[allow(clippy::too_many_lines)]` suppressions: **13** across 8 files.
+Total `#[allow(clippy::too_many_lines)]` suppressions: **16** across 11 files (grep-verified). Full breakdown:
+
+| File | Count | Functions |
+|---|---|---|
+| `src/runtime/launch.rs` | 3 | `begin_load_agent` (line 288), `load_agent` (line 532), `load_agent_with` (line 552) |
+| `src/console/manager/input/editor.rs` | 2 | `handle_editor_key` (line 22), test block (line 1143) |
+| `src/console/manager/input/save.rs` | 2 | `build_confirm_save_lines` (line 296), test block (line 663) |
+| `src/console/manager/render/editor.rs` | 2 | lines 104, 544 |
+| `src/app/mod.rs` | 1 | `run()` (line 39) |
+| `src/console/manager/input/mod.rs` | 1 | `handle_key` (line 43) |
+| `src/console/manager/input/prelude.rs` | 1 | line 54 |
+| `src/console/manager/render/mod.rs` | 1 | `render` (line 87) |
+| `src/console/mod.rs` | 1 | line 152 |
+| `src/console/widgets/op_picker/render.rs` | 1 | line 111 |
+| `src/tui/animation.rs` | 1 | `banner_grid` (line 245) |
+
+The iteration-1 count of "13 across 8 files" was outdated — PR #171 added suppressions in `input/editor.rs` (2), `render/editor.rs` (+2), and `render/mod.rs` (+1). `console/mod.rs` and `op_picker/render.rs` were previously uncounted.
 
 `mod.rs` files containing real logic (not just re-exports):
 - `src/app/mod.rs` (951L) — the entire `run()` dispatch function lives here.
@@ -777,7 +793,7 @@ A `//!` that only does item 1 is adequate. One that does all three eliminates a 
 
 **Pattern observation:** The `console/manager/` subsystem has the best `//!` coverage in the codebase. PR #171 was written with docs discipline — every new file received a `//!` doc. The contrast with `src/app/`, `src/runtime/`, and `src/instance/` (which have almost none) is stark. The `//!` priority queue in §10 Step 5 targets the highest-impact gaps in those older subsystems.
 
-**The `render/mod.rs` minimal doc** is an example of a 1-element `//!` that could be upgraded. The two missing elements: (1) scope claim — "this is the canonical home for the phosphor-green palette constants; all render sub-files import from here"; (2) consolidation history — "FooterItem model was added in PR #165 when the footer was refactored from plain strings." A `//!` upgrade is lower priority than writing docs for undocumented files, but worth noting as the difference between "adequate" and "exemplary."
+**The `render/mod.rs` minimal doc** is an example of a 1-element `//!` that could be upgraded. The two missing elements: (1) scope claim — "this is the canonical home for the phosphor-green palette constants; all render sub-files import from here"; (2) consolidation history — "FooterItem model was added in PR #166 (workspace manager TUI, PR 2 of 3) when the footer was refactored from plain strings" — PR verified by `git log --follow src/console/manager/render/mod.rs` (oldest commit is `a3ab1ab`, PR #166). A `//!` upgrade is lower priority than writing docs for undocumented files, but worth noting as the difference between "adequate" and "exemplary."
 
 ---
 
@@ -952,7 +968,7 @@ All three are private functions. Rust inline tests access private functions via 
 
 2. **`render_tab_strip`** (`src/console/manager/render/editor.rs:269`) — `fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab)`. Takes frame, area, and `EditorTab` enum value. Enumerate all 4 tab variants (`General`, `Mounts`, `Agents`, `Secrets`) as separate snapshot assertions. Terminal size 80×3 (just the strip). 4 snapshots, ~20 lines of test code.
 
-3. **`render_mounts_subpanel`** (`src/console/manager/render/list.rs:433`) — `fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::workspace::MountConfig])`. Three cases: empty slice, 1 mount, 3 mounts. `MountConfig` can be constructed with `MountConfig { src: "/home/op/project".into(), dst: "/workspace/project".into(), read_only: false }`. Terminal size 60×20. ~30 lines of test code covering 3 snapshots.
+3. **`render_mounts_subpanel`** (`src/console/manager/render/list.rs:433`) — `fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::workspace::MountConfig])`. Three cases: empty slice, 1 mount, 3 mounts. `MountConfig` can be constructed with `MountConfig { src: "/home/op/project".into(), dst: "/workspace/project".into(), read_only: false }`. Terminal size 60×20. ~30 lines of test code covering 3 snapshots. **Rename caveat (§5 #13):** If `MountConfig` → `MountSpec` is applied before these tests are written, the fixture construction becomes `MountSpec { ... }` and the function signature changes to `&[crate::workspace::MountSpec]`. Write the tests against the current name; the rename is a mechanical find-replace.
 
 These 3 tests together exercise 2 different render modules, cover both zero-state and data-driven cases, and catch any future column-width, padding, or color-palette regressions in the most-visited code paths.
 
@@ -967,7 +983,7 @@ Applicable to parsing functions (`src/selector.rs`, `src/workspace/mounts.rs`, `
 
 **Cost (A):** Low — add `insta` + write ~10 snapshot tests. One-time setup; ongoing maintenance at each visual change.
 
-**Gain (A):** jackin's TUI has complex multi-tab rendering with 13+ `#[allow(clippy::too_many_lines)]` suppressions. Any refactor touching `render/list.rs` (1989L — grew with PR #171's Environments subpanel) or `render/editor.rs` (1666L — grew with PR #171's Secrets tab) currently has no automated regression net. Snapshot tests would provide one.
+**Gain (A):** jackin's TUI has complex multi-tab rendering with 16 `#[allow(clippy::too_many_lines)]` suppressions. Any refactor touching `render/list.rs` (1989L — grew with PR #171's Environments subpanel) or `render/editor.rs` (1666L — grew with PR #171's Secrets tab) currently has no automated regression net. Snapshot tests would provide one.
 
 **Recommendation:**
 - `adopt` `insta` + `TestBackend` snapshot testing (approach A) — clear gain, low cost.
@@ -1063,9 +1079,9 @@ This is a mature, well-considered configuration. One gap: the cast allowances at
 
 *Option A — Keep in `Cargo.toml` (current):* The `[lints]` table in `Cargo.toml` (stabilised in Rust 1.73) is the modern standard. No separate config file needed.
 
-*Option B — Separate `clippy.toml` or `.clippy.toml`:* For per-lint configuration that isn't available in the `[lints]` table (e.g., `cognitive-complexity-threshold`, `too-many-lines-threshold`). The 13 `#[allow(clippy::too_many_lines)]` suppressions suggest a threshold that's too low for this codebase's function-length norms. Setting `too-many-lines-threshold = 150` (or higher) in `clippy.toml` would let code pass without suppression markers, making the markers meaningful only for genuinely oversized functions.
+*Option B — Separate `clippy.toml` or `.clippy.toml`:* For per-lint configuration that isn't available in the `[lints]` table (e.g., `cognitive-complexity-threshold`, `too-many-lines-threshold`). The 16 `#[allow(clippy::too_many_lines)]` suppressions (across 11 files) suggest a threshold that's too low for this codebase's function-length norms. Setting `too-many-lines-threshold = 150` (or higher) in `clippy.toml` would let code pass without suppression markers, making the markers meaningful only for genuinely oversized functions.
 
-**Recommendation:** `adopt` option B partially: add a `clippy.toml` with `too-many-lines-threshold = 150` (current Clippy default is 100). This would remove most of the 13 `#[allow(clippy::too_many_lines)]` suppressions — those that remain above 150 lines would be genuine candidates for refactoring (and are already in the §4 hot-spot list).
+**Recommendation:** `adopt` option B partially: add a `clippy.toml` with `too-many-lines-threshold = 150` (current Clippy default is 100). This would remove most of the 16 `#[allow(clippy::too_many_lines)]` suppressions — those that remain above 150 lines would be genuine candidates for refactoring (and are already in the §4 hot-spot list).
 
 ---
 
