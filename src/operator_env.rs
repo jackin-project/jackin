@@ -735,6 +735,50 @@ pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Res
     )
 }
 
+/// (key → (layer, `raw_value`)) precedence-merged across the four
+/// config layers — global, agent, workspace, workspace-agent — for the
+/// given `(agent, workspace)` selection. Later layers overwrite earlier
+/// ones, so the final layer attached to each key is the one that wins.
+fn build_attributed_layers(
+    config: &crate::config::AppConfig,
+    agent_selector: Option<&str>,
+    workspace_name: Option<&str>,
+) -> std::collections::BTreeMap<String, (EnvLayer, String)> {
+    let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
+        std::collections::BTreeMap::new();
+
+    let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, String>| {
+        for (k, v) in env {
+            attributed.insert(k.clone(), (layer.clone(), v.clone()));
+        }
+    };
+
+    record(EnvLayer::Global, &config.env);
+    if let Some(agent_name) = agent_selector
+        && let Some(a) = config.agents.get(agent_name)
+    {
+        record(EnvLayer::Agent(agent_name.to_string()), &a.env);
+    }
+    if let Some(ws_name) = workspace_name
+        && let Some(ws) = config.workspaces.get(ws_name)
+    {
+        record(EnvLayer::Workspace(ws_name.to_string()), &ws.env);
+        if let Some(agent_name) = agent_selector
+            && let Some(ov) = ws.agents.get(agent_name)
+        {
+            record(
+                EnvLayer::WorkspaceAgent {
+                    workspace: ws_name.to_string(),
+                    agent: agent_name.to_string(),
+                },
+                &ov.env,
+            );
+        }
+    }
+
+    attributed
+}
+
 /// Walk the env layers for the given `(agent, workspace)` pair and
 /// resolve every value. Resolution failures across layers are
 /// aggregated into one error.
@@ -765,57 +809,7 @@ where
     R: OpRunner + ?Sized,
     H: FnMut(&str) -> Result<String, std::env::VarError>,
 {
-    let empty = std::collections::BTreeMap::new();
-
-    let global = &config.env;
-    let agent = agent_selector
-        .and_then(|a| config.agents.get(a))
-        .map_or(&empty, |a| &a.env);
-    let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
-    let workspace = ws_opt.map_or(&empty, |w| &w.env);
-    let workspace_agent = ws_opt
-        .zip(agent_selector)
-        .and_then(|(w, a)| w.agents.get(a))
-        .map_or(&empty, |o| &o.env);
-
-    // (key → (layer, raw_value)) so resolution errors can attribute
-    // which layer supplied each value.
-    let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
-        std::collections::BTreeMap::new();
-
-    for (k, v) in global {
-        attributed.insert(k.clone(), (EnvLayer::Global, v.clone()));
-    }
-    if let Some(agent_name) = agent_selector {
-        for (k, v) in agent {
-            attributed.insert(
-                k.clone(),
-                (EnvLayer::Agent(agent_name.to_string()), v.clone()),
-            );
-        }
-    }
-    if let Some(ws_name) = workspace_name {
-        for (k, v) in workspace {
-            attributed.insert(
-                k.clone(),
-                (EnvLayer::Workspace(ws_name.to_string()), v.clone()),
-            );
-        }
-    }
-    if let (Some(ws_name), Some(agent_name)) = (workspace_name, agent_selector) {
-        for (k, v) in workspace_agent {
-            attributed.insert(
-                k.clone(),
-                (
-                    EnvLayer::WorkspaceAgent {
-                        workspace: ws_name.to_string(),
-                        agent: agent_name.to_string(),
-                    },
-                    v.clone(),
-                ),
-            );
-        }
-    }
+    let attributed = build_attributed_layers(config, agent_selector, workspace_name);
 
     let mut resolved = std::collections::BTreeMap::new();
     let mut errors: Vec<String> = Vec::new();
@@ -901,51 +895,7 @@ fn write_launch_diagnostic<W: std::io::Write>(
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) -> std::io::Result<()> {
-    // Rebuild attribution using the same precedence as
-    // resolve_operator_env_with.
-    let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
-
-    let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
-        std::collections::BTreeMap::new();
-
-    for (k, v) in &config.env {
-        attributed.insert(k.clone(), (EnvLayer::Global, v.clone()));
-    }
-    if let Some(agent_name) = agent_selector
-        && let Some(a) = config.agents.get(agent_name)
-    {
-        for (k, v) in &a.env {
-            attributed.insert(
-                k.clone(),
-                (EnvLayer::Agent(agent_name.to_string()), v.clone()),
-            );
-        }
-    }
-    if let (Some(ws_name), Some(ws)) = (workspace_name, ws_opt) {
-        for (k, v) in &ws.env {
-            attributed.insert(
-                k.clone(),
-                (EnvLayer::Workspace(ws_name.to_string()), v.clone()),
-            );
-        }
-        if let Some(agent_name) = agent_selector
-            && let Some(ov) = ws.agents.get(agent_name)
-        {
-            for (k, v) in &ov.env {
-                attributed.insert(
-                    k.clone(),
-                    (
-                        EnvLayer::WorkspaceAgent {
-                            workspace: ws_name.to_string(),
-                            agent: agent_name.to_string(),
-                        },
-                        v.clone(),
-                    ),
-                );
-            }
-        }
-    }
-
+    let mut attributed = build_attributed_layers(config, agent_selector, workspace_name);
     // Drop keys not in `resolved` — those failed to dispatch.
     attributed.retain(|k, _| resolved.contains_key(k));
 
