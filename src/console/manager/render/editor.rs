@@ -16,7 +16,7 @@ use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
 };
 use crate::config::AppConfig;
-use crate::operator_env::{OpAccount, is_op_reference, parse_op_reference};
+use crate::operator_env::{is_op_reference, parse_op_reference};
 
 // ── Editor stage ────────────────────────────────────────────────────
 
@@ -24,7 +24,6 @@ pub fn render_editor(
     frame: &mut Frame,
     state: &EditorState<'_>,
     config: &AppConfig,
-    op_accounts: &[OpAccount],
 ) {
     let area = frame.area();
     let chunks = Layout::default()
@@ -49,7 +48,7 @@ pub fn render_editor(
         EditorTab::General => render_general_tab(frame, chunks[2], state),
         EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state),
         EditorTab::Agents => render_agents_tab(frame, chunks[2], state, config),
-        EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config, op_accounts),
+        EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config),
     }
 
     let mut items: Vec<FooterItem> = Vec::new();
@@ -523,14 +522,6 @@ pub(in crate::console::manager) fn secrets_flat_rows(
     rows
 }
 
-#[must_use]
-pub(in crate::console::manager) fn secrets_flat_row_count(
-    editor: &EditorState<'_>,
-    config: &AppConfig,
-) -> usize {
-    secrets_flat_rows(editor, config).len()
-}
-
 /// Mirrors launch-time semantics from
 /// [`crate::app::context::eligible_agents_for_workspace`]. Agents
 /// already carrying an override are NOT filtered — operators may add
@@ -553,7 +544,6 @@ fn render_secrets_tab(
     area: Rect,
     state: &EditorState<'_>,
     config: &AppConfig,
-    op_accounts: &[OpAccount],
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -585,7 +575,6 @@ fn render_secrets_tab(
                     masked,
                     area.width,
                     label_width,
-                    op_accounts,
                 ));
             }
             SecretsRow::WorkspaceAddSentinel => {
@@ -632,7 +621,6 @@ fn render_secrets_tab(
                     masked,
                     area.width,
                     label_width,
-                    op_accounts,
                 ));
             }
             SecretsRow::AgentAddSentinel(agent) => {
@@ -658,8 +646,6 @@ fn render_secrets_tab(
 /// `op://` rows skip masking and render as a breadcrumb (3-segment:
 /// `vault / item → field`, 4-segment adds `section`). Account scope
 /// isn't part of the `op://` path — see the picker docstring.
-/// `op_accounts` is retained for signature compatibility.
-#[allow(clippy::too_many_arguments)]
 fn render_secrets_key_line(
     selected: bool,
     cursor_col: &str,
@@ -668,13 +654,10 @@ fn render_secrets_key_line(
     masked: bool,
     area_width: u16,
     label_width: usize,
-    op_accounts: &[OpAccount],
 ) -> Line<'static> {
     const OP_MARKER: &str = "[op] ";
     const NO_MARKER: &str = "     ";
     const MASK: &str = "●●●●●●●●●●●";
-
-    let _ = op_accounts;
 
     let label_style = if selected {
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
@@ -683,8 +666,10 @@ fn render_secrets_key_line(
     };
     let dim = Style::default().fg(PHOSPHOR_DIM);
 
-    let is_op = is_op_reference(value);
-    let marker = if is_op { OP_MARKER } else { NO_MARKER };
+    // parse_op_reference doubles as the is-op check: Some → op://,
+    // None → plain. One scan instead of two.
+    let op_parts = parse_op_reference(value);
+    let marker = if op_parts.is_some() { OP_MARKER } else { NO_MARKER };
     let mut spans = vec![
         Span::raw(cursor_col.to_string()),
         Span::styled(marker.to_string(), dim),
@@ -694,7 +679,7 @@ fn render_secrets_key_line(
     // Op:// references render as a breadcrumb regardless of `masked` —
     // the path is not the credential, so masking it makes the row a
     // less informative version of itself.
-    if let Some(parts) = parse_op_reference(value) {
+    if let Some(parts) = op_parts {
         let white_style = Style::default().fg(WHITE);
         let green = Style::default().fg(PHOSPHOR_GREEN);
         let green_bold = Style::default()
@@ -1121,7 +1106,7 @@ mod secrets_tab_render_tests {
         let backend = TestBackend::new(80, 15);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_secrets_tab(f, Rect::new(0, 0, 80, 15), editor, &config, &[]);
+            render_secrets_tab(f, Rect::new(0, 0, 80, 15), editor, &config);
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -1418,9 +1403,8 @@ mod secrets_tab_render_tests {
         let backend = TestBackend::new(80, 15);
         let mut term = Terminal::new(backend).unwrap();
         let config = AppConfig::default();
-        let accounts: Vec<crate::operator_env::OpAccount> = Vec::new();
         term.draw(|f| {
-            render_secrets_tab(f, Rect::new(0, 0, 80, 15), &editor, &config, &accounts);
+            render_secrets_tab(f, Rect::new(0, 0, 80, 15), &editor, &config);
         })
         .unwrap();
         let buf = term.backend().buffer();
