@@ -231,7 +231,7 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 
 | File | Total | Prod LOC | Test LOC | Suppressions | Priority |
 |---|---|---|---|---|---|
-| `src/runtime/launch.rs` | 2368 | **1085** | 1282 | 3× `too_many_lines` | **Highest** — production code is genuinely large |
+| `src/runtime/launch.rs` | 2368 | **~1077** | ~1290 | 3× `too_many_lines` | **Highest** — production code is genuinely large; test section starts at line 1078 (verified iteration 31) |
 | `src/app/mod.rs` | 979 | **~957** | 22 | 1× `too_many_lines` | **High** — nearly all production; ~957L dispatch function (verified iteration 30) |
 | `src/operator_env.rs` | 2130 | **~880** | ~1250 | 0 | **High** — production code has grown (was 1569L at loop start; 2130L confirmed by wc -l); tests start at line 881 |
 | `src/console/manager/state.rs` | 992 | **~628** | ~363 | 0 | **High** — 26+ type definitions (Modal enum, EditorState, CreatePreludeState, etc.) mixed with impl behavior; prime candidate for types/behavior split |
@@ -259,7 +259,7 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/console/widgets/op_picker/render.rs` | 865 | **~545** | ~320 | 1× `too_many_lines` | **Medium** — PR #171 addition (AI-generated); 545L production with 4 level-specific renderers (`render_account_lines`, `render_vault_lines`, `render_item_lines`, `render_field_lines`, ~120L) that could move to `op_picker/pane.rs`; has `//!` doc; single concern (1Password picker rendering) |
 | `src/console/mod.rs` | 406 | **~307** | ~99 | 1× `too_many_lines` | **Low** — 307L production; `run_console` is the TUI event loop; no `//!` doc (block comment with ConsoleStage design rationale should be promoted to `//!`); fits in the `//!` priority queue |
 
-**Key insight:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `input/editor.rs` (1141L — updated post-PR #171), `runtime/launch.rs` (1085L), `app/mod.rs` (928L), and `operator_env.rs` (810L).
+**Key insight:** Total line count is a misleading hot-spot metric. `manifest/validate.rs` (962L) and `config/mod.rs` (867L) appear in the top 10 by total LOC but have only 145L and 134L of production code respectively — both are exemplars of thorough testing, not god files. The true god files by production LOC are `input/editor.rs` (~1141L), `runtime/launch.rs` (~1077L), `app/mod.rs` (~957L), and `operator_env.rs` (~880L). All four production counts verified iteration 31 by `#[cfg(test)]` line position.
 
 Total `#[allow(clippy::too_many_lines)]` suppressions: **16** across 11 files (grep-verified). Full breakdown:
 
@@ -315,7 +315,7 @@ Post-refactor target: **zero** entries rated `requires-grep` or `requires-tribal
 | # | Concept | Current location | Rating today | Proposed location | Post-refactor rating |
 |---|---|---|---|---|---|
 | 1 | **`AgentPicker` modal** | `src/console/manager/state.rs:245` (Modal enum, `AgentPicker` variant); `src/console/widgets/agent_picker.rs` (state) | `requires-grep` — `Modal` enum is in state.rs, widget is flat at widgets root | `src/console/widgets/agent_picker/` — self-contained subdirectory with `mod.rs`, `state.rs`, `render.rs`; Modal enum documents where each variant's state type lives | `discoverable-in-2-hops` |
-| 2 | **`OpPicker` state machine** | `src/console/widgets/op_picker/mod.rs` + `render.rs` | `requires-grep` — no entry in PROJECT_STRUCTURE.md yet | Entry in PROJECT_STRUCTURE.md; canonical layout rule in `RULES.md § TUI List Modals` already added in PR #171 | `discoverable-in-2-hops` |
+| 2 | **`OpPicker` state machine** | `src/console/widgets/op_picker/mod.rs` + `render.rs` | `requires-grep` — `PROJECT_STRUCTURE.md` line 53 confirmed stale (iteration 31 fresh scan): the `console/` entry still lists the pre-PR#171 widget set (`file_browser`, `text_input`, `confirm`, `confirm_save`, `error_popup`, `mount_dst_choice`, `workdir_pick`, `github_picker`, `save_discard`, `panel_rain`) and omits `op_picker/`, `agent_picker.rs`, `scope_picker.rs`, `source_picker.rs` entirely. The manager/ sub-structure description is also pre-split. | Update `PROJECT_STRUCTURE.md` line 53 to include op_picker, agent_picker, scope_picker, source_picker; canonical layout rule in `RULES.md § TUI List Modals` already added in PR #171 | `discoverable-in-2-hops` |
 | 3 | **Workspace env diff (`change_count`)** | `src/console/manager/state.rs:517` — `EditorState::change_count()` method | `requires-grep` | Same file is fine; add `//!` to state.rs explaining it is the editor-state source of truth | `discoverable-in-2-hops` |
 | 4 | **Console event-loop polling (20 Hz / 50ms)** | `src/console/mod.rs:90` — `const TICK_MS: u64 = 50;` with doc comment "20 Hz: spinner stays fluid and op results surface within ~50ms without hot-spinning. <16ms wastes cycles, >100ms stutters."; `ms.poll_picker_loads()` is called at line ~200 before each render to drain worker results; the non-blocking `event::poll(Duration::from_millis(TICK_MS))` at line ~217 replaced the old blocking `event::read()`. The `is_on_main_screen` and `consumes_letter_input` helpers at lines ~111–130 gate the `Q` exit-confirmation flow introduced in the same PR. | `discoverable-in-2-hops` — `TICK_MS` is named and documented inline at `console/mod.rs:90` | Add `//!` to `console/mod.rs` summarising the 20 Hz loop contract; the constant and its doc comment already capture the contract — no structural change needed | `discoverable-in-2-hops` |
 | 5 | **`OpStructRunner` trait and threading contract** | `src/operator_env.rs:348`; doc comment "Distinct from OpRunner: picker is a metadata browser and must never deserialize a secret value" | `requires-grep` — nothing in PROJECT_STRUCTURE.md points here yet | Update PROJECT_STRUCTURE.md §operator_env; the threading contract belongs in a `//!` module doc or in a separate `src/op/` module if operator_env splits | `discoverable-in-2-hops` |
@@ -493,7 +493,7 @@ The structural-split approach above rests on two assumptions that deserve explic
 Counter-evidence: AI agents can be directed to a specific function with a line reference (e.g. `src/console/widgets/op_picker/mod.rs:446`) without loading the whole file into a conversation. When a reviewer asks "did the AI correctly implement `handle_field_key`?", the relevant unit is the *function*, not the file. Splitting `op_picker/mod.rs` into `mod.rs + loading.rs + keys.rs` does not make `handle_field_key` more auditable if `keys.rs` still has no behavioral spec for that function.
 
 **Assumption B: File size limits comprehension.**
-Counter-evidence: Claude Sonnet 4 has a ~200K-token context window — sufficient to hold the entire 43K-line `jackin` codebase simultaneously. File size is not a context constraint for current-generation AI agents. What limits comprehension is the *absence of stated invariants*, not the length of the file. `manifest/validate.rs` (962L total, 145L production) is trivially auditable because the other 816L are tests that demonstrate the expected behavior. `runtime/launch.rs` (2368L, ~1085L production, no `//!` doc) is hard to audit not because it's large, but because no file-level contract states what it does.
+Counter-evidence: Claude Sonnet 4 has a ~200K-token context window — sufficient to hold the entire 43K-line `jackin` codebase simultaneously. File size is not a context constraint for current-generation AI agents. What limits comprehension is the *absence of stated invariants*, not the length of the file. `manifest/validate.rs` (962L total, 145L production) is trivially auditable because the other 816L are tests that demonstrate the expected behavior. `runtime/launch.rs` (2368L, ~1077L production, no `//!` doc) is hard to audit not because it's large, but because no file-level contract states what it does.
 
 **The alternative approach: documentation-first verification**
 
@@ -520,7 +520,7 @@ Instead of splitting files, make each file self-verifiable through:
 The two approaches are not mutually exclusive. A stronger path than either alone:
 
 - **Phase 1 — documentation sprint** (low-risk, immediately applicable): Write `//!` module contracts and `///` function docs for the 10 files in the §10 //! priority queue. Add behavioral specs to `docs/internal/specs/` for the three hardest-to-verify subsystems: `op_picker/` (drill-down state machine), `config/editor.rs` (two-phase save invariants), `runtime/launch.rs` (container bootstrap sequence). This is 2–3 PRs, zero structural change.
-- **Phase 2 — targeted structural splits** (higher-risk, higher-payoff): Apply file splits only to files with >600L *production* code where the split boundary is unambiguous. By that criterion, only 4 files qualify: `input/editor.rs` (1141L), `runtime/launch.rs` (1085L), `app/mod.rs` (~957L), and `operator_env.rs` (~810L). The 10 smaller files in the current §10 Step 4f table drop from urgent to deferred.
+- **Phase 2 — targeted structural splits** (higher-risk, higher-payoff): Apply file splits only to files with >800L *production* code where the split boundary is unambiguous. By that criterion, exactly 4 files qualify: `input/editor.rs` (~1141L), `runtime/launch.rs` (~1077L), `app/mod.rs` (~957L), and `operator_env.rs` (~880L). All other files in the §10 Step 4f table (state.rs ~628L, render/editor.rs ~736L, render/list.rs ~668L, input/save.rs ~661L, op_picker/mod.rs ~775L) are below this threshold and drop from urgent to deferred. Production counts verified iteration 31 by `#[cfg(test)]` line position for all 9 candidate files.
 - **Phase 3 — workspace split** if LOC exceeds 150K or a second binary needs its own semver identity.
 
 This phasing reduces the scope of structural changes by ~60% while delivering the stated goal (AI verifiability) faster and with lower risk.
@@ -672,7 +672,7 @@ Violators:
 
   **Net effect**: Max production file drops from 1548L to ~120L. The 963L test file stays large but is a test file (expected). The `create_workspace`/`edit_workspace` delegation pattern is visible in `workspace_ops.rs` and doesn't need to be co-located with `env_ops.rs` for any functional reason.
 
-  **Priority note**: `config/editor.rs`'s production code is only 503L — a reasonable size. The file is "large" primarily because of its 963L test suite. The split is still worthwhile for navigability (18 methods in one `impl` block is hard to scan), but it is *lower priority* than splitting `runtime/launch.rs` (1083L production code) or `operator_env.rs` (810L production code).
+  **Priority note**: `config/editor.rs`'s production code is only ~584L — a reasonable size. The file is "large" primarily because of its ~963L test suite. The split is still worthwhile for navigability (18 methods in one `impl` block is hard to scan), but it is *lower priority* than splitting `runtime/launch.rs` (~1077L production code) or `operator_env.rs` (~880L production code).
 
 **Rule 3: File names match dominant concern.**
 No current violators found (names are descriptive), but three edge cases:
@@ -802,7 +802,7 @@ PR #171 addition; already has a `//!` doc. Functions fall into two groups with n
 
 **Critical Rule 5 violator: `src/console/manager/input/editor.rs` (2349L, ~1141L production)**
 
-Previously listed at 1304L/547L-production. PR #171 added the entire Secrets/Environments tab keyboard handling (~600L of new production code), making this the **largest production file in the codebase** — surpassing `runtime/launch.rs` (1085L). The growth was missed because `pub(super) fn handle_editor_modal` (line 618) was invisible to `^pub fn` grep patterns.
+Previously listed at 1304L/547L-production. PR #171 added the entire Secrets/Environments tab keyboard handling (~600L of new production code), making this the **largest production file in the codebase** — surpassing `runtime/launch.rs` (~1077L). The growth was missed because `pub(super) fn handle_editor_modal` (line 618) was invisible to `^pub fn` grep patterns.
 
 The file has two major entry-point functions plus tab-specific helpers:
 
@@ -1603,7 +1603,7 @@ mod workspaces;
 
 **Auditability gain:** To audit "does the agent auth forward correctly?", a reviewer reads only `agent_ops.rs` (~130L). Today they must scan 1548L for the relevant methods.
 
-4d. **`src/operator_env.rs` → `src/operator_env/` module directory** (~810L production, ~758L tests): Convert to module directory: `mod.rs` (~100L traits + dispatch), `client.rs` (~280L subprocess), `layers.rs` (~470L env resolution), `picker.rs` (~250L PR #171).
+4d. **`src/operator_env.rs` → `src/operator_env/` module directory** (~880L production, ~1250L tests; test section starts at line 881, verified iteration 31): Convert to module directory: `mod.rs` (~100L traits + dispatch), `client.rs` (~280L subprocess), `layers.rs` (~470L env resolution), `picker.rs` (~250L PR #171).
 
 **Verified dependency graph (corrected — read lines 797–845):**
 ```

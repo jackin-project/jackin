@@ -1245,3 +1245,63 @@ The loop prompt was also updated to embed these directives explicitly.
 1. **§2 — PROJECT_STRUCTURE.md gap not yet documented in §2 discovery table** — the §2 table shows op_picker as `requires-grep` with "Entry in PROJECT_STRUCTURE.md pending" but the fresh scan confirms it was never added. This should be explicitly noted as a concrete unresolved gap (not just "pending").
 2. **§7 modernization — alternative thesis needs external evidence** — the documentation-first alternative in §4 would be strengthened by researching how other large Rust TUI projects (e.g. `gitui`, `bottom`, `lazygit`-equivalent Rust projects) actually structure their code. Do they split into many small files, or use large well-documented files?
 3. **§8.1 spec-driven development** — the new §4 alternative explicitly recommends `docs/internal/specs/` for 3 subsystems (op_picker, config/editor, runtime/launch) but §8.1 doesn't yet specify the format of these specs. A concrete spec template would complete the loop.
+
+---
+
+## Iteration 31 — 2026-04-26
+
+### What was improved
+
+1. **Corrected factual error introduced in iteration 30: ">600L production → 4 files" was wrong**
+   
+   The iteration 30 alternative thesis stated "apply file splits only to files with >600L production code; by that criterion, only 4 files qualify." Iteration 31 re-verified production LOC for all 9 candidate files using `#[cfg(test)]` line positions (exact test-section start lines):
+   
+   | File | Total | Test starts at | Production |
+   |---|---|---|---|
+   | `input/editor.rs` | 2349 | 1142 | ~1141L |
+   | `runtime/launch.rs` | 2368 | 1078 | ~1077L |
+   | `app/mod.rs` | 979 | 957 | ~956L |
+   | `operator_env.rs` | 2130 | 881 | ~880L |
+   | `op_picker/mod.rs` | 1712 | 776 | ~775L |
+   | `render/editor.rs` | 1666 | 737 | ~736L |
+   | `render/list.rs` | 1989 | 669 | ~668L |
+   | `input/save.rs` | 1472 | 662 | ~661L |
+   | `state.rs` | 992 | 629 | ~628L |
+   
+   9 files exceed 600L production (not 4). The correct threshold for "exactly 4 files" is **>800L production**. Corrected iteration 30's "600L" → "800L" and updated the supporting text. All 9 files' production counts added to the §4 alternative thesis with provenance.
+
+2. **Production LOC corrections propagated throughout**
+   - `runtime/launch.rs` production: 1085 → ~1077L (corrected in 5 locations: hot-spot table, key insight callout, alternative thesis, config/editor priority note, input/editor comparison sentence)
+   - `operator_env.rs` production: 810 → ~880L (corrected in 4 locations: alternative thesis, config/editor priority note, §10 Step 4d header, hot-spot table was already correct from iteration 27)
+   - `app/mod.rs` production: 928 → ~957L in the key insight callout (hot-spot table was already corrected in iteration 30)
+   - `config/editor.rs` production: 503 → ~584L in the priority note (already corrected in hot-spot table in iteration 30)
+
+3. **§2 OpPicker row — PROJECT_STRUCTURE.md gap confirmed and documented precisely**
+   - Changed from vague "no entry yet" to specific: `PROJECT_STRUCTURE.md` line 53 (confirmed by fresh scan) still lists the pre-PR#171 widget set (10 named widgets) and omits `op_picker/`, `agent_picker.rs`, `scope_picker.rs`, `source_picker.rs` entirely. The manager/ sub-structure description is also pre-split. This is a concrete, named gap — not a future proposal.
+
+### What was read (fresh scan)
+- `find src -name "*.rs" | wc -l` — 94 files, stable
+- `wc -l` for all 9 candidate files — stable since iteration 30
+- `grep -n "#\[cfg(test)\]"` for all 9 — exact test start lines extracted for production LOC calculation
+- `PROJECT_STRUCTURE.md` line 53 — confirmed full widget list still missing PR #171 additions
+
+### What changed in the roadmap
+- §4 alternative thesis: "600L" → "800L", updated file list with verified production LOC, added table of all 9 candidates
+- §4 hot-spot table: launch.rs "**1085**" → "**~1077**" with provenance note
+- §4 key insight callout: updated all four god-file LOC values with verified figures
+- §4 config/editor priority note: updated launch.rs and operator_env.rs references
+- §4 input/editor comparison: launch.rs 1085 → ~1077
+- §10 Step 4d: operator_env.rs "(~810L production, ~758L tests)" → "(~880L production, ~1250L tests)"
+- §2 row 2: OpPicker gap documented as confirmed current state, not future proposal
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| Production LOC for all 9 files | High | Derived from `#[cfg(test)]` line position; exact for files with a single test block; render/list.rs and render/editor.rs have multiple interspersed test blocks, so production LOC is a lower bound from first test block |
+| ">800L → exactly 4 files" claim | High | Verified: op_picker/mod.rs is ~775L production (below 800L threshold) |
+| PROJECT_STRUCTURE.md staleness | High | Fresh scan confirmed line 53 content |
+
+### Weakest sections for iteration 32
+1. **render/list.rs and render/editor.rs production LOC** — both have multiple interspersed `#[cfg(test)]` blocks (3-4 per file), so the "first test at line 669/737" underestimates production LOC. The real production LOC could be significantly higher. Need to count all test blocks to get accurate production/test split.
+2. **§8.1 spec template** — the alternative thesis now references `docs/internal/specs/` as the home for behavioral specs, but §8.1 still doesn't provide a concrete spec template. A one-page template would let future agents produce specs in the right format.
+3. **§3 documentation hierarchy** — PROJECT_STRUCTURE.md is documented as stale in §2 but §3 (doc hierarchy) doesn't have a specific proposal for how to keep it current (e.g., a CI gate that fails if new `.rs` files have no corresponding PROJECT_STRUCTURE.md entry).
