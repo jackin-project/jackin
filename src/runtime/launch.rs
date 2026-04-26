@@ -338,6 +338,14 @@ struct LaunchContext<'a> {
     debug: bool,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
     cache_dir: &'a std::path::Path,
+    /// Required so `launch_agent_runtime` can fire the `keep_awake`
+    /// reconciler between `docker run -d` and the foreground `docker
+    /// attach`. Without that mid-flight call, caffeinate would never
+    /// spawn for an interactive `jackin load`: the post-launch
+    /// reconcile in `app::Command::Load` only runs after attach
+    /// returns, by which time the container has stopped and the
+    /// `keep_awake` count is back to zero.
+    paths: &'a JackinPaths,
 }
 
 /// Create the Docker network, start `DinD`, and launch the agent container.
@@ -360,6 +368,7 @@ fn launch_agent_runtime(
         debug,
         resolved_env,
         cache_dir,
+        paths,
     } = ctx;
 
     let certs_volume = dind_certs_volume(container_name);
@@ -582,6 +591,17 @@ fn launch_agent_runtime(
     }
     run_args.push(image);
     runner.run("docker", &run_args, None, &docker_run_opts)?;
+
+    // Reconcile keep_awake AFTER the agent container is running but
+    // BEFORE the foreground attach blocks. This is the only window in
+    // which an interactive `jackin load` can spawn caffeinate: the
+    // pre-launch reconcile in `app::Command::Load` runs before the
+    // container exists (count=0 → no-op), and the post-launch
+    // reconcile only runs after attach returns, by which time the
+    // container has stopped (count=0 again → no-op). Without this
+    // mid-flight call the feature would never hold a power assertion
+    // for a single interactive session.
+    super::caffeinate::reconcile(paths, runner);
 
     // Attach with signal forwarding disabled and the default detach shortcut
     // cleared: only an explicit exit from inside (or terminal close) ends the
@@ -1022,6 +1042,7 @@ fn load_agent_with(
             debug: opts.debug,
             resolved_env: &resolved_env,
             cache_dir: &paths.cache_dir,
+            paths,
         };
         let certs_volume = dind_certs_volume(&container_name);
         let mut cleanup = LoadCleanup::new(
