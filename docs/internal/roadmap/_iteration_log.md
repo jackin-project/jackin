@@ -854,3 +854,43 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 Rule 5 — `tui/animation.rs` `//!` doc** — confirmed missing; should be added to the priority queue. Currently at position ~12 (below the 11 already queued). Lower urgency than the large split proposals.
 2. **§10 Step 5 — `//!` queue now has 11 entries** — the preamble says "first 10 files"; needs updating to "first 11 files".
 3. **§4 — console/manager/input/save.rs analysis** — the ConfirmSave pipeline (661L production) has complex diff rendering helpers (`env_diff_lines`, `collapse_section_lines`, `apply_env_diff`) that are AI-generated candidates for audit. Not yet analyzed for a split proposal.
+
+---
+
+## Iteration 21 — 2026-04-26
+
+### Improvements chosen
+
+1. **`input/save.rs` deep analysis — four pub(super) functions discovered, concrete split proposed** — previous iterations only identified `begin_editor_save` as the public function (grep missed `pub(super)` pattern). Reading the file revealed 4 `pub(super)` functions: `begin_editor_save` (~118L Phase 1), `commit_editor_save` (~149L Phase 2), `open_save_error_popup` (~12L error helper), `build_workspace_edit` (~33L diff builder). 8 private helpers split cleanly into two groups: "preview text" (`build_confirm_save_lines` + 5 formatting helpers, ~280L) and "apply changes" (`apply_env_diff` + `apply_env_map_diff`, ~48L). Proposed 3-file split: `mod.rs` (re-exports) + `flow.rs` (~360L, how a save commits) + `preview.rs` (~310L, what the ConfirmSave modal shows). No cross-dependency between flow and preview.
+
+2. **`//!` queue preamble corrected** — changed "first 10 files" → "first 11 files" to match the actual queue count (11 entries since iteration 17 added `instance/auth.rs`).
+
+3. **Module map and hot-spot table corrected for save.rs** — module map updated from 1418→1472L and corrected key exports (was just `build_confirm_save_lines`; now lists all 4 pub(super) fns). Hot-spot table note updated: corrected `begin_editor_save` from "~280L" → "~118L" (Phase 1 only); added note about Phase 2 (`commit_editor_save` ~149L) and the clean helper grouping.
+
+4. **§10 Step 4f-v updated** — save.rs entry in the execution table changed from "Optional — file already has `//!` doc and a clear single concern" to the concrete 3-file split proposal (consistent with §4 analysis).
+
+### What was read
+- `src/console/manager/input/save.rs:17–20` (begin_editor_save signature)
+- `src/console/manager/input/save.rs:135–200` (commit_editor_save — Phase 2 structure)
+- `src/console/manager/input/save.rs:284–295` (open_save_error_popup — confirmed 12L)
+- `src/console/manager/input/save.rs:628–661` (build_workspace_edit — confirmed 33L)
+- `grep "^pub(super) fn"` in save.rs — confirmed 4 public functions
+
+### What changed in the roadmap
+- §1 module map: save.rs row updated (1418→1472, correct key exports)
+- §1 hot-spot table: save.rs row note corrected (begin_editor_save ~280L → ~118L; added Phase 2 note)
+- §4 Rule 5: Added save.rs two-concern split analysis with function table and 3-file proposal
+- §10 Step 4f-v: Updated from "Optional" to concrete 3-file split
+- §10 Step 5 preamble: "first 10 files" → "first 11 files"
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `input/save.rs` 4 public functions | High | grep pub(super) confirmed; all 4 signatures read |
+| `input/save.rs` split proposal | High | function line ranges verified; no cross-dependency confirmed by reading apply_env_diff vs env_diff_lines |
+| `//!` queue count (11) | High | Counted manually: entries 1-11 all present in roadmap |
+
+### Weakest sections for iteration 22
+1. **§2 concept map — completeness check** — §2 contains 25+ documented concepts but hasn't been read in full since iteration 8. Some may be stale given the structural analysis done in iterations 13-21.
+2. **§4 — `console/manager/input/list.rs` (614L)** — not analyzed; listed in §1 module map as "list view + list modal dispatch" but no production/test breakdown.
+3. **§1 hot-spot table — missing rows** — `mount_info.rs` (745L total, 277L production) was confirmed in iteration 19 but never added to the hot-spot table as a row. It's above the 500L total threshold.

@@ -154,7 +154,7 @@ jackin/
 | `console/manager/input/mod.rs` | — | `handle_key` | input dispatch hub for manager | manager/input/* |
 | `console/manager/input/editor.rs` | 2349 | `handle_editor_key`, `handle_editor_modal` | editor tab key bindings + modal commit handling | manager/* |
 | `console/manager/input/list.rs` | 614 | `handle_list_modal` | list view + list modal dispatch | manager/state |
-| `console/manager/input/save.rs` | 1418 | `build_confirm_save_lines` | ConfirmSave modal dispatch + rendering helpers | manager/* |
+| `console/manager/input/save.rs` | 1472 | `begin_editor_save`, `commit_editor_save`, `open_save_error_popup`, `build_workspace_edit` | two-phase save: Phase 1 validate+preview, Phase 2 commit to disk | manager/* |
 | `console/manager/input/prelude.rs` | 533 | — | workspace-create wizard input | manager/* |
 | `console/manager/input/mouse.rs` | 689 | — | mouse event handling for manager | manager/* |
 | `console/manager/render/mod.rs` | — | `render` | render dispatch for manager stages | manager/render/* |
@@ -228,7 +228,7 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/operator_env.rs` | 1569 | **810** | 758 | 0 | **High** — production and tests roughly equal |
 | `src/console/manager/state.rs` | 992 | **~628** | ~363 | 0 | **High** — 26+ type definitions (Modal enum, EditorState, CreatePreludeState, etc.) mixed with impl behavior; prime candidate for types/behavior split |
 | `src/console/manager/input/editor.rs` | 2349 | **~1141** | ~1208 | 3× `too_many_lines` | **Critical** — PR #171 added Secrets-tab handlers, growing from ~547L to 1141L production; now the **largest production file** in the codebase; two major dispatch fns (`handle_editor_key` ~250L, `handle_editor_modal` ~276L) plus ~615L of tab-specific helpers |
-| `src/console/manager/input/save.rs` | 1472 | **~661** | ~811 | 2× `too_many_lines` | **Medium-High** — ConfirmSave pipeline; `begin_editor_save` is ~280L; already has a `//!` doc |
+| `src/console/manager/input/save.rs` | 1472 | **~661** | ~811 | 2× `too_many_lines` | **Medium-High** — two-phase save: `begin_editor_save` (~118L Phase 1) + `commit_editor_save` (~149L Phase 2); 8 private helpers split cleanly into "preview text" vs "apply changes" groups; already has a `//!` doc |
 | `src/app/context.rs` | 800 | **347** | 452 | 0 | Low — tests dominate |
 | `src/console/manager/render/editor.rs` | 1666 | **~736** | ~930 (4 interspersed `#[cfg(test)]` blocks at lines 737, 923, 1055, 1574) | 0 | **Medium-High** — production grew with PR #171 (Secrets/Environments tab added); split by tab is now justified |
 | `src/workspace/planner.rs` | 718 | **235** | 482 | 0 | Low — tests dominate |
@@ -714,6 +714,29 @@ The file has two major entry-point functions plus tab-specific helpers:
 **Note:** `open_agent_override_picker` (line 465) is grouped with agents rather than with the Secrets-tab openers because it opens a picker for setting an agent auth-override, not an env-var operation. Its position in the file is between Secrets openers (artifact of PR #171 insertion order), not its logical affiliation.
 
 **Auditability gain:** To audit "does the Secrets tab correctly persist a new env var key when committed from the text input modal?", a reviewer reads `editor/secrets.rs` (~500L). Today they must scan 1141L of mixed-tab production code to find `open_secrets_enter_modal`, `set_pending_env_value`, and `apply_text_input_to_pending` (the commit chain). The Secrets-tab keyboard layer is the highest AI-generated-code-density section in the TUI — every key binding in it was written by PR #171.
+
+**`src/console/manager/input/save.rs` — two-concern split (661L production)**
+
+The file has a `//!` doc and a single dominant theme (save flow), but 661L of production code with two clearly separable internal concerns:
+
+| Function group | Lines | ~LOC | Concern |
+|---|---|---|---|
+| `begin_editor_save` | 17–134 | ~118L | Phase 1: validate → plan → open ConfirmSave modal |
+| `commit_editor_save` | 135–283 | ~149L | Phase 2: commit to ConfigEditor → write disk → update list |
+| `open_save_error_popup` | 284–294 | ~12L | Error path helper (shared by both phases) |
+| `build_workspace_edit` | 628–660 | ~33L | Builds `WorkspaceEdit` diff struct (called by Phase 1) |
+| `apply_env_diff`, `apply_env_map_diff` | 580–627 | ~48L | Apply env changes to ConfigEditor (called by Phase 2) |
+| `build_confirm_save_lines` | 297–480 | ~184L | Generates ConfirmSave modal preview text (called by Phase 1) |
+| `mount_summary`, `allowed_agents_summary`, `env_diff_lines`, `append_env_map_diff_lines`, `collapse_section_lines` | 481–578 | ~98L | Formatting helpers for preview (called by `build_confirm_save_lines`) |
+
+**Proposed split — convert to `input/save/` module directory:**
+- `save/mod.rs` (~20L): module declarations; re-export all four `pub(super)` functions
+- `save/flow.rs` (~360L): the two phase entry points, error helper, `build_workspace_edit`, `apply_env_diff`, `apply_env_map_diff` — answers "how does a save get committed?"
+- `save/preview.rs` (~310L): `build_confirm_save_lines` + 5 formatting helpers — answers "what text appears in the ConfirmSave modal?"
+
+**No cross-dependency between `flow.rs` and `preview.rs`:** `apply_env_diff` (flow) and `env_diff_lines` (preview) handle env vars for different purposes — one applies changes to disk, the other formats them for display — and neither calls the other.
+
+**Auditability gain:** PR #171 added the env-diff display for the Secrets tab (`env_diff_lines`, `collapse_section_lines`) to the ConfirmSave preview. A reviewer auditing "does the ConfirmSave correctly diff workspace-level vs agent-level env vars?" reads `preview.rs` (~310L). Today they scan 661L to find the preview functions mixed with the save commit logic.
 
 **Rule 6: Rustdoc on every `pub` and `pub(crate)` item.**
 Current coverage = 41% (37/90 files have `//!` module docs — exact count). Adding `#![warn(missing_docs)]` to `Cargo.toml` or `src/lib.rs` would surface the gap as compiler warnings. The gate should be CI-enforced once the initial coverage pass is done. The 53 undocumented files are concentrated in `src/app/`, `src/cli/`, `src/instance/`, `src/runtime/`, and root helpers — see §1 for the breakdown.
@@ -1478,7 +1501,7 @@ picker.rs    → mod.rs    (imports OpRunner)
 | 4f-ii | `state.rs` | ~628L | `state/` (5 files: mod.rs + types.rs + manager.rs + editor.rs + create.rs) | Rule 5 violator |
 | 4f-iii | `render/editor.rs` | ~736L | `render/editor/` (6 files: mod.rs + footer.rs + general.rs + mounts.rs + agents.rs + secrets.rs) | Rule 5 violator |
 | 4f-iv | `render/list.rs` | ~668L | `render/list/` (3 files: mod.rs + details.rs + subpanels.rs) | Rule 5 violator |
-| 4f-v | `input/save.rs` | ~661L | Optional — file already has `//!` doc and a clear single concern | Medium-High |
+| 4f-v | `input/save.rs` | ~661L | `input/save/` (3 files: mod.rs + flow.rs + preview.rs); flow vs preview split; no cross-dependency | Medium-High |
 
 *What could go wrong (console splits):* (1) `state.rs` split — `ManagerStage` holds `EditorState` and `CreatePreludeState` as enum variants; all three must move to `types.rs` together to avoid circular imports between `manager.rs` and `editor.rs`. (2) `input/editor.rs` split — `handle_editor_key` and `handle_editor_modal` both read and mutate `EditorState`; they must import from the same `state/types.rs` path after the state split. Sequencing: 4f-ii (state) before 4f-i (input/editor) is the safe order if both are being done, but they can be done in either order since state.rs keeps its `pub use` re-exports throughout.
 
@@ -1499,7 +1522,7 @@ picker.rs    → mod.rs    (imports OpRunner)
 
 Add `//!` orientation comments to all 50+ files lacking them. Add `#![warn(missing_docs)]` to `Cargo.toml` lints table. Enable intra-doc link checking in CI. Add `clippy.toml` with `too-many-lines-threshold = 150`.
 
-**`//!` priority queue — first 10 files, all confirmed missing (verified by checking first line of each):**
+**`//!` priority queue — first 11 files, all confirmed missing (verified by checking first line of each):**
 
 The ordering is: files most likely to be opened cold, most likely to contain AI-generated logic bugs, or most critical for understanding invariants.
 
