@@ -1302,13 +1302,12 @@ fn agent_picker_opens_when_multiple_agents_available() -> Result<()> {
     )?;
     let cwd = temp.path();
     let mut state = ConsoleState::new(&config, cwd)?;
-    let idx = state
-        .workspaces
-        .iter()
-        .position(|c| c.name == "multi-agent-ws")
-        .expect("seeded workspace must be in ConsoleState.workspaces");
 
-    let outcome = state.dispatch_launch_for_workspace(&config, cwd, idx)?;
+    let outcome = state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+    )?;
     assert!(
         outcome.is_none(),
         "multi-agent dispatch must stay in the run-loop (Ok(None)); got {outcome:?}"
@@ -1338,13 +1337,12 @@ fn agent_picker_skipped_when_default_agent_set() -> Result<()> {
     )?;
     let cwd = temp.path();
     let mut state = ConsoleState::new(&config, cwd)?;
-    let idx = state
-        .workspaces
-        .iter()
-        .position(|c| c.name == "multi-agent-ws")
-        .unwrap();
 
-    let outcome = state.dispatch_launch_for_workspace(&config, cwd, idx)?;
+    let outcome = state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+    )?;
     let (agent, _ws) = outcome.expect("default_agent must short-circuit to a direct launch");
     assert_eq!(agent.key(), "chainargos/agent-smith");
     let ConsoleStage::Manager(ms) = &state.stage;
@@ -1365,13 +1363,12 @@ fn agent_picker_skipped_when_single_eligible_agent() -> Result<()> {
     let config = seed_config_with_agents(&paths, temp.path(), &["chainargos/agent-smith"], None)?;
     let cwd = temp.path();
     let mut state = ConsoleState::new(&config, cwd)?;
-    let idx = state
-        .workspaces
-        .iter()
-        .position(|c| c.name == "multi-agent-ws")
-        .unwrap();
 
-    let outcome = state.dispatch_launch_for_workspace(&config, cwd, idx)?;
+    let outcome = state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+    )?;
     let (agent, _ws) =
         outcome.expect("single eligible agent must short-circuit to a direct launch");
     assert_eq!(agent.key(), "chainargos/agent-smith");
@@ -1397,13 +1394,12 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
     )?;
     let cwd = temp.path();
     let mut state = ConsoleState::new(&config, cwd)?;
-    let idx = state
-        .workspaces
-        .iter()
-        .position(|c| c.name == "multi-agent-ws")
-        .unwrap();
 
-    state.dispatch_launch_for_workspace(&config, cwd, idx)?;
+    state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+    )?;
     let ConsoleStage::Manager(ms) = &mut state.stage;
     assert!(matches!(ms.list_modal, Some(Modal::AgentPicker { .. })));
 
@@ -1443,13 +1439,12 @@ fn agent_picker_esc_closes_modal() -> Result<()> {
     )?;
     let cwd = temp.path();
     let mut state = ConsoleState::new(&config, cwd)?;
-    let idx = state
-        .workspaces
-        .iter()
-        .position(|c| c.name == "multi-agent-ws")
-        .unwrap();
 
-    state.dispatch_launch_for_workspace(&config, cwd, idx)?;
+    state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+    )?;
     let ConsoleStage::Manager(ms) = &mut state.stage;
     assert!(matches!(ms.list_modal, Some(Modal::AgentPicker { .. })));
 
@@ -2310,5 +2305,268 @@ fn tab_on_agent_header_advances_tab_normally() -> Result<()> {
         EditorTab::General,
         "Tab on a header must still advance the active tab"
     );
+    Ok(())
+}
+
+// ── Launch-routing regression tests for commit 53 ────────────────────
+//
+// PR #171 review (Codex, Section 1: High): `ConsoleState.workspaces`
+// was a snapshot built once at console startup. Manager edits
+// (create / rename / edit / delete) rebuilt `ManagerState.workspaces`
+// after each save but never refreshed the console-level snapshot, so
+// the launch dispatcher kept reading stale data.
+//
+// Fix (Option B): drop the snapshot entirely and have
+// `dispatch_launch_for_workspace` build a fresh `WorkspaceChoice` from
+// the current `AppConfig` per call (`build_workspace_choice` in
+// `console::state`). These tests pin the four operator-visible failure
+// modes the bug produced — each would have failed against the
+// pre-fix code.
+
+/// A workspace created via `ConfigEditor` after the `ConsoleState` has
+/// been built must be resolvable by the launch dispatcher in the same
+/// session. Under the stale-snapshot bug, the new name was absent from
+/// `ConsoleState.workspaces` and the dispatcher returned `Ok(None)`.
+#[test]
+fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config =
+        seed_config_with_agents(&paths, temp.path(), &["chainargos/agent-smith"], None)?;
+    let cwd = temp.path();
+
+    // Build the console state BEFORE the new workspace exists.
+    let mut state = ConsoleState::new(&config, cwd)?;
+
+    // Now create a second workspace via ConfigEditor — same code path
+    // the manager save flow uses (no CLI subprocess, no UX detour).
+    let host_path = cwd.display().to_string();
+    let new_ws = WorkspaceConfig {
+        workdir: host_path.clone(),
+        mounts: vec![MountConfig {
+            src: host_path.clone(),
+            dst: host_path,
+            readonly: false,
+        }],
+        allowed_agents: vec!["chainargos/agent-smith".to_string()],
+        default_agent: Some("chainargos/agent-smith".to_string()),
+        last_agent: None,
+        env: std::collections::BTreeMap::new(),
+        agents: std::collections::BTreeMap::new(),
+    };
+    {
+        let mut ce = ConfigEditor::open(&paths)?;
+        ce.create_workspace("freshly-created", new_ws)?;
+        config = ce.save()?;
+    }
+
+    // Dispatch a launch against the freshly-created name. With the bug,
+    // `ConsoleState.workspaces` would not contain "freshly-created" and
+    // the dispatcher would return Ok(None). With the fix, the dispatcher
+    // builds the choice from the current `config` and short-circuits on
+    // the single eligible agent.
+    let outcome = state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("freshly-created".into()),
+    )?;
+    let (agent, _ws) = outcome.expect(
+        "freshly-created workspace must resolve through the dispatcher; under the bug, \
+         ConsoleState.workspaces was a startup snapshot and didn't include the new name",
+    );
+    assert_eq!(agent.key(), "chainargos/agent-smith");
+    Ok(())
+}
+
+/// A workspace renamed via `ConfigEditor` after the `ConsoleState` has
+/// been built must be resolvable by its new name. Under the bug, the
+/// dispatcher would look up the OLD name in the snapshot — find a
+/// `WorkspaceChoice` whose `input` was `Saved(old)` — and the
+/// preview-resolve step would then fail because `config.workspaces[old]`
+/// no longer existed on disk.
+#[test]
+fn launch_after_rename_uses_new_name() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config_with_agents(
+        &paths,
+        temp.path(),
+        &["chainargos/agent-smith"],
+        Some("chainargos/agent-smith"),
+    )?;
+    let cwd = temp.path();
+
+    let mut state = ConsoleState::new(&config, cwd)?;
+
+    // Rename "multi-agent-ws" → "renamed-ws" via ConfigEditor.
+    {
+        let mut ce = ConfigEditor::open(&paths)?;
+        ce.rename_workspace("multi-agent-ws", "renamed-ws")?;
+        config = ce.save()?;
+    }
+
+    // Dispatch against the new name — must resolve and short-circuit
+    // (single eligible agent + default_agent set).
+    let outcome = state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("renamed-ws".into()),
+    )?;
+    let (agent, _ws) = outcome.expect("renamed workspace must resolve under the new name");
+    assert_eq!(agent.key(), "chainargos/agent-smith");
+
+    // The OLD name must NOT resolve — that's the workspace the operator
+    // renamed away from. Under the bug, the snapshot still had it and
+    // the dispatcher would have happily attempted a launch.
+    let stale_outcome = state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+    )?;
+    assert!(
+        stale_outcome.is_none(),
+        "the old (renamed-away) name must not resolve to a launch outcome; got {stale_outcome:?}"
+    );
+    Ok(())
+}
+
+/// Setting `default_agent` on a workspace via `ConfigEditor` after
+/// `ConsoleState` was built must change the dispatch routing on the
+/// next launch attempt: the picker (Branch 3) must short-circuit to a
+/// direct launch (Branch 1). Under the bug, the snapshot's
+/// `default_agent: None` persisted and the dispatcher kept opening the
+/// picker.
+#[test]
+fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config_with_agents(
+        &paths,
+        temp.path(),
+        &["chainargos/agent-smith", "chainargos/agent-brown"],
+        // No default_agent — two eligible agents → picker would open.
+        None,
+    )?;
+    let cwd = temp.path();
+
+    let mut state = ConsoleState::new(&config, cwd)?;
+
+    // Confirm baseline: dispatch against the seeded workspace opens the
+    // picker (no short-circuit).
+    let baseline = state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+    )?;
+    assert!(
+        baseline.is_none(),
+        "baseline (no default_agent) must open the picker, not direct-launch"
+    );
+    {
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        // Close the picker so the next dispatch can reopen / short-circuit.
+        ms.list_modal = None;
+    }
+    state.pending_launch = None;
+
+    // Now set default_agent via ConfigEditor (same path the manager's
+    // save flow drives via WorkspaceEdit { default_agent: Some(_), .. }).
+    {
+        let mut ce = ConfigEditor::open(&paths)?;
+        let mut edit = jackin::workspace::WorkspaceEdit::default();
+        edit.default_agent = Some(Some("chainargos/agent-smith".to_string()));
+        ce.edit_workspace("multi-agent-ws", edit)?;
+        config = ce.save()?;
+    }
+
+    // Dispatch again — with the new default_agent in config, the
+    // dispatcher must short-circuit to a direct launch outcome.
+    let after = state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+    )?;
+    let (agent, _ws) = after.expect(
+        "after default_agent is set, dispatch must short-circuit to a direct launch outcome; \
+         under the bug, the snapshot's default_agent: None forced the picker open",
+    );
+    assert_eq!(agent.key(), "chainargos/agent-smith");
+    let ConsoleStage::Manager(ms) = &state.stage;
+    assert!(
+        ms.list_modal.is_none(),
+        "post-default direct-launch must NOT have opened the picker; got {:?}",
+        ms.list_modal
+    );
+    Ok(())
+}
+
+/// Deleting a workspace via `ConfigEditor` after `ConsoleState` was
+/// built must make subsequent dispatches against that name a no-op
+/// (`Ok(None)`). Under the bug, the snapshot retained the deleted
+/// workspace and `dispatch_launch_for_workspace` would have happily
+/// tried to launch it.
+#[test]
+fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    seed_config_with_agents(
+        &paths,
+        temp.path(),
+        &["chainargos/agent-smith"],
+        Some("chainargos/agent-smith"),
+    )?;
+    // Seed a second workspace so the delete leaves the config non-empty
+    // (mirrors the operator-visible scenario of "two saved, deleted one").
+    let host_path = temp.path().display().to_string();
+    let second = WorkspaceConfig {
+        workdir: host_path.clone(),
+        mounts: vec![MountConfig {
+            src: host_path.clone(),
+            dst: host_path,
+            readonly: false,
+        }],
+        allowed_agents: vec!["chainargos/agent-smith".to_string()],
+        default_agent: Some("chainargos/agent-smith".to_string()),
+        last_agent: None,
+        env: std::collections::BTreeMap::new(),
+        agents: std::collections::BTreeMap::new(),
+    };
+    let mut config = {
+        let mut ce = ConfigEditor::open(&paths)?;
+        ce.create_workspace("survivor-ws", second)?;
+        ce.save()?
+    };
+    let cwd = temp.path();
+
+    let mut state = ConsoleState::new(&config, cwd)?;
+
+    // Delete the first workspace via ConfigEditor.
+    {
+        let mut ce = ConfigEditor::open(&paths)?;
+        ce.remove_workspace("multi-agent-ws")?;
+        config = ce.save()?;
+    }
+
+    // Attempt a launch against the deleted name — must no-op.
+    let outcome = state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+    )?;
+    assert!(
+        outcome.is_none(),
+        "deleted workspace must not resolve to a launch outcome; under the bug, \
+         the snapshot retained it and the dispatcher would have launched a ghost; \
+         got {outcome:?}"
+    );
+
+    // Sanity: the surviving workspace still resolves.
+    let alive = state.dispatch_launch_for_workspace(
+        &config,
+        cwd,
+        jackin::workspace::LoadWorkspaceInput::Saved("survivor-ws".into()),
+    )?;
+    let (agent, _ws) = alive.expect("survivor-ws must still resolve");
+    assert_eq!(agent.key(), "chainargos/agent-smith");
     Ok(())
 }

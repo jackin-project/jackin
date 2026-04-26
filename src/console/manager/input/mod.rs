@@ -27,16 +27,16 @@ pub enum InputOutcome {
     ExitJackin,
     /// Launch the named workspace — resolved by name in `run_console`.
     LaunchNamed(String),
-    /// Launch against the synthetic "Current directory" choice (row 0).
-    /// `run_console` routes this through the same agent-picker path as
-    /// `LaunchNamed`, using `ConsoleState::workspaces[0]` which is built
-    /// in `ConsoleState::new` from the current cwd.
+    /// Launch against the synthetic "Current directory" choice. The
+    /// `run_console` dispatcher builds the choice on demand from
+    /// `current_dir_workspace(cwd)` via [`build_workspace_choice`], so
+    /// there's no startup snapshot to grow stale.
     LaunchCurrentDir,
     /// Operator just committed a choice in `Modal::AgentPicker`. The
-    /// outer `run_console` loop resolves the selected workspace
-    /// (already pinned on `ConsoleState.selected_workspace` when the
-    /// picker opened) against this agent and breaks with
-    /// `Ok(Some((agent, ws)))`.
+    /// outer `run_console` loop rebuilds the workspace choice from the
+    /// `LoadWorkspaceInput` pinned on `ConsoleState.pending_launch` (set
+    /// when the picker opened), resolves it against this agent, and
+    /// breaks with `Ok(Some((agent, ws)))`.
     LaunchWithAgent(crate::selector::ClassSelector),
 }
 

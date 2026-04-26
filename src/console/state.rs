@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::app::context::{eligible_agents_for_workspace, find_saved_workspace_for_cwd};
+use crate::app::context::eligible_agents_for_workspace;
 use crate::config::{AppConfig, MountEntry};
 use crate::console::op_cache::OpCache;
 use crate::selector::ClassSelector;
@@ -33,12 +33,20 @@ pub struct WorkspaceChoice {
 #[derive(Debug)]
 pub struct ConsoleState {
     pub stage: ConsoleStage,
-    /// Which entry in `workspaces` the operator is launching against.
-    /// Pinned by the launch dispatcher when the operator presses Enter
-    /// on a manager row, then read back by the `AgentPicker` commit
-    /// path to resolve the chosen agent against the right workspace.
-    pub selected_workspace: usize,
-    pub workspaces: Vec<WorkspaceChoice>,
+    /// Workspace whose `AgentPicker` is currently open (or was just dispatched
+    /// against). Pinned by `dispatch_launch_for_workspace` when it routes
+    /// to Branch 3 (multiple eligible agents → picker), then read back by
+    /// the `LaunchWithAgent` arm in `run_console` to rebuild a fresh
+    /// `WorkspaceChoice` on commit.
+    ///
+    /// Storing a `LoadWorkspaceInput` rather than an index decouples
+    /// launch routing from any cached snapshot of the workspace list.
+    /// Each launch attempt rebuilds its `WorkspaceChoice` from the
+    /// current `AppConfig` via [`build_workspace_choice`] so manager
+    /// edits (rename / create / delete / `default_agent` / env) take
+    /// effect immediately — no stale-snapshot bug. See PR #171 review:
+    /// commit 53.
+    pub pending_launch: Option<LoadWorkspaceInput>,
     /// Process-lifetime cache of `op` structural metadata, shared with
     /// the embedded `ManagerState` and any picker the operator opens.
     /// Survives Esc-back-to-list and editor re-entry within a single
@@ -73,49 +81,6 @@ pub struct ConsoleState {
 
 impl ConsoleState {
     pub fn new(config: &AppConfig, cwd: &std::path::Path) -> anyhow::Result<Self> {
-        let current = current_dir_workspace(cwd)?;
-        let global_mounts = global_mounts(config)?;
-        let current_choice = WorkspaceChoice {
-            name: "Current directory".to_string(),
-            workspace: ResolvedWorkspace {
-                label: current.workdir.clone(),
-                workdir: current.workdir,
-                mounts: current.mounts,
-            },
-            allowed_agents: configured_agents(config),
-            default_agent: None,
-            last_agent: None,
-            global_mounts: global_mounts.clone(),
-            input: LoadWorkspaceInput::CurrentDir,
-        };
-
-        let mut workspaces = vec![current_choice];
-        for (name, saved) in &config.workspaces {
-            let allowed_agents = eligible_agents_for_workspace(config, saved);
-            workspaces.push(WorkspaceChoice {
-                name: name.clone(),
-                workspace: ResolvedWorkspace {
-                    label: name.clone(),
-                    workdir: saved.workdir.clone(),
-                    mounts: saved.mounts.clone(),
-                },
-                allowed_agents,
-                default_agent: saved.default_agent.clone(),
-                last_agent: saved.last_agent.clone(),
-                global_mounts: global_mounts.clone(),
-                input: LoadWorkspaceInput::Saved(name.clone()),
-            });
-        }
-
-        // Preselect the saved workspace that best covers `cwd`. The
-        // decision uses the shared helper in `app::context` so the TUI
-        // and the non-interactive CLI agree on "which workspace am I in?".
-        // Falls back to index 0 (the synthetic "Current directory" choice)
-        // if no saved workspace matches.
-        let selected_workspace = find_saved_workspace_for_cwd(config, cwd)
-            .and_then(|(name, _)| workspaces.iter().position(|choice| choice.name == name))
-            .unwrap_or(0);
-
         let op_cache = Rc::new(RefCell::new(OpCache::default()));
         // One-shot `op --version` probe — same code path the launch-time
         // resolver uses. Failure is fine: it just means the source
@@ -135,18 +100,76 @@ impl ConsoleState {
                     op_available,
                 ),
             ),
-            selected_workspace,
-            workspaces,
+            pending_launch: None,
             op_cache,
             op_available,
             quit_confirm: None,
         })
     }
+}
 
-    pub fn selected_workspace_name(&self) -> Option<&str> {
-        self.workspaces
-            .get(self.selected_workspace)
-            .map(|choice| choice.name.as_str())
+/// Build a fresh [`WorkspaceChoice`] from the current `AppConfig` for `input`.
+///
+/// `input` is a saved workspace name or the synthetic "current directory"
+/// choice. Called at launch dispatch time so manager edits — create,
+/// rename, delete, `default_agent`, `allowed_agents`, env — flow through
+/// immediately.
+///
+/// Returns `Ok(None)` when `input` is `Saved(name)` but `name` is no
+/// longer present in `config.workspaces` (e.g. the operator deleted it
+/// via the manager between the keypress and the dispatch). Surfaces
+/// resolution errors verbatim — they bubble up as a hard error from
+/// `dispatch_launch_for_workspace`.
+///
+/// Replaces the old `ConsoleState.workspaces: Vec<WorkspaceChoice>`
+/// snapshot built once at console startup. See `pending_launch` for the
+/// motivation.
+pub fn build_workspace_choice(
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    input: &LoadWorkspaceInput,
+) -> anyhow::Result<Option<WorkspaceChoice>> {
+    let global_mounts = global_mounts(config)?;
+    match input {
+        LoadWorkspaceInput::CurrentDir => {
+            let current = current_dir_workspace(cwd)?;
+            Ok(Some(WorkspaceChoice {
+                name: "Current directory".to_string(),
+                workspace: ResolvedWorkspace {
+                    label: current.workdir.clone(),
+                    workdir: current.workdir,
+                    mounts: current.mounts,
+                },
+                allowed_agents: configured_agents(config),
+                default_agent: None,
+                last_agent: None,
+                global_mounts,
+                input: LoadWorkspaceInput::CurrentDir,
+            }))
+        }
+        LoadWorkspaceInput::Saved(name) => {
+            let Some(saved) = config.workspaces.get(name) else {
+                return Ok(None);
+            };
+            let allowed_agents = eligible_agents_for_workspace(config, saved);
+            Ok(Some(WorkspaceChoice {
+                name: name.clone(),
+                workspace: ResolvedWorkspace {
+                    label: name.clone(),
+                    workdir: saved.workdir.clone(),
+                    mounts: saved.mounts.clone(),
+                },
+                allowed_agents,
+                default_agent: saved.default_agent.clone(),
+                last_agent: saved.last_agent.clone(),
+                global_mounts,
+                input: LoadWorkspaceInput::Saved(name.clone()),
+            }))
+        }
+        // `Path { .. }` is a CLI-only shape (`jackin load --path`); the
+        // console never produces it. Reject it loudly rather than papering
+        // over an unexpected dispatcher input.
+        LoadWorkspaceInput::Path { .. } => Ok(None),
     }
 }
 
@@ -176,12 +199,40 @@ fn global_mounts(config: &AppConfig) -> anyhow::Result<Vec<MountConfig>> {
 mod tests {
     use super::*;
 
+    // Preselection of the saved workspace covering `cwd` is pinned by
+    // `ManagerState::from_config`'s tests in
+    // `console::manager::state::tests::manager_preselects_saved_workspace_matching_cwd`.
+    // The old `selected_workspace_name` accessor on `ConsoleState` was
+    // removed in commit 53 (PR #171) when the snapshot list was dropped
+    // in favour of build-on-demand `WorkspaceChoice`s — see
+    // [`build_workspace_choice`].
+
+    // ── build_workspace_choice: derive launch routing from current config ──
+    //
+    // These tests pin the new model: each launch dispatch builds a
+    // fresh `WorkspaceChoice` from the current `AppConfig`, so manager
+    // edits flow through immediately. Regression coverage for the
+    // stale-snapshot bug fixed in commit 53 lives in
+    // `tests/manager_flow.rs::launch_after_*`.
+
     #[test]
-    fn preselects_saved_workspace_on_exact_workdir_match() {
+    fn build_workspace_choice_returns_none_for_unknown_saved_name() {
+        let config = crate::config::AppConfig::default();
+        let cwd = std::env::temp_dir();
+        let result =
+            build_workspace_choice(&config, &cwd, &LoadWorkspaceInput::Saved("ghost".into()))
+                .unwrap();
+        assert!(
+            result.is_none(),
+            "Saved(name) for an absent workspace must return None, not fabricate a choice"
+        );
+    }
+
+    #[test]
+    fn build_workspace_choice_picks_up_default_agent_from_config() {
         let temp = tempfile::tempdir().unwrap();
         let project_dir = temp.path().canonicalize().unwrap();
         let workdir = project_dir.display().to_string();
-
         let mut config = crate::config::AppConfig::default();
         config.agents.insert(
             "agent-smith".to_string(),
@@ -193,7 +244,7 @@ mod tests {
             },
         );
         config.workspaces.insert(
-            "big-monorepo".to_string(),
+            "ws".to_string(),
             crate::workspace::WorkspaceConfig {
                 workdir: workdir.clone(),
                 mounts: vec![crate::workspace::MountConfig {
@@ -209,86 +260,15 @@ mod tests {
             },
         );
 
-        let state = ConsoleState::new(&config, &project_dir).unwrap();
-        assert_eq!(state.selected_workspace_name(), Some("big-monorepo"));
-    }
-
-    #[test]
-    fn preselects_saved_workspace_for_nested_directory_under_mount_root() {
-        let temp = tempfile::tempdir().unwrap();
-        let project_dir = temp.path().join("project");
-        let nested_dir = project_dir.join("src/lib");
-        std::fs::create_dir_all(&nested_dir).unwrap();
-        let nested_dir = nested_dir.canonicalize().unwrap();
-
-        let mut config = crate::config::AppConfig::default();
-        config.agents.insert(
-            "agent-smith".to_string(),
-            crate::config::AgentSource {
-                git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
-                trusted: true,
-                claude: None,
-                env: std::collections::BTreeMap::new(),
-            },
-        );
-        config.workspaces.insert(
-            "big-monorepo".to_string(),
-            crate::workspace::WorkspaceConfig {
-                workdir: "/workspace".to_string(),
-                mounts: vec![crate::workspace::MountConfig {
-                    src: project_dir.canonicalize().unwrap().display().to_string(),
-                    dst: "/workspace".to_string(),
-                    readonly: false,
-                }],
-                allowed_agents: vec!["agent-smith".to_string()],
-                default_agent: Some("agent-smith".to_string()),
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
-            },
-        );
-
-        let state = ConsoleState::new(&config, &nested_dir).unwrap();
-        assert_eq!(state.selected_workspace_name(), Some("big-monorepo"));
-    }
-
-    #[test]
-    fn preselects_saved_workspace_from_host_workdir_root() {
-        let temp = tempfile::tempdir().unwrap();
-        let workspace_root = temp.path().join("monorepo");
-        let repo_dir = workspace_root.join("jackin");
-        std::fs::create_dir_all(&repo_dir).unwrap();
-        let workspace_root = workspace_root.canonicalize().unwrap();
-
-        let mut config = crate::config::AppConfig::default();
-        config.agents.insert(
-            "agent-smith".to_string(),
-            crate::config::AgentSource {
-                git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
-                trusted: true,
-                claude: None,
-                env: std::collections::BTreeMap::new(),
-            },
-        );
-        config.workspaces.insert(
-            "big-monorepo".to_string(),
-            crate::workspace::WorkspaceConfig {
-                workdir: workspace_root.display().to_string(),
-                mounts: vec![crate::workspace::MountConfig {
-                    src: repo_dir.canonicalize().unwrap().display().to_string(),
-                    dst: "/workspace/jackin".to_string(),
-                    readonly: false,
-                }],
-                allowed_agents: vec!["agent-smith".to_string()],
-                default_agent: Some("agent-smith".to_string()),
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
-            },
-        );
-
-        let state = ConsoleState::new(&config, &workspace_root).unwrap();
-        assert_eq!(state.selected_workspace_name(), Some("big-monorepo"));
+        let choice = build_workspace_choice(
+            &config,
+            &project_dir,
+            &LoadWorkspaceInput::Saved("ws".into()),
+        )
+        .unwrap()
+        .expect("present saved workspace must resolve");
+        assert_eq!(choice.default_agent.as_deref(), Some("agent-smith"));
+        assert_eq!(choice.allowed_agents.len(), 1);
     }
 
     // ── Phase 0 gap-fill: agent-eligibility composition ────────────────────

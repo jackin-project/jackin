@@ -15,16 +15,17 @@ pub use op_cache::OpCache;
 pub use state::ConsoleStage;
 pub use state::ConsoleState;
 pub use state::WorkspaceChoice;
+pub use state::build_workspace_choice;
 
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use crate::selector::ClassSelector;
-use crate::workspace::ResolvedWorkspace;
+use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
 impl ConsoleState {
-    /// Shared `LaunchNamed` / `LaunchCurrentDir` transition: preselect
-    /// the workspace at `idx` in `ConsoleState::workspaces`, then route
-    /// by agent count.
+    /// Shared `LaunchNamed` / `LaunchCurrentDir` transition: build a
+    /// fresh `WorkspaceChoice` from the current `AppConfig` for `input`,
+    /// then route by agent count.
     ///
     /// Three branches:
     /// 1. `default_agent` set on the workspace → launch immediately with
@@ -34,21 +35,30 @@ impl ConsoleState {
     ///    `WorkspaceChoice.allowed_agents`) → launch immediately with it.
     /// 3. Multiple eligible agents and no default → open
     ///    `Modal::AgentPicker` on the manager list and stay in the
-    ///    run-loop until the operator commits a choice.
+    ///    run-loop until the operator commits a choice; `pending_launch`
+    ///    is set so the picker-commit arm in `run_console` can rebuild
+    ///    the same choice when it resolves.
     ///
     /// Returns `Ok(Some(_))` if the caller should break with that
     /// outcome, `Ok(None)` to stay in the run-loop (modal opened, or
     /// there are no eligible agents and we surface a toast). Errors only
     /// when workspace resolution itself fails.
+    ///
+    /// Builds `WorkspaceChoice` on the fly via [`build_workspace_choice`]
+    /// rather than indexing into a startup snapshot, so manager-driven
+    /// edits (create / rename / delete / `default_agent` / env) take
+    /// effect on the very next launch attempt. See PR #171 commit 53.
     pub fn dispatch_launch_for_workspace(
         &mut self,
         config: &AppConfig,
         cwd: &std::path::Path,
-        idx: usize,
+        input: LoadWorkspaceInput,
     ) -> anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>> {
-        self.selected_workspace = idx;
-
-        let Some(choice) = self.workspaces.get(idx) else {
+        let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
+            // Saved name no longer present in config (e.g. operator deleted
+            // it via the manager between the keypress and the dispatch).
+            // Stay in the run-loop silently; the manager already removed
+            // the row, so there's no UI to reconcile.
             return Ok(None);
         };
         let agents = choice.allowed_agents.clone();
@@ -58,8 +68,8 @@ impl ConsoleState {
         if let Some(default_key) = default_agent.as_deref()
             && let Some(agent) = agents.iter().find(|a| a.key() == default_key).cloned()
         {
-            let workspace =
-                preview::resolve_selected_workspace(config, cwd, &self.workspaces[idx], &agent)?;
+            let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &agent)?;
+            self.pending_launch = None;
             return Ok(Some((agent, workspace)));
         }
 
@@ -70,11 +80,7 @@ impl ConsoleState {
                 // the operator can edit the workspace's `allowed_agents` or
                 // register an agent. Avoids a hard error that would terminate
                 // the TUI from a single Enter press.
-                let name = self
-                    .workspaces
-                    .get(idx)
-                    .map_or("<unknown>", |choice| choice.name.as_str())
-                    .to_string();
+                let name = choice.name;
                 if let ConsoleStage::Manager(ms) = &mut self.stage {
                     ms.toast = Some(crate::console::manager::state::Toast {
                         message: format!("no eligible agents for workspace \"{name}\""),
@@ -82,20 +88,20 @@ impl ConsoleState {
                         shown_at: std::time::Instant::now(),
                     });
                 }
+                self.pending_launch = None;
                 Ok(None)
             }
             1 => {
                 let agent = agents.into_iter().next().unwrap();
-                let workspace = preview::resolve_selected_workspace(
-                    config,
-                    cwd,
-                    &self.workspaces[idx],
-                    &agent,
-                )?;
+                let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &agent)?;
+                self.pending_launch = None;
                 Ok(Some((agent, workspace)))
             }
             _ => {
                 // Branch 3: multiple eligible — open the picker overlay.
+                // Pin `pending_launch` so the `LaunchWithAgent` arm in
+                // `run_console` can rebuild the same choice on commit.
+                self.pending_launch = Some(input);
                 if let ConsoleStage::Manager(ms) = &mut self.stage {
                     ms.list_modal = Some(crate::console::manager::state::Modal::AgentPicker {
                         state: crate::console::widgets::agent_picker::AgentPickerState::with_confirm_label(
@@ -350,25 +356,29 @@ pub fn run_console(
                             break Ok(None);
                         }
                         manager::InputOutcome::LaunchNamed(name) => {
-                            // Find the workspace by name in ConsoleState.workspaces.
-                            if let Some(idx) = state
-                                .workspaces
-                                .iter()
-                                .position(|choice| choice.name == name)
-                            {
-                                match state.dispatch_launch_for_workspace(&config, cwd, idx) {
-                                    Ok(Some(outcome)) => break Ok(Some(outcome)),
-                                    Ok(None) => {}
-                                    Err(e) => break Err(e),
-                                }
+                            // Route the named workspace through the
+                            // dispatcher — it builds a fresh
+                            // `WorkspaceChoice` from the current
+                            // `AppConfig`, so manager edits flow through
+                            // immediately.
+                            match state.dispatch_launch_for_workspace(
+                                &config,
+                                cwd,
+                                LoadWorkspaceInput::Saved(name),
+                            ) {
+                                Ok(Some(outcome)) => break Ok(Some(outcome)),
+                                Ok(None) => {}
+                                Err(e) => break Err(e),
                             }
                         }
                         manager::InputOutcome::LaunchCurrentDir => {
-                            // Index 0 of ConsoleState.workspaces is the
-                            // synthetic "Current directory" choice (built
-                            // in ConsoleState::new). Route it through the
-                            // same dispatcher as a saved workspace.
-                            match state.dispatch_launch_for_workspace(&config, cwd, 0) {
+                            // Synthetic "Current directory" choice — same
+                            // dispatcher path as a saved workspace.
+                            match state.dispatch_launch_for_workspace(
+                                &config,
+                                cwd,
+                                LoadWorkspaceInput::CurrentDir,
+                            ) {
                                 Ok(Some(outcome)) => break Ok(Some(outcome)),
                                 Ok(None) => {}
                                 Err(e) => break Err(e),
@@ -376,17 +386,21 @@ pub fn run_console(
                         }
                         manager::InputOutcome::LaunchWithAgent(agent) => {
                             // The `AgentPicker` modal just committed. The
-                            // dispatcher pinned `selected_workspace` when
-                            // it opened the picker, so resolve against
-                            // that. Should be unreachable when the index
-                            // is missing — the dispatcher validated it on
-                            // open — but fall back to staying in the
-                            // run-loop rather than panicking on a state-
-                            // machine inconsistency.
-                            let idx = state.selected_workspace;
-                            if let Some(choice) = state.workspaces.get(idx) {
+                            // dispatcher pinned `pending_launch` when it
+                            // opened the picker; rebuild the choice now
+                            // from current config so any edits between
+                            // open and commit flow through.
+                            //
+                            // `take()` clears the pin even if the
+                            // workspace went missing in the interim
+                            // (e.g. concurrent delete) — falling through
+                            // to stay in the run-loop is safer than
+                            // panicking on a state-machine inconsistency.
+                            if let Some(input) = state.pending_launch.take()
+                                && let Some(choice) = build_workspace_choice(&config, cwd, &input)?
+                            {
                                 match preview::resolve_selected_workspace(
-                                    &config, cwd, choice, &agent,
+                                    &config, cwd, &choice, &agent,
                                 ) {
                                     Ok(workspace) => break Ok(Some((agent, workspace))),
                                     Err(e) => break Err(e),
