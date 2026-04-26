@@ -31,7 +31,7 @@ Derived from direct reading; excludes `target/`, `node_modules/`, `.git/`.
 
 ```
 jackin/
-├── src/                      Rust CLI binary — 72 .rs files, ~40,664 lines
+├── src/                      Rust CLI binary — 72+ .rs files, ~43,587 lines
 │   ├── main.rs               Entry point — constructs Cli, calls run()
 │   ├── lib.rs                Thin crate root (~20 LOC), module decls, pub use
 │   ├── app/                  Command dispatch and console context helpers
@@ -480,7 +480,7 @@ A reviewer auditing "did the AI correctly implement workspace validation?" reads
 
 ### Workspace vs single-crate decision
 
-**Current state:** Single Rust crate (`jackin`), ~40,664 lines, two binaries (`jackin`, `jackin-validate`), no workspace.
+**Current state:** Single Rust crate (`jackin`), ~43,587 lines (verified by `find src -name "*.rs" | xargs wc -l` in iteration 27; was ~40,664 at loop start), two binaries (`jackin`, `jackin-validate`), no workspace.
 
 **The argument for staying single-crate:**
 - At 40k lines, this is well below the ~200k line threshold at which workspace benefits (parallel inter-crate compilation) start outweighing the overhead (matklad's rule of thumb, verified in `_research_notes.md`).
@@ -637,7 +637,7 @@ No current violators found (names are descriptive), but three edge cases:
 Currently most items use bare `pub`. A pass to replace `pub` with `pub(crate)` or `pub(super)` where cross-crate visibility is not needed would improve encapsulation signalling without behavior change. Estimated scope: moderate (50–100 items across the codebase).
 
 **Rule 5: No god files (>500 lines) without justification.**
-The 24 files above the 500-line threshold (§1 hot-spot list) should each have an explicit justification in a `//!` module comment. If no justification exists, the file should be split per Rule 2. `src/runtime/launch.rs` at 2368L has no `//!` module comment — this is the clearest violation.
+The **28+ files above the 500-line threshold** (§1 hot-spot list, updated by `find src -name "*.rs" | xargs wc -l | sort -rn` in iteration 27) should each have an explicit justification in a `//!` module comment. If no justification exists, the file should be split per Rule 2. `src/runtime/launch.rs` at 2368L has no `//!` module comment — this is the clearest violation.
 
 **New Rule 5 violator (post-PR #171): `src/console/manager/render/editor.rs` (1666L, ~736L production)**
 
@@ -713,6 +713,26 @@ Production code is 668L (tests start at line 669). PR #171 added `render_environ
 **Import path note:** `agents_block_agent_count` (line 246 in the current file) calls `super::super::agent_allow::allows_all_agents`. After the split, `details.rs` is one directory deeper, so this path becomes `super::super::super::agent_allow::allows_all_agents`. Alternatively, add `use crate::console::manager::agent_allow::allows_all_agents;` for a path-stable import.
 
 **Auditability gain:** To audit "does the Environments subpanel correctly show per-agent env overrides?", a reviewer reads `list/subpanels.rs` (~280L) containing `render_environments_subpanel`, `struct EnvRow`, and `env_row_line`. Today they scan 668L of production code (plus 1320L of tests) to locate those three items. The split is especially valuable because PR #171 added the entire environments subpanel as AI-generated code — a focused audit of `subpanels.rs` is the fastest way to verify its correctness.
+
+**`src/console/widgets/op_picker/mod.rs` Rule 5 analysis (1712L, ~775L production)**
+
+PR #171 addition; has a 7-line `//!` doc. The `impl OpPickerState` block (lines 133–762, ~630L) contains four distinct method groups:
+
+| Group | Methods | ~LOC | Concern |
+|---|---|---|---|
+| Constructors | `new`, `new_with_cache`, `new_with_runner`, `new_with_runner_and_cache` | ~45L | Wires up runner, cache, kicks off initial account load |
+| Async loading | `start_account_load`, `handle_accounts_loaded`, `start_vault_load`, `start_item_load`, `start_field_load`, `selected_account_id`, `runner_clone_for_thread` | ~120L | Spawns threads, routes cached/uncached loads via `mpsc` |
+| Poll + views | `poll_load`, `tick`, `filtered_accounts`, `filtered_vaults`, `filtered_items`, `filtered_fields` | ~140L | Drains results, advances spinner, provides filtered lists |
+| Key handling | `handle_key`, `handle_account_key`, `handle_vault_key`, `handle_item_key`, `handle_field_key`, `reset_selection_for_filter` | ~315L | Per-level key dispatch; each level has ~60-65L of binding logic |
+
+**Proposed split — leverage the existing `op_picker/` directory:**
+- `mod.rs` (~200L): types, constructors, `poll_load`, `tick`, `filtered_*` views, `Debug` impl. Answers: "What is the picker's state shape and how is it initialised?"
+- `op_picker/loading.rs` (~120L): `start_*_load` family + `handle_accounts_loaded` + `selected_account_id` + `runner_clone_for_thread`. Answers: "How does the picker load data asynchronously and cache it?"
+- `op_picker/keys.rs` (~315L): `handle_key` + 4 level-specific handlers + `reset_selection_for_filter`. Answers: "How does each 1Password level respond to keyboard input?"
+
+**Key interaction between groups:** `keys.rs` calls `loading.rs` methods (e.g., `handle_vault_key` calls `start_item_load`). This is a valid dependency — no circularity. `loading.rs` does NOT depend on `keys.rs`.
+
+**Auditability gain:** To audit "does the field key handler correctly commit the `op://...` reference when Enter is pressed?", a reviewer reads `keys.rs` (~315L) containing `handle_field_key`. Today they scan 775L of mixed-concern production code. The key handlers are the highest AI-generated-code-density section in the picker — every level-specific binding was written by PR #171.
 
 **`src/console/widgets/op_picker/render.rs` Rule 5 analysis (865L, ~545L production)**
 

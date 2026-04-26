@@ -1109,3 +1109,39 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 `op_picker/mod.rs` split proposal** — identified the types/behavior split opportunity but no formal proposal written yet. The `OpPickerState` struct (~28L) and 4 enum types (~35L) could move to `op_picker/types.rs`, leaving only `impl OpPickerState` in `mod.rs`.
 2. **§4 Rule 5 "24 files" note** — the preamble says "The 24 files above the 500-line threshold" — `find` shows 28+ files above 500L. Needs a targeted update.
 3. **§1 total LOC update** — the roadmap says "~40,664 lines" in §4 but `find | xargs wc` now shows 43,587L total. This is also stale.
+
+---
+
+## Iteration 28 — 2026-04-26
+
+### Improvements chosen
+
+1. **`op_picker/mod.rs` formal 3-file split proposal** — read all method signatures in `impl OpPickerState` (grep: 30 methods across 4 groups). Mapped each method to its concern. Proposed split: `mod.rs` (constructors + poll + filtered views + types), `loading.rs` (async load family, ~120L), `keys.rs` (4 level-specific key handlers, ~315L). Noted the key interaction: `keys.rs` → `loading.rs` (keys call load methods after cursor movement); no reverse dependency. Auditability gain: "field key handler commits op:// reference?" → reads `keys.rs` instead of 775L.
+
+2. **"24 files" hot-spot count corrected to "28+"** — updated the Rule 5 preamble from "The 24 files above the 500-line threshold" to "The 28+ files above the 500-line threshold (updated by find | xargs wc -l in iteration 27)". The count grew from 24 (iteration 1) to 28+ as new files were analyzed.
+
+3. **Total LOC updated from ~40,664 → ~43,587** — updated 2 occurrences: the ASCII tree header ("72 .rs files, ~40,664" → "72+ .rs files, ~43,587") and the §4 workspace decision paragraph. Added a provenance note ("verified by find | xargs wc -l in iteration 27; was ~40,664 at loop start").
+
+### What was read
+- `src/console/widgets/op_picker/mod.rs:133–760` method list via grep — 30 methods in 4 groups identified
+- `src/console/widgets/op_picker/mod.rs:183–305` (async loading group) via grep line ranges
+- The handle_*_key methods confirmed at lines 475, 523, 588, 653 via grep
+
+### What changed in the roadmap
+- §4 Rule 5: Added `op_picker/mod.rs` split analysis with 4-group table and 3-file proposal (before existing render.rs section)
+- §4 Rule 5 preamble: "24 files" → "28+"
+- §4 workspace argument: ~40,664 → ~43,587 with provenance note
+- ASCII tree: ~40,664 → ~43,587, "72 .rs" → "72+"
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `op_picker/mod.rs` method groups (4 groups) | High | grep confirmed all 30 methods with line numbers |
+| `keys.rs` ~315L estimate | High | handle_key at 446, handle_field_key at 653, next fn at 734; 734-446=288+preamble≈315 |
+| 28+ files above 500L | High | wc -l confirmed 28 files above 500L from find | xargs output |
+| Total LOC ~43,587 | High | wc -l sum confirmed from find | xargs output |
+
+### Weakest sections for iteration 29
+1. **§10 Step 4 — `op_picker/` splits missing from execution order** — the §10 Step 4f console group has 5 sub-steps but doesn't include `op_picker/mod.rs` or `op_picker/render.rs`. These should be added as 4f-vi and 4f-vii.
+2. **§4 Rule 5 — file_browser/* files** — `git_prompt.rs` (576L) and `input.rs` (570L) are in the 28-file list but never analyzed. They may be above the 500L production threshold.
+3. **§1 module map — missing entries for `file_browser/*`** — the `console/widgets/file_browser/` directory has at least 3 files (git_prompt.rs, input.rs, and the main module) but the module map only shows "file_browser/" as a single entry.
