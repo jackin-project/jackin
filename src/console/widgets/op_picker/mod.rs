@@ -285,6 +285,10 @@ impl OpPickerState {
         self.selected_account.as_ref().map(|a| a.id.clone())
     }
 
+    fn selected_account_id_ref(&self) -> Option<&str> {
+        self.selected_account.as_ref().map(|a| a.id.as_str())
+    }
+
     /// Clone the `Arc` so spawned workers share the same trait object
     /// (test-injected stubs included).
     fn runner_clone_for_thread(&self) -> Arc<dyn OpStructRunner + Send + Sync> {
@@ -310,10 +314,9 @@ impl OpPickerState {
                         OpLoadState::Error(OpPickerError::Fatal(OpPickerFatalState::NoVaults));
                     return;
                 }
-                let account_id = self.selected_account_id();
                 self.op_cache
                     .borrow_mut()
-                    .put_vaults(account_id.as_deref(), vaults.clone());
+                    .put_vaults(self.selected_account_id_ref(), vaults.clone());
                 self.vaults = vaults;
                 self.vault_list_state.select(Some(0));
                 self.load_state = OpLoadState::Ready;
@@ -324,14 +327,13 @@ impl OpPickerState {
             }
             Ok(LoadResult::Items(Ok(items))) => {
                 self.rx = None;
-                let account_id = self.selected_account_id();
                 let vault_id = self
                     .selected_vault
                     .as_ref()
                     .map(|v| v.id.clone())
                     .unwrap_or_default();
                 self.op_cache.borrow_mut().put_items(
-                    account_id.as_deref(),
+                    self.selected_account_id_ref(),
                     &vault_id,
                     items.clone(),
                 );
@@ -351,7 +353,6 @@ impl OpPickerState {
                 // Concealed first; cache the sorted vec so cache hits
                 // are already presentation-ordered.
                 fields.sort_by_key(|f| !f.concealed);
-                let account_id = self.selected_account_id();
                 let vault_id = self
                     .selected_vault
                     .as_ref()
@@ -363,7 +364,7 @@ impl OpPickerState {
                     .map(|i| i.id.clone())
                     .unwrap_or_default();
                 self.op_cache.borrow_mut().put_fields(
-                    account_id.as_deref(),
+                    self.selected_account_id_ref(),
                     &vault_id,
                     &item_id,
                     fields.clone(),
