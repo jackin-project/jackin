@@ -218,11 +218,7 @@ readonly = true
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
 
         let error =
@@ -251,11 +247,7 @@ readonly = true
                         readonly: false,
                         isolation: crate::isolation::MountIsolation::Shared,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -415,11 +407,7 @@ auth_forward = "token"
                         readonly: false,
                         isolation: crate::isolation::MountIsolation::Shared,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -462,11 +450,7 @@ auth_forward = "token"
                         readonly: true,
                         isolation: crate::isolation::MountIsolation::Shared,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -517,11 +501,7 @@ auth_forward = "token"
                             isolation: crate::isolation::MountIsolation::Shared,
                         },
                     ],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -577,11 +557,7 @@ auth_forward = "token"
                         isolation: crate::isolation::MountIsolation::Shared,
                     },
                 ],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
 
@@ -626,11 +602,7 @@ auth_forward = "token"
                             isolation: crate::isolation::MountIsolation::Shared,
                         },
                     ],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap_err();
@@ -666,11 +638,7 @@ auth_forward = "token"
                             isolation: crate::isolation::MountIsolation::Shared,
                         },
                     ],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap_err();
@@ -694,11 +662,7 @@ auth_forward = "token"
                         readonly: false,
                         isolation: crate::isolation::MountIsolation::Shared,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap();

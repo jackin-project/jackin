@@ -289,11 +289,7 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         config
             .create_workspace("big-monorepo", original.clone())
@@ -312,9 +308,7 @@ mod tests {
                     }],
                     allowed_agents: vec!["agent-smith".to_string()],
                     default_agent: Some("agent-smith".to_string()),
-                    last_agent: None,
-                    env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    ..Default::default()
                 },
             )
             .unwrap_err();
@@ -342,11 +336,7 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         config
             .create_workspace("big-monorepo", original.clone())
@@ -397,11 +387,7 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         config
             .create_workspace("big-monorepo", original.clone())

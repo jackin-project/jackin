@@ -162,11 +162,16 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
 }
 
 /// Dispatch a key into whatever modal currently sits on `state.list_modal`.
-/// Only `Modal::GithubPicker` is expected here today; any other variant that
-/// sneaks in is treated as cancel so the operator isn't stuck.
-pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) {
+/// Today the slot can hold either `Modal::GithubPicker` (opened by `o` on
+/// a workspace row) or `Modal::AgentPicker` (opened by Enter when the
+/// highlighted workspace has multiple eligible agents). Any other variant
+/// that sneaks in is treated as cancel so the operator isn't stuck.
+///
+/// Returns the resulting `InputOutcome` so the `AgentPicker` commit path
+/// can surface the chosen agent up to `run_console` for launch.
+pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some(modal) = state.list_modal.as_mut() else {
-        return;
+        return InputOutcome::Continue;
     };
     match modal {
         Modal::GithubPicker { state: picker } => match picker.handle_key(key) {
@@ -179,16 +184,30 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) {
                         shown_at: std::time::Instant::now(),
                     });
                 }
+                InputOutcome::Continue
             }
             ModalOutcome::Cancel => {
                 state.list_modal = None;
+                InputOutcome::Continue
             }
-            ModalOutcome::Continue => {}
+            ModalOutcome::Continue => InputOutcome::Continue,
+        },
+        Modal::AgentPicker { state: picker } => match picker.handle_key(key) {
+            ModalOutcome::Commit(agent) => {
+                state.list_modal = None;
+                InputOutcome::LaunchWithAgent(agent)
+            }
+            ModalOutcome::Cancel => {
+                state.list_modal = None;
+                InputOutcome::Continue
+            }
+            ModalOutcome::Continue => InputOutcome::Continue,
         },
         // Defensive catch-all — no other Modal variants are placed on the
         // list_modal slot today.
         _ => {
             state.list_modal = None;
+            InputOutcome::Continue
         }
     }
 }
@@ -256,11 +275,7 @@ mod tests {
             WorkspaceConfig {
                 workdir: "/unrelated".into(),
                 mounts: vec![],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
         let mut state = ManagerState::from_config(&config, cwd);
@@ -336,11 +351,7 @@ mod tests {
             WorkspaceConfig {
                 workdir: "/alpha".into(),
                 mounts: vec![],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
         let mut state = ManagerState::from_config(&config, cwd);
@@ -384,18 +395,13 @@ mod tests {
         .unwrap();
 
         let ws = WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![
                 mount(repo_a.to_str().unwrap(), "/a"),
                 mount(plain.to_str().unwrap(), "/p"),
                 mount(repo_b.to_str().unwrap(), "/b"),
                 mount(gitlab.to_str().unwrap(), "/g"),
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
 
         let choices = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
@@ -418,13 +424,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = make_github_repo(tmp.path(), "solo", "trunk");
         let ws = WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![mount(repo.to_str().unwrap(), "/solo")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let choices = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
         assert_eq!(choices.len(), 1);
@@ -437,16 +438,11 @@ mod tests {
         let repo_a = make_github_repo(tmp.path(), "repo-a", "main");
         let repo_b = make_github_repo(tmp.path(), "repo-b", "main");
         let ws = WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![
                 mount(repo_a.to_str().unwrap(), "/a"),
                 mount(repo_b.to_str().unwrap(), "/b"),
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
 
@@ -473,13 +469,8 @@ mod tests {
         let plain = tmp_src.path().join("plain");
         std::fs::create_dir(&plain).unwrap();
         let ws = WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![mount(plain.to_str().unwrap(), "/p")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
 
@@ -512,18 +503,9 @@ mod tests {
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
-        config.workspaces.insert(
-            "demo".into(),
-            WorkspaceConfig {
-                workdir: String::new(),
-                mounts: vec![],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
-            },
-        );
+        config
+            .workspaces
+            .insert("demo".into(), WorkspaceConfig::default());
         let mut state = ManagerState::from_config(&config, tmp.path());
         state.selected = 0;
 

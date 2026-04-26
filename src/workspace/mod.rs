@@ -31,7 +31,7 @@ pub struct MountConfig {
     pub isolation: crate::isolation::MountIsolation,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceConfig {
     pub workdir: String,
     #[serde(default)]
@@ -171,11 +171,7 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         }
     }
 
@@ -272,11 +268,7 @@ mod tests {
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         validate_workspace_config("test", &ws).unwrap();
     }

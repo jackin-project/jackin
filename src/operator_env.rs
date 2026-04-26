@@ -2,20 +2,12 @@
 //! syntaxes (`op://`, `$NAME` / `${NAME}`, literal), and merging onto
 //! the manifest-resolved env at launch.
 
-/// Test seam for the `op` CLI subprocess.
-///
-/// Production code uses [`OpCli`] which shells out to `op read`; tests
-/// use a mock implementation that captures inputs and returns canned
-/// responses.
 pub trait OpRunner {
-    /// Resolve a single `op://...` reference to its secret value.
     fn read(&self, reference: &str) -> anyhow::Result<String>;
 
-    /// Verify the 1Password CLI is available on this host. Called
-    /// once per launch before any `op://` reference is resolved so
-    /// the operator sees a single, clear "install op" error rather
-    /// than one-per-key noise. Default is a no-op so mock runners
-    /// used in unit tests do not need to implement it.
+    /// Probed once per launch so a missing `op` surfaces as a single
+    /// install-link error rather than one-per-key noise. Default no-op
+    /// keeps mock runners trivial.
     fn probe(&self) -> anyhow::Result<()> {
         Ok(())
     }
@@ -23,13 +15,9 @@ pub trait OpRunner {
 
 /// Dispatch a single env value string to the appropriate resolver.
 ///
-/// * `op://...`              → `op_runner.read(value)`
-/// * `$NAME` or `${NAME}`    → `host_env(name)`
-/// * anything else           → returned verbatim as a literal
-///
-/// `layer_label` and `var_name` are used only for error messages so
-/// operators can locate the offending config line (e.g. `"workspace
-/// \"big-monorepo\" env var \"API_TOKEN\""`).
+/// `op://...` → `op_runner.read`, `$NAME` / `${NAME}` → `host_env`,
+/// otherwise verbatim. `layer_label` / `var_name` only feed error
+/// messages.
 pub fn dispatch_value<R>(
     layer_label: &str,
     var_name: &str,
@@ -40,7 +28,7 @@ pub fn dispatch_value<R>(
 where
     R: OpRunner + ?Sized,
 {
-    if value.starts_with("op://") {
+    if is_op_reference(value) {
         return op_runner.read(value).map_err(|e| {
             anyhow::anyhow!(
                 "{layer_label} env var {var_name:?}: 1Password reference {value:?} failed: {e}"
@@ -59,10 +47,8 @@ where
     Ok(value.to_string())
 }
 
-/// Parse `$NAME` or `${NAME}` and return the name. Returns `None` for
-/// any other string (including bare `$`, `${}`, partially braced like
-/// `${NAME`, and anything containing whitespace or non-identifier
-/// characters after the sigil).
+/// Parse `$NAME` or `${NAME}` and return the name. Rejects bare `$`,
+/// unmatched braces, and non-identifier characters.
 fn parse_host_ref(value: &str) -> Option<&str> {
     if let Some(rest) = value.strip_prefix("${")
         && let Some(name) = rest.strip_suffix('}')
@@ -81,8 +67,46 @@ fn parse_host_ref(value: &str) -> Option<&str> {
     None
 }
 
-/// A valid POSIX-ish env name: ASCII letter or `_`, followed by ASCII
-/// alphanumeric or `_`. Empty names are rejected.
+#[must_use]
+pub fn is_op_reference(value: &str) -> bool {
+    value.starts_with("op://")
+}
+
+/// Structured parts of an `op://...` reference.
+///
+/// Syntax: `op://<vault>/<item>/[<section>/]<field>`. Account scope is
+/// not encoded in the path; multi-account picks live separately on
+/// `OpPickerState::selected_account`. See
+/// <https://developer.1password.com/docs/cli/secret-reference-syntax/>.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpReferenceParts {
+    pub vault: String,
+    pub item: String,
+    pub section: Option<String>,
+    pub field: String,
+}
+
+#[must_use]
+pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
+    let path = value.strip_prefix("op://")?;
+    let parts: Vec<&str> = path.split('/').collect();
+    match parts.as_slice() {
+        [vault, item, field] => Some(OpReferenceParts {
+            vault: (*vault).to_string(),
+            item: (*item).to_string(),
+            section: None,
+            field: (*field).to_string(),
+        }),
+        [vault, item, section, field] => Some(OpReferenceParts {
+            vault: (*vault).to_string(),
+            item: (*item).to_string(),
+            section: Some((*section).to_string()),
+            field: (*field).to_string(),
+        }),
+        _ => None,
+    }
+}
+
 fn is_valid_env_name(s: &str) -> bool {
     let mut chars = s.chars();
     match chars.next() {
@@ -92,34 +116,21 @@ fn is_valid_env_name(s: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Default production path for the 1Password CLI binary.
 const OP_DEFAULT_BIN: &str = "op";
-
-/// Default timeout for a single `op read` subprocess.
 const OP_DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
-/// Maximum bytes of subprocess stderr captured in error output.
-/// Larger outputs are truncated with a visible marker.
 const OP_STDERR_MAX: usize = 4 * 1024;
 
 /// Production `OpRunner` that shells out to the 1Password CLI.
 ///
-/// Tests replace this with a mock by constructing a different
-/// `OpRunner` implementation directly (e.g. `TestOpRunner`) or by
-/// pointing `OpCli` at an explicit binary path via `OpCli::with_binary`.
-/// No env-var-based test seam is used — the runner is always injected
-/// as a dependency, which keeps tests free of any process-env mutation
-/// and keeps the crate-level `unsafe_code = "forbid"` lint intact.
+/// Tests inject a different runner (e.g. `TestOpRunner`) rather than
+/// using an env-var seam — keeps the crate `unsafe_code = "forbid"`
+/// lint intact and tests free of process-env mutation.
 pub struct OpCli {
     binary: String,
     timeout: std::time::Duration,
 }
 
 impl OpCli {
-    /// Construct a runner that invokes the default `op` binary on `$PATH`.
-    /// Production code uses this via `OpCli::default()` inside
-    /// `resolve_operator_env`; tests construct a different runner
-    /// directly and pass it into `resolve_operator_env_with`.
     pub fn new() -> Self {
         Self {
             binary: OP_DEFAULT_BIN.to_string(),
@@ -127,9 +138,18 @@ impl OpCli {
         }
     }
 
-    /// Construct a runner that invokes an explicit binary path. Used
-    /// by integration tests to point `OpCli` at a tempfile-backed fake
-    /// `op` binary without touching the process env.
+    /// Short-timeout variant for startup availability checks. A 3-second
+    /// ceiling prevents `jackin console` from hanging when `op` is installed
+    /// but biometric-blocked or network-stalled at launch time. A false
+    /// negative here is acceptable — the picker shows an error panel if `op`
+    /// later fails.
+    pub fn new_probe() -> Self {
+        Self {
+            binary: OP_DEFAULT_BIN.to_string(),
+            timeout: std::time::Duration::from_secs(3),
+        }
+    }
+
     pub const fn with_binary(binary: String) -> Self {
         Self {
             binary,
@@ -137,8 +157,6 @@ impl OpCli {
         }
     }
 
-    /// Test constructor: point at an explicit binary path with a
-    /// custom (usually shorter) timeout.
     #[cfg(test)]
     const fn with_binary_and_timeout(binary: String, timeout: std::time::Duration) -> Self {
         Self { binary, timeout }
@@ -151,27 +169,28 @@ impl Default for OpCli {
     }
 }
 
-/// Format a subprocess exit status for inclusion in an error message,
-/// falling back to `"signal"` if the process was terminated by a signal.
 fn format_exit_status(status: std::process::ExitStatus) -> String {
     status
         .code()
         .map_or_else(|| "signal".to_string(), |c| c.to_string())
 }
 
-/// Truncate a stderr string to `OP_STDERR_MAX` bytes with a visible
-/// marker. Returns an owned `String` in either branch.
+/// Truncate stderr to ~`OP_STDERR_MAX` bytes, rounding down to a UTF-8
+/// char boundary so a multi-byte codepoint at the cut point cannot
+/// panic on the error path.
 fn truncate_stderr(stderr: &str) -> String {
-    if stderr.len() > OP_STDERR_MAX {
-        format!("{}… [truncated]", &stderr[..OP_STDERR_MAX])
-    } else {
-        stderr.to_owned()
+    if stderr.len() <= OP_STDERR_MAX {
+        return stderr.to_owned();
     }
+    let mut end = OP_STDERR_MAX;
+    while !stderr.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}… [truncated]", &stderr[..end])
 }
 
-/// Drain a child's stderr into a buffer capped at `OP_STDERR_MAX + 1`
-/// bytes. The extra byte lets the caller detect overflow; any further
-/// stderr output is drained into a sink so the child exits cleanly.
+/// Drain stderr capped at `OP_STDERR_MAX + 1` bytes; further output is
+/// sunk so the child exits cleanly.
 fn drain_bounded_stderr(mut stderr: std::process::ChildStderr) -> Vec<u8> {
     use std::io::Read;
 
@@ -193,12 +212,9 @@ fn drain_bounded_stderr(mut stderr: std::process::ChildStderr) -> Vec<u8> {
     buf
 }
 
-/// Spawn a background thread that polls `try_wait` on the shared child
-/// and forwards the exit status through `tx` when the child exits.
-///
-/// The poll loop releases the mutex between attempts so a concurrent
-/// timeout branch can `take` the child and call `kill` without waiting
-/// on a blocking `wait()`.
+/// Poll `try_wait` and forward the exit status, releasing the mutex
+/// between attempts so the timeout branch can `take` and `kill` the
+/// child without contending on a blocking `wait()`.
 fn spawn_wait_thread(
     child: std::sync::Arc<std::sync::Mutex<Option<std::process::Child>>>,
     tx: std::sync::mpsc::Sender<std::io::Result<std::process::ExitStatus>>,
@@ -250,8 +266,9 @@ impl OpRunner for OpCli {
                 )
             })?;
 
-        // Wait with timeout using a channel-and-thread pattern so we
-        // don't pull in a new async dep.
+        // Channel-and-thread wait pattern so we avoid a new async dep,
+        // and the wait thread never holds the mutex across a blocking
+        // wait — see spawn_wait_thread.
         let (tx, rx) = std::sync::mpsc::channel();
         let mut stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
@@ -264,18 +281,6 @@ impl OpRunner for OpCli {
         });
         let stderr_handle = std::thread::spawn(move || drain_bounded_stderr(stderr));
 
-        // Share the Child handle across the wait thread (which polls
-        // `try_wait` and consumes the child on completion) and the
-        // timeout branch (which `take`s the child and calls `kill`).
-        // `Child::kill` sends SIGKILL on Unix per its documented
-        // behavior — no `unsafe` or libc dependency required.
-        //
-        // The wait thread must not hold the mutex across a blocking
-        // `wait()` call — that would deadlock the timeout branch,
-        // which needs the lock to perform the kill. Instead we poll
-        // `try_wait` on a short cadence and release the lock between
-        // polls so the timeout branch can take ownership the moment
-        // it needs to.
         let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
         spawn_wait_thread(std::sync::Arc::clone(&child), tx);
 
@@ -285,19 +290,13 @@ impl OpRunner for OpCli {
                 anyhow::bail!("1Password CLI wait failed for {reference:?}: {e}");
             }
             Err(_) => {
-                // Timeout: SIGKILL the child via the documented std API.
-                // `Child::kill` returns `io::Result<()>`; we ignore the
-                // result because the child may already have exited
-                // between `recv_timeout` expiring and us reaching here,
-                // which yields `Err(InvalidInput)` and is not a real
-                // failure for our purposes. Take the child out of the
-                // mutex in a short scope so no guard is held across the
-                // blocking `wait()` below.
+                // Child may have exited between recv_timeout expiring
+                // and the take below (yielding Err(InvalidInput) on
+                // kill), which is not a real failure. Reap so pipes
+                // close and reader threads exit.
                 let killed = child.lock().expect("child mutex poisoned").take();
                 if let Some(mut c) = killed {
                     let _ = c.kill();
-                    // Reap the killed child so its pipes close and the
-                    // stdout/stderr reader threads can exit.
                     let _ = c.wait();
                 }
                 anyhow::bail!(
@@ -311,7 +310,16 @@ impl OpRunner for OpCli {
         let stderr_bytes = stderr_handle.join().unwrap_or_default();
 
         if status.success() {
-            let stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
+            // `op read` appends a trailing newline as CLI convention;
+            // strip exactly one so a secret ending in a real newline
+            // (e.g. PEM block) survives.
+            let mut stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
+            if stdout.ends_with('\n') {
+                stdout.pop();
+                if stdout.ends_with('\r') {
+                    stdout.pop();
+                }
+            }
             return Ok(stdout);
         }
 
@@ -325,42 +333,337 @@ impl OpRunner for OpCli {
     }
 
     fn probe(&self) -> anyhow::Result<()> {
-        use std::process::{Command, Stdio};
-
-        let output = Command::new(&self.binary)
-            .arg("--version")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|e| {
+        // Route through the timeout helper so a wedged `op` (network
+        // stall, biometric prompt held open) cannot freeze the caller.
+        run_op_with_timeout(&self.binary, &["--version"], self.timeout).map_err(|e| {
+            // Preserve the install-link hint on spawn-error paths.
+            let msg = e.to_string();
+            if msg.contains("developer.1password.com") {
+                e
+            } else {
                 anyhow::anyhow!(
-                    "1Password CLI ({:?}) was not found on PATH: {e} — \
-                     install from https://developer.1password.com/docs/cli/",
+                    "1Password CLI probe (`{} --version`) failed: {msg} — \
+                     see https://developer.1password.com/docs/cli/",
                     self.binary
                 )
-            })?;
-        if output.status.success() {
-            return Ok(());
-        }
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stderr_trimmed = truncate_stderr(&stderr);
-        anyhow::bail!(
-            "1Password CLI probe (`{} --version`) exited with status {}: {} — \
-             see https://developer.1password.com/docs/cli/",
-            self.binary,
-            format_exit_status(output.status),
-            stderr_trimmed.trim()
-        )
+            }
+        })?;
+        Ok(())
     }
 }
 
-/// Tracks which layer supplied the currently-winning value for a key.
+/// Structural `op` queries used by the picker.
 ///
-/// Used to produce precise error messages during reserved-name
-/// enforcement ("global [env] declares `DOCKER_HOST` which is reserved")
-/// and launch diagnostics ("`OPERATOR_X`: provided by workspace
-/// \"big-monorepo\" [agent override]").
+/// Distinct from [`OpRunner`] (single-value resolution): the picker is
+/// a metadata browser and must never deserialize a secret value — see
+/// [`RawOpField`].
+pub trait OpStructRunner {
+    /// Doubles as the sign-in probe before any other call.
+    fn account_list(&self) -> anyhow::Result<Vec<OpAccount>>;
+    /// `account = None` lets `op` use its default-account context.
+    fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>>;
+    fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>>;
+    fn item_get(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        account: Option<&str>,
+    ) -> anyhow::Result<Vec<OpField>>;
+}
+
+/// `id` is the `account_uuid` accepted by `op --account <id>`. `email`
+/// and `url` feed the picker's Account pane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpAccount {
+    pub id: String,
+    pub email: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpVault {
+    pub id: String,
+    pub name: String,
+}
+
+/// `name` comes from JSON `title`; `subtitle` from
+/// `additional_information` (login username/email, empty on secure
+/// notes) — used to disambiguate items sharing a title.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpItem {
+    pub id: String,
+    pub name: String,
+    pub subtitle: String,
+}
+
+/// Field metadata only — the value is intentionally absent.
+///
+/// `reference` is the verbatim `op://...` 1Password emits per field;
+/// the picker commits this rather than synthesizing a path from
+/// display names (synthesis was wrong for sections, names containing
+/// `/`, or whitespace).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpField {
+    pub id: String,
+    pub label: String,
+    pub field_type: String,
+    pub concealed: bool,
+    pub reference: String,
+}
+
+// Accept either `id` or `account_uuid` so the probe works against
+// current and older op CLI shapes. `email` / `url` default to empty
+// because older `op` versions may omit them.
+#[derive(serde::Deserialize)]
+struct RawOpAccount {
+    #[serde(alias = "account_uuid")]
+    id: String,
+    #[serde(default)]
+    email: String,
+    #[serde(default)]
+    url: String,
+}
+
+#[derive(serde::Deserialize)]
+struct RawOpVault {
+    id: String,
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+struct RawOpItem {
+    id: String,
+    title: String,
+    // Missing on secure notes and other non-login item types.
+    #[serde(default)]
+    additional_information: String,
+}
+
+#[derive(serde::Deserialize)]
+struct RawOpItemDetail {
+    #[serde(default)]
+    fields: Vec<RawOpField>,
+}
+
+// SAFETY: 'value' is intentionally absent from this struct. The picker is a
+// metadata browser; serde must not deserialize secret values into memory.
+// Any change adding a `value` field here breaks the picker's trust model.
+//
+// `reference` IS deserialized: the string `op://...` that 1Password's
+// CLI emits per field is metadata, not a credential, and the picker
+// commits it verbatim instead of synthesizing a path from display
+// names (which mishandled section nesting and `/`/whitespace in
+// names).
+#[derive(serde::Deserialize)]
+struct RawOpField {
+    id: String,
+    #[serde(default)]
+    label: String,
+    #[serde(rename = "type", default)]
+    field_type: String,
+    #[serde(default)]
+    purpose: String,
+    #[serde(default)]
+    reference: String,
+}
+
+impl From<RawOpAccount> for OpAccount {
+    fn from(raw: RawOpAccount) -> Self {
+        Self {
+            id: raw.id,
+            email: raw.email,
+            url: raw.url,
+        }
+    }
+}
+
+impl From<RawOpVault> for OpVault {
+    fn from(raw: RawOpVault) -> Self {
+        Self {
+            id: raw.id,
+            name: raw.name,
+        }
+    }
+}
+
+impl From<RawOpItem> for OpItem {
+    fn from(raw: RawOpItem) -> Self {
+        Self {
+            id: raw.id,
+            name: raw.title,
+            subtitle: raw.additional_information,
+        }
+    }
+}
+
+impl From<RawOpField> for OpField {
+    fn from(raw: RawOpField) -> Self {
+        let concealed = raw.field_type == "CONCEALED" || raw.purpose == "PASSWORD";
+        Self {
+            id: raw.id,
+            label: raw.label,
+            field_type: raw.field_type,
+            concealed,
+            reference: raw.reference,
+        }
+    }
+}
+
+/// Shared timeout primitive used by [`OpCli::probe`] and
+/// [`run_op_json`]. Returns stdout bytes on success; failure stderr is
+/// untouched so callers can pattern-match (see [`run_op_json`]).
+fn run_op_with_timeout(
+    binary: &str,
+    args: &[&str],
+    timeout: std::time::Duration,
+) -> anyhow::Result<Vec<u8>> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new(binary)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "failed to spawn 1Password CLI {binary:?}: {e} \
+                 (is `op` installed and on your PATH? see \
+                 https://developer.1password.com/docs/cli/)"
+            )
+        })?;
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let stderr = child.stderr.take().expect("piped stderr");
+
+    let stdout_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        buf
+    });
+    let stderr_handle = std::thread::spawn(move || drain_bounded_stderr(stderr));
+
+    let child = std::sync::Arc::new(std::sync::Mutex::new(Some(child)));
+    spawn_wait_thread(std::sync::Arc::clone(&child), tx);
+
+    let cmd_label = format!("op {}", args.join(" "));
+    let status = match rx.recv_timeout(timeout) {
+        Ok(Ok(status)) => status,
+        Ok(Err(e)) => {
+            anyhow::bail!("1Password CLI wait failed for `{cmd_label}`: {e}");
+        }
+        Err(_) => {
+            let killed = child.lock().expect("child mutex poisoned").take();
+            if let Some(mut c) = killed {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            anyhow::bail!(
+                "1Password CLI timed out after {}s running `{cmd_label}`",
+                timeout.as_secs()
+            );
+        }
+    };
+
+    let stdout_bytes = stdout_handle.join().unwrap_or_default();
+    let stderr_bytes = stderr_handle.join().unwrap_or_default();
+
+    if status.success() {
+        return Ok(stdout_bytes);
+    }
+
+    let stderr = String::from_utf8_lossy(&stderr_bytes);
+    let stderr_trimmed = truncate_stderr(&stderr);
+    let stderr_msg = stderr_trimmed.trim();
+    anyhow::bail!(
+        "1Password CLI exited with status {} running `{cmd_label}`: {stderr_msg}",
+        format_exit_status(status),
+    )
+}
+
+/// Wraps [`run_op_with_timeout`] and additionally rewrites the
+/// "not signed in" / "no accounts" stderr signature into a dedicated
+/// error message the picker pattern-matches on.
+fn run_op_json(
+    binary: &str,
+    args: &[&str],
+    timeout: std::time::Duration,
+) -> anyhow::Result<Vec<u8>> {
+    let cmd_label = format!("op {}", args.join(" "));
+    run_op_with_timeout(binary, args, timeout).map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("not currently signed") || msg.contains("no accounts") {
+            anyhow::anyhow!(
+                "1Password CLI is not signed in (running `{cmd_label}` returned: {msg}). \
+                 Run `op signin` in your shell, then retry."
+            )
+        } else {
+            e
+        }
+    })
+}
+
+impl OpStructRunner for OpCli {
+    fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
+        let bytes = run_op_json(
+            &self.binary,
+            &["account", "list", "--format", "json"],
+            self.timeout,
+        )?;
+        let raw: Vec<RawOpAccount> = serde_json::from_slice(&bytes)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op account list` JSON: {e}"))?;
+        Ok(raw.into_iter().map(OpAccount::from).collect())
+    }
+
+    fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
+        let mut args: Vec<&str> = vec!["vault", "list"];
+        if let Some(id) = account {
+            args.push("--account");
+            args.push(id);
+        }
+        args.extend_from_slice(&["--format", "json"]);
+        let bytes = run_op_json(&self.binary, &args, self.timeout)?;
+        let raw: Vec<RawOpVault> = serde_json::from_slice(&bytes)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op vault list` JSON: {e}"))?;
+        Ok(raw.into_iter().map(OpVault::from).collect())
+    }
+
+    fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
+        let mut args: Vec<&str> = vec!["item", "list", "--vault", vault_id];
+        if let Some(id) = account {
+            args.push("--account");
+            args.push(id);
+        }
+        args.extend_from_slice(&["--format", "json"]);
+        let bytes = run_op_json(&self.binary, &args, self.timeout)?;
+        let raw: Vec<RawOpItem> = serde_json::from_slice(&bytes)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op item list` JSON: {e}"))?;
+        Ok(raw.into_iter().map(OpItem::from).collect())
+    }
+
+    fn item_get(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        account: Option<&str>,
+    ) -> anyhow::Result<Vec<OpField>> {
+        let mut args: Vec<&str> = vec!["item", "get", item_id, "--vault", vault_id];
+        if let Some(id) = account {
+            args.push("--account");
+            args.push(id);
+        }
+        args.extend_from_slice(&["--format", "json"]);
+        let bytes = run_op_json(&self.binary, &args, self.timeout)?;
+        let detail: RawOpItemDetail = serde_json::from_slice(&bytes)
+            .map_err(|e| anyhow::anyhow!("failed to parse `op item get` JSON: {e}"))?;
+        Ok(detail.fields.into_iter().map(OpField::from).collect())
+    }
+}
+
+/// Source layer of an env value, attached to error messages and
+/// launch diagnostics so the operator can locate the offending entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvLayer {
     Global,
@@ -382,15 +685,8 @@ impl std::fmt::Display for EnvLayer {
     }
 }
 
-/// Merge four env layers with later-wins semantics. Keys present in a
-/// later layer overwrite values from earlier layers. Keys unique to any
-/// layer are preserved.
-///
-/// Order, low → high priority:
-///   1. `global`          — `[env]`
-///   2. `agent`           — `[agents.<agent>.env]`
-///   3. `workspace`       — `[workspaces.<ws>.env]`
-///   4. `workspace_agent` — `[workspaces.<ws>.agents.<agent>.env]`
+/// Later-wins merge. Order, low → high priority:
+/// global → agent → workspace → workspace-agent.
 pub fn merge_layers(
     global: &std::collections::BTreeMap<String, String>,
     agent: &std::collections::BTreeMap<String, String>,
@@ -398,76 +694,43 @@ pub fn merge_layers(
     workspace_agent: &std::collections::BTreeMap<String, String>,
 ) -> std::collections::BTreeMap<String, String> {
     let mut merged = std::collections::BTreeMap::new();
-    for (k, v) in global {
-        merged.insert(k.clone(), v.clone());
-    }
-    for (k, v) in agent {
-        merged.insert(k.clone(), v.clone());
-    }
-    for (k, v) in workspace {
-        merged.insert(k.clone(), v.clone());
-    }
-    for (k, v) in workspace_agent {
-        merged.insert(k.clone(), v.clone());
+    for layer in [global, agent, workspace, workspace_agent] {
+        for (k, v) in layer {
+            merged.insert(k.clone(), v.clone());
+        }
     }
     merged
 }
 
 /// Reject operator env maps that declare any reserved runtime name.
-///
-/// The reserved names (`JACKIN_CLAUDE_ENV`, `JACKIN_DIND_HOSTNAME`,
-/// `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are fixed
-/// by jackin and cannot be overridden. Conflicts are collected across
-/// every layer and reported as a single aggregated error so operators
-/// see all problems at once.
-///
-/// This runs at config LOAD time (in `AppConfig::load_or_init`),
-/// before any launch path — so misconfigurations fail fast and the
-/// runtime never sees a resolved map with a reserved key.
+/// Runs at config-load time so misconfigurations fail before launch.
+/// Conflicts across every layer are aggregated into one error.
 pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Result<()> {
     let mut offenses: Vec<String> = Vec::new();
-
-    for key in config.env.keys() {
-        if crate::env_model::is_reserved(key) {
-            offenses.push(format!(
-                "  - {key:?} is reserved by the jackin runtime; declared in {}",
-                EnvLayer::Global
-            ));
+    let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, String>| {
+        for key in env.keys() {
+            if crate::env_model::is_reserved(key) {
+                offenses.push(format!(
+                    "  - {key:?} is reserved by the jackin runtime; declared in {layer}"
+                ));
+            }
         }
-    }
+    };
 
+    record(EnvLayer::Global, &config.env);
     for (agent_name, agent_source) in &config.agents {
-        for key in agent_source.env.keys() {
-            if crate::env_model::is_reserved(key) {
-                offenses.push(format!(
-                    "  - {key:?} is reserved by the jackin runtime; declared in {}",
-                    EnvLayer::Agent(agent_name.clone())
-                ));
-            }
-        }
+        record(EnvLayer::Agent(agent_name.clone()), &agent_source.env);
     }
-
     for (ws_name, ws) in &config.workspaces {
-        for key in ws.env.keys() {
-            if crate::env_model::is_reserved(key) {
-                offenses.push(format!(
-                    "  - {key:?} is reserved by the jackin runtime; declared in {}",
-                    EnvLayer::Workspace(ws_name.clone())
-                ));
-            }
-        }
+        record(EnvLayer::Workspace(ws_name.clone()), &ws.env);
         for (agent_name, override_) in &ws.agents {
-            for key in override_.env.keys() {
-                if crate::env_model::is_reserved(key) {
-                    offenses.push(format!(
-                        "  - {key:?} is reserved by the jackin runtime; declared in {}",
-                        EnvLayer::WorkspaceAgent {
-                            workspace: ws_name.clone(),
-                            agent: agent_name.clone()
-                        }
-                    ));
-                }
-            }
+            record(
+                EnvLayer::WorkspaceAgent {
+                    workspace: ws_name.clone(),
+                    agent: agent_name.clone(),
+                },
+                &override_.env,
+            );
         }
     }
 
@@ -484,17 +747,53 @@ pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Res
     )
 }
 
-/// Walk the four env layers for a given `(agent, workspace)` pair and
-/// resolve every value. Returns a map of resolved `(key → value)`.
-///
-/// Resolution failures from every layer are collected and reported in
-/// a single aggregated error so operators see all problems at once
-/// (matching the policy of `validate_reserved_names`).
-///
-/// The `agent` and `workspace` selectors are optional. When they are
-/// `None`, only the global layer contributes; when only `agent` is set,
-/// the agent layer joins; when only `workspace` is set, the workspace
-/// layer joins; when both are set, all four layers are consulted.
+/// (key → (layer, `raw_value`)) precedence-merged across the four
+/// config layers — global, agent, workspace, workspace-agent — for the
+/// given `(agent, workspace)` selection. Later layers overwrite earlier
+/// ones, so the final layer attached to each key is the one that wins.
+fn build_attributed_layers(
+    config: &crate::config::AppConfig,
+    agent_selector: Option<&str>,
+    workspace_name: Option<&str>,
+) -> std::collections::BTreeMap<String, (EnvLayer, String)> {
+    let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
+        std::collections::BTreeMap::new();
+
+    let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, String>| {
+        for (k, v) in env {
+            attributed.insert(k.clone(), (layer.clone(), v.clone()));
+        }
+    };
+
+    record(EnvLayer::Global, &config.env);
+    if let Some(agent_name) = agent_selector
+        && let Some(a) = config.agents.get(agent_name)
+    {
+        record(EnvLayer::Agent(agent_name.to_string()), &a.env);
+    }
+    if let Some(ws_name) = workspace_name
+        && let Some(ws) = config.workspaces.get(ws_name)
+    {
+        record(EnvLayer::Workspace(ws_name.to_string()), &ws.env);
+        if let Some(agent_name) = agent_selector
+            && let Some(ov) = ws.agents.get(agent_name)
+        {
+            record(
+                EnvLayer::WorkspaceAgent {
+                    workspace: ws_name.to_string(),
+                    agent: agent_name.to_string(),
+                },
+                &ov.env,
+            );
+        }
+    }
+
+    attributed
+}
+
+/// Walk the env layers for the given `(agent, workspace)` pair and
+/// resolve every value. Resolution failures across layers are
+/// aggregated into one error.
 pub fn resolve_operator_env(
     config: &crate::config::AppConfig,
     agent_selector: Option<&str>,
@@ -509,12 +808,8 @@ pub fn resolve_operator_env(
     )
 }
 
-/// Test-injectable version of [`resolve_operator_env`].
-///
-/// `R: OpRunner + ?Sized` so callers can pass either a concrete runner
-/// (`&OpCli`, `&TestOpRunner`) or a trait object (`&dyn OpRunner`) —
-/// the latter is how `LoadOptions::op_runner` flows through
-/// `src/runtime/launch.rs`.
+/// `?Sized` so callers can pass `&dyn OpRunner` (used by
+/// `LoadOptions::op_runner` in `src/runtime/launch.rs`).
 pub fn resolve_operator_env_with<R, H>(
     config: &crate::config::AppConfig,
     agent_selector: Option<&str>,
@@ -526,66 +821,14 @@ where
     R: OpRunner + ?Sized,
     H: FnMut(&str) -> Result<String, std::env::VarError>,
 {
-    let empty = std::collections::BTreeMap::new();
-
-    let global = &config.env;
-    let agent = agent_selector
-        .and_then(|a| config.agents.get(a))
-        .map_or(&empty, |a| &a.env);
-    let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
-    let workspace = ws_opt.map_or(&empty, |w| &w.env);
-    let workspace_agent = ws_opt
-        .zip(agent_selector)
-        .and_then(|(w, a)| w.agents.get(a))
-        .map_or(&empty, |o| &o.env);
-
-    // Produce a (key → (layer, raw_value)) map so resolution errors can
-    // attribute which layer supplied each value.
-    let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
-        std::collections::BTreeMap::new();
-
-    for (k, v) in global {
-        attributed.insert(k.clone(), (EnvLayer::Global, v.clone()));
-    }
-    if let Some(agent_name) = agent_selector {
-        for (k, v) in agent {
-            attributed.insert(
-                k.clone(),
-                (EnvLayer::Agent(agent_name.to_string()), v.clone()),
-            );
-        }
-    }
-    if let Some(ws_name) = workspace_name {
-        for (k, v) in workspace {
-            attributed.insert(
-                k.clone(),
-                (EnvLayer::Workspace(ws_name.to_string()), v.clone()),
-            );
-        }
-    }
-    if let (Some(ws_name), Some(agent_name)) = (workspace_name, agent_selector) {
-        for (k, v) in workspace_agent {
-            attributed.insert(
-                k.clone(),
-                (
-                    EnvLayer::WorkspaceAgent {
-                        workspace: ws_name.to_string(),
-                        agent: agent_name.to_string(),
-                    },
-                    v.clone(),
-                ),
-            );
-        }
-    }
+    let attributed = build_attributed_layers(config, agent_selector, workspace_name);
 
     let mut resolved = std::collections::BTreeMap::new();
     let mut errors: Vec<String> = Vec::new();
 
-    // If ANY value uses the op:// scheme, probe the op CLI once up
-    // front. This turns "op is not installed" from an N-failures
-    // aggregate into a single clear install-link error, which is the
-    // failure mode documented in the spec.
-    let uses_op = attributed.values().any(|(_, v)| v.starts_with("op://"));
+    // Probe op CLI once up front when any value uses op://, so a
+    // missing op surfaces as one install-link error not N.
+    let uses_op = attributed.values().any(|(_, v)| is_op_reference(v));
     if uses_op && let Err(e) = op_runner.probe() {
         anyhow::bail!("operator env resolution aborted: {e}");
     }
@@ -611,26 +854,9 @@ where
     );
 }
 
-/// Emit a single-line (normal) / multi-line (debug) launch diagnostic.
-///
-/// Summarises the operator env that was just resolved. Values are NEVER
-/// printed — only counts (normal) or reference strings (debug) and the
-/// layer that supplied each key.
-///
-/// Normal mode format:
-///
-/// ```text
-/// [jackin] operator env: 3 resolved (2 op://, 1 host ref, 0 literal)
-/// ```
-///
-/// Debug mode format:
-///
-/// ```text
-/// [jackin] operator env:
-///   OPERATOR_TOKEN        op://Personal/api/token   (workspace "big-monorepo" → agent "agent-smith" [env])
-///   CI_CACHE_DIR          ${HOME_CACHE}             (global [env])
-///   AGENT_VERSION         literal                   (agent "agent-smith" [env])
-/// ```
+/// Print a launch diagnostic to stderr. Values are NEVER printed —
+/// normal mode is counts only, debug mode is reference strings or the
+/// `literal` placeholder; the layer that supplied each key is shown.
 pub fn print_launch_diagnostic(
     config: &crate::config::AppConfig,
     agent_selector: Option<&str>,
@@ -640,8 +866,6 @@ pub fn print_launch_diagnostic(
 ) {
     use std::io::Write;
     let mut out = Vec::new();
-    // write_launch_diagnostic writes into an in-memory buffer and
-    // cannot fail with an I/O error; unwrap is safe here.
     write_launch_diagnostic(
         &mut out,
         config,
@@ -654,9 +878,6 @@ pub fn print_launch_diagnostic(
     let _ = std::io::stderr().write_all(&out);
 }
 
-/// Test-visible entry point that returns the diagnostic as a String.
-/// Production code uses [`print_launch_diagnostic`], which writes the
-/// same bytes to process stderr.
 #[cfg(test)]
 fn format_launch_diagnostic_for_test(
     config: &crate::config::AppConfig,
@@ -686,59 +907,12 @@ fn write_launch_diagnostic<W: std::io::Write>(
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) -> std::io::Result<()> {
-    // Rebuild the (key → (layer, raw_value)) attribution using the same
-    // precedence rule as resolve_operator_env_with.
-    let ws_opt = workspace_name.and_then(|w| config.workspaces.get(w));
-
-    let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
-        std::collections::BTreeMap::new();
-
-    for (k, v) in &config.env {
-        attributed.insert(k.clone(), (EnvLayer::Global, v.clone()));
-    }
-    if let Some(agent_name) = agent_selector
-        && let Some(a) = config.agents.get(agent_name)
-    {
-        for (k, v) in &a.env {
-            attributed.insert(
-                k.clone(),
-                (EnvLayer::Agent(agent_name.to_string()), v.clone()),
-            );
-        }
-    }
-    if let (Some(ws_name), Some(ws)) = (workspace_name, ws_opt) {
-        for (k, v) in &ws.env {
-            attributed.insert(
-                k.clone(),
-                (EnvLayer::Workspace(ws_name.to_string()), v.clone()),
-            );
-        }
-        if let Some(agent_name) = agent_selector
-            && let Some(ov) = ws.agents.get(agent_name)
-        {
-            for (k, v) in &ov.env {
-                attributed.insert(
-                    k.clone(),
-                    (
-                        EnvLayer::WorkspaceAgent {
-                            workspace: ws_name.to_string(),
-                            agent: agent_name.to_string(),
-                        },
-                        v.clone(),
-                    ),
-                );
-            }
-        }
-    }
-
-    // Restrict to keys actually in `resolved` (they were successfully
-    // dispatched); a key missing from `resolved` indicates a prior
-    // error path and should not show up here.
+    let mut attributed = build_attributed_layers(config, agent_selector, workspace_name);
+    // Drop keys not in `resolved` — those failed to dispatch.
     attributed.retain(|k, _| resolved.contains_key(k));
 
     if debug {
         writeln!(w, "[jackin] operator env:")?;
-        // Compute a column width for nice alignment.
         let key_width = attributed
             .keys()
             .map(String::len)
@@ -786,7 +960,7 @@ enum ValueKind {
 
 impl ValueKind {
     fn of(raw: &str) -> Self {
-        if raw.starts_with("op://") {
+        if is_op_reference(raw) {
             Self::Op
         } else if parse_host_ref(raw).is_some() {
             Self::Host
@@ -796,11 +970,9 @@ impl ValueKind {
     }
 }
 
-/// Return a short, value-free label for a raw operator env entry:
-/// `op://...` references are returned verbatim (the reference string
-/// is not secret; only the resolved value is); `$NAME` / `${NAME}`
-/// references are returned verbatim; literals are labelled `"literal"`
-/// so the resolved value is never printed.
+/// Value-free label: `op://...` and `$NAME` returned verbatim (the
+/// reference is not secret, the resolved value is); literals collapse
+/// to `"literal"` so the value never reaches stderr.
 fn classify_value(raw: &str) -> String {
     match ValueKind::of(raw) {
         ValueKind::Op | ValueKind::Host => raw.to_string(),
@@ -811,6 +983,43 @@ fn classify_value(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_op_reference_recognizes_prefix() {
+        assert!(is_op_reference("op://Personal/api/token"));
+        assert!(is_op_reference("op://acct/Personal/api/token"));
+        assert!(!is_op_reference("plain-literal"));
+        assert!(!is_op_reference("$HOST"));
+        assert!(!is_op_reference("${HOST}"));
+        assert!(!is_op_reference(""));
+        assert!(!is_op_reference("op:/missing"));
+    }
+
+    #[test]
+    fn parse_op_reference_three_segments() {
+        let parts = parse_op_reference("op://Vault/Item/field").unwrap();
+        assert_eq!(parts.vault, "Vault");
+        assert_eq!(parts.item, "Item");
+        assert_eq!(parts.section, None);
+        assert_eq!(parts.field, "field");
+    }
+
+    #[test]
+    fn parse_op_reference_handles_section_in_4_segment() {
+        let parts = parse_op_reference("op://Personal/Item/Auth/password").unwrap();
+        assert_eq!(parts.vault, "Personal");
+        assert_eq!(parts.item, "Item");
+        assert_eq!(parts.section, Some("Auth".to_string()));
+        assert_eq!(parts.field, "password");
+    }
+
+    #[test]
+    fn parse_op_reference_invalid_segment_count() {
+        assert!(parse_op_reference("plain").is_none());
+        assert!(parse_op_reference("op://only/two").is_none());
+        assert!(parse_op_reference("op://a/b/c/d/e").is_none());
+        assert!(parse_op_reference("op://").is_none());
+    }
 
     #[test]
     fn dispatch_literal_value_returns_literal() {
@@ -857,11 +1066,10 @@ mod tests {
         assert_eq!(out, "braced");
     }
 
+    /// Set-but-empty (Unix semantics) passes through unchanged; only
+    /// `VarError::NotPresent` is a hard error.
     #[test]
     fn dispatch_host_ref_empty_string_passes_through() {
-        // Spec: empty string host-env result is "set but empty" and
-        // passes through unchanged (Unix semantics). Differentiates
-        // from VarError::NotPresent, which is a hard error.
         let out = dispatch_value(
             "global",
             "MAYBE_EMPTY",
@@ -916,7 +1124,6 @@ mod tests {
         );
     }
 
-    /// Test seam: an `OpRunner` that captures the last `op read` argument.
     struct TestOpRunner {
         response: std::cell::RefCell<Option<anyhow::Result<String>>>,
         last_ref: std::cell::RefCell<Option<String>>,
@@ -969,6 +1176,39 @@ mod tests {
     }
 
     #[test]
+    fn op_cli_strips_trailing_newline_from_op_read_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-newline");
+        std::fs::write(&bin_path, "#!/bin/sh\nprintf 'tok-123\\n'\nexit 0\n").unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let out = runner.read("op://Personal/api/token").unwrap();
+        assert_eq!(
+            out, "tok-123",
+            "trailing \\n from op read must be stripped; got {out:?}"
+        );
+    }
+
+    /// A secret legitimately ending in `\n` (e.g. a PEM block) is sent
+    /// by `op read` as value+\n; strip exactly one so inner newlines
+    /// survive.
+    #[test]
+    fn op_cli_strips_only_one_trailing_newline_preserves_value_newline() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-double-newline");
+        std::fs::write(&bin_path, "#!/bin/sh\nprintf 'line1\\nline2\\n'\nexit 0\n").unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let out = runner.read("op://Personal/api/multi").unwrap();
+        assert_eq!(
+            out, "line1\nline2",
+            "internal newline must survive while final trailing \\n is stripped"
+        );
+    }
+
+    #[test]
     fn op_cli_missing_binary_returns_clear_error() {
         let runner = OpCli::with_binary("/nonexistent/op/binary/path".to_string());
         let err = runner.read("op://Personal/api/token").unwrap_err();
@@ -1007,8 +1247,6 @@ mod tests {
     fn op_cli_large_stderr_is_truncated() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-big-stderr");
-        // Emit ~16 KiB of stderr then fail. The runner must cap the
-        // captured bytes so operator error output stays readable.
         std::fs::write(
             &bin_path,
             "#!/bin/sh\npython3 -c \"import sys; sys.stderr.write('X' * 16384)\" 2>&1 1>&2\nexit 1\n",
@@ -1019,8 +1257,6 @@ mod tests {
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let err = runner.read("op://Foo/bar").unwrap_err();
         let msg = err.to_string();
-        // OP_STDERR_MAX is 4 KiB; the error should be bounded to that plus a
-        // short truncation marker and the exit code framing.
         assert!(
             msg.len() < 6 * 1024,
             "expected bounded stderr in error; got {} bytes",
@@ -1035,7 +1271,6 @@ mod tests {
         std::fs::write(&bin_path, "#!/bin/sh\nsleep 60\n").unwrap();
         make_executable(&bin_path);
 
-        // Shorten the timeout for the test via the test-only constructor.
         let runner = OpCli::with_binary_and_timeout(
             bin_path.to_string_lossy().to_string(),
             std::time::Duration::from_millis(250),
@@ -1066,6 +1301,33 @@ mod tests {
         runner.probe().unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn op_cli_probe_times_out_when_binary_hangs() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-version-hang");
+        std::fs::write(&bin_path, "#!/bin/sh\nsleep 60\n").unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary_and_timeout(
+            bin_path.to_string_lossy().to_string(),
+            std::time::Duration::from_millis(250),
+        );
+        let start = std::time::Instant::now();
+        let err = runner.probe().unwrap_err();
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "probe must abort before 5s; actual={elapsed:?}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("timeout") || msg.contains("timed out"),
+            "expected timeout in error: {msg}"
+        );
+    }
+
     #[test]
     fn op_cli_probe_fails_with_install_link_when_binary_missing() {
         let runner = OpCli::with_binary("/nonexistent/op/binary/path".to_string());
@@ -1090,10 +1352,51 @@ mod tests {
     }
 
     #[cfg(not(unix))]
-    fn make_executable(_path: &std::path::Path) {
-        // Tests that require fake binaries are cfg-gated to unix; on
-        // other platforms they are no-ops because the launch path
-        // itself is unix-only in this codebase.
+    fn make_executable(_path: &std::path::Path) {}
+
+    #[test]
+    fn truncate_stderr_returns_input_for_short_string() {
+        let s = "short error message";
+        assert_eq!(truncate_stderr(s), s);
+    }
+
+    #[test]
+    fn truncate_stderr_truncates_long_ascii_at_boundary() {
+        let s: String = "x".repeat(OP_STDERR_MAX + 100);
+        let out = truncate_stderr(&s);
+        assert!(
+            out.starts_with(&s[..OP_STDERR_MAX]),
+            "ASCII truncation must keep exactly OP_STDERR_MAX bytes"
+        );
+        assert!(out.ends_with("[truncated]"));
+    }
+
+    /// Multi-byte UTF-8 char straddling `OP_STDERR_MAX` — naive byte
+    /// slicing would panic; the boundary walk-back must round down.
+    #[test]
+    fn truncate_stderr_does_not_panic_on_utf8_boundary() {
+        // ASCII padding + 4-byte emoji (`U+1F4A9`) straddling the cap.
+        let pad_len = OP_STDERR_MAX - 2;
+        let mut s = String::with_capacity(pad_len + 16);
+        s.push_str(&"a".repeat(pad_len));
+        for _ in 0..10 {
+            s.push('\u{1F4A9}');
+        }
+        assert!(
+            !s.is_char_boundary(OP_STDERR_MAX),
+            "test fixture must place a non-boundary byte at OP_STDERR_MAX; \
+             got is_char_boundary == true"
+        );
+        let out = truncate_stderr(&s);
+        assert!(out.ends_with("[truncated]"));
+        let head = out
+            .strip_suffix("… [truncated]")
+            .expect("truncate marker present");
+        assert!(
+            head.is_char_boundary(head.len()),
+            "truncated head must end on a UTF-8 char boundary"
+        );
+        assert!(head.len() <= OP_STDERR_MAX);
     }
 
     use std::collections::BTreeMap;
@@ -1210,11 +1513,7 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         ws.env
             .insert("DOCKER_TLS_VERIFY".to_string(), "0".to_string());
@@ -1241,11 +1540,7 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         ws.agents.insert("agent-smith".to_string(), override_);
         cfg.workspaces.insert("big-monorepo".to_string(), ws);
@@ -1329,11 +1624,7 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         ws.env.insert("X".to_string(), "workspace".to_string());
         let mut wsa = crate::workspace::WorkspaceAgentOverride::default();
@@ -1372,9 +1663,6 @@ mod tests {
 
     #[test]
     fn resolve_probes_op_cli_once_when_any_op_ref_present() {
-        // Spec: check op presence once per launch by shelling
-        // `op --version`. Here we verify the probe fires for configs
-        // that use op://... and is skipped for configs that do not.
         struct ProbeCountingRunner {
             probe_calls: std::cell::Cell<u32>,
             read_calls: std::cell::Cell<u32>,
@@ -1568,5 +1856,278 @@ mod tests {
         assert!(rendered.contains("literal"), "{rendered}");
         assert!(!rendered.contains("super-secret"), "{rendered}");
         assert!(!rendered.contains("op-value-secret"), "{rendered}");
+    }
+
+    // ---- OpStructRunner tests --------------------------------------------
+
+    #[test]
+    fn op_field_concealed_derives_from_type_or_purpose() {
+        // Type CONCEALED -> concealed=true.
+        let raw_concealed = RawOpField {
+            id: "f1".to_string(),
+            label: "password".to_string(),
+            field_type: "CONCEALED".to_string(),
+            purpose: String::new(),
+            reference: String::new(),
+        };
+        assert!(OpField::from(raw_concealed).concealed);
+
+        // Purpose PASSWORD -> concealed=true, even when type is empty.
+        let raw_purpose = RawOpField {
+            id: "f2".to_string(),
+            label: "pw".to_string(),
+            field_type: String::new(),
+            purpose: "PASSWORD".to_string(),
+            reference: String::new(),
+        };
+        assert!(OpField::from(raw_purpose).concealed);
+
+        // Plain text field -> concealed=false.
+        let raw_text = RawOpField {
+            id: "f3".to_string(),
+            label: "username".to_string(),
+            field_type: "STRING".to_string(),
+            purpose: "USERNAME".to_string(),
+            reference: String::new(),
+        };
+        assert!(!OpField::from(raw_text).concealed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_vault_list_parses_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-vault-list");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\nif [ \"$1\" = \"vault\" ] && [ \"$2\" = \"list\" ]; then \
+             printf '%s' '[{\"id\":\"v1\",\"name\":\"Personal\"}]'; exit 0; fi\nexit 99\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let vaults = runner.vault_list(None).unwrap();
+        assert_eq!(
+            vaults,
+            vec![OpVault {
+                id: "v1".to_string(),
+                name: "Personal".to_string(),
+            }]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_item_list_parses_json() {
+        // Two items are returned: the first carries an
+        // `additional_information` subtitle (the username/email 1Password
+        // surfaces in its UI), the second omits it. Both must round-trip
+        // — the first into a populated `subtitle`, the second into an
+        // empty string via `#[serde(default)]`.
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-item-list");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"list\" ]; then \
+             printf '%s' '[{\"id\":\"i1\",\"title\":\"Google\",\"additional_information\":\"alexey@zhokhov.com\"},\
+{\"id\":\"i2\",\"title\":\"API Keys\"}]'; exit 0; fi\nexit 99\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let items = runner.item_list("v1", None).unwrap();
+        assert_eq!(
+            items,
+            vec![
+                OpItem {
+                    id: "i1".to_string(),
+                    name: "Google".to_string(),
+                    subtitle: "alexey@zhokhov.com".to_string(),
+                },
+                OpItem {
+                    id: "i2".to_string(),
+                    name: "API Keys".to_string(),
+                    subtitle: String::new(),
+                },
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_item_list_handles_missing_additional_information() {
+        // Items without `additional_information` (e.g., secure notes)
+        // must deserialize cleanly with an empty `subtitle`. Regression
+        // coverage for the `#[serde(default)]` on `RawOpItem`.
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-item-list-no-subtitle");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"list\" ]; then \
+             printf '%s' '[{\"id\":\"i1\",\"title\":\"Recovery codes\"}]'; exit 0; fi\nexit 99\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let items = runner.item_list("v1", None).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "Recovery codes");
+        assert_eq!(items[0].subtitle, "");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_item_get_parses_fields_no_value() {
+        // The crucial safety test: even when `op item get` JSON contains
+        // a `value` key on each field, our `RawOpField` struct does not
+        // declare it, so serde silently drops the value during
+        // deserialization. The resulting `OpField` has no value field
+        // at all (the type itself doesn't have one).
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-item-get");
+        let json = r#"{"id":"i1","title":"API Keys","fields":[
+            {"id":"username","label":"username","type":"STRING","purpose":"USERNAME","value":"alice","reference":"op://Personal/API Keys/username"},
+            {"id":"password","label":"password","type":"CONCEALED","purpose":"PASSWORD","value":"super-secret","reference":"op://Personal/API Keys/password"}
+        ]}"#;
+        let script = format!(
+            "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"get\" ]; then \
+             cat <<'JSON'\n{json}\nJSON\nexit 0; fi\nexit 99\n"
+        );
+        std::fs::write(&bin_path, script).unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let fields = runner.item_get("i1", "v1", None).unwrap();
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].label, "username");
+        assert!(!fields[0].concealed);
+        assert_eq!(fields[1].label, "password");
+        assert!(fields[1].concealed);
+        // Compile-time guarantee: OpField has no `value` field. If a
+        // future refactor adds one, this struct-match will fail to
+        // compile and force an explicit re-review of the trust model.
+        // The destructure also names `reference` — drop it from
+        // `OpField` and this fails to compile, forcing a re-review of
+        // the picker's commit path (which depends on `reference`
+        // being the authoritative `op://` string from the CLI rather
+        // than a synthesized one).
+        let OpField {
+            id: _,
+            label: _,
+            field_type: _,
+            concealed: _,
+            reference: _,
+        } = fields[1].clone();
+    }
+
+    /// `op item get --format json` emits a `reference` key on every
+    /// field carrying the authoritative `op://...` string. The picker
+    /// commits this verbatim instead of synthesizing a path from
+    /// display names, so verify it round-trips into `OpField`.
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_item_get_captures_reference_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-item-get-reference");
+        // `auth/secret_key` is the sectioned shape: 4-segment reference
+        // where the 3rd segment is a section name. The picker must be
+        // able to commit this verbatim.
+        let json = r#"{"id":"i1","title":"X","fields":[
+            {"id":"f1","label":"top","type":"STRING","reference":"op://X/Y/Z"},
+            {"id":"f2","label":"key","type":"CONCEALED","reference":"op://Personal/API Keys/auth/secret_key"}
+        ]}"#;
+        let script = format!(
+            "#!/bin/sh\nif [ \"$1\" = \"item\" ] && [ \"$2\" = \"get\" ]; then \
+             cat <<'JSON'\n{json}\nJSON\nexit 0; fi\nexit 99\n"
+        );
+        std::fs::write(&bin_path, script).unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let fields = runner.item_get("i1", "v1", None).unwrap();
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].reference, "op://X/Y/Z");
+        assert_eq!(
+            fields[1].reference,
+            "op://Personal/API Keys/auth/secret_key"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_account_list_parses_real_op_output() {
+        // Captured from `op account list --format json` against op CLI v2.x.
+        // The actual key is `account_uuid`, not `id` — verify our serde
+        // alias makes both shapes parse.
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-accounts");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\ncat <<'EOF'\n[\n  {\n    \"url\": \"example.1password.com\",\n    \"email\": \"someone@example.com\",\n    \"user_uuid\": \"USERUUIDXXXX\",\n    \"account_uuid\": \"ACCTUUIDYYYY\"\n  }\n]\nEOF\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let accounts = runner
+            .account_list()
+            .expect("real op account list output must parse");
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].id, "ACCTUUIDYYYY");
+        // email + url round-trip from the realistic JSON fixture so the
+        // picker's Account pane has the human-readable display string.
+        assert_eq!(accounts[0].email, "someone@example.com");
+        assert_eq!(accounts[0].url, "example.1password.com");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn op_struct_runner_threads_account_flag_to_op_cli() {
+        // The fake `op` shim echoes its argv to stdout when invoked. We
+        // assert that passing `Some(account_uuid)` to vault_list produces
+        // an `--account ACCT123` pair in the spawned argv. JSON output
+        // is the empty array so deserialization succeeds.
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-account-flag");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\necho \"$@\" >&2\nprintf '%s' '[]'\nexit 0\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        // With Some(_) → must include `--account <id>` in argv.
+        let _ = runner.vault_list(Some("ACCT123")).unwrap();
+        // With None → must NOT include `--account` in argv.
+        let _ = runner.vault_list(None).unwrap();
+        // (Argv is echoed to stderr, which run_op_json drains but does
+        // not return on success. Concrete argv-ordering coverage is in
+        // the picker integration test that uses an inspectable stub.
+        // This test verifies both code paths return Ok without panicking
+        // — i.e., the args slice is well-formed in both branches.)
+    }
+
+    #[test]
+    fn op_struct_runner_signed_out_detection() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_path = dir.path().join("fake-op-signed-out");
+        std::fs::write(
+            &bin_path,
+            "#!/bin/sh\n>&2 echo 'You are not currently signed in. Run `op signin`.'\nexit 1\n",
+        )
+        .unwrap();
+        make_executable(&bin_path);
+
+        let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
+        let err = runner.vault_list(None).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not signed in") || msg.contains("op signin"),
+            "expected signed-out detection in error: {msg}"
+        );
     }
 }

@@ -60,11 +60,7 @@ impl CreatePreludeState<'_> {
                 readonly: self.pending_readonly,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::default(),
-            agents: std::collections::BTreeMap::default(),
+            ..WorkspaceConfig::default()
         })
     }
 
