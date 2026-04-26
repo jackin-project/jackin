@@ -1458,3 +1458,56 @@ The roadmap listed `config/editor.rs` as equally prioritized for behavioral spec
 1. **The INV entries for runtime/launch.rs** are based on function names and step comment positions, not on reading the actual load_agent_with body. Iteration 35 should read lines 553–900 of launch.rs and verify or correct the proposed INV entries.
 2. **§3 CI gate for PROJECT_STRUCTURE.md** — still not proposed despite being flagged in iterations 32, 33.
 3. **§7 external Rust TUI comparison** — still not done.
+
+---
+
+## Iteration 35 — 2026-04-26
+
+### Critical challenge this iteration
+The INV entries added in iteration 34 for `runtime/launch.rs` were inferred from step comment positions and function names — not from reading the actual code body. This was exactly the anti-pattern the roadmap argues against (claims without file/line citation). Iteration 35 reads lines 553–894 of `load_agent_with` and produces verified INV entries.
+
+### What was improved
+
+**Verified and corrected all 5 INV entries for `runtime/launch.rs` behavioral spec (§10 Step 2)**
+
+Read `load_agent_with` lines 553–892 in full. Key findings:
+
+**Corrections to iteration 34 draft:**
+- INV-1 from iteration 34: "container name is claimed before Docker network creation (`claim_container_name` at line 918...)" — LINE 918 IS WRONG. 918 is the function definition of `claim_container_name`. The CALL is at line 754. Corrected.
+
+**Verified INVs (all cite exact line numbers from reading the code):**
+1. **INV-1 — Trust gate precedes image build**: `confirm_trust` at line 594 (Step 1) before `build_agent_image` at line 736 (Step 2). Untrusted agent repo is cloned but image NOT built until trust confirmed.
+2. **INV-2 — Container name claimed between image build and network creation**: `claim_container_name` at line 754, between Step 2 (line 736) and Step 3 (line 827). If name claim fails, image exists but no network/container created.
+3. **INV-3 — Token verified before network creation**: `verify_token_env_present` at line 763, before Step 3 (line 827). Fail-fast: avoids Docker infrastructure spin-up if auth token missing.
+4. **INV-4 — `render_exit` called on ALL exit paths**: Both `Ok` arm (line 886) and `Err` arm (line 890) call `render_exit`. No code path skips it.
+5. **INV-5 — Cleanup disarm semantics are state-dependent**: `Running` → disarm (user detached, `hardline` can restart); `Stopped { exit_code: 0, oom_killed: false }` → cleanup; `Stopped { .. }` (crash) → disarm. This is why `jackin hardline` works.
+
+Also noted: env resolution (interactive prompts for op:// and $NAME refs) happens BETWEEN Step 1 and Step 2 (lines 635–708). This means operator-visible prompts appear before the expensive Docker image build — a deliberate UX choice worth noting in the spec.
+
+**Additional discovery**: Two injection seams for testing (`op_runner` and `host_env` fields on `LoadOptions`) are documented in extensive inline comments at lines 657–693. These explain why tests can override `op://` resolution without mutating `std::env`. This should appear in the spec as a testing note.
+
+### What was read
+- `src/runtime/launch.rs` lines 553–892 — full `load_agent_with` body
+- Trust gate: lines 591–610
+- Env resolution: lines 635–708 (between Step 1 and Step 2)
+- Image build: lines 725–746 (Step 2)
+- Container name claim: line 754
+- Token verification: lines 762–764
+- Step 3: lines 827–855 (network + DinD)
+- Cleanup state machine: lines 864–873
+- `render_exit` calls: lines 884–891
+
+### What changed in the roadmap
+- §10 Step 2 Track B, item 1: Replaced the iteration 34 draft INVs (inferred from step comment positions) with 5 verified INVs citing exact line numbers from reading the code; added "Verify by:" grep instructions for each; corrected wrong line number (918 → 754); documented the iteration 34 error explicitly
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| All 5 INV entries for runtime/launch.rs | High | Read from actual code, line numbers verified |
+| INV-5 cleanup disarm semantics | High | Read `match inspect_container_state(...)` arms directly |
+| "render_exit on all paths" | High | Both `Ok` and `Err` arms confirmed at lines 886, 890 |
+
+### Weakest sections for iteration 36
+1. **§3 CI gate for PROJECT_STRUCTURE.md staleness** — flagged in iterations 32, 33, 34, 35. Still no concrete proposal. Priority: add a simple shell check or pre-commit hook.
+2. **§7 external Rust TUI comparison** — `gitui`, `bottom`, `zellij` structure comparison still not done. Would validate or contradict the documentation-first vs structure-first debate in §4.
+3. **Env resolution between Step 1 and Step 2 not yet in spec** — op:// interactive prompts happen before Docker image build. This is a UX invariant worth capturing.
