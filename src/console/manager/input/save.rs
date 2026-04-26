@@ -356,6 +356,12 @@ fn build_confirm_save_lines(
                     value,
                 ),
             ]));
+            let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
+            if !env_lines.is_empty() {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Env vars:", heading)));
+                out.extend(env_lines);
+            }
         }
         EditorMode::Edit { name } => {
             let display_name = editor.pending_name.clone().unwrap_or_else(|| name.clone());
@@ -457,15 +463,6 @@ fn build_confirm_save_lines(
                 out.push(Line::from(Span::styled("Env vars:", heading)));
                 out.extend(env_lines);
             }
-        }
-    }
-
-    if matches!(editor.mode, EditorMode::Create) {
-        let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
-        if !env_lines.is_empty() {
-            out.push(Line::raw(""));
-            out.push(Line::from(Span::styled("Env vars:", heading)));
-            out.extend(env_lines);
         }
     }
 
