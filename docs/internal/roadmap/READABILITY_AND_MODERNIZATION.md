@@ -603,6 +603,137 @@ This phasing reduces the scope of structural changes by ~60% while delivering th
 
 Until one of these conditions holds, workspace adds complexity without proportional benefit.
 
+### Greenfield architecture — ideal structure for a growing project
+
+*This section answers: "If we were writing jackin from scratch today, how would we structure it?" It is NOT the recommended immediate path (that is §4 Phase 1 → Phase 2). It is the target architecture to grow toward as the project scales, and a lens for evaluating whether incremental refactors are moving in the right direction.*
+
+#### Dependency graph (verified by grep, iteration 36)
+
+The actual import structure across top-level modules reveals a clean dependency hierarchy with no cycles at the domain level:
+
+```
+Tier 0 — no cross-module dependencies (pure data + traits):
+  workspace/     (WorkspaceConfig, MountConfig, WorkspaceEdit, planner, resolve, mounts)
+  manifest/      (AgentManifest, EnvVarDecl)
+  env_model/     (env layer types)
+  docker.rs      (CommandRunner trait + ShellRunner)
+  paths.rs       (JackinPaths)
+  selector.rs    (ClassSelector)
+
+Tier 1 — depends only on Tier 0:
+  config/        (AppConfig, ConfigEditor — re-exports workspace types; adds TOML persistence)
+  tui/           (terminal output, animation — uses paths)
+  env_resolver/  (interactive env resolution — uses manifest + terminal_prompter)
+  instance/      (AgentState, container naming — uses config, paths, selector)
+
+Tier 2 — depends on Tier 0 + Tier 1:
+  operator_env/  (1Password env layers — uses config + docker)
+  runtime/       (launch pipeline — uses config, instance, tui, docker, paths, selector)
+  repo/          (agent repo clone/fetch — uses paths, selector, manifest)
+
+Tier 3 — depends on Tier 0–2:
+  console/       (TUI — uses config, workspace, tui, operator_env; NO import from runtime)
+
+Binary:
+  cli/           (Clap schema — no business logic)
+  app/           (dispatch — depends on all)
+```
+
+**Key findings from the dependency graph:**
+1. `workspace/` is LOWER-level than `config/` — `config/mod.rs` re-exports workspace types (lines 5–6: `pub use crate::workspace::MountConfig; pub use crate::workspace::WorkspaceAgentOverride`). The naming is confusing: `workspace` is the domain model layer, `config` is the persistence layer on top of it.
+2. `console/` has NO import from `runtime/` — the console TUI is already isolated from the container bootstrap pipeline. This is the key pre-existing clean boundary.
+3. `operator_env/` is only consumed by `console/` — it could move into the console crate in a workspace.
+4. `tui/` is consumed by app, console, AND runtime — it's a shared utility layer.
+
+#### Ideal workspace structure (greenfield)
+
+```
+jackin/
+├── Cargo.toml                    ← workspace manifest
+├── crates/
+│   ├── jackin-core/              ← Tier 0: pure data types, traits, primitives
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── workspace.rs      ← WorkspaceConfig, MountConfig, WorkspaceEdit,
+│   │       │                        planner, resolve, mounts, sensitive
+│   │       ├── manifest.rs       ← AgentManifest, EnvVarDecl
+│   │       ├── env_model.rs      ← env layer enum types
+│   │       ├── docker.rs         ← CommandRunner trait (NOT ShellRunner impl)
+│   │       ├── paths.rs          ← JackinPaths
+│   │       └── selector.rs       ← ClassSelector
+│   │
+│   ├── jackin-config/            ← Tier 1: TOML persistence on top of core types
+│   │   └── src/
+│   │       ├── lib.rs            ← AppConfig, ConfigEditor, EnvScope
+│   │       └── persist.rs        ← load/save TOML, migration
+│   │
+│   ├── jackin-tui/               ← Tier 1: terminal presentation
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── output.rs         ← tables, hints, fatal, logo, title
+│   │       ├── animation.rs      ← intro/outro, digital rain
+│   │       └── prompt.rs         ← interactive prompts
+│   │
+│   ├── jackin-runtime/           ← Tier 2: container bootstrap pipeline
+│   │   └── src/
+│   │       ├── lib.rs            ← pub fn load_agent (the public API)
+│   │       ├── launch.rs         ← load_agent_with pipeline (120L public API)
+│   │       ├── pipeline.rs       ← load_agent_with body (~560L)
+│   │       ├── trust.rs          ← confirm_agent_trust
+│   │       ├── terminfo.rs       ← resolve_terminal_setup, export_host_terminfo
+│   │       ├── instance.rs       ← AgentState, auth provisioning
+│   │       ├── repo.rs           ← agent repo clone/update/lock
+│   │       ├── cleanup.rs        ← gc_orphaned_resources, LoadCleanup
+│   │       └── image.rs          ← Docker image build, naming
+│   │
+│   ├── jackin-console/           ← Tier 3: workspace manager TUI
+│   │   └── src/
+│   │       ├── lib.rs            ← pub fn run_console
+│   │       ├── manager/          ← workspace manager (state, input, render)
+│   │       ├── widgets/          ← TUI widget library
+│   │       └── op_env/           ← operator_env (only used here)
+│   │
+│   └── jackin-shell/             ← concrete Docker subprocess impl (not trait)
+│       └── src/
+│           ├── lib.rs
+│           └── runner.rs         ← ShellRunner implements CommandRunner
+│
+├── src/                          ← thin binary crate
+│   ├── main.rs                   ← calls jackin-config::load + app::run
+│   └── app/                      ← CLI dispatch (matches on cli::Command)
+│
+└── bin/
+    └── validate.rs               ← jackin-validate binary
+```
+
+#### What this architecture enables
+
+| Capability | Current (single crate) | Greenfield (workspace) |
+|---|---|---|
+| Parallel compilation | No — all 94 files compile together | Yes — jackin-core + jackin-config + jackin-tui compile simultaneously |
+| Test isolation | All tests share one crate's test runner | jackin-console tests run without compiling runtime; runtime tests run without console |
+| Plugin/extension API | Not possible without publishing the whole crate | Publish `jackin-core` as a stable library; third-party agent manifests import it |
+| Selective feature deps | `ratatui` pulled in even for CLI-only operations | `ratatui` lives in `jackin-console` and `jackin-tui`; binary without console avoids it |
+| Error type clarity | `anyhow::Result` crosses all boundaries | Workspace boundaries force explicit error conversion at crate interfaces |
+| Independent versioning | One version for everything | `jackin-core` can reach 1.0 independently once API stabilises |
+
+#### The critical naming fix this structure reveals
+
+The current module layout has `config/` as a higher-level module than `workspace/`, but `workspace/` contains the domain types while `config/` is really "TOML persistence." The greenfield naming would be:
+- `jackin-core` contains `workspace` (domain model)
+- `jackin-config` wraps persistence on top of it
+
+This resolves the confusing current situation where `config/mod.rs` re-exports types FROM `workspace` — in the greenfield design, `jackin-core` is the single source of truth for all domain types.
+
+#### Migration path (incremental bridge to greenfield)
+
+The §4 Phase 1/Phase 2 incremental steps are NOT wasted in the greenfield vision — they are pre-work:
+- Step 4a (types extraction from `config/mod.rs`) → exactly what `jackin-core`'s `workspace.rs` and `selector.rs` would contain
+- Step 4d (`operator_env.rs` split) → exactly what `jackin-console/src/op_env/` would contain  
+- Step 4g (`runtime/launch.rs` split) → exactly what `jackin-runtime/src/pipeline.rs` would contain
+
+The incremental file splits make the eventual workspace split easier by establishing clean internal module boundaries first.
+
 ### Module-shape rules
 
 The following rules should be applied uniformly. Each rule names the current violators.

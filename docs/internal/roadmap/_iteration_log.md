@@ -1559,3 +1559,60 @@ Also noted: env resolution (interactive prompts for op:// and $NAME refs) happen
 1. **New operator directive: Rust project structure best practices for a growing project** — research Cargo workspace conventions, module layout in large Rust CLIs (ripgrep, starship, cargo itself), and propose an ideal greenfield structure for jackin. This may significantly challenge §4's current incremental approach.
 2. **workspace/resolve.rs and workspace/mod.rs missing //!** — add to §10 //! priority queue.
 3. **§7 external Rust TUI comparison** — `gitui`, `bottom` structure still not researched.
+
+---
+
+## Iteration 37 — 2026-04-26
+
+### Operator directive
+The operator asked: "We need to research the best Rust project structure for a big project — as if we rewrite this project from scratch. Analyze how to refactor and reorganize all modules. The current structure is hard to maintain and understand, not intuitive."
+
+This iteration responds by adding a "Greenfield architecture" section to §4, grounded in the actual dependency graph.
+
+### What was improved
+
+**Added §4 "Greenfield architecture" — ideal workspace structure for a growing jackin** (major new section)
+
+Mapped the actual cross-module import graph by grepping `use crate::X` for each top-level module across all files outside that module's directory. Key findings:
+
+1. **`workspace/` is lower-level than `config/`** — config/mod.rs re-exports workspace types (lines 1, 5, 6). The naming is confusing: `workspace` is the domain model layer (pure data + planning), `config` is the TOML persistence layer on top of it. In a greenfield design, `workspace` types would live in `jackin-core`, not inside a module called `config`.
+
+2. **`console/` has NO import from `runtime/`** — this pre-existing clean boundary is the most important structural asset. It means `jackin-console` and `jackin-runtime` can be separate workspace crates TODAY without breaking anything.
+
+3. **`operator_env/` is exclusively consumed by `console/`** — it would naturally collocate with the console crate.
+
+4. **`tui/` is a shared utility used by app, console, AND runtime** — warrants its own crate.
+
+5. **Dependency tiers (verified):**
+   - Tier 0 (no deps): workspace, manifest, env_model, docker (trait), paths, selector
+   - Tier 1: config, tui, env_resolver, instance
+   - Tier 2: operator_env, runtime, repo
+   - Tier 3: console
+   - Binary: cli, app
+
+**Ideal workspace structure documented:** `jackin-core` (Tier 0 domain types), `jackin-config` (TOML persistence), `jackin-tui` (terminal presentation), `jackin-runtime` (container bootstrap), `jackin-console` (TUI), `jackin-shell` (concrete subprocess impl), thin binary in `src/`.
+
+**Key bridge argument added:** The §4 Phase 1/Phase 2 incremental splits (4a types extraction, 4d operator_env split, 4g launch.rs split) are pre-work toward the workspace migration, not alternatives to it. The incremental and greenfield paths are complementary.
+
+### What was read (fresh scan)
+- `src/config/mod.rs` lines 1–6 — confirmed workspace type re-exports
+- `src/workspace/resolve.rs` imports — confirmed no config import (workspace is lower-level)
+- `src/workspace/planner.rs` imports — confirmed same
+- Full cross-module dependency grep for all 14 top-level modules
+
+### What changed in the roadmap
+- §4: Added "Greenfield architecture — ideal structure for a growing project" between "Workspace vs single-crate" and "Module-shape rules"
+- New content: dependency tier table, ideal workspace directory structure, enablement table (parallel compilation, test isolation, etc.), the critical naming fix (workspace/config inversion), migration path bridge
+
+### Confidence assessment
+| Section | Confidence | Notes |
+|---|---|---|
+| Dependency tier assignments | High | Verified by grep; workspace→no config imports confirmed |
+| console has no runtime import | High | Grep confirmed |
+| operator_env only in console | High | Confirmed |
+| Greenfield workspace structure | Medium | Logical derivation from dependency graph; not validated against actual Rust workspace best practices for CLIs of this type |
+
+### Weakest sections for iteration 38
+1. **Greenfield section lacks external validation** — the proposed workspace structure is logically derived but not compared against real-world Rust CLI workspace examples (ripgrep, starship, cargo). Iteration 38 should research these and either validate or refine the proposal.
+2. **§3 CI gate** — added in iteration 36 but not yet in §10 execution sequencing.
+3. **workspace/resolve.rs and mod.rs missing //!** — still not added to §10 //! priority queue.
