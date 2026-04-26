@@ -202,11 +202,6 @@ fn delete_workspace_via_manager() -> Result<()> {
 
 // ── Secrets tab integration tests ─────────────────────────────────
 
-/// Seed a workspace with a `DB_URL` env key, open the Secrets tab, and
-/// assert the key is visible in the rendered buffer. Inserts the row
-/// into `unmasked_rows` first so the literal value shows up cleanly
-/// (the label is independent of masking, but we also want the value
-/// confirmed visible to pin the render path).
 #[test]
 fn secrets_tab_shows_existing_env() -> Result<()> {
     let temp = tempdir()?;
@@ -219,9 +214,7 @@ fn secrets_tab_shows_existing_env() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Unmask so both the key label and literal value are visible in the
-    // dump (the masked default would still show `DB_URL` but would hide
-    // the value; unmasking makes the assertion more specific).
+    // Unmask so the literal value reaches the dump.
     editor_mut(&mut state).unmasked_rows.insert((
         jackin::console::manager::state::SecretsScopeTag::Workspace,
         "DB_URL".into(),
@@ -588,12 +581,9 @@ fn secrets_add_new_key_flow() -> Result<()> {
 
 // ── 1Password picker integration tests ────────────────────────────
 
-/// `P` on a Secrets-tab key row opens the `OpPicker` modal directly
-/// (no intermediate text modal). The picker may load successfully or
-/// land in a fatal state depending on whether `op` is on `$PATH` in
-/// the test environment — either way the modal variant must be
-/// `OpPicker` and `pending_picker_target` must record the row's scope
-/// + key.
+/// Picker may load or fall into a fatal state depending on `op` on
+/// `$PATH`; either way the modal variant must be `OpPicker` and
+/// `pending_picker_target` must record (scope, key).
 #[test]
 fn op_picker_opens_on_p_from_secrets_key_row() -> Result<()> {
     let temp = tempdir()?;
@@ -882,11 +872,8 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
 
 // ── SourcePicker integration tests ────────────────────────────────
 
-/// Helper: enter the SourcePicker by way of Enter-on-sentinel →
-/// ScopePicker(All agents) → EnvKey commit. Returns the state mid-flow
-/// with the SourcePicker modal open. Works against the default
-/// `op_available = false` ManagerState so the 1Password choice is
-/// rendered disabled.
+/// Drives Enter-on-sentinel → ScopePicker(All agents) → EnvKey
+/// commit, leaving SourcePicker open. Default `op_available = false`.
 fn drive_to_source_picker<'a>(
     config: &mut AppConfig,
     paths: &JackinPaths,
@@ -959,12 +946,8 @@ fn enter_on_sentinel_opens_envkey_then_sourcepicker_then_value_modal() -> Result
     Ok(())
 }
 
-/// EnvValue accepts an empty value: drive the same EnvKey →
-/// SourcePicker(Plain) → EnvValue flow, but commit Enter on an empty
-/// textarea. Previously the widget's global `is_valid` rule rejected
-/// empty input for every target, swallowing the commit. POSIX env
-/// semantics distinguish `VAR=""` from `unset VAR`, so the EnvValue
-/// modal must land an empty string in `pending.env`.
+/// POSIX `VAR=""` differs from `unset VAR`, so EnvValue must commit
+/// the empty string into `pending.env`.
 #[test]
 fn env_value_modal_allows_empty_commit() -> Result<()> {
     let temp = tempdir()?;
@@ -1178,16 +1161,9 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
     Ok(())
 }
 
-/// Multi-account 1Password setup: drive the picker through the full
-/// Account → Vault → Item → Field commit chain. Mirrors the Option-Z
-/// direct-field-seeding pattern used by the single-account picker
-/// integration tests above. Verifies that:
-///   - `selected_account` is captured at the Account stage,
-///   - the breadcrumb / pane sequence honors the account scope,
-///   - the committed `op://` reference is the simple `op://Vault/Item/
-///     Field` form (account-prefixed paths are out of scope until the
-///     launch-time resolver gains explicit per-reference account
-///     handling).
+/// Drives Account → Vault → Item → Field. Verifies committed `op://`
+/// is the bare `op://Vault/Item/Field` form (account scope is not
+/// encoded in the path).
 #[test]
 fn op_picker_multi_account_flow() -> Result<()> {
     use jackin::console::widgets::op_picker::{OpLoadState, OpPickerStage};
@@ -1882,11 +1858,8 @@ fn scope_picker_specific_path_to_agent_picker_then_envkey() -> Result<()> {
     Ok(())
 }
 
-/// The agent picker reachable from the SpecificAgent path lists every
-/// allowed agent — including agents that already have override sections.
-/// This is the behavioural change vs commit 34: operators may want to
-/// add additional keys to an agent that already has some, so the
-/// picker must include them.
+/// Agents already carrying an override are not filtered out — the
+/// operator may want to add more keys.
 #[test]
 fn agent_picker_lists_all_allowed_agents_not_filtered_by_existing_overrides() -> Result<()> {
     let temp = tempdir()?;
@@ -2475,9 +2448,7 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
     let (agent, _ws) = outcome.expect("renamed workspace must resolve under the new name");
     assert_eq!(agent.key(), "chainargos/agent-smith");
 
-    // The OLD name must NOT resolve — that's the workspace the operator
-    // renamed away from. Under the bug, the snapshot still had it and
-    // the dispatcher would have happily attempted a launch.
+    // OLD name must not resolve — under the snapshot bug it did.
     let stale_outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
@@ -2490,12 +2461,8 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
     Ok(())
 }
 
-/// Setting `default_agent` on a workspace via `ConfigEditor` after
-/// `ConsoleState` was built must change the dispatch routing on the
-/// next launch attempt: the picker (Branch 3) must short-circuit to a
-/// direct launch (Branch 1). Under the bug, the snapshot's
-/// `default_agent: None` persisted and the dispatcher kept opening the
-/// picker.
+/// Post-edit `default_agent` must short-circuit dispatch from picker
+/// to direct launch.
 #[test]
 fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
     let temp = tempdir()?;
@@ -2560,11 +2527,7 @@ fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
     Ok(())
 }
 
-/// Deleting a workspace via `ConfigEditor` after `ConsoleState` was
-/// built must make subsequent dispatches against that name a no-op
-/// (`Ok(None)`). Under the bug, the snapshot retained the deleted
-/// workspace and `dispatch_launch_for_workspace` would have happily
-/// tried to launch it.
+/// Post-delete dispatch against the old name must return `Ok(None)`.
 #[test]
 fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     let temp = tempdir()?;
@@ -2575,8 +2538,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
         &["chainargos/agent-smith"],
         Some("chainargos/agent-smith"),
     )?;
-    // Seed a second workspace so the delete leaves the config non-empty
-    // (mirrors the operator-visible scenario of "two saved, deleted one").
+    // Survivor so the delete leaves config non-empty.
     let host_path = temp.path().display().to_string();
     let second = WorkspaceConfig {
         workdir: host_path.clone(),

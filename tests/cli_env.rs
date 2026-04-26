@@ -1,10 +1,7 @@
 #![cfg(unix)]
 
-//! Integration coverage for the `jackin config env` and
-//! `jackin workspace env` CLI verbs.
-//!
-//! These tests exercise the real binary end-to-end under a temp `$HOME`
-//! so the config file lives at `$HOME/.config/jackin/config.toml`.
+//! Integration coverage for the `jackin config env` /
+//! `jackin workspace env` CLI verbs against a temp `$HOME`.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -38,9 +35,8 @@ fn read_config(env: &Env) -> String {
     fs::read_to_string(config_path(env)).unwrap()
 }
 
-/// Seed an agent entry in the config file so `[agents.<name>.env]` writes
-/// sit underneath a fully-formed agent table (the `git` field is required
-/// by `AgentSource` serde parsing).
+/// `[agents.<name>]` needs the required `git` field for serde to
+/// accept the table.
 fn seed_agent(env: &Env, name: &str) {
     let path = config_path(env);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -50,7 +46,6 @@ fn seed_agent(env: &Env, name: &str) {
 }
 
 fn seed_workspace(env: &Env, name: &str, workdir: &str) {
-    // Use the create command itself so the config shape is authoritative.
     fs::create_dir_all(workdir).unwrap();
     jackin(env)
         .args(["workspace", "create", name, "--workdir", workdir])
@@ -267,13 +262,8 @@ fn workspace_env_list_unknown_workspace_exits_nonzero() {
         .stderr(predicate::str::contains("no-such-ws"));
 }
 
-// ---- regression coverage for the brick-the-CLI bugs from PR #171 review ----
+// ── brick-the-CLI regressions ───────────────────────────────────
 
-/// `config env set` of a reserved runtime name (e.g. DOCKER_HOST) must
-/// fail loudly without writing the entry. Previously this succeeded
-/// silently, then every subsequent `config env *` command failed at
-/// load with `validate_reserved_names` and the operator could not unset
-/// the offending entry through the CLI.
 #[test]
 fn config_env_set_reserved_name_rejected_with_clear_error() {
     let env = setup_env();
@@ -292,10 +282,6 @@ fn config_env_set_reserved_name_rejected_with_clear_error() {
     }
 }
 
-/// `config env set --agent <unknown>` must fail loudly without writing
-/// a partial `[agents.<name>]` table. Previously the editor would create
-/// `[agents.ghost]` without the required `git` field, which then made
-/// the whole config fail to load until hand-edited.
 #[test]
 fn config_env_set_unknown_agent_rejected() {
     let env = setup_env();
