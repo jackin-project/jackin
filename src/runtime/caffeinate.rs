@@ -89,16 +89,16 @@ fn reconcile_inner(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyh
     let want_running = count_keep_awake_agents(runner)? > 0;
     let pid_path = paths.data_dir.join(PID_FILENAME);
     let current_pid = read_pid_file(&pid_path)?;
-    let alive = current_pid.is_some_and(is_pid_alive);
+    let alive = current_pid.is_some_and(is_caffeinate_alive_at);
 
     match (want_running, alive) {
         (true, true) => {}
         (true, false) => {
-            // Stale PID file (process died, never reaped) — wipe before
-            // overwriting so a failed start doesn't leave garbage behind.
-            if current_pid.is_some() {
-                let _ = std::fs::remove_file(&pid_path);
-            }
+            // Stale or reassigned PID file — wipe before overwriting so a
+            // failed start doesn't leave garbage behind. `remove_file` is
+            // a no-op when the file is already gone; the `let _` swallows
+            // ENOENT.
+            let _ = std::fs::remove_file(&pid_path);
             let pid = spawn_caffeinate()?;
             write_pid_file(&pid_path, pid)?;
         }
@@ -109,11 +109,10 @@ fn reconcile_inner(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyh
             let _ = std::fs::remove_file(&pid_path);
         }
         (false, false) => {
-            // Process is gone but PID file lingered — clean up so future
-            // reconciliations don't keep parsing dead state.
-            if current_pid.is_some() {
-                let _ = std::fs::remove_file(&pid_path);
-            }
+            // Process is gone (or PID was reassigned) but the PID file
+            // lingered — clean up so future reconciliations don't keep
+            // parsing dead state.
+            let _ = std::fs::remove_file(&pid_path);
         }
     }
 
@@ -150,17 +149,39 @@ fn write_pid_file(path: &Path, pid: u32) -> anyhow::Result<()> {
     std::fs::write(path, pid.to_string()).with_context(|| format!("writing {}", path.display()))
 }
 
-/// `kill -0 PID` — exits 0 when the PID exists *and* the caller can
-/// signal it. Treats both "no such process" and any error as dead;
-/// the caller will then re-spawn, which is the safe direction (worst
-/// case we briefly run two assertions, never zero).
-fn is_pid_alive(pid: u32) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stdout(Stdio::null())
+/// Whether the process at `pid` is alive AND is `caffeinate`.
+///
+/// macOS PIDs cycle through ~99k values and are reused quickly. After
+/// jackin exits, the OS may reassign our recorded PID to an unrelated
+/// user-owned process. A bare `kill -0 PID` would treat that as
+/// "still ours" and a later reconcile could SIGTERM the unrelated
+/// process. Checking the process basename against `caffeinate`
+/// closes that race — at the cost of one extra `ps` exec per
+/// reconcile.
+///
+/// Returns `false` on any failure (process gone, ps error, comm
+/// mismatch). The safe direction: a false negative just causes us
+/// to spawn a fresh caffeinate — worst case briefly two assertions,
+/// never an unrelated process killed.
+///
+/// On macOS `ps -o comm=` reports the absolute path (e.g.
+/// `/usr/bin/caffeinate`); on Linux it reports the basename
+/// (potentially truncated to 15 chars, but `caffeinate` is 10).
+/// Splitting on `/` and taking the last component normalizes both.
+fn is_caffeinate_alive_at(pid: u32) -> bool {
+    let Ok(output) = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
         .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+        .output()
+    else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    let comm = String::from_utf8_lossy(&output.stdout);
+    let basename = comm.trim().rsplit('/').next().unwrap_or("");
+    basename == "caffeinate"
 }
 
 /// Spawn `caffeinate -imsu` so it survives jackin exiting *and* the
@@ -190,10 +211,11 @@ fn spawn_caffeinate() -> anyhow::Result<u32> {
         String::from_utf8_lossy(&output.stderr).trim()
     );
 
-    let pid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let pid: u32 = pid_str
+    let raw = String::from_utf8(output.stdout).context("caffeinate PID output not UTF-8")?;
+    let pid: u32 = raw
+        .trim()
         .parse()
-        .with_context(|| format!("parsing caffeinate PID from {pid_str:?}"))?;
+        .with_context(|| format!("parsing caffeinate PID from {:?}", raw.trim()))?;
     Ok(pid)
 }
 
@@ -267,19 +289,18 @@ mod tests {
     }
 
     #[test]
-    fn is_pid_alive_returns_false_for_pid_zero() {
-        // PID 0 is not a real process from a user's perspective; kill -0 0
-        // either succeeds (signalling the whole process group on Linux) or
-        // fails (macOS). We don't depend on the exact answer — only that
-        // the function returns a bool without panicking.
-        let _ = is_pid_alive(0);
+    fn is_caffeinate_alive_at_returns_false_for_nonexistent_pid() {
+        // PID 1 always exists; pick a deliberately huge number unlikely
+        // to be allocated. `ps -p` returns nonzero for missing PIDs.
+        assert!(!is_caffeinate_alive_at(2_000_000_000));
     }
 
     #[test]
-    fn is_pid_alive_for_nonexistent_pid_returns_false() {
-        // PID 1 always exists; pick a deliberately huge number unlikely
-        // to be allocated.
-        assert!(!is_pid_alive(2_000_000_000));
+    fn is_caffeinate_alive_at_returns_false_for_unrelated_process() {
+        // PID 1 is launchd on macOS / init on Linux — alive, but its
+        // comm is not "caffeinate". This is exactly the PID-reuse race
+        // the comm check guards against.
+        assert!(!is_caffeinate_alive_at(1));
     }
 
     #[test]
@@ -299,11 +320,35 @@ mod tests {
         let paths = JackinPaths::for_tests(tmp.path());
         std::fs::create_dir_all(&paths.data_dir).unwrap();
         let pid_path = pid_path_for_tests(&paths);
+        // Use a PID that is definitely not caffeinate. A huge nonexistent
+        // PID exercises the "process gone" branch; PID 1 (launchd/init)
+        // would exercise the "alive but wrong comm" branch — both must
+        // be treated as "needs cleanup."
         std::fs::write(&pid_path, "2000000001").unwrap();
 
         let mut runner = FakeRunner::with_capture_queue([String::new()]);
         reconcile_inner(&paths, &mut runner).unwrap();
 
         assert!(!pid_path.exists(), "stale PID file should be removed");
+    }
+
+    #[test]
+    fn reconcile_inner_clears_pid_file_when_pid_belongs_to_unrelated_process() {
+        let tmp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        std::fs::create_dir_all(&paths.data_dir).unwrap();
+        let pid_path = pid_path_for_tests(&paths);
+        // PID 1 is alive on every Unix host, but its comm is launchd /
+        // init / systemd, never "caffeinate" — so the comm check should
+        // reject it and reconcile should treat the PID file as stale.
+        std::fs::write(&pid_path, "1").unwrap();
+
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+        reconcile_inner(&paths, &mut runner).unwrap();
+
+        assert!(
+            !pid_path.exists(),
+            "PID file pointing at an unrelated live process should be removed"
+        );
     }
 }

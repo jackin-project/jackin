@@ -66,8 +66,11 @@ pub struct WorkspaceConfig {
 /// jackin command boundary; one caffeinate process covers all
 /// active keep-awake workspaces.
 ///
-/// Future-proofing: `command` and `platforms` are reserved for a
-/// follow-up that adds Linux support (e.g. `systemd-inhibit`).
+/// Linux/Windows support (e.g. `systemd-inhibit`) is intentionally
+/// out of scope until a non-mac user reports needing it. Adding
+/// fields here is a schema change because the struct is
+/// `deny_unknown_fields` — extend it intentionally rather than
+/// silently accepting new keys.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct KeepAwakeConfig {

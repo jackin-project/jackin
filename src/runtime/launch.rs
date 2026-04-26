@@ -2321,6 +2321,123 @@ plugins = []
     }
 
     #[test]
+    fn load_agent_emits_keep_awake_label_when_workspace_opted_in() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[identity]
+name = "Agent Smith"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let mut workspace = repo_workspace(&repo_dir);
+        workspace.keep_awake_enabled = true;
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("--label jackin.keep_awake=true"),
+            "agent container with keep_awake_enabled must carry the keep_awake label, \
+             so runtime::caffeinate::reconcile can detect it via docker ps --filter; \
+             actual run command: {run_cmd}"
+        );
+    }
+
+    #[test]
+    fn load_agent_omits_keep_awake_label_when_workspace_opted_out() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[identity]
+name = "Agent Smith"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir); // keep_awake_enabled defaults false
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(
+            !run_cmd.contains("jackin.keep_awake"),
+            "agent container without keep_awake_enabled must not carry the label, \
+             else the reconciler would hold caffeinate for opted-out workspaces; \
+             actual run command: {run_cmd}"
+        );
+    }
+
+    #[test]
     fn load_agent_sets_claude_env_to_jackin() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
