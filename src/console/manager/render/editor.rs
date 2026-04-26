@@ -20,11 +20,7 @@ use crate::operator_env::{is_op_reference, parse_op_reference};
 
 // ── Editor stage ────────────────────────────────────────────────────
 
-pub fn render_editor(
-    frame: &mut Frame,
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) {
+pub fn render_editor(frame: &mut Frame, state: &EditorState<'_>, config: &AppConfig) {
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -539,12 +535,7 @@ pub(in crate::console::manager) fn eligible_agents_for_override(
 
 // Linear match per row kind reads better than scattered helpers.
 #[allow(clippy::too_many_lines)]
-fn render_secrets_tab(
-    frame: &mut Frame,
-    area: Rect,
-    state: &EditorState<'_>,
-    config: &AppConfig,
-) {
+fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
@@ -669,7 +660,11 @@ fn render_secrets_key_line(
     // parse_op_reference doubles as the is-op check: Some → op://,
     // None → plain. One scan instead of two.
     let op_parts = parse_op_reference(value);
-    let marker = if op_parts.is_some() { OP_MARKER } else { NO_MARKER };
+    let marker = if op_parts.is_some() {
+        OP_MARKER
+    } else {
+        NO_MARKER
+    };
     let mut spans = vec![
         Span::raw(cursor_col.to_string()),
         Span::styled(marker.to_string(), dim),
