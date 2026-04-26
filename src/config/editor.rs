@@ -1330,11 +1330,7 @@ auth_forward = "token"
                 dst: "/workspace/new".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
@@ -1365,11 +1361,7 @@ auth_forward = "token"
                 dst: "/workspace/unrelated".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
 
         let mut editor = ConfigEditor::open(&paths).unwrap();

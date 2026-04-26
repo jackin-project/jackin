@@ -1500,11 +1500,7 @@ mod tests {
                 dst: "/x".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         ws.env
             .insert("DOCKER_TLS_VERIFY".to_string(), "0".to_string());
@@ -1530,11 +1526,7 @@ mod tests {
                 dst: "/x".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         ws.agents.insert("agent-smith".to_string(), override_);
         cfg.workspaces.insert("big-monorepo".to_string(), ws);
@@ -1617,11 +1609,7 @@ mod tests {
                 dst: "/x".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         ws.env.insert("X".to_string(), "workspace".to_string());
         let mut wsa = crate::workspace::WorkspaceAgentOverride::default();

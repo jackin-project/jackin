@@ -634,12 +634,7 @@ mod tests {
     fn empty_ws(workdir: &str) -> WorkspaceConfig {
         WorkspaceConfig {
             workdir: workdir.into(),
-            mounts: vec![],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: Default::default(),
-            agents: Default::default(),
+            ..Default::default()
         }
     }
 
@@ -660,10 +655,7 @@ mod tests {
                 },
             ],
             allowed_agents: vec!["agent-smith".into()],
-            default_agent: None,
-            last_agent: None,
-            env: Default::default(),
-            agents: Default::default(),
+            ..Default::default()
         };
         let sum = WorkspaceSummary::from_config("big-monorepo", &ws);
         assert_eq!(sum.name, "big-monorepo");
@@ -701,11 +693,7 @@ mod tests {
                     dst: workdir,
                     readonly: false,
                 }],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: Default::default(),
-                agents: Default::default(),
+                ..Default::default()
             },
         );
         // Second workspace that does NOT match cwd — used to verify the

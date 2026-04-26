@@ -423,12 +423,7 @@ mod tests {
             "my-ws".to_string(),
             workspace::WorkspaceConfig {
                 workdir: "/workspace".to_string(),
-                mounts: vec![],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
         let cwd = std::env::temp_dir();
@@ -740,11 +735,7 @@ mod tests {
                     dst: "/workspace".to_string(),
                     readonly: false,
                 }],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
         let serialized = toml::to_string_pretty(&config).unwrap();

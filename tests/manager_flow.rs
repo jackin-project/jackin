@@ -43,11 +43,7 @@ fn seed_config(paths: &JackinPaths, temp_dir: &std::path::Path) -> Result<AppCon
             dst: host_path,
             readonly: false,
         }],
-        allowed_agents: vec![],
-        default_agent: None,
-        last_agent: None,
-        env: std::collections::BTreeMap::new(),
-        agents: std::collections::BTreeMap::new(),
+        ..Default::default()
     };
 
     let mut ce = ConfigEditor::open(paths)?;
@@ -75,11 +71,8 @@ fn seed_config_with_env(
             dst: host_path,
             readonly: false,
         }],
-        allowed_agents: vec![],
-        default_agent: None,
-        last_agent: None,
         env: env_map,
-        agents: std::collections::BTreeMap::new(),
+        ..Default::default()
     };
     let mut ce = ConfigEditor::open(paths)?;
     ce.create_workspace("big-monorepo", ws)?;
@@ -425,11 +418,8 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             dst: host_path,
             readonly: false,
         }],
-        allowed_agents: vec![],
-        default_agent: None,
-        last_agent: None,
-        env: std::collections::BTreeMap::new(),
         agents,
+        ..Default::default()
     };
     let mut ce = ConfigEditor::open(&paths)?;
     ce.create_workspace("big-monorepo", ws)?;
@@ -1589,11 +1579,8 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             dst: host_path,
             readonly: false,
         }],
-        allowed_agents: vec![],
-        default_agent: None,
-        last_agent: None,
-        env: std::collections::BTreeMap::new(),
         agents,
+        ..Default::default()
     };
     let mut ce = ConfigEditor::open(&paths)?;
     ce.create_workspace("big-monorepo", ws)?;

@@ -275,11 +275,7 @@ mod tests {
             WorkspaceConfig {
                 workdir: "/unrelated".into(),
                 mounts: vec![],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
         let mut state = ManagerState::from_config(&config, cwd);
@@ -355,11 +351,7 @@ mod tests {
             WorkspaceConfig {
                 workdir: "/alpha".into(),
                 mounts: vec![],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                ..Default::default()
             },
         );
         let mut state = ManagerState::from_config(&config, cwd);

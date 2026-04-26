@@ -709,11 +709,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
@@ -755,11 +751,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
@@ -801,11 +793,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
@@ -857,11 +845,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![ro_mount("/work/sub", "/work/sub")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("big-monorepo", ws.clone()).unwrap();
 
@@ -899,11 +883,7 @@ mod tests {
                 mount("/work", "/work"),
                 mount("/work/sub", "/work/sub"), // already redundant
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) =
             setup_with_workspace("legacy-workspace", ws.clone()).unwrap();
@@ -943,11 +923,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("clean-ws", ws.clone()).unwrap();
 
@@ -973,11 +949,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("edit-me", ws.clone()).unwrap();
 
@@ -1008,11 +980,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("exit-me", ws.clone()).unwrap();
 
@@ -1042,11 +1010,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("toast-me", ws.clone()).unwrap();
 
@@ -1093,11 +1057,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("original-name", ws.clone()).unwrap();
 
@@ -1194,11 +1154,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("stay-here", ws.clone()).unwrap();
 
@@ -1227,20 +1183,12 @@ mod tests {
         let ws_a = WorkspaceConfig {
             workdir: "/a".into(),
             mounts: vec![mount("/a", "/a")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let ws_b = WorkspaceConfig {
             workdir: "/b".into(),
             mounts: vec![mount("/b", "/b")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, _) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
         // Add the second workspace on disk.
@@ -1274,20 +1222,12 @@ mod tests {
         let ws_a = WorkspaceConfig {
             workdir: "/a".into(),
             mounts: vec![mount("/a", "/a")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let ws_b = WorkspaceConfig {
             workdir: "/b".into(),
             mounts: vec![mount("/b", "/b")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, _) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
         let mut config = {
@@ -1425,11 +1365,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/old".into(),
             mounts: vec![mount("/old", "/old")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("diff-me", ws.clone()).unwrap();
         let cwd = tmp.path();
@@ -1461,11 +1397,7 @@ mod tests {
         let ws = WorkspaceConfig {
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         let (tmp, paths, mut config) = setup_with_workspace("collapsy", ws.clone()).unwrap();
         let cwd = tmp.path();
