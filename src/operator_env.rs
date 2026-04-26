@@ -224,14 +224,26 @@ fn format_exit_status(status: std::process::ExitStatus) -> String {
         .map_or_else(|| "signal".to_string(), |c| c.to_string())
 }
 
-/// Truncate a stderr string to `OP_STDERR_MAX` bytes with a visible
-/// marker. Returns an owned `String` in either branch.
+/// Truncate a stderr string to roughly `OP_STDERR_MAX` bytes with a
+/// visible marker. Returns an owned `String` in either branch.
+///
+/// The slice is rounded down to the nearest UTF-8 char boundary at or
+/// before `OP_STDERR_MAX` so this never panics — the previous
+/// `&stderr[..OP_STDERR_MAX]` form would split a multi-byte codepoint
+/// (an `op` error in a non-ASCII locale, or any future output
+/// containing emoji / box-drawing) and crash on the error path.
 fn truncate_stderr(stderr: &str) -> String {
-    if stderr.len() > OP_STDERR_MAX {
-        format!("{}… [truncated]", &stderr[..OP_STDERR_MAX])
-    } else {
-        stderr.to_owned()
+    if stderr.len() <= OP_STDERR_MAX {
+        return stderr.to_owned();
     }
+    // Walk back from `OP_STDERR_MAX` until we land on a char boundary.
+    // The maximum walk is 3 bytes (UTF-8 codepoints are 1-4 bytes
+    // wide); `is_char_boundary(0)` is always true so this terminates.
+    let mut end = OP_STDERR_MAX;
+    while !stderr.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}… [truncated]", &stderr[..end])
 }
 
 /// Drain a child's stderr into a buffer capped at `OP_STDERR_MAX + 1`
@@ -1634,6 +1646,65 @@ mod tests {
         // Tests that require fake binaries are cfg-gated to unix; on
         // other platforms they are no-ops because the launch path
         // itself is unix-only in this codebase.
+    }
+
+    /// Regression — short input must be returned unchanged, no
+    /// allocation beyond the `to_owned`. This guards the early-exit
+    /// branch in `truncate_stderr`.
+    #[test]
+    fn truncate_stderr_returns_input_for_short_string() {
+        let s = "short error message";
+        assert_eq!(truncate_stderr(s), s);
+    }
+
+    /// Regression — pure ASCII input that exceeds `OP_STDERR_MAX` is
+    /// truncated at exactly `OP_STDERR_MAX` bytes (every ASCII byte
+    /// is a char boundary, so the boundary walk-back never fires).
+    #[test]
+    fn truncate_stderr_truncates_long_ascii_at_boundary() {
+        let s: String = "x".repeat(OP_STDERR_MAX + 100);
+        let out = truncate_stderr(&s);
+        assert!(
+            out.starts_with(&s[..OP_STDERR_MAX]),
+            "ASCII truncation must keep exactly OP_STDERR_MAX bytes"
+        );
+        assert!(out.ends_with("[truncated]"));
+    }
+
+    /// Construct a string whose byte at `OP_STDERR_MAX` falls inside a
+    /// multi-byte UTF-8 character. Slicing on byte index would have
+    /// panicked; the new char-boundary path must round down and
+    /// produce a valid string.
+    #[test]
+    fn truncate_stderr_does_not_panic_on_utf8_boundary() {
+        // Build a buffer of ASCII padding + a 4-byte emoji (`U+1F4A9`,
+        // pile-of-poo) such that the emoji straddles `OP_STDERR_MAX`.
+        let pad_len = OP_STDERR_MAX - 2;
+        let mut s = String::with_capacity(pad_len + 16);
+        s.push_str(&"a".repeat(pad_len));
+        // Append several emoji so total length is well over the cap;
+        // byte index `OP_STDERR_MAX` lands inside the first emoji.
+        for _ in 0..10 {
+            s.push('\u{1F4A9}');
+        }
+        assert!(
+            !s.is_char_boundary(OP_STDERR_MAX),
+            "test fixture must place a non-boundary byte at OP_STDERR_MAX; \
+             got is_char_boundary == true"
+        );
+        let out = truncate_stderr(&s);
+        // The truncated head must still be valid UTF-8 (which it is by
+        // construction since `out: String`) and end on a char boundary
+        // before `OP_STDERR_MAX`.
+        assert!(out.ends_with("[truncated]"));
+        let head = out
+            .strip_suffix("… [truncated]")
+            .expect("truncate marker present");
+        assert!(
+            head.is_char_boundary(head.len()),
+            "truncated head must end on a UTF-8 char boundary"
+        );
+        assert!(head.len() <= OP_STDERR_MAX);
     }
 
     use std::collections::BTreeMap;
