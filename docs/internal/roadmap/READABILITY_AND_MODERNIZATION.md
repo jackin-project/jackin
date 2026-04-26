@@ -158,7 +158,7 @@ jackin/
 | `console/manager/input/prelude.rs` | 533 | — | workspace-create wizard input | manager/* |
 | `console/manager/input/mouse.rs` | 689 | — | mouse event handling for manager | manager/* |
 | `console/manager/render/mod.rs` | — | `render` | render dispatch for manager stages | manager/render/* |
-| `console/manager/render/list.rs` | 1122 | — | list view drawing | ratatui |
+| `console/manager/render/list.rs` | 1989 | — | list view drawing (left column, right-pane details, toast) | ratatui |
 | `console/manager/render/editor.rs` | 1666 | — | editor tabs drawing (General, Mounts, Agents, Secrets) | ratatui |
 | `console/manager/render/modal.rs` | — | — | modal overlay rendering | ratatui |
 | `console/manager/mount_info.rs` | 745 | — | mount-info formatting for TUI rows | workspace |
@@ -226,14 +226,14 @@ Files with >500 lines (verified counts). **Production LOC** is the critical metr
 | `src/runtime/launch.rs` | 2368 | **1085** | 1282 | 3× `too_many_lines` | **Highest** — production code is genuinely large |
 | `src/app/mod.rs` | 951 | **928** | 22 | 1× `too_many_lines` | **High** — nearly all production; 928L dispatch function |
 | `src/operator_env.rs` | 1569 | **810** | 758 | 0 | **High** — production and tests roughly equal |
-| `src/console/manager/state.rs` | 865 | **577** | 287 | 0 | **Medium** — Modal enum + EditorState logic |
+| `src/console/manager/state.rs` | 992 | **~628** | ~363 | 0 | **High** — 26+ type definitions (Modal enum, EditorState, CreatePreludeState, etc.) mixed with impl behavior; prime candidate for types/behavior split |
 | `src/console/manager/input/save.rs` | 1418 | **567** | 850 | 2× `too_many_lines` | **Medium** — ConfirmSave pipeline |
 | `src/console/manager/input/editor.rs` | 1304 | **547** | 756 | 3× `too_many_lines` | **Medium** — editor key bindings |
 | `src/app/context.rs` | 800 | **347** | 452 | 0 | Low — tests dominate |
 | `src/console/manager/render/editor.rs` | 1666 | **~736** | ~930 (4 interspersed `#[cfg(test)]` blocks at lines 737, 923, 1055, 1574) | 0 | **Medium-High** — production grew with PR #171 (Secrets/Environments tab added); split by tab is now justified |
 | `src/workspace/planner.rs` | 718 | **235** | 482 | 0 | Low — tests dominate |
 | `src/console/manager/input/mouse.rs` | 689 | **206** | 482 | 0 | Low — tests dominate |
-| `src/console/manager/render/list.rs` | 1122 | **404** | 718 | 0 | Low-medium — multiple interspersed test blocks |
+| `src/console/manager/render/list.rs` | 1989 | **~668** | ~1320 | 0 | **Medium-High** — PR #171 added `render_environments_subpanel` (~200L production), pushing past the 500L threshold; 3 test blocks interspersed at lines 669, 812, 860 |
 | `src/config/editor.rs` | 1467 | **503** | 963 | 0 | Medium — production reasonable; tests dominate |
 | `src/tui/animation.rs` | 582 | ~582 (no test section found) | ~0 | 1× `too_many_lines` | Medium — all production (animation logic) |
 | `src/runtime/cleanup.rs` | 587 | **220** | 366 | 0 | Low |
@@ -636,6 +636,33 @@ The hotspot table previously listed this as 782L with no tests. PR #171 added th
 
 **Auditability gain:** To audit "did the AI correctly implement the Secrets tab?", a reviewer reads only `editor/secrets.rs` (~250L) including its tests. Today they must scan 1666L. This split is especially valuable given the Secrets tab handles 1Password references — a security-adjacent concern warranting focused review.
 
+**New Rule 5 violator: `src/console/manager/state.rs` (992L, ~628L production)**
+
+Production code is 628L (tests start at line 629). The file mixes 26+ type definitions with two `impl` blocks containing non-trivial behavior:
+
+| Lines | Content | Kind |
+|---|---|---|
+| 23–80 | `ManagerListRow`, `DragState`, `clamp_split`, constants | Types + pure fn |
+| 82–100 | `ManagerStage`, `WorkspaceSummary` | Types |
+| 102–200 | `EditorState` struct, `EditorSaveFlow`, `PendingSaveCommit`, `EditorMode`, `EditorTab`, `FieldFocus` | Types |
+| 205–260 | `Modal` enum (10 variants: TextInput, FileBrowser, MountDstChoice, WorkdirPick, Confirm, SaveDiscardCancel, GithubPicker, ConfirmSave, ErrorPopup, OpPicker, AgentPicker, AgentOverridePicker, SourcePicker, ScopePicker) | Types |
+| 263–340 | `TextInputTarget`, `FileBrowserTarget`, `ConfirmTarget`, `SecretsScopeTag`, `ExitIntent`, `CreatePreludeState`, `CreateStep`, `Toast`, `ToastKind` | Types |
+| 354–478 | `impl ManagerState` — 12 methods including `from_config_with_cache_and_op`, `poll_picker_loads` | Behavior |
+| 479–583 | `impl EditorState` — `new_edit`, `new_create`, `is_dirty`, `change_count` | Behavior |
+| 585–628 | `env_change_count`, `Default for CreatePreludeState`, `impl CreatePreludeState` | Behavior + helpers |
+
+**Proposed split — convert to `console/manager/state/` module directory:**
+
+- `state/mod.rs` (~30L): module declarations, re-exports for all public types
+- `state/types.rs` (~280L): all 26+ type definitions with no impl blocks — `ManagerListRow`, `DragState`, `clamp_split`, `ManagerStage`, `WorkspaceSummary`, `EditorState` struct, `EditorSaveFlow`, `PendingSaveCommit`, `EditorMode`, `EditorTab`, `FieldFocus`, `Modal`, all target/intent enums, `Toast`, `ToastKind`
+- `state/manager.rs` (~150L): `impl ManagerState` (12 methods) + its tests
+- `state/editor.rs` (~130L): `impl EditorState` + `env_change_count` helper + its tests
+- `state/create.rs` (~80L): `impl CreatePreludeState` + `Default for CreatePreludeState` + its tests
+
+**Auditability gain:** To audit "does the editor dirty-detection correctly count environment variable changes?", a reviewer reads `editor.rs` (~130L) containing `impl EditorState::change_count` and `env_change_count`. Today they scan the entire 992L file to find those two functions. The type/behavior separation is especially valuable here because `Modal` (10+ variants) visually dominates the file and is irrelevant to the dirty-detection question.
+
+**Key structural note:** `ManagerStage` (line 84) holds `EditorState` and `CreatePreludeState` as enum variants — these types must be in `types.rs` together to avoid circular imports. The `impl` blocks for each struct then live in separate files importing from `types.rs`. This is the same impl-extension pattern already used in `config/`.
+
 **Rule 6: Rustdoc on every `pub` and `pub(crate)` item.**
 Current coverage = 41% (37/90 files have `//!` module docs — exact count). Adding `#![warn(missing_docs)]` to `Cargo.toml` or `src/lib.rs` would surface the gap as compiler warnings. The gate should be CI-enforced once the initial coverage pass is done. The 53 undocumented files are concentrated in `src/app/`, `src/cli/`, `src/instance/`, `src/runtime/`, and root helpers — see §1 for the breakdown.
 
@@ -819,13 +846,13 @@ ratatui provides `TestBackend` which captures rendered cells to a `Buffer`. `ins
 
 **Concrete first 3 snapshot tests** (function names grep-confirmed in current codebase):
 
-All three are private functions. Rust inline tests access private functions via `use super::*` inside `#[cfg(test)] mod tests { ... }`. This pattern is already in use in `list.rs` — the existing test at `list.rs:720` calls `render_mounts_subpanel` directly, confirming no visibility change is needed.
+All three are private functions. Rust inline tests access private functions via `use super::*` inside `#[cfg(test)] mod tests { ... }`. This pattern is already in use in `list.rs` — the existing test at `list.rs:944` calls `render_mounts_subpanel` directly, confirming no visibility change is needed.
 
-1. **`render_sentinel_description_pane`** (`src/console/manager/render/list.rs:306`) — `fn render_sentinel_description_pane(frame: &mut Frame, area: Rect)`. Takes only frame and area; zero state input; renders the static "+ New workspace" description panel. Simplest possible snapshot test — no fixture construction. Terminal size 80×10 suffices. Approx 10 lines of test code including the `TestBackend` setup.
+1. **`render_sentinel_description_pane`** (`src/console/manager/render/list.rs:332`) — `fn render_sentinel_description_pane(frame: &mut Frame, area: Rect)`. Takes only frame and area; zero state input; renders the static "+ New workspace" description panel. Simplest possible snapshot test — no fixture construction. Terminal size 80×10 suffices. Approx 10 lines of test code including the `TestBackend` setup.
 
-2. **`render_tab_strip`** (`src/console/manager/render/editor.rs:180`) — `fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab)`. Takes frame, area, and `EditorTab` enum value. Enumerate all 4 tab variants (`General`, `Mounts`, `Agents`, `Secrets`/stub) as separate snapshot assertions. Terminal size 80×3 (just the strip). 4 snapshots, ~20 lines of test code.
+2. **`render_tab_strip`** (`src/console/manager/render/editor.rs:269`) — `fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab)`. Takes frame, area, and `EditorTab` enum value. Enumerate all 4 tab variants (`General`, `Mounts`, `Agents`, `Secrets`) as separate snapshot assertions. Terminal size 80×3 (just the strip). 4 snapshots, ~20 lines of test code.
 
-3. **`render_mounts_subpanel`** (`src/console/manager/render/list.rs:408`) — `fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::workspace::MountConfig])`. Three cases: empty slice, 1 mount, 3 mounts. `MountConfig` can be constructed with `MountConfig { src: "/home/op/project".into(), dst: "/workspace/project".into(), read_only: false }`. Terminal size 60×20. ~30 lines of test code covering 3 snapshots.
+3. **`render_mounts_subpanel`** (`src/console/manager/render/list.rs:433`) — `fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::workspace::MountConfig])`. Three cases: empty slice, 1 mount, 3 mounts. `MountConfig` can be constructed with `MountConfig { src: "/home/op/project".into(), dst: "/workspace/project".into(), read_only: false }`. Terminal size 60×20. ~30 lines of test code covering 3 snapshots.
 
 These 3 tests together exercise 2 different render modules, cover both zero-state and data-driven cases, and catch any future column-width, padding, or color-palette regressions in the most-visited code paths.
 
@@ -840,7 +867,7 @@ Applicable to parsing functions (`src/selector.rs`, `src/workspace/mounts.rs`, `
 
 **Cost (A):** Low — add `insta` + write ~10 snapshot tests. One-time setup; ongoing maintenance at each visual change.
 
-**Gain (A):** jackin's TUI has complex multi-tab rendering with 13+ `#[allow(clippy::too_many_lines)]` suppressions. Any refactor touching `render/list.rs` (1122L) or `render/editor.rs` (1666L — grew with PR #171's Secrets tab) currently has no automated regression net. Snapshot tests would provide one.
+**Gain (A):** jackin's TUI has complex multi-tab rendering with 13+ `#[allow(clippy::too_many_lines)]` suppressions. Any refactor touching `render/list.rs` (1989L — grew with PR #171's Environments subpanel) or `render/editor.rs` (1666L — grew with PR #171's Secrets tab) currently has no automated regression net. Snapshot tests would provide one.
 
 **Recommendation:**
 - `adopt` `insta` + `TestBackend` snapshot testing (approach A) — clear gain, low cost.
@@ -1439,7 +1466,27 @@ The ordering is: files most likely to be opened cold, most likely to contain AI-
    //! This indirection means unit tests never spawn Docker processes.
    ```
 
-4. **`src/workspace/mod.rs`** (central concept; used everywhere):
+4. **`src/instance/auth.rs`** (security-critical credential operations; four non-obvious invariants — the highest audit-risk file not yet documented):
+   ```rust
+   //! Auth-forward: host-to-agent-container credential provisioning.
+   //!
+   //! Implements three [`AuthForwardMode`] strategies (Ignore, Token, Sync).
+   //!
+   //! Four security invariants an auditor must verify:
+   //! 1. **0o600 permissions** — `write_private_file` enforces owner-read-only via
+   //!    `PermissionsExt`; loosening this exposes host credentials to other users.
+   //! 2. **Symlink rejection** — `reject_symlink` calls `symlink_metadata` (lstat)
+   //!    before any write; a compromised agent could replace `.credentials.json`
+   //!    with a symlink to redirect host-side writes to arbitrary paths.
+   //! 3. **TOCTOU-safe writes** — `NamedTempFile` (opened O_EXCL) + atomic rename
+   //!    closes the check-time/use-time window; a pre-planted symlink at the temp
+   //!    path is impossible.
+   //! 4. **macOS Keychain fallback** — `read_host_credentials` falls back to
+   //!    `security find-generic-password -s "Claude Code-credentials"` only when
+   //!    `host_home` matches `BaseDirs::home_dir()` — keeps tests hermetic.
+   ```
+
+5. **`src/workspace/mod.rs`** (central concept; used everywhere):
    ```rust
    //! Workspace model — named associations of workdir, mounts, and agents.
    //!
@@ -1449,7 +1496,7 @@ The ordering is: files most likely to be opened cold, most likely to contain AI-
    //! mount deduplication ([`planner`]), lookup ([`resolve`]).
    ```
 
-5. **`src/selector.rs`** (the `ClassSelector` type is in 17 files; the `/`→`__` invariant is not obvious):
+6. **`src/selector.rs`** (the `ClassSelector` type is in 17 files; the `/`→`__` invariant is not obvious):
    ```rust
    //! Agent selector parsing — the string passed to `jackin load` or `jackin eject`.
    //!
@@ -1459,7 +1506,7 @@ The ordering is: files most likely to be opened cold, most likely to contain AI-
    //! `ns/agent` and `ns-agent` produce different image names.
    ```
 
-6. **`src/instance/mod.rs`** (naming conventions; the `__` separator invariant):
+7. **`src/instance/mod.rs`** (naming conventions; the `__` separator invariant):
    ```rust
    //! Per-container naming and state conventions.
    //!
@@ -1469,7 +1516,7 @@ The ordering is: files most likely to be opened cold, most likely to contain AI-
    //! `chainargos/agent` → `jackin-chainargos__agent` (not `jackin-chainargos-agent`).
    ```
 
-7. **`src/paths.rs`** (XDG layout; needed to understand where data lives):
+8. **`src/paths.rs`** (XDG layout; needed to understand where data lives):
    ```rust
    //! XDG-compliant data and config directory resolution.
    //!
@@ -1478,7 +1525,7 @@ The ordering is: files most likely to be opened cold, most likely to contain AI-
    //! Every module that reads or writes persistent state receives a `&JackinPaths`.
    ```
 
-8. **`src/env_resolver.rs`** (interactive env prompting; the prompting contract is invisible from callsites):
+9. **`src/env_resolver.rs`** (interactive env prompting; the prompting contract is invisible from callsites):
    ```rust
    //! Runtime operator-env resolution with interactive prompts.
    //!
@@ -1487,7 +1534,7 @@ The ordering is: files most likely to be opened cold, most likely to contain AI-
    //! interactively. The prompt is skipped in non-TTY environments.
    ```
 
-9. **`src/tui/mod.rs`** (palette constants; DEBUG_MODE flag; shared across all TUI code):
+10. **`src/tui/mod.rs`** (palette constants; DEBUG_MODE flag; shared across all TUI code):
    ```rust
    //! Terminal UI palette, helpers, and global debug flag.
    //!
@@ -1496,7 +1543,7 @@ The ordering is: files most likely to be opened cold, most likely to contain AI-
    //! `output.rs`). All TUI code imports from here — keep it thin.
    ```
 
-10. **`src/repo.rs`** (agent repo validation; the contract between `jackin` and agent repos):
+11. **`src/repo.rs`** (agent repo validation; the contract between `jackin` and agent repos):
     ```rust
     //! Agent repository validation.
     //!

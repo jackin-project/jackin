@@ -705,3 +705,43 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 `src/instance/auth.rs` (796L) split** — not yet analyzed. This is the auth-forward module; it likely maps cleanly to 3 files (types, apply, test). Needs reading.
 2. **§4 `src/console/manager/` overall structure** — the manager module is the TUI's core. Beyond `render/editor.rs`, there are other large files (`list.rs` 1122L, `state.rs` ~large) that haven't been split-analyzed.
 3. **§9 OQ2 — `agent_allow.rs` scope** — `src/console/manager/agent_allow.rs` responsibility not yet verified. Relevant to the TUI structural analysis.
+
+---
+
+## Iteration 17 — 2026-04-26
+
+### Improvements chosen
+
+1. **`instance/auth.rs` analysis — no split needed; promoted to `//!` priority queue** — read the full production structure (178L production, 585L tests). Single dominant concern: auth credential forwarding from host to agent container. Too small to split. However, the file contains four non-obvious security invariants (0o600 permissions, symlink rejection, TOCTOU-safe writes via NamedTempFile+rename, macOS Keychain fallback) that are invisible to a reviewer who hasn't read the code carefully. Added to `//!` priority queue at position #4 (above workspace/mod.rs) with a draft doc that explicitly names all four invariants. This is the security-adjacent file with the highest audit-risk-per-line in the codebase.
+
+2. **Stale line count corrections — `render/list.rs` and `state.rs`** — measured both files. `render/list.rs` is 1989L (was listed as 1122L — PR #171 added `render_environments_subpanel` before the test blocks at line 669, growing production from ~404L to ~668L). `state.rs` is 992L (was 865L). Priority upgraded: list.rs from "Low-medium" → "Medium-High" (production now above 500L threshold); state.rs from "Medium" → "High". Also corrected three function line numbers in §7.9 snapshot test targets: `render_sentinel_description_pane` 306→332, `render_mounts_subpanel` 408→433, `render_tab_strip` 180→269; corrected inline test reference `list.rs:720` → `list.rs:944`. Also updated §7.5 Gain(A) line count reference.
+
+3. **`state.rs` split proposal — new §4 Rule 5 violator analysis** — mapped all 628L of production code in state.rs. Identified 26+ type definitions interspersed with two impl blocks (`impl ManagerState` 12 methods, `impl EditorState` 4 methods + change_count logic). Proposed 5-file module directory split: `types.rs` (all 26+ types), `manager.rs` (impl ManagerState), `editor.rs` (impl EditorState + env_change_count), `create.rs` (impl CreatePreludeState), `mod.rs` (re-exports). Key structural note: `ManagerStage` holds `EditorState` and `CreatePreludeState` as variants — these must all be in `types.rs` together to avoid circular imports.
+
+### What was read
+- `src/instance/auth.rs` (full — 796L): `provision_claude_auth` (lines 17–77), `copy_host_claude_json` (81–84), `read_host_credentials` (92–125) with macOS Keychain fallback, `reject_symlink` (135–147), `write_private_file` (157–182) with NamedTempFile+rename, `repair_permissions` (187–209). Tests start at line 211 (585L of tests).
+- `src/console/manager/state.rs` (structure traced): all top-level items via grep; `ManagerState` struct (lines 41–59), `ManagerStage` enum (84–89), `EditorState` struct (103–142), `Modal` enum (205–260, 10+ variants), `impl ManagerState` (354–478, 12 methods including `from_config_with_cache_and_op`, `poll_picker_loads`), `impl EditorState` (479–583)
+- `src/console/manager/render/list.rs` (line count + structure): 1989L total; function list via grep (`render_list_body`, `render_toast`, `render_details_pane`, `render_sentinel_description_pane:332`, `render_mounts_subpanel:433`, `render_environments_subpanel:506`, `render_agents_subpanel:608`); test blocks at lines 669, 812, 860
+- `src/console/manager/render/editor.rs`: grep confirmed `render_tab_strip` at line 269 (was cited as 180)
+
+### What changed in the roadmap
+- §1 module map: `render/list.rs` 1122 → 1989
+- §1 hot-spot table: `render/list.rs` row (1122→1989, 404→~668, 718→~1320, priority Low-medium→Medium-High, PR #171 note); `state.rs` row (865→992, 577→~628, 287→~363, priority Medium→High)
+- §4 Rule 5: Added `state.rs` as new violator with full function table, 5-file split proposal, and `ManagerStage` circular-import note
+- §7.5 Gain(A): Updated render/list.rs line count reference
+- §7.9 snapshot targets: Corrected all four line-number references
+- §10 Step 5: Added `instance/auth.rs` as new position #4 in priority queue; renumbered 4–10 → 5–11
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| `instance/auth.rs` no-split verdict | High | 178L production confirmed by reading function boundaries |
+| `instance/auth.rs` //! security invariants | High | All 4 invariants read directly from source (symlink_metadata, NamedTempFile, BaseDirs comparison) |
+| `state.rs` split proposal | High | All 26+ types and impl blocks confirmed via grep + selective reading |
+| `render/list.rs` 1989L | High | `wc -l` confirmed; function line numbers verified by grep |
+| §7.9 line corrections | High | All corrected values grep-verified in current source |
+
+### Weakest sections for iteration 18
+1. **§4 `render/list.rs` split proposal** — now confirmed 668L production code (Medium-High priority); deserves the same treatment as `render/editor.rs` — a function-by-panel split. Not yet in roadmap as a proposed split.
+2. **§9 OQ2 — `agent_allow.rs` scope** — still unread; needed to complete the TUI structural picture.
+3. **§4 `console/manager/input/save.rs` (567L production)** — second-largest input handler; not analyzed. Likely handles the ConfirmSave multi-step modal which is AI-generated logic with complex state transitions.
