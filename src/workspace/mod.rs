@@ -26,7 +26,7 @@ pub struct MountConfig {
     pub readonly: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceConfig {
     pub workdir: String,
     #[serde(default)]

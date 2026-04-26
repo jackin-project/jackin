@@ -28,13 +28,8 @@ mod tests {
 
     fn ws_with_allowed(allowed: Vec<String>) -> WorkspaceConfig {
         WorkspaceConfig {
-            workdir: String::new(),
-            mounts: vec![],
             allowed_agents: allowed,
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         }
     }
 

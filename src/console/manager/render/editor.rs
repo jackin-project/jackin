@@ -789,17 +789,12 @@ mod contextual_row_items_tests {
     /// pointing at `src`. The cursor is on row 0 (the mount we just added).
     fn editor_at_mounts_row0(src: &str) -> EditorState<'static> {
         let ws = WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![MountConfig {
                 src: src.to_string(),
                 dst: src.to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Mounts;
@@ -953,13 +948,8 @@ mod agents_tab_render_tests {
 
     fn ws_with_allowed(names: &[&str]) -> WorkspaceConfig {
         WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
             allowed_agents: names.iter().map(|s| (*s).into()).collect(),
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         }
     }
 
@@ -1095,13 +1085,8 @@ mod secrets_tab_render_tests {
         let mut env = std::collections::BTreeMap::new();
         env.insert("DB_URL".into(), "postgres://localhost/db".into());
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
             env,
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
@@ -1120,13 +1105,8 @@ mod secrets_tab_render_tests {
             WorkspaceAgentOverride { env: agent_env },
         );
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
             agents,
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
@@ -1227,16 +1207,7 @@ mod secrets_tab_render_tests {
 
     #[test]
     fn secrets_tab_cursor_skips_workspace_header_label() {
-        let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
-        };
-        let editor = EditorState::new_edit("ws".into(), ws);
+        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         let rows = super::secrets_flat_rows(&editor, &AppConfig::default());
         assert!(
             !rows.is_empty(),
@@ -1255,16 +1226,7 @@ mod secrets_tab_render_tests {
 
     #[test]
     fn secrets_tab_empty_renders_only_sentinel() {
-        let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
-        };
-        let editor = EditorState::new_edit("ws".into(), ws);
+        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         let dump = render_to_dump(&editor);
 
         assert!(
@@ -1290,13 +1252,8 @@ mod secrets_tab_render_tests {
         let mut env = std::collections::BTreeMap::new();
         env.insert("DB_URL".into(), "op://Work/db/password".into());
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
             env,
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
@@ -1345,13 +1302,8 @@ mod secrets_tab_render_tests {
             "op://Personal/API Keys/auth/secret_key".into(),
         );
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
             env,
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
@@ -1392,13 +1344,8 @@ mod secrets_tab_render_tests {
         let mut env = std::collections::BTreeMap::new();
         env.insert("DB_URL".into(), "op://Work/db/password".into());
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
             env,
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
@@ -1420,13 +1367,8 @@ mod secrets_tab_render_tests {
         let mut env = std::collections::BTreeMap::new();
         env.insert("DEBUG".into(), "1".into());
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
             env,
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
@@ -1444,13 +1386,8 @@ mod secrets_tab_render_tests {
         let mut env = std::collections::BTreeMap::new();
         env.insert("DB_URL".into(), "op://Work/db/password".into());
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
             env,
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
@@ -1469,13 +1406,8 @@ mod secrets_tab_render_tests {
         let mut env = std::collections::BTreeMap::new();
         env.insert("DEBUG".into(), "1".into());
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
             env,
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
@@ -1510,13 +1442,8 @@ mod secrets_tab_render_tests {
         env.insert("ALPHA".into(), "a".into());
         env.insert("MIKE".into(), "m".into());
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
             env,
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
@@ -1544,13 +1471,9 @@ mod secrets_tab_render_tests {
             WorkspaceAgentOverride { env: agent_env },
         );
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
             env,
             agents,
+            ..WorkspaceConfig::default()
         };
         let editor = EditorState::new_edit("ws".into(), ws);
         let rows = super::secrets_flat_rows(&editor, &AppConfig::default());
@@ -1581,13 +1504,8 @@ mod secrets_tab_render_tests {
         );
         agents.insert("agent-smith".into(), WorkspaceAgentOverride { env: b_env });
         let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
             agents,
+            ..WorkspaceConfig::default()
         };
         let editor = EditorState::new_edit("ws".into(), ws);
         let rows = super::secrets_flat_rows(&editor, &AppConfig::default());
@@ -1631,13 +1549,9 @@ mod eligible_agents_for_override_tests {
             agents.insert((*a).into(), WorkspaceAgentOverride { env });
         }
         WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
             allowed_agents: allowed.iter().map(|s| (*s).into()).collect(),
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
             agents,
+            ..WorkspaceConfig::default()
         }
     }
 

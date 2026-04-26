@@ -1178,15 +1178,7 @@ mod tests {
     }
 
     fn empty_ws() -> WorkspaceConfig {
-        WorkspaceConfig {
-            workdir: String::new(),
-            mounts: Vec::new(),
-            allowed_agents: Vec::new(),
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
-        }
+        WorkspaceConfig::default()
     }
 
     fn config_with_agents(names: &[&str]) -> AppConfig {
@@ -1224,17 +1216,12 @@ mod tests {
 
     fn ws_with_one_mount(readonly: bool) -> WorkspaceConfig {
         WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![MountConfig {
                 src: "/host/a".into(),
                 dst: "/host/a".into(),
                 readonly,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         }
     }
 
@@ -1262,16 +1249,7 @@ mod tests {
     /// function is `apply_file_browser_to_editor`, which opens the new
     /// `MountDstChoice` modal instead of the old "push + TextInput" chain.
     fn editor_with_browser_committed(src: &str) -> EditorState<'static> {
-        let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: vec![],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
-        };
-        let mut editor = EditorState::new_edit("ws".into(), ws);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.active_tab = EditorTab::Mounts;
         editor.active_field = FieldFocus::Row(0);
         apply_file_browser_to_editor(
@@ -1292,17 +1270,8 @@ mod tests {
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
         let config = AppConfig::default();
-        let ws = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: vec![],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
-        };
         let mut state = ManagerState::from_config(&config, tmp.path());
-        let mut editor = EditorState::new_edit("ws".into(), ws);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.active_tab = start_tab;
         state.stage = ManagerStage::Editor(editor);
         (state, config, paths, tmp)

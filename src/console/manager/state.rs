@@ -497,15 +497,7 @@ impl EditorState<'_> {
     }
 
     pub fn new_create() -> Self {
-        let empty = WorkspaceConfig {
-            workdir: String::new(),
-            mounts: vec![],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::default(),
-            agents: std::collections::BTreeMap::default(),
-        };
+        let empty = WorkspaceConfig::default();
         Self {
             mode: EditorMode::Create,
             active_tab: EditorTab::General,

@@ -403,18 +403,13 @@ mod tests {
         .unwrap();
 
         let ws = WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![
                 mount(repo_a.to_str().unwrap(), "/a"),
                 mount(plain.to_str().unwrap(), "/p"),
                 mount(repo_b.to_str().unwrap(), "/b"),
                 mount(gitlab.to_str().unwrap(), "/g"),
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
 
         let choices = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
@@ -437,13 +432,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = make_github_repo(tmp.path(), "solo", "trunk");
         let ws = WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![mount(repo.to_str().unwrap(), "/solo")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let choices = crate::console::manager::github_mounts::resolve_for_workspace(&ws);
         assert_eq!(choices.len(), 1);
@@ -456,16 +446,11 @@ mod tests {
         let repo_a = make_github_repo(tmp.path(), "repo-a", "main");
         let repo_b = make_github_repo(tmp.path(), "repo-b", "main");
         let ws = WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![
                 mount(repo_a.to_str().unwrap(), "/a"),
                 mount(repo_b.to_str().unwrap(), "/b"),
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
 
@@ -492,13 +477,8 @@ mod tests {
         let plain = tmp_src.path().join("plain");
         std::fs::create_dir(&plain).unwrap();
         let ws = WorkspaceConfig {
-            workdir: String::new(),
             mounts: vec![mount(plain.to_str().unwrap(), "/p")],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..WorkspaceConfig::default()
         };
         let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
 
@@ -531,18 +511,9 @@ mod tests {
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
-        config.workspaces.insert(
-            "demo".into(),
-            WorkspaceConfig {
-                workdir: String::new(),
-                mounts: vec![],
-                allowed_agents: vec![],
-                default_agent: None,
-                last_agent: None,
-                env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
-            },
-        );
+        config
+            .workspaces
+            .insert("demo".into(), WorkspaceConfig::default());
         let mut state = ManagerState::from_config(&config, tmp.path());
         state.selected = 0;
 
