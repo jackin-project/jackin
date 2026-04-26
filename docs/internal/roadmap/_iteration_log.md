@@ -634,3 +634,38 @@ PR #182 merged. New branch: `analysis/code-readability`. Operator direction: **p
 1. **§4 4d `operator_env.rs` — cross-cluster dependency verification** — the split proposes `layers.rs` imports `OpRunner` from `mod.rs` but not `OpCli` from `client.rs`. This needs to be verified by reading `resolve_operator_env_with` (line 512–633) to confirm it only calls `op_runner: &R: OpRunner` and never reaches into `OpCli` internals.
 2. **§4 4f `runtime/launch.rs` — `trust.rs` split safety** — `confirm_agent_trust` (lines 216–271) is injected as a `FnOnce` into `load_agent`. After splitting to `trust.rs`, it needs to be importable by both `launch_pipeline.rs` (which calls the injection point) and the test module. Verify the import chain.
 3. **§2 concept index — OQ1 resolution** — the `op_picker` session-scoped cache (now on main) can be read to verify the invalidation strategy and close OQ1 with a finding.
+
+---
+
+## Iteration 15 — 2026-04-26
+
+### Improvements chosen
+
+1. **§4 4d — corrected dependency graph for `operator_env/` split** — read lines 797–845. Finding: `resolve_operator_env` (line 797, the non-injectable public wrapper) calls `&OpCli::new()` directly. This means `layers.rs` imports `OpCli` from `client.rs` in addition to `OpRunner` from `mod.rs`. The previous description "mod.rs ← layers.rs" was incomplete. Corrected graph: `layers.rs` → `mod.rs` + `client.rs`; `picker.rs` → `mod.rs` + `client.rs`. Still a strict DAG — no circularity. Added explicit import examples to execution note.
+
+2. **§4 4f — `trust.rs` split verified safe** — read lines 216–270 (confirm_agent_trust) and 533–560 (load_agent + load_agent_with signature). The FnOnce injection pattern is the key: `load_agent_with` takes `confirm_trust: impl FnOnce(...)` as a generic parameter — it NEVER imports `confirm_agent_trust` by name. Post-split: `launch.rs` imports it from `trust.rs` to pass as the argument; `launch_pipeline.rs` has zero dependency on `trust.rs`. The isolation is already built into the architecture.
+
+3. **OQ1 — op_cache.rs read, closed** — read `src/console/op_cache.rs` in full (114L production + tests). Findings: 4-level cache (accounts/vaults/items/fields); per-level invalidation (not cascading); NO sign-in expiry handling in the cache (handled at OpCli subprocess level, behaviour responsibility of picker state machine); `DEFAULT_ACCOUNT_KEY = ""` avoids Option<String> in BTreeMap keys. Architectural conclusion: design is sound. Action items: expand existing `//!` doc with expiry and invalidation-scope notes; add to PROJECT_STRUCTURE.md.
+
+### What was read
+- `src/operator_env.rs:797–845` (resolve_operator_env + resolve_operator_env_with in full)
+- `src/runtime/launch.rs:216–270` (confirm_agent_trust function)
+- `src/runtime/launch.rs:533–560` (load_agent + load_agent_with signature)
+- `src/console/op_cache.rs` (full — 252L)
+
+### What changed in the roadmap
+- §4 4d: Corrected dependency graph — added `layers.rs → client.rs` edge with explanation; added import examples for execution
+- §4 4f: Added `trust.rs` split safety verification — FnOnce injection pattern confirmed; import chain documented
+- §9 OQ1: Replaced "deferred" with full resolution — 4-level structure, invalidation scope, expiry handling, action items
+
+### Confidence assessment (updated)
+| Section | Confidence | Notes |
+|---|---|---|
+| §4 4d operator_env split | High (execution-ready) | Dependency graph corrected and verified; all imports identified |
+| §4 4f launch.rs/trust.rs split | High (execution-ready) | FnOnce isolation confirmed; import chain verified |
+| §9 OQ1 | Closed | op_cache.rs read in full; design confirmed sound |
+
+### Weakest sections for iteration 16
+1. **§4 Rule 3 — trait definitions co-location** — Rule 3 says "trait definitions live with their primary implementation". `OpRunner` trait is in `operator_env.rs` but its primary implementation is `OpCli`. After the split, `OpRunner` goes to `mod.rs` and `OpCli` to `client.rs` — these are in the same module directory, which is fine. But `CommandRunner` trait is in `docker.rs` — verify this is where it should stay.
+2. **§1 hot-spot list — `console/manager/render/editor.rs` (782L, ~all production)** — this file was listed as "Medium — all production (render functions, no tests)" but its internal structure hasn't been read. It has ~782L of render-only code with no test section. Does it have one dominant concern or should it be split?
+3. **§10 execution order — should 4a precede 4c?** — 4a (config/types.rs) and 4c (config/editor.rs module dir) are both in `config/`. The 4a split creates `config/types.rs` which 4c's sub-files would then import. The execution order matters: do 4a before 4c, or they interfere.

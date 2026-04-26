@@ -1209,7 +1209,14 @@ For the process-discipline aspects superpowers added beyond spec/plan (TDD cycle
 
 ### Open Questions
 
-**OQ1 — PR #171 `op_picker` session-scoped cache:** The cache design (where it lives, what invalidates it, how it handles op sign-in expiry) now readable on main — verify the cache invalidation strategy and add a `//!` module doc covering sign-in expiry handling.
+**OQ1 — `op_picker` session-scoped cache** *(resolved by reading `src/console/op_cache.rs`)*:
+
+- **4-level structure** (verified): `accounts` (`Option<Vec<OpAccount>>`), `vaults` (keyed by account), `items` (keyed by account + vault_id), `fields` (keyed by account + vault_id + item_id). Each level has `get_*`, `put_*`, and `invalidate_*` methods.
+- **Invalidation scope**: per-level, not cascading. `invalidate_accounts()` does not also invalidate vaults/items/fields. The picker state machine is responsible for calling the appropriate level(s) when needed.
+- **Sign-in expiry**: NOT handled in the cache itself. There is no TTL, no clock, no session token tracking. If the `op` sign-in expires during a session, the `OpCli` subprocess call fails with an error. `OpPickerState` must handle that error and call the relevant `invalidate_*` method (or show an error to the user) — this is a behaviour responsibility of the picker, not the cache.
+- **`DEFAULT_ACCOUNT_KEY = ""`** sentinel: avoids `Option<String>` in all BTreeMap keys. The "no account" case is represented as an empty string — allowing uniform `BTreeMap<String, ...>` without option handling.
+- **Action**: `op_cache.rs` already has a `//!` doc (lines 1–5) but it is incomplete — missing the sign-in expiry note and the invalidation-scope behaviour. Add those two points to the existing `//!`. Separately, add `src/console/op_cache.rs` to `PROJECT_STRUCTURE.md`.
+- **No architectural concern**: the design is sound. The cache is purely a read-through store; the picker drives all state transitions.
 
 **OQ2 — `src/console/manager/agent_allow.rs` scope:** Module not deeply read. Responsibility and coupling need verification before the §4 structural proposal is considered final.
 
@@ -1314,7 +1321,22 @@ mod workspaces;
 
 **Auditability gain:** To audit "does the agent auth forward correctly?", a reviewer reads only `agent_ops.rs` (~130L). Today they must scan 1467L for the relevant methods.
 
-4d. **`src/operator_env.rs` → `src/operator_env/` module directory** (~810L production, ~758L tests): Convert to module directory: `mod.rs` (~100L traits + dispatch), `client.rs` (~280L subprocess), `layers.rs` (~470L env resolution), `picker.rs` (~250L PR #171 additions). Dependency graph has no circularity (mod.rs ← client.rs, mod.rs ← layers.rs, mod.rs + client.rs ← picker.rs).
+4d. **`src/operator_env.rs` → `src/operator_env/` module directory** (~810L production, ~758L tests): Convert to module directory: `mod.rs` (~100L traits + dispatch), `client.rs` (~280L subprocess), `layers.rs` (~470L env resolution), `picker.rs` (~250L PR #171).
+
+**Verified dependency graph (corrected — read lines 797–845):**
+```
+mod.rs         defines: OpRunner trait, dispatch_value, parse_host_ref, is_valid_env_name
+client.rs    → mod.rs    (imports OpRunner)
+layers.rs    → mod.rs    (imports OpRunner, dispatch_value)
+             → client.rs (imports OpCli — used by resolve_operator_env, the non-injectable
+                          wrapper at line 797 which calls &OpCli::new() as the default runner)
+picker.rs    → mod.rs    (imports OpRunner)
+             → client.rs (imports OpCli — used by impl OpStructRunner for OpCli)
+```
+
+**No circularity** — this is a strict DAG. The earlier description "mod.rs ← layers.rs" was incomplete: `layers.rs` also imports `OpCli` from `client.rs`. The `resolve_operator_env_with` function (lines 813–858) itself only uses the `OpRunner` trait — but `resolve_operator_env` (lines 797–809), the non-injectable public wrapper that injects `&OpCli::new()`, also lives in `layers.rs` and requires the `client.rs` import.
+
+**Implication for split execution:** `layers.rs` must add both `use super::OpRunner;` (from mod.rs) and `use super::client::OpCli;` (from client.rs). This is safe and expected.
 
 4e. **`src/app/mod.rs` → `src/app/` module split** (951L total, 843L of `run()` dispatch):
 
@@ -1335,6 +1357,15 @@ mod workspaces;
 **Auditability gain:** To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` (~438L) plus `config/editor.rs::workspace_ops` (~120L). Today they must scan the entire 951L `app/mod.rs` to find the relevant code.
 
 4f. **`src/runtime/launch.rs` → 4 files** (2368L — most impactful, most complex test suite): Split into `launch.rs` (~120L public API), `launch_pipeline.rs` (~560L + ~1200L tests), `terminfo.rs` (~110L), `trust.rs` (~60L). Do last: the test suite is 1282L and depends on `FakeRunner` from `runtime/test_support.rs`; any test compilation failure here blocks all runtime changes.
+
+**`trust.rs` split import chain — verified safe (read lines 216–270, 533–560):**
+- `confirm_agent_trust` (lines 216–270) is a standalone fn with imports only from `std`, `owo_colors`, `dialoguer`, and `crate::config`. No dependency on `launch_pipeline.rs`.
+- `load_agent` (lines 533–550) passes `confirm_agent_trust` to `load_agent_with` as a `FnOnce` argument: `load_agent_with(..., confirm_agent_trust)`.
+- `load_agent_with` (lines 552+) receives `confirm_trust: impl FnOnce(&ClassSelector, &AgentSource) -> anyhow::Result<()>` — a generic parameter, NOT a named import. It never imports `confirm_agent_trust` by name.
+- Post-split import chain: `launch.rs` imports `confirm_agent_trust` from `trust.rs` to pass it as the argument. `launch_pipeline.rs` does NOT import `trust.rs` at all — the FnOnce injection pattern already perfectly decouples them. Test code substitutes a custom closure instead.
+- **The FnOnce injection pattern is the key architectural feature that makes `trust.rs` trivially splittable.**
+
+**Auditability gain from `trust.rs`:** An auditor verifying "can the trust prompt be bypassed?" reads only `trust.rs` (~60L) — the interactive confirmation logic, the stderr output, and the `dialoguer::Confirm` call. No other module handles trust decisions.
 
 *What could go wrong:* Each split can introduce circular `use` paths if the dependency graph is not sketched first. The `operator_env` split (4d) risks a circular dependency if `layers.rs` tries to import from `client.rs` — verify that `resolve_operator_env_with` only uses `OpRunner` (from `mod.rs`) not `OpCli` directly. Mitigation: `cargo check` + `cargo nextest run` after each sub-step; each sub-step is a separate PR with a green CI gate.
 
