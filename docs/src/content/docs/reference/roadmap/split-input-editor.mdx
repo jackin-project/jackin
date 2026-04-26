@@ -1,0 +1,44 @@
+---
+title: "Split input/editor.rs"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 2, confirmation needed
+
+## Problem
+
+<RepoFile path="src/console/manager/input/editor.rs" /> is the largest production file at ~1141L production (2349L total, tests start at line 1142). It handles keyboard dispatch for all 4 editor tabs (General, Mounts, Agents, Secrets). PR #171 added the Secrets tab, growing this file from ~547L to 1141L. A reviewer auditing "did the AI correctly implement the Secrets tab?" must scan 1141L of mixed-tab code.
+
+## Proposed split
+
+```
+src/console/manager/input/editor/
+  mod.rs      ← re-exports, handle_editor_key dispatcher, handle_editor_modal dispatcher
+  general.rs  ← General tab key handlers (~100L)
+  mounts.rs   ← Mounts tab key handlers (~150L)
+  agents.rs   ← toggle_agent_allowed, toggle_default_agent, open_agent_override_picker (~80L)
+  secrets.rs  ← Secrets tab key handlers (~500L — the PR #171 AI-generated section)
+```
+
+## Key technical details
+
+- `handle_editor_key` (line 22, ~250L) — main dispatcher; stays in `mod.rs`
+- `handle_editor_modal` (line 618, ~276L) — modal commit handling; stays in `mod.rs`
+- Both functions dispatch to tab-specific helpers; the helpers move to per-tab files
+- After split, `agents_block_agent_count` at line 246 uses `super::super::agent_allow::allows_all_agents` — with `editor/` being one level deeper, use `crate::console::manager::agent_allow::allows_all_agents` for stability
+
+## What needs confirmation
+
+Should `handle_editor_modal` stay in `mod.rs` or move to a `modal.rs` sub-file? This depends on its size post-split and whether it's a "modal concern" or a "dispatch concern".
+
+## Auditability gain
+
+To audit "did the AI correctly implement the Secrets tab?", a reviewer reads only `secrets.rs` (~500L) instead of scanning 1141L of mixed-tab production code.
+
+## Steps
+
+1. Complete snapshot tests item first (regression net).
+2. Create `src/console/manager/input/editor/` directory.
+3. Move each tab's handlers to the appropriate file, keeping `mod.rs` as the dispatcher.
+4. Fix import paths (the `super::super::` depth changes).
+5. Verify `cargo nextest run` passes.

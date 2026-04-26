@@ -1,0 +1,56 @@
+---
+title: "Developer Reference Starlight section"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 1, confirmation needed (URL structure, sidebar config)
+
+## Problem
+
+Internal developer docs (behavioral specs, ADRs, architecture notes, code tour) are not browsable on the live site. They live in `docs/internal/` as plain Markdown files not served by Starlight.
+
+## Goal
+
+All internal docs browsable at `jackin.tailrocks.com/internal/`. One unified site for both user documentation and developer reference.
+
+## What gets created
+
+```
+docs/src/content/docs/internal/
+  index.mdx              ← "Developer Reference" landing page
+  architecture.mdx       ← high-level module architecture
+  code-tour.mdx          ← stub: key call chains (load, console launch, hardline)
+  specs/                 ← behavioral + feature specs (runtime-launch, op-picker, ...)
+  decisions/             ← ADRs (ADR-001 through ADR-003, ...)
+```
+
+## astro.config.ts sidebar addition
+
+```typescript
+{
+  label: 'Developer Reference',
+  collapsed: true,
+  items: [
+    { label: 'Architecture', slug: 'internal/architecture' },
+    { label: 'Code Tour', slug: 'internal/code-tour' },
+    { autogenerate: { directory: 'internal/decisions' } },
+    { autogenerate: { directory: 'internal/specs' } },
+  ]
+}
+```
+
+## Steps
+
+1. Create the directory structure with stub MDX files (frontmatter + one paragraph).
+2. Add the sidebar group to <RepoFile path="docs/astro.config.ts" />.
+3. Verify `bun run build` passes.
+4. Verify `bun run check:links:fresh` still passes.
+
+## What needs confirmation
+
+- The URL prefix (`/internal/`) — confirm this is the right prefix.
+- `collapsed: true` for the sidebar group — confirm this is the right UX default.
+
+## Caveats
+
+Draft MDX pages with broken links will fail the `docs-link-check` CI gate. Use only working links (or no links) in placeholder pages.

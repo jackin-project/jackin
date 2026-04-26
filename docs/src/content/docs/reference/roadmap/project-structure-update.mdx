@@ -1,0 +1,35 @@
+---
+title: "Update PROJECT_STRUCTURE.md"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 1, no confirmation needed
+
+## Problem
+
+<RepoFile path="PROJECT_STRUCTURE.md" /> line 53 is stale. The `console/` entry still lists the pre-PR#171 widget set and omits 4 new widgets plus the full `manager/` sub-structure. AI agents and contributors cannot find new subsystems via the primary navigation document.
+
+## Specific gaps
+
+Currently listed in `widgets/`: `file_browser`, `text_input`, `confirm`, `confirm_save`, `error_popup`, `mount_dst_choice`, `workdir_pick`, `github_picker`, `save_discard`, `panel_rain`
+
+**Missing:**
+- `op_picker/` (1712L, 1Password picker state machine — added in PR #171)
+- `agent_picker.rs` (436L, agent disambiguation modal)
+- `scope_picker.rs` (201L, workspace-vs-agent choice)
+- `source_picker.rs` (244L, plain-or-1Password choice)
+
+**Also stale:** `manager/` description doesn't reflect the actual structure: `state.rs`, `input/` (mouse.rs, editor.rs, save.rs, list.rs, prelude.rs, mod.rs), `render/` (editor.rs, list.rs, mod.rs), `create.rs`, `mount_info.rs`, `agent_allow.rs`, `github_mounts.rs`.
+
+**Also missing:** `op_cache.rs` (session-scoped op metadata cache).
+
+## Steps
+
+1. Open <RepoFile path="PROJECT_STRUCTURE.md" /> at line 53.
+2. Update the `widgets/` list to include the 4 new items.
+3. Update the `manager/` description to reflect its actual structure.
+4. Add `op_cache.rs` entry.
+
+## Caveats
+
+Purely documentation — no code change. Do before enabling the CI staleness gate.

@@ -1,0 +1,40 @@
+---
+title: "Split operator_env.rs"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 2, confirmation needed
+
+## Problem
+
+<RepoFile path="src/operator_env.rs" /> is 2130L total, ~880L production (test section starts at line 881). It contains 4 distinct concerns: trait definitions, subprocess client, env layer composition, and 1Password picker integration. It is only used by `console/` (verified: no other module imports from `operator_env`).
+
+## Proposed split
+
+```
+src/operator_env/
+  mod.rs    ← re-exports, OpRunner trait, OpStructRunner trait, dispatch (~100L)
+  client.rs ← OpCli struct + subprocess helpers (~280L, lines 105–364)
+  layers.rs ← EnvLayer, merge_layers, validate_reserved_names, resolve_operator_env* (~470L, lines 365–808)
+  picker.rs ← PR #171 1Password picker integration (~250L)
+```
+
+## Dependency graph — verified safe
+
+- `layers.rs` imports both `mod.rs` (OpRunner trait) AND `client.rs` (OpCli) — creates a `layers → client` dep but NOT a `client → layers` dep. No circular risk.
+- `picker.rs` only uses types from `mod.rs` (`OpStructRunner`, `OpRunner`)
+- Zero external crate imports from `console/` into `operator_env` — dependency is one-way
+
+## Migration note
+
+After split, all callers doing `use crate::operator_env::resolve_operator_env` continue to work because `mod.rs` re-exports everything. No call-site changes outside the `operator_env/` directory.
+
+## What needs confirmation
+
+- Whether `picker.rs` should be a separate file or merge with `mod.rs` (it's ~250L — borderline)
+- Whether `print_launch_diagnostic` belongs in `client.rs` or `layers.rs`
+
+## Related files
+
+- <RepoFile path="src/operator_env.rs" /> — target file
+- <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — uses `OpStructRunner` from operator_env

@@ -1,0 +1,37 @@
+---
+title: "Split app/mod.rs"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 2, confirmation needed
+
+## Problem
+
+<RepoFile path="src/app/mod.rs" /> is 979L total, ~957L production (only 22L of tests). Nearly all production code is the `run()` dispatch function with a large match on CLI commands. A reviewer auditing "does `jackin workspace create` correctly validate the workdir?" must scan 957L of mixed-command dispatch.
+
+## Proposed split
+
+```
+src/app/
+  mod.rs           ← re-exports, pub fn run() dispatcher (~80L)
+  dispatch.rs      ← the giant match on cli::Command (~700L)
+  workspace_cmd.rs ← workspace subcommand handlers (~150L)
+  config_cmd.rs    ← config subcommand handlers (~100L)
+```
+
+Note: <RepoFile path="src/app/context.rs" /> (784L) already implements the impl-extension pattern and stays as-is.
+
+## Import notes
+
+- `app/mod.rs` is referenced from `main.rs` as `mod app; app::run(...)` — this stays the same
+- `dispatch.rs` is `mod dispatch` inside `app/`; `run()` calls `dispatch::dispatch_command(args)`
+- `context.rs` already lives in `app/` — no change
+
+## What needs confirmation
+
+- Whether `run()` stays in `mod.rs` or also moves to `dispatch.rs`
+- The exact boundary between `dispatch.rs` and `workspace_cmd.rs` (some workspace handling is interleaved in the dispatch match)
+
+## Auditability gain
+
+To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` (~150L) instead of scanning 957L of mixed-command dispatch.

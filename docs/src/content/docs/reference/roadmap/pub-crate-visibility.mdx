@@ -1,0 +1,47 @@
+---
+title: "pub(crate) visibility pass"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 1, no confirmation needed
+
+## Problem
+
+`jackin` is a binary crate with no external consumers, yet 257 bare `pub` items exist while only 21 use `pub(crate)`. Bare `pub` in a binary crate signals "public API surface" — that signal is noise here since there is no library consumer. The `unreachable_pub` lint detects items that are `pub` but not reachable from the crate root.
+
+## Verified numbers
+
+- 257 bare `pub` items (functions, structs, enums, traits, types, consts)
+- 21 `pub(crate)` items
+- 61 `pub(super)` items
+- 0 `unreachable_pub` enforcement anywhere
+
+## Top violators
+
+| File | Bare pub items | Notes |
+|---|---|---|
+| <RepoFile path="src/operator_env.rs" /> | 17 | `OpRunner`, `OpCli`, `OpStructRunner` traits — should be `pub(crate)` |
+| <RepoFile path="src/tui/output.rs" /> | 13 | All operator-facing output fns — `pub(crate)` is correct |
+| <RepoFile path="src/workspace/planner.rs" /> | 8 | Plan structs used internally — `pub(crate)` |
+
+## Steps
+
+1. Add to <RepoFile path="Cargo.toml" /> `[lints.rust]` section:
+   ```toml
+   [lints.rust]
+   unreachable_pub = "warn"
+   ```
+2. Run `cargo check` — compiler lists all `pub` items unreachable from the crate root.
+3. Convert each flagged item from `pub` to `pub(crate)`.
+4. Verify `cargo nextest run` still passes.
+5. Verify `cargo check` with no warnings.
+
+## What stays `pub`
+
+- `pub fn load_agent` / `pub fn run_console` — binary entry points from `main.rs`
+- All items in <RepoFile path="src/bin/validate.rs" /> — the validate binary's public interface
+- CLI structs derived from `clap::Parser` — clap requires `pub`
+
+## Caveats
+
+Do in a single commit so CI doesn't have a partial state. The lint runs in `cargo clippy -- -D warnings` CI gate, but only after converting all current violations first.

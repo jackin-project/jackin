@@ -1,0 +1,39 @@
+---
+title: "Snapshot tests for TUI render"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — Phase 1, no confirmation needed
+
+## Problem
+
+The TUI has 16 `#[allow(clippy::too_many_lines)]` suppressions across 11 files. Refactoring <RepoFile path="src/console/manager/render/list.rs" /> (1989L) or <RepoFile path="src/console/manager/render/editor.rs" /> (1666L) currently has no automated regression net. Any refactor can silently change TUI appearance.
+
+## Three target functions
+
+| Function | File | Line | What to snapshot |
+|---|---|---|---|
+| `render_sentinel_description_pane` | <RepoFile path="src/console/manager/render/list.rs" /> | 332 | Static "+ New workspace" panel. Zero state. 80×10 terminal. |
+| `render_tab_strip` | <RepoFile path="src/console/manager/render/editor.rs" /> | 269 | Tab bar with `EditorTab` active. 4 variants × 1 snapshot each. 80×3 terminal. |
+| `render_mounts_subpanel` | <RepoFile path="src/console/manager/render/list.rs" /> | 433 | Mount list subpanel. 3 cases: empty, 1 mount, 3 mounts. 60×20 terminal. |
+
+## Implementation
+
+Use `insta` for snapshot storage + review workflow; `ratatui::backend::TestBackend` for the buffer (already used in existing tests — no extra dependency just for the backend).
+
+| Library | Stars | Approach | Fit |
+|---|---|---|---|
+| `insta` | ~4k | String snapshots with `cargo insta review` | Best — simple, no async, inline or file-based |
+| `ratatui::backend::TestBackend` | built-in | Raw buffer comparison | Already available |
+| `trycmd` | ~400 | CLI snapshot testing | Wrong layer — tests full CLI, not render functions |
+
+## Steps
+
+1. Add `insta` to `[dev-dependencies]` in <RepoFile path="Cargo.toml" />.
+2. Write 3 test modules (one per target function) using `TestBackend` + `insta::assert_snapshot!()`.
+3. Run `cargo insta review` to accept the initial snapshots.
+4. `cargo nextest run` already runs snapshot comparisons — no additional CI step needed.
+
+## Why before Phase 2
+
+These snapshot tests are the regression net for the Phase 2 file splits. Without them, a split that silently changes TUI rendering won't be caught by the existing test suite.
