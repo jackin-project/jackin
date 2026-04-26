@@ -771,18 +771,10 @@ mod tests {
         // commits the save.
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("editor stage expected");
-        };
         assert!(
-            e.modal.is_none(),
-            "modal should be closed after confirm; got {:?}",
-            e.modal
-        );
-        assert!(
-            !e.save_flow.is_error(),
-            "save should have succeeded: {:?}",
-            e.save_flow.error_message()
+            matches!(state.stage, ManagerStage::List),
+            "s + confirm should exit to list; got {:?}",
+            state.stage
         );
 
         // On-disk config now contains only the collapsed parent.
@@ -1196,31 +1188,30 @@ mod tests {
     }
 
     #[test]
-    fn confirm_save_save_stays_in_editor_on_success_from_direct_s() {
-        // Bare `s` press (not from SaveDiscardCancel) keeps the operator
-        // in the editor after a successful save.
+    fn confirm_save_s_exits_to_list_on_success() {
+        // `s` + Enter on ConfirmSave returns the operator to the list,
+        // consistent with the Esc→Save path.
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
         };
-        let (tmp, paths, mut config) = setup_with_workspace("stay-here", ws.clone()).unwrap();
+        let (tmp, paths, mut config) = setup_with_workspace("save-me", ws.clone()).unwrap();
 
         let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
-        let mut editor = EditorState::new_edit("stay-here".into(), ws);
+        let mut editor = EditorState::new_edit("save-me".into(), ws);
         editor.pending.workdir = "/w/new".into();
         state.stage = ManagerStage::Editor(editor);
 
         press_s(&mut state, &mut config, &paths, cwd);
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
 
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("should stay in editor on direct `s` save");
-        };
-        assert!(e.modal.is_none());
-        // Origin-of-truth refreshed so the editor is clean again.
-        assert_eq!(e.change_count(), 0);
+        assert!(
+            matches!(state.stage, ManagerStage::List),
+            "s + confirm must return to the list; got {:?}",
+            state.stage
+        );
     }
 
     #[test]

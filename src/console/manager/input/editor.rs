@@ -37,9 +37,7 @@ pub(super) fn handle_editor_key(
                 return Ok(InputOutcome::Continue);
             }
             if matches!(&state.stage, ManagerStage::Editor(_)) {
-                // Direct `s` stays in editor; ExitIntent::Save passes
-                // `true` to exit to list on success.
-                super::save::begin_editor_save(state, config, false)?;
+                super::save::begin_editor_save(state, config, true)?;
             }
             // `paths` is consumed by the commit path in
             // handle_editor_modal, not here.
