@@ -26,7 +26,7 @@ pub struct MountConfig {
     pub readonly: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceConfig {
     pub workdir: String,
     #[serde(default)]
@@ -124,11 +124,7 @@ mod tests {
                 dst: dst.to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         }
     }
 
@@ -223,11 +219,7 @@ mod tests {
                     readonly: false,
                 },
             ],
-            allowed_agents: vec![],
-            default_agent: None,
-            last_agent: None,
-            env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            ..Default::default()
         };
         validate_workspace_config("test", &ws).unwrap();
     }

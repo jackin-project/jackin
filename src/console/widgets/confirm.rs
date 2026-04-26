@@ -1,7 +1,7 @@
 //! Y/N confirmation modal with keyboard focus.
 //!
 //! Y / N / Esc return distinct outcomes; case-insensitive.
-//! Tab / Shift+Tab / ←→ / h/l cycle focus between Yes and No.
+//! Tab / ←→ / h/l cycle focus between Yes and No.
 //! Enter commits the focused button.
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -35,12 +35,8 @@ impl ConfirmState {
             // Direct shortcuts (case-insensitive).
             KeyCode::Char('y' | 'Y') => ModalOutcome::Commit(true),
             KeyCode::Char('n' | 'N') => ModalOutcome::Commit(false),
-            // Focus-based interaction — Tab/Shift+Tab/←→/h/l all toggle focus.
-            KeyCode::Tab
-            | KeyCode::BackTab
-            | KeyCode::Right
-            | KeyCode::Left
-            | KeyCode::Char('l' | 'h') => {
+            // Focus-based interaction — Tab/←→/h/l all toggle focus.
+            KeyCode::Tab | KeyCode::Right | KeyCode::Left | KeyCode::Char('l' | 'h') => {
                 self.focus = match self.focus {
                     ConfirmFocus::Yes => ConfirmFocus::No,
                     ConfirmFocus::No => ConfirmFocus::Yes,
