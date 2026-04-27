@@ -699,8 +699,8 @@ impl OpPickerState {
             KeyCode::Enter => {
                 let visible = self.filtered_fields();
                 let cur = self.field_list_state.selected.unwrap_or(0);
-                if visible.get(cur).is_some() {
-                    return ModalOutcome::Commit(build_op_ref_on_commit(self));
+                if let Some(field) = visible.get(cur) {
+                    return ModalOutcome::Commit(build_op_ref_on_commit(self, field));
                 }
                 ModalOutcome::Continue
             }
@@ -739,8 +739,7 @@ impl OpPickerState {
     }
 }
 
-/// Build an [`crate::operator_env::OpRef`] from the picker's current
-/// fully-drilled-down state (vault + item + field all selected).
+/// Build an `OpRef` from the picker's currently-selected vault/item/field.
 ///
 /// The `op` field uses UUID-form identifiers from the picker's pane
 /// selections. The `path` field uses human-readable names, with an
@@ -751,11 +750,22 @@ impl OpPickerState {
 /// the UUID in `op` still resolves correctly). Empty subtitles also
 /// suppress the embed.
 ///
+/// Section info is recovered by parsing `field.reference`, which `op item get`
+/// emits in canonical form (with the section name correctly attributed).
+/// If `field.reference` is empty or unparseable, this falls back to a
+/// 3-segment URI — which produces an UNRESOLVING reference for fields
+/// that actually live inside a section. In production, `op item get`
+/// always populates `reference` for fields, so this fallback is a
+/// safety net rather than a routine path.
+///
 /// # Panics
 ///
-/// Panics if vault, item, or field are not selected — callers must
+/// Panics if vault or item are not selected — callers must
 /// ensure the picker has fully drilled to the field pane before calling.
-pub(crate) fn build_op_ref_on_commit(state: &OpPickerState) -> crate::operator_env::OpRef {
+pub(crate) fn build_op_ref_on_commit(
+    state: &OpPickerState,
+    field: &crate::operator_env::OpField,
+) -> crate::operator_env::OpRef {
     let vault = state
         .selected_vault
         .as_ref()
@@ -764,12 +774,6 @@ pub(crate) fn build_op_ref_on_commit(state: &OpPickerState) -> crate::operator_e
         .selected_item
         .as_ref()
         .expect("item must be selected before commit");
-    let cur = state.field_list_state.selected.unwrap_or(0);
-    let field = state
-        .filtered_fields()
-        .into_iter()
-        .nth(cur)
-        .expect("field must be selected before commit");
 
     // Ambiguity check: any other item in the vault sharing this name?
     let item_name_collides = state
@@ -1817,6 +1821,13 @@ mod tests {
 
     #[test]
     fn picker_commit_writes_op_ref_with_uuid_form_and_clean_path_when_unique() {
+        let field = OpField {
+            id: "f_uuid".into(),
+            label: "api key".into(),
+            reference: "op://Private/Stripe/api key".into(),
+            field_type: "concealed".into(),
+            concealed: true,
+        };
         let state = test_state_picked(
             OpVault {
                 id: "v_uuid".into(),
@@ -1825,22 +1836,16 @@ mod tests {
             vec![OpItem {
                 id: "i_uuid".into(),
                 name: "Stripe".into(),
-                subtitle: "".into(),
+                subtitle: String::new(),
             }],
             OpItem {
                 id: "i_uuid".into(),
                 name: "Stripe".into(),
-                subtitle: "".into(),
+                subtitle: String::new(),
             },
-            OpField {
-                id: "f_uuid".into(),
-                label: "api key".into(),
-                reference: "op://Private/Stripe/api key".into(),
-                field_type: "concealed".into(),
-                concealed: true,
-            },
+            field.clone(),
         );
-        let r = build_op_ref_on_commit(&state);
+        let r = build_op_ref_on_commit(&state, &field);
         assert_eq!(r.op, "op://v_uuid/i_uuid/f_uuid");
         assert_eq!(r.path, "Private/Stripe/api key");
     }
@@ -1857,22 +1862,23 @@ mod tests {
             name: "Claude".into(),
             subtitle: "alexey@chainargos.com".into(),
         };
+        let field = OpField {
+            id: "f_uuid".into(),
+            label: "auth token".into(),
+            reference: "op://Private/Claude/security/auth token".into(),
+            field_type: "concealed".into(),
+            concealed: true,
+        };
         let state = test_state_picked(
             OpVault {
                 id: "v_uuid".into(),
                 name: "Private".into(),
             },
-            vec![claude_a.clone(), claude_b.clone()],
-            claude_a.clone(),
-            OpField {
-                id: "f_uuid".into(),
-                label: "auth token".into(),
-                reference: "op://Private/Claude/security/auth token".into(),
-                field_type: "concealed".into(),
-                concealed: true,
-            },
+            vec![claude_a.clone(), claude_b],
+            claude_a,
+            field.clone(),
         );
-        let r = build_op_ref_on_commit(&state);
+        let r = build_op_ref_on_commit(&state, &field);
         // Section "security" must be preserved in both op and path.
         assert!(
             r.op.starts_with("op://v_uuid/i_uuid_a/"),
@@ -1899,22 +1905,23 @@ mod tests {
             name: "Item [tag]".into(),
             subtitle: "user@y".into(),
         };
+        let field = OpField {
+            id: "f_uuid".into(),
+            label: "auth".into(),
+            reference: "op://Private/Item [tag]/auth".into(),
+            field_type: "concealed".into(),
+            concealed: false,
+        };
         let state = test_state_picked(
             OpVault {
                 id: "v_uuid".into(),
                 name: "Private".into(),
             },
-            vec![weird_a.clone(), weird_b.clone()],
-            weird_a.clone(),
-            OpField {
-                id: "f_uuid".into(),
-                label: "auth".into(),
-                reference: "op://Private/Item [tag]/auth".into(),
-                field_type: "concealed".into(),
-                concealed: false,
-            },
+            vec![weird_a.clone(), weird_b],
+            weird_a,
+            field.clone(),
         );
-        let r = build_op_ref_on_commit(&state);
+        let r = build_op_ref_on_commit(&state, &field);
         assert_eq!(
             r.path, "Private/Item [tag]/auth",
             "no subtitle embed for bracket-bearing item names"
@@ -1926,29 +1933,30 @@ mod tests {
         let note_a = OpItem {
             id: "i_a".into(),
             name: "Notes".into(),
-            subtitle: "".into(),
+            subtitle: String::new(),
         };
         let note_b = OpItem {
             id: "i_b".into(),
             name: "Notes".into(),
-            subtitle: "".into(),
+            subtitle: String::new(),
+        };
+        let field = OpField {
+            id: "f_uuid".into(),
+            label: "notesPlain".into(),
+            reference: "op://Private/Notes/notesPlain".into(),
+            field_type: "string".into(),
+            concealed: false,
         };
         let state = test_state_picked(
             OpVault {
                 id: "v_uuid".into(),
                 name: "Private".into(),
             },
-            vec![note_a.clone(), note_b.clone()],
-            note_a.clone(),
-            OpField {
-                id: "f_uuid".into(),
-                label: "notesPlain".into(),
-                reference: "op://Private/Notes/notesPlain".into(),
-                field_type: "string".into(),
-                concealed: false,
-            },
+            vec![note_a.clone(), note_b],
+            note_a,
+            field.clone(),
         );
-        let r = build_op_ref_on_commit(&state);
+        let r = build_op_ref_on_commit(&state, &field);
         assert_eq!(
             r.path, "Private/Notes/notesPlain",
             "empty subtitle => no embed even on collision"
