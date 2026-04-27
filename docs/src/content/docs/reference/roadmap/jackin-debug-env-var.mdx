@@ -1,0 +1,65 @@
+---
+title: "`JACKIN_DEBUG` Env Var for Sticky Debug Output"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+
+**Status**: Resolved
+
+## Problem
+
+Operators who routinely want raw container output had to pass `--debug` on every invocation: `jackin --debug`, `jackin load --debug`, `jackin console --debug`. There was no way to make debug-by-default sticky for a shell session, account, or CI job, so the flag had to be remembered and added repeatedly.
+
+## Why It Matters
+
+- **Operator ergonomics.** A persistent verbosity preference is a one-time setup in unix shells (`RUST_LOG`, `NO_COLOR`, etc.). jackin's `--debug` was the odd one out.
+- **CI / agent-loop debugging.** Long-running operator workflows that wrap `jackin` benefit from setting verbose mode once at the environment level, not threading a `--debug` flag through every wrapper.
+- **No new TOML.** The configuration alternative (`jackin config debug enable`) would have added a new `ConfigCommand` arm, an `AppConfig` field, and an editor method — all to express a single boolean developer preference. An env var matches the unix idiom for verbosity knobs and avoids the new persistence surface.
+
+## Resolution
+
+Added `env = "JACKIN_DEBUG"` to the existing `--debug` `#[arg(...)]` attributes on `LoadArgs.debug` and `ConsoleArgs.debug` in <RepoFile path="src/cli/agent.rs" />. clap's `ArgAction::SetTrue` env semantics handle precedence and value parsing without bespoke code:
+
+1. `--debug` on the command line → `true`
+2. CLI flag absent, env var set to a truthy value (`1`, `true`, `yes`, `on`, …) → `true`
+3. CLI flag absent, env var set to a falsy value (`0`, `false`, `no`, `off`, empty string) → `false`
+4. CLI flag absent, env var unset → `default_value_t = false`
+
+`ConsoleArgs` is `#[command(flatten)]`'d into the top-level `Cli`, so `jackin --debug` (bare, no subcommand) inherits the same env binding as `jackin console --debug` — no separate wiring at the top level.
+
+## Operator usage
+
+```bash
+# Make debug sticky for a shell or user account
+echo 'export JACKIN_DEBUG=1' >> ~/.zshrc
+
+# Now every invocation defaults to debug-on
+jackin load
+jackin console
+jackin                          # bare → console (on a TTY)
+
+# Disable for one invocation when env is sticky
+JACKIN_DEBUG=0 jackin load
+
+# CLI flag still wins
+jackin load --debug             # always debug-on, regardless of env
+```
+
+The `--help` output for affected commands automatically advertises the env binding via clap's standard `[env: JACKIN_DEBUG=]` annotation, so the variable is discoverable through normal CLI exploration.
+
+## Test strategy
+
+Because `unsafe_code = "forbid"` rules out in-process `std::env::set_var` for testing env-driven clap parsing, the integration coverage in <RepoFile path="tests/cli_debug_env.rs" /> spawns the real binary with a controlled env and verifies:
+
+- `--help` for `jackin load`, `jackin console`, and bare `jackin` advertises the `[env: JACKIN_DEBUG=]` annotation (proves the binding is correctly attached to `--debug` on every entry point).
+- Truthy, falsy, and empty `JACKIN_DEBUG` values do not break clap parsing — the existing console-on-non-TTY error is reached, which means parsing succeeded.
+
+clap's value-resolution semantics for `ArgAction::SetTrue` env vars (`FalseyValueParser`) are clap's contract and not retested here.
+
+## Related files
+
+- <RepoFile path="src/cli/agent.rs" /> — `LoadArgs.debug` and `ConsoleArgs.debug` carry the new `env = "JACKIN_DEBUG"` attribute.
+- <RepoFile path="src/cli/mod.rs" /> — `Cli` flattens `ConsoleArgs`, propagating the env binding to the top-level form.
+- <RepoFile path="tests/cli_debug_env.rs" /> — subprocess integration tests.
+- <RepoFile path="Cargo.toml" /> — clap's `env` feature is enabled.
+- <RepoFile path="docs/superpowers/specs/2026-04-27-jackin-debug-env-var-design.md" /> — original design doc.

@@ -35,21 +35,25 @@ Two struct fields, both in `src/cli/agent.rs`:
 - `LoadArgs.debug` at `src/cli/agent.rs:48`
 - `ConsoleArgs.debug` at `src/cli/agent.rs:85`
 
-Each gets `env = "JACKIN_DEBUG"` added to its `#[arg(...)]` attribute.
+Each gets `env = "JACKIN_DEBUG"` added to its `#[arg(...)]` attribute, plus an explicit `action` and `value_parser`:
 
 ```rust
-// src/cli/agent.rs (LoadArgs)
+// src/cli/agent.rs (LoadArgs and ConsoleArgs)
 /// Print raw container output for troubleshooting
-#[arg(long, env = "JACKIN_DEBUG", default_value_t = false)]
+#[arg(
+    long,
+    env = "JACKIN_DEBUG",
+    action = clap::ArgAction::SetTrue,
+    value_parser = clap::builder::FalseyValueParser::new(),
+)]
 pub debug: bool,
 ```
 
-```rust
-// src/cli/agent.rs (ConsoleArgs)
-/// Print raw container output for troubleshooting
-#[arg(long, env = "JACKIN_DEBUG", default_value_t = false)]
-pub debug: bool,
-```
+The two overrides are deliberate. clap derive's default for a `bool` field is `ArgAction::Set` paired with `BoolValueParser` — fine for CLI, but rejects env values like `JACKIN_DEBUG=1` because `BoolValueParser` only accepts the literal strings `"true"` / `"false"`. Forcing `SetTrue` makes `--debug` a presence flag again, and `FalseyValueParser` makes env truthy/falsy strings (`1`, `0`, `yes`, `no`, empty) parse the way an operator would expect.
+
+This also means the original spec's `default_value_t = false` is dropped — `SetTrue` already defaults to `false` when the flag is absent and the env is unset, and `default_value_t` would conflict with the SetTrue action.
+
+clap's `env` attribute requires the `env` feature on the dependency. `Cargo.toml` is updated to enable it (`features = ["derive", "color", "env"]`).
 
 `ConsoleArgs` is `#[command(flatten)]`'d into `Cli` in `src/cli/mod.rs:55-56`, so `jackin --debug` (without a subcommand) inherits the env-backed flag automatically — no separate change needed at the top level.
 
@@ -79,17 +83,20 @@ No changes to `src/cli/dispatch.rs`, `src/app/`, or `src/runtime/`. The `debug: 
 
 ### Tests
 
-Add to `src/cli/agent.rs`'s existing `#[cfg(test)] mod tests`:
+Implementation discovered that `unsafe_code = "forbid"` (in `[lints.rust]`) rules out `std::env::set_var` / `remove_var` in unit tests, and adding a dev-dep wrapper crate (`temp-env`, `serial_test`) just to mutate process env is overkill for what's a single env-backed flag. Each subprocess gets its own env, so the integration coverage in <RepoFile path="tests/cli_debug_env.rs" /> uses `assert_cmd::Command` with explicit `.env(...)` / `.env_remove(...)` per test:
 
-1. `parses_load_with_jackin_debug_env_truthy` — set `JACKIN_DEBUG=1`, parse `["jackin", "load"]`, assert `debug: true`.
-2. `parses_load_with_jackin_debug_env_falsy` — set `JACKIN_DEBUG=0`, parse `["jackin", "load"]`, assert `debug: false`.
-3. `cli_debug_flag_overrides_falsy_env` — set `JACKIN_DEBUG=0`, parse `["jackin", "load", "--debug"]`, assert `debug: true`. Locks in clap's "CLI > env" precedence as our intended contract.
-4. `bare_jackin_with_jackin_debug_env` — set `JACKIN_DEBUG=1`, parse `["jackin"]`, assert `cli.console_args.debug == true`. Locks in that the flattened top-level form picks up the env var too.
-5. `console_subcommand_with_jackin_debug_env` — set `JACKIN_DEBUG=1`, parse `["jackin", "console"]`, assert `debug: true`. Locks in symmetry between `jackin --debug` and `jackin console --debug`.
+1. `help_annotation::load_help_advertises_jackin_debug` — `jackin load --help` output contains the literal substring `[env: JACKIN_DEBUG=`. Proves the binding is attached to `--debug` on `LoadArgs`.
+2. `help_annotation::console_help_advertises_jackin_debug` — same for `jackin console --help` (`ConsoleArgs`).
+3. `help_annotation::top_level_help_advertises_jackin_debug` — same for `jackin --help` (proves the flattened top-level form inherits the env binding).
+4. `env_does_not_break_parsing::jackin_debug_truthy_does_not_break_console_parse` — `JACKIN_DEBUG=1 jackin console` reaches the existing non-TTY error (`CONSOLE_REQUIRES_TTY_ERROR`). Proves clap parses the env value cleanly under the `FalseyValueParser`.
+5. `env_does_not_break_parsing::jackin_debug_falsy_does_not_break_console_parse` — same for `JACKIN_DEBUG=0`.
+6. `env_does_not_break_parsing::jackin_debug_empty_does_not_break_console_parse` — same for `JACKIN_DEBUG=` (empty string, common in CI).
 
-Tests that mutate process env need `serial_test` or equivalent isolation. Check whether the crate already uses `serial_test` (search for it in `Cargo.toml`); if not, gate env-mutating tests with `#[serial]` from a small new dev-dep, or use `temp-env` for scoped overrides. Prefer `temp-env` if introducing a new dep — it does not require ordering all env-touching tests, only the ones that mutate.
+clap's actual value-resolution semantics for `ArgAction::SetTrue` env vars are clap's contract and not retested here.
 
-The implementation plan will pick the env-isolation crate after surveying `Cargo.toml`. Either choice is fine; the spec only requires that env-mutating tests do not race with each other or with concurrent unrelated tests.
+#### Existing unit tests adjusted
+
+Existing tests in `src/cli/agent.rs` and `src/cli/dispatch.rs` that destructured `ConsoleArgs { debug: false }` or `LaunchArgs { debug: false }` as an incidental "default" check were updated to match `{ .. }` instead. Reason: with env-backed `--debug`, the field's default depends on the runner's process env (`JACKIN_DEBUG=1` in the operator's shell would otherwise break those unit tests). The tests still assert the routing behavior they were originally testing — they just no longer pin a value that is now environment-dependent. Tests that explicitly assert `debug: true` after passing `--debug` are unchanged: CLI flag wins over env, so the assertion holds regardless of `JACKIN_DEBUG`.
 
 ### Documentation
 
@@ -99,14 +106,7 @@ A one-paragraph mention in the operator console docs page (`docs/src/content/doc
 
 ### CHANGELOG
 
-A single entry under the next-release section of `CHANGELOG.md`, e.g.:
-
-```
-### Added
-- `JACKIN_DEBUG=1` environment variable makes `--debug` sticky across invocations
-  for commands that accept it (`jackin`, `jackin load`, `jackin console`).
-  CLI flag still takes precedence; falsy values (`0`, `false`, `no`) keep debug off.
-```
+Not updated by this PR. The operator backfills `CHANGELOG.md` by hand at release time. Roadmap entry under <RepoFile path="docs/src/content/docs/reference/roadmap/jackin-debug-env-var.mdx" /> serves as the user-facing record of the change instead.
 
 ## Risk & rollout
 
