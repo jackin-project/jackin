@@ -868,6 +868,165 @@ pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Res
     )
 }
 
+/// Resolve a user-supplied `op://...` URI into a canonical [`OpRef`].
+///
+/// Accepts all official 1Password URI forms: names, UUIDs, mixed, with
+/// optional subtitle filter `Item[subtitle]`, optional 4th section segment,
+/// and optional query suffix (`?attribute=otp` etc.). Errors on ambiguity,
+/// missing items or fields, or unsupported `${VAR}` substitution syntax.
+///
+/// The caller must probe `op` CLI availability before calling this
+/// (e.g. via [`OpRunner::probe`]).
+#[allow(clippy::too_many_lines)]
+pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Result<OpRef> {
+    use anyhow::{anyhow, bail};
+
+    if !input.starts_with("op://") {
+        bail!("not an op:// reference: {input}");
+    }
+    if input.contains("${") {
+        bail!(
+            "jackin does not support shell variable substitution inside `op://` URIs \
+             (`{input}`). Use a plain string value, or substitute before passing."
+        );
+    }
+
+    // Peel off optional `?attribute=...` / `?attr=...` / `?ssh-format=...` suffix.
+    let (path_part, query) = input
+        .find('?')
+        .map_or((input, None), |i| (&input[..i], Some(&input[i..])));
+    let body = path_part.strip_prefix("op://").unwrap();
+    let segs: Vec<&str> = body.split('/').collect();
+    let (vault_seg, item_seg, section_seg, field_seg) = match segs.as_slice() {
+        [v, i, f] => (*v, *i, None::<&str>, *f),
+        [v, i, s, f] => (*v, *i, Some(*s), *f),
+        _ => bail!("malformed op:// URI (expected 3 or 4 path segments): {input}"),
+    };
+
+    // Item segment may carry [subtitle] filter — jackin's display extension.
+    // Nested condition makes map_or awkward; allow the if-let pattern here.
+    #[allow(clippy::option_if_let_else)]
+    let (item_name, subtitle_filter): (&str, Option<&str>) = if let Some(open) = item_seg.rfind('[')
+    {
+        if item_seg.ends_with(']') && open < item_seg.len() - 1 {
+            (
+                &item_seg[..open],
+                Some(&item_seg[open + 1..item_seg.len() - 1]),
+            )
+        } else {
+            (item_seg, None)
+        }
+    } else {
+        (item_seg, None)
+    };
+
+    // Resolve vault by name (case-insensitive) or UUID.
+    let vaults = op.vault_list(None)?;
+    let vault = vaults
+        .iter()
+        .find(|v| v.name.eq_ignore_ascii_case(vault_seg) || v.id == vault_seg)
+        .ok_or_else(|| anyhow!("vault not found: {vault_seg:?}"))?;
+
+    // Resolve items in this vault, then filter by name (case-insensitive) or
+    // UUID, and by subtitle filter when present.
+    let items = op.item_list(&vault.id, None)?;
+    let mut matches: Vec<&OpItem> = items
+        .iter()
+        .filter(|i| {
+            (i.name.eq_ignore_ascii_case(item_name) || i.id == item_name)
+                && subtitle_filter.is_none_or(|s| i.subtitle.eq_ignore_ascii_case(s))
+        })
+        .collect();
+
+    if matches.is_empty() {
+        let suffix = subtitle_filter
+            .map(|s| format!("[{s}]"))
+            .unwrap_or_default();
+        bail!(
+            "item {name:?} not found in vault {vault_name:?}",
+            name = format!("{item_name}{suffix}"),
+            vault_name = vault.name
+        );
+    }
+    if matches.len() > 1 {
+        let suggestions: Vec<String> = matches
+            .iter()
+            .map(|i| {
+                let label = if i.subtitle.is_empty() {
+                    format!("{}[#{}]", i.name, &i.id[..i.id.len().min(8)])
+                } else {
+                    format!("{}[{}]", i.name, i.subtitle)
+                };
+                let section_part = section_seg.map(|s| format!("/{s}")).unwrap_or_default();
+                let q = query.unwrap_or("");
+                format!("  op://{}/{label}{section_part}/{field_seg}{q}", vault.name)
+            })
+            .collect();
+        bail!(
+            "{n} items named {name:?} in vault {vault_name:?}. Disambiguate with:\n{lines}",
+            n = matches.len(),
+            name = item_name,
+            vault_name = vault.name,
+            lines = suggestions.join("\n")
+        );
+    }
+    let item = matches.pop().unwrap();
+
+    // Resolve field by label (case-insensitive) or UUID.
+    let fields = op.item_get(&item.id, &vault.id, None)?;
+    let field = fields
+        .iter()
+        .find(|f| {
+            f.label.eq_ignore_ascii_case(field_seg)
+                || f.id == field_seg
+                || matches_special_alias(f, field_seg)
+        })
+        .ok_or_else(|| {
+            anyhow!(
+                "field {field_seg:?} not found in item {name:?}",
+                name = item.name
+            )
+        })?;
+
+    // Compute ambiguity for path snapshot (same rule as picker).
+    let item_name_collides = items.iter().any(|i| i.id != item.id && i.name == item.name);
+    let safe_to_embed = !item.name.contains('[') && !item.name.contains(']');
+    let item_segment = if item_name_collides && safe_to_embed && !item.subtitle.is_empty() {
+        format!("{}[{}]", item.name, item.subtitle)
+    } else {
+        item.name.clone()
+    };
+
+    let q_suffix = query.unwrap_or("");
+    let (op_uri, display_path) = section_seg.map_or_else(
+        || {
+            (
+                format!("op://{}/{}/{}{q_suffix}", vault.id, item.id, field.id),
+                format!("{}/{}/{}{q_suffix}", vault.name, item_segment, field.label),
+            )
+        },
+        |s| {
+            (
+                format!("op://{}/{}/{}/{}{q_suffix}", vault.id, item.id, s, field.id),
+                format!(
+                    "{}/{}/{}/{}{q_suffix}",
+                    vault.name, item_segment, s, field.label
+                ),
+            )
+        },
+    );
+
+    Ok(OpRef {
+        op: op_uri,
+        path: display_path,
+    })
+}
+
+fn matches_special_alias(f: &OpField, seg: &str) -> bool {
+    matches!(seg, "username" | "password" | "notes" | "notesPlain")
+        && f.label.eq_ignore_ascii_case(seg)
+}
+
 /// (key → (layer, value)) precedence-merged across the four config
 /// layers — global, agent, workspace, workspace-agent — for the given
 /// `(agent, workspace)` selection. Later layers overwrite earlier ones,
@@ -2435,5 +2594,228 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
         let serialized = toml::to_string(&parsed).unwrap();
         let reparsed: Wrap = toml::from_str(&serialized).unwrap();
         assert_eq!(parsed, reparsed);
+    }
+
+    // ---- resolve_op_uri_to_ref tests ------------------------------------
+
+    /// Minimal stub for `OpStructRunner` used by `resolve_op_uri_to_ref` unit
+    /// tests. Supports builder methods (`with_vault`, `with_item`, `with_field`)
+    /// and covers only the synchronous path used by the CLI resolver.
+    struct StubOpStructRunner {
+        vaults: Vec<OpVault>,
+        /// (vault_id → items)
+        items: std::collections::HashMap<String, Vec<OpItem>>,
+        /// (item_id → fields)
+        fields: std::collections::HashMap<String, Vec<OpField>>,
+    }
+
+    impl StubOpStructRunner {
+        fn new() -> Self {
+            Self {
+                vaults: Vec::new(),
+                items: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+            }
+        }
+
+        fn with_vault(mut self, name: &str, id: &str) -> Self {
+            self.vaults.push(OpVault {
+                id: id.to_string(),
+                name: name.to_string(),
+            });
+            self
+        }
+
+        fn with_item(mut self, vault_id: &str, name: &str, id: &str, subtitle: &str) -> Self {
+            self.items
+                .entry(vault_id.to_string())
+                .or_default()
+                .push(OpItem {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    subtitle: subtitle.to_string(),
+                });
+            self
+        }
+
+        fn with_field(mut self, item_id: &str, label: &str, id: &str, concealed: bool) -> Self {
+            self.fields
+                .entry(item_id.to_string())
+                .or_default()
+                .push(OpField {
+                    id: id.to_string(),
+                    label: label.to_string(),
+                    field_type: if concealed {
+                        "CONCEALED".into()
+                    } else {
+                        "STRING".into()
+                    },
+                    concealed,
+                    reference: String::new(),
+                });
+            self
+        }
+    }
+
+    impl OpStructRunner for StubOpStructRunner {
+        fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
+            Ok(vec![])
+        }
+
+        fn vault_list(&self, _account: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
+            Ok(self.vaults.clone())
+        }
+
+        fn item_list(&self, vault_id: &str, _account: Option<&str>) -> anyhow::Result<Vec<OpItem>> {
+            Ok(self.items.get(vault_id).cloned().unwrap_or_default())
+        }
+
+        fn item_get(
+            &self,
+            item_id: &str,
+            _vault_id: &str,
+            _account: Option<&str>,
+        ) -> anyhow::Result<Vec<OpField>> {
+            Ok(self.fields.get(item_id).cloned().unwrap_or_default())
+        }
+    }
+
+    #[test]
+    fn resolve_op_uri_unique_resolves_to_op_ref() {
+        let stub = StubOpStructRunner::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Stripe", "i_uuid", "")
+            .with_field("i_uuid", "api key", "f_uuid", false);
+
+        let result = resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub).unwrap();
+        assert_eq!(result.op, "op://v_uuid/i_uuid/f_uuid");
+        assert_eq!(result.path, "Private/Stripe/api key");
+    }
+
+    #[test]
+    fn resolve_op_uri_ambiguous_errors_with_disambig_list() {
+        let stub = StubOpStructRunner::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Claude", "i_a", "alexey@zhokhov.com")
+            .with_item("v_uuid", "Claude", "i_b", "alexey@chainargos.com")
+            .with_item("v_uuid", "Claude", "i_c", "team@example.com");
+
+        let err = resolve_op_uri_to_ref("op://Private/Claude/auth", &stub).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("3 items"), "msg: {msg}");
+        assert!(msg.contains("Claude[alexey@zhokhov.com]"), "msg: {msg}");
+        assert!(msg.contains("Claude[alexey@chainargos.com]"), "msg: {msg}");
+        assert!(msg.contains("Claude[team@example.com]"), "msg: {msg}");
+    }
+
+    #[test]
+    fn resolve_op_uri_with_subtitle_filter_resolves() {
+        let stub = StubOpStructRunner::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Claude", "i_a", "alexey@zhokhov.com")
+            .with_item("v_uuid", "Claude", "i_b", "alexey@chainargos.com")
+            .with_field("i_a", "auth", "f_uuid_a", false);
+
+        let result =
+            resolve_op_uri_to_ref("op://Private/Claude[alexey@zhokhov.com]/auth", &stub).unwrap();
+        assert_eq!(result.op, "op://v_uuid/i_a/f_uuid_a");
+        // Path retains brackets because the item is ambiguous in the vault.
+        assert_eq!(result.path, "Private/Claude[alexey@zhokhov.com]/auth");
+    }
+
+    #[test]
+    fn resolve_op_uri_plain_literal_not_affected() {
+        // Non-op:// input must be rejected by resolve_op_uri_to_ref.
+        let stub = StubOpStructRunner::new();
+        let err = resolve_op_uri_to_ref("postgres://localhost", &stub).unwrap_err();
+        assert!(err.to_string().contains("not an op://"), "{err}");
+    }
+
+    #[test]
+    fn resolve_op_uri_with_dollar_var_errors() {
+        // `${VAR}` substitution inside op:// URIs is unsupported.
+        let stub = StubOpStructRunner::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Stripe", "i_uuid", "");
+
+        let err = resolve_op_uri_to_ref("op://${APP_ENV}/Stripe/api key", &stub).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("substitution") || msg.contains("${"),
+            "msg: {msg}"
+        );
+    }
+
+    #[test]
+    fn resolve_op_uri_uuid_form_resolves() {
+        // UUID-form input: the vault/item/field IDs are supplied directly.
+        // vault_list returns a vault whose id matches the input segment.
+        let stub = StubOpStructRunner::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Stripe", "i_uuid", "")
+            .with_field("i_uuid", "api key", "f_uuid", false);
+
+        let result = resolve_op_uri_to_ref("op://v_uuid/i_uuid/f_uuid", &stub).unwrap();
+        assert_eq!(result.op, "op://v_uuid/i_uuid/f_uuid");
+        assert_eq!(result.path, "Private/Stripe/api key");
+    }
+
+    #[test]
+    fn resolve_op_uri_with_attribute_query_preserves_query() {
+        let stub = StubOpStructRunner::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "GitHub", "i_uuid", "")
+            .with_field("i_uuid", "one-time password", "f_uuid", false);
+
+        let result =
+            resolve_op_uri_to_ref("op://Private/GitHub/one-time password?attribute=otp", &stub)
+                .unwrap();
+        assert!(result.op.contains("?attribute=otp"), "op: {}", result.op);
+        assert!(
+            result.path.contains("?attribute=otp"),
+            "path: {}",
+            result.path
+        );
+    }
+
+    #[test]
+    fn resolve_op_uri_4_segment_with_section_resolves() {
+        let stub = StubOpStructRunner::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Claude", "i_uuid", "")
+            .with_field("i_uuid", "auth token", "f_uuid", false);
+
+        let result =
+            resolve_op_uri_to_ref("op://Private/Claude/security/auth token", &stub).unwrap();
+        assert_eq!(result.path, "Private/Claude/security/auth token");
+        assert!(result.op.contains("/security/"), "op: {}", result.op);
+    }
+
+    #[test]
+    fn resolve_op_uri_vault_not_found_errors() {
+        let stub = StubOpStructRunner::new().with_vault("Personal", "v1");
+
+        let err = resolve_op_uri_to_ref("op://NoSuchVault/Item/field", &stub).unwrap_err();
+        assert!(err.to_string().contains("vault not found"), "{}", err);
+    }
+
+    #[test]
+    fn resolve_op_uri_item_not_found_errors() {
+        let stub = StubOpStructRunner::new().with_vault("Private", "v_uuid");
+        // No items in the vault.
+
+        let err = resolve_op_uri_to_ref("op://Private/NoSuchItem/field", &stub).unwrap_err();
+        assert!(err.to_string().contains("not found"), "{}", err);
+    }
+
+    #[test]
+    fn resolve_op_uri_field_not_found_errors() {
+        let stub = StubOpStructRunner::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Stripe", "i_uuid", "");
+        // No fields on the item.
+
+        let err = resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub).unwrap_err();
+        assert!(err.to_string().contains("not found"), "{}", err);
     }
 }
