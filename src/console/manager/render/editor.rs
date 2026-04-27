@@ -813,7 +813,7 @@ fn render_secrets_key_line(
     // Plain branch: render as masked or literal value.
     let plain_str = match value {
         EnvValue::Plain(s) => s.as_str(),
-        EnvValue::OpRef(_) => unreachable!("OpRef handled above"),
+        EnvValue::OpRef(r) => r.op.as_str(),
     };
 
     let value_style = if masked {
@@ -1813,6 +1813,46 @@ mod secrets_tab_render_tests {
             dump.contains("one-time password"),
             "field must render; dump:\n{dump}"
         );
+    }
+
+    /// OpRef with BOTH a subtitle disambiguation AND an `?attribute=otp`
+    /// query suffix. Asserts that all six visible pieces appear in the
+    /// expected left-to-right order: vault → item → subtitle → section →
+    /// field → query.
+    #[test]
+    fn renderer_op_ref_with_subtitle_section_and_query_renders_all() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "TOKEN".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc/def/sec/fld?attribute=otp".into(),
+                path: "Private/Claude[alexey@zhokhov.com]/security/auth token?attribute=otp".into(),
+            }),
+        );
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        // Use the wide terminal so no piece is truncated.
+        let dump = render_to_dump_wide(&editor);
+
+        // All visible pieces must appear in order:
+        // vault → item → subtitle → section → field → query.
+        let v_pos = dump.find("Private").expect("vault present");
+        let i_pos = dump.find("Claude").expect("item present");
+        let s_pos = dump.find("alexey@zhokhov.com").expect("subtitle present");
+        let sec_pos = dump.find("security").expect("section present");
+        let f_pos = dump.find("auth token").expect("field present");
+        let q_pos = dump.find("?attribute=otp").expect("query present");
+        assert!(v_pos < i_pos, "vault before item");
+        assert!(i_pos < s_pos, "item before subtitle");
+        assert!(s_pos < sec_pos, "subtitle before section");
+        assert!(sec_pos < f_pos, "section before field");
+        assert!(f_pos < q_pos, "field before query");
     }
 
     /// After Task 6, a `Plain` row containing a bare `op://...` string
