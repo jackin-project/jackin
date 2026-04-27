@@ -125,10 +125,10 @@ pub struct EditorState<'a> {
     /// row's value; `Some((scope, None))` opens the `EnvKey` modal
     /// next with the value pre-stashed in `pending_picker_value`.
     pub pending_picker_target: Option<(SecretsScopeTag, Option<String>)>,
-    /// In the sentinel-add flow, holds the picker-supplied path until
-    /// the operator names the key and the `EnvKey` modal commits both
-    /// fields at once.
-    pub pending_picker_value: Option<String>,
+    /// In the sentinel-add flow, holds the picker-supplied `OpRef`
+    /// (wrapped as `EnvValue::OpRef`) until the operator names the key
+    /// and the `EnvKey` modal commits both fields at once.
+    pub pending_picker_value: Option<crate::operator_env::EnvValue>,
 }
 
 /// Save cycle state machine.

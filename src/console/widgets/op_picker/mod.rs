@@ -443,7 +443,7 @@ impl OpPickerState {
             .collect()
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
         // Tests bypass render entirely so we drain here too, not just
         // on tick.
         self.poll_load();
@@ -472,7 +472,7 @@ impl OpPickerState {
         }
     }
 
-    fn handle_account_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
+    fn handle_account_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
         match key.code {
             KeyCode::Esc => ModalOutcome::Cancel,
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -520,7 +520,7 @@ impl OpPickerState {
         }
     }
 
-    fn handle_vault_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
+    fn handle_vault_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
@@ -585,7 +585,7 @@ impl OpPickerState {
         }
     }
 
-    fn handle_item_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
+    fn handle_item_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
@@ -650,7 +650,7 @@ impl OpPickerState {
         }
     }
 
-    fn handle_field_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
+    fn handle_field_key(&mut self, key: KeyEvent) -> ModalOutcome<crate::operator_env::OpRef> {
         match key.code {
             KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
@@ -699,26 +699,8 @@ impl OpPickerState {
             KeyCode::Enter => {
                 let visible = self.filtered_fields();
                 let cur = self.field_list_state.selected.unwrap_or(0);
-                if let Some(field) = visible.get(cur) {
-                    // Prefer the CLI-emitted `reference` verbatim;
-                    // synthesizing from display names mishandled
-                    // sections, slashes, and whitespace. Synthesis is
-                    // a defensive fallback for fixtures that omit
-                    // `reference`.
-                    let path = if field.reference.is_empty() {
-                        let label = if field.label.is_empty() {
-                            field.id.clone()
-                        } else {
-                            field.label.clone()
-                        };
-                        let vault_name =
-                            self.selected_vault.as_ref().map_or("", |v| v.name.as_str());
-                        let item_name = self.selected_item.as_ref().map_or("", |i| i.name.as_str());
-                        format!("op://{vault_name}/{item_name}/{label}")
-                    } else {
-                        field.reference.clone()
-                    };
-                    return ModalOutcome::Commit(path);
+                if visible.get(cur).is_some() {
+                    return ModalOutcome::Commit(build_op_ref_on_commit(self));
                 }
                 ModalOutcome::Continue
             }
@@ -755,6 +737,91 @@ impl OpPickerState {
             }
         }
     }
+}
+
+/// Build an [`crate::operator_env::OpRef`] from the picker's current
+/// fully-drilled-down state (vault + item + field all selected).
+///
+/// The `op` field uses UUID-form identifiers from the picker's pane
+/// selections. The `path` field uses human-readable names, with an
+/// inline `Item[subtitle]` annotation when the item shares its name
+/// with another item in the same vault (ambiguity-aware).
+///
+/// Bracket-bearing item names suppress the subtitle embed (defensive —
+/// the UUID in `op` still resolves correctly). Empty subtitles also
+/// suppress the embed.
+///
+/// # Panics
+///
+/// Panics if vault, item, or field are not selected — callers must
+/// ensure the picker has fully drilled to the field pane before calling.
+pub(crate) fn build_op_ref_on_commit(state: &OpPickerState) -> crate::operator_env::OpRef {
+    let vault = state
+        .selected_vault
+        .as_ref()
+        .expect("vault must be selected before commit");
+    let item = state
+        .selected_item
+        .as_ref()
+        .expect("item must be selected before commit");
+    let cur = state.field_list_state.selected.unwrap_or(0);
+    let field = state
+        .filtered_fields()
+        .into_iter()
+        .nth(cur)
+        .expect("field must be selected before commit");
+
+    // Ambiguity check: any other item in the vault sharing this name?
+    let item_name_collides = state
+        .items
+        .iter()
+        .any(|i| i.id != item.id && i.name == item.name);
+
+    // Defensive: bracket-bearing names would corrupt the `path` grammar.
+    let safe_to_embed = !item.name.contains('[') && !item.name.contains(']');
+
+    let item_segment = if item_name_collides && safe_to_embed && !item.subtitle.is_empty() {
+        format!("{}[{}]", item.name, item.subtitle)
+    } else {
+        item.name.clone()
+    };
+
+    // Section info comes from parsing the field's emitted reference,
+    // which `op item get` populates with the human-readable path. We
+    // rewrite vault/item/field segments to UUID form and preserve the
+    // section segment.
+    let parsed = crate::operator_env::parse_op_reference(&field.reference);
+
+    let (op, path) = match parsed {
+        Some(p) if p.section.is_some() => {
+            let section_name = p.section.unwrap();
+            (
+                format!(
+                    "op://{}/{}/{}/{}",
+                    vault.id, item.id, section_name, field.id
+                ),
+                format!(
+                    "{}/{}/{}/{}",
+                    vault.name, item_segment, section_name, field.label
+                ),
+            )
+        }
+        _ => {
+            // No section, or reference was empty / unparseable — fall
+            // back to synthesizing from display names.
+            let label = if field.label.is_empty() {
+                field.id.clone()
+            } else {
+                field.label.clone()
+            };
+            (
+                format!("op://{}/{}/{}", vault.id, item.id, field.id),
+                format!("{}/{}/{}", vault.name, item_segment, label),
+            )
+        }
+    };
+
+    crate::operator_env::OpRef { op, path }
 }
 
 /// Classifies by stderr substring because `anyhow::Error` has no
@@ -1057,17 +1124,22 @@ mod tests {
         assert_eq!(visible[0].label, "pw");
     }
 
-    /// Backward-compat fallback: synthesize from display names when
-    /// `OpField::reference` is missing (older fixtures).
+    /// Backward-compat fallback: synthesize from display names (UUID
+    /// form for op, human names for path) when `OpField::reference` is
+    /// missing (older fixtures).
     #[test]
     fn enter_on_field_commits_op_path() {
         let mut s = picker_ready();
-        s.selected_vault = Some(vault("Personal"));
+        s.selected_vault = Some(OpVault {
+            id: "v-Personal".into(),
+            name: "Personal".into(),
+        });
         s.selected_item = Some(OpItem {
             id: "i-api".into(),
             name: "API Keys".into(),
             subtitle: String::new(),
         });
+        s.items = vec![s.selected_item.clone().unwrap()];
         s.fields = vec![
             field("password", "concealed", true),
             field("username", "text", false),
@@ -1077,34 +1149,45 @@ mod tests {
 
         let outcome = s.handle_key(key(KeyCode::Enter));
         match outcome {
-            ModalOutcome::Commit(path) => {
-                assert_eq!(path, "op://Personal/API Keys/password");
+            ModalOutcome::Commit(op_ref) => {
+                assert_eq!(op_ref.op, "op://v-Personal/i-api/password");
+                assert_eq!(op_ref.path, "Personal/API Keys/password");
             }
             other => panic!("expected Commit, got {other:?}"),
         }
     }
 
-    /// Display name with whitespace + section-aware reference must
-    /// commit verbatim, not via synthesized path.
+    /// Section-aware reference: section must be preserved in both `op`
+    /// (UUID-form vault/item/field, section name preserved) and `path`
+    /// (human-readable, section name preserved).
     #[test]
     fn picker_commit_uses_op_provided_reference_not_synthesized() {
         let mut s = picker_ready();
-        s.selected_vault = Some(vault("Personal"));
+        s.selected_vault = Some(OpVault {
+            id: "v-Personal".into(),
+            name: "Personal".into(),
+        });
         s.selected_item = Some(OpItem {
             id: "i-test".into(),
             name: "name with spaces".into(),
             subtitle: String::new(),
         });
+        s.items = vec![s.selected_item.clone().unwrap()];
         s.fields = vec![field_with_reference("api", "op://Personal/test/auth/api")];
         s.field_list_state.select(Some(0));
         s.stage = OpPickerStage::Field;
 
         let outcome = s.handle_key(key(KeyCode::Enter));
         match outcome {
-            ModalOutcome::Commit(path) => {
+            ModalOutcome::Commit(op_ref) => {
+                // Section "auth" must be preserved; vault/item/field use UUIDs.
                 assert_eq!(
-                    path, "op://Personal/test/auth/api",
-                    "picker must commit `field.reference` verbatim, not a synthesized path"
+                    op_ref.op, "op://v-Personal/i-test/auth/api",
+                    "op must use UUID-form vault/item, preserve section, UUID field id"
+                );
+                assert_eq!(
+                    op_ref.path, "Personal/name with spaces/auth/api",
+                    "path must use human-readable names and preserve section"
                 );
             }
             other => panic!("expected Commit, got {other:?}"),
@@ -1707,6 +1790,168 @@ mod tests {
                 Some("acct1".to_string())
             )),
             "worker thread must forward (item_id, vault_id, account_id) verbatim"
+        );
+    }
+
+    // ── build_op_ref_on_commit tests ────────────────────────────────
+
+    /// Build an `OpPickerState` fully drilled down to a field selection,
+    /// bypassing the async worker. `items_in_vault` is the full list
+    /// seeded into `s.items` (used for ambiguity detection).
+    fn test_state_picked(
+        vault: OpVault,
+        items_in_vault: Vec<OpItem>,
+        selected_item: OpItem,
+        field: OpField,
+    ) -> OpPickerState {
+        let mut s = picker_ready();
+        s.selected_vault = Some(vault);
+        s.items = items_in_vault;
+        s.selected_item = Some(selected_item);
+        s.fields = vec![field];
+        s.field_list_state.select(Some(0));
+        s.stage = OpPickerStage::Field;
+        s.load_state = OpLoadState::Ready;
+        s
+    }
+
+    #[test]
+    fn picker_commit_writes_op_ref_with_uuid_form_and_clean_path_when_unique() {
+        let state = test_state_picked(
+            OpVault {
+                id: "v_uuid".into(),
+                name: "Private".into(),
+            },
+            vec![OpItem {
+                id: "i_uuid".into(),
+                name: "Stripe".into(),
+                subtitle: "".into(),
+            }],
+            OpItem {
+                id: "i_uuid".into(),
+                name: "Stripe".into(),
+                subtitle: "".into(),
+            },
+            OpField {
+                id: "f_uuid".into(),
+                label: "api key".into(),
+                reference: "op://Private/Stripe/api key".into(),
+                field_type: "concealed".into(),
+                concealed: true,
+            },
+        );
+        let r = build_op_ref_on_commit(&state);
+        assert_eq!(r.op, "op://v_uuid/i_uuid/f_uuid");
+        assert_eq!(r.path, "Private/Stripe/api key");
+    }
+
+    #[test]
+    fn picker_commit_embeds_subtitle_when_item_name_collides_in_vault() {
+        let claude_a = OpItem {
+            id: "i_uuid_a".into(),
+            name: "Claude".into(),
+            subtitle: "alexey@zhokhov.com".into(),
+        };
+        let claude_b = OpItem {
+            id: "i_uuid_b".into(),
+            name: "Claude".into(),
+            subtitle: "alexey@chainargos.com".into(),
+        };
+        let state = test_state_picked(
+            OpVault {
+                id: "v_uuid".into(),
+                name: "Private".into(),
+            },
+            vec![claude_a.clone(), claude_b.clone()],
+            claude_a.clone(),
+            OpField {
+                id: "f_uuid".into(),
+                label: "auth token".into(),
+                reference: "op://Private/Claude/security/auth token".into(),
+                field_type: "concealed".into(),
+                concealed: true,
+            },
+        );
+        let r = build_op_ref_on_commit(&state);
+        // Section "security" must be preserved in both op and path.
+        assert!(
+            r.op.starts_with("op://v_uuid/i_uuid_a/"),
+            "op had wrong prefix: {}",
+            r.op
+        );
+        assert!(r.op.ends_with("/f_uuid"), "op had wrong suffix: {}", r.op);
+        assert_eq!(
+            r.path,
+            "Private/Claude[alexey@zhokhov.com]/security/auth token"
+        );
+    }
+
+    #[test]
+    fn picker_commit_suppresses_subtitle_when_item_name_has_brackets() {
+        // Defensive: bracket-bearing item names would make `path` ambiguous.
+        let weird_a = OpItem {
+            id: "i_uuid_a".into(),
+            name: "Item [tag]".into(),
+            subtitle: "user@x".into(),
+        };
+        let weird_b = OpItem {
+            id: "i_uuid_b".into(),
+            name: "Item [tag]".into(),
+            subtitle: "user@y".into(),
+        };
+        let state = test_state_picked(
+            OpVault {
+                id: "v_uuid".into(),
+                name: "Private".into(),
+            },
+            vec![weird_a.clone(), weird_b.clone()],
+            weird_a.clone(),
+            OpField {
+                id: "f_uuid".into(),
+                label: "auth".into(),
+                reference: "op://Private/Item [tag]/auth".into(),
+                field_type: "concealed".into(),
+                concealed: false,
+            },
+        );
+        let r = build_op_ref_on_commit(&state);
+        assert_eq!(
+            r.path, "Private/Item [tag]/auth",
+            "no subtitle embed for bracket-bearing item names"
+        );
+    }
+
+    #[test]
+    fn picker_commit_skips_subtitle_when_subtitle_empty() {
+        let note_a = OpItem {
+            id: "i_a".into(),
+            name: "Notes".into(),
+            subtitle: "".into(),
+        };
+        let note_b = OpItem {
+            id: "i_b".into(),
+            name: "Notes".into(),
+            subtitle: "".into(),
+        };
+        let state = test_state_picked(
+            OpVault {
+                id: "v_uuid".into(),
+                name: "Private".into(),
+            },
+            vec![note_a.clone(), note_b.clone()],
+            note_a.clone(),
+            OpField {
+                id: "f_uuid".into(),
+                label: "notesPlain".into(),
+                reference: "op://Private/Notes/notesPlain".into(),
+                field_type: "string".into(),
+                concealed: false,
+            },
+        );
+        let r = build_op_ref_on_commit(&state);
+        assert_eq!(
+            r.path, "Private/Notes/notesPlain",
+            "empty subtitle => no embed even on collision"
         );
     }
 }

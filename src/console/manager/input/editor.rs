@@ -920,19 +920,20 @@ pub(super) fn handle_editor_modal(
         }
         Modal::OpPicker { state: picker } => {
             match picker.handle_key(key) {
-                ModalOutcome::Commit(path) => {
+                ModalOutcome::Commit(op_ref) => {
                     // Operator picked a Vault → Item → Field path. The
                     // dispatch depends on whether `P` was pressed on a
                     // key row (write directly) or on an `+ Add` sentinel
-                    // (stash the path, ask for the key name first).
+                    // (stash the OpRef, ask for the key name first).
                     let target = editor.pending_picker_target.take();
                     match target {
                         Some((scope, Some(key))) => {
-                            set_pending_env_value(editor, &scope, &key, &path);
+                            set_pending_env_op_ref(editor, &scope, &key, op_ref);
                             editor.modal = None;
                         }
                         Some((scope, None)) => {
-                            editor.pending_picker_value = Some(path);
+                            editor.pending_picker_value =
+                                Some(crate::operator_env::EnvValue::OpRef(op_ref));
                             let label = format!("New environment key for {}", scope_label(&scope));
                             let state = env_key_input_state(editor, &scope, label, "");
                             editor.modal = Some(Modal::TextInput {
@@ -1058,6 +1059,52 @@ fn set_pending_env_value(
     }
 }
 
+/// Write an `OpRef` (picker commit result) into the pending env map.
+fn set_pending_env_op_ref(
+    editor: &mut EditorState<'_>,
+    scope: &SecretsScopeTag,
+    key: &str,
+    op_ref: crate::operator_env::OpRef,
+) {
+    match scope {
+        SecretsScopeTag::Workspace => {
+            editor.pending.env.insert(
+                key.to_string(),
+                crate::operator_env::EnvValue::OpRef(op_ref),
+            );
+        }
+        SecretsScopeTag::Agent(agent) => {
+            let entry = editor.pending.agents.entry(agent.clone()).or_default();
+            entry.env.insert(
+                key.to_string(),
+                crate::operator_env::EnvValue::OpRef(op_ref),
+            );
+            editor.secrets_expanded.insert(agent.clone());
+        }
+    }
+}
+
+/// Write an already-typed `EnvValue` into the pending env map.
+/// Used by the sentinel-add flow where the picker stashed an `OpRef`
+/// before the key name was known.
+fn set_pending_env_value_typed(
+    editor: &mut EditorState<'_>,
+    scope: &SecretsScopeTag,
+    key: &str,
+    value: crate::operator_env::EnvValue,
+) {
+    match scope {
+        SecretsScopeTag::Workspace => {
+            editor.pending.env.insert(key.to_string(), value);
+        }
+        SecretsScopeTag::Agent(agent) => {
+            let entry = editor.pending.agents.entry(agent.clone()).or_default();
+            entry.env.insert(key.to_string(), value);
+            editor.secrets_expanded.insert(agent.clone());
+        }
+    }
+}
+
 pub(super) fn apply_text_input_to_pending(
     target: &TextInputTarget,
     editor: &mut EditorState<'_>,
@@ -1093,10 +1140,10 @@ pub(super) fn apply_text_input_to_pending(
                 return;
             }
             let key = trimmed.to_string();
-            // Sentinel-picker fast path: P committed a path before the
+            // Sentinel-picker fast path: P committed an OpRef before the
             // key existed; both fields land here.
             if let Some(stashed) = editor.pending_picker_value.take() {
-                set_pending_env_value(editor, scope, &key, &stashed);
+                set_pending_env_value_typed(editor, scope, &key, stashed);
                 editor.pending_env_key = None;
                 return;
             }

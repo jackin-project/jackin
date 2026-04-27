@@ -739,15 +739,16 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     // The reference must land directly in pending.env (no text modal
-    // intermediate).
+    // intermediate). `as_persisted_str()` on an `OpRef` returns the
+    // UUID-form `op` field (vault uuid=v1, item uuid=i1, field=password).
     assert_eq!(
         editor(&state)
             .pending
             .env
             .get("DB_URL")
             .map(|v| v.as_persisted_str()),
-        Some("op://Personal/Database/password"),
-        "picker commit must write the op:// reference straight into pending.env[key]"
+        Some("op://v1/i1/password"),
+        "picker commit must write the UUID-form op:// reference straight into pending.env[key]"
     );
     assert!(
         editor(&state).modal.is_none(),
@@ -834,7 +835,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
     }
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
-    // After the picker commits: EnvKey modal is open and the path is
+    // After the picker commits: EnvKey modal is open and the OpRef is
     // stashed on pending_picker_value.
     match &editor(&state).modal {
         Some(Modal::TextInput {
@@ -843,10 +844,15 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
         }) => {}
         other => panic!("expected TextInput(EnvKey) modal; got {other:?}"),
     }
+    // pending_picker_value holds an EnvValue::OpRef; check the `op` field
+    // via as_persisted_str(). UUID form: vault=v1, item=i1, field=credential.
     assert_eq!(
-        editor(&state).pending_picker_value.as_deref(),
-        Some("op://Personal/API Keys/credential"),
-        "picker commit must stash the op:// reference for the EnvKey commit"
+        editor(&state)
+            .pending_picker_value
+            .as_ref()
+            .map(|v| v.as_persisted_str()),
+        Some("op://v1/i1/credential"),
+        "picker commit must stash the UUID-form op:// reference for the EnvKey commit"
     );
 
     // Type the new key name and Enter — the EnvKey commit handler must
@@ -862,8 +868,8 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
             .env
             .get("API_KEY")
             .map(|v| v.as_persisted_str()),
-        Some("op://Personal/API Keys/credential"),
-        "EnvKey commit must write the stashed picker value into pending.env"
+        Some("op://v1/i1/credential"),
+        "EnvKey commit must write the stashed UUID-form OpRef into pending.env"
     );
     assert!(
         editor(&state).pending_picker_value.is_none(),
@@ -1271,10 +1277,10 @@ fn op_picker_multi_account_flow() -> Result<()> {
         }
     }
 
-    // Enter on the Field pane commits the path. The committed reference
-    // is the simple `op://Vault/Item/Field` form — account scoping is
-    // not (yet) embedded in the URL; the launch-time resolver uses the
-    // operator's default `op` account context.
+    // Enter on the Field pane commits the OpRef. The `op` field uses
+    // UUID-form identifiers (vault=v1, item=i1, field=password).
+    // Account scoping is not embedded in the URL; the launch-time
+    // resolver uses the operator's default `op` account context.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert_eq!(
         editor(&state)
@@ -1282,8 +1288,8 @@ fn op_picker_multi_account_flow() -> Result<()> {
             .env
             .get("DB_URL")
             .map(|v| v.as_persisted_str()),
-        Some("op://Shared/Database/password"),
-        "multi-account picker commit must produce a Vault/Item/Field path"
+        Some("op://v1/i1/password"),
+        "multi-account picker commit must produce a UUID-form op:// reference"
     );
     assert!(editor(&state).modal.is_none());
     Ok(())
