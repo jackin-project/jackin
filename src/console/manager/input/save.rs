@@ -505,6 +505,13 @@ fn build_confirm_save_lines(
                     value,
                 ),
             ]));
+            if editor.pending.keep_awake.enabled {
+                out.push(Line::raw(""));
+                out.push(Line::from(vec![
+                    Span::styled("Keep awake: ", heading),
+                    Span::styled("enabled", value),
+                ]));
+            }
             let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
             if !env_lines.is_empty() {
                 out.push(Line::raw(""));
@@ -618,6 +625,23 @@ fn build_confirm_save_lines(
                 } else {
                     out.push(Line::from(Span::styled("  + (none)", value)));
                 }
+            }
+
+            if editor.pending.keep_awake.enabled != editor.original.keep_awake.enabled {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Keep awake:", heading)));
+                let old_label = if editor.original.keep_awake.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                };
+                let new_label = if editor.pending.keep_awake.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                };
+                out.push(Line::from(Span::styled(format!("  - {old_label}"), dim)));
+                out.push(Line::from(Span::styled(format!("  + {new_label}"), value)));
             }
 
             let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
@@ -863,7 +887,7 @@ mod tests {
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
     use crate::paths::JackinPaths;
-    use crate::workspace::{MountConfig, WorkspaceConfig};
+    use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
     use crossterm::event::KeyCode;
     use tempfile::TempDir;
 
@@ -1666,6 +1690,49 @@ mod tests {
             .join("|");
         assert!(joined.contains("/old"), "old value shown: {joined}");
         assert!(joined.contains("/new"), "new value shown: {joined}");
+    }
+
+    #[test]
+    fn edit_mode_confirm_save_shows_keep_awake_toggle() {
+        // A keep_awake toggle in the TUI must surface in the ConfirmSave
+        // preview so the operator can see what they are confirming. The
+        // on-disk write was already correct; this pins the modal preview
+        // so a future refactor cannot silently re-omit the diff line.
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            keep_awake: KeepAwakeConfig { enabled: false },
+            ..Default::default()
+        };
+        let (tmp, paths, mut config) = setup_with_workspace("ka-toggle", ws.clone()).unwrap();
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("ka-toggle".into(), ws);
+        editor.pending.keep_awake.enabled = true;
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        let Some(Modal::ConfirmSave { state: modal }) = &e.modal else {
+            panic!("expected ConfirmSave");
+        };
+        let joined: String = modal
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect::<Vec<_>>()
+            .join("|");
+        assert!(
+            joined.contains("Keep awake"),
+            "keep_awake heading shown: {joined}"
+        );
+        assert!(
+            joined.contains("disabled") && joined.contains("enabled"),
+            "both old and new keep_awake states shown: {joined}"
+        );
     }
 
     // ── Source-drift safeguard (Task 10.3) ────────────────────────────
