@@ -67,6 +67,55 @@ fn parse_host_ref(value: &str) -> Option<&str> {
     None
 }
 
+/// Operator-defined env value. Either a 1Password reference pinned by
+/// UUIDs (with a display snapshot), or any other string value.
+///
+/// Untagged: serde picks the variant by structural shape — inline TOML
+/// table → `OpRef`, scalar string → `Plain`. Legacy bare `op://...`
+/// strings deserialize as `Plain` and are passed through to the
+/// container as literals (no resolution attempt).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum EnvValue {
+    OpRef(OpRef),
+    Plain(String),
+}
+
+/// Pinned 1Password reference. `op` is the canonical UUID-form URI we
+/// pass to `op read`; `path` is a snapshot breadcrumb for human-
+/// readable editor display, captured at pick time.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OpRef {
+    /// Canonical `op://` URI. Format:
+    /// `op://<vault_id>/<item_id>/[<section_id>/]<field_id>[?attribute=<name>]`
+    pub op: String,
+
+    /// Snapshot breadcrumb captured at pick / resolve time:
+    /// `<Vault>/<Item>[<subtitle>?]/[<Section>/]<Field>[?attribute=<name>]`
+    /// `[subtitle]` is embedded only when the item shares its name with
+    /// another item in the same vault at write time.
+    pub path: String,
+}
+
+impl EnvValue {
+    /// View the value as the string we'd pass to a downstream container
+    /// for `Plain`, or the canonical `op://` URI for `OpRef`. Resolution
+    /// (calling the 1Password CLI for `OpRef`) happens in `dispatch_value`,
+    /// not here — this is for display, comparison, and migration paths.
+    pub const fn as_persisted_str(&self) -> &str {
+        match self {
+            Self::Plain(s) => s.as_str(),
+            Self::OpRef(r) => r.op.as_str(),
+        }
+    }
+}
+
+impl From<String> for EnvValue {
+    fn from(s: String) -> Self {
+        Self::Plain(s)
+    }
+}
+
 #[must_use]
 pub fn is_op_reference(value: &str) -> bool {
     value.starts_with("op://")
@@ -2129,5 +2178,49 @@ mod tests {
             msg.contains("not signed in") || msg.contains("op signin"),
             "expected signed-out detection in error: {msg}"
         );
+    }
+
+    #[test]
+    fn env_value_round_trip_through_toml() {
+        use std::collections::BTreeMap;
+
+        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+        struct Wrap {
+            env: BTreeMap<String, EnvValue>,
+        }
+
+        let toml_in = r#"
+[env]
+PLAIN = "literal-value"
+HOST_VAR = "${HOME}"
+LEGACY = "op://Vault/Item/Field"
+PINNED = { op = "op://abc/def/fld", path = "Vault/Item/Field" }
+PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
+"#;
+        let parsed: Wrap = toml::from_str(toml_in).unwrap();
+        assert_eq!(
+            parsed.env.get("PLAIN"),
+            Some(&EnvValue::Plain("literal-value".into()))
+        );
+        assert_eq!(
+            parsed.env.get("HOST_VAR"),
+            Some(&EnvValue::Plain("${HOME}".into()))
+        );
+        assert_eq!(
+            parsed.env.get("LEGACY"),
+            Some(&EnvValue::Plain("op://Vault/Item/Field".into()))
+        );
+        assert_eq!(
+            parsed.env.get("PINNED"),
+            Some(&EnvValue::OpRef(OpRef {
+                op: "op://abc/def/fld".into(),
+                path: "Vault/Item/Field".into(),
+            }))
+        );
+
+        // Round-trip back to TOML and re-parse must produce the same map.
+        let serialized = toml::to_string(&parsed).unwrap();
+        let reparsed: Wrap = toml::from_str(&serialized).unwrap();
+        assert_eq!(parsed, reparsed);
     }
 }
