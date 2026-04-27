@@ -102,6 +102,7 @@ export default defineConfig({
                     { label: 'Selectable sandbox backends', slug: 'reference/roadmap/selectable-sandbox-backends' },
                     { label: 'Reproducibility & provenance pinning', slug: 'reference/roadmap/reproducibility-pinning' },
                     { label: 'Per-mount isolation', slug: 'reference/roadmap/per-mount-isolation' },
+                    { label: 'Worktree cleanup assessment', slug: 'reference/roadmap/worktree-cleanup-assessment' },
                     { label: 'Devcontainer parity', slug: 'reference/roadmap/devcontainer-parity' },
                     { label: 'Docs markdown linting', slug: 'reference/roadmap/docs-markdown-linting' },
                     { label: 'Open review findings', slug: 'reference/roadmap/open-review-findings' },
