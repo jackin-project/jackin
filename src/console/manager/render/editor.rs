@@ -677,6 +677,72 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
+/// Display-side breadcrumb parser for `OpRef.path`.
+/// Grammar: `<Vault>/<Item>[<subtitle>?]/[<Section>/]<Field>[?<query>]`
+#[derive(Debug, PartialEq, Eq)]
+// Task 6 wires this in; until then the struct is exercised only by tests.
+#[allow(dead_code)]
+pub(super) struct PathBreadcrumb {
+    pub vault: String,
+    pub item: String,
+    pub item_subtitle: Option<String>,
+    pub section: Option<String>,
+    pub field: String,
+    pub attribute_query: Option<String>,
+}
+
+// Task 6 wires this in; until then the function is exercised only by tests.
+#[allow(dead_code)]
+pub(super) fn parse_path_breadcrumb(path: &str) -> Option<PathBreadcrumb> {
+    if path.is_empty() {
+        return None;
+    }
+    // Peel off optional `?attribute=...` / `?attr=...` / `?ssh-format=...` query.
+    let (path_no_q, attr) = path
+        .find('?')
+        .map_or((path, None), |i| (&path[..i], Some(path[i..].to_string())));
+    let segs: Vec<&str> = path_no_q.split('/').collect();
+    let (item, item_subtitle, vault, section, field) = match segs.as_slice() {
+        [vault, item_seg, field] => {
+            let (item, sub) = split_bracket_subtitle(item_seg);
+            (item, sub, vault.to_string(), None, field.to_string())
+        }
+        [vault, item_seg, section, field] => {
+            let (item, sub) = split_bracket_subtitle(item_seg);
+            (
+                item,
+                sub,
+                vault.to_string(),
+                Some(section.to_string()),
+                field.to_string(),
+            )
+        }
+        _ => return None,
+    };
+    Some(PathBreadcrumb {
+        vault,
+        item,
+        item_subtitle,
+        section,
+        field,
+        attribute_query: attr,
+    })
+}
+
+#[allow(dead_code)]
+fn split_bracket_subtitle(s: &str) -> (String, Option<String>) {
+    if let Some(open) = s.rfind('[')
+        && s.ends_with(']')
+        && open < s.len() - 1
+    {
+        return (
+            s[..open].to_string(),
+            Some(s[open + 1..s.len() - 1].to_string()),
+        );
+    }
+    (s.to_string(), None)
+}
+
 /// `op://` rows skip masking and render as a breadcrumb (3-segment:
 /// `vault / item → field`, 4-segment adds `section`). Account scope
 /// isn't part of the `op://` path — see the picker docstring.
@@ -1704,5 +1770,70 @@ mod eligible_agents_for_override_tests {
         let editor = editor_for(ws_with_overrides(&[], &[]));
         let eligible = eligible_agents_for_override(&editor, &cfg);
         assert!(eligible.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod parse_path_breadcrumb_tests {
+    use super::parse_path_breadcrumb;
+
+    #[test]
+    fn parse_path_breadcrumb_3_segment_no_subtitle() {
+        let p = parse_path_breadcrumb("Private/Stripe/api key").unwrap();
+        assert_eq!(p.vault, "Private");
+        assert_eq!(p.item, "Stripe");
+        assert!(p.item_subtitle.is_none());
+        assert!(p.section.is_none());
+        assert_eq!(p.field, "api key");
+        assert!(p.attribute_query.is_none());
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_3_segment_with_subtitle() {
+        let p = parse_path_breadcrumb("Private/Claude[alexey@zhokhov.com]/auth").unwrap();
+        assert_eq!(p.vault, "Private");
+        assert_eq!(p.item, "Claude");
+        assert_eq!(p.item_subtitle.as_deref(), Some("alexey@zhokhov.com"));
+        assert!(p.section.is_none());
+        assert_eq!(p.field, "auth");
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_4_segment_with_subtitle() {
+        let p = parse_path_breadcrumb("Private/Claude[alexey@zhokhov.com]/security/auth token")
+            .unwrap();
+        assert_eq!(p.vault, "Private");
+        assert_eq!(p.item, "Claude");
+        assert_eq!(p.item_subtitle.as_deref(), Some("alexey@zhokhov.com"));
+        assert_eq!(p.section.as_deref(), Some("security"));
+        assert_eq!(p.field, "auth token");
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_with_attribute_query() {
+        let p = parse_path_breadcrumb("Private/GitHub/one-time password?attribute=otp").unwrap();
+        assert_eq!(p.field, "one-time password");
+        assert_eq!(p.attribute_query.as_deref(), Some("?attribute=otp"));
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_subtitle_containing_brackets() {
+        // rfind('[') means the last [...] is the subtitle.
+        let p = parse_path_breadcrumb("Private/Claude[has [bracket]]/auth").unwrap();
+        assert_eq!(p.item, "Claude[has ");
+        assert_eq!(p.item_subtitle.as_deref(), Some("bracket]"));
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_invalid_too_few_segments() {
+        assert!(parse_path_breadcrumb("Private/Item").is_none());
+        assert!(parse_path_breadcrumb("Private").is_none());
+        assert!(parse_path_breadcrumb("").is_none());
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_invalid_too_many_segments() {
+        // 5+ segments is not a valid 1Password breadcrumb.
+        assert!(parse_path_breadcrumb("a/b/c/d/e").is_none());
     }
 }
