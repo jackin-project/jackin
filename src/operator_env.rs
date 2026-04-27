@@ -18,6 +18,10 @@ pub trait OpRunner {
 /// `op://...` → `op_runner.read`, `$NAME` / `${NAME}` → `host_env`,
 /// otherwise verbatim. `layer_label` / `var_name` only feed error
 /// messages.
+///
+/// This function is retained for the CLI input parser (Task 8) and for
+/// resolving `EnvValue::Plain` strings (which may contain `$VAR` refs).
+/// Runtime dispatch for `EnvValue` uses `resolve_env_value` instead.
 pub fn dispatch_value<R>(
     layer_label: &str,
     var_name: &str,
@@ -44,6 +48,67 @@ where
         });
     }
 
+    Ok(value.to_string())
+}
+
+/// Resolve a single [`EnvValue`] to its final string, dispatching on the
+/// enum variant rather than lexical string prefix.
+///
+/// - `EnvValue::Plain` passes through `$VAR` / `${VAR}` expansion via
+///   the host environment; bare `op://...` strings stored as `Plain` are
+///   **not** resolved and flow to the container literally.
+/// - `EnvValue::OpRef` shells out to `op read <op>` using the canonical
+///   UUID URI; failures are wrapped with the human-readable `path` for
+///   actionable error messages.
+///
+/// `layer_label` / `var_name` are used only in error messages.
+pub fn resolve_env_value<R, H>(
+    layer_label: &str,
+    var_name: &str,
+    value: &EnvValue,
+    op_runner: &R,
+    host_env: H,
+) -> anyhow::Result<String>
+where
+    R: OpRunner + ?Sized,
+    H: FnMut(&str) -> Result<String, std::env::VarError>,
+{
+    match value {
+        EnvValue::Plain(s) => {
+            // Delegate to the string-based dispatcher but skip the op://
+            // branch — the discriminator is now structural (the enum variant).
+            // Plain("op://...") passes through literally; no op read call.
+            dispatch_plain(layer_label, var_name, s, host_env)
+        }
+        EnvValue::OpRef(r) => op_runner.read(&r.op).map_err(|e| {
+            anyhow::anyhow!(
+                "{layer_label} env var {var_name:?}: 1Password reference {:?} failed: {e}",
+                r.path
+            )
+        }),
+    }
+}
+
+/// Resolve a plain string value: `$NAME` / `${NAME}` → host env lookup,
+/// otherwise verbatim. `op://...` strings are intentionally NOT resolved
+/// here — that branch lives exclusively in [`resolve_env_value`] for
+/// `EnvValue::OpRef`.
+fn dispatch_plain<H>(
+    layer_label: &str,
+    var_name: &str,
+    value: &str,
+    mut host_env: H,
+) -> anyhow::Result<String>
+where
+    H: FnMut(&str) -> Result<String, std::env::VarError>,
+{
+    if let Some(host_name) = parse_host_ref(value) {
+        return host_env(host_name).map_err(|_| {
+            anyhow::anyhow!(
+                "{layer_label} env var {var_name:?}: host env var {host_name:?} is not set"
+            )
+        });
+    }
     Ok(value.to_string())
 }
 
@@ -803,21 +868,21 @@ pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Res
     )
 }
 
-/// (key → (layer, `raw_value`)) precedence-merged across the four
-/// config layers — global, agent, workspace, workspace-agent — for the
-/// given `(agent, workspace)` selection. Later layers overwrite earlier
-/// ones, so the final layer attached to each key is the one that wins.
+/// (key → (layer, value)) precedence-merged across the four config
+/// layers — global, agent, workspace, workspace-agent — for the given
+/// `(agent, workspace)` selection. Later layers overwrite earlier ones,
+/// so the final layer attached to each key is the one that wins.
 fn build_attributed_layers(
     config: &crate::config::AppConfig,
     agent_selector: Option<&str>,
     workspace_name: Option<&str>,
-) -> std::collections::BTreeMap<String, (EnvLayer, String)> {
-    let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
+) -> std::collections::BTreeMap<String, (EnvLayer, EnvValue)> {
+    let mut attributed: std::collections::BTreeMap<String, (EnvLayer, EnvValue)> =
         std::collections::BTreeMap::new();
 
     let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, EnvValue>| {
         for (k, v) in env {
-            attributed.insert(k.clone(), (layer.clone(), v.as_persisted_str().to_string()));
+            attributed.insert(k.clone(), (layer.clone(), v.clone()));
         }
     };
 
@@ -882,18 +947,20 @@ where
     let mut resolved = std::collections::BTreeMap::new();
     let mut errors: Vec<String> = Vec::new();
 
-    // Probe op CLI once up front when any value uses op://, so a
+    // Probe op CLI once up front when any value is an OpRef, so a
     // missing op surfaces as one install-link error not N.
-    let uses_op = attributed.values().any(|(_, v)| is_op_reference(v));
+    let uses_op = attributed
+        .values()
+        .any(|(_, v)| matches!(v, EnvValue::OpRef(_)));
     if uses_op && let Err(e) = op_runner.probe() {
         anyhow::bail!("operator env resolution aborted: {e}");
     }
 
-    for (key, (layer, raw_value)) in &attributed {
+    for (key, (layer, value)) in &attributed {
         let layer_label = format!("{layer}");
-        match dispatch_value(&layer_label, key, raw_value, op_runner, &mut host_env) {
-            Ok(value) => {
-                resolved.insert(key.clone(), value);
+        match resolve_env_value(&layer_label, key, value, op_runner, &mut host_env) {
+            Ok(v) => {
+                resolved.insert(key.clone(), v);
             }
             Err(e) => errors.push(format!("  - {e}")),
         }
@@ -977,20 +1044,20 @@ fn write_launch_diagnostic<W: std::io::Write>(
             .min(40);
         let raw_width = attributed
             .values()
-            .map(|(_, v)| classify_value(v).len())
+            .map(|(_, v)| classify_env_value(v).len())
             .max()
             .unwrap_or(0)
             .min(40);
-        for (key, (layer, raw_value)) in &attributed {
-            let kind = classify_value(raw_value);
+        for (key, (layer, value)) in &attributed {
+            let kind = classify_env_value(value);
             writeln!(w, "  {key:key_width$}  {kind:raw_width$}  ({layer})")?;
         }
         return Ok(());
     }
 
     let (mut op_count, mut host_count, mut literal_count) = (0u32, 0u32, 0u32);
-    for (_, raw) in attributed.values() {
-        match ValueKind::of(raw) {
+    for (_, value) in attributed.values() {
+        match ValueKind::of_env_value(value) {
             ValueKind::Op => op_count += 1,
             ValueKind::Host => host_count += 1,
             ValueKind::Literal => literal_count += 1,
@@ -1015,24 +1082,33 @@ enum ValueKind {
 }
 
 impl ValueKind {
-    fn of(raw: &str) -> Self {
-        if is_op_reference(raw) {
-            Self::Op
-        } else if parse_host_ref(raw).is_some() {
-            Self::Host
-        } else {
-            Self::Literal
+    fn of_env_value(value: &EnvValue) -> Self {
+        match value {
+            EnvValue::OpRef(_) => Self::Op,
+            EnvValue::Plain(s) => {
+                if parse_host_ref(s).is_some() {
+                    Self::Host
+                } else {
+                    Self::Literal
+                }
+            }
         }
     }
 }
 
-/// Value-free label: `op://...` and `$NAME` returned verbatim (the
-/// reference is not secret, the resolved value is); literals collapse
-/// to `"literal"` so the value never reaches stderr.
-fn classify_value(raw: &str) -> String {
-    match ValueKind::of(raw) {
-        ValueKind::Op | ValueKind::Host => raw.to_string(),
-        ValueKind::Literal => "literal".to_string(),
+/// Value-free label: `OpRef` emits the canonical `op://` URI; `$NAME`
+/// host refs are returned verbatim; literals collapse to `"literal"` so
+/// the value never reaches stderr.
+fn classify_env_value(value: &EnvValue) -> String {
+    match value {
+        EnvValue::OpRef(r) => r.op.clone(),
+        EnvValue::Plain(s) => {
+            if parse_host_ref(s).is_some() {
+                s.clone()
+            } else {
+                "literal".to_string()
+            }
+        }
     }
 }
 
@@ -1213,6 +1289,81 @@ mod tests {
                 None => panic!("op CLI should not have been invoked"),
             }
         }
+    }
+
+    // ---- resolve_env_value dispatch tests --------------------------------
+
+    #[test]
+    fn dispatch_plain_returns_literal_unchanged() {
+        let runner = TestOpRunner::forbidden();
+        let v = EnvValue::Plain("hello".into());
+        let r = resolve_env_value("test", "X", &v, &runner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+        assert_eq!(r, "hello");
+        assert!(
+            runner.last_ref.borrow().is_none(),
+            "no op call expected for Plain"
+        );
+    }
+
+    #[test]
+    fn dispatch_plain_with_bare_op_uri_passes_through_literally() {
+        let runner = TestOpRunner::forbidden();
+        let v = EnvValue::Plain("op://Vault/Item/Field".into());
+        let r = resolve_env_value("test", "X", &v, &runner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+        assert_eq!(
+            r, "op://Vault/Item/Field",
+            "bare op:// in Plain must NOT be resolved; passes through to container"
+        );
+        assert!(
+            runner.last_ref.borrow().is_none(),
+            "no op call expected for Plain(op://...)"
+        );
+    }
+
+    #[test]
+    fn dispatch_op_ref_calls_op_read_with_canonical_uri() {
+        let runner = TestOpRunner::new(Ok("secret-value".to_string()));
+        let v = EnvValue::OpRef(OpRef {
+            op: "op://abc/def/fld".into(),
+            path: "Vault/Item/Field".into(),
+        });
+        let r = resolve_env_value("test", "X", &v, &runner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+        assert_eq!(r, "secret-value");
+        assert_eq!(
+            runner.last_ref().as_deref(),
+            Some("op://abc/def/fld"),
+            "must call op read with the canonical UUID URI"
+        );
+    }
+
+    #[test]
+    fn dispatch_op_ref_failure_wraps_error_with_path() {
+        let runner = TestOpRunner::new(Err(anyhow::anyhow!("not signed in")));
+        let v = EnvValue::OpRef(OpRef {
+            op: "op://abc/def/fld".into(),
+            path: "Private/Claude/security/auth token".into(),
+        });
+        let err = resolve_env_value("workspace foo", "TOKEN", &v, &runner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("workspace foo"), "msg: {msg}");
+        assert!(msg.contains("TOKEN"), "msg: {msg}");
+        assert!(
+            msg.contains("Private/Claude/security/auth token"),
+            "msg should reference path for the operator, not raw UUID URI: {msg}"
+        );
+        assert!(msg.contains("not signed in"), "msg: {msg}");
     }
 
     #[test]
@@ -1751,10 +1902,20 @@ mod tests {
         }
 
         let mut cfg = crate::config::AppConfig::default();
-        cfg.env
-            .insert("A".to_string(), "op://Personal/a".to_string().into());
-        cfg.env
-            .insert("B".to_string(), "op://Personal/b".to_string().into());
+        cfg.env.insert(
+            "A".to_string(),
+            EnvValue::OpRef(OpRef {
+                op: "op://abc-vault/abc-item/field-a".to_string(),
+                path: "Personal/ItemA/field-a".to_string(),
+            }),
+        );
+        cfg.env.insert(
+            "B".to_string(),
+            EnvValue::OpRef(OpRef {
+                op: "op://abc-vault/abc-item/field-b".to_string(),
+                path: "Personal/ItemA/field-b".to_string(),
+            }),
+        );
         let runner = ProbeCountingRunner {
             probe_calls: std::cell::Cell::new(0),
             read_calls: std::cell::Cell::new(0),
@@ -1764,7 +1925,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(runner.probe_calls.get(), 1, "probe must fire exactly once");
-        assert_eq!(runner.read_calls.get(), 2, "each op:// key is resolved");
+        assert_eq!(runner.read_calls.get(), 2, "each OpRef key is resolved");
     }
 
     #[test]
@@ -1815,10 +1976,20 @@ mod tests {
         }
 
         let mut cfg = crate::config::AppConfig::default();
-        cfg.env
-            .insert("A".to_string(), "op://Personal/a".to_string().into());
-        cfg.env
-            .insert("B".to_string(), "op://Personal/b".to_string().into());
+        cfg.env.insert(
+            "A".to_string(),
+            EnvValue::OpRef(OpRef {
+                op: "op://abc-vault/abc-item/field-a".to_string(),
+                path: "Personal/ItemA/field-a".to_string(),
+            }),
+        );
+        cfg.env.insert(
+            "B".to_string(),
+            EnvValue::OpRef(OpRef {
+                op: "op://abc-vault/abc-item/field-b".to_string(),
+                path: "Personal/ItemA/field-b".to_string(),
+            }),
+        );
         let err = resolve_operator_env_with(&cfg, None, None, &FailingProbeRunner, |_| {
             Err(std::env::VarError::NotPresent)
         })
@@ -1835,7 +2006,10 @@ mod tests {
         let mut cfg = crate::config::AppConfig::default();
         cfg.env.insert(
             "TOKEN".to_string(),
-            "op://Personal/broken/token".to_string().into(),
+            EnvValue::OpRef(OpRef {
+                op: "op://abc-vault/abc-item/token".to_string(),
+                path: "Personal/BrokenItem/token".to_string(),
+            }),
         );
 
         let runner = TestOpRunner::new(Err(anyhow::anyhow!("item not found")));
@@ -1846,7 +2020,8 @@ mod tests {
         .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("TOKEN"), "{msg}");
-        assert!(msg.contains("op://Personal/broken/token"), "{msg}");
+        // Error references the human-readable path, not the raw UUID URI.
+        assert!(msg.contains("Personal/BrokenItem/token"), "{msg}");
         assert!(msg.contains("global [env]"), "{msg}");
     }
 
@@ -1883,7 +2058,10 @@ mod tests {
             .insert("HOST_KEY".to_string(), "$HOST_VAR".to_string().into());
         cfg.env.insert(
             "OP_KEY".to_string(),
-            "op://Personal/item/field".to_string().into(),
+            EnvValue::OpRef(OpRef {
+                op: "op://abc-vault/abc-item/field".to_string(),
+                path: "Personal/item/field".to_string(),
+            }),
         );
         let resolved: std::collections::BTreeMap<String, String> = [
             ("LITERAL_KEY".to_string(), "super-secret".to_string()),
@@ -1917,7 +2095,10 @@ mod tests {
             .insert("LITERAL_KEY".to_string(), "super-secret".to_string().into());
         cfg.env.insert(
             "OP_KEY".to_string(),
-            "op://Personal/item/field".to_string().into(),
+            EnvValue::OpRef(OpRef {
+                op: "op://abc-vault/abc-item/field".to_string(),
+                path: "Personal/item/field".to_string(),
+            }),
         );
         let resolved: std::collections::BTreeMap<String, String> = [
             ("LITERAL_KEY".to_string(), "super-secret".to_string()),
@@ -1928,10 +2109,12 @@ mod tests {
 
         let rendered = format_launch_diagnostic_for_test(&cfg, None, None, &resolved, true);
 
-        // Debug mode emits references (reference string is config,
-        // not secret) and the "literal" label — never the resolved
-        // value.
-        assert!(rendered.contains("op://Personal/item/field"), "{rendered}");
+        // Debug mode emits the canonical op URI (config, not secret)
+        // and the "literal" label — never the resolved value.
+        assert!(
+            rendered.contains("op://abc-vault/abc-item/field"),
+            "{rendered}"
+        );
         assert!(rendered.contains("literal"), "{rendered}");
         assert!(!rendered.contains("super-secret"), "{rendered}");
         assert!(!rendered.contains("op-value-secret"), "{rendered}");

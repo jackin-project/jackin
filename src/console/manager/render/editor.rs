@@ -19,7 +19,7 @@ use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
 };
 use crate::config::AppConfig;
-use crate::operator_env::{is_op_reference, parse_op_reference};
+use crate::operator_env::{EnvValue, parse_op_reference};
 
 // ── Editor stage ────────────────────────────────────────────────────
 
@@ -185,19 +185,19 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
             // the operator deletes and re-adds via the source picker — so
             // we drop `Enter edit` and `M mask/unmask` on those rows.
             let rows = secrets_flat_rows(state);
-            // Determine if the focused key row carries an op:// reference.
+            // Determine if the focused key row carries an OpRef value.
             let focused_value_is_op_ref = match rows.get(cursor) {
                 Some(SecretsRow::WorkspaceKeyRow(key)) => state
                     .pending
                     .env
                     .get(key)
-                    .is_some_and(|v| is_op_reference(v.as_persisted_str())),
+                    .is_some_and(|v| matches!(v, EnvValue::OpRef(_))),
                 Some(SecretsRow::AgentKeyRow { agent, key }) => state
                     .pending
                     .agents
                     .get(agent)
                     .and_then(|ov| ov.env.get(key))
-                    .is_some_and(|v| is_op_reference(v.as_persisted_str())),
+                    .is_some_and(|v| matches!(v, EnvValue::OpRef(_))),
                 _ => false,
             };
             match rows.get(cursor) {

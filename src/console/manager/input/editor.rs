@@ -348,27 +348,25 @@ fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
     };
     let key = match row {
         SecretsRow::WorkspaceKeyRow(key) => {
-            // Op:// rows render as breadcrumbs and ignore mask state.
-            let value = editor
+            // OpRef rows render as breadcrumbs and ignore mask state.
+            if editor
                 .pending
                 .env
                 .get(&key)
-                .map(|v| v.as_persisted_str().to_string())
-                .unwrap_or_default();
-            if crate::operator_env::is_op_reference(&value) {
+                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
+            {
                 return;
             }
             (SecretsScopeTag::Workspace, key)
         }
         SecretsRow::AgentKeyRow { agent, key } => {
-            let value = editor
+            if editor
                 .pending
                 .agents
                 .get(&agent)
                 .and_then(|o| o.env.get(&key))
-                .map(|v| v.as_persisted_str().to_string())
-                .unwrap_or_default();
-            if crate::operator_env::is_op_reference(&value) {
+                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
+            {
                 return;
             }
             (SecretsScopeTag::Agent(agent), key)
@@ -416,17 +414,22 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     };
     match row {
         SecretsRow::WorkspaceKeyRow(key) => {
+            // OpRef rows are not text-editable — operator deletes via
+            // D and re-adds via the source picker.
+            if editor
+                .pending
+                .env
+                .get(&key)
+                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
+            {
+                return;
+            }
             let current = editor
                 .pending
                 .env
                 .get(&key)
                 .map(|v| v.as_persisted_str().to_string())
                 .unwrap_or_default();
-            // Op:// rows are not text-editable — operator deletes via
-            // D and re-adds via the source picker.
-            if crate::operator_env::is_op_reference(&current) {
-                return;
-            }
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
                     scope: SecretsScopeTag::Workspace,
@@ -449,6 +452,15 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
             }
         }
         SecretsRow::AgentKeyRow { agent, key } => {
+            if editor
+                .pending
+                .agents
+                .get(&agent)
+                .and_then(|o| o.env.get(&key))
+                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
+            {
+                return;
+            }
             let current = editor
                 .pending
                 .agents
@@ -456,9 +468,6 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
                 .and_then(|o| o.env.get(&key))
                 .map(|v| v.as_persisted_str().to_string())
                 .unwrap_or_default();
-            if crate::operator_env::is_op_reference(&current) {
-                return;
-            }
             let label = format!("Edit {key}");
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
@@ -2019,8 +2028,13 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
         let mut ws = empty_ws();
-        ws.env
-            .insert("DB_URL".into(), "op://Work/db/password".into());
+        ws.env.insert(
+            "DB_URL".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc-vault/abc-item/password".into(),
+                path: "Work/db/password".into(),
+            }),
+        );
 
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -2057,7 +2071,13 @@ mod tests {
         let mut config = AppConfig::default();
         let mut ws = empty_ws();
         let mut ag_env = std::collections::BTreeMap::new();
-        ag_env.insert("API_TOKEN".into(), "op://acct/Personal/api/token".into());
+        ag_env.insert(
+            "API_TOKEN".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc-vault/abc-item/api-token".into(),
+                path: "Personal/api/token".into(),
+            }),
+        );
         ws.agents.insert(
             "smith".into(),
             crate::workspace::WorkspaceAgentOverride { env: ag_env },
@@ -2227,8 +2247,13 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
         let mut ws = empty_ws();
-        ws.env
-            .insert("DB_URL".into(), "op://Work/db/password".into());
+        ws.env.insert(
+            "DB_URL".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc-vault/abc-item/password".into(),
+                path: "Work/db/password".into(),
+            }),
+        );
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
