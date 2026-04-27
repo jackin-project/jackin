@@ -366,7 +366,7 @@ pub(super) fn commit_editor_save_with_runner(
 
     // `create_workspace`/`edit_workspace` don't touch env — TUI
     // manages env exclusively through this diff loop.
-    apply_env_diff(&mut ce, &current_name, &editor.original, &editor.pending);
+    apply_env_diff(&mut ce, &current_name, &editor.original, &editor.pending)?;
 
     match ce.save() {
         Ok(fresh) => {
@@ -796,9 +796,9 @@ fn apply_env_diff(
     workspace_name: &str,
     original: &crate::workspace::WorkspaceConfig,
     pending: &crate::workspace::WorkspaceConfig,
-) {
+) -> anyhow::Result<()> {
     let ws_scope = EnvScope::Workspace(workspace_name.to_string());
-    apply_env_map_diff(ce, &ws_scope, &original.env, &pending.env);
+    apply_env_map_diff(ce, &ws_scope, &original.env, &pending.env)?;
 
     // Union so agents on only one side are caught.
     let agent_keys: std::collections::BTreeSet<&String> = original
@@ -814,8 +814,9 @@ fn apply_env_diff(
             workspace: workspace_name.to_string(),
             agent: agent.clone(),
         };
-        apply_env_map_diff(ce, &scope, orig_env, pend_env);
+        apply_env_map_diff(ce, &scope, orig_env, pend_env)?;
     }
+    Ok(())
 }
 
 fn apply_env_map_diff(
@@ -823,12 +824,12 @@ fn apply_env_map_diff(
     scope: &EnvScope,
     original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
     pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
-) {
+) -> anyhow::Result<()> {
     for (k, v) in pending {
         match original.get(k) {
             Some(ov) if ov == v => {}
             _ => {
-                let _ = ce.set_env_var(scope, k, v.clone());
+                ce.set_env_var(scope, k, v.clone())?;
             }
         }
     }
@@ -839,6 +840,7 @@ fn apply_env_map_diff(
             let _ = ce.remove_env_var(scope, k);
         }
     }
+    Ok(())
 }
 
 pub(super) fn build_workspace_edit(

@@ -116,6 +116,7 @@ impl From<String> for EnvValue {
     }
 }
 
+#[cfg(test)]
 impl From<&str> for EnvValue {
     fn from(s: &str) -> Self {
         Self::Plain(s.to_string())

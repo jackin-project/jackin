@@ -53,7 +53,12 @@ fn seed_config_with_env(
     let host_path = temp_dir.display().to_string();
     let env_map: std::collections::BTreeMap<String, jackin::operator_env::EnvValue> = env
         .into_iter()
-        .map(|(k, v)| (k.to_string(), v.into()))
+        .map(|(k, v)| {
+            (
+                k.to_string(),
+                jackin::operator_env::EnvValue::Plain(v.to_string()),
+            )
+        })
         .collect();
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -401,7 +406,10 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     // Seed a workspace with one agent override. Using `ConfigEditor`
     // keeps the test aligned with the real save path.
     let mut agent_env = std::collections::BTreeMap::new();
-    agent_env.insert("LOG_LEVEL".into(), "debug".into());
+    agent_env.insert(
+        "LOG_LEVEL".into(),
+        jackin::operator_env::EnvValue::Plain("debug".into()),
+    );
     let mut agents = std::collections::BTreeMap::new();
     agents.insert(
         "agent-smith".into(),
@@ -498,10 +506,10 @@ fn secrets_dirty_detection_and_change_count() -> Result<()> {
     assert!(!editor(&state).is_dirty());
     assert_eq!(editor(&state).change_count(), 0);
 
-    editor_mut(&mut state)
-        .pending
-        .env
-        .insert("NEW_KEY".into(), "v".into());
+    editor_mut(&mut state).pending.env.insert(
+        "NEW_KEY".into(),
+        jackin::operator_env::EnvValue::Plain("v".into()),
+    );
 
     assert!(editor(&state).is_dirty(), "env add must flip is_dirty");
     assert!(
@@ -1579,7 +1587,10 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     let host_path = temp.path().display().to_string();
 
     let mut agent_env = std::collections::BTreeMap::new();
-    agent_env.insert("LOG_LEVEL".into(), "debug".into());
+    agent_env.insert(
+        "LOG_LEVEL".into(),
+        jackin::operator_env::EnvValue::Plain("debug".into()),
+    );
     let mut agents = std::collections::BTreeMap::new();
     agents.insert(
         "agent-smith".into(),
@@ -1731,7 +1742,10 @@ fn seed_override_picker_workspace(
     let mut agents_map = std::collections::BTreeMap::new();
     for name in with_overrides {
         let mut env = std::collections::BTreeMap::new();
-        env.insert("LOG_LEVEL".into(), "debug".into());
+        env.insert(
+            "LOG_LEVEL".into(),
+            jackin::operator_env::EnvValue::Plain("debug".into()),
+        );
         agents_map.insert((*name).into(), WorkspaceAgentOverride { env });
     }
 
