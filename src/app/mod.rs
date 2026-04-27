@@ -1,6 +1,6 @@
 pub mod context;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::io::ErrorKind;
 use std::path::Path;
 
@@ -106,6 +106,11 @@ pub fn run(cli: Cli) -> Result<()> {
 
             let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
             opts.force = force;
+            // Pre-launch reconcile: if a previous agent in a keep_awake
+            // workspace already runs, ensure caffeinate is up before we
+            // build/launch (so a long Docker build doesn't see the host
+            // sleep). Post-launch reconcile below catches the new agent.
+            runtime::reconcile_keep_awake(&paths, &mut runner);
             let result = runtime::load_agent(
                 &paths,
                 &mut config,
@@ -121,6 +126,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 &class,
                 &result,
             );
+            runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
         Command::Console(ConsoleArgs { debug }) | Command::Launch(ConsoleArgs { debug }) => {
@@ -141,9 +147,11 @@ pub fn run(cli: Cli) -> Result<()> {
             }
 
             let opts = runtime::LoadOptions::for_launch(debug);
+            runtime::reconcile_keep_awake(&paths, &mut runner);
             let result =
                 runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts);
             remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
+            runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
         Command::Hardline(HardlineArgs { selector }) => {
@@ -156,7 +164,10 @@ pub fn run(cli: Cli) -> Result<()> {
                 let cwd = std::env::current_dir()?;
                 resolve_running_container_from_context(&config, &cwd, &mut runner)?
             };
-            runtime::hardline_agent(&paths, &container, &mut runner)
+            runtime::reconcile_keep_awake(&paths, &mut runner);
+            let result = runtime::hardline_agent(&paths, &container, &mut runner);
+            runtime::reconcile_keep_awake(&paths, &mut runner);
+            result
         }
         Command::Eject(EjectArgs {
             selector,
@@ -176,36 +187,52 @@ pub fn run(cli: Cli) -> Result<()> {
                     }
                 }
             };
-            if containers.is_empty() {
-                println!("No matching agents found.");
-            } else {
-                for container in &containers {
-                    runtime::eject_agent(container, &mut runner)?;
-                    if purge {
-                        crate::isolation::cleanup::purge_isolated_for_container(
-                            &paths.data_dir.join(container),
-                            &mut runner,
-                        )?;
-                        remove_data_dir_if_exists(&paths.data_dir.join(container))?;
-                        println!("Ejected and purged {container}.");
-                    } else {
-                        println!("Ejected {container}.");
+            // Wrap the loop so a partial failure still hits the trailing
+            // reconcile — otherwise a `--all` eject that errors on
+            // container N+1 would leave caffeinate running even though
+            // earlier containers were already removed.
+            let result: anyhow::Result<()> = (|| {
+                if containers.is_empty() {
+                    println!("No matching agents found.");
+                } else {
+                    for container in &containers {
+                        runtime::eject_agent(container, &mut runner)
+                            .with_context(|| format!("ejecting {container}"))?;
+                        if purge {
+                            crate::isolation::cleanup::purge_isolated_for_container(
+                                &paths.data_dir.join(container),
+                                &mut runner,
+                            )
+                            .with_context(|| format!("purging isolated state for {container}"))?;
+                            remove_data_dir_if_exists(&paths.data_dir.join(container))
+                                .with_context(|| format!("removing data dir for {container}"))?;
+                            println!("Ejected and purged {container}.");
+                        } else {
+                            println!("Ejected {container}.");
+                        }
                     }
                 }
-            }
-            Ok(())
+                Ok(())
+            })();
+            runtime::reconcile_keep_awake(&paths, &mut runner);
+            result
         }
         Command::Exile => {
             let names = runtime::list_managed_agent_names(&mut runner)?;
-            if names.is_empty() {
-                println!("No agents running.");
-            } else {
-                for name in &names {
-                    runtime::eject_agent(name, &mut runner)?;
-                    println!("Ejected {name}.");
+            let result: anyhow::Result<()> = (|| {
+                if names.is_empty() {
+                    println!("No agents running.");
+                } else {
+                    for name in &names {
+                        runtime::eject_agent(name, &mut runner)
+                            .with_context(|| format!("ejecting {name}"))?;
+                        println!("Ejected {name}.");
+                    }
                 }
-            }
-            Ok(())
+                Ok(())
+            })();
+            runtime::reconcile_keep_awake(&paths, &mut runner);
+            result
         }
         Command::Config(config_cmd) => match config_cmd {
             cli::ConfigCommand::Mount(mount_cmd) => match mount_cmd {
@@ -452,6 +479,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 allowed_agents,
                 default_agent,
                 mount_isolation,
+                keep_awake,
             } => {
                 let expanded_workdir = workspace::resolve_path(&workdir);
                 let parsed_mounts = mounts
@@ -491,6 +519,9 @@ pub fn run(cli: Cli) -> Result<()> {
                     last_agent: None,
                     env: std::collections::BTreeMap::new(),
                     agents: std::collections::BTreeMap::new(),
+                    keep_awake: crate::workspace::KeepAwakeConfig {
+                        enabled: keep_awake,
+                    },
                 };
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
                 editor.create_workspace(&name, ws)?;
@@ -571,7 +602,19 @@ pub fn run(cli: Cli) -> Result<()> {
                 prune,
                 mount_isolation,
                 delete_isolated_state,
+                keep_awake,
+                no_keep_awake,
             } => {
+                // Map paired flags to Option<bool>: None = no change.
+                // Mutual exclusion is enforced at parse time by clap's
+                // `conflicts_with`, so at most one of the two is true.
+                let keep_awake_change = if keep_awake {
+                    Some(true)
+                } else if no_keep_awake {
+                    Some(false)
+                } else {
+                    None
+                };
                 let upsert_mounts = mounts
                     .iter()
                     .map(|value| parse_mount_spec_resolved(value))
@@ -692,6 +735,12 @@ pub fn run(cli: Cli) -> Result<()> {
                 } else if let Some(ref agent) = default_agent {
                     changes.push(format!("default agent → {agent}"));
                 }
+                if let Some(v) = keep_awake_change {
+                    changes.push(format!(
+                        "keep_awake → {}",
+                        if v { "enabled" } else { "disabled" }
+                    ));
+                }
 
                 // Build the prospective mount list (mirrors edit_workspace's
                 // merge order) so we can check for source drift on any mount
@@ -767,6 +816,7 @@ pub fn run(cli: Cli) -> Result<()> {
                             default_agent.map(Some)
                         },
                         mount_isolation_overrides: mount_isolation,
+                        keep_awake_enabled: keep_awake_change,
                     },
                 )?;
                 editor.save()?;
@@ -1013,12 +1063,18 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
     let default_agent = workspace.default_agent.as_deref().unwrap_or("none");
 
     let short_workdir = tui::shorten_home(&workspace.workdir);
-    let info = [
+    let mut info: Vec<(&str, &str)> = vec![
         ("Name", name),
         ("Workdir", short_workdir.as_str()),
         ("Allowed Agents", allowed.as_str()),
         ("Default Agent", default_agent),
     ];
+    // Only surface keep_awake when opted in — disabled is the default and
+    // shouldn't add noise. When enabled, the operator sees it here so a
+    // mysteriously sleepless Mac traces back to the workspace.
+    if workspace.keep_awake.enabled {
+        info.push(("Keep Awake", "enabled (macOS only)"));
+    }
     let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
     info_table
         .with(Style::modern_rounded())
@@ -1100,6 +1156,7 @@ mod auth_set_tests {
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
+            keep_awake: Default::default(),
         };
         let out = render_workspace_show("jackin", &ws);
         assert!(out.contains("Isolation"));

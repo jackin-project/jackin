@@ -15,8 +15,8 @@ use super::discovery::list_running_agent_display_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
 use super::image::build_agent_image;
 use super::naming::{
-    LABEL_MANAGED, LABEL_ROLE_AGENT, LABEL_ROLE_DIND, dind_certs_volume, format_agent_display,
-    image_name,
+    LABEL_KEEP_AWAKE, LABEL_MANAGED, LABEL_ROLE_AGENT, LABEL_ROLE_DIND, dind_certs_volume,
+    format_agent_display, image_name,
 };
 use super::repo_cache::resolve_agent_repo;
 
@@ -338,6 +338,14 @@ struct LaunchContext<'a> {
     debug: bool,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
     cache_dir: &'a std::path::Path,
+    /// Required so `launch_agent_runtime` can fire the `keep_awake`
+    /// reconciler between `docker run -d` and the foreground `docker
+    /// attach`. Without that mid-flight call, caffeinate would never
+    /// spawn for an interactive `jackin load`: the post-launch
+    /// reconcile in `app::Command::Load` only runs after attach
+    /// returns, by which time the container has stopped and the
+    /// `keep_awake` count is back to zero.
+    paths: &'a JackinPaths,
 }
 
 /// Create the Docker network, start `DinD`, and launch the agent container.
@@ -360,6 +368,7 @@ fn launch_agent_runtime(
         debug,
         resolved_env,
         cache_dir,
+        paths,
     } = ctx;
 
     let certs_volume = dind_certs_volume(container_name);
@@ -502,6 +511,13 @@ fn launch_agent_runtime(
         &display_label,
         "--workdir",
         &workspace.workdir,
+    ];
+
+    if workspace.keep_awake_enabled {
+        run_args.extend_from_slice(&["--label", LABEL_KEEP_AWAKE]);
+    }
+
+    run_args.extend_from_slice(&[
         // JACKIN_* runtime metadata is injected by jackin, not declared in agent manifests.
         "-e",
         &docker_host,
@@ -517,7 +533,7 @@ fn launch_agent_runtime(
         &git_author_email,
         "-e",
         &container_term,
-    ];
+    ]);
     if *debug {
         run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
     }
@@ -575,6 +591,17 @@ fn launch_agent_runtime(
     }
     run_args.push(image);
     runner.run("docker", &run_args, None, &docker_run_opts)?;
+
+    // Reconcile keep_awake AFTER the agent container is running but
+    // BEFORE the foreground attach blocks. This is the only window in
+    // which an interactive `jackin load` can spawn caffeinate: the
+    // pre-launch reconcile in `app::Command::Load` runs before the
+    // container exists (count=0 → no-op), and the post-launch
+    // reconcile only runs after attach returns, by which time the
+    // container has stopped (count=0 again → no-op). Without this
+    // mid-flight call the feature would never hold a power assertion
+    // for a single interactive session.
+    super::caffeinate::reconcile(paths, runner);
 
     // Attach with signal forwarding disabled and the default detach shortcut
     // cleared: only an explicit exit from inside (or terminal close) ends the
@@ -1015,6 +1042,7 @@ fn load_agent_with(
             debug: opts.debug,
             resolved_env: &resolved_env,
             cache_dir: &paths.cache_dir,
+            paths,
         };
         let certs_volume = dind_certs_volume(&container_name);
         let mut cleanup = LoadCleanup::new(
@@ -1054,6 +1082,14 @@ fn load_agent_with(
             // the safe cleanup pass once. We do not loop further: if the
             // operator still leaves dirty state, the second pass will fall
             // back to Preserved and exit normally.
+            //
+            // Reconcile keep_awake BEFORE the restart re-attach, mirroring the
+            // mid-flight reconcile in `launch_agent_runtime`: between the
+            // original exit and this restart, a parallel jackin invocation
+            // could observe `docker ps --filter ...` = 0 and kill caffeinate,
+            // leaving the restart session unprotected. The lock inside
+            // `reconcile` serializes against that race.
+            super::caffeinate::reconcile(paths, runner);
             runner.run(
                 "docker",
                 &["start", "-ai", &container_name],
@@ -1362,6 +1398,7 @@ mod tests {
                             .into(),
                 }),
             }],
+            keep_awake_enabled: false,
         };
 
         let strings = build_workspace_mount_strings(&mat);
@@ -1429,6 +1466,7 @@ mod tests {
                 isolation: MountIsolation::Shared,
                 worktree_aux: None,
             }],
+            keep_awake_enabled: false,
         };
 
         let strings = build_workspace_mount_strings(&mat);
@@ -1478,6 +1516,7 @@ mod tests {
                     }),
                 },
             ],
+            keep_awake_enabled: false,
         };
 
         let strings = build_workspace_mount_strings(&mat);
@@ -1533,6 +1572,7 @@ mod tests {
                 isolation: MountIsolation::Shared,
                 worktree_aux: None,
             }],
+            keep_awake_enabled: false,
         };
 
         let strings = build_workspace_mount_strings(&mat);
@@ -1549,6 +1589,7 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
+            keep_awake_enabled: false,
         }
     }
 
@@ -1781,6 +1822,7 @@ trusted = true
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
+            keep_awake_enabled: false,
         };
 
         load_agent(
@@ -1915,6 +1957,7 @@ plugins = []
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
+            keep_awake_enabled: false,
         };
 
         load_agent(
@@ -1983,6 +2026,7 @@ plugins = []
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
+            keep_awake_enabled: false,
         };
 
         load_agent(
@@ -2303,6 +2347,123 @@ plugins = []
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
+    }
+
+    #[test]
+    fn load_agent_emits_keep_awake_label_when_workspace_opted_in() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[identity]
+name = "Agent Smith"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let mut workspace = repo_workspace(&repo_dir);
+        workspace.keep_awake_enabled = true;
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("--label jackin.keep_awake=true"),
+            "agent container with keep_awake_enabled must carry the keep_awake label, \
+             so runtime::caffeinate::reconcile can detect it via docker ps --filter; \
+             actual run command: {run_cmd}"
+        );
+    }
+
+    #[test]
+    fn load_agent_omits_keep_awake_label_when_workspace_opted_out() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[identity]
+name = "Agent Smith"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir); // keep_awake_enabled defaults false
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(
+            !run_cmd.contains("jackin.keep_awake"),
+            "agent container without keep_awake_enabled must not carry the label, \
+             else the reconciler would hold caffeinate for opted-out workspaces; \
+             actual run command: {run_cmd}"
+        );
     }
 
     #[test]

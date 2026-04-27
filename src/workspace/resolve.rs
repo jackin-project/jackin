@@ -32,6 +32,11 @@ pub struct ResolvedWorkspace {
     pub label: String,
     pub workdir: String,
     pub mounts: Vec<MountConfig>,
+    /// Whether this workspace opted into the keep-awake reconciler.
+    /// Carried through to `launch_agent_runtime` so the container can
+    /// be tagged with `jackin.keep_awake=true` without a config
+    /// re-lookup.
+    pub keep_awake_enabled: bool,
 }
 
 fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
@@ -78,6 +83,12 @@ pub fn resolve_load_workspace(
     input: LoadWorkspaceInput,
     ad_hoc_mounts: &[MountConfig],
 ) -> anyhow::Result<ResolvedWorkspace> {
+    // Note on `keep_awake`: only `Saved` workspaces can opt in.
+    // `CurrentDir` and `Path` build a fresh `WorkspaceConfig` from
+    // defaults (`enabled = false`), so an ad-hoc load against a
+    // directory that *would* match a saved keep-awake workspace
+    // intentionally does not inherit the assertion — the user opted
+    // in for the saved workspace, not for arbitrary loads.
     let (mut workspace, label) = match input {
         LoadWorkspaceInput::CurrentDir => {
             let ws = current_dir_workspace(cwd)?;
@@ -171,6 +182,7 @@ pub fn resolve_load_workspace(
         label,
         workdir: workspace.workdir,
         mounts,
+        keep_awake_enabled: workspace.keep_awake.enabled,
     })
 }
 

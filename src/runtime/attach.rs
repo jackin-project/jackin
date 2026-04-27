@@ -81,8 +81,18 @@ pub fn hardline_agent(
     container_name: &str,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    // Reconcile keep_awake right before each `attach_running` call.
+    // `attach_running` blocks on `docker attach` until the container
+    // exits, so the post-hardline reconcile in `app::Command::Hardline`
+    // would fire too late: by the time attach returns, the container
+    // is stopped and the keep_awake count is zero. Firing here, while
+    // the container is observably running, ensures caffeinate spawns
+    // for the duration of the re-attached session.
     let attach_outcome = match inspect_container_state(runner, container_name) {
-        ContainerState::Running => attach_running(container_name, runner),
+        ContainerState::Running => {
+            super::caffeinate::reconcile(paths, runner);
+            attach_running(container_name, runner)
+        }
         ContainerState::NotFound => {
             anyhow::bail!(
                 "container '{container_name}' not found; use `jackin load` to start a new session"
@@ -123,6 +133,7 @@ pub fn hardline_agent(
                 None,
                 &RunOptions::default(),
             )?;
+            super::caffeinate::reconcile(paths, runner);
             attach_running(container_name, runner)
         }
     };

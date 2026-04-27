@@ -99,6 +99,7 @@ mod tests {
             label: cwd.display().to_string(),
             workdir: cwd.display().to_string(),
             mounts: vec![],
+            keep_awake_enabled: false,
         };
         let git = GitIdentity {
             user_name: String::new(),
@@ -127,6 +128,7 @@ mod tests {
             label: "big-monorepo".to_string(),
             workdir: "/workspace/project".to_string(),
             mounts: vec![],
+            keep_awake_enabled: false,
         };
         let git = GitIdentity {
             user_name: "Alice".to_string(),
@@ -158,6 +160,7 @@ mod tests {
             label: "test".to_string(),
             workdir: "/workspace".to_string(),
             mounts: vec![],
+            keep_awake_enabled: false,
         };
         let git = GitIdentity {
             user_name: String::new(),

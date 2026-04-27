@@ -220,6 +220,46 @@ jackin workspace edit secure-api --default-agent neo
 jackin workspace edit secure-api --clear-default-agent
 ```
 
+## Keeping the host awake
+
+Long-running agent work — large builds, test suites, dataset pulls — can outlast your screen-saver and the host's idle-sleep timer. macOS will then suspend the machine and the agent stops making progress until you wake it up.
+
+Workspaces can opt in to a per-workspace keep-awake reconciler that prevents this:
+
+```toml
+[workspaces.my-app.keep_awake]
+enabled = true
+```
+
+When the flag is set, `jackin` keeps a single `caffeinate -imsu` process alive for as long as **any** agent in **any** keep-awake workspace is running. The reconciler runs at every command boundary (`load`, `console`, `hardline`, `eject`, `exile`), so the assertion turns on the moment a keep-awake agent starts and turns off the moment the last keep-awake agent stops.
+
+<Aside type="caution">
+This feature is **macOS-only** today. On Linux and Windows the flag is silently ignored — there is no equivalent system-wake assertion wired up yet. If you need it on another platform, please open an issue.
+</Aside>
+
+Other workspaces (those without the flag) are unaffected: their containers do not contribute to the keep-awake count, and the host is free to sleep if no opted-in agent is running.
+
+### Setting keep-awake
+
+You can opt in (or out) from the CLI or the operator console — no need to hand-edit `config.toml`.
+
+**CLI** — paired flags on `workspace create` and `workspace edit`:
+
+```bash
+# Opt in at creation time
+jackin workspace create my-app --workdir ~/Projects/my-app --keep-awake
+
+# Toggle on an existing workspace
+jackin workspace edit my-app --keep-awake
+jackin workspace edit my-app --no-keep-awake
+```
+
+`--keep-awake` and `--no-keep-awake` are mutually exclusive. Omit both for "no change."
+
+**Operator console** — the **General** tab of the workspace editor has a `Keep awake` row. Press `Space` to toggle it; the change persists when you save the workspace.
+
+`jackin workspace show <name>` surfaces a `Keep Awake: enabled (macOS only)` row when the flag is on, so you can confirm at a glance which workspaces are holding power assertions.
+
 ## Workspace auto-detection
 
 When you open the operator console (`jackin console`), it checks whether your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths. If it does, that workspace is preselected — saving you a selection step and reinforcing the value of naming project boundaries once. Container-only `workdir` values like `/workspace` can still be auto-detected as long as one of the workspace's mounted host paths contains your current directory. You can always override the preselection by choosing a different workspace or "Current directory."

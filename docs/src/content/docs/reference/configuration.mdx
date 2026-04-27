@@ -86,6 +86,9 @@ isolation = "worktree"
 src = "/home/user/cache"
 dst = "/cache"
 readonly = true
+
+[workspaces.my-app.keep_awake]
+enabled = true
 ```
 
 | Field | Description |
@@ -99,6 +102,7 @@ readonly = true
 | `allowed_agents` | List of allowed agent selectors |
 | `default_agent` | Default agent selector |
 | `last_agent` | Most recently used agent selector for this workspace |
+| `keep_awake.enabled` | macOS-only: keep the host awake while any agent in this workspace is running (see [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake)). On Linux/Windows the flag is silently accepted but has no effect — useful when sharing a `config.toml` across machines, but the host will still sleep. |
 
 When you use `jackin workspace create`, the common case is to make `workdir` and the first mount destination the same absolute path. If you need a different container layout, use `--no-workdir-mount` and define mounts explicitly.
 

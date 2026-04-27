@@ -998,6 +998,7 @@ mod subpanel_padding_tests {
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
+            keep_awake: crate::workspace::KeepAwakeConfig::default(),
         }
     }
 

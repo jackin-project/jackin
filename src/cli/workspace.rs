@@ -59,6 +59,12 @@ Examples:
             action = clap::ArgAction::Append
         )]
         mount_isolation: Vec<(String, MountIsolation)>,
+        /// Opt the workspace into the macOS keep-awake reconciler.
+        /// While any agent in this workspace is running, jackin holds a
+        /// `caffeinate -imsu` assertion so the host stays awake. Silent
+        /// no-op on Linux/Windows.
+        #[arg(long = "keep-awake", default_value_t = false)]
+        keep_awake: bool,
     },
     /// List all saved workspaces
     #[command(before_help = BANNER, styles = HELP_STYLES)]
@@ -142,6 +148,18 @@ Examples:
         /// active isolation records on a stopped container.
         #[arg(long)]
         delete_isolated_state: bool,
+        /// Opt the workspace into the macOS keep-awake reconciler. Mutually
+        /// exclusive with `--no-keep-awake`. See `workspace create`.
+        #[arg(long = "keep-awake", default_value_t = false)]
+        keep_awake: bool,
+        /// Opt the workspace OUT of the keep-awake reconciler. Mutually
+        /// exclusive with `--keep-awake`.
+        #[arg(
+            long = "no-keep-awake",
+            conflicts_with = "keep_awake",
+            default_value_t = false
+        )]
+        no_keep_awake: bool,
     },
     /// Remove redundant mounts (rule-C violations) from a saved workspace
     #[command(
@@ -384,6 +402,96 @@ mod tests {
                 ..
             }))
         ));
+    }
+
+    #[test]
+    fn parses_workspace_create_with_keep_awake() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "create",
+            "my-app",
+            "--workdir",
+            "/tmp/my-app",
+            "--keep-awake",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Workspace(WorkspaceCommand::Create { keep_awake, .. })) => {
+                assert!(keep_awake, "--keep-awake should set the field to true");
+            }
+            other => panic!("unexpected command {other:?}"),
+        }
+    }
+
+    #[test]
+    fn workspace_create_keep_awake_defaults_to_false() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "create",
+            "my-app",
+            "--workdir",
+            "/tmp/my-app",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Workspace(WorkspaceCommand::Create { keep_awake, .. })) => {
+                assert!(!keep_awake, "absent --keep-awake should default to false");
+            }
+            other => panic!("unexpected command {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_workspace_edit_with_keep_awake() {
+        let cli =
+            Cli::try_parse_from(["jackin", "workspace", "edit", "my-app", "--keep-awake"]).unwrap();
+        match cli.command {
+            Some(Command::Workspace(WorkspaceCommand::Edit {
+                keep_awake,
+                no_keep_awake,
+                ..
+            })) => {
+                assert!(keep_awake);
+                assert!(!no_keep_awake);
+            }
+            other => panic!("unexpected command {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_workspace_edit_with_no_keep_awake() {
+        let cli = Cli::try_parse_from(["jackin", "workspace", "edit", "my-app", "--no-keep-awake"])
+            .unwrap();
+        match cli.command {
+            Some(Command::Workspace(WorkspaceCommand::Edit {
+                keep_awake,
+                no_keep_awake,
+                ..
+            })) => {
+                assert!(!keep_awake);
+                assert!(no_keep_awake);
+            }
+            other => panic!("unexpected command {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_conflicting_workspace_edit_keep_awake_flags() {
+        // Mutual exclusion at the CLI parser level — the user must not
+        // be able to ask jackin to both opt in and opt out in one
+        // invocation. clap enforces this via `conflicts_with`.
+        let err = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "edit",
+            "my-app",
+            "--keep-awake",
+            "--no-keep-awake",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]

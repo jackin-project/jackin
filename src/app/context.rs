@@ -477,6 +477,7 @@ mod tests {
                 last_agent: None,
                 env: std::collections::BTreeMap::new(),
                 agents: std::collections::BTreeMap::new(),
+                keep_awake: workspace::KeepAwakeConfig::default(),
             },
         );
 
@@ -519,6 +520,7 @@ mod tests {
                 last_agent: None,
                 env: std::collections::BTreeMap::new(),
                 agents: std::collections::BTreeMap::new(),
+                keep_awake: workspace::KeepAwakeConfig::default(),
             },
         );
 
@@ -560,6 +562,7 @@ mod tests {
                 last_agent: Some("ghost-agent".to_string()),
                 env: std::collections::BTreeMap::new(),
                 agents: std::collections::BTreeMap::new(),
+                keep_awake: workspace::KeepAwakeConfig::default(),
             },
         );
 
@@ -610,6 +613,7 @@ mod tests {
                 last_agent,
                 env: std::collections::BTreeMap::new(),
                 agents: std::collections::BTreeMap::new(),
+                keep_awake: workspace::KeepAwakeConfig::default(),
             },
         );
         config

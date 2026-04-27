@@ -505,6 +505,13 @@ fn build_confirm_save_lines(
                     value,
                 ),
             ]));
+            if editor.pending.keep_awake.enabled {
+                out.push(Line::raw(""));
+                out.push(Line::from(vec![
+                    Span::styled("Keep awake: ", heading),
+                    Span::styled("enabled", value),
+                ]));
+            }
             let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
             if !env_lines.is_empty() {
                 out.push(Line::raw(""));
@@ -618,6 +625,23 @@ fn build_confirm_save_lines(
                 } else {
                     out.push(Line::from(Span::styled("  + (none)", value)));
                 }
+            }
+
+            if editor.pending.keep_awake.enabled != editor.original.keep_awake.enabled {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Keep awake:", heading)));
+                let old_label = if editor.original.keep_awake.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                };
+                let new_label = if editor.pending.keep_awake.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                };
+                out.push(Line::from(Span::styled(format!("  - {old_label}"), dim)));
+                out.push(Line::from(Span::styled(format!("  + {new_label}"), value)));
             }
 
             let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
@@ -846,6 +870,9 @@ pub(super) fn build_workspace_edit(
     if pending.default_agent != original.default_agent {
         edit.default_agent = Some(pending.default_agent.clone());
     }
+    if pending.keep_awake.enabled != original.keep_awake.enabled {
+        edit.keep_awake_enabled = Some(pending.keep_awake.enabled);
+    }
     edit
 }
 
@@ -860,7 +887,7 @@ mod tests {
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
     use crate::paths::JackinPaths;
-    use crate::workspace::{MountConfig, WorkspaceConfig};
+    use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
     use crossterm::event::KeyCode;
     use tempfile::TempDir;
 
@@ -897,6 +924,48 @@ mod tests {
         cwd: &std::path::Path,
     ) {
         handle_key(state, config, paths, cwd, key(KeyCode::Char('s'))).unwrap();
+    }
+
+    #[test]
+    fn build_workspace_edit_emits_keep_awake_change_only_when_diffed() {
+        // The TUI save path leans on `build_workspace_edit` to discover
+        // what fields the operator touched. If keep_awake's diff path
+        // ever regresses to "always emit," the resulting WorkspaceEdit
+        // would clobber the field on every save — breaking the "edit
+        // workdir doesn't flip keep_awake" contract that
+        // `edit_workspace_toggles_keep_awake_when_set` enforces.
+        use crate::workspace::KeepAwakeConfig;
+        let original = WorkspaceConfig {
+            workdir: "/workspace/proj".into(),
+            mounts: vec![mount("/work", "/workspace/proj")],
+            keep_awake: KeepAwakeConfig { enabled: false },
+            ..Default::default()
+        };
+
+        // No change → no field set.
+        let pending_unchanged = original.clone();
+        let edit = super::build_workspace_edit(&original, &pending_unchanged);
+        assert_eq!(edit.keep_awake_enabled, None);
+
+        // Flip on → Some(true).
+        let pending_on = WorkspaceConfig {
+            keep_awake: KeepAwakeConfig { enabled: true },
+            ..original.clone()
+        };
+        let edit = super::build_workspace_edit(&original, &pending_on);
+        assert_eq!(edit.keep_awake_enabled, Some(true));
+
+        // Flip off (when original was on) → Some(false).
+        let original_on = WorkspaceConfig {
+            keep_awake: KeepAwakeConfig { enabled: true },
+            ..original.clone()
+        };
+        let pending_off = WorkspaceConfig {
+            keep_awake: KeepAwakeConfig { enabled: false },
+            ..original.clone()
+        };
+        let edit = super::build_workspace_edit(&original_on, &pending_off);
+        assert_eq!(edit.keep_awake_enabled, Some(false));
     }
 
     #[test]
@@ -1623,6 +1692,49 @@ mod tests {
         assert!(joined.contains("/new"), "new value shown: {joined}");
     }
 
+    #[test]
+    fn edit_mode_confirm_save_shows_keep_awake_toggle() {
+        // A keep_awake toggle in the TUI must surface in the ConfirmSave
+        // preview so the operator can see what they are confirming. The
+        // on-disk write was already correct; this pins the modal preview
+        // so a future refactor cannot silently re-omit the diff line.
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![mount("/w", "/w")],
+            keep_awake: KeepAwakeConfig { enabled: false },
+            ..Default::default()
+        };
+        let (tmp, paths, mut config) = setup_with_workspace("ka-toggle", ws.clone()).unwrap();
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("ka-toggle".into(), ws);
+        editor.pending.keep_awake.enabled = true;
+        state.stage = ManagerStage::Editor(editor);
+
+        press_s(&mut state, &mut config, &paths, cwd);
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!();
+        };
+        let Some(Modal::ConfirmSave { state: modal }) = &e.modal else {
+            panic!("expected ConfirmSave");
+        };
+        let joined: String = modal
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect::<Vec<_>>()
+            .join("|");
+        assert!(
+            joined.contains("Keep awake"),
+            "keep_awake heading shown: {joined}"
+        );
+        assert!(
+            joined.contains("disabled") && joined.contains("enabled"),
+            "both old and new keep_awake states shown: {joined}"
+        );
+    }
+
     // ── Source-drift safeguard (Task 10.3) ────────────────────────────
 
     /// Stand up a workspace with a single mount whose isolated state has
@@ -1654,6 +1766,7 @@ mod tests {
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
+            keep_awake: Default::default(),
         };
         let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
 
