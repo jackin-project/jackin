@@ -178,6 +178,14 @@ pub(super) fn handle_editor_key(
         KeyCode::Char(' ') if editor.active_tab == EditorTab::Agents => {
             toggle_agent_allowed_at_cursor(editor, config);
         }
+        KeyCode::Char(' ') if editor.active_tab == EditorTab::General => {
+            // Row 2 is the keep_awake toggle. Other General rows
+            // ignore Space — Enter is the modal-opening key for them.
+            let FieldFocus::Row(n) = editor.active_field;
+            if n == 2 {
+                editor.pending.keep_awake.enabled = !editor.pending.keep_awake.enabled;
+            }
+        }
         KeyCode::Char('*') if editor.active_tab == EditorTab::Agents => {
             toggle_default_agent_at_cursor(editor, config);
         }
@@ -279,7 +287,8 @@ pub(super) fn handle_editor_key(
 
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
     match editor.active_tab {
-        EditorTab::General => 1,
+        // 0=Name, 1=Working dir, 2=Keep awake
+        EditorTab::General => 2,
         EditorTab::Mounts => editor.pending.mounts.len(),
         EditorTab::Agents => config.agents.len().saturating_sub(1),
         // Secrets tab is handled inline in the Down key arm; never reached here.
@@ -2435,6 +2444,122 @@ mod tests {
             "↑ from header(2) must skip spacer(1) and land on sentinel(0); \
              got {:?}",
             e.active_field
+        );
+    }
+
+    // ── General tab: keep_awake Space toggle ──────────────────────────
+
+    #[test]
+    fn space_on_general_keep_awake_row_toggles_pending_flag() {
+        // Row 2 of the General tab is the keep_awake toggle. Space
+        // flips pending.keep_awake.enabled; subsequent Space flips
+        // back. The change lives only on `pending` (not `original`)
+        // until the operator saves — that's what build_workspace_edit
+        // detects to populate WorkspaceEdit.keep_awake_enabled.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
+        if let ManagerStage::Editor(e) = &mut state.stage {
+            e.active_field = FieldFocus::Row(2);
+        }
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char(' ')),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            e.pending.keep_awake.enabled,
+            "first Space on row 2 must enable keep_awake"
+        );
+        assert!(
+            !e.original.keep_awake.enabled,
+            "Space must mutate pending only, not original (so the diff is visible to save)"
+        );
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char(' ')),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            !e.pending.keep_awake.enabled,
+            "second Space must toggle keep_awake back off",
+        );
+    }
+
+    #[test]
+    fn space_on_general_non_toggle_rows_does_not_flip_keep_awake() {
+        // Row 0 (Name) and row 1 (Working dir) ignore Space — those
+        // are modal-opening fields driven by Enter. A regression that
+        // applied the toggle from any General row would flip the flag
+        // when the operator was just typing a Space in a name input.
+        for row in [0usize, 1usize] {
+            let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
+            if let ManagerStage::Editor(e) = &mut state.stage {
+                e.active_field = FieldFocus::Row(row);
+            }
+            handle_key(
+                &mut state,
+                &mut config,
+                &paths,
+                tmp.path(),
+                key(KeyCode::Char(' ')),
+            )
+            .unwrap();
+            let ManagerStage::Editor(e) = &state.stage else {
+                panic!("editor stage expected");
+            };
+            assert!(
+                !e.pending.keep_awake.enabled,
+                "Space on General row {row} must NOT toggle keep_awake",
+            );
+        }
+    }
+
+    #[test]
+    fn down_arrow_on_general_can_reach_keep_awake_row() {
+        // max_row_for_tab(General) must allow the cursor to navigate
+        // to row 2; otherwise the toggle would be reachable only via
+        // direct mutation, defeating the operator-discoverable
+        // workflow.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
+        if let ManagerStage::Editor(e) = &mut state.stage {
+            e.active_field = FieldFocus::Row(0);
+        }
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Down),
+        )
+        .unwrap();
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Down),
+        )
+        .unwrap();
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(
+            matches!(e.active_field, FieldFocus::Row(2)),
+            "two ↓ presses from row 0 must land on row 2 (Keep awake); got {:?}",
+            e.active_field,
         );
     }
 }

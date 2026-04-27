@@ -85,6 +85,7 @@ pub fn build_workspace_choice(
                     label: current.workdir.clone(),
                     workdir: current.workdir,
                     mounts: current.mounts,
+                    keep_awake_enabled: false,
                 },
                 allowed_agents: configured_agents(config),
                 default_agent: None,
@@ -104,6 +105,7 @@ pub fn build_workspace_choice(
                     label: name.clone(),
                     workdir: saved.workdir.clone(),
                     mounts: saved.mounts.clone(),
+                    keep_awake_enabled: saved.keep_awake.enabled,
                 },
                 allowed_agents,
                 default_agent: saved.default_agent.clone(),
@@ -187,6 +189,7 @@ mod tests {
                 last_agent: None,
                 env: std::collections::BTreeMap::new(),
                 agents: std::collections::BTreeMap::new(),
+                keep_awake: crate::workspace::KeepAwakeConfig::default(),
             },
         );
 
@@ -221,6 +224,7 @@ mod tests {
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
+            keep_awake: crate::workspace::KeepAwakeConfig::default(),
         }
     }
 

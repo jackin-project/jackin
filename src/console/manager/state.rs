@@ -560,6 +560,9 @@ impl EditorState<'_> {
         if self.pending.allowed_agents != self.original.allowed_agents {
             n += 1;
         }
+        if self.pending.keep_awake != self.original.keep_awake {
+            n += 1;
+        }
         // Rename in Edit mode counts as a change.
         if let EditorMode::Edit { name } = &self.mode
             && self.pending_name.as_deref().is_some_and(|pn| pn != name)
@@ -1143,6 +1146,7 @@ mod tests {
             last_agent: None,
             env: BTreeMap::default(),
             agents: BTreeMap::default(),
+            keep_awake: Default::default(),
         };
         let mut e = EditorState::new_edit("ws".into(), ws);
         e.active_tab = EditorTab::Mounts;
