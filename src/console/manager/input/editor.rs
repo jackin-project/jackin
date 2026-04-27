@@ -349,7 +349,12 @@ fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
     let key = match row {
         SecretsRow::WorkspaceKeyRow(key) => {
             // Op:// rows render as breadcrumbs and ignore mask state.
-            let value = editor.pending.env.get(&key).cloned().unwrap_or_default();
+            let value = editor
+                .pending
+                .env
+                .get(&key)
+                .map(|v| v.as_persisted_str().to_string())
+                .unwrap_or_default();
             if crate::operator_env::is_op_reference(&value) {
                 return;
             }
@@ -361,7 +366,7 @@ fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
                 .agents
                 .get(&agent)
                 .and_then(|o| o.env.get(&key))
-                .cloned()
+                .map(|v| v.as_persisted_str().to_string())
                 .unwrap_or_default();
             if crate::operator_env::is_op_reference(&value) {
                 return;
@@ -411,7 +416,12 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     };
     match row {
         SecretsRow::WorkspaceKeyRow(key) => {
-            let current = editor.pending.env.get(&key).cloned().unwrap_or_default();
+            let current = editor
+                .pending
+                .env
+                .get(&key)
+                .map(|v| v.as_persisted_str().to_string())
+                .unwrap_or_default();
             // Op:// rows are not text-editable — operator deletes via
             // D and re-adds via the source picker.
             if crate::operator_env::is_op_reference(&current) {
@@ -444,7 +454,7 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
                 .agents
                 .get(&agent)
                 .and_then(|o| o.env.get(&key))
-                .cloned()
+                .map(|v| v.as_persisted_str().to_string())
                 .unwrap_or_default();
             if crate::operator_env::is_op_reference(&current) {
                 return;
@@ -1023,14 +1033,17 @@ fn set_pending_env_value(
 ) {
     match scope {
         SecretsScopeTag::Workspace => {
-            editor
-                .pending
-                .env
-                .insert(key.to_string(), value.to_string());
+            editor.pending.env.insert(
+                key.to_string(),
+                crate::operator_env::EnvValue::Plain(value.to_string()),
+            );
         }
         SecretsScopeTag::Agent(agent) => {
             let entry = editor.pending.agents.entry(agent.clone()).or_default();
-            entry.env.insert(key.to_string(), value.to_string());
+            entry.env.insert(
+                key.to_string(),
+                crate::operator_env::EnvValue::Plain(value.to_string()),
+            );
             editor.secrets_expanded.insert(agent.clone());
         }
     }

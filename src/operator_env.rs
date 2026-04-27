@@ -116,6 +116,12 @@ impl From<String> for EnvValue {
     }
 }
 
+impl From<&str> for EnvValue {
+    fn from(s: &str) -> Self {
+        Self::Plain(s.to_string())
+    }
+}
+
 #[must_use]
 pub fn is_op_reference(value: &str) -> bool {
     value.starts_with("op://")
@@ -737,11 +743,11 @@ impl std::fmt::Display for EnvLayer {
 /// Later-wins merge. Order, low → high priority:
 /// global → agent → workspace → workspace-agent.
 pub fn merge_layers(
-    global: &std::collections::BTreeMap<String, String>,
-    agent: &std::collections::BTreeMap<String, String>,
-    workspace: &std::collections::BTreeMap<String, String>,
-    workspace_agent: &std::collections::BTreeMap<String, String>,
-) -> std::collections::BTreeMap<String, String> {
+    global: &std::collections::BTreeMap<String, EnvValue>,
+    agent: &std::collections::BTreeMap<String, EnvValue>,
+    workspace: &std::collections::BTreeMap<String, EnvValue>,
+    workspace_agent: &std::collections::BTreeMap<String, EnvValue>,
+) -> std::collections::BTreeMap<String, EnvValue> {
     let mut merged = std::collections::BTreeMap::new();
     for layer in [global, agent, workspace, workspace_agent] {
         for (k, v) in layer {
@@ -756,7 +762,7 @@ pub fn merge_layers(
 /// Conflicts across every layer are aggregated into one error.
 pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Result<()> {
     let mut offenses: Vec<String> = Vec::new();
-    let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, String>| {
+    let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, EnvValue>| {
         for key in env.keys() {
             if crate::env_model::is_reserved(key) {
                 offenses.push(format!(
@@ -808,9 +814,9 @@ fn build_attributed_layers(
     let mut attributed: std::collections::BTreeMap<String, (EnvLayer, String)> =
         std::collections::BTreeMap::new();
 
-    let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, String>| {
+    let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, EnvValue>| {
         for (k, v) in env {
-            attributed.insert(k.clone(), (layer.clone(), v.clone()));
+            attributed.insert(k.clone(), (layer.clone(), v.as_persisted_str().to_string()));
         }
     };
 
@@ -1450,10 +1456,10 @@ mod tests {
 
     use std::collections::BTreeMap;
 
-    fn m(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    fn m(pairs: &[(&str, &str)]) -> BTreeMap<String, EnvValue> {
         pairs
             .iter()
-            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .map(|(k, v)| ((*k).to_string(), EnvValue::Plain((*v).to_string())))
             .collect()
     }
 
@@ -1466,8 +1472,8 @@ mod tests {
     #[test]
     fn merge_global_only() {
         let merged = merge_layers(&m(&[("A", "1"), ("B", "2")]), &m(&[]), &m(&[]), &m(&[]));
-        assert_eq!(merged.get("A").map(|v| v.as_str()), Some("1"));
-        assert_eq!(merged.get("B").map(|v| v.as_str()), Some("2"));
+        assert_eq!(merged.get("A").map(|v| v.as_persisted_str()), Some("1"));
+        assert_eq!(merged.get("B").map(|v| v.as_persisted_str()), Some("2"));
     }
 
     #[test]
@@ -1478,8 +1484,11 @@ mod tests {
             &m(&[]),
             &m(&[]),
         );
-        assert_eq!(merged.get("A").map(|v| v.as_str()), Some("global"));
-        assert_eq!(merged.get("B").map(|v| v.as_str()), Some("agent"));
+        assert_eq!(
+            merged.get("A").map(|v| v.as_persisted_str()),
+            Some("global")
+        );
+        assert_eq!(merged.get("B").map(|v| v.as_persisted_str()), Some("agent"));
     }
 
     #[test]
@@ -1490,7 +1499,10 @@ mod tests {
             &m(&[("A", "workspace")]),
             &m(&[]),
         );
-        assert_eq!(merged.get("A").map(|v| v.as_str()), Some("workspace"));
+        assert_eq!(
+            merged.get("A").map(|v| v.as_persisted_str()),
+            Some("workspace")
+        );
     }
 
     #[test]
@@ -1501,7 +1513,10 @@ mod tests {
             &m(&[("A", "workspace")]),
             &m(&[("A", "ws-agent")]),
         );
-        assert_eq!(merged.get("A").map(|v| v.as_str()), Some("ws-agent"));
+        assert_eq!(
+            merged.get("A").map(|v| v.as_persisted_str()),
+            Some("ws-agent")
+        );
     }
 
     #[test]
@@ -1512,17 +1527,17 @@ mod tests {
             &m(&[("W", "w")]),
             &m(&[("X", "x")]),
         );
-        assert_eq!(merged.get("G").map(|v| v.as_str()), Some("g"));
-        assert_eq!(merged.get("A").map(|v| v.as_str()), Some("a"));
-        assert_eq!(merged.get("W").map(|v| v.as_str()), Some("w"));
-        assert_eq!(merged.get("X").map(|v| v.as_str()), Some("x"));
+        assert_eq!(merged.get("G").map(|v| v.as_persisted_str()), Some("g"));
+        assert_eq!(merged.get("A").map(|v| v.as_persisted_str()), Some("a"));
+        assert_eq!(merged.get("W").map(|v| v.as_persisted_str()), Some("w"));
+        assert_eq!(merged.get("X").map(|v| v.as_persisted_str()), Some("x"));
     }
 
     #[test]
     fn validate_reserved_names_rejects_global_reserved() {
         let mut cfg = crate::config::AppConfig::default();
         cfg.env
-            .insert("DOCKER_HOST".to_string(), "whatever".to_string());
+            .insert("DOCKER_HOST".to_string(), "whatever".to_string().into());
 
         let err = validate_reserved_names(&cfg).unwrap_err();
         let msg = err.to_string();
@@ -1540,9 +1555,10 @@ mod tests {
             claude: None,
             env: std::collections::BTreeMap::new(),
         };
-        agent
-            .env
-            .insert("JACKIN_CLAUDE_ENV".to_string(), "whatever".to_string());
+        agent.env.insert(
+            "JACKIN_CLAUDE_ENV".to_string(),
+            "whatever".to_string().into(),
+        );
         cfg.agents.insert("agent-smith".to_string(), agent);
 
         let err = validate_reserved_names(&cfg).unwrap_err();
@@ -1565,7 +1581,7 @@ mod tests {
             ..Default::default()
         };
         ws.env
-            .insert("DOCKER_TLS_VERIFY".to_string(), "0".to_string());
+            .insert("DOCKER_TLS_VERIFY".to_string(), "0".to_string().into());
         cfg.workspaces.insert("big-monorepo".to_string(), ws);
 
         let err = validate_reserved_names(&cfg).unwrap_err();
@@ -1580,7 +1596,7 @@ mod tests {
         let mut override_ = crate::workspace::WorkspaceAgentOverride::default();
         override_
             .env
-            .insert("DOCKER_CERT_PATH".to_string(), "/tmp".to_string());
+            .insert("DOCKER_CERT_PATH".to_string(), "/tmp".to_string().into());
         let mut ws = crate::workspace::WorkspaceConfig {
             workdir: "/x".to_string(),
             mounts: vec![crate::workspace::MountConfig {
@@ -1606,9 +1622,10 @@ mod tests {
     #[test]
     fn validate_reserved_names_reports_all_conflicts_in_one_error() {
         let mut cfg = crate::config::AppConfig::default();
-        cfg.env.insert("DOCKER_HOST".to_string(), "x".to_string());
         cfg.env
-            .insert("DOCKER_TLS_VERIFY".to_string(), "y".to_string());
+            .insert("DOCKER_HOST".to_string(), "x".to_string().into());
+        cfg.env
+            .insert("DOCKER_TLS_VERIFY".to_string(), "y".to_string().into());
 
         let err = validate_reserved_names(&cfg).unwrap_err();
         let msg = err.to_string();
@@ -1619,9 +1636,10 @@ mod tests {
     #[test]
     fn validate_reserved_names_accepts_non_reserved() {
         let mut cfg = crate::config::AppConfig::default();
-        cfg.env.insert("MY_VAR".to_string(), "value".to_string());
         cfg.env
-            .insert("OPERATOR_TOKEN".to_string(), "op://...".to_string());
+            .insert("MY_VAR".to_string(), "value".to_string().into());
+        cfg.env
+            .insert("OPERATOR_TOKEN".to_string(), "op://...".to_string().into());
 
         validate_reserved_names(&cfg).unwrap();
     }
@@ -1640,7 +1658,7 @@ mod tests {
     #[test]
     fn resolve_global_literal_value() {
         let mut cfg = crate::config::AppConfig::default();
-        cfg.env.insert("FOO".to_string(), "bar".to_string());
+        cfg.env.insert("FOO".to_string(), "bar".to_string().into());
         let resolved =
             resolve_operator_env_with(&cfg, None, None, &TestOpRunner::forbidden(), |_| {
                 Err(std::env::VarError::NotPresent)
@@ -1652,7 +1670,7 @@ mod tests {
     #[test]
     fn resolve_layers_apply_in_order_with_workspace_agent_winning() {
         let mut cfg = crate::config::AppConfig::default();
-        cfg.env.insert("X".to_string(), "global".to_string());
+        cfg.env.insert("X".to_string(), "global".to_string().into());
 
         let mut agent_source = crate::config::AgentSource {
             git: "https://example.com/x.git".to_string(),
@@ -1662,7 +1680,7 @@ mod tests {
         };
         agent_source
             .env
-            .insert("X".to_string(), "agent".to_string());
+            .insert("X".to_string(), "agent".to_string().into());
         cfg.agents.insert("agent-smith".to_string(), agent_source);
 
         let mut ws = crate::workspace::WorkspaceConfig {
@@ -1675,9 +1693,11 @@ mod tests {
             }],
             ..Default::default()
         };
-        ws.env.insert("X".to_string(), "workspace".to_string());
+        ws.env
+            .insert("X".to_string(), "workspace".to_string().into());
         let mut wsa = crate::workspace::WorkspaceAgentOverride::default();
-        wsa.env.insert("X".to_string(), "ws-agent".to_string());
+        wsa.env
+            .insert("X".to_string(), "ws-agent".to_string().into());
         ws.agents.insert("agent-smith".to_string(), wsa);
         cfg.workspaces.insert("big-monorepo".to_string(), ws);
 
@@ -1696,8 +1716,10 @@ mod tests {
     #[test]
     fn resolve_reports_all_failures_in_one_error() {
         let mut cfg = crate::config::AppConfig::default();
-        cfg.env.insert("A".to_string(), "$MISSING_A".to_string());
-        cfg.env.insert("B".to_string(), "$MISSING_B".to_string());
+        cfg.env
+            .insert("A".to_string(), "$MISSING_A".to_string().into());
+        cfg.env
+            .insert("B".to_string(), "$MISSING_B".to_string().into());
 
         let err = resolve_operator_env_with(&cfg, None, None, &TestOpRunner::forbidden(), |_| {
             Err(std::env::VarError::NotPresent)
@@ -1729,9 +1751,9 @@ mod tests {
 
         let mut cfg = crate::config::AppConfig::default();
         cfg.env
-            .insert("A".to_string(), "op://Personal/a".to_string());
+            .insert("A".to_string(), "op://Personal/a".to_string().into());
         cfg.env
-            .insert("B".to_string(), "op://Personal/b".to_string());
+            .insert("B".to_string(), "op://Personal/b".to_string().into());
         let runner = ProbeCountingRunner {
             probe_calls: std::cell::Cell::new(0),
             read_calls: std::cell::Cell::new(0),
@@ -1760,7 +1782,8 @@ mod tests {
         }
 
         let mut cfg = crate::config::AppConfig::default();
-        cfg.env.insert("A".to_string(), "literal".to_string());
+        cfg.env
+            .insert("A".to_string(), "literal".to_string().into());
         let runner = ProbeCountingRunner {
             probe_calls: std::cell::Cell::new(0),
         };
@@ -1792,9 +1815,9 @@ mod tests {
 
         let mut cfg = crate::config::AppConfig::default();
         cfg.env
-            .insert("A".to_string(), "op://Personal/a".to_string());
+            .insert("A".to_string(), "op://Personal/a".to_string().into());
         cfg.env
-            .insert("B".to_string(), "op://Personal/b".to_string());
+            .insert("B".to_string(), "op://Personal/b".to_string().into());
         let err = resolve_operator_env_with(&cfg, None, None, &FailingProbeRunner, |_| {
             Err(std::env::VarError::NotPresent)
         })
@@ -1811,7 +1834,7 @@ mod tests {
         let mut cfg = crate::config::AppConfig::default();
         cfg.env.insert(
             "TOKEN".to_string(),
-            "op://Personal/broken/token".to_string(),
+            "op://Personal/broken/token".to_string().into(),
         );
 
         let runner = TestOpRunner::new(Err(anyhow::anyhow!("item not found")));
@@ -1829,8 +1852,10 @@ mod tests {
     #[test]
     fn resolve_host_ref_success_returns_value() {
         let mut cfg = crate::config::AppConfig::default();
-        cfg.env
-            .insert("API_KEY".to_string(), "${MY_HOST_API_KEY}".to_string());
+        cfg.env.insert(
+            "API_KEY".to_string(),
+            "${MY_HOST_API_KEY}".to_string().into(),
+        );
 
         let resolved =
             resolve_operator_env_with(&cfg, None, None, &TestOpRunner::forbidden(), |name| {
@@ -1852,11 +1877,13 @@ mod tests {
     fn launch_diagnostic_normal_mode_prints_counts_only_no_values() {
         let mut cfg = crate::config::AppConfig::default();
         cfg.env
-            .insert("LITERAL_KEY".to_string(), "super-secret".to_string());
+            .insert("LITERAL_KEY".to_string(), "super-secret".to_string().into());
         cfg.env
-            .insert("HOST_KEY".to_string(), "$HOST_VAR".to_string());
-        cfg.env
-            .insert("OP_KEY".to_string(), "op://Personal/item/field".to_string());
+            .insert("HOST_KEY".to_string(), "$HOST_VAR".to_string().into());
+        cfg.env.insert(
+            "OP_KEY".to_string(),
+            "op://Personal/item/field".to_string().into(),
+        );
         let resolved: std::collections::BTreeMap<String, String> = [
             ("LITERAL_KEY".to_string(), "super-secret".to_string()),
             ("HOST_KEY".to_string(), "host-value-secret".to_string()),
@@ -1886,9 +1913,11 @@ mod tests {
     fn launch_diagnostic_debug_mode_prints_references_but_not_values() {
         let mut cfg = crate::config::AppConfig::default();
         cfg.env
-            .insert("LITERAL_KEY".to_string(), "super-secret".to_string());
-        cfg.env
-            .insert("OP_KEY".to_string(), "op://Personal/item/field".to_string());
+            .insert("LITERAL_KEY".to_string(), "super-secret".to_string().into());
+        cfg.env.insert(
+            "OP_KEY".to_string(),
+            "op://Personal/item/field".to_string().into(),
+        );
         let resolved: std::collections::BTreeMap<String, String> = [
             ("LITERAL_KEY".to_string(), "super-secret".to_string()),
             ("OP_KEY".to_string(), "op-value-secret".to_string()),

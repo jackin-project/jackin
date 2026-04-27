@@ -51,9 +51,9 @@ fn seed_config_with_env(
     // WorkspaceConfig's workdir-must-equal-or-be-covered-by-mount-dst
     // validation passes.
     let host_path = temp_dir.display().to_string();
-    let env_map: std::collections::BTreeMap<String, String> = env
+    let env_map: std::collections::BTreeMap<String, jackin::operator_env::EnvValue> = env
         .into_iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .map(|(k, v)| (k.to_string(), v.into()))
         .collect();
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -258,7 +258,11 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     assert_eq!(
-        editor(&state).pending.env.get("DB_URL").map(String::as_str),
+        editor(&state)
+            .pending
+            .env
+            .get("DB_URL")
+            .map(|v| v.as_persisted_str()),
         Some("new-value"),
         "pending.env must reflect the edit"
     );
@@ -279,7 +283,7 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
         .get("big-monorepo")
         .expect("workspace must still exist");
     assert_eq!(
-        ws.env.get("DB_URL").map(String::as_str),
+        ws.env.get("DB_URL").map(|v| v.as_persisted_str()),
         Some("new-value"),
         "on-disk env must reflect the edit"
     );
@@ -555,7 +559,7 @@ fn secrets_add_new_key_flow() -> Result<()> {
             .pending
             .env
             .get("API_KEY")
-            .map(String::as_str),
+            .map(|v| v.as_persisted_str()),
         Some("s3cret"),
         "pending.env must contain the new key after the three-step add"
     );
@@ -646,7 +650,11 @@ fn op_picker_cancel_closes_modal() -> Result<()> {
     );
     // Cancel is a pure UI action — the on-pending env value is unchanged.
     assert_eq!(
-        editor(&state).pending.env.get("DB_URL").map(String::as_str),
+        editor(&state)
+            .pending
+            .env
+            .get("DB_URL")
+            .map(|v| v.as_persisted_str()),
         Some("untouched"),
         "Esc-cancel must not mutate pending.env"
     );
@@ -725,7 +733,11 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
     // The reference must land directly in pending.env (no text modal
     // intermediate).
     assert_eq!(
-        editor(&state).pending.env.get("DB_URL").map(String::as_str),
+        editor(&state)
+            .pending
+            .env
+            .get("DB_URL")
+            .map(|v| v.as_persisted_str()),
         Some("op://Personal/Database/password"),
         "picker commit must write the op:// reference straight into pending.env[key]"
     );
@@ -841,7 +853,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
             .pending
             .env
             .get("API_KEY")
-            .map(String::as_str),
+            .map(|v| v.as_persisted_str()),
         Some("op://Personal/API Keys/credential"),
         "EnvKey commit must write the stashed picker value into pending.env"
     );
@@ -926,7 +938,7 @@ fn enter_on_sentinel_opens_envkey_then_sourcepicker_then_value_modal() -> Result
             .pending
             .env
             .get("API_KEY")
-            .map(String::as_str),
+            .map(|v| v.as_persisted_str()),
         Some("s3cret"),
         "Plain-text source path must land the typed value in pending.env"
     );
@@ -973,7 +985,7 @@ fn env_value_modal_allows_empty_commit() -> Result<()> {
             .pending
             .env
             .get("EMPTY_OK")
-            .map(String::as_str),
+            .map(|v| v.as_persisted_str()),
         Some(""),
         "EnvValue modal must allow committing an empty string \
          (POSIX VAR=\"\" semantics)"
@@ -1257,7 +1269,11 @@ fn op_picker_multi_account_flow() -> Result<()> {
     // operator's default `op` account context.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert_eq!(
-        editor(&state).pending.env.get("DB_URL").map(String::as_str),
+        editor(&state)
+            .pending
+            .env
+            .get("DB_URL")
+            .map(|v| v.as_persisted_str()),
         Some("op://Shared/Database/password"),
         "multi-account picker commit must produce a Vault/Item/Field path"
     );
@@ -1545,7 +1561,7 @@ fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {
             .pending
             .env
             .get("EXISTING")
-            .map(String::as_str),
+            .map(|v| v.as_persisted_str()),
         Some("kept-value"),
         "the pre-existing value must remain untouched"
     );
@@ -1640,7 +1656,10 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
         .expect("agent override must survive");
     assert_eq!(agent_entry.env.len(), 1);
     assert_eq!(
-        agent_entry.env.get("LOG_LEVEL").map(String::as_str),
+        agent_entry
+            .env
+            .get("LOG_LEVEL")
+            .map(|v| v.as_persisted_str()),
         Some("debug"),
         "pre-existing agent value must remain untouched"
     );
@@ -2059,8 +2078,13 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
         agents.keys().collect::<Vec<_>>()
     );
     assert_eq!(
-        agents.get("agent-smith").unwrap().env.get("API_TOKEN"),
-        Some(&"secret".to_string()),
+        agents
+            .get("agent-smith")
+            .unwrap()
+            .env
+            .get("API_TOKEN")
+            .map(|v| v.as_persisted_str()),
+        Some("secret"),
         "the committed key/value must land in the agent's env map"
     );
     // The section must be auto-expanded.

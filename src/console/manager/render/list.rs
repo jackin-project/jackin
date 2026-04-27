@@ -550,7 +550,7 @@ fn render_environments_subpanel(
             rows.push(EnvRow {
                 name: key.clone(),
                 scope: None,
-                is_op: crate::operator_env::is_op_reference(value),
+                is_op: crate::operator_env::is_op_reference(value.as_persisted_str()),
             });
         }
         for (agent, overrides) in &ws.agents {
@@ -558,7 +558,7 @@ fn render_environments_subpanel(
                 rows.push(EnvRow {
                     name: key.clone(),
                     scope: Some(agent.clone()),
-                    is_op: crate::operator_env::is_op_reference(value),
+                    is_op: crate::operator_env::is_op_reference(value.as_persisted_str()),
                 });
             }
         }

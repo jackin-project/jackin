@@ -191,13 +191,13 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
                     .pending
                     .env
                     .get(key)
-                    .is_some_and(|v| is_op_reference(v)),
+                    .is_some_and(|v| is_op_reference(v.as_persisted_str())),
                 Some(SecretsRow::AgentKeyRow { agent, key }) => state
                     .pending
                     .agents
                     .get(agent)
                     .and_then(|ov| ov.env.get(key))
-                    .is_some_and(|v| is_op_reference(v)),
+                    .is_some_and(|v| is_op_reference(v.as_persisted_str())),
                 _ => false,
             };
             match rows.get(cursor) {
@@ -588,7 +588,12 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
         let cursor_col = if selected { "▸ " } else { "  " };
         match row {
             SecretsRow::WorkspaceKeyRow(key) => {
-                let value = state.pending.env.get(key).cloned().unwrap_or_default();
+                let value = state
+                    .pending
+                    .env
+                    .get(key)
+                    .map(|v| v.as_persisted_str().to_string())
+                    .unwrap_or_default();
                 let masked = !state
                     .unmasked_rows
                     .contains(&(SecretsScopeTag::Workspace, key.clone()));
@@ -632,9 +637,13 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 lines.push(Line::from(spans));
             }
             SecretsRow::AgentKeyRow { agent, key } => {
-                let empty = std::collections::BTreeMap::<String, String>::new();
+                let empty =
+                    std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
                 let pend_env = state.pending.agents.get(agent).map_or(&empty, |o| &o.env);
-                let value = pend_env.get(key).cloned().unwrap_or_default();
+                let value = pend_env
+                    .get(key)
+                    .map(|v| v.as_persisted_str().to_string())
+                    .unwrap_or_default();
                 let masked = !state
                     .unmasked_rows
                     .contains(&(SecretsScopeTag::Agent(agent.clone()), key.clone()));

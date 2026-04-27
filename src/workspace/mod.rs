@@ -48,7 +48,7 @@ pub struct WorkspaceConfig {
     /// values use the `operator_env` dispatch syntax
     /// (`op://...` | `$NAME` | `${NAME}` | literal).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub env: std::collections::BTreeMap<String, String>,
+    pub env: std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
     /// Per-(workspace × agent) env overrides, keyed by the agent
     /// selector (e.g. `"agent-smith"` or `"chainargos/agent-brown"`).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -93,7 +93,7 @@ impl KeepAwakeConfig {
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceAgentOverride {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub env: std::collections::BTreeMap<String, String>,
+    pub env: std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
 }
 
 #[derive(Debug, Clone, Default)]

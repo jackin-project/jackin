@@ -698,7 +698,7 @@ fn env_diff_lines(
         .keys()
         .chain(pending.agents.keys())
         .collect();
-    let empty = std::collections::BTreeMap::<String, String>::new();
+    let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
     for agent in agent_keys {
         let orig_env = original.agents.get(agent).map_or(&empty, |o| &o.env);
         let pend_env = pending.agents.get(agent).map_or(&empty, |p| &p.env);
@@ -721,8 +721,8 @@ fn env_diff_lines(
 fn append_env_map_diff_lines(
     out: &mut Vec<ratatui::text::Line<'static>>,
     indent: Option<&str>,
-    original: &std::collections::BTreeMap<String, String>,
-    pending: &std::collections::BTreeMap<String, String>,
+    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
     value: ratatui::style::Style,
     dim: ratatui::style::Style,
 ) {
@@ -732,7 +732,7 @@ fn append_env_map_diff_lines(
         match original.get(k) {
             Some(ov) if ov == v => {}
             _ => out.push(Line::from(Span::styled(
-                format!("{prefix}  + {k} = {v}"),
+                format!("{prefix}  + {k} = {}", v.as_persisted_str()),
                 value,
             ))),
         }
@@ -806,7 +806,7 @@ fn apply_env_diff(
         .keys()
         .chain(pending.agents.keys())
         .collect();
-    let empty = std::collections::BTreeMap::<String, String>::new();
+    let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
     for agent in agent_keys {
         let orig_env = original.agents.get(agent).map_or(&empty, |o| &o.env);
         let pend_env = pending.agents.get(agent).map_or(&empty, |p| &p.env);
@@ -821,13 +821,15 @@ fn apply_env_diff(
 fn apply_env_map_diff(
     ce: &mut crate::config::ConfigEditor,
     scope: &EnvScope,
-    original: &std::collections::BTreeMap<String, String>,
-    pending: &std::collections::BTreeMap<String, String>,
+    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
 ) {
     for (k, v) in pending {
         match original.get(k) {
             Some(ov) if ov == v => {}
-            _ => ce.set_env_var(scope, k, v),
+            _ => {
+                let _ = ce.set_env_var(scope, k, v.clone());
+            }
         }
     }
     for k in original.keys() {

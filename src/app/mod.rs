@@ -424,7 +424,11 @@ pub fn run(cli: Cli) -> Result<()> {
                     }
                     let scope = agent.map_or(config::EnvScope::Global, config::EnvScope::Agent);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                    editor.set_env_var(&scope, &key, &value);
+                    editor.set_env_var(
+                        &scope,
+                        &key,
+                        crate::operator_env::EnvValue::Plain(value),
+                    )?;
                     if let Some(ref c) = comment {
                         editor.set_env_comment(&scope, &key, Some(c));
                     }
@@ -453,14 +457,14 @@ pub fn run(cli: Cli) -> Result<()> {
                             config
                                 .env
                                 .iter()
-                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .map(|(k, v)| (k.clone(), v.as_persisted_str().to_string()))
                                 .collect()
                         },
                         |a| {
                             config.agents.get(a).map_or_else(Vec::new, |src| {
                                 src.env
                                     .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                    .map(|(k, v)| (k.clone(), v.as_persisted_str().to_string()))
                                     .collect()
                             })
                         },
@@ -912,7 +916,11 @@ pub fn run(cli: Cli) -> Result<()> {
                     }
                     let scope = workspace_env_scope(workspace, agent);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                    editor.set_env_var(&scope, &key, &value);
+                    editor.set_env_var(
+                        &scope,
+                        &key,
+                        crate::operator_env::EnvValue::Plain(value),
+                    )?;
                     if let Some(ref c) = comment {
                         editor.set_env_comment(&scope, &key, Some(c));
                     }
@@ -943,10 +951,18 @@ pub fn run(cli: Cli) -> Result<()> {
                 cli::WorkspaceEnvCommand::List { workspace, agent } => {
                     let ws = config.require_workspace(&workspace)?;
                     let vars: Vec<(String, String)> = agent.as_ref().map_or_else(
-                        || ws.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                        || {
+                            ws.env
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.as_persisted_str().to_string()))
+                                .collect()
+                        },
                         |a| {
                             ws.agents.get(a).map_or_else(Vec::new, |ov| {
-                                ov.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                                ov.env
+                                    .iter()
+                                    .map(|(k, v)| (k.clone(), v.as_persisted_str().to_string()))
+                                    .collect()
                             })
                         },
                     );

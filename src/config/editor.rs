@@ -95,10 +95,28 @@ impl ConfigEditor {
         Ok(config)
     }
 
-    pub fn set_env_var(&mut self, scope: &EnvScope, key: &str, value_str: &str) {
+    pub fn set_env_var(
+        &mut self,
+        scope: &EnvScope,
+        key: &str,
+        value: crate::operator_env::EnvValue,
+    ) -> anyhow::Result<()> {
+        use crate::operator_env::EnvValue;
+        use toml_edit::{InlineTable, Item, Value, value as toml_value};
+
         let path = env_scope_path(scope);
         let table = table_path_mut(&mut self.doc, &path);
-        table.insert(key, toml_edit::value(value_str));
+        let item = match value {
+            EnvValue::Plain(s) => toml_value(s),
+            EnvValue::OpRef(r) => {
+                let mut tbl = InlineTable::new();
+                tbl.insert("op", Value::from(r.op));
+                tbl.insert("path", Value::from(r.path));
+                Item::Value(Value::InlineTable(tbl))
+            }
+        };
+        table.insert(key, item);
+        Ok(())
     }
 
     pub fn set_env_comment(&mut self, scope: &EnvScope, key: &str, comment: Option<&str>) {
@@ -532,7 +550,13 @@ mod tests {
         std::fs::write(&paths.config_file, "").unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(&EnvScope::Global, "API_TOKEN", "op://Personal/api/token");
+        editor
+            .set_env_var(
+                &EnvScope::Global,
+                "API_TOKEN",
+                "op://Personal/api/token".into(),
+            )
+            .unwrap();
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -557,14 +581,16 @@ workdir = "/workspace/prod"
         .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(
-            &EnvScope::WorkspaceAgent {
-                workspace: "prod".to_string(),
-                agent: "agent-smith".to_string(),
-            },
-            "OPENAI_API_KEY",
-            "op://Work/OpenAI/default",
-        );
+        editor
+            .set_env_var(
+                &EnvScope::WorkspaceAgent {
+                    workspace: "prod".to_string(),
+                    agent: "agent-smith".to_string(),
+                },
+                "OPENAI_API_KEY",
+                "op://Work/OpenAI/default".into(),
+            )
+            .unwrap();
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -592,7 +618,9 @@ API_TOKEN = "old-value"
         .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(&EnvScope::Global, "API_TOKEN", "new-value");
+        editor
+            .set_env_var(&EnvScope::Global, "API_TOKEN", "new-value".into())
+            .unwrap();
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -653,7 +681,9 @@ git = "https://example.com/a.git"
 
         let scope = EnvScope::Agent("agent-smith".to_string());
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(&scope, "LOG_LEVEL", "debug");
+        editor
+            .set_env_var(&scope, "LOG_LEVEL", "debug".into())
+            .unwrap();
         assert!(
             editor.remove_env_var(&scope, "LOG_LEVEL"),
             "first remove should return true"
@@ -683,7 +713,9 @@ workdir = "/workspace/prod"
 
         let scope = EnvScope::Workspace("prod".to_string());
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(&scope, "DB_URL", "op://Work/Prod/db-url");
+        editor
+            .set_env_var(&scope, "DB_URL", "op://Work/Prod/db-url".into())
+            .unwrap();
         assert!(
             editor.remove_env_var(&scope, "DB_URL"),
             "first remove should return true"
@@ -716,7 +748,9 @@ workdir = "/workspace/prod"
             agent: "agent-smith".to_string(),
         };
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(&scope, "OPENAI_API_KEY", "op://Work/OpenAI/default");
+        editor
+            .set_env_var(&scope, "OPENAI_API_KEY", "op://Work/OpenAI/default".into())
+            .unwrap();
         assert!(
             editor.remove_env_var(&scope, "OPENAI_API_KEY"),
             "first remove should return true"
@@ -739,8 +773,12 @@ workdir = "/workspace/prod"
         std::fs::write(&paths.config_file, "").unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(&EnvScope::Global, "KEY_A", "value-a");
-        editor.set_env_var(&EnvScope::Global, "KEY_B", "value-b");
+        editor
+            .set_env_var(&EnvScope::Global, "KEY_A", "value-a".into())
+            .unwrap();
+        editor
+            .set_env_var(&EnvScope::Global, "KEY_B", "value-b".into())
+            .unwrap();
         editor.save().unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
@@ -835,7 +873,9 @@ API_TOKEN = "op://vault-id/item-id/field"
         std::fs::write(&paths.config_file, original).unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(&EnvScope::Global, "OTHER", "z");
+        editor
+            .set_env_var(&EnvScope::Global, "OTHER", "z".into())
+            .unwrap();
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -862,7 +902,9 @@ workdir = "/b"
         std::fs::write(&paths.config_file, original).unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_env_var(&EnvScope::Workspace("a".to_string()), "K", "v");
+        editor
+            .set_env_var(&EnvScope::Workspace("a".to_string()), "K", "v".into())
+            .unwrap();
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -1014,7 +1056,9 @@ API_TOKEN = "op://Personal/api/token"
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
         // Bypass the CLI pre-flight via the unchecked setter.
-        editor.set_env_var(&EnvScope::Global, "DOCKER_HOST", "tcp://bad");
+        editor
+            .set_env_var(&EnvScope::Global, "DOCKER_HOST", "tcp://bad".into())
+            .unwrap();
 
         let err = editor.save().unwrap_err();
         let msg = format!("{err:#}");
@@ -1548,5 +1592,61 @@ workdir = "/b"
         let mut editor = ConfigEditor::open(&paths).unwrap();
         let err = editor.rename_workspace("a", "").unwrap_err();
         assert!(err.to_string().contains("empty"), "{err}");
+    }
+
+    #[test]
+    fn set_env_var_writes_inline_table_for_op_ref() {
+        use crate::operator_env::{EnvValue, OpRef};
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "[env]\n").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor
+            .set_env_var(
+                &EnvScope::Global,
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                EnvValue::OpRef(OpRef {
+                    op: "op://abc/def/fld".into(),
+                    path: "Private/Claude/security/auth token".into(),
+                }),
+            )
+            .unwrap();
+        editor.save().unwrap();
+
+        let serialized = std::fs::read_to_string(&paths.config_file).unwrap();
+        // Inline-table form, not a scalar string with quoted JSON.
+        assert!(
+            serialized.contains(r#"CLAUDE_CODE_OAUTH_TOKEN = { op = "op://abc/def/fld", path = "Private/Claude/security/auth token" }"#),
+            "expected inline-table emit, got:\n{serialized}"
+        );
+    }
+
+    #[test]
+    fn set_env_var_writes_scalar_string_for_plain() {
+        use crate::operator_env::EnvValue;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "[env]\n").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor
+            .set_env_var(
+                &EnvScope::Global,
+                "DB_URL",
+                EnvValue::Plain("postgres://localhost".into()),
+            )
+            .unwrap();
+        editor.save().unwrap();
+
+        let serialized = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            serialized.contains(r#"DB_URL = "postgres://localhost""#),
+            "expected scalar-string emit, got:\n{serialized}"
+        );
     }
 }

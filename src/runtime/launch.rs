@@ -1292,15 +1292,21 @@ fn lookup_operator_env_raw(
     // `or_else`-chaining lets `None` from a later layer fall back to
     // an earlier layer's value.
     let workspace_agent = ws_opt.zip(agent_selector).and_then(|(ws, agent_name)| {
-        ws.agents
-            .get(agent_name)
-            .and_then(|overlay| overlay.env.get(key).cloned())
+        ws.agents.get(agent_name).and_then(|overlay| {
+            overlay
+                .env
+                .get(key)
+                .map(|v| v.as_persisted_str().to_string())
+        })
     });
-    let workspace = ws_opt.and_then(|ws| ws.env.get(key).cloned());
+    let workspace = ws_opt.and_then(|ws| ws.env.get(key).map(|v| v.as_persisted_str().to_string()));
     let agent = agent_selector
         .and_then(|agent_name| config.agents.get(agent_name))
-        .and_then(|a| a.env.get(key).cloned());
-    let global = config.env.get(key).cloned();
+        .and_then(|a| a.env.get(key).map(|v| v.as_persisted_str().to_string()));
+    let global = config
+        .env
+        .get(key)
+        .map(|v| v.as_persisted_str().to_string());
 
     workspace_agent.or(workspace).or(agent).or(global)
 }

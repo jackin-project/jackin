@@ -585,7 +585,7 @@ impl EditorState<'_> {
         for agent in agent_keys {
             let orig = self.original.agents.get(agent).map(|o| &o.env);
             let pend = self.pending.agents.get(agent).map(|p| &p.env);
-            let empty = std::collections::BTreeMap::<String, String>::new();
+            let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
             let orig_env = orig.unwrap_or(&empty);
             let pend_env = pend.unwrap_or(&empty);
             n += env_change_count(orig_env, pend_env);
@@ -653,8 +653,8 @@ pub fn classify_mount_diffs<'a>(
 }
 
 fn env_change_count(
-    original: &std::collections::BTreeMap<String, String>,
-    pending: &std::collections::BTreeMap<String, String>,
+    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
 ) -> usize {
     let mut n = 0;
     for (k, v) in pending {
@@ -930,7 +930,10 @@ mod tests {
     fn change_count_env_set_counts_as_one() {
         let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
         assert_eq!(e.change_count(), 0);
-        e.pending.env.insert("DB_URL".into(), "postgres://…".into());
+        e.pending.env.insert(
+            "DB_URL".into(),
+            crate::operator_env::EnvValue::Plain("postgres://…".into()),
+        );
         assert_eq!(e.change_count(), 1);
     }
 
@@ -939,7 +942,10 @@ mod tests {
     #[test]
     fn change_count_env_remove_counts_as_one() {
         let mut ws = empty_ws("/a");
-        ws.env.insert("DB_URL".into(), "postgres://…".into());
+        ws.env.insert(
+            "DB_URL".into(),
+            crate::operator_env::EnvValue::Plain("postgres://…".into()),
+        );
         let mut e = EditorState::new_edit("a".into(), ws);
         assert_eq!(e.change_count(), 0);
         e.pending.env.remove("DB_URL");
@@ -954,7 +960,10 @@ mod tests {
         // Seed one agent with one env key.
         let mut ws = empty_ws("/a");
         let mut agent_x_env = std::collections::BTreeMap::new();
-        agent_x_env.insert("LOG_LEVEL".into(), "info".into());
+        agent_x_env.insert(
+            "LOG_LEVEL".into(),
+            crate::operator_env::EnvValue::Plain("info".into()),
+        );
         ws.agents.insert(
             "agent-x".into(),
             WorkspaceAgentOverride { env: agent_x_env },
@@ -963,12 +972,10 @@ mod tests {
         assert_eq!(e.change_count(), 0);
 
         // Add a new key to pending.
-        e.pending
-            .agents
-            .get_mut("agent-x")
-            .unwrap()
-            .env
-            .insert("DEBUG".into(), "1".into());
+        e.pending.agents.get_mut("agent-x").unwrap().env.insert(
+            "DEBUG".into(),
+            crate::operator_env::EnvValue::Plain("1".into()),
+        );
         assert_eq!(e.change_count(), 1);
 
         // Remove the original key. Net delta: 2 (one add + one remove).
@@ -991,7 +998,9 @@ mod tests {
         // Workspace env path.
         let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
         assert!(!e.is_dirty());
-        e.pending.env.insert("K".into(), "v".into());
+        e.pending
+            .env
+            .insert("K".into(), crate::operator_env::EnvValue::Plain("v".into()));
         assert!(e.is_dirty(), "workspace env set must make state dirty");
 
         // Per-agent env path.
@@ -1002,7 +1011,7 @@ mod tests {
             WorkspaceAgentOverride {
                 env: {
                     let mut m = std::collections::BTreeMap::new();
-                    m.insert("K".into(), "v".into());
+                    m.insert("K".into(), crate::operator_env::EnvValue::Plain("v".into()));
                     m
                 },
             },
