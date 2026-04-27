@@ -1082,6 +1082,14 @@ fn load_agent_with(
             // the safe cleanup pass once. We do not loop further: if the
             // operator still leaves dirty state, the second pass will fall
             // back to Preserved and exit normally.
+            //
+            // Reconcile keep_awake BEFORE the restart re-attach, mirroring the
+            // mid-flight reconcile in `launch_agent_runtime`: between the
+            // original exit and this restart, a parallel jackin invocation
+            // could observe `docker ps --filter ...` = 0 and kill caffeinate,
+            // leaving the restart session unprotected. The lock inside
+            // `reconcile` serializes against that race.
+            super::caffeinate::reconcile(paths, runner);
             runner.run(
                 "docker",
                 &["start", "-ai", &container_name],
