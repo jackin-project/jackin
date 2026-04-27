@@ -1,0 +1,253 @@
+---
+title: "Worktree Cleanup Assessment Misjudges Renamed and Squash-Merged Branches"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+
+**Status**: Open
+
+## Problem
+
+When an operator finishes a clean session in a `worktree`-isolated mount, the post-attach finalizer at <RepoFile path="src/isolation/finalize.rs" /> can wrongly conclude there is unpushed work and prompt:
+
+```text
+Isolated worktree for jackin-the-architect still has uncommitted changes:
+  /Users/donbeave/.jackin/data/jackin-the-architect/git/worktree/repo/Users/donbeave/Projects/jackin-project/jackin/jackin-the-architect
+
+What do you want to do?
+  [1] Return to agent to address it
+  [2] Preserve worktree and exit
+  [3] Force delete worktree and discard changes
+```
+
+The prompt fires repeatedly even when the host repo is clean, the agent has just landed and squash-merged a PR, and the actual worktree contents are spotless. Three independent defects compound into the operator-visible bug:
+
+1. **The wording lies for one of the two paths that lead here.** The same string is shown for the `PreservedDirty` assessment (real working-tree changes — `git status --porcelain` non-empty) and the `PreservedUnpushed` assessment (HEAD has moved past `base_commit` and the upstream check came back empty). The clean-tree-but-unpushed-commits case is the most confusing one — the operator sees "uncommitted changes" alongside a tree that quite obviously has no uncommitted changes.
+2. **The upstream check looks at the wrong branch.** It hardcodes `record.scratch_branch` (the `jackin/scratch/<container>` ref jackin created at session start), but the per-mount-isolation design itself acknowledges that "agents (or external tooling such as the Superpowers plugin in Claude Code) rename the branch before pushing a PR." Once the agent moves HEAD off the scratch branch, the check is interrogating a stale ref that was abandoned at session start — typically still parked at `base_commit`, with no upstream — and unconditionally routes to `PreservedUnpushed`.
+3. **The "[gone] upstream" case is treated as unsafe.** When the agent's actual feature branch is squash-merged on GitHub and the remote branch is auto-deleted, `git fetch --prune` leaves the local branch with `[gone]` upstream tracking. The current logic in `assess_cleanup` falls back to `PreservedUnpushed` for this state instead of recognising "merged-and-pruned" as evidence the work has landed.
+
+## Why It Matters
+
+- **The prompt fires on every clean exit of every worktree-isolated container an agent has ever committed in.** Worktrees are reused across sessions (see `materialize_one` in <RepoFile path="src/isolation/materialize.rs" />), and the recorded `base_commit` is captured once at first creation and never updated. As soon as any commit lands on any branch in the worktree — which is what an agent does in the course of normal work — `HEAD != base_commit` becomes a sticky condition for the lifetime of the worktree.
+- **The wording trains operators to choose "preserve" defensively.** "Still has uncommitted changes" + a clearly clean tree + a recently merged PR creates cognitive dissonance. The safe-feeling default ("nothing is at risk, why is jackin asking me?") is option 2. Over time every long-lived agent accumulates an isolated worktree pinned at a stale `feature/...` branch whose squash-merged equivalent is already on `main`. None of those preserved worktrees are ever revisited, but they all keep showing up at every clean exit.
+- **The architectural assumption is stale.** The cleanup logic was written as if `record.scratch_branch` were the only branch to check. The per-mount-isolation design comment in <RepoFile path="docs/src/content/docs/reference/roadmap/per-mount-isolation.mdx" /> explicitly says agents rename the branch before opening a PR, so the cleanup contract has been wrong since V1 shipped — it has only become operator-visible now that more operators are running long-lived isolated agents.
+- **The current behaviour silently disables the cleanup safety story.** The point of the post-attach finalizer is "auto-clean when nothing is at risk; prompt only when something might be lost." If the prompt fires on benign squash-merge state, the safety signal is destroyed by alarm fatigue — operators stop reading the prompt and start reflexively picking a single option. Either they pick 2 and grow a graveyard of stale worktrees, or they pick 3 (force delete) reflexively and one day discard a worktree that genuinely held unpushed work.
+
+## Reproduction
+
+### Captured debug log (real session, jackin v0.6.0-dev)
+
+The operator launched `jackin --debug`, the agent worked on a feature branch, opened a PR, the PR was squash-merged on GitHub with branch deletion, then the agent exited cleanly.
+
+The interesting fragment of the finalize step:
+
+```text
+[debug] docker inspect -f {{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}} jackin-the-architect
+[debug] -> exited|0|false
+[jackin debug isolation] finalize_foreground_session: container=jackin-the-architect exit_code=Some(0) oom_killed=false interactive=true
+[debug] git -C <worktree> status --porcelain
+[debug] git -C <worktree> rev-parse HEAD
+[debug] -> 498440970f6922948e48523a7e831205c1a75210
+[debug] git -C <worktree> for-each-ref --format=%(upstream:short) refs/heads/jackin/scratch/jackin-the-architect
+[jackin debug isolation] finalize assess: container=jackin-the-architect mount=/Users/donbeave/Projects/jackin-project/jackin → PreservedUnpushed
+Isolated worktree for jackin-the-architect still has uncommitted changes:
+  /Users/donbeave/.jackin/data/jackin-the-architect/git/worktree/repo/Users/donbeave/Projects/jackin-project/jackin/jackin-the-architect
+```
+
+Note three things:
+
+- `git status --porcelain` returned no output → tree is clean.
+- `rev-parse HEAD` returned `498440970f...` while `record.base_commit` was `e7a2e5382e...` (recorded at first materialization).
+- `for-each-ref refs/heads/jackin/scratch/jackin-the-architect` returned no output — the **scratch** branch still has no upstream. But HEAD is no longer on the scratch branch.
+
+### Worktree state at the moment the prompt fires
+
+Drilling into the worktree directly:
+
+```text
+$ cd /Users/donbeave/.jackin/data/jackin-the-architect/git/worktree/repo/Users/.../jackin-the-architect
+$ git status
+On branch feature/jackin-debug-env-var
+Your branch is based on 'origin/feature/jackin-debug-env-var', but the upstream is gone.
+  (use "git branch --unset-upstream" to fixup)
+nothing to commit, working tree clean
+
+$ git for-each-ref --format='%(refname:short) | upstream=%(upstream:short) | tracking=%(upstream:track) | sha=%(objectname:short)' refs/heads/
+feature/jackin-debug-env-var | upstream=origin/feature/jackin-debug-env-var | tracking=[gone]    | sha=49844097
+jackin/scratch/jackin-the-architect | upstream=                              | tracking=         | sha=e7a2e538
+main                          | upstream=origin/main                         | tracking=[behind 1] | sha=2e37a755
+
+$ git merge-base --is-ancestor jackin/scratch/jackin-the-architect e7a2e5382eb34e28fcb101e5fc8032b7693fb808
+# exit 0 → "scratch == base or behind"
+
+$ git branch -r --contains HEAD
+# (empty — HEAD's commit lives on no remote ref directly)
+
+$ git ls-remote --heads origin feature/jackin-debug-env-var
+# (empty — remote branch has been deleted)
+
+$ git log --oneline --all --grep='JACKIN_DEBUG' | head -5
+eabde94f feat(cli): JACKIN_DEBUG env var for sticky debug output (#188)
+2a43d633 docs(roadmap): add JACKIN_DEBUG env var as Resolved
+3fb858d7 feat(cli): JACKIN_DEBUG env var makes --debug sticky
+8cd7e65d docs(specs): JACKIN_DEBUG env var for sticky debug output
+49a9c49b test: add coverage for JACKIN_DEBUG flag and MCP server registration
+```
+
+This is the canonical post-merge state of a developer worktree. Three branches:
+
+- The scratch branch the agent never touched, still parked at `base_commit`.
+- The agent's actual feature branch with `[gone]` upstream — squash-merged, branch deleted on origin.
+- A local `main` slightly behind `origin/main`.
+
+The squash-merge is unambiguous: `eabde94f` on `origin/main` is `(#188)`, the squashed equivalent of the four local commits on `feature/jackin-debug-env-var`. The local commits' content has shipped; their SHAs have not.
+
+## Root Cause
+
+### Walk-through of `assess_cleanup`
+
+The current implementation in <RepoFile path="src/isolation/finalize.rs" />:
+
+```rust
+let porcelain = runner.capture("git", &["-C", &record.worktree_path, "status", "--porcelain"], None)?;
+if !porcelain.trim().is_empty() {
+    return Ok(CleanupAssessment::PreservedDirty);
+}
+let head = runner.capture("git", &["-C", &record.worktree_path, "rev-parse", "HEAD"], None)?;
+if head == record.base_commit {
+    return Ok(CleanupAssessment::SafeToDelete);
+}
+let upstream = runner.capture(
+    "git",
+    &[
+        "-C", &record.worktree_path,
+        "for-each-ref", "--format=%(upstream:short)",
+        &format!("refs/heads/{}", record.scratch_branch),
+    ],
+    None,
+)?;
+if upstream.trim().is_empty() {
+    return Ok(CleanupAssessment::PreservedUnpushed);
+}
+let branch_minus_upstream = runner.capture(
+    "git",
+    &[
+        "-C", &record.worktree_path,
+        "rev-list", &format!("{upstream}..{}", record.scratch_branch),
+    ],
+    None,
+)?;
+if branch_minus_upstream.trim().is_empty() {
+    Ok(CleanupAssessment::SafeToDelete)
+} else {
+    Ok(CleanupAssessment::PreservedUnpushed)
+}
+```
+
+For the captured-state case above, this evaluates as:
+
+- `status --porcelain` → empty (clean). Skip `PreservedDirty`.
+- `rev-parse HEAD` → `49844097`, `record.base_commit` is `e7a2e538`. They differ. Skip `SafeToDelete`.
+- `for-each-ref refs/heads/jackin/scratch/jackin-the-architect` → empty (no upstream — that branch was created with `git worktree add -b` and never had one set). Return `PreservedUnpushed`.
+- The `rev-list` step never runs; the agent's actual branch (`feature/jackin-debug-env-var`) is never inspected.
+
+`PreservedUnpushed` triggers the prompt. The wording switch in <RepoFile path="src/isolation/finalize.rs" /> at the call site does not branch on `CleanupAssessment` kind — it always says "uncommitted changes."
+
+### Why each defect bites
+
+1. **Wrong-branch check.** The `for-each-ref` argument is keyed off `record.scratch_branch`, not the actual current HEAD. The scratch branch is irrelevant from the moment the agent does `git checkout -b <feature>`. On every subsequent assessment it's a stale ref pinned at `base_commit` with no upstream, so the upstream lookup will always be empty.
+2. **`[gone]` upstream is unsafe.** Even if the check were redirected to HEAD's actual branch, the next step falls over on the squash-merge case. `for-each-ref` would return the configured upstream short name (`origin/feature/jackin-debug-env-var`) — a non-empty string — so the function would proceed to `git rev-list <upstream>..<branch>`. But the upstream ref no longer resolves locally (it was pruned), so `rev-list` errors. The error path at line ~321 routes to `PreservedUnpushed` — exactly the bug this pattern is supposed to prevent (transient git failures preserving worktrees) — but for a state that is in fact safe.
+3. **Single prompt message for two assessments.** The `FinalizerPrompt::ask_unsafe_cleanup` signature accepts only `(container, worktree_path)`. There's no input for "which assessment fired", so the wording is necessarily one-size-fits-all.
+
+### Why the existing design comment was insufficient
+
+The "Foreground session finalization" bullet in <RepoFile path="docs/src/content/docs/reference/roadmap/per-mount-isolation.mdx" /> says:
+
+> Branch commits are considered safe to delete when `HEAD == base_commit`, or when the branch has an upstream/remote tracking branch and all local commits are reachable from that upstream.
+
+This is reasonable when "the branch" is unambiguous. In practice it's not: the worktree typically contains three or more branches (scratch, agent feature, host's main mirror), only one of which is at HEAD, and the implementation hardcodes the scratch one. The contract should be redefined either as "HEAD's current branch" or "every local branch in the worktree".
+
+## Proposed Fix
+
+The fix has two independent pieces. Both should land together; neither is sufficient on its own.
+
+### Piece 1 — replace single-branch logic with all-branch enumeration
+
+Replace the body of `assess_cleanup` with an enumerate-and-classify loop. For each branch found by `git for-each-ref refs/heads/`, classify it as Safe or Unsafe; the worktree is `SafeToDelete` only when every branch is Safe (and `git status --porcelain` is clean).
+
+The per-branch predicate encodes the policy table:
+
+| Branch state                                                | Decision | Rationale                                                   |
+|-------------------------------------------------------------|----------|-------------------------------------------------------------|
+| `branch tip == base_commit`                                 | Safe     | Untouched (e.g. the scratch branch in the captured case)    |
+| Tip moved, no upstream configured                           | Unsafe   | Genuinely local-only work; preserve it                      |
+| Tip moved, upstream set, ref present, `rev-list` empty      | Safe     | All commits pushed                                          |
+| Tip moved, upstream set, ref present, `rev-list` non-empty  | Unsafe   | Real unpushed work                                          |
+| Tip moved, upstream set, **upstream ref `[gone]`**          | Safe     | Heuristic: PR merged and remote branch deleted              |
+| Any git capture error                                       | Unsafe   | Existing fail-closed contract — preserve over silently lose |
+
+The detached-HEAD case (no `symbolic-ref HEAD`, but commits past `base_commit`) is also Unsafe; surface it as a fourth `CleanupAssessment` variant or fold into `PreservedUnpushed` with an explanatory note in the prompt.
+
+### Piece 2 — split the prompt wording per assessment
+
+Add a kind discriminator to `FinalizerPrompt::ask_unsafe_cleanup` so the message can branch on:
+
+- `PreservedDirty` → "Isolated worktree for `<container>` has uncommitted changes:" (current wording, accurate for this case).
+- `PreservedUnpushed` → "Isolated worktree for `<container>` has unpushed commits on a local branch:" plus the branch name and tip SHA, so the operator can decide whether to push or discard without leaving the prompt.
+- (If detached-HEAD becomes a fourth variant) → "Isolated worktree for `<container>` is in detached-HEAD state with commits past base:" plus the SHA.
+
+Each variant should still offer the same three actions (return / preserve / force-delete) — the wording change is about telling the operator *what* the risk actually is, not about widening the action surface.
+
+The non-interactive warning text at the bottom of `finalize_clean_exit` ("reason: see cleanup status") should grow the same per-variant phrasing — today's `[jackin] preserved isolated worktree …` line is similarly ambiguous.
+
+### Policy decision: `[gone]` is Safe
+
+Treating `[gone]` upstream as Safe is a deliberate choice. The trade-offs:
+
+- **Pro:** matches the standard GitHub workflow (open PR → merge with branch deletion). Squash-merge is the dominant merge strategy in this repo (see <RepoFile path="AGENTS.md" /> on PR merge commit titles), and squash-merge breaks the `git branch -r --contains HEAD` reachability check by design. There is no purely-local git operation that proves "my work was squash-merged into main", so the only general-purpose signal is the upstream-pruned state. Without this rule, every squash-merge produces a permanently-preserved worktree.
+- **Con:** if the operator deletes a remote branch by mistake before merging the PR, an immediately-following clean exit will auto-delete the local worktree and lose work.
+
+The operator-error case is mitigated by:
+
+- The worktree's local commits remain reachable through the per-container `git/` admin entry — `git reflog` in the worktree (or in the host repo) recovers them as long as gc hasn't run.
+- `purge` is the only existing path that deletes the per-worktree git tree; the cleanup change here only deletes via `git worktree remove --force`. The host repo's reflog is unaffected.
+- Operators can opt into stricter behaviour by setting an env var (e.g. `JACKIN_CLEANUP_REQUIRE_PUSHED=1`) that treats `[gone]` as Unsafe.
+
+The conservative alternative — treat `[gone]` as Unsafe — would be silently broken for the common case and only correct in the rare misuse case. That asymmetry argues for Safe-by-default.
+
+### Out of scope for this fix
+
+- **Detecting squash-merge by patch content.** `git cherry origin/main HEAD` compares by patch-id and would correctly mark a *rebase-merged* branch's commits as "equivalent upstream", but squash-merge produces one combined patch that doesn't match any individual local commit's patch-id. Implementing patch-equivalent detection is materially harder than the `[gone]` heuristic and only adds value in workflows that bypass GitHub's merge-and-delete default. Not pursued in V1 of this fix.
+- **Querying GitHub directly** (e.g. `gh pr list --state merged --head <branch>`). Adds a network dependency to a hot path that runs on every clean exit, plus a GitHub-CLI dependency that today is optional. Not pursued.
+- **Rewriting `record.scratch_branch` to track HEAD across renames.** Conceptually possible (intercept `git checkout -b` inside the container, update the record) but invasive and coupled to the agent runtime. The all-branch enumeration above sidesteps the need.
+
+## Test Strategy
+
+`assess_cleanup` is already covered by the table-driven tests at the bottom of <RepoFile path="src/isolation/finalize.rs" /> using the `FakeRunner` capture-queue pattern. Extend that suite with new cases that pin the per-branch contract:
+
+1. **Renamed-branch happy path.** Scratch branch at `base_commit`, agent's `feature/x` branch ahead with upstream set + reachable, `rev-list` empty → assert `SafeToDelete`. (Pre-fix, this returns `PreservedUnpushed`.)
+2. **Squash-merged-and-pruned branch.** Scratch branch at `base_commit`, agent's `feature/x` branch ahead with upstream set, `for-each-ref` returns the upstream short name, but `rev-list` errors with "unknown revision" → assert `SafeToDelete`. (Pre-fix, this returns `PreservedUnpushed` via the `Err` arm at line ~321.)
+3. **Real unpushed work on a renamed branch.** Scratch branch at `base_commit`, agent's `feature/x` branch ahead with NO upstream → assert `PreservedUnpushed`.
+4. **Real unpushed work on a renamed branch with upstream.** Scratch branch at base, agent's `feature/x` branch ahead with upstream set + reachable, `rev-list` non-empty → assert `PreservedUnpushed`.
+5. **Multiple non-trivial branches, all safe.** Scratch at base, `feature/a` pushed-and-merged-and-pruned, `feature/b` pushed clean → assert `SafeToDelete`.
+6. **Multiple non-trivial branches, one unsafe.** Scratch at base, `feature/a` pushed clean, `feature/b` ahead of upstream → assert `PreservedUnpushed`.
+7. **Detached HEAD with commits past base.** No `symbolic-ref HEAD`, HEAD's commit `!= base_commit` → assert preserved (and surface "detached HEAD" in the prompt wording variant).
+8. **Capture failure on the per-branch loop.** Any `for-each-ref` / `rev-list` capture failing → assert preserved (preserves the existing fail-closed contract).
+9. **Prompt-wording variants.** Extend `ScriptedPrompt` in the test module to record which assessment kind was passed and assert the correct variant fires for each path.
+
+The existing four "capture failure preserves unpushed" tests should be updated — when the failure happens during all-branch enumeration the worktree must still be preserved, but the assertion wording changes (the existing tests are scratch-branch-specific).
+
+## Operator workaround until the fix lands
+
+The captured-state worktree is genuinely safe to discard — the squash-merged PR is on `main`, the scratch branch is at `base_commit`, and there is no other unpushed work. Operators encountering the prompt can choose option 3 (Force delete) safely, or run `jackin purge <container>` outside the prompt to drop the container plus all isolated state in one shot.
+
+For repeated occurrences on long-lived containers, the deterministic recovery is `jackin purge <container>` after the agent's PR has been merged, then re-run `jackin load <container>` to materialize a fresh worktree from the current host `HEAD`. This is the same recovery path documented for the "Mount mode flipped between loads" bullet in <RepoFile path="docs/src/content/docs/reference/roadmap/per-mount-isolation.mdx" />.
+
+## Related Files
+
+- <RepoFile path="src/isolation/finalize.rs" /> — `assess_cleanup`, `FinalizerPrompt`, `StdinPrompt`, prompt wording, and the table-driven test suite that pins the safety contract.
+- <RepoFile path="src/isolation/materialize.rs" /> — `materialize_one` (records `base_commit` once at first creation, reuses worktree on subsequent loads).
+- <RepoFile path="src/isolation/cleanup.rs" /> — `force_cleanup_isolated` (the destructive path option 3 invokes; unaffected by this fix but referenced by the prompt actions).
+- <RepoFile path="src/isolation/state.rs" /> — `IsolationRecord`, `CleanupStatus` (`PreservedDirty` / `PreservedUnpushed` variants whose semantics this fix sharpens).
+- <RepoFile path="docs/src/content/docs/reference/roadmap/per-mount-isolation.mdx" /> — V1 design doc; the "Foreground session finalization" bullet's safety contract is the one this fix corrects.
+- <RepoFile path="docs/src/content/docs/reference/architecture.mdx" /> — operator-facing explanation of clean-exit cleanup; user-facing wording changes from Piece 2 should land here too.
