@@ -109,13 +109,9 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
-            // The General tab now has only two editable rows in both
-            // Edit and Create modes. The former read-only rows
-            // (`Default agent`, `Last used`) were removed — `Default
-            // agent` moved to the Agents tab, `Last used` was deleted as
-            // informational clutter.
             //   row 0 = Name        (editable — Enter opens rename)
             //   row 1 = Working dir (editable — Enter opens workdir picker)
+            //   row 2 = Keep awake  (toggle — Space flips on/off)
             match cursor {
                 0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
                 // WorkdirPick requires at least one mount to choose from;
@@ -125,6 +121,7 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
                     FooterItem::Key("Enter"),
                     FooterItem::Text("pick working directory"),
                 ],
+                2 => vec![FooterItem::Key("Space"), FooterItem::Text("toggle")],
                 _ => Vec::new(),
             }
         }
@@ -310,11 +307,12 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
     };
 
-    // Both Edit and Create modes show the same two rows:
+    // Both Edit and Create modes show the same three rows:
     //   0 = Name        (editable; Enter opens rename TextInput)
     //   1 = Working dir (editable; Enter opens workdir picker)
+    //   2 = Keep awake  (toggle; Space flips pending.keep_awake.enabled)
     //
-    // The former `Default agent` (ro) and `Last used` (ro) rows have been
+    // The former `Default agent` (ro) and `Last used` (ro) rows were
     // removed from the General tab. `Default agent` is now editable on the
     // Agents tab (see `*` keybinding); `Last used` was informational
     // clutter and has no place here. The underlying schema fields
@@ -333,6 +331,20 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         cursor,
         "Working dir",
         &workdir_display,
+    ));
+    // Keep-awake row. The "(macOS only)" suffix when enabled mirrors the
+    // CLI `workspace show` output, surfacing the platform constraint
+    // exactly where it matters: the moment an operator opts in.
+    let keep_awake_display = if state.pending.keep_awake.enabled {
+        "enabled (macOS only)"
+    } else {
+        "disabled"
+    };
+    rows.push(render_editor_row(
+        2,
+        cursor,
+        "Keep awake",
+        keep_awake_display,
     ));
 
     frame.render_widget(Paragraph::new(rows).block(block), area);

@@ -18,6 +18,13 @@ pub(super) const FILTER_MANAGED: &str = "label=jackin.managed=true";
 pub(super) const FILTER_ROLE_AGENT: &str = "label=jackin.role=agent";
 /// Filter expression for `docker ps --filter` to find `DinD` sidecars.
 pub(super) const FILTER_ROLE_DIND: &str = "label=jackin.role=dind";
+/// Filter expression for `docker ps --filter` to find agents whose
+/// workspace opted into the keep-awake reconciler.
+pub(super) const FILTER_KEEP_AWAKE: &str = "label=jackin.keep_awake=true";
+/// Applied to agent containers whose workspace opted into the
+/// keep-awake reconciler. Read by `runtime::caffeinate::reconcile`
+/// to decide whether to keep `caffeinate` running.
+pub(super) const LABEL_KEEP_AWAKE: &str = "jackin.keep_awake=true";
 
 /// Format a human-friendly agent name from a container name and its display label.
 ///

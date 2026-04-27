@@ -53,6 +53,35 @@ pub struct WorkspaceConfig {
     /// selector (e.g. `"agent-smith"` or `"chainargos/agent-brown"`).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub agents: std::collections::BTreeMap<String, WorkspaceAgentOverride>,
+    #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
+    pub keep_awake: KeepAwakeConfig,
+}
+
+/// Per-workspace power-management opt-in.
+///
+/// macOS-only today: when `enabled = true`, jackin spawns
+/// `caffeinate -imsu` while at least one agent is running in any
+/// workspace with this flag set, so the host stays awake while
+/// agents work in the background. The reconciler runs at every
+/// jackin command boundary; one caffeinate process covers all
+/// active keep-awake workspaces.
+///
+/// Linux/Windows support (e.g. `systemd-inhibit`) is intentionally
+/// out of scope until a non-mac user reports needing it. Adding
+/// fields here is a schema change because the struct is
+/// `deny_unknown_fields` — extend it intentionally rather than
+/// silently accepting new keys.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct KeepAwakeConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+impl KeepAwakeConfig {
+    const fn is_default(&self) -> bool {
+        !self.enabled
+    }
 }
 
 /// Per-(workspace × agent) operator overrides.
@@ -77,6 +106,11 @@ pub struct WorkspaceEdit {
     pub allowed_agents_to_remove: Vec<String>,
     pub default_agent: Option<Option<String>>,
     pub mount_isolation_overrides: Vec<(String, crate::isolation::MountIsolation)>,
+    /// Toggle for the macOS keep-awake reconciler. `None` = no change,
+    /// `Some(true)` = opt in, `Some(false)` = opt out. The CLI's paired
+    /// `--keep-awake` / `--no-keep-awake` flags map onto this; the TUI
+    /// derives it by diffing `pending.keep_awake` vs `original`.
+    pub keep_awake_enabled: Option<bool>,
 }
 
 /// Validate the isolation layout for a workspace's mounts. Two rules
@@ -216,6 +250,71 @@ mod tests {
             }],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn keep_awake_defaults_to_disabled_when_section_omitted() {
+        let toml_str = r#"
+workdir = "/workspace/project"
+
+[[mounts]]
+src = "/tmp/project"
+dst = "/workspace/project"
+"#;
+        let ws: WorkspaceConfig = toml::from_str(toml_str).unwrap();
+        assert!(!ws.keep_awake.enabled);
+    }
+
+    #[test]
+    fn keep_awake_enabled_round_trips_through_toml() {
+        let toml_str = r#"
+workdir = "/workspace/project"
+
+[[mounts]]
+src = "/tmp/project"
+dst = "/workspace/project"
+
+[keep_awake]
+enabled = true
+"#;
+        let ws: WorkspaceConfig = toml::from_str(toml_str).unwrap();
+        assert!(ws.keep_awake.enabled);
+
+        let serialized = toml::to_string(&ws).unwrap();
+        assert!(
+            serialized.contains("[keep_awake]") && serialized.contains("enabled = true"),
+            "expected serialized form to contain [keep_awake] enabled = true, got:\n{serialized}"
+        );
+
+        // Default (disabled) variant must round-trip back to "no section emitted"
+        // so existing configs don't grow noise after a load/save cycle.
+        let mut default_ws = ws.clone();
+        default_ws.keep_awake.enabled = false;
+        let serialized_default = toml::to_string(&default_ws).unwrap();
+        assert!(
+            !serialized_default.contains("keep_awake"),
+            "disabled keep_awake should be skipped during serialization, got:\n{serialized_default}"
+        );
+    }
+
+    #[test]
+    fn keep_awake_rejects_unknown_fields_under_section() {
+        let toml_str = r#"
+workdir = "/workspace/project"
+
+[[mounts]]
+src = "/tmp/project"
+dst = "/workspace/project"
+
+[keep_awake]
+enabled = true
+mystery_field = 7
+"#;
+        let err = toml::from_str::<WorkspaceConfig>(toml_str).unwrap_err();
+        assert!(
+            err.to_string().contains("mystery_field"),
+            "expected error to name the unknown field, got: {err}"
+        );
     }
 
     #[test]
@@ -499,6 +598,7 @@ isolation = "worktree"
             last_agent: None,
             env: BTreeMap::new(),
             agents: BTreeMap::new(),
+            keep_awake: Default::default(),
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();

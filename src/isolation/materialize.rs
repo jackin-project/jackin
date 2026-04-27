@@ -11,6 +11,10 @@ use std::path::{Path, PathBuf};
 pub struct MaterializedWorkspace {
     pub workdir: String,
     pub mounts: Vec<MaterializedMount>,
+    /// Threaded through from `ResolvedWorkspace` so `launch_agent_runtime`
+    /// can stamp the `jackin.keep_awake=true` label on the container
+    /// without a config re-lookup. Read by the keep-awake reconciler.
+    pub keep_awake_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -476,6 +480,7 @@ pub fn materialize_workspace(
     Ok(MaterializedWorkspace {
         workdir: resolved.workdir.clone(),
         mounts,
+        keep_awake_enabled: resolved.keep_awake_enabled,
     })
 }
 
@@ -1012,6 +1017,7 @@ mod tests {
                 readonly: false,
                 isolation: MountIsolation::Worktree,
             }],
+            keep_awake_enabled: false,
         }
     }
 
@@ -1096,6 +1102,7 @@ mod tests {
                 readonly: false,
                 isolation: MountIsolation::Shared,
             }],
+            keep_awake_enabled: false,
         };
         let mut runner = FakeRunner::default();
         let mat = materialize_workspace(
@@ -1243,6 +1250,7 @@ mod tests {
                     worktree_aux: None,
                 },
             ],
+            keep_awake_enabled: false,
         };
         let ordered = mount_order_for_docker(&mat);
         assert_eq!(ordered[0].dst, "/workspace/proj");
@@ -1269,6 +1277,7 @@ mod tests {
                     worktree_aux: None,
                 },
             ],
+            keep_awake_enabled: false,
         };
         let ordered = mount_order_for_docker(&mat);
         assert_eq!(ordered[0].dst, "/workspace/aa");
