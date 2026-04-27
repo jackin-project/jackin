@@ -776,6 +776,7 @@ fn render_secrets_key_line(
         Span::raw(cursor_col.to_string()),
         Span::styled(marker.to_string(), dim),
         Span::styled(format!("{key:label_width$}"), label_style),
+        Span::raw("  "), // always at least two spaces between key and value
     ];
 
     // OpRef rows render as a breadcrumb regardless of `masked` — the
@@ -1887,6 +1888,39 @@ mod secrets_tab_render_tests {
         assert!(
             dump.contains("●●●"),
             "Plain row must render masked by default; dump:\n{dump}"
+        );
+    }
+
+    /// Single env var → label_width equals key length. Without the explicit
+    /// two-space span, the screenshot bug (CLAUDE_CODE_OAUTH_TOKENPrivate / ...)
+    /// recurs.
+    #[test]
+    fn renderer_key_value_separator_always_at_least_two_spaces() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "CLAUDE_CODE_OAUTH_TOKEN".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc/def/fld".into(),
+                path: "Private/Claude/security/auth token".into(),
+            }),
+        );
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        // Use the wide terminal so the breadcrumb is not truncated.
+        let dump = render_to_dump_wide(&editor);
+        assert!(
+            dump.contains("CLAUDE_CODE_OAUTH_TOKEN  Private"),
+            "expected at least 2 spaces between key and breadcrumb; dump:\n{dump}"
+        );
+        assert!(
+            !dump.contains("CLAUDE_CODE_OAUTH_TOKENPrivate"),
+            "no space is the bug; dump:\n{dump}"
         );
     }
 }
