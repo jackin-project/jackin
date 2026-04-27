@@ -145,10 +145,14 @@ mod tests {
     fn bare_jackin_on_tty_runs_console_implicitly() {
         let cli = Cli::try_parse_from(["jackin"]).unwrap();
         let action = classify(cli, true);
+        // `debug` matched with `..`: env-backed (`JACKIN_DEBUG`), so its
+        // default depends on the runner's env. What this test pins is
+        // routing — `bare jackin` on a TTY classifies as implicit
+        // RunConsole — not the debug default.
         assert!(matches!(
             action,
             Action::RunConsole {
-                args: ConsoleArgs { debug: false },
+                args: ConsoleArgs { .. },
                 explicit: false,
                 deprecated_alias: false,
             }
@@ -180,10 +184,12 @@ mod tests {
     fn console_subcommand_routes_to_console_runner() {
         let cli = Cli::try_parse_from(["jackin", "console"]).unwrap();
         let action = classify(cli, true);
+        // See `bare_jackin_on_tty_runs_console_implicitly` for why
+        // `debug` is matched with `..`.
         assert!(matches!(
             action,
             Action::RunConsole {
-                args: ConsoleArgs { debug: false },
+                args: ConsoleArgs { .. },
                 explicit: true,
                 deprecated_alias: false,
             }
@@ -220,10 +226,12 @@ mod tests {
     fn launch_subcommand_still_routes_to_console_runner_with_deprecation_flag() {
         let cli = Cli::try_parse_from(["jackin", "launch"]).unwrap();
         let action = classify(cli, true);
+        // See `bare_jackin_on_tty_runs_console_implicitly` for why
+        // `debug` is matched with `..`.
         assert!(matches!(
             action,
             Action::RunConsole {
-                args: ConsoleArgs { debug: false },
+                args: ConsoleArgs { .. },
                 explicit: true,
                 deprecated_alias: true,
             }

@@ -118,6 +118,7 @@ export default defineConfig({
                     { label: 'DinD hostname env var', slug: 'reference/roadmap/dind-hostname-env-var' },
                     { label: 'Agent source trust', slug: 'reference/roadmap/agent-source-trust' },
                     { label: 'DinD TLS', slug: 'reference/roadmap/dind-tls' },
+                    { label: 'JACKIN_DEBUG env var', slug: 'reference/roadmap/jackin-debug-env-var' },
                   ],
                 },
                 {

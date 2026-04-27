@@ -44,7 +44,20 @@ pub struct LoadArgs {
     #[arg(long, default_value_t = false)]
     pub no_intro: bool,
     /// Print raw container output for troubleshooting
-    #[arg(long, default_value_t = false)]
+    //
+    // The `action`/`value_parser` overrides are deliberate. clap
+    // derive's default for a `bool` field is `Set` + `BoolValueParser`
+    // — fine for CLI but rejects env values like `JACKIN_DEBUG=1` (only
+    // literal `"true"` / `"false"` parse). Forcing `SetTrue` makes
+    // `--debug` a presence flag again, and `FalseyValueParser` makes
+    // env truthy/falsy strings (`1`/`0`/`yes`/`no`/empty) parse the
+    // way an operator would expect.
+    #[arg(
+        long,
+        env = "JACKIN_DEBUG",
+        action = clap::ArgAction::SetTrue,
+        value_parser = clap::builder::FalseyValueParser::new(),
+    )]
     pub debug: bool,
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
@@ -81,7 +94,14 @@ pub struct HardlineArgs {
 #[command(before_help = BANNER, styles = HELP_STYLES)]
 pub struct ConsoleArgs {
     /// Print raw container output for troubleshooting
-    #[arg(long, default_value_t = false)]
+    //
+    // See `LoadArgs.debug` for why action/value_parser are explicit.
+    #[arg(
+        long,
+        env = "JACKIN_DEBUG",
+        action = clap::ArgAction::SetTrue,
+        value_parser = clap::builder::FalseyValueParser::new(),
+    )]
     pub debug: bool,
 }
 
@@ -124,13 +144,15 @@ mod tests {
     #[test]
     fn parses_load_command() {
         let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
+        // `debug` is omitted from the pattern: it is env-backed
+        // (`JACKIN_DEBUG`), so its default depends on the runner's env.
+        // `tests/cli_debug_env.rs` covers the env-driven behavior.
         assert!(matches!(
             cli.command,
             Some(Command::Load(super::LoadArgs {
                 selector: Some(ref s),
                 target: None,
                 no_intro: false,
-                debug: false,
                 ..
             })) if s == "agent-smith"
         ));
@@ -223,9 +245,10 @@ mod tests {
     #[test]
     fn parses_launch_command() {
         let cli = Cli::try_parse_from(["jackin", "launch"]).unwrap();
+        // See `parses_load_command` for why `debug` is matched with `..`.
         assert!(matches!(
             cli.command,
-            Some(Command::Launch(super::LaunchArgs { debug: false }))
+            Some(Command::Launch(super::LaunchArgs { .. }))
         ));
     }
 
@@ -234,7 +257,7 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "console"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Console(super::ConsoleArgs { debug: false }))
+            Some(Command::Console(super::ConsoleArgs { .. }))
         ));
     }
 
@@ -251,13 +274,16 @@ mod tests {
     fn parses_bare_jackin_as_no_subcommand() {
         let cli = Cli::try_parse_from(["jackin"]).unwrap();
         assert!(cli.command.is_none());
-        assert!(!cli.console_args.debug);
+        // `console_args.debug` not asserted here: env-backed (see
+        // `LoadArgs.debug` / `parses_load_command`).
     }
 
     #[test]
     fn parses_bare_jackin_with_top_level_debug() {
         let cli = Cli::try_parse_from(["jackin", "--debug"]).unwrap();
         assert!(cli.command.is_none());
+        // CLI flag wins over env, so this assertion holds even when
+        // `JACKIN_DEBUG=0` is set in the runner's env.
         assert!(cli.console_args.debug);
     }
 
