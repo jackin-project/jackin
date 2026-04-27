@@ -14,6 +14,19 @@ This repository uses `main` as its primary branch. This file is the canonical ho
 
 If you are uncertain whether authorization applies to the PR in front of you, ask. The cost of pausing is ~30 seconds; the cost of merging something the operator wasn't ready for is much higher.
 
+### Verify PR title and description before merging
+
+When the operator confirms a PR can be merged, verify the PR's title and description still match the actual code being merged **before invoking the merge**.
+
+- Read the current metadata: `gh pr view <PR>`.
+- Read the actual diff being merged: `gh pr diff <PR>` (and `git log` on the PR branch if the diff is large).
+- Compare. The metadata is stale if any of these are true: commits added scope that the title/body doesn't reflect; a feature was descoped after the PR opened; the test plan is wrong relative to what was actually verified; file paths cited in the body have moved or been renamed; the title still says "design doc only" / "WIP" / etc. while the PR now contains implementation.
+- If stale, update the title and/or body via `gh pr edit <PR>` *before* running the merge. Squash-merge writes the PR title verbatim into the commit message; merging with stale metadata bakes the drift into history permanently.
+
+Don't ask the operator for permission to bring the metadata into agreement with the diff — they've authorized merging the *content*, and reconciling the description is part of finishing the merge cleanly. *Do* surface the discrepancy briefly in your reply ("title was 'docs(specs):' but the PR now ships the feature too — updated to 'feat(cli):' before merging") so the operator can object if your interpretation is wrong. Only pause for confirmation if the metadata rewrite would represent a meaningful change the operator might not have noticed (e.g. the PR has grown from "fix bug" into "rewrite module" — flag it and confirm before both updating and merging).
+
+Why this rule exists: the operator relies on PR titles and bodies as the long-term navigable record of what shipped. Drift between description and diff is the single most common cause of "what does this PR actually do?" archaeology after the fact.
+
 ### PR merge commit titles
 
 When an agent merges a pull request, the resulting squash/merge commit title must preserve the GitHub PR reference.
