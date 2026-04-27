@@ -700,6 +700,11 @@ fn render_secrets_key_line(
     };
     let dim = Style::default().fg(PHOSPHOR_DIM);
 
+    // TODO(uuid-pinning, Task 6): replace string-sniff with variant-aware
+    // dispatch on the EnvValue. Until Task 6 lands `parse_path_breadcrumb`,
+    // legacy bare `op://...` strings stored as Plain still render with the
+    // `[op]` marker and breadcrumb here, even though input handlers now
+    // treat them as Plain (no mask toggle, no edit modal).
     // parse_op_reference doubles as the is-op check: Some → op://,
     // None → plain. One scan instead of two.
     let op_parts = parse_op_reference(value);

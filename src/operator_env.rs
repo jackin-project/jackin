@@ -165,7 +165,7 @@ pub struct OpRef {
 impl EnvValue {
     /// View the value as the string we'd pass to a downstream container
     /// for `Plain`, or the canonical `op://` URI for `OpRef`. Resolution
-    /// (calling the 1Password CLI for `OpRef`) happens in `dispatch_value`,
+    /// (calling the 1Password CLI for `OpRef`) happens in `resolve_env_value`,
     /// not here — this is for display, comparison, and migration paths.
     pub const fn as_persisted_str(&self) -> &str {
         match self {
