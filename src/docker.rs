@@ -47,7 +47,8 @@ impl ShellRunner {
 
     fn log_command(&self, program: &str, args: &[&str], cwd: Option<&Path>) {
         if self.debug {
-            let cmd = format!("{} {}", program, args.join(" "));
+            let redacted = redact_env_args(args);
+            let cmd = format!("{} {}", program, redacted.join(" "));
             if let Some(dir) = cwd {
                 eprintln!(
                     "{}",
@@ -58,6 +59,39 @@ impl ShellRunner {
             }
         }
     }
+}
+
+/// Mask the value portion of `-e KEY=VALUE` / `--env KEY=VALUE` args so that
+/// secrets resolved into the env (1Password references, host-env passthroughs
+/// like `$GITHUB_TOKEN`, plain literals that may carry tokens) never appear in
+/// `--debug` output. The env var *name* is preserved so the operator can still
+/// see which keys are being injected.
+///
+/// Forms handled:
+/// - `-e KEY=VALUE` → `-e KEY=<redacted>`
+/// - `--env KEY=VALUE` → `--env KEY=<redacted>`
+/// - `-e KEY` (host-env passthrough; the docker CLI inherits the value from
+///   the launching shell — no value present in the argv) → left unchanged.
+///
+/// Other args are passed through unchanged.
+pub(crate) fn redact_env_args(args: &[&str]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(args.len());
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i];
+        out.push(arg.to_string());
+        if (arg == "-e" || arg == "--env") && i + 1 < args.len() {
+            let next = args[i + 1];
+            match next.find('=') {
+                Some(eq) => out.push(format!("{}=<redacted>", &next[..eq])),
+                None => out.push(next.to_string()),
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    out
 }
 
 impl CommandRunner for ShellRunner {
@@ -231,5 +265,118 @@ mod tests {
 
         assert!(output.len() >= 190000);
         assert!(output.starts_with('x'));
+    }
+
+    #[test]
+    fn redact_env_args_masks_dash_e_value() {
+        let args = &[
+            "run",
+            "-e",
+            "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-secretvalue",
+            "image:tag",
+        ];
+        let redacted = redact_env_args(args);
+        assert_eq!(
+            redacted,
+            vec![
+                "run",
+                "-e",
+                "CLAUDE_CODE_OAUTH_TOKEN=<redacted>",
+                "image:tag",
+            ],
+        );
+    }
+
+    #[test]
+    fn redact_env_args_masks_long_env_form() {
+        let args = &["run", "--env", "GITHUB_TOKEN=ghp_secret", "image:tag"];
+        let redacted = redact_env_args(args);
+        assert_eq!(
+            redacted,
+            vec!["run", "--env", "GITHUB_TOKEN=<redacted>", "image:tag"],
+        );
+    }
+
+    #[test]
+    fn redact_env_args_leaves_host_passthrough_form_unchanged() {
+        // `-e KEY` (no `=`) means docker inherits from the host shell.
+        // There's no value in argv to redact.
+        let args = &["run", "-e", "GITHUB_TOKEN", "image:tag"];
+        let redacted = redact_env_args(args);
+        assert_eq!(redacted, vec!["run", "-e", "GITHUB_TOKEN", "image:tag"]);
+    }
+
+    #[test]
+    fn redact_env_args_redacts_multiple_dash_e_values() {
+        let args = &[
+            "run",
+            "-e",
+            "TOKEN=secret-a",
+            "--name",
+            "my-container",
+            "-e",
+            "API_KEY=secret-b",
+            "image:tag",
+        ];
+        let redacted = redact_env_args(args);
+        assert_eq!(
+            redacted,
+            vec![
+                "run",
+                "-e",
+                "TOKEN=<redacted>",
+                "--name",
+                "my-container",
+                "-e",
+                "API_KEY=<redacted>",
+                "image:tag",
+            ],
+        );
+    }
+
+    #[test]
+    fn redact_env_args_passes_non_env_args_through() {
+        // No -e / --env anywhere — args round-trip unchanged.
+        let args = &["build", "-t", "image:tag", "--no-cache", "."];
+        let redacted = redact_env_args(args);
+        assert_eq!(
+            redacted,
+            vec!["build", "-t", "image:tag", "--no-cache", "."],
+        );
+    }
+
+    #[test]
+    fn redact_env_args_handles_empty_value() {
+        // `-e KEY=` (empty value) should still mask, never pass through.
+        let args = &["run", "-e", "EMPTY=", "image:tag"];
+        let redacted = redact_env_args(args);
+        assert_eq!(redacted, vec!["run", "-e", "EMPTY=<redacted>", "image:tag"]);
+    }
+
+    #[test]
+    fn redact_env_args_handles_value_containing_equals() {
+        // Values can contain `=` (e.g. URLs with query strings). Only the
+        // first `=` separates KEY from VALUE; everything after the first
+        // `=` is the value and must be redacted.
+        let args = &[
+            "run",
+            "-e",
+            "DATABASE_URL=postgres://user:pass@host:5432/db?sslmode=require",
+            "image:tag",
+        ];
+        let redacted = redact_env_args(args);
+        assert_eq!(
+            redacted,
+            vec!["run", "-e", "DATABASE_URL=<redacted>", "image:tag",],
+        );
+    }
+
+    #[test]
+    fn redact_env_args_handles_dash_e_at_end_with_no_value() {
+        // Defensive: malformed `-e` at end of args (no following arg).
+        // Should not panic; the lone `-e` passes through.
+        let args = &["run", "-e"];
+        let redacted = redact_env_args(args);
+        assert_eq!(redacted, vec!["run", "-e"]);
     }
 }

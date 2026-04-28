@@ -366,7 +366,7 @@ pub(super) fn commit_editor_save_with_runner(
 
     // `create_workspace`/`edit_workspace` don't touch env — TUI
     // manages env exclusively through this diff loop.
-    apply_env_diff(&mut ce, &current_name, &editor.original, &editor.pending);
+    apply_env_diff(&mut ce, &current_name, &editor.original, &editor.pending)?;
 
     match ce.save() {
         Ok(fresh) => {
@@ -698,7 +698,7 @@ fn env_diff_lines(
         .keys()
         .chain(pending.agents.keys())
         .collect();
-    let empty = std::collections::BTreeMap::<String, String>::new();
+    let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
     for agent in agent_keys {
         let orig_env = original.agents.get(agent).map_or(&empty, |o| &o.env);
         let pend_env = pending.agents.get(agent).map_or(&empty, |p| &p.env);
@@ -721,8 +721,8 @@ fn env_diff_lines(
 fn append_env_map_diff_lines(
     out: &mut Vec<ratatui::text::Line<'static>>,
     indent: Option<&str>,
-    original: &std::collections::BTreeMap<String, String>,
-    pending: &std::collections::BTreeMap<String, String>,
+    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
     value: ratatui::style::Style,
     dim: ratatui::style::Style,
 ) {
@@ -732,7 +732,7 @@ fn append_env_map_diff_lines(
         match original.get(k) {
             Some(ov) if ov == v => {}
             _ => out.push(Line::from(Span::styled(
-                format!("{prefix}  + {k} = {v}"),
+                format!("{prefix}  + {k} = {}", v.as_display_str()),
                 value,
             ))),
         }
@@ -796,9 +796,9 @@ fn apply_env_diff(
     workspace_name: &str,
     original: &crate::workspace::WorkspaceConfig,
     pending: &crate::workspace::WorkspaceConfig,
-) {
+) -> anyhow::Result<()> {
     let ws_scope = EnvScope::Workspace(workspace_name.to_string());
-    apply_env_map_diff(ce, &ws_scope, &original.env, &pending.env);
+    apply_env_map_diff(ce, &ws_scope, &original.env, &pending.env)?;
 
     // Union so agents on only one side are caught.
     let agent_keys: std::collections::BTreeSet<&String> = original
@@ -806,7 +806,7 @@ fn apply_env_diff(
         .keys()
         .chain(pending.agents.keys())
         .collect();
-    let empty = std::collections::BTreeMap::<String, String>::new();
+    let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
     for agent in agent_keys {
         let orig_env = original.agents.get(agent).map_or(&empty, |o| &o.env);
         let pend_env = pending.agents.get(agent).map_or(&empty, |p| &p.env);
@@ -814,20 +814,23 @@ fn apply_env_diff(
             workspace: workspace_name.to_string(),
             agent: agent.clone(),
         };
-        apply_env_map_diff(ce, &scope, orig_env, pend_env);
+        apply_env_map_diff(ce, &scope, orig_env, pend_env)?;
     }
+    Ok(())
 }
 
 fn apply_env_map_diff(
     ce: &mut crate::config::ConfigEditor,
     scope: &EnvScope,
-    original: &std::collections::BTreeMap<String, String>,
-    pending: &std::collections::BTreeMap<String, String>,
-) {
+    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+) -> anyhow::Result<()> {
     for (k, v) in pending {
         match original.get(k) {
             Some(ov) if ov == v => {}
-            _ => ce.set_env_var(scope, k, v),
+            _ => {
+                ce.set_env_var(scope, k, v.clone())?;
+            }
         }
     }
     for k in original.keys() {
@@ -837,6 +840,7 @@ fn apply_env_map_diff(
             let _ = ce.remove_env_var(scope, k);
         }
     }
+    Ok(())
 }
 
 pub(super) fn build_workspace_edit(
@@ -1971,6 +1975,49 @@ mod tests {
         assert!(
             joined.contains("will be subsumed under"),
             "collapse detail must appear: {joined}"
+        );
+    }
+
+    #[test]
+    fn pre_save_diff_renders_op_ref_via_breadcrumb_not_uuid() {
+        use crate::operator_env::{EnvValue, OpRef};
+        use ratatui::style::Style;
+
+        let original = std::collections::BTreeMap::new();
+        let mut pending = std::collections::BTreeMap::new();
+        pending.insert(
+            "TOKEN".to_string(),
+            EnvValue::OpRef(OpRef {
+                op: "op://abc/def/fld".to_string(),
+                path: "Private/Claude/auth".to_string(),
+            }),
+        );
+
+        let value_style = Style::default();
+        let dim_style = Style::default();
+        let mut lines = Vec::new();
+        super::append_env_map_diff_lines(
+            &mut lines,
+            None,
+            &original,
+            &pending,
+            value_style,
+            dim_style,
+        );
+
+        let joined: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(
+            joined.contains("Private/Claude/auth"),
+            "pre-save diff must render breadcrumb path; got: {joined}"
+        );
+        assert!(
+            !joined.contains("op://abc/def/fld"),
+            "UUID URI must NOT appear in pre-save diff; got: {joined}"
         );
     }
 }

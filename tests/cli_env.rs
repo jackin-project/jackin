@@ -57,13 +57,7 @@ fn seed_workspace(env: &Env, name: &str, workdir: &str) {
 fn config_env_set_global() {
     let env = setup_env();
     jackin(&env)
-        .args([
-            "config",
-            "env",
-            "set",
-            "API_TOKEN",
-            "op://Personal/api/token",
-        ])
+        .args(["config", "env", "set", "API_TOKEN", "my-literal-token"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Set API_TOKEN."));
@@ -73,7 +67,7 @@ fn config_env_set_global() {
         "missing [env] table:\n{contents}"
     );
     assert!(
-        contents.contains("API_TOKEN = \"op://Personal/api/token\""),
+        contents.contains("API_TOKEN = \"my-literal-token\""),
         "missing API_TOKEN entry:\n{contents}"
     );
 }
@@ -115,7 +109,7 @@ fn config_env_set_with_comment() {
             "env",
             "set",
             "OPENAI_KEY",
-            "op://Work/OpenAI/key",
+            "my-key-value",
             "--comment",
             "rotate quarterly",
         ])
@@ -207,7 +201,7 @@ fn workspace_env_set_workspace_scope() {
             "set",
             "prod",
             "DB_URL",
-            "op://Work/Prod/db-url",
+            "postgres://localhost:5432/prod",
         ])
         .assert()
         .success()
@@ -218,7 +212,7 @@ fn workspace_env_set_workspace_scope() {
         "missing [workspaces.prod.env]:\n{contents}"
     );
     assert!(
-        contents.contains("DB_URL = \"op://Work/Prod/db-url\""),
+        contents.contains("DB_URL = \"postgres://localhost:5432/prod\""),
         "missing DB_URL entry:\n{contents}"
     );
 }
@@ -235,7 +229,7 @@ fn workspace_env_set_workspace_agent_scope() {
             "set",
             "prod",
             "OPENAI_KEY",
-            "op://Work/OpenAI/key",
+            "sk-literal-key",
             "--agent",
             "agent-smith",
         ])
@@ -247,7 +241,7 @@ fn workspace_env_set_workspace_agent_scope() {
         "missing [workspaces.prod.agents.agent-smith.env]:\n{contents}"
     );
     assert!(
-        contents.contains("OPENAI_KEY = \"op://Work/OpenAI/key\""),
+        contents.contains("OPENAI_KEY = \"sk-literal-key\""),
         "missing OPENAI_KEY entry:\n{contents}"
     );
 }

@@ -76,8 +76,10 @@ Agent-specific attribution trailer requirements (e.g., for the Codex agent) are 
 Before committing **any** change, run all three checks and ensure zero warnings and zero failures:
 
 ```sh
-cargo fmt -- --check && cargo clippy && cargo nextest run
+cargo fmt -- --check && cargo clippy -- -D warnings && cargo nextest run
 ```
+
+The `-- -D warnings` flag promotes clippy warnings to hard errors, matching what CI runs. Without it, lints like `clippy::branches_sharing_code` and `clippy::doc_markdown` exit clippy with status 0 locally but fail CI — wasting a round-trip. Use the strict invocation locally so CI never catches a lint your local check missed.
 
 If formatting fails, run `cargo fmt` to fix it, then re-run the checks.
 

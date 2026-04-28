@@ -1264,15 +1264,15 @@ fn verify_token_env_present(
 
 /// Return a printable source reference for `CLAUDE_CODE_OAUTH_TOKEN`
 /// given the raw (unresolved) declaration value from the operator env
-/// config (e.g. `"op://vault/claude/token"` or
-/// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Produces the `"KEY <- value"` form
-/// consumed by `tui::auth_mode_notice`. When `raw` is `None`, falls
-/// back to the bare env-var name.
+/// config (e.g. `"Private/Claude/security/auth token"` or
+/// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Produces the `"KEY ← value"` form
+/// consumed by `tui::auth_mode_notice`. When `raw` is `None` or the
+/// display string is empty, falls back to the bare env-var name.
 fn auth_token_source_reference(raw: Option<&str>) -> String {
-    raw.map_or_else(
-        || "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
-        |value| format!("CLAUDE_CODE_OAUTH_TOKEN \u{2190} {value}"),
-    )
+    match raw {
+        None | Some("") => "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
+        Some(value) => format!("CLAUDE_CODE_OAUTH_TOKEN \u{2190} {value}"),
+    }
 }
 
 /// Look up the raw (unresolved) declaration value for `key` in the
@@ -1294,13 +1294,13 @@ fn lookup_operator_env_raw(
     let workspace_agent = ws_opt.zip(agent_selector).and_then(|(ws, agent_name)| {
         ws.agents
             .get(agent_name)
-            .and_then(|overlay| overlay.env.get(key).cloned())
+            .and_then(|overlay| overlay.env.get(key).map(|v| v.as_display_str().to_string()))
     });
-    let workspace = ws_opt.and_then(|ws| ws.env.get(key).cloned());
+    let workspace = ws_opt.and_then(|ws| ws.env.get(key).map(|v| v.as_display_str().to_string()));
     let agent = agent_selector
         .and_then(|agent_name| config.agents.get(agent_name))
-        .and_then(|a| a.env.get(key).cloned());
-    let global = config.env.get(key).cloned();
+        .and_then(|a| a.env.get(key).map(|v| v.as_display_str().to_string()));
+    let global = config.env.get(key).map(|v| v.as_display_str().to_string());
 
     workspace_agent.or(workspace).or(agent).or(global)
 }
@@ -2856,11 +2856,11 @@ plugins = []
         std::fs::create_dir_all(&bin_dir).unwrap();
         let bin_path = bin_dir.join("op");
         // The resolver first runs `op --version` as a reachability probe
-        // when any value carries the `op://` scheme, then calls
-        // `op read op://...`. The fake must handle both.
+        // when any value carries an OpRef, then calls `op read op://...`
+        // with the canonical UUID URI. The fake must handle both.
         std::fs::write(
             &bin_path,
-            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://Personal/api/token\" ]; then printf '%s' 'resolved-op-token'; exit 0; fi\nexit 99\n",
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://abc-vault/abc-item/api-token\" ]; then printf '%s' 'resolved-op-token'; exit 0; fi\nexit 99\n",
         )
         .unwrap();
         let mut perms = std::fs::metadata(&bin_path).unwrap().permissions();
@@ -2870,7 +2870,7 @@ plugins = []
         std::fs::write(
             &paths.config_file,
             r#"[env]
-OPERATOR_TOKEN = "op://Personal/api/token"
+OPERATOR_TOKEN = {op = "op://abc-vault/abc-item/api-token", path = "Personal/api/token"}
 
 [agents.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"

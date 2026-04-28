@@ -422,9 +422,10 @@ pub fn run(cli: Cli) -> Result<()> {
                              before setting agent-scoped env vars"
                         );
                     }
+                    let env_value = resolve_env_value_for_cli(&value)?;
                     let scope = agent.map_or(config::EnvScope::Global, config::EnvScope::Agent);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                    editor.set_env_var(&scope, &key, &value);
+                    editor.set_env_var(&scope, &key, env_value)?;
                     if let Some(ref c) = comment {
                         editor.set_env_comment(&scope, &key, Some(c));
                     }
@@ -453,14 +454,14 @@ pub fn run(cli: Cli) -> Result<()> {
                             config
                                 .env
                                 .iter()
-                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
                                 .collect()
                         },
                         |a| {
                             config.agents.get(a).map_or_else(Vec::new, |src| {
                                 src.env
                                     .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                    .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
                                     .collect()
                             })
                         },
@@ -910,9 +911,10 @@ pub fn run(cli: Cli) -> Result<()> {
                              before setting agent-scoped env vars"
                         );
                     }
+                    let env_value = resolve_env_value_for_cli(&value)?;
                     let scope = workspace_env_scope(workspace, agent);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                    editor.set_env_var(&scope, &key, &value);
+                    editor.set_env_var(&scope, &key, env_value)?;
                     if let Some(ref c) = comment {
                         editor.set_env_comment(&scope, &key, Some(c));
                     }
@@ -943,10 +945,18 @@ pub fn run(cli: Cli) -> Result<()> {
                 cli::WorkspaceEnvCommand::List { workspace, agent } => {
                     let ws = config.require_workspace(&workspace)?;
                     let vars: Vec<(String, String)> = agent.as_ref().map_or_else(
-                        || ws.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                        || {
+                            ws.env
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
+                                .collect()
+                        },
                         |a| {
                             ws.agents.get(a).map_or_else(Vec::new, |ov| {
-                                ov.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                                ov.env
+                                    .iter()
+                                    .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
+                                    .collect()
                             })
                         },
                     );
@@ -986,6 +996,33 @@ pub fn run(cli: Cli) -> Result<()> {
             }
         },
     }
+}
+
+/// Resolve a CLI-supplied env value string into the appropriate [`EnvValue`]
+/// variant. Values starting with `op://` trigger headless resolution via the
+/// 1Password CLI; all other values are stored as [`EnvValue::Plain`] unchanged.
+///
+/// Errors when:
+/// - The value starts with `op://` but the `op` CLI is unavailable.
+/// - The value starts with `op://` and contains `${VAR}` substitution syntax.
+/// - Resolution fails (vault/item/field not found, ambiguity, etc.).
+fn resolve_env_value_for_cli(value: &str) -> anyhow::Result<crate::operator_env::EnvValue> {
+    if !value.starts_with("op://") {
+        return Ok(crate::operator_env::EnvValue::Plain(value.to_string()));
+    }
+
+    // Probe op CLI availability before attempting structural queries.
+    let op_cli = crate::operator_env::OpCli::new();
+    crate::operator_env::OpRunner::probe(&op_cli).map_err(|e| {
+        anyhow::anyhow!(
+            "`op` CLI not available; cannot resolve `op://...` reference. \
+             Install 1Password CLI, or use a non-op:// value.\n\
+             Probe error: {e}"
+        )
+    })?;
+
+    let op_ref = crate::operator_env::resolve_op_uri_to_ref(value, &op_cli)?;
+    Ok(crate::operator_env::EnvValue::OpRef(op_ref))
 }
 
 fn workspace_env_scope(workspace: String, agent: Option<String>) -> config::EnvScope {

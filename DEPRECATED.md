@@ -75,6 +75,34 @@ Each entry includes:
   - `src/tui/output.rs::deprecation_warning` — printer used by the
     migration; can stay if other deprecations need it.
 
+### Bare `op://...` strings as env values (runtime resolution)
+
+- **Type:** behavior
+- **Deprecated since:** 2026-04-27 (PR #193)
+- **Replacement:** use the structured `EnvValue::OpRef` inline-table
+  form `{ op = "op://uuid/uuid/uuid", path = "Vault/Item/Field" }`.
+  The operator-facing path is `jackin workspace env set <NAME>
+  "op://..."` (the CLI auto-resolves to the pinned form) or via the
+  TUI 1Password picker keystroke.
+- **Behavior today:** workspaces and config TOMLs that contain a
+  scalar `op://...` string as an env value **no longer** have it
+  resolved at launch via `op read`. The string is passed to the
+  container as a literal. No error is emitted; the row renders
+  without the `[op]` marker in the TUI (the visual cue that
+  re-picking is needed).
+- **Remove when:** N/A — the legacy strings still load and flow
+  through without error; only the silent runtime resolution behavior
+  has been removed. There is no planned hard-removal date; the TUI
+  `[op]`-marker cue and the `jackin workspace env set` auto-resolve
+  path are the migration surfaces.
+- **Where:**
+  - `src/operator_env.rs::resolve_env_value` — variant dispatch:
+    only `EnvValue::OpRef` triggers `op read`. `Plain` arm falls
+    through to `dispatch_plain` which never calls the 1Password CLI.
+  - `src/console/manager/render/editor.rs::render_secrets_key_line`
+    — plain rows (including legacy bare `op://...`) render without
+    `[op]` marker, signalling the need to re-pick.
+
 ## How to add an entry
 
 When you deprecate something, append a new section to **Active
