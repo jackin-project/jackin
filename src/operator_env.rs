@@ -2543,6 +2543,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
 "#;
         #[derive(serde::Deserialize)]
         struct Wrap {
+            #[allow(dead_code)] // exercised via deserialization, never read in this negative test
             env: std::collections::BTreeMap<String, EnvValue>,
         }
         let result: Result<Wrap, _> = toml::from_str(toml_in);
