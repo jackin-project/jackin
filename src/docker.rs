@@ -79,8 +79,8 @@ pub(crate) fn redact_env_args(args: &[&str]) -> Vec<String> {
     let mut i = 0;
     while i < args.len() {
         let arg = args[i];
+        out.push(arg.to_string());
         if (arg == "-e" || arg == "--env") && i + 1 < args.len() {
-            out.push(arg.to_string());
             let next = args[i + 1];
             match next.find('=') {
                 Some(eq) => out.push(format!("{}=<redacted>", &next[..eq])),
@@ -88,7 +88,6 @@ pub(crate) fn redact_env_args(args: &[&str]) -> Vec<String> {
             }
             i += 2;
         } else {
-            out.push(arg.to_string());
             i += 1;
         }
     }
