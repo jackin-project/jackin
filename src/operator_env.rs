@@ -13,44 +13,6 @@ pub trait OpRunner {
     }
 }
 
-/// Dispatch a single env value string to the appropriate resolver.
-///
-/// `op://...` → `op_runner.read`, `$NAME` / `${NAME}` → `host_env`,
-/// otherwise verbatim. `layer_label` / `var_name` only feed error
-/// messages.
-///
-/// This function is retained for the CLI input parser (Task 8) and for
-/// resolving `EnvValue::Plain` strings (which may contain `$VAR` refs).
-/// Runtime dispatch for `EnvValue` uses `resolve_env_value` instead.
-pub fn dispatch_value<R>(
-    layer_label: &str,
-    var_name: &str,
-    value: &str,
-    op_runner: &R,
-    mut host_env: impl FnMut(&str) -> Result<String, std::env::VarError>,
-) -> anyhow::Result<String>
-where
-    R: OpRunner + ?Sized,
-{
-    if is_op_reference(value) {
-        return op_runner.read(value).map_err(|e| {
-            anyhow::anyhow!(
-                "{layer_label} env var {var_name:?}: 1Password reference {value:?} failed: {e}"
-            )
-        });
-    }
-
-    if let Some(host_name) = parse_host_ref(value) {
-        return host_env(host_name).map_err(|_| {
-            anyhow::anyhow!(
-                "{layer_label} env var {var_name:?}: host env var {host_name:?} is not set"
-            )
-        });
-    }
-
-    Ok(value.to_string())
-}
-
 /// Resolve a single [`EnvValue`] to its final string, dispatching on the
 /// enum variant rather than lexical string prefix.
 ///
@@ -62,6 +24,13 @@ where
 ///   actionable error messages.
 ///
 /// `layer_label` / `var_name` are used only in error messages.
+///
+/// # Behavior change
+///
+/// Lexical `op://` detection at runtime is gone — only structural
+/// `EnvValue::OpRef` triggers `op read`. Bare `op://...` strings
+/// stored as `EnvValue::Plain` (e.g. legacy workspace TOMLs) flow
+/// to the container literally.
 pub fn resolve_env_value<R, H>(
     layer_label: &str,
     var_name: &str,
@@ -74,12 +43,7 @@ where
     H: FnMut(&str) -> Result<String, std::env::VarError>,
 {
     match value {
-        EnvValue::Plain(s) => {
-            // Delegate to the string-based dispatcher but skip the op://
-            // branch — the discriminator is now structural (the enum variant).
-            // Plain("op://...") passes through literally; no op read call.
-            dispatch_plain(layer_label, var_name, s, host_env)
-        }
+        EnvValue::Plain(s) => dispatch_plain(layer_label, var_name, s, host_env),
         EnvValue::OpRef(r) => op_runner.read(&r.op).map_err(|e| {
             anyhow::anyhow!(
                 "{layer_label} env var {var_name:?}: 1Password reference {:?} failed: {e}",
@@ -149,7 +113,17 @@ pub enum EnvValue {
 /// Pinned 1Password reference. `op` is the canonical UUID-form URI we
 /// pass to `op read`; `path` is a snapshot breadcrumb for human-
 /// readable editor display, captured at pick time.
+///
+/// # Snapshot semantics
+///
+/// `op` is the source of truth for resolution; `path` is purely
+/// display. If the underlying 1Password item is renamed after the
+/// pick, `op` continues to resolve to the same secret while `path`
+/// shows the stale name until the operator re-picks. This is
+/// intentional — paths are advisory text for the editor, not part
+/// of the resolution contract.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpRef {
     /// Canonical `op://` URI. Format:
     /// `op://<vault_id>/<item_id>/[<section_id>/]<field_id>[?attribute=<name>]`
@@ -1348,109 +1322,6 @@ mod tests {
         assert!(parse_op_reference("op://only/two").is_none());
         assert!(parse_op_reference("op://a/b/c/d/e").is_none());
         assert!(parse_op_reference("op://").is_none());
-    }
-
-    #[test]
-    fn dispatch_literal_value_returns_literal() {
-        let out = dispatch_value(
-            "global",
-            "FOO",
-            "plain-literal",
-            &TestOpRunner::forbidden(),
-            |n| panic!("host env should not be queried for literal; got {n}"),
-        )
-        .unwrap();
-        assert_eq!(out, "plain-literal");
-    }
-
-    #[test]
-    fn dispatch_host_ref_dollar_name_reads_host_env() {
-        let out = dispatch_value(
-            "global",
-            "MY_VAR",
-            "$OPERATOR_HOST_SOURCE",
-            &TestOpRunner::forbidden(),
-            |name| {
-                assert_eq!(name, "OPERATOR_HOST_SOURCE");
-                Ok("from-host".to_string())
-            },
-        )
-        .unwrap();
-        assert_eq!(out, "from-host");
-    }
-
-    #[test]
-    fn dispatch_host_ref_braced_reads_host_env() {
-        let out = dispatch_value(
-            "global",
-            "MY_VAR",
-            "${OPERATOR_HOST_SOURCE}",
-            &TestOpRunner::forbidden(),
-            |name| {
-                assert_eq!(name, "OPERATOR_HOST_SOURCE");
-                Ok("braced".to_string())
-            },
-        )
-        .unwrap();
-        assert_eq!(out, "braced");
-    }
-
-    /// Set-but-empty (Unix semantics) passes through unchanged; only
-    /// `VarError::NotPresent` is a hard error.
-    #[test]
-    fn dispatch_host_ref_empty_string_passes_through() {
-        let out = dispatch_value(
-            "global",
-            "MAYBE_EMPTY",
-            "$OPERATOR_HOST_EMPTY",
-            &TestOpRunner::forbidden(),
-            |name| {
-                assert_eq!(name, "OPERATOR_HOST_EMPTY");
-                Ok(String::new())
-            },
-        )
-        .unwrap();
-        assert_eq!(out, "");
-    }
-
-    #[test]
-    fn dispatch_host_ref_missing_returns_clear_error() {
-        let err = dispatch_value(
-            "workspace \"big-monorepo\"",
-            "MY_VAR",
-            "$MISSING_HOST_VAR",
-            &TestOpRunner::forbidden(),
-            |_| Err(std::env::VarError::NotPresent),
-        )
-        .unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("MY_VAR"), "expected var name in error: {msg}");
-        assert!(
-            msg.contains("MISSING_HOST_VAR"),
-            "expected host var name in error: {msg}"
-        );
-        assert!(
-            msg.contains("workspace \"big-monorepo\""),
-            "expected layer name in error: {msg}"
-        );
-    }
-
-    #[test]
-    fn dispatch_op_ref_invokes_op_cli() {
-        let runner = TestOpRunner::new(Ok("tok-abc".to_string()));
-        let out = dispatch_value(
-            "agent \"agent-smith\"",
-            "API_TOKEN",
-            "op://Personal/api/token",
-            &runner,
-            |_| panic!("host env should not be queried for op:// refs"),
-        )
-        .unwrap();
-        assert_eq!(out, "tok-abc");
-        assert_eq!(
-            runner.last_ref().as_deref(),
-            Some("op://Personal/api/token")
-        );
     }
 
     struct TestOpRunner {

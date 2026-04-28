@@ -683,6 +683,7 @@ pub(super) struct PathBreadcrumb {
     pub attribute_query: Option<String>,
 }
 
+/// Parse a snapshot breadcrumb. Returns `None` on empty input or non-3-/4-segment counts.
 pub(super) fn parse_path_breadcrumb(path: &str) -> Option<PathBreadcrumb> {
     if path.is_empty() {
         return None;
@@ -720,6 +721,7 @@ pub(super) fn parse_path_breadcrumb(path: &str) -> Option<PathBreadcrumb> {
 }
 
 fn split_bracket_subtitle(s: &str) -> (String, Option<String>) {
+    // rfind so an inner '[' in the subtitle is tolerated.
     if let Some(open) = s.rfind('[')
         && s.ends_with(']')
         && open < s.len() - 1
@@ -1856,9 +1858,9 @@ mod secrets_tab_render_tests {
         assert!(f_pos < q_pos, "field before query");
     }
 
-    /// After Task 6, a `Plain` row containing a bare `op://...` string
-    /// gets NO `[op]` marker — it renders as a literal masked value, the
-    /// visual signal that the operator needs to re-pick it.
+    /// A `Plain` row containing a bare `op://...` string gets NO `[op]`
+    /// marker — it renders as a literal masked value, the visual signal
+    /// that the operator needs to re-pick it.
     #[test]
     fn renderer_plain_with_bare_op_uri_renders_as_literal_no_breadcrumb() {
         let mut env = std::collections::BTreeMap::new();
