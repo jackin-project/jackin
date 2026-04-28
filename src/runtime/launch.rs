@@ -1264,15 +1264,15 @@ fn verify_token_env_present(
 
 /// Return a printable source reference for `CLAUDE_CODE_OAUTH_TOKEN`
 /// given the raw (unresolved) declaration value from the operator env
-/// config (e.g. `"op://vault/claude/token"` or
-/// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Produces the `"KEY <- value"` form
-/// consumed by `tui::auth_mode_notice`. When `raw` is `None`, falls
-/// back to the bare env-var name.
+/// config (e.g. `"Private/Claude/security/auth token"` or
+/// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Produces the `"KEY ← value"` form
+/// consumed by `tui::auth_mode_notice`. When `raw` is `None` or the
+/// display string is empty, falls back to the bare env-var name.
 fn auth_token_source_reference(raw: Option<&str>) -> String {
-    raw.map_or_else(
-        || "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
-        |value| format!("CLAUDE_CODE_OAUTH_TOKEN \u{2190} {value}"),
-    )
+    match raw {
+        None | Some("") => "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
+        Some(value) => format!("CLAUDE_CODE_OAUTH_TOKEN \u{2190} {value}"),
+    }
 }
 
 /// Look up the raw (unresolved) declaration value for `key` in the

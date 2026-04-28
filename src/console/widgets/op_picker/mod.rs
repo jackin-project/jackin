@@ -829,10 +829,12 @@ pub(crate) fn build_op_ref_on_commit(
                     .iter()
                     .any(|f| f.id != field.id && !f.reference.is_empty());
                 if sibling_has_ref {
-                    eprintln!(
-                        "[jackin debug] op_picker: empty field.reference for {}/{} (id {}); \
-                         sibling fields have references — falling back to 3-segment URI",
-                        vault.name, item.name, field.id
+                    crate::debug_log!(
+                        "op_picker",
+                        "empty field.reference for {}/{} (id {}); sibling fields have references — falling back to 3-segment URI",
+                        vault.name,
+                        item.name,
+                        field.id
                     );
                 }
             }

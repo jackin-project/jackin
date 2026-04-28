@@ -753,6 +753,7 @@ fn render_secrets_key_line(
     const OP_MARKER: &str = "[op] ";
     const NO_MARKER: &str = "     ";
     const MASK: &str = "●●●●●●●●●●●";
+    const OP_REF_REPICK_PLACEHOLDER: &str = "<unparseable path \u{2014} re-pick>";
 
     let label_style = if selected {
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
@@ -814,9 +815,11 @@ fn render_secrets_key_line(
     }
 
     // Plain branch: render as masked or literal value.
+    // For an OpRef whose path failed to parse (malformed / empty), show an
+    // explicit re-pick placeholder rather than leaking the UUID URI.
     let plain_str = match value {
         EnvValue::Plain(s) => s.as_str(),
-        EnvValue::OpRef(r) => r.op.as_str(),
+        EnvValue::OpRef(_) => OP_REF_REPICK_PLACEHOLDER,
     };
 
     let value_style = if masked {
@@ -1927,10 +1930,10 @@ mod secrets_tab_render_tests {
     }
 
     /// `OpRef` whose `path` doesn't parse as a 3- or 4-segment breadcrumb.
-    /// The renderer must NOT panic; it falls back to displaying the canonical
-    /// `op://` URI in the value column without the `[op]` marker.
+    /// The renderer must NOT panic; it shows a re-pick placeholder in the
+    /// value column without the `[op]` marker, and must NOT leak the UUID URI.
     #[test]
-    fn renderer_op_ref_with_malformed_path_renders_op_uri_no_marker_no_panic() {
+    fn renderer_op_ref_with_malformed_path_renders_repick_placeholder_no_panic() {
         let mut env = std::collections::BTreeMap::new();
         env.insert(
             "TOKEN".into(),
@@ -1946,21 +1949,23 @@ mod secrets_tab_render_tests {
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
-        // Unmask so the fallback URI is rendered as text rather than ●●●.
+        // Unmask so the placeholder is rendered as text rather than ●●●.
         editor
             .unmasked_rows
             .insert((SecretsScopeTag::Workspace, "TOKEN".into()));
 
         let dump = render_to_dump_wide(&editor);
         // Malformed path → parse_path_breadcrumb returns None → no [op] marker.
+        assert!(!dump.contains("[op]"), "no [op] marker; dump:\n{dump}");
+        // Re-pick placeholder must be shown instead of the UUID URI.
         assert!(
-            !dump.contains("[op]"),
-            "malformed path must not get [op] marker; dump:\n{dump}"
+            dump.contains("<unparseable path \u{2014} re-pick>"),
+            "expected re-pick placeholder; dump:\n{dump}"
         );
-        // The canonical op:// URI is rendered as the fallback value.
+        // UUID URI must NOT be visible to the operator.
         assert!(
-            dump.contains("op://abc/def/fld"),
-            "fallback must render the canonical URI; dump:\n{dump}"
+            !dump.contains("op://abc/def/fld"),
+            "UUID URI must NOT leak; dump:\n{dump}"
         );
     }
 }

@@ -732,7 +732,7 @@ fn append_env_map_diff_lines(
         match original.get(k) {
             Some(ov) if ov == v => {}
             _ => out.push(Line::from(Span::styled(
-                format!("{prefix}  + {k} = {}", v.as_persisted_str()),
+                format!("{prefix}  + {k} = {}", v.as_display_str()),
                 value,
             ))),
         }
@@ -1975,6 +1975,49 @@ mod tests {
         assert!(
             joined.contains("will be subsumed under"),
             "collapse detail must appear: {joined}"
+        );
+    }
+
+    #[test]
+    fn pre_save_diff_renders_op_ref_via_breadcrumb_not_uuid() {
+        use crate::operator_env::{EnvValue, OpRef};
+        use ratatui::style::Style;
+
+        let original = std::collections::BTreeMap::new();
+        let mut pending = std::collections::BTreeMap::new();
+        pending.insert(
+            "TOKEN".to_string(),
+            EnvValue::OpRef(OpRef {
+                op: "op://abc/def/fld".to_string(),
+                path: "Private/Claude/auth".to_string(),
+            }),
+        );
+
+        let value_style = Style::default();
+        let dim_style = Style::default();
+        let mut lines = Vec::new();
+        super::append_env_map_diff_lines(
+            &mut lines,
+            None,
+            &original,
+            &pending,
+            value_style,
+            dim_style,
+        );
+
+        let joined: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(
+            joined.contains("Private/Claude/auth"),
+            "pre-save diff must render breadcrumb path; got: {joined}"
+        );
+        assert!(
+            !joined.contains("op://abc/def/fld"),
+            "UUID URI must NOT appear in pre-save diff; got: {joined}"
         );
     }
 }
