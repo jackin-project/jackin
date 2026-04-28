@@ -976,11 +976,7 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
     let fields = op.item_get(&item.id, &vault.id, None)?;
     let field = fields
         .iter()
-        .find(|f| {
-            f.label.eq_ignore_ascii_case(field_seg)
-                || f.id == field_seg
-                || matches_special_alias(f, field_seg)
-        })
+        .find(|f| f.label.eq_ignore_ascii_case(field_seg) || f.id == field_seg)
         .ok_or_else(|| {
             anyhow!(
                 "field {field_seg:?} not found in item {name:?}",
@@ -997,8 +993,22 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
         item.name.clone()
     };
 
+    // Use field.reference (1Password's canonical emission) as the authoritative
+    // source for the section segment, mirroring build_op_ref_on_commit.
+    let section_from_field = parse_op_reference(&field.reference).and_then(|p| p.section);
+
+    let canonical_section = match (section_seg, section_from_field) {
+        // Both present: use canonical (1Password) form.
+        (Some(_), Some(s)) => Some(s),
+        // User typed a section but the field's reference has none — should not
+        // happen for sectioned fields; trust the user input as a fallback.
+        (Some(user_s), None) => Some(user_s.to_string()),
+        // No section anywhere: 3-segment URI.
+        (None, _) => None,
+    };
+
     let q_suffix = query.unwrap_or("");
-    let (op_uri, display_path) = section_seg.map_or_else(
+    let (op_uri, display_path) = canonical_section.as_deref().map_or_else(
         || {
             (
                 format!("op://{}/{}/{}{q_suffix}", vault.id, item.id, field.id),
@@ -1020,11 +1030,6 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
         op: op_uri,
         path: display_path,
     })
-}
-
-fn matches_special_alias(f: &OpField, seg: &str) -> bool {
-    matches!(seg, "username" | "password" | "notes" | "notesPlain")
-        && f.label.eq_ignore_ascii_case(seg)
 }
 
 /// (key → (layer, value)) precedence-merged across the four config
@@ -2609,6 +2614,12 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
         fields: std::collections::HashMap<String, Vec<OpField>>,
     }
 
+    impl Default for StubOpStructRunner {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl StubOpStructRunner {
         fn new() -> Self {
             Self {
@@ -2652,6 +2663,34 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
                     },
                     concealed,
                     reference: String::new(),
+                });
+            self
+        }
+
+        /// Like `with_field`, but allows specifying the `reference` string
+        /// (1Password's canonical op:// reference) explicitly. Used by tests
+        /// that exercise section-name canonicalization.
+        fn with_field_with_reference(
+            mut self,
+            item_id: &str,
+            label: &str,
+            id: &str,
+            concealed: bool,
+            reference: &str,
+        ) -> Self {
+            self.fields
+                .entry(item_id.to_string())
+                .or_default()
+                .push(OpField {
+                    id: id.to_string(),
+                    label: label.to_string(),
+                    field_type: if concealed {
+                        "CONCEALED".into()
+                    } else {
+                        "STRING".into()
+                    },
+                    concealed,
+                    reference: reference.to_string(),
                 });
             self
         }
@@ -2706,6 +2745,11 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
         assert!(msg.contains("Claude[alexey@zhokhov.com]"), "msg: {msg}");
         assert!(msg.contains("Claude[alexey@chainargos.com]"), "msg: {msg}");
         assert!(msg.contains("Claude[team@example.com]"), "msg: {msg}");
+        // The full op:// line must be copy-pasteable.
+        assert!(
+            msg.contains("op://Private/Claude[alexey@zhokhov.com]/auth"),
+            "full disambiguation line should be present, got:\n{msg}"
+        );
     }
 
     #[test]
@@ -2817,5 +2861,56 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
 
         let err = resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub).unwrap_err();
         assert!(err.to_string().contains("not found"), "{}", err);
+    }
+
+    #[test]
+    fn resolve_op_uri_normalizes_section_to_field_reference_form() {
+        let stub = StubOpStructRunner::default()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Claude", "i_uuid", "")
+            .with_field_with_reference(
+                "i_uuid",
+                "auth token",
+                "f_uuid",
+                false,
+                // canonical: "Security" capitalized
+                "op://Private/Claude/Security/auth token",
+            );
+        let r = resolve_op_uri_to_ref(
+            // User types lowercase "security"
+            "op://Private/Claude/security/auth token",
+            &stub,
+        )
+        .unwrap();
+        // Both op and path normalize to the canonical "Security" capitalization.
+        assert!(
+            r.op.contains("/Security/"),
+            "op should use canonical section form, got {}",
+            r.op
+        );
+        assert!(
+            r.path.contains("/Security/"),
+            "path should use canonical section form, got {}",
+            r.path
+        );
+    }
+
+    #[test]
+    fn resolve_op_uri_disambiguation_uses_id_prefix_when_subtitle_empty() {
+        let stub = StubOpStructRunner::default()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Notes", "abcdef1234567890", "")
+            .with_item("v_uuid", "Notes", "fedcba0987654321", "");
+        let err = resolve_op_uri_to_ref("op://Private/Notes/notesPlain", &stub).unwrap_err();
+        let msg = format!("{err:#}");
+        // Empty subtitles fall back to short id prefixes.
+        assert!(
+            msg.contains("Notes[#abcdef12]"),
+            "expected #id-prefix form, got:\n{msg}"
+        );
+        assert!(
+            msg.contains("Notes[#fedcba09]"),
+            "expected #id-prefix form, got:\n{msg}"
+        );
     }
 }
