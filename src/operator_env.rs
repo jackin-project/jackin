@@ -2532,6 +2532,35 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
         assert_eq!(parsed, reparsed);
     }
 
+    #[test]
+    fn op_ref_rejects_unknown_fields_in_inline_table() {
+        // Typo'd inline table: "paht" instead of "path". Should fail
+        // with a clear "unknown field" error, not silently produce an
+        // OpRef with empty path.
+        let toml_in = r#"
+[env]
+TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
+"#;
+        #[derive(serde::Deserialize)]
+        struct Wrap {
+            env: std::collections::BTreeMap<String, EnvValue>,
+        }
+        let result: Result<Wrap, _> = toml::from_str(toml_in);
+        let err = result
+            .err()
+            .expect("deny_unknown_fields must reject `paht`");
+        let err_msg = format!("{err}");
+        // Either an "unknown field" error or a fall-through-to-Plain failure
+        // (because OpRef rejected; Plain expects scalar string, not table).
+        // The important thing is it doesn't silently accept the OpRef shape.
+        assert!(
+            err_msg.contains("unknown field")
+                || err_msg.contains("paht")
+                || err_msg.contains("invalid type"),
+            "expected unknown-field or invalid-type error; got: {err_msg}"
+        );
+    }
+
     // ---- resolve_op_uri_to_ref tests ------------------------------------
 
     /// Minimal stub for `OpStructRunner` used by `resolve_op_uri_to_ref` unit
@@ -2751,6 +2780,31 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
             "path: {}",
             result.path
         );
+    }
+
+    #[test]
+    fn resolve_op_uri_with_attr_short_alias_preserves_query() {
+        // 1Password URI grammar accepts `?attr=` as a shorthand for `?attribute=`.
+        let stub = StubOpStructRunner::default()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "GitHub", "i_uuid", "")
+            .with_field("i_uuid", "one-time password", "f_uuid", false);
+        let r = resolve_op_uri_to_ref("op://Private/GitHub/one-time password?attr=type", &stub)
+            .unwrap();
+        assert!(r.op.contains("?attr=type"), "op: {}", r.op);
+        assert!(r.path.contains("?attr=type"), "path: {}", r.path);
+    }
+
+    #[test]
+    fn resolve_op_uri_with_ssh_format_query_preserves_query() {
+        let stub = StubOpStructRunner::default()
+            .with_vault("Personal", "v_uuid")
+            .with_item("v_uuid", "MyKey", "i_uuid", "")
+            .with_field("i_uuid", "private key", "f_uuid", false);
+        let r = resolve_op_uri_to_ref("op://Personal/MyKey/private key?ssh-format=openssh", &stub)
+            .unwrap();
+        assert!(r.op.contains("?ssh-format=openssh"), "op: {}", r.op);
+        assert!(r.path.contains("?ssh-format=openssh"), "path: {}", r.path);
     }
 
     #[test]
