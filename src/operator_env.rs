@@ -164,13 +164,28 @@ pub struct OpRef {
 
 impl EnvValue {
     /// View the value as the string we'd pass to a downstream container
-    /// for `Plain`, or the canonical `op://` URI for `OpRef`. Resolution
-    /// (calling the 1Password CLI for `OpRef`) happens in `resolve_env_value`,
-    /// not here — this is for display, comparison, and migration paths.
+    /// for `Plain`, or the UUID-form `op://` URI for `OpRef` (see
+    /// `OpRef::op`). Resolution (calling the 1Password CLI for `OpRef`)
+    /// happens in `resolve_env_value`, not here — this is for internal
+    /// merging, comparison, and migration paths.
     pub const fn as_persisted_str(&self) -> &str {
         match self {
             Self::Plain(s) => s.as_str(),
             Self::OpRef(r) => r.op.as_str(),
+        }
+    }
+
+    /// Human-readable display form. For `OpRef`, returns the snapshot
+    /// breadcrumb (e.g. `Private/Claude/security/auth token`). For
+    /// `Plain`, returns the literal value.
+    ///
+    /// Use this on operator-facing surfaces (CLI `env list`, launch
+    /// auth-mode notice). For internal merging or comparison, use
+    /// `as_persisted_str` (which returns the UUID-form URI for `OpRef`).
+    pub const fn as_display_str(&self) -> &str {
+        match self {
+            Self::Plain(s) => s.as_str(),
+            Self::OpRef(r) => r.path.as_str(),
         }
     }
 }
@@ -1471,6 +1486,23 @@ mod tests {
                 None => panic!("op CLI should not have been invoked"),
             }
         }
+    }
+
+    // ---- as_display_str tests --------------------------------------------
+
+    #[test]
+    fn env_value_as_display_str_returns_path_for_op_ref() {
+        let v = EnvValue::OpRef(OpRef {
+            op: "op://abc/def/fld".into(),
+            path: "Private/Claude/auth".into(),
+        });
+        assert_eq!(v.as_display_str(), "Private/Claude/auth");
+    }
+
+    #[test]
+    fn env_value_as_display_str_returns_literal_for_plain() {
+        let v = EnvValue::Plain("postgres://localhost".into());
+        assert_eq!(v.as_display_str(), "postgres://localhost");
     }
 
     // ---- resolve_env_value dispatch tests --------------------------------

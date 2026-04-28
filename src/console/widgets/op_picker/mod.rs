@@ -818,6 +818,25 @@ pub(crate) fn build_op_ref_on_commit(
             } else {
                 field.label.clone()
             };
+
+            // Anomaly detection: if this field's reference is empty but
+            // sibling fields in the same item carry non-empty references,
+            // that suggests a malformed `op item get` emission rather than
+            // a genuine 3-segment field. Log so triage can see it.
+            if field.reference.is_empty() {
+                let sibling_has_ref = state
+                    .fields
+                    .iter()
+                    .any(|f| f.id != field.id && !f.reference.is_empty());
+                if sibling_has_ref {
+                    eprintln!(
+                        "[jackin debug] op_picker: empty field.reference for {}/{} (id {}); \
+                         sibling fields have references — falling back to 3-segment URI",
+                        vault.name, item.name, field.id
+                    );
+                }
+            }
+
             (
                 format!("op://{}/{}/{}", vault.id, item.id, field.id),
                 format!("{}/{}/{}", vault.name, item_segment, label),
@@ -1961,6 +1980,50 @@ mod tests {
             r.path, "Private/Notes/notesPlain",
             "empty subtitle => no embed even on collision"
         );
+    }
+
+    // ── Fix 2B: fallback-to-3-segment preserved when sibling has reference ──
+
+    /// When a field has an empty reference but sibling fields in the same
+    /// item carry non-empty references, the picker still commits a valid
+    /// 3-segment OpRef (the debug log fires but must not panic).
+    #[test]
+    fn picker_commit_3seg_fallback_preserved_when_sibling_has_reference() {
+        let sectioned_field = crate::operator_env::OpField {
+            id: "f_sectioned".into(),
+            label: "password".into(),
+            reference: "op://Private/MyItem/Auth/password".into(),
+            field_type: "CONCEALED".into(),
+            concealed: true,
+        };
+        let no_ref_field = crate::operator_env::OpField {
+            id: "f_noref".into(),
+            label: "notes".into(),
+            reference: String::new(),
+            field_type: "STRING".into(),
+            concealed: false,
+        };
+        let the_item = crate::operator_env::OpItem {
+            id: "i_uuid".into(),
+            name: "MyItem".into(),
+            subtitle: String::new(),
+        };
+        let mut state = test_state_picked(
+            crate::operator_env::OpVault {
+                id: "v_uuid".into(),
+                name: "Private".into(),
+            },
+            vec![the_item.clone()],
+            the_item,
+            no_ref_field.clone(),
+        );
+        // Add the sectioned sibling so the anomaly log path is exercised.
+        state.fields.push(sectioned_field);
+
+        // Must not panic; must produce a 3-segment OpRef.
+        let r = build_op_ref_on_commit(&state, &no_ref_field);
+        assert_eq!(r.op, "op://v_uuid/i_uuid/f_noref");
+        assert_eq!(r.path, "Private/MyItem/notes");
     }
 
     // ── parity tests: build_op_ref_on_commit vs resolve_op_uri_to_ref ──────

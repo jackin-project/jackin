@@ -454,14 +454,14 @@ pub fn run(cli: Cli) -> Result<()> {
                             config
                                 .env
                                 .iter()
-                                .map(|(k, v)| (k.clone(), v.as_persisted_str().to_string()))
+                                .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
                                 .collect()
                         },
                         |a| {
                             config.agents.get(a).map_or_else(Vec::new, |src| {
                                 src.env
                                     .iter()
-                                    .map(|(k, v)| (k.clone(), v.as_persisted_str().to_string()))
+                                    .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
                                     .collect()
                             })
                         },
@@ -948,14 +948,14 @@ pub fn run(cli: Cli) -> Result<()> {
                         || {
                             ws.env
                                 .iter()
-                                .map(|(k, v)| (k.clone(), v.as_persisted_str().to_string()))
+                                .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
                                 .collect()
                         },
                         |a| {
                             ws.agents.get(a).map_or_else(Vec::new, |ov| {
                                 ov.env
                                     .iter()
-                                    .map(|(k, v)| (k.clone(), v.as_persisted_str().to_string()))
+                                    .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
                                     .collect()
                             })
                         },

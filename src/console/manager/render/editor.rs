@@ -1923,6 +1923,44 @@ mod secrets_tab_render_tests {
             "no space is the bug; dump:\n{dump}"
         );
     }
+
+    /// `OpRef` whose `path` doesn't parse as a 3- or 4-segment breadcrumb.
+    /// The renderer must NOT panic; it falls back to displaying the canonical
+    /// `op://` URI in the value column without the `[op]` marker.
+    #[test]
+    fn renderer_op_ref_with_malformed_path_renders_op_uri_no_marker_no_panic() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "TOKEN".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc/def/fld".into(),
+                path: "garbage-no-slashes".into(),
+            }),
+        );
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        // Unmask so the fallback URI is rendered as text rather than ●●●.
+        editor
+            .unmasked_rows
+            .insert((SecretsScopeTag::Workspace, "TOKEN".into()));
+
+        let dump = render_to_dump_wide(&editor);
+        // Malformed path → parse_path_breadcrumb returns None → no [op] marker.
+        assert!(
+            !dump.contains("[op]"),
+            "malformed path must not get [op] marker; dump:\n{dump}"
+        );
+        // The canonical op:// URI is rendered as the fallback value.
+        assert!(
+            dump.contains("op://abc/def/fld"),
+            "fallback must render the canonical URI; dump:\n{dump}"
+        );
+    }
 }
 
 #[cfg(test)]
