@@ -933,8 +933,14 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
     let mut matches: Vec<&OpItem> = items
         .iter()
         .filter(|i| {
-            (i.name.eq_ignore_ascii_case(item_name) || i.id == item_name)
-                && subtitle_filter.is_none_or(|s| i.subtitle.eq_ignore_ascii_case(s))
+            let name_match = i.name.eq_ignore_ascii_case(item_name) || i.id == item_name;
+            let subtitle_match = match subtitle_filter {
+                None => true,
+                // `#<prefix>` → match against item ID prefix (from disambig suggestion).
+                Some(s) if s.starts_with('#') => i.id.starts_with(&s[1..]),
+                Some(s) => i.subtitle.eq_ignore_ascii_case(s),
+            };
+            name_match && subtitle_match
         })
         .collect();
 
@@ -953,7 +959,8 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
             .iter()
             .map(|i| {
                 let label = if i.subtitle.is_empty() {
-                    format!("{}[#{}]", i.name, &i.id[..i.id.len().min(8)])
+                    let id_prefix: String = i.id.chars().take(8).collect();
+                    format!("{}[#{}]", i.name, id_prefix)
                 } else {
                     format!("{}[{}]", i.name, i.subtitle)
                 };
@@ -998,13 +1005,24 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
     let section_from_field = parse_op_reference(&field.reference).and_then(|p| p.section);
 
     let canonical_section = match (section_seg, section_from_field) {
-        // Both present: use canonical (1Password) form.
-        (Some(_), Some(s)) => Some(s),
+        // field.reference has a section: use canonical (1Password) form
+        // regardless of whether the user also typed a section. This covers:
+        //   - (Some(_), Some(s)): both present → prefer field.reference's form.
+        //   - (None, Some(s)): 3-segment input but field lives in a section;
+        //     pick it up so the result matches the picker's output.
+        (_, Some(s)) => Some(s),
         // User typed a section but the field's reference has none — should not
         // happen for sectioned fields; trust the user input as a fallback.
         (Some(user_s), None) => Some(user_s.to_string()),
         // No section anywhere: 3-segment URI.
-        (None, _) => None,
+        (None, None) => None,
+    };
+
+    // Mirror picker's empty-label fallback: use field.id when label is empty.
+    let field_label = if field.label.is_empty() {
+        field.id.as_str()
+    } else {
+        field.label.as_str()
     };
 
     let q_suffix = query.unwrap_or("");
@@ -1012,7 +1030,7 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
         || {
             (
                 format!("op://{}/{}/{}{q_suffix}", vault.id, item.id, field.id),
-                format!("{}/{}/{}{q_suffix}", vault.name, item_segment, field.label),
+                format!("{}/{}/{}{q_suffix}", vault.name, item_segment, field_label),
             )
         },
         |s| {
@@ -1020,7 +1038,7 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
                 format!("op://{}/{}/{}/{}{q_suffix}", vault.id, item.id, s, field.id),
                 format!(
                     "{}/{}/{}/{}{q_suffix}",
-                    vault.name, item_segment, s, field.label
+                    vault.name, item_segment, s, field_label
                 ),
             )
         },
@@ -2934,6 +2952,59 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
         assert!(
             msg.contains("Notes[#fedcba09]"),
             "expected #id-prefix form, got:\n{msg}"
+        );
+    }
+
+    /// Fix 1B: `[#<id-prefix>]` suggestions from disambig error are parseable
+    /// and select the correct item by ID prefix.
+    #[test]
+    fn resolve_op_uri_with_id_prefix_filter_resolves() {
+        let stub = StubOpStructRunner::default()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Notes", "abcdef1234567890", "")
+            .with_item("v_uuid", "Notes", "fedcba0987654321", "")
+            .with_field("abcdef1234567890", "notesPlain", "f_uuid", false);
+        let r = resolve_op_uri_to_ref("op://Private/Notes[#abcdef12]/notesPlain", &stub).unwrap();
+        assert_eq!(r.op, "op://v_uuid/abcdef1234567890/f_uuid");
+    }
+
+    /// Fix 1C: empty field label falls back to field.id in the display path.
+    #[test]
+    fn resolve_op_uri_empty_field_label_uses_field_id_in_path() {
+        let stub = StubOpStructRunner::default()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Stripe", "i_uuid", "")
+            .with_field("i_uuid", "", "f_uuid", false);
+        let r = resolve_op_uri_to_ref("op://Private/Stripe/f_uuid", &stub).unwrap();
+        // path must not end with a trailing slash (empty label)
+        assert_eq!(r.path, "Private/Stripe/f_uuid");
+    }
+
+    /// Fix 1A: 3-segment input where the field actually lives in a section
+    /// (per field.reference) must include that section in the result.
+    #[test]
+    fn resolve_op_uri_3seg_input_picks_up_section_from_field_reference() {
+        let stub = StubOpStructRunner::default()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Claude", "i_uuid", "")
+            .with_field_with_reference(
+                "i_uuid",
+                "auth token",
+                "f_uuid",
+                false,
+                "op://Private/Claude/Security/auth token",
+            );
+        // User supplies 3-segment URI (no section), but field lives in "Security"
+        let r = resolve_op_uri_to_ref("op://Private/Claude/auth token", &stub).unwrap();
+        assert!(
+            r.op.contains("/Security/"),
+            "op must include section from field.reference; got {}",
+            r.op
+        );
+        assert!(
+            r.path.contains("/Security/"),
+            "path must include section from field.reference; got {}",
+            r.path
         );
     }
 }

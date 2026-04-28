@@ -1962,4 +1962,283 @@ mod tests {
             "empty subtitle => no embed even on collision"
         );
     }
+
+    // ── parity tests: build_op_ref_on_commit vs resolve_op_uri_to_ref ──────
+
+    /// Minimal `OpStructRunner` stub for parity tests (no async needed).
+    struct ParityStub {
+        vaults: Vec<crate::operator_env::OpVault>,
+        items: std::collections::HashMap<String, Vec<crate::operator_env::OpItem>>,
+        fields: std::collections::HashMap<String, Vec<crate::operator_env::OpField>>,
+    }
+
+    impl ParityStub {
+        fn new() -> Self {
+            Self {
+                vaults: Vec::new(),
+                items: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+            }
+        }
+
+        fn with_vault(mut self, name: &str, id: &str) -> Self {
+            self.vaults.push(crate::operator_env::OpVault {
+                id: id.to_string(),
+                name: name.to_string(),
+            });
+            self
+        }
+
+        fn with_item(mut self, vault_id: &str, name: &str, id: &str, subtitle: &str) -> Self {
+            self.items
+                .entry(vault_id.to_string())
+                .or_default()
+                .push(crate::operator_env::OpItem {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    subtitle: subtitle.to_string(),
+                });
+            self
+        }
+
+        fn with_field_with_reference(
+            mut self,
+            item_id: &str,
+            label: &str,
+            id: &str,
+            concealed: bool,
+            reference: &str,
+        ) -> Self {
+            self.fields.entry(item_id.to_string()).or_default().push(
+                crate::operator_env::OpField {
+                    id: id.to_string(),
+                    label: label.to_string(),
+                    field_type: if concealed {
+                        "CONCEALED".into()
+                    } else {
+                        "STRING".into()
+                    },
+                    concealed,
+                    reference: reference.to_string(),
+                },
+            );
+            self
+        }
+    }
+
+    impl crate::operator_env::OpStructRunner for ParityStub {
+        fn account_list(&self) -> anyhow::Result<Vec<crate::operator_env::OpAccount>> {
+            Ok(vec![])
+        }
+        fn vault_list(
+            &self,
+            _account: Option<&str>,
+        ) -> anyhow::Result<Vec<crate::operator_env::OpVault>> {
+            Ok(self.vaults.clone())
+        }
+        fn item_list(
+            &self,
+            vault_id: &str,
+            _account: Option<&str>,
+        ) -> anyhow::Result<Vec<crate::operator_env::OpItem>> {
+            Ok(self.items.get(vault_id).cloned().unwrap_or_default())
+        }
+        fn item_get(
+            &self,
+            item_id: &str,
+            _vault_id: &str,
+            _account: Option<&str>,
+        ) -> anyhow::Result<Vec<crate::operator_env::OpField>> {
+            Ok(self.fields.get(item_id).cloned().unwrap_or_default())
+        }
+    }
+
+    /// Fix 1D parity: unique item, 3-segment field → identical OpRef.
+    #[test]
+    fn parity_unique_item_3seg_field_cli_matches_picker() {
+        let field = crate::operator_env::OpField {
+            id: "f_uuid".into(),
+            label: "api key".into(),
+            reference: "op://Private/Stripe/api key".into(),
+            field_type: "concealed".into(),
+            concealed: true,
+        };
+        let the_item = crate::operator_env::OpItem {
+            id: "i_uuid".into(),
+            name: "Stripe".into(),
+            subtitle: String::new(),
+        };
+        let state = test_state_picked(
+            crate::operator_env::OpVault {
+                id: "v_uuid".into(),
+                name: "Private".into(),
+            },
+            vec![the_item.clone()],
+            the_item,
+            field.clone(),
+        );
+        let picker_ref = build_op_ref_on_commit(&state, &field);
+
+        let stub = ParityStub::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Stripe", "i_uuid", "")
+            .with_field_with_reference(
+                "i_uuid",
+                "api key",
+                "f_uuid",
+                true,
+                "op://Private/Stripe/api key",
+            );
+        let cli_ref =
+            crate::operator_env::resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub)
+                .unwrap();
+
+        assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
+        assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
+    }
+
+    /// Fix 1D parity: ambiguous item with subtitle → both embed subtitle bracket.
+    #[test]
+    fn parity_ambiguous_item_with_subtitle_cli_matches_picker() {
+        let field = crate::operator_env::OpField {
+            id: "f_uuid".into(),
+            label: "auth token".into(),
+            reference: "op://Private/Claude/auth token".into(),
+            field_type: "concealed".into(),
+            concealed: true,
+        };
+        let item_a = crate::operator_env::OpItem {
+            id: "i_uuid_a".into(),
+            name: "Claude".into(),
+            subtitle: "alexey@zhokhov.com".into(),
+        };
+        let item_b = crate::operator_env::OpItem {
+            id: "i_uuid_b".into(),
+            name: "Claude".into(),
+            subtitle: "alexey@chainargos.com".into(),
+        };
+        let state = test_state_picked(
+            crate::operator_env::OpVault {
+                id: "v_uuid".into(),
+                name: "Private".into(),
+            },
+            vec![item_a.clone(), item_b],
+            item_a,
+            field.clone(),
+        );
+        let picker_ref = build_op_ref_on_commit(&state, &field);
+
+        let stub = ParityStub::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Claude", "i_uuid_a", "alexey@zhokhov.com")
+            .with_item("v_uuid", "Claude", "i_uuid_b", "alexey@chainargos.com")
+            .with_field_with_reference(
+                "i_uuid_a",
+                "auth token",
+                "f_uuid",
+                true,
+                "op://Private/Claude/auth token",
+            );
+        let cli_ref = crate::operator_env::resolve_op_uri_to_ref(
+            "op://Private/Claude[alexey@zhokhov.com]/auth token",
+            &stub,
+        )
+        .unwrap();
+
+        assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
+        assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
+    }
+
+    /// Fix 1D parity: sectioned field → both produce 4-segment OpRef.
+    #[test]
+    fn parity_sectioned_field_cli_matches_picker() {
+        let field = crate::operator_env::OpField {
+            id: "f_uuid".into(),
+            label: "auth token".into(),
+            reference: "op://Private/Claude/Security/auth token".into(),
+            field_type: "concealed".into(),
+            concealed: true,
+        };
+        let the_item = crate::operator_env::OpItem {
+            id: "i_uuid".into(),
+            name: "Claude".into(),
+            subtitle: String::new(),
+        };
+        let state = test_state_picked(
+            crate::operator_env::OpVault {
+                id: "v_uuid".into(),
+                name: "Private".into(),
+            },
+            vec![the_item.clone()],
+            the_item,
+            field.clone(),
+        );
+        let picker_ref = build_op_ref_on_commit(&state, &field);
+
+        let stub = ParityStub::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Claude", "i_uuid", "")
+            .with_field_with_reference(
+                "i_uuid",
+                "auth token",
+                "f_uuid",
+                true,
+                "op://Private/Claude/Security/auth token",
+            );
+        let cli_ref = crate::operator_env::resolve_op_uri_to_ref(
+            "op://Private/Claude/Security/auth token",
+            &stub,
+        )
+        .unwrap();
+
+        assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
+        assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
+    }
+
+    /// Fix 1D parity: 3-segment user input where field has a section →
+    /// after fix 1A the CLI picks up the section from field.reference,
+    /// matching the picker's output.
+    #[test]
+    fn parity_3seg_input_with_sectioned_field_cli_matches_picker() {
+        let field = crate::operator_env::OpField {
+            id: "f_uuid".into(),
+            label: "auth token".into(),
+            reference: "op://Private/Claude/Security/auth token".into(),
+            field_type: "concealed".into(),
+            concealed: true,
+        };
+        let the_item = crate::operator_env::OpItem {
+            id: "i_uuid".into(),
+            name: "Claude".into(),
+            subtitle: String::new(),
+        };
+        let state = test_state_picked(
+            crate::operator_env::OpVault {
+                id: "v_uuid".into(),
+                name: "Private".into(),
+            },
+            vec![the_item.clone()],
+            the_item,
+            field.clone(),
+        );
+        let picker_ref = build_op_ref_on_commit(&state, &field);
+
+        // CLI path: 3-segment input, but field.reference has "Security"
+        let stub = ParityStub::new()
+            .with_vault("Private", "v_uuid")
+            .with_item("v_uuid", "Claude", "i_uuid", "")
+            .with_field_with_reference(
+                "i_uuid",
+                "auth token",
+                "f_uuid",
+                true,
+                "op://Private/Claude/Security/auth token",
+            );
+        let cli_ref =
+            crate::operator_env::resolve_op_uri_to_ref("op://Private/Claude/auth token", &stub)
+                .unwrap();
+
+        assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
+        assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
+    }
 }
