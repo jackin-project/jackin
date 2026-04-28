@@ -121,7 +121,10 @@ pub enum EnvValue {
 /// pick, `op` continues to resolve to the same secret while `path`
 /// shows the stale name until the operator re-picks. This is
 /// intentional — paths are advisory text for the editor, not part
-/// of the resolution contract.
+/// of the resolution contract. Drift is operator-visible (the editor
+/// breadcrumb shows the stale name) but resolver-invisible (resolution
+/// uses `op` only). A future "refresh path" feature would need to be
+/// a deliberate metadata pass — never a side-effect of resolution.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OpRef {
@@ -175,11 +178,6 @@ impl From<&str> for EnvValue {
     fn from(s: &str) -> Self {
         Self::Plain(s.to_string())
     }
-}
-
-#[must_use]
-pub fn is_op_reference(value: &str) -> bool {
-    value.starts_with("op://")
 }
 
 /// Structured parts of an `op://...` reference.
@@ -1286,17 +1284,6 @@ fn classify_env_value(value: &EnvValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn is_op_reference_recognizes_prefix() {
-        assert!(is_op_reference("op://Personal/api/token"));
-        assert!(is_op_reference("op://acct/Personal/api/token"));
-        assert!(!is_op_reference("plain-literal"));
-        assert!(!is_op_reference("$HOST"));
-        assert!(!is_op_reference("${HOST}"));
-        assert!(!is_op_reference(""));
-        assert!(!is_op_reference("op:/missing"));
-    }
 
     #[test]
     fn parse_op_reference_three_segments() {
