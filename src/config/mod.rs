@@ -109,7 +109,7 @@ pub struct AgentSource {
     /// `[env]` map when the agent is launched. Values use the
     /// `operator_env` dispatch syntax.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub env: BTreeMap<String, String>,
+    pub env: BTreeMap<String, crate::operator_env::EnvValue>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -125,7 +125,7 @@ pub struct AppConfig {
     /// Global operator env map — the bottom layer. Merged under
     /// per-agent, per-workspace, and per-(workspace × agent) layers.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub env: BTreeMap<String, String>,
+    pub env: BTreeMap<String, crate::operator_env::EnvValue>,
     #[serde(default)]
     pub agents: BTreeMap<String, AgentSource>,
     #[serde(default)]
@@ -726,12 +726,26 @@ OPERATOR_SECRET = "op://Personal/api/token"
 OPERATOR_HOST = "$HOME_VAR"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.env.get("OPERATOR_GLOBAL").unwrap(), "literal");
         assert_eq!(
-            config.env.get("OPERATOR_SECRET").unwrap(),
+            config
+                .env
+                .get("OPERATOR_GLOBAL")
+                .unwrap()
+                .as_persisted_str(),
+            "literal"
+        );
+        assert_eq!(
+            config
+                .env
+                .get("OPERATOR_SECRET")
+                .unwrap()
+                .as_persisted_str(),
             "op://Personal/api/token"
         );
-        assert_eq!(config.env.get("OPERATOR_HOST").unwrap(), "$HOME_VAR");
+        assert_eq!(
+            config.env.get("OPERATOR_HOST").unwrap().as_persisted_str(),
+            "$HOME_VAR"
+        );
     }
 
     #[test]
@@ -746,7 +760,7 @@ AGENT_TOKEN = "op://Shared/smith/token"
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         let agent = config.agents.get("agent-smith").unwrap();
         assert_eq!(
-            agent.env.get("AGENT_TOKEN").unwrap(),
+            agent.env.get("AGENT_TOKEN").unwrap().as_persisted_str(),
             "op://Shared/smith/token"
         );
     }
@@ -769,7 +783,10 @@ WORKSPACE_VAR = "literal"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         let ws = config.workspaces.get("big-monorepo").unwrap();
-        assert_eq!(ws.env.get("WORKSPACE_VAR").unwrap(), "literal");
+        assert_eq!(
+            ws.env.get("WORKSPACE_VAR").unwrap().as_persisted_str(),
+            "literal"
+        );
     }
 
     #[test]
@@ -792,7 +809,11 @@ PER_WORKSPACE_PER_AGENT = "specific"
         let ws = config.workspaces.get("big-monorepo").unwrap();
         let override_ = ws.agents.get("agent-smith").unwrap();
         assert_eq!(
-            override_.env.get("PER_WORKSPACE_PER_AGENT").unwrap(),
+            override_
+                .env
+                .get("PER_WORKSPACE_PER_AGENT")
+                .unwrap()
+                .as_persisted_str(),
             "specific"
         );
     }
@@ -836,13 +857,17 @@ OPENAI_API_KEY = "op://Work/big-monorepo/OpenAI"
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         let agent = config.agents.get("chainargos/agent-jones").unwrap();
         assert_eq!(
-            agent.env.get("DATABASE_URL").unwrap(),
+            agent.env.get("DATABASE_URL").unwrap().as_persisted_str(),
             "op://Work/agent-jones/db"
         );
         let ws = config.workspaces.get("big-monorepo").unwrap();
         let override_ = ws.agents.get("chainargos/agent-jones").unwrap();
         assert_eq!(
-            override_.env.get("OPENAI_API_KEY").unwrap(),
+            override_
+                .env
+                .get("OPENAI_API_KEY")
+                .unwrap()
+                .as_persisted_str(),
             "op://Work/big-monorepo/OpenAI"
         );
     }

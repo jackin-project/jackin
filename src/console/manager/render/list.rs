@@ -550,7 +550,7 @@ fn render_environments_subpanel(
             rows.push(EnvRow {
                 name: key.clone(),
                 scope: None,
-                is_op: crate::operator_env::is_op_reference(value),
+                is_op: matches!(value, crate::operator_env::EnvValue::OpRef(_)),
             });
         }
         for (agent, overrides) in &ws.agents {
@@ -558,7 +558,7 @@ fn render_environments_subpanel(
                 rows.push(EnvRow {
                     name: key.clone(),
                     scope: Some(agent.clone()),
-                    is_op: crate::operator_env::is_op_reference(value),
+                    is_op: matches!(value, crate::operator_env::EnvValue::OpRef(_)),
                 });
             }
         }
@@ -1808,8 +1808,13 @@ mod subpanel_padding_tests {
     #[test]
     fn preview_environments_marks_op_references_with_op_marker() {
         let mut ws = ws_config_with_allowed(&[], None);
-        ws.env
-            .insert("STRIPE_KEY".into(), "op://Vault/Item/field".into());
+        ws.env.insert(
+            "STRIPE_KEY".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc-vault/abc-item/field".into(),
+                path: "Vault/Item/field".into(),
+            }),
+        );
 
         let backend = TestBackend::new(60, 4);
         let mut term = Terminal::new(backend).unwrap();
