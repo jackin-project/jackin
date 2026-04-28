@@ -348,22 +348,25 @@ fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
     };
     let key = match row {
         SecretsRow::WorkspaceKeyRow(key) => {
-            // Op:// rows render as breadcrumbs and ignore mask state.
-            let value = editor.pending.env.get(&key).cloned().unwrap_or_default();
-            if crate::operator_env::is_op_reference(&value) {
+            // OpRef rows render as breadcrumbs and ignore mask state.
+            if editor
+                .pending
+                .env
+                .get(&key)
+                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
+            {
                 return;
             }
             (SecretsScopeTag::Workspace, key)
         }
         SecretsRow::AgentKeyRow { agent, key } => {
-            let value = editor
+            if editor
                 .pending
                 .agents
                 .get(&agent)
                 .and_then(|o| o.env.get(&key))
-                .cloned()
-                .unwrap_or_default();
-            if crate::operator_env::is_op_reference(&value) {
+                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
+            {
                 return;
             }
             (SecretsScopeTag::Agent(agent), key)
@@ -411,12 +414,22 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     };
     match row {
         SecretsRow::WorkspaceKeyRow(key) => {
-            let current = editor.pending.env.get(&key).cloned().unwrap_or_default();
-            // Op:// rows are not text-editable — operator deletes via
+            // OpRef rows are not text-editable — operator deletes via
             // D and re-adds via the source picker.
-            if crate::operator_env::is_op_reference(&current) {
+            if editor
+                .pending
+                .env
+                .get(&key)
+                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
+            {
                 return;
             }
+            let current = editor
+                .pending
+                .env
+                .get(&key)
+                .map(|v| v.as_persisted_str().to_string())
+                .unwrap_or_default();
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
                     scope: SecretsScopeTag::Workspace,
@@ -439,16 +452,22 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
             }
         }
         SecretsRow::AgentKeyRow { agent, key } => {
+            if editor
+                .pending
+                .agents
+                .get(&agent)
+                .and_then(|o| o.env.get(&key))
+                .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
+            {
+                return;
+            }
             let current = editor
                 .pending
                 .agents
                 .get(&agent)
                 .and_then(|o| o.env.get(&key))
-                .cloned()
+                .map(|v| v.as_persisted_str().to_string())
                 .unwrap_or_default();
-            if crate::operator_env::is_op_reference(&current) {
-                return;
-            }
             let label = format!("Edit {key}");
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
@@ -901,19 +920,20 @@ pub(super) fn handle_editor_modal(
         }
         Modal::OpPicker { state: picker } => {
             match picker.handle_key(key) {
-                ModalOutcome::Commit(path) => {
+                ModalOutcome::Commit(op_ref) => {
                     // Operator picked a Vault → Item → Field path. The
                     // dispatch depends on whether `P` was pressed on a
                     // key row (write directly) or on an `+ Add` sentinel
-                    // (stash the path, ask for the key name first).
+                    // (stash the OpRef, ask for the key name first).
                     let target = editor.pending_picker_target.take();
                     match target {
                         Some((scope, Some(key))) => {
-                            set_pending_env_value(editor, &scope, &key, &path);
+                            set_pending_env_op_ref(editor, &scope, &key, op_ref);
                             editor.modal = None;
                         }
                         Some((scope, None)) => {
-                            editor.pending_picker_value = Some(path);
+                            editor.pending_picker_value =
+                                Some(crate::operator_env::EnvValue::OpRef(op_ref));
                             let label = format!("New environment key for {}", scope_label(&scope));
                             let state = env_key_input_state(editor, &scope, label, "");
                             editor.modal = Some(Modal::TextInput {
@@ -1023,14 +1043,63 @@ fn set_pending_env_value(
 ) {
     match scope {
         SecretsScopeTag::Workspace => {
-            editor
-                .pending
-                .env
-                .insert(key.to_string(), value.to_string());
+            editor.pending.env.insert(
+                key.to_string(),
+                crate::operator_env::EnvValue::Plain(value.to_string()),
+            );
         }
         SecretsScopeTag::Agent(agent) => {
             let entry = editor.pending.agents.entry(agent.clone()).or_default();
-            entry.env.insert(key.to_string(), value.to_string());
+            entry.env.insert(
+                key.to_string(),
+                crate::operator_env::EnvValue::Plain(value.to_string()),
+            );
+            editor.secrets_expanded.insert(agent.clone());
+        }
+    }
+}
+
+/// Write an `OpRef` (picker commit result) into the pending env map.
+fn set_pending_env_op_ref(
+    editor: &mut EditorState<'_>,
+    scope: &SecretsScopeTag,
+    key: &str,
+    op_ref: crate::operator_env::OpRef,
+) {
+    match scope {
+        SecretsScopeTag::Workspace => {
+            editor.pending.env.insert(
+                key.to_string(),
+                crate::operator_env::EnvValue::OpRef(op_ref),
+            );
+        }
+        SecretsScopeTag::Agent(agent) => {
+            let entry = editor.pending.agents.entry(agent.clone()).or_default();
+            entry.env.insert(
+                key.to_string(),
+                crate::operator_env::EnvValue::OpRef(op_ref),
+            );
+            editor.secrets_expanded.insert(agent.clone());
+        }
+    }
+}
+
+/// Write an already-typed `EnvValue` into the pending env map.
+/// Used by the sentinel-add flow where the picker stashed an `OpRef`
+/// before the key name was known.
+fn set_pending_env_value_typed(
+    editor: &mut EditorState<'_>,
+    scope: &SecretsScopeTag,
+    key: &str,
+    value: crate::operator_env::EnvValue,
+) {
+    match scope {
+        SecretsScopeTag::Workspace => {
+            editor.pending.env.insert(key.to_string(), value);
+        }
+        SecretsScopeTag::Agent(agent) => {
+            let entry = editor.pending.agents.entry(agent.clone()).or_default();
+            entry.env.insert(key.to_string(), value);
             editor.secrets_expanded.insert(agent.clone());
         }
     }
@@ -1071,10 +1140,10 @@ pub(super) fn apply_text_input_to_pending(
                 return;
             }
             let key = trimmed.to_string();
-            // Sentinel-picker fast path: P committed a path before the
+            // Sentinel-picker fast path: P committed an OpRef before the
             // key existed; both fields land here.
             if let Some(stashed) = editor.pending_picker_value.take() {
-                set_pending_env_value(editor, scope, &key, &stashed);
+                set_pending_env_value_typed(editor, scope, &key, stashed);
                 editor.pending_env_key = None;
                 return;
             }
@@ -2006,8 +2075,13 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
         let mut ws = empty_ws();
-        ws.env
-            .insert("DB_URL".into(), "op://Work/db/password".into());
+        ws.env.insert(
+            "DB_URL".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc-vault/abc-item/password".into(),
+                path: "Work/db/password".into(),
+            }),
+        );
 
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -2044,7 +2118,13 @@ mod tests {
         let mut config = AppConfig::default();
         let mut ws = empty_ws();
         let mut ag_env = std::collections::BTreeMap::new();
-        ag_env.insert("API_TOKEN".into(), "op://acct/Personal/api/token".into());
+        ag_env.insert(
+            "API_TOKEN".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc-vault/abc-item/api-token".into(),
+                path: "Personal/api/token".into(),
+            }),
+        );
         ws.agents.insert(
             "smith".into(),
             crate::workspace::WorkspaceAgentOverride { env: ag_env },
@@ -2214,8 +2294,13 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
         let mut ws = empty_ws();
-        ws.env
-            .insert("DB_URL".into(), "op://Work/db/password".into());
+        ws.env.insert(
+            "DB_URL".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc-vault/abc-item/password".into(),
+                path: "Work/db/password".into(),
+            }),
+        );
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
@@ -2560,6 +2645,51 @@ mod tests {
             matches!(e.active_field, FieldFocus::Row(2)),
             "two ↓ presses from row 0 must land on row 2 (Keep awake); got {:?}",
             e.active_field,
+        );
+    }
+
+    // ── TUI text-entry regression: typing or pasting op:// must stay Plain ──
+
+    /// Typing or pasting `op://...` into a value cell (text-entry path)
+    /// must always commit as `EnvValue::Plain`. The picker is the ONLY
+    /// TUI path that produces `EnvValue::OpRef`; this test pins that
+    /// invariant so an accidental auto-resolve can never sneak in.
+    ///
+    /// The structural guarantee: `apply_text_input_to_pending` for the
+    /// `EnvValue` target calls `set_pending_env_value`, which
+    /// unconditionally wraps its `&str` argument in
+    /// `EnvValue::Plain(value.to_string())`. There is no `op://` pattern
+    /// match in the text-entry commit path.
+    #[test]
+    fn tui_text_entry_op_uri_always_commits_as_plain() {
+        let mut editor =
+            EditorState::new_edit("CLAUDE_TOKEN_WS".into(), WorkspaceConfig::default());
+
+        let target = TextInputTarget::EnvValue {
+            scope: SecretsScopeTag::Workspace,
+            key: "CLAUDE_TOKEN".into(),
+        };
+
+        // Simulate committing a typed/pasted op:// string via the
+        // text-entry path (Enter in the EnvValue modal).
+        apply_text_input(&target, &mut editor, "op://Vault/Item/Field");
+
+        let stored = editor
+            .pending
+            .env
+            .get("CLAUDE_TOKEN")
+            .expect("CLAUDE_TOKEN must be present after commit");
+
+        assert_eq!(
+            stored,
+            &crate::operator_env::EnvValue::Plain("op://Vault/Item/Field".into()),
+            "text-entry commit of op:// string must store EnvValue::Plain, \
+             not EnvValue::OpRef — the picker is the only path to OpRef"
+        );
+        // Belt-and-suspenders: confirm it is NOT an OpRef.
+        assert!(
+            !matches!(stored, crate::operator_env::EnvValue::OpRef(_)),
+            "text entry must never produce EnvValue::OpRef"
         );
     }
 }

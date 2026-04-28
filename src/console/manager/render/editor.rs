@@ -19,7 +19,7 @@ use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
 };
 use crate::config::AppConfig;
-use crate::operator_env::{is_op_reference, parse_op_reference};
+use crate::operator_env::EnvValue;
 
 // ── Editor stage ────────────────────────────────────────────────────
 
@@ -185,19 +185,19 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
             // the operator deletes and re-adds via the source picker — so
             // we drop `Enter edit` and `M mask/unmask` on those rows.
             let rows = secrets_flat_rows(state);
-            // Determine if the focused key row carries an op:// reference.
+            // Determine if the focused key row carries an OpRef value.
             let focused_value_is_op_ref = match rows.get(cursor) {
                 Some(SecretsRow::WorkspaceKeyRow(key)) => state
                     .pending
                     .env
                     .get(key)
-                    .is_some_and(|v| is_op_reference(v)),
+                    .is_some_and(|v| matches!(v, EnvValue::OpRef(_))),
                 Some(SecretsRow::AgentKeyRow { agent, key }) => state
                     .pending
                     .agents
                     .get(agent)
                     .and_then(|ov| ov.env.get(key))
-                    .is_some_and(|v| is_op_reference(v)),
+                    .is_some_and(|v| matches!(v, EnvValue::OpRef(_))),
                 _ => false,
             };
             match rows.get(cursor) {
@@ -588,7 +588,8 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
         let cursor_col = if selected { "▸ " } else { "  " };
         match row {
             SecretsRow::WorkspaceKeyRow(key) => {
-                let value = state.pending.env.get(key).cloned().unwrap_or_default();
+                let default_value = EnvValue::Plain(String::new());
+                let value = state.pending.env.get(key).unwrap_or(&default_value);
                 let masked = !state
                     .unmasked_rows
                     .contains(&(SecretsScopeTag::Workspace, key.clone()));
@@ -596,7 +597,7 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                     selected,
                     cursor_col,
                     key,
-                    &value,
+                    value,
                     masked,
                     area.width,
                     label_width,
@@ -632,9 +633,11 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 lines.push(Line::from(spans));
             }
             SecretsRow::AgentKeyRow { agent, key } => {
-                let empty = std::collections::BTreeMap::<String, String>::new();
+                let empty =
+                    std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
                 let pend_env = state.pending.agents.get(agent).map_or(&empty, |o| &o.env);
-                let value = pend_env.get(key).cloned().unwrap_or_default();
+                let default_value = EnvValue::Plain(String::new());
+                let value = pend_env.get(key).unwrap_or(&default_value);
                 let masked = !state
                     .unmasked_rows
                     .contains(&(SecretsScopeTag::Agent(agent.clone()), key.clone()));
@@ -642,7 +645,7 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                     selected,
                     cursor_col,
                     key,
-                    &value,
+                    value,
                     masked,
                     area.width,
                     label_width,
@@ -668,14 +671,81 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-/// `op://` rows skip masking and render as a breadcrumb (3-segment:
-/// `vault / item → field`, 4-segment adds `section`). Account scope
-/// isn't part of the `op://` path — see the picker docstring.
+/// Display-side breadcrumb parser for `OpRef.path`.
+/// Grammar: `<Vault>/<Item>[<subtitle>?]/[<Section>/]<Field>[?<query>]`
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct PathBreadcrumb {
+    pub vault: String,
+    pub item: String,
+    pub item_subtitle: Option<String>,
+    pub section: Option<String>,
+    pub field: String,
+    pub attribute_query: Option<String>,
+}
+
+/// Parse a snapshot breadcrumb. Returns `None` on empty input or non-3-/4-segment counts.
+pub(super) fn parse_path_breadcrumb(path: &str) -> Option<PathBreadcrumb> {
+    if path.is_empty() {
+        return None;
+    }
+    // Peel off optional `?attribute=...` / `?attr=...` / `?ssh-format=...` query.
+    let (path_no_q, attr) = path
+        .find('?')
+        .map_or((path, None), |i| (&path[..i], Some(path[i..].to_string())));
+    let segs: Vec<&str> = path_no_q.split('/').collect();
+    let (item, item_subtitle, vault, section, field) = match segs.as_slice() {
+        [vault, item_seg, field] => {
+            let (item, sub) = split_bracket_subtitle(item_seg);
+            (item, sub, vault.to_string(), None, field.to_string())
+        }
+        [vault, item_seg, section, field] => {
+            let (item, sub) = split_bracket_subtitle(item_seg);
+            (
+                item,
+                sub,
+                vault.to_string(),
+                Some(section.to_string()),
+                field.to_string(),
+            )
+        }
+        _ => return None,
+    };
+    Some(PathBreadcrumb {
+        vault,
+        item,
+        item_subtitle,
+        section,
+        field,
+        attribute_query: attr,
+    })
+}
+
+fn split_bracket_subtitle(s: &str) -> (String, Option<String>) {
+    // rfind so an inner '[' in the subtitle is tolerated.
+    if let Some(open) = s.rfind('[')
+        && s.ends_with(']')
+        && open < s.len() - 1
+    {
+        return (
+            s[..open].to_string(),
+            Some(s[open + 1..s.len() - 1].to_string()),
+        );
+    }
+    (s.to_string(), None)
+}
+
+/// `OpRef` rows skip masking and render as a breadcrumb (3-segment:
+/// `vault / item → field`, 4-segment adds `section`). An optional
+/// `[subtitle]` annotation after the item renders in `PHOSPHOR_DIM`; an
+/// optional `?attribute=...` query suffix renders in `PHOSPHOR_DIM` after
+/// the field. `Plain` rows (including legacy bare `op://...` strings)
+/// render as a literal / masked value with no `[op]` marker — the visual
+/// migration signal that the row needs re-picking to upgrade.
 fn render_secrets_key_line(
     selected: bool,
     cursor_col: &str,
     key: &str,
-    value: &str,
+    value: &EnvValue,
     masked: bool,
     area_width: u16,
     label_width: usize,
@@ -683,6 +753,7 @@ fn render_secrets_key_line(
     const OP_MARKER: &str = "[op] ";
     const NO_MARKER: &str = "     ";
     const MASK: &str = "●●●●●●●●●●●";
+    const OP_REF_REPICK_PLACEHOLDER: &str = "<unparseable path \u{2014} re-pick>";
 
     let label_style = if selected {
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
@@ -691,10 +762,15 @@ fn render_secrets_key_line(
     };
     let dim = Style::default().fg(PHOSPHOR_DIM);
 
-    // parse_op_reference doubles as the is-op check: Some → op://,
-    // None → plain. One scan instead of two.
-    let op_parts = parse_op_reference(value);
-    let marker = if op_parts.is_some() {
+    // Variant-aware dispatch: only `OpRef` rows render with the `[op]`
+    // marker and breadcrumb. `Plain` values (including legacy bare
+    // `op://...` strings) render as literal / masked — the visual signal
+    // that the row needs re-picking to upgrade to a pinned `OpRef`.
+    let op_breadcrumb = match value {
+        EnvValue::OpRef(r) => parse_path_breadcrumb(&r.path),
+        EnvValue::Plain(_) => None,
+    };
+    let marker = if op_breadcrumb.is_some() {
         OP_MARKER
     } else {
         NO_MARKER
@@ -703,12 +779,13 @@ fn render_secrets_key_line(
         Span::raw(cursor_col.to_string()),
         Span::styled(marker.to_string(), dim),
         Span::styled(format!("{key:label_width$}"), label_style),
+        Span::raw("  "), // always at least two spaces between key and value
     ];
 
-    // Op:// references render as a breadcrumb regardless of `masked` —
-    // the path is not the credential, so masking it makes the row a
+    // OpRef rows render as a breadcrumb regardless of `masked` — the
+    // path is not the credential, so masking it makes the row a
     // less informative version of itself.
-    if let Some(parts) = op_parts {
+    if let Some(parts) = op_breadcrumb {
         let white_style = Style::default().fg(WHITE);
         let green = Style::default().fg(PHOSPHOR_GREEN);
         let green_bold = Style::default()
@@ -717,17 +794,33 @@ fn render_secrets_key_line(
         spans.push(Span::styled(parts.vault, white_style));
         spans.push(Span::styled(" / ", dim));
         spans.push(Span::styled(parts.item, green));
-        if let Some(section) = parts.section.as_ref() {
+        if let Some(subtitle) = parts.item_subtitle {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(subtitle, dim));
+        }
+        if let Some(section) = parts.section {
             // 4-segment reference: the field lives inside a named
             // section of the item. Render the section between the
             // item and the field.
             spans.push(Span::styled(" / ", dim));
-            spans.push(Span::styled(section.clone(), green));
+            spans.push(Span::styled(section, green));
         }
         spans.push(Span::styled(" \u{2192} ", dim));
         spans.push(Span::styled(parts.field, green_bold));
+        if let Some(query) = parts.attribute_query {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(query, dim));
+        }
         return Line::from(spans);
     }
+
+    // Plain branch: render as masked or literal value.
+    // For an OpRef whose path failed to parse (malformed / empty), show an
+    // explicit re-pick placeholder rather than leaking the UUID URI.
+    let plain_str = match value {
+        EnvValue::Plain(s) => s.as_str(),
+        EnvValue::OpRef(_) => OP_REF_REPICK_PLACEHOLDER,
+    };
 
     let value_style = if masked {
         Style::default().fg(PHOSPHOR_DIM)
@@ -749,12 +842,12 @@ fn render_secrets_key_line(
             .saturating_sub(label_width)
             .saturating_sub(8)
             .max(1);
-        if value.chars().count() > budget {
-            let mut s: String = value.chars().take(budget.saturating_sub(1)).collect();
+        if plain_str.chars().count() > budget {
+            let mut s: String = plain_str.chars().take(budget.saturating_sub(1)).collect();
             s.push('…');
             s
         } else {
-            value.to_string()
+            plain_str.to_string()
         }
     };
     spans.push(Span::styled(rendered_value, value_style));
@@ -1326,7 +1419,13 @@ mod secrets_tab_render_tests {
     #[test]
     fn op_row_breadcrumb_render_three_segment() {
         let mut env = std::collections::BTreeMap::new();
-        env.insert("DB_URL".into(), "op://Work/db/password".into());
+        env.insert(
+            "DB_URL".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://Work/db/password".into(),
+                path: "Work/db/password".into(),
+            }),
+        );
         let ws = WorkspaceConfig {
             env,
             ..WorkspaceConfig::default()
@@ -1356,15 +1455,15 @@ mod secrets_tab_render_tests {
             !dump.contains("op://"),
             "op:// scheme prefix must not appear in the breadcrumb; dump:\n{dump}"
         );
-        // Mask glyph must not appear on op:// rows even though
+        // Mask glyph must not appear on OpRef rows even though
         // editor defaults to all-masked.
         assert!(
             editor.unmasked_rows.is_empty(),
-            "default state is all-masked; op:// rows must still bypass masking"
+            "default state is all-masked; OpRef rows must still bypass masking"
         );
         assert!(
             !dump.contains("●●●"),
-            "op:// rows must never render the mask glyph; dump:\n{dump}"
+            "OpRef rows must never render the mask glyph; dump:\n{dump}"
         );
     }
 
@@ -1375,7 +1474,10 @@ mod secrets_tab_render_tests {
         let mut env = std::collections::BTreeMap::new();
         env.insert(
             "API_KEY".into(),
-            "op://Personal/API Keys/auth/secret_key".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://Personal/API Keys/auth/secret_key".into(),
+                path: "Personal/API Keys/auth/secret_key".into(),
+            }),
         );
         let ws = WorkspaceConfig {
             env,
@@ -1418,7 +1520,13 @@ mod secrets_tab_render_tests {
     #[test]
     fn op_row_renders_with_op_text_marker() {
         let mut env = std::collections::BTreeMap::new();
-        env.insert("DB_URL".into(), "op://Work/db/password".into());
+        env.insert(
+            "DB_URL".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://Work/db/password".into(),
+                path: "Work/db/password".into(),
+            }),
+        );
         let ws = WorkspaceConfig {
             env,
             ..WorkspaceConfig::default()
@@ -1430,7 +1538,7 @@ mod secrets_tab_render_tests {
         let dump = render_to_dump(&editor);
         assert!(
             dump.contains("[op]"),
-            "op:// row must render the `[op]` text marker; dump:\n{dump}"
+            "OpRef row must render the `[op]` text marker; dump:\n{dump}"
         );
         assert!(
             !dump.contains("\u{26BF}"),
@@ -1460,7 +1568,13 @@ mod secrets_tab_render_tests {
     #[test]
     fn op_row_marker_column_is_5_chars_wide_with_brackets() {
         let mut env = std::collections::BTreeMap::new();
-        env.insert("DB_URL".into(), "op://Work/db/password".into());
+        env.insert(
+            "DB_URL".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://Work/db/password".into(),
+                path: "Work/db/password".into(),
+            }),
+        );
         let ws = WorkspaceConfig {
             env,
             ..WorkspaceConfig::default()
@@ -1472,7 +1586,7 @@ mod secrets_tab_render_tests {
         let dump = render_to_dump(&editor);
         assert!(
             dump.contains("[op] "),
-            "op:// row must render the marker as exactly `[op] ` (5 chars \
+            "OpRef row must render the marker as exactly `[op] ` (5 chars \
              including trailing space); dump:\n{dump}"
         );
     }
@@ -1597,6 +1711,263 @@ mod secrets_tab_render_tests {
             "no trailing spacer after the final section; rows={rows:?}"
         );
     }
+
+    /// Helper that renders the Secrets tab to a wider (120-column) terminal
+    /// so long breadcrumbs (subtitle + section + field) are not truncated.
+    fn render_to_dump_wide(editor: &EditorState<'_>) -> String {
+        let config = AppConfig::default();
+        let backend = TestBackend::new(120, 15);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_secrets_tab(f, Rect::new(0, 0, 120, 15), editor, &config);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    /// OpRef whose `path` contains the `[subtitle]` disambiguation form.
+    /// The subtitle must appear in the rendered output between the item
+    /// name and the next " / " separator.
+    #[test]
+    fn renderer_op_ref_with_subtitle_renders_text() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "TOKEN".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc/def/fld".into(),
+                path: "Private/Claude[alexey@zhokhov.com]/security/auth token".into(),
+            }),
+        );
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        // Use the wide terminal so the subtitle and field are not truncated.
+        let dump = render_to_dump_wide(&editor);
+        // The row must carry the [op] marker (OpRef variant).
+        assert!(
+            dump.contains("[op]"),
+            "OpRef row with subtitle must render `[op]` marker; dump:\n{dump}"
+        );
+        // Subtitle text must appear in the rendered output.
+        assert!(
+            dump.contains("alexey@zhokhov.com"),
+            "subtitle text must appear in the breadcrumb; dump:\n{dump}"
+        );
+        // Vault, item, section, and field must all render.
+        assert!(dump.contains("Private"), "vault must render; dump:\n{dump}");
+        assert!(
+            dump.contains("Claude"),
+            "item name must render; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("security"),
+            "section must render; dump:\n{dump}"
+        );
+        assert!(
+            dump.contains("auth token"),
+            "field must render; dump:\n{dump}"
+        );
+    }
+
+    /// OpRef whose `path` carries an `?attribute=otp` query suffix. The
+    /// query must appear in the rendered output after the field name.
+    #[test]
+    fn renderer_op_ref_with_attribute_query_renders_text() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "OTP".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc/def/fld?attribute=otp".into(),
+                path: "Private/GitHub/one-time password?attribute=otp".into(),
+            }),
+        );
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        // Use the wide terminal so `?attribute=otp` is not truncated.
+        let dump = render_to_dump_wide(&editor);
+        // The row must carry the [op] marker.
+        assert!(
+            dump.contains("[op]"),
+            "OpRef row with attribute query must render `[op]` marker; dump:\n{dump}"
+        );
+        // The query suffix must appear in the output.
+        assert!(
+            dump.contains("?attribute=otp"),
+            "attribute query must appear in breadcrumb; dump:\n{dump}"
+        );
+        // Field name must also render.
+        assert!(
+            dump.contains("one-time password"),
+            "field must render; dump:\n{dump}"
+        );
+    }
+
+    /// OpRef with BOTH a subtitle disambiguation AND an `?attribute=otp`
+    /// query suffix. Asserts that all six visible pieces appear in the
+    /// expected left-to-right order: vault → item → subtitle → section →
+    /// field → query.
+    #[test]
+    fn renderer_op_ref_with_subtitle_section_and_query_renders_all() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "TOKEN".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc/def/sec/fld?attribute=otp".into(),
+                path: "Private/Claude[alexey@zhokhov.com]/security/auth token?attribute=otp".into(),
+            }),
+        );
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        // Use the wide terminal so no piece is truncated.
+        let dump = render_to_dump_wide(&editor);
+
+        // All visible pieces must appear in order:
+        // vault → item → subtitle → section → field → query.
+        let v_pos = dump.find("Private").expect("vault present");
+        let i_pos = dump.find("Claude").expect("item present");
+        let s_pos = dump.find("alexey@zhokhov.com").expect("subtitle present");
+        let sec_pos = dump.find("security").expect("section present");
+        let f_pos = dump.find("auth token").expect("field present");
+        let q_pos = dump.find("?attribute=otp").expect("query present");
+        assert!(v_pos < i_pos, "vault before item");
+        assert!(i_pos < s_pos, "item before subtitle");
+        assert!(s_pos < sec_pos, "subtitle before section");
+        assert!(sec_pos < f_pos, "section before field");
+        assert!(f_pos < q_pos, "field before query");
+    }
+
+    /// A `Plain` row containing a bare `op://...` string gets NO `[op]`
+    /// marker — it renders as a literal masked value, the visual signal
+    /// that the operator needs to re-pick it.
+    #[test]
+    fn renderer_plain_with_bare_op_uri_renders_as_literal_no_breadcrumb() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("DB_URL".into(), "op://Vault/Item/Field".into());
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        let dump = render_to_dump(&editor);
+        // Plain rows carrying a legacy op:// string must NOT render the
+        // [op] marker — the visual distinction signals the need to re-pick.
+        assert!(
+            !dump.contains("[op]"),
+            "Plain rows must NOT carry [op] marker; dump:\n{dump}"
+        );
+        // The breadcrumb separators must not appear — this is a plain
+        // masked/literal row, not a breadcrumb render.
+        assert!(
+            !dump.contains(" / Vault / "),
+            "Plain op:// strings must not render vault breadcrumb; dump:\n{dump}"
+        );
+        // The mask glyph must appear (plain row, masked by default).
+        assert!(
+            dump.contains("●●●"),
+            "Plain row must render masked by default; dump:\n{dump}"
+        );
+    }
+
+    /// Single env var → label_width equals key length. Without the explicit
+    /// two-space span, the screenshot bug (CLAUDE_CODE_OAUTH_TOKENPrivate / ...)
+    /// recurs.
+    #[test]
+    fn renderer_key_value_separator_always_at_least_two_spaces() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "CLAUDE_CODE_OAUTH_TOKEN".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc/def/fld".into(),
+                path: "Private/Claude/security/auth token".into(),
+            }),
+        );
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+
+        // Use the wide terminal so the breadcrumb is not truncated.
+        let dump = render_to_dump_wide(&editor);
+        assert!(
+            dump.contains("CLAUDE_CODE_OAUTH_TOKEN  Private"),
+            "expected at least 2 spaces between key and breadcrumb; dump:\n{dump}"
+        );
+        assert!(
+            !dump.contains("CLAUDE_CODE_OAUTH_TOKENPrivate"),
+            "no space is the bug; dump:\n{dump}"
+        );
+    }
+
+    /// `OpRef` whose `path` doesn't parse as a 3- or 4-segment breadcrumb.
+    /// The renderer must NOT panic; it shows a re-pick placeholder in the
+    /// value column without the `[op]` marker, and must NOT leak the UUID URI.
+    #[test]
+    fn renderer_op_ref_with_malformed_path_renders_repick_placeholder_no_panic() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "TOKEN".into(),
+            crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+                op: "op://abc/def/fld".into(),
+                path: "garbage-no-slashes".into(),
+            }),
+        );
+        let ws = WorkspaceConfig {
+            env,
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        // Unmask so the placeholder is rendered as text rather than ●●●.
+        editor
+            .unmasked_rows
+            .insert((SecretsScopeTag::Workspace, "TOKEN".into()));
+
+        let dump = render_to_dump_wide(&editor);
+        // Malformed path → parse_path_breadcrumb returns None → no [op] marker.
+        assert!(!dump.contains("[op]"), "no [op] marker; dump:\n{dump}");
+        // Re-pick placeholder must be shown instead of the UUID URI.
+        assert!(
+            dump.contains("<unparseable path \u{2014} re-pick>"),
+            "expected re-pick placeholder; dump:\n{dump}"
+        );
+        // UUID URI must NOT be visible to the operator.
+        assert!(
+            !dump.contains("op://abc/def/fld"),
+            "UUID URI must NOT leak; dump:\n{dump}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1690,5 +2061,70 @@ mod eligible_agents_for_override_tests {
         let editor = editor_for(ws_with_overrides(&[], &[]));
         let eligible = eligible_agents_for_override(&editor, &cfg);
         assert!(eligible.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod parse_path_breadcrumb_tests {
+    use super::parse_path_breadcrumb;
+
+    #[test]
+    fn parse_path_breadcrumb_3_segment_no_subtitle() {
+        let p = parse_path_breadcrumb("Private/Stripe/api key").unwrap();
+        assert_eq!(p.vault, "Private");
+        assert_eq!(p.item, "Stripe");
+        assert!(p.item_subtitle.is_none());
+        assert!(p.section.is_none());
+        assert_eq!(p.field, "api key");
+        assert!(p.attribute_query.is_none());
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_3_segment_with_subtitle() {
+        let p = parse_path_breadcrumb("Private/Claude[alexey@zhokhov.com]/auth").unwrap();
+        assert_eq!(p.vault, "Private");
+        assert_eq!(p.item, "Claude");
+        assert_eq!(p.item_subtitle.as_deref(), Some("alexey@zhokhov.com"));
+        assert!(p.section.is_none());
+        assert_eq!(p.field, "auth");
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_4_segment_with_subtitle() {
+        let p = parse_path_breadcrumb("Private/Claude[alexey@zhokhov.com]/security/auth token")
+            .unwrap();
+        assert_eq!(p.vault, "Private");
+        assert_eq!(p.item, "Claude");
+        assert_eq!(p.item_subtitle.as_deref(), Some("alexey@zhokhov.com"));
+        assert_eq!(p.section.as_deref(), Some("security"));
+        assert_eq!(p.field, "auth token");
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_with_attribute_query() {
+        let p = parse_path_breadcrumb("Private/GitHub/one-time password?attribute=otp").unwrap();
+        assert_eq!(p.field, "one-time password");
+        assert_eq!(p.attribute_query.as_deref(), Some("?attribute=otp"));
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_subtitle_containing_brackets() {
+        // rfind('[') means the last [...] is the subtitle.
+        let p = parse_path_breadcrumb("Private/Claude[has [bracket]]/auth").unwrap();
+        assert_eq!(p.item, "Claude[has ");
+        assert_eq!(p.item_subtitle.as_deref(), Some("bracket]"));
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_invalid_too_few_segments() {
+        assert!(parse_path_breadcrumb("Private/Item").is_none());
+        assert!(parse_path_breadcrumb("Private").is_none());
+        assert!(parse_path_breadcrumb("").is_none());
+    }
+
+    #[test]
+    fn parse_path_breadcrumb_invalid_too_many_segments() {
+        // 5+ segments is not a valid 1Password breadcrumb.
+        assert!(parse_path_breadcrumb("a/b/c/d/e").is_none());
     }
 }
