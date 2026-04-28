@@ -607,4 +607,32 @@ isolation = "worktree"
             "validate_workspace_config must surface the nested-worktrees error from validate_isolation_layout; got: {msg}",
         );
     }
+
+    // ── Legacy bare op:// migration regression ───────────────────────────────
+
+    /// Pre-Task-3 workspaces may contain bare `op://Vault/Item/Field`
+    /// strings written as scalar TOML values (not the inline-table
+    /// `{ op = "...", path = "..." }` shape produced by the picker).
+    /// They must deserialize without error as `EnvValue::Plain` so the
+    /// user's config remains loadable; at the operator's pace they can
+    /// re-pick via the TUI to get the pinned-UUID form.
+    #[test]
+    fn legacy_bare_op_uri_in_workspace_loads_as_plain_no_error() {
+        let toml_input = r#"
+workdir = "/workspace/proj"
+
+[[mounts]]
+src = "/tmp/proj"
+dst = "/workspace/proj"
+
+[env]
+OLD = "op://Vault/Item/Field"
+"#;
+        let ws: WorkspaceConfig = toml::from_str(toml_input).expect("must parse");
+        assert_eq!(
+            ws.env.get("OLD").expect("OLD env var present"),
+            &crate::operator_env::EnvValue::Plain("op://Vault/Item/Field".into()),
+            "bare op:// scalar must deserialize as Plain, not OpRef",
+        );
+    }
 }

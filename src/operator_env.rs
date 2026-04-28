@@ -1490,6 +1490,29 @@ mod tests {
         );
     }
 
+    /// Regression pin: workspaces written before this branch have
+    /// `MY_VAR = "op://Vault/Item/Field"` as a scalar string — those
+    /// load as `EnvValue::Plain`. At runtime the resolver must pass
+    /// them through to the container as a literal string: no `op read`
+    /// call, no error.
+    #[test]
+    fn legacy_bare_op_uri_at_runtime_passes_through_literally() {
+        let runner = TestOpRunner::forbidden(); // panics if read() is ever called
+        let v = EnvValue::Plain("op://Vault/Item/Field".into());
+        let r = resolve_env_value("test", "OLD", &v, &runner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .expect("must succeed — Plain values never fail unless $VAR is unset");
+        assert_eq!(
+            r, "op://Vault/Item/Field",
+            "Plain bare op:// must pass through literally, not be resolved",
+        );
+        assert!(
+            runner.last_ref.borrow().is_none(),
+            "no op read call must be made for Plain values, even op://-shaped ones",
+        );
+    }
+
     #[test]
     fn dispatch_op_ref_calls_op_read_with_canonical_uri() {
         let runner = TestOpRunner::new(Ok("secret-value".to_string()));

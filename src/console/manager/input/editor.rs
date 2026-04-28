@@ -2647,4 +2647,49 @@ mod tests {
             e.active_field,
         );
     }
+
+    // ── TUI text-entry regression: typing or pasting op:// must stay Plain ──
+
+    /// Typing or pasting `op://...` into a value cell (text-entry path)
+    /// must always commit as `EnvValue::Plain`. The picker is the ONLY
+    /// TUI path that produces `EnvValue::OpRef`; this test pins that
+    /// invariant so an accidental auto-resolve can never sneak in.
+    ///
+    /// The structural guarantee: `apply_text_input_to_pending` for the
+    /// `EnvValue` target calls `set_pending_env_value`, which
+    /// unconditionally wraps its `&str` argument in
+    /// `EnvValue::Plain(value.to_string())`. There is no `op://` pattern
+    /// match in the text-entry commit path.
+    #[test]
+    fn tui_text_entry_op_uri_always_commits_as_plain() {
+        let mut editor =
+            EditorState::new_edit("CLAUDE_TOKEN_WS".into(), WorkspaceConfig::default());
+
+        let target = TextInputTarget::EnvValue {
+            scope: SecretsScopeTag::Workspace,
+            key: "CLAUDE_TOKEN".into(),
+        };
+
+        // Simulate committing a typed/pasted op:// string via the
+        // text-entry path (Enter in the EnvValue modal).
+        apply_text_input(&target, &mut editor, "op://Vault/Item/Field");
+
+        let stored = editor
+            .pending
+            .env
+            .get("CLAUDE_TOKEN")
+            .expect("CLAUDE_TOKEN must be present after commit");
+
+        assert_eq!(
+            stored,
+            &crate::operator_env::EnvValue::Plain("op://Vault/Item/Field".into()),
+            "text-entry commit of op:// string must store EnvValue::Plain, \
+             not EnvValue::OpRef — the picker is the only path to OpRef"
+        );
+        // Belt-and-suspenders: confirm it is NOT an OpRef.
+        assert!(
+            !matches!(stored, crate::operator_env::EnvValue::OpRef(_)),
+            "text entry must never produce EnvValue::OpRef"
+        );
+    }
 }
