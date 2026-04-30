@@ -1,7 +1,7 @@
 use jackin::docker::{CommandRunner, RunOptions};
 use jackin::isolation::MountIsolation;
 use jackin::isolation::finalize::{
-    AttachOutcome, FinalizeDecision, FinalizerPrompt, finalize_foreground_session,
+    AttachOutcome, FinalizeDecision, FinalizerPrompt, PreservedReason, finalize_foreground_session,
 };
 use jackin::isolation::materialize::{PreflightContext, materialize_workspace};
 use jackin::isolation::state::{CleanupStatus, read_records};
@@ -12,7 +12,12 @@ use tempfile::TempDir;
 
 struct NoPrompt;
 impl FinalizerPrompt for NoPrompt {
-    fn ask_unsafe_cleanup(&mut self, _c: &str, _w: &str) -> anyhow::Result<usize> {
+    fn ask_unsafe_cleanup(
+        &mut self,
+        _c: &str,
+        _w: &str,
+        _r: PreservedReason,
+    ) -> anyhow::Result<usize> {
         panic!("prompt should not be called");
     }
 }
@@ -160,9 +165,10 @@ fn materialize_then_clean_exit_removes_record_and_branch() {
         "commondir override removed in V1 final design",
     );
 
-    // Now finalize a clean exit with HEAD == base.
-    // Capture queue: status --porcelain (clean), rev-parse HEAD (== base)
-    let mut finalize_runner = ScriptedRunner::new(&["", "deadbeef\n"]);
+    // Finalize a clean exit. Capture queue: status --porcelain (clean),
+    // for-each-ref refs/heads/ (single scratch branch parked at base).
+    let branches = "jackin/scratch/jackin-the-architect\tdeadbeef\t\t\n";
+    let mut finalize_runner = ScriptedRunner::new(&["", branches]);
     let mut prompt = NoPrompt;
     let dec = finalize_foreground_session(
         "jackin-the-architect",
