@@ -44,7 +44,7 @@ else
     echo "[entrypoint] tirith disabled (JACKIN_DISABLE_TIRITH=1)"
 fi
 if [[ "${JACKIN_DISABLE_SHELLFIRM:-0}" != "1" ]]; then
-    run_maybe_quiet claude mcp add shellfirm -- shellfirm mcp-server || true
+    run_maybe_quiet claude mcp add shellfirm -- shellfirm mcp || true
 else
     echo "[entrypoint] shellfirm disabled (JACKIN_DISABLE_SHELLFIRM=1)"
 fi
