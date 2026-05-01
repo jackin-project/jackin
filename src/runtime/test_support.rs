@@ -104,6 +104,14 @@ impl CommandRunner for FakeRunner {
         let command = format!("{} {}", program, args.join(" "));
         self.recorded.push(command.clone());
         self.check_command(&command)?;
+        // `unwrap_or_default()` returns `Ok("")` when the queue is exhausted.
+        // Two commands in `assess_cleanup` are dangerous when they silently
+        // receive a phantom `Ok("")`:
+        //   - `rev-list`: empty output = "no commits ahead" → SafeToDelete
+        //   - `symbolic-ref HEAD`: any Ok (including "") = "HEAD on a branch",
+        //     silently skipping the detached-HEAD guard
+        // Always provide one queue entry per expected capture call and
+        // document each in a comment above the `fake_with_outputs` call.
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 }

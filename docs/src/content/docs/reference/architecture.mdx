@@ -131,10 +131,10 @@ The file lives next to the existing `.claude/` and `.jackin/` per-container stat
 | `original_src` | Resolved host `src` recorded for source-drift detection |
 | `isolation` | Mode (`worktree` in V1) |
 | `worktree_path` | Materialized worktree path on the host |
-| `branch` | Scratch branch name (`jackin/scratch/<container>`) |
+| `scratch_branch` | Scratch branch name (`jackin/scratch/<container>`) |
 | `base_commit` | Host `HEAD` at first materialization |
-| `selector` | Agent selector key |
-| `container` | Final container name |
+| `selector_key` | Agent selector key |
+| `container_name` | Final container name |
 | `status` | `active` \| `preserved_dirty` \| `preserved_unpushed` |
 
 Successful cleanup removes the corresponding record rather than keeping a historical `cleaned` entry.

@@ -2,6 +2,8 @@
 //   git status --porcelain
 //   git for-each-ref --format=... refs/heads/
 //   git rev-list <upstream>..<branch>
+//   git symbolic-ref --quiet HEAD          (detached-HEAD guard)
+//   git rev-parse HEAD                     (detached-HEAD guard; only when HEAD is detached)
 //   git worktree remove --force
 //   git branch -D
 // None require network access. The shared finalizer is safe to call
@@ -62,7 +64,7 @@ pub enum PreservedReason {
     /// The working tree is clean but at least one local branch has
     /// commits that we cannot prove have shipped (no upstream, real
     /// commits past upstream, or a git capture failure on the per-branch
-    /// loop). Includes the detached-HEAD-past-base case.
+    /// loop), or HEAD is detached with commits past `base_commit`.
     Unpushed,
 }
 
@@ -277,10 +279,19 @@ enum CleanupAssessment {
 /// |---------------------------------------------------------------|----------|
 /// | tip == `base_commit`                                          | Safe     |
 /// | tip moved, no upstream                                        | Unsafe   |
-/// | tip moved, upstream set, ref present, `rev-list` empty        | Safe     |
-/// | tip moved, upstream set, ref present, `rev-list` non-empty    | Unsafe   |
-/// | tip moved, upstream set, upstream `[gone]` (pruned)           | Safe     |
+/// | tip moved, upstream set, upstream tracking ref not `[gone]`, `rev-list` empty   | Safe  |
+/// | tip moved, upstream set, upstream tracking ref not `[gone]`, `rev-list` non-empty | Unsafe |
+/// | tip moved, upstream `[gone]` (squash-merged + pruned)         | Safe     |
 /// | any `git` capture error                                       | Unsafe   |
+///
+/// After all named branches pass, a detached-HEAD guard runs:
+///
+/// | Detached-HEAD state                                           | Decision |
+/// |---------------------------------------------------------------|----------|
+/// | `symbolic-ref HEAD` succeeds (HEAD on branch)                 | Safe     |
+/// | `symbolic-ref HEAD` fails, `rev-parse HEAD` == `base_commit`  | Safe     |
+/// | `symbolic-ref HEAD` fails, `rev-parse HEAD` != `base_commit`  | Unsafe   |
+/// | `symbolic-ref HEAD` fails, `rev-parse HEAD` also fails        | Unsafe   |
 ///
 /// `[gone]` upstream is treated as Safe because squash-merge with
 /// remote-branch-deletion is the dominant GitHub workflow: there is
@@ -405,7 +416,7 @@ fn assess_cleanup(
         // `[gone]` (or bare `gone` in some git versions) means the
         // upstream ref is configured but the remote-tracking ref was
         // pruned. Treat as Safe — see the policy comment above.
-        if track.contains("gone") {
+        if track == "[gone]" || track == "gone" {
             debug_log!(
                 "isolation",
                 "finalize assess: branch {name} in {wt} has upstream={upstream} marked gone; treating as merged-and-pruned (safe)",
@@ -441,6 +452,61 @@ fn assess_cleanup(
                 wt = record.worktree_path,
             );
             return Ok(CleanupAssessment::PreservedUnpushed);
+        }
+    }
+
+    // Detached-HEAD guard: commits made while HEAD is detached don't
+    // appear under refs/heads/ and slip past the branch loop above.
+    // `symbolic-ref --quiet HEAD` exits 0 on an attached branch and
+    // fails (exit 1) on a detached HEAD — both failure and a capture
+    // error are treated as potentially unsafe.
+    if runner
+        .capture(
+            "git",
+            &[
+                "-C",
+                &record.worktree_path,
+                "symbolic-ref",
+                "--quiet",
+                "HEAD",
+            ],
+            None,
+        )
+        .is_err()
+    {
+        // `symbolic-ref` fails on detached HEAD (exit 1) and on any git
+        // error — both are unsafe until we can verify HEAD is at base.
+        debug_log!(
+            "isolation",
+            "finalize assess: symbolic-ref HEAD failed for {wt} (detached HEAD or error); checking rev-parse HEAD",
+            wt = record.worktree_path,
+        );
+        match runner.capture(
+            "git",
+            &["-C", &record.worktree_path, "rev-parse", "HEAD"],
+            None,
+        ) {
+            Ok(head_sha) if head_sha.trim() == record.base_commit.trim() => {
+                // Detached HEAD parked at base — no unreachable commits.
+            }
+            Ok(head_sha) => {
+                debug_log!(
+                    "isolation",
+                    "finalize assess: detached HEAD {sha} != base {base} in {wt}; preserving as unpushed",
+                    sha = head_sha.trim(),
+                    base = record.base_commit.trim(),
+                    wt = record.worktree_path,
+                );
+                return Ok(CleanupAssessment::PreservedUnpushed);
+            }
+            Err(e) => {
+                debug_log!(
+                    "isolation",
+                    "finalize assess: rev-parse HEAD failed for {wt}: {e}; preserving as unpushed (cannot verify detached HEAD state)",
+                    wt = record.worktree_path,
+                );
+                return Ok(CleanupAssessment::PreservedUnpushed);
+            }
         }
     }
 
@@ -571,10 +637,11 @@ mod tests {
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
 
         // Capture queue:
-        //   status --porcelain  (clean)
-        //   for-each-ref refs/heads/  (single scratch branch at base_commit)
+        //   status --porcelain           (clean)
+        //   for-each-ref refs/heads/     (single scratch branch at base_commit)
+        //   symbolic-ref HEAD            (HEAD on scratch branch → attached)
         let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
-        let mut runner = fake_with_outputs(&["", &branches]);
+        let mut runner = fake_with_outputs(&["", &branches, "refs/heads/jackin/scratch/x"]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -606,11 +673,12 @@ mod tests {
         //   status --porcelain (clean)
         //   for-each-ref -> single branch ahead of base with reachable upstream
         //   rev-list <upstream>..<branch> -> "" (all reachable)
+        //   symbolic-ref HEAD            (HEAD on scratch branch → attached)
         let branches = format!(
             "{}\n",
             ferow("jackin/scratch/x", "newhead", "origin/jackin/scratch/x", "",)
         );
-        let mut runner = fake_with_outputs(&["", &branches, ""]);
+        let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/jackin/scratch/x"]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -908,9 +976,8 @@ mod tests {
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         // status clean, for-each-ref returns one branch ahead with
         // upstream still configured (not gone), then rev-list fails.
-        // Without the fail-closed `Err` arm the empty-string fallback
-        // would return SafeToDelete here and the unpushed commits would
-        // be garbage-collected.
+        // The fail-closed Err arm must route to PreservedUnpushed, not
+        // silently treat the failure as "no commits ahead".
         let branches = format!(
             "{}\n",
             ferow(
@@ -1226,13 +1293,14 @@ mod tests {
         //   - scratch at base_commit (no upstream)
         //   - feature/x ahead, upstream set, no [gone]
         // rev-list <upstream>..feature/x → empty (everything pushed)
+        // symbolic-ref HEAD             (HEAD on feature/x → attached)
         let branches = [
             ferow("jackin/scratch/x", "abc", "", ""),
             ferow("feature/x", "newhead", "origin/feature/x", ""),
         ]
         .join("\n")
             + "\n";
-        let mut runner = fake_with_outputs(&["", &branches, ""]);
+        let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/x"]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -1267,7 +1335,8 @@ mod tests {
         .join("\n")
             + "\n";
         // No rev-list call expected — `[gone]` short-circuits to Safe.
-        let mut runner = fake_with_outputs(&["", &branches]);
+        // symbolic-ref HEAD  (HEAD on feature/x → attached)
+        let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -1364,8 +1433,9 @@ mod tests {
         .join("\n")
             + "\n";
         // status clean, branch enumeration, rev-list for feature/b only
-        // (feature/a short-circuits via [gone], scratch via tip==base).
-        let mut runner = fake_with_outputs(&["", &branches, ""]);
+        // (feature/a short-circuits via [gone], scratch via tip==base),
+        // then symbolic-ref HEAD (HEAD on feature/b → attached).
+        let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/b"]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -1471,5 +1541,279 @@ mod tests {
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         assert_eq!(p.seen, vec![PreservedReason::Dirty]);
+    }
+
+    // ---------------------------------------------------------------
+    // Malformed for-each-ref row — fail-closed guard (line 377).
+    // These tests replace the old assess_cleanup_empty_head_*
+    // test (which exercised the removed rev-parse HEAD path). The
+    // equivalent invariant is now: an empty `name` or empty `tip`
+    // in a for-each-ref row must never match base_commit and must
+    // always route to PreservedUnpushed.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn assess_cleanup_malformed_row_empty_name_preserves_unpushed() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // Empty name column — malformed row, fail closed.
+        let branches = format!("{}\n", ferow("", "newhead", "", ""));
+        let mut runner = fake_with_outputs(&["", &branches]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    }
+
+    #[test]
+    fn assess_cleanup_malformed_row_empty_tip_preserves_unpushed() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // Empty tip column — must not compare equal to any base_commit,
+        // including an empty one; always fails closed.
+        let branches = format!("{}\n", ferow("feature/x", "", "origin/feature/x", ""));
+        let mut runner = fake_with_outputs(&["", &branches]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    }
+
+    // ---------------------------------------------------------------
+    // Non-interactive PreservedUnpushed path. The non-interactive
+    // eprintln uses per-reason wording; this pins that the Unpushed
+    // arm is reached (FinalizeDecision::Preserved +
+    // CleanupStatus::PreservedUnpushed) when is_interactive=false.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // status clean, branch ahead of base with no upstream → PreservedUnpushed
+        let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
+        let mut runner = fake_with_outputs(&["", &branches]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    }
+
+    // ---------------------------------------------------------------
+    // Interactive prompt choices for PreservedUnpushed.
+    // Counterparts to the Dirty interactive tests; pins that the
+    // three-way prompt dispatch works for both preservation paths.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn unpushed_branch_interactive_force_delete_runs_cleanup() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
+        let mut runner = fake_with_outputs(&["", &branches]);
+        let mut p = ScriptedPrompt(VecDeque::from([2]));
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert!(read_records(dir.path()).unwrap().is_empty());
+        assert!(
+            runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree remove --force"))
+        );
+    }
+
+    #[test]
+    fn unpushed_branch_interactive_return_to_agent_signals_caller() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
+        let mut runner = fake_with_outputs(&["", &branches]);
+        let mut p = ScriptedPrompt(VecDeque::from([0]));
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::ReturnToAgent);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    }
+
+    // ---------------------------------------------------------------
+    // Bare `gone` track annotation (no brackets). Some git versions
+    // emit `gone` instead of `[gone]`; both must short-circuit to Safe.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn bare_gone_track_is_safe_to_delete() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // Bare `gone` (no brackets) must also short-circuit to Safe.
+        let branches = [
+            ferow("jackin/scratch/x", "abc", "", ""),
+            ferow("feature/x", "newhead", "origin/feature/x", "gone"),
+        ]
+        .join("\n")
+            + "\n";
+        // No rev-list expected — bare `gone` short-circuits just like `[gone]`.
+        // symbolic-ref HEAD  (HEAD on feature/x → attached)
+        let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert!(read_records(dir.path()).unwrap().is_empty());
+        assert!(
+            !runner.recorded.iter().any(|c| c.contains("rev-list")),
+            "bare gone short-circuit must not invoke rev-list; recorded={:?}",
+            runner.recorded,
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Detached-HEAD guard. Commits made in detached-HEAD mode don't
+    // appear in refs/heads/ and would slip past the branch loop.
+    // `symbolic-ref --quiet HEAD` is the sentinel: Err = detached (or
+    // git error); both are treated as unsafe unless rev-parse HEAD
+    // confirms HEAD is parked at base_commit.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn detached_head_past_base_preserves_unpushed() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // All named branches are safe (scratch at base), but HEAD is
+        // detached and points at a commit past base_commit.
+        let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
+        // Queue: status, for-each-ref, rev-parse HEAD (symbolic-ref fails).
+        let mut runner = fake_failing_capture(&["", &branches, "deadbeef"], "symbolic-ref");
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    }
+
+    #[test]
+    fn detached_head_at_base_is_safe_to_delete() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // Detached HEAD parked exactly at base_commit ("abc") — no
+        // unreachable commits; safe to clean.
+        let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
+        // Queue: status, for-each-ref, rev-parse HEAD (= "abc\n" → trims to base_commit).
+        // Using the real git rev-parse output format (trailing newline) so trim() is exercised.
+        let mut runner = fake_failing_capture(&["", &branches, "abc\n"], "symbolic-ref");
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert!(read_records(dir.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn detached_head_rev_parse_failure_preserves_unpushed() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // Both symbolic-ref and rev-parse fail → fail-closed.
+        let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
+        let mut runner = FakeRunner {
+            capture_queue: std::collections::VecDeque::from(vec![String::new(), branches]),
+            fail_on: vec!["symbolic-ref".to_string(), "rev-parse".to_string()],
+            ..FakeRunner::default()
+        };
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
 }
