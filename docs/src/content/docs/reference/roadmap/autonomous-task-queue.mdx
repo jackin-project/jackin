@@ -1,0 +1,275 @@
+---
+title: "Autonomous Task Queue"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 4, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+Once the operator surface is observable (Phase 2) and storage is persistent
+(Phase 3) and tasks come from a pluggable source (the previous leaf), the
+remaining piece is a **dispatcher**: turn tasks into agent invocations,
+respect parallelism limits, recover gracefully on failure, and let the
+operator leave the console running overnight.
+
+This is the headline workflow that justifies the program. Without it, the
+program just makes jackin's existing surface nicer; with it, jackin'
+becomes something an organization deploys instead of building their own.
+
+## Why It Matters
+
+- It's the workflow distinction between "AI coding agent runner" (today)
+  and "AI coding agent platform" (target).
+- Many of the program's smaller leaves only pay off once the queue exists
+  ([archive](/reference/roadmap/workspace-archive/) auto-archive integration,
+  [resource limits](/reference/roadmap/declarative-resource-limits/)
+  budget enforcement, [idle runtime
+  cleanup](/reference/roadmap/idle-runtime-cleanup/)).
+- It's the answer to "I have 50 GitHub issues; can jackin' chip through
+  them overnight?" — currently, no.
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [Autonomous queueing](https://github.com/graemerocher/multicode#autonomous-queueing) (full operator-facing description of every knob)
+- Config — [`config.toml` `[autonomous]` block](https://github.com/yawkat/multicode/blob/main/config.toml)
+- Source — [`lib/src/manager.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/manager.rs) (dispatch loop)
+
+```toml
+[autonomous]
+max-parallel-issues = 5
+issue-scan-delay-seconds = 900
+scan-on-startup = true
+idle-runtime-cleanup = false
+idle-runtime-cleanup-delay-seconds = 300
+idle-runtime-cleanup-interval-seconds = 900
+idle-runtime-restart = false
+```
+
+Behaviors:
+
+- **Per-workspace queue** with a parallelism cap.
+- **Scan cadence** controls how often the workspace polls its source.
+- **Scan on startup** runs an initial poll the moment the workspace
+  becomes assigned.
+- **Idle runtime cleanup** (separate concern, see
+  [idle runtime cleanup](/reference/roadmap/idle-runtime-cleanup/)).
+
+What multicode does that jackin' should match: per-workspace concurrency
+limit, periodic re-scan, automatic dispatch when a slot frees.
+
+What multicode does that jackin' should *not* match: hardcoded "issue"
+vocabulary, GitHub-only sources, lack of per-task isolation (multicode
+agents share a workspace dir; jackin's worktree isolation gives every
+queued task its own materialized branch).
+
+## Recommended Shape
+
+A queue that's **per-workspace**, dispatches to **per-task isolated
+instances**, and uses jackin's existing primitives for everything except
+the dispatch loop itself.
+
+### Config
+
+```toml
+[workspaces.fix-bugs]
+workdir = "/workspace/example"
+default_agent = "the-architect"
+
+# A workspace can subscribe to one or more task sources.
+task_sources = ["fix-issues", "review-spec"]
+
+[workspaces.fix-bugs.queue]
+max_parallel = 3                   # at most 3 agents at once
+poll_interval_seconds = 600        # re-poll source every 10 min
+poll_on_startup = true             # dispatch immediately on console open
+budget_usd_per_day = 50.00         # optional; skip dispatch when exceeded
+auto_archive_completed = true      # archive instance after task completes
+```
+
+### Mounts
+
+Every queue dispatch creates a per-task instance using **jackin's
+existing isolation primitives** — no new mount type. The workspace's
+mounts are inherited; a worktree-isolated mount becomes a per-instance
+materialized worktree exactly like manual `jackin load`. Each task
+gets a distinct container name, distinct data dir, distinct branch.
+
+The branch name follows the existing convention from
+[per-mount isolation](/reference/roadmap/per-mount-isolation/):
+`jackin/scratch/<container>` where `<container>` includes the unique
+suffix already produced by <RepoFile path="src/instance/naming.rs" />.
+
+### Task → instance materialization
+
+When the queue picks up a Task and an open slot:
+
+1. Generate a per-task instance name, e.g.
+   `jackin-fix-bugs-task-{short_hash_of_task_id}`.
+2. Run the equivalent of `jackin load <agent> <workspace>` with three
+   additions:
+   - `JACKIN_TASK_ID` env var set to the task ID.
+   - `JACKIN_TASK_BODY` env var set to the task body (or, if too long,
+     written to a file inside the container and the env var points at
+     the path).
+   - The agent's first prompt is templated from the task — see
+     "First prompt" below.
+3. Update the `tasks` table: `state = 'in_progress'`,
+   `instance_name = <generated>`.
+4. Subscribe to the [agent runtime
+   status](/reference/roadmap/agent-runtime-status/) bus for that
+   instance to detect completion.
+
+### First prompt
+
+Templated from a per-source-kind handler. For `github_issues`:
+
+```text
+You are working on GitHub issue {issue_url}.
+
+Title: {issue_title}
+
+Body:
+{issue_body}
+
+Read the issue, investigate, and either propose a fix as a PR, post a
+clarifying comment, or document why no action is needed. Emit
+<jackin:issue>{issue_url}</jackin:issue> when you start, and
+<jackin:pr>...</jackin:pr> when you open a PR.
+```
+
+For `file_glob`: simpler — "Read this spec doc and implement it" plus
+the file content.
+
+For `stdin_pipe`: the prompt is the task body verbatim.
+
+The template is editable per-source via a `[task_sources.<name>.prompt_template]`
+key in TOML — operators can tune it.
+
+### Completion detection
+
+The queue considers a task **complete** when:
+
+- The agent's container exits cleanly (exit 0, no OOM), AND
+- A configurable success signal is observed: a `<jackin:pr>` tag was
+  emitted, OR the agent printed a configured success marker, OR the
+  agent's foreground session was finalized clean (no preserved-dirty
+  state).
+
+Completion writes `tasks.state = 'completed'`, records the outcome
+(PR URL if any, exit code, runtime cost from
+[token & cost telemetry](/reference/roadmap/token-cost-telemetry/)),
+and (if `auto_archive_completed = true`) archives the per-task data dir.
+
+Failures (exit non-zero, OOM, missing success signal) write
+`state = 'failed'` and preserve the data dir for inspection. They're
+not auto-retried in V1 — operator-driven re-queue only.
+
+### Budget enforcement
+
+If `budget_usd_per_day` is set, the queue checks the workspace's
+running cost (sum of `tasks.outcome.cost` for tasks completed today
+plus current `usage_samples` for in-flight tasks) before dispatching.
+Over-budget = no dispatch, console shows a "budget exceeded" indicator,
+re-evaluates at next poll.
+
+### Console rendering
+
+When [console resource panel](/reference/roadmap/console-resource-panel/)
+is open, the workspace gets a "Queue" section: pending count,
+in-flight count, completed-today count, failed count. Per-instance
+rows show their task ID alongside.
+
+### CLI
+
+```sh
+jackin queue list <workspace>          # show pending + in-flight + recent completed
+jackin queue feed <workspace>          # read tasks from stdin (stdin_pipe source)
+jackin queue retry <workspace> <id>    # re-queue a failed task
+jackin queue cancel <workspace> <id>   # remove a pending task
+jackin queue pause <workspace>         # stop dispatching new tasks
+jackin queue resume <workspace>        # resume
+```
+
+## Scope (V1)
+
+- Per-workspace `[workspaces.X.queue]` config block.
+- Dispatch loop tied to the workspace's lifecycle (active when the
+  operator console is open *or* when `jackin queue resume <workspace>`
+  is running as a background daemon — see Open Questions).
+- Per-task instance materialization using existing isolation +
+  load primitives.
+- Completion detection via status bus + tag protocol.
+- Budget gating against daily cost.
+- Auto-archive on success when configured.
+- `jackin queue` CLI subcommands above.
+- Console "Queue" panel.
+
+## Defer
+
+- Multi-workspace orchestration ("treat my whole org as one queue").
+  V1: one queue per workspace.
+- Smart retry policies (exponential backoff, jitter). V1: manual
+  retry only.
+- Cross-task dependencies ("task B depends on PR from task A").
+  Out of V1.
+- Webhook-driven dispatch (GitHub webhook → immediate task dispatch
+  instead of polling). Defer; the polling loop is sufficient.
+- Operator-attended task review ("dispatch a task, but pause for
+  approval before opening the PR"). Defer.
+
+## Open Questions
+
+- **Daemon mode.** Does the queue run only while the console is open,
+  or as a background daemon (`jackin daemon start`)? Daemon mode is
+  the right answer for the "leave it overnight" workflow but adds a
+  meaningful operational surface (logs, supervision, restart).
+  Recommended: *V1 ships console-open-only*; daemon is a V1.1 follow-up
+  that lands as a separate roadmap item once the queue's behavior is
+  proven.
+- **Failure replay vs failure quarantine.** When a task fails, should
+  the queue re-poll and re-claim it (potentially looping forever) or
+  quarantine the task ID? Recommended: *quarantine in V1* — manual
+  retry only.
+- **First-prompt template safety.** Templating user-controlled task
+  body into an agent prompt is a prompt-injection surface. Recommended:
+  *document the risk*, render task body inside a clearly-fenced block,
+  trust the agent class's instructions to handle it. This is a known
+  general AI-agent concern; jackin' shouldn't pretend to solve it.
+- **Container-name length.** Per-task instance names will be long
+  (`jackin-fix-bugs-task-<hash>`). Docker accepts up to 253 chars but
+  branch names get attached to logs and dashboards — confirm the
+  rendered length stays readable.
+
+## Related Files
+
+- New module (e.g. `src/queue/dispatcher.rs`) —
+  the dispatch loop
+- `src/queue/task_source.rs` (from previous leaf) —
+  source polling
+- <RepoFile path="src/runtime/launch.rs" /> — invoked by the
+  dispatcher per task; small refactor to accept programmatic
+  invocation instead of CLI args only
+- <RepoFile path="src/instance/naming.rs" /> — per-task instance name
+  generator extension
+- <RepoFile path="src/cli/agent.rs" /> — `jackin queue` subcommands
+- The persistent-storage module — `tasks` table reads/writes
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Task source abstraction](/reference/roadmap/task-source-abstraction/) —
+  required input
+- [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) —
+  required state
+- [Agent runtime status](/reference/roadmap/agent-runtime-status/) —
+  required completion-detection signal
+- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) —
+  budget gating
+- [Per-mount isolation](/reference/roadmap/per-mount-isolation/) —
+  per-task isolation reuses worktree mode
+- [Workspace archive](/reference/roadmap/workspace-archive/) —
+  auto-archive on completion
+- [Idle runtime cleanup](/reference/roadmap/idle-runtime-cleanup/) —
+  paired Phase 4 item
