@@ -1,0 +1,183 @@
+---
+title: "Agent Runtime Status (Idle / Busy / Question)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 2, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+jackin's CLI is intentionally opaque to agent runtime: the operator launches
+an agent, the agent prints things, the operator interacts with it. There's no
+*structured* observability — jackin has no way to answer "is this agent
+currently busy, idle, or waiting for input?" That makes every downstream
+observability feature impossible:
+
+- The operator console can't show a status column.
+- The autonomous queue (Phase 4) can't dispatch a queued task to an idle
+  agent.
+- Idle-runtime cleanup (Phase 4) has no signal to act on.
+- Cost telemetry (Phase 3) can't correlate token bursts with periods of
+  active work.
+
+Closing this gap is the **load-bearing** Phase 2 item: it's the substrate
+that everything observable depends on.
+
+## Why It Matters
+
+- Without runtime status, the program's autonomous-queue thesis can't work:
+  a queue can't dispatch to a slot if it doesn't know whether the slot is
+  free.
+- The console looks fixed-shape today (one row per workspace + agent
+  picker). multicode's per-row colored status indicator (orange=idle,
+  green=busy, yellow=waiting) is the single biggest UX upgrade their TUI
+  has over jackin's, and it's the same data this gap exposes.
+- Multi-runtime support already needs an adapter seam for runtime-specific
+  behavior (entrypoint, auth, state). Status surfacing is one more
+  responsibility per adapter, which means one more reason to land the
+  adapter abstraction cleanly.
+
+## Inspiration in multicode
+
+**Sources**:
+- No dedicated README section (implementation-only feature)
+- Source — [`lib/src/services/root_session_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/root_session_service.rs) (SSE event stream → status state)
+- Source — [`lib/src/services/opencode_client_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/opencode_client_service.rs) (the SSE client itself)
+
+multicode subscribes to the OpenCode SSE event stream and derives a
+three-state enum:
+
+- **Idle** — no in-flight tool call, no pending message
+- **Busy** — agent is actively generating or running a tool
+- **Question** — agent is waiting for user input
+
+The state lives on `WorkspaceSnapshot.root_session_status`. The TUI renders
+it as a colored cell next to the workspace name. The transition stream is
+also consumed by the resource-usage poller (so CPU samples are tagged by
+status — not implemented today but visible in their schema).
+
+The implementation cost is small: a parser per-provider that reads SSE/
+event-stream output and emits status events. No agent-runtime changes; just
+a sidecar that watches the agent's emitted protocol.
+
+## Recommended Shape
+
+A small **runtime-status adapter** per supported runtime, bolted onto the
+existing multi-runtime adapter seam (the one that owns
+`derived_image.rs` / `entrypoint.sh` / `instance/auth.rs` / etc. per
+runtime). Each adapter emits status events to a single in-process channel;
+consumers (console, queue, cleanup, telemetry) subscribe to the channel.
+
+### Status enum
+
+```rust
+pub enum AgentStatus {
+    Initializing,
+    Idle,
+    Busy { since: Instant },
+    Question { prompt: Option<String>, since: Instant },
+    Crashed { exit_code: i32 },
+    OomKilled,
+}
+```
+
+`Initializing` covers the gap between container start and the first runtime
+event. `Crashed` and `OomKilled` are surfaced from Docker container state,
+not from the runtime adapter — they're handled by the same mechanism so
+consumers see one stream.
+
+### Per-runtime adapters
+
+- **Claude (today)**. Claude Code emits a streaming JSONL transcript when
+  invoked with `--output-format stream-json` (or similar). The adapter
+  attaches to that stream when available; if not (e.g. the operator is
+  using Claude in a regular interactive session), the adapter falls back
+  to a heartbeat-and-stdin-idle heuristic.
+- **Codex** (when [multi-runtime](/reference/roadmap/multi-runtime-support/)
+  ships). Codex's app-server emits structured events; map those.
+- **Amp** (when multi-runtime ships). Amp's thread API has an explicit
+  status field; surface it.
+
+The adapter is a *separate process or task*, not part of the runtime's
+own startup. It reads the runtime's structured output from a side channel
+(stream-json file, named pipe, server-sent events) and emits status events
+to jackin's status bus. It's allowed to know runtime specifics; the
+consumers are not.
+
+### Status bus
+
+A simple broadcast channel in <RepoFile path="src/runtime/launch.rs" />
+(or a new `src/runtime/status.rs`) that emits
+`(instance_name, status_event)` tuples. Console subscribes for live
+rendering; queue subscribes for dispatch; persistent storage layer
+subscribes to record state transitions.
+
+Consumers should be tolerant of dropped events (broadcast channel with
+bounded capacity); status is always re-derivable from the most recent
+event plus container liveness.
+
+## Scope (V1)
+
+- `AgentStatus` enum + per-instance status state.
+- One status adapter for Claude — the only runtime today. Adapters for
+  Codex and Amp ship alongside their multi-runtime support.
+- A status bus that consumers subscribe to.
+- A fallback heartbeat-and-idle heuristic for Claude when stream-json
+  isn't available, gated behind a `--observable` flag on `jackin load` so
+  operators opt in.
+- Console subscribes to render a status cell next to each workspace.
+  *(The console rendering integration may slip a release behind the
+  status-bus plumbing.)*
+- No persistence in V1 — status is in-memory only. [Persistent storage
+  layer](/reference/roadmap/persistent-storage-layer/) adds a status_log
+  table later.
+
+## Defer
+
+- Heuristic fallbacks for runtimes without structured output. If a runtime
+  doesn't expose status, jackin' shows `Initializing → Unknown` and the
+  operator gets the existing opaque experience.
+- Per-tool granularity (which tool the agent is running right now). V1 is
+  three-state; finer-grained surfacing is a follow-up.
+- Cross-instance status aggregation (a single "fleet view"). Wait until
+  the queue exists.
+
+## Open Questions
+
+- **`--observable` opt-in default.** Should running Claude with stream-json
+  parsing be the default in jackin' (so status surfaces automatically) or
+  opt-in (so the operator's existing interactive flow is unchanged)?
+  Recommended default: *opt-in for V1*, then revisit after operator
+  feedback. stream-json output may interact with how the operator currently
+  uses Claude's TUI.
+- **Heuristic-only fallback.** Is a "no event for 30s and stdin is idle"
+  signal good enough to call an agent Idle? Recommended: *yes for queue
+  dispatch* (false negatives are safe — the queue just doesn't fill the
+  slot); *no for cost telemetry* (false negatives skew samples).
+- **Adapter ownership.** Is the status adapter part of the multi-runtime
+  adapter trait, or a separate runtime-coupled module? Recommended:
+  *separate module* — runtime adapters own launch, auth, entrypoint;
+  status adapters own observability. Different reviewers, different
+  cadence.
+
+## Related Files
+
+- New module (e.g. `src/runtime/status.rs`) — status bus +
+  adapter trait
+- <RepoFile path="src/runtime/launch.rs" /> — wires the adapter into the
+  launch path
+- <RepoFile path="src/console/manager/state.rs" /> — subscribes for
+  rendering
+- Future per-runtime files (Codex / Amp adapters) — bolt into this seam
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Multi-runtime support](/reference/roadmap/multi-runtime-support/) —
+  the runtime adapter abstraction this depends on
+- [Console resource panel](/reference/roadmap/console-resource-panel/) —
+  pairs with status to render the per-workspace observability column
+- [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) — the
+  primary downstream consumer
+- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) —
+  another downstream consumer

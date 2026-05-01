@@ -1,0 +1,208 @@
+---
+title: "jackin-remote (run on another machine, attend from laptop)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 5, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+Some agent workloads don't fit on the operator's laptop. A long parallel
+queue, a CPU-heavy build pipeline, or a memory-hungry indexing job all
+benefit from running on a beefy host (cloud VM, home server, office
+workstation) while the operator continues to use their laptop normally.
+
+Today, jackin' has no story for this. Operators either run jackin' over
+SSH (losing all of the console UX), set up a manual SSH-mounted workspace
+(losing the data-dir guarantees), or simply don't.
+
+multicode addresses this with `multicode-remote`: a small helper binary
+that runs the multicode TUI on the local laptop while the actual agents
+run on a remote machine, with bidirectional rsync of workspace state and
+SSH-relayed handler invocations (open links in the local browser, etc.).
+
+## Why It Matters
+
+- Real workloads — queue-driven fleets, CI-adjacent agent runs — push
+  past laptop resources fast.
+- The Kubernetes platform vision in the [roadmap
+  vision](/reference/roadmap/#vision) addresses this long-term, but is
+  far away. A simpler SSH-bridge sits naturally between local-only and
+  full Kubernetes.
+- It demonstrates that jackin's agent-class + workspace + queue model
+  is location-independent — exactly the kind of property a "general
+  tool" claim needs.
+
+This item is explicitly **deferred** until Phase 1–4 are stable, because
+remote operation only adds value once there's a meaningful workload to
+move off the laptop.
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [multicode-remote](https://github.com/graemerocher/multicode#multicode-remote)
+- Source — [`remote/src/main.rs`](https://github.com/yawkat/multicode/blob/main/remote/src/main.rs) (the `multicode-remote` binary entry point)
+- Source — [`remote/src/orchestration.rs`](https://github.com/yawkat/multicode/blob/main/remote/src/orchestration.rs) (SSE relay, file sync, symlink dereferencing)
+- Source — [`lib/src/remote_action.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/remote_action.rs) (handler-relay protocol — `RemoteActionRequest`)
+- Config — [`config.toml` `[remote]` block](https://github.com/yawkat/multicode/blob/main/config.toml) (sync intervals, sync-up/sync-bidi mounts, install command)
+
+`multicode-remote`:
+
+- Cross-compiled binary distributed via `make multicode-remote`.
+- Runs on the local laptop: `multicode-remote --ssh user@host config.toml`.
+- Establishes an SSH session to the remote multicode instance.
+- Rsync syncs workspace state bidirectionally on a configurable interval
+  (default 2 sec). Three sync modes: `sync-up` (one-way local → remote),
+  `sync-bidi` (bidirectional with exclusion patterns), and an explicit
+  install command for first-time remote setup.
+- Relays handler actions: when an agent emits a link the operator
+  clicks, the action fires on the *local* laptop (browser open, IDE
+  launch) even though the agent runs remote.
+- Synchronizes credentials (GitHub PAT, OpenCode auth) up to the remote
+  before agents need them.
+
+## Recommended Shape
+
+The fundamental architecture choice for jackin's version:
+
+**Option A — SSH + rsync**, like multicode-remote. Pros: simple, no new
+protocols, works through any SSH-accessible host. Cons: rsync polling
+adds latency, file-conflict resolution is rsync-shaped (which is fine
+but unsubtle), credential plumbing requires care.
+
+**Option B — Agent gRPC**, jackin' on the remote exposes a typed gRPC
+endpoint, the local UI is a thin client. Pros: low-latency, structured
+events (not file syncs), easier to extend. Cons: another protocol to
+maintain, harder to operate over restrictive networks.
+
+**Option C — Defer to Kubernetes**. Don't build SSH bridge; wait for
+the K8s platform support and let pod-attach be the remote story. Pros:
+one architecture for "remote", not two. Cons: years away; ignores the
+simpler "I have one home server" use case entirely.
+
+Recommendation: **Option A for V1**, designed so the eventual K8s story
+absorbs it without rewrite. Most jackin' state already lives in
+`~/.jackin/data/<container>/` — rsync of that tree over SSH is the
+natural fit.
+
+### Components
+
+```
+jackin-remote (local laptop)
+   └── ssh ──> jackin (remote host)
+       ├── runs agents in Docker as usual
+       └── exposes a small RPC endpoint (over SSH stdin/stdout) for:
+           - status events streamed back
+           - handler invocation requests forwarded back
+```
+
+### Config
+
+```toml
+# ~/.config/jackin/remote.toml (or section of operator config)
+
+[remote.dev-server]
+ssh = "user@dev-server.local"
+remote_jackin_path = "/usr/local/bin/jackin"
+sync_interval_seconds = 2
+
+[[remote.dev-server.sync_up]]
+local = "~/.config/jackin"
+remote = "~/.config/jackin"
+
+[[remote.dev-server.sync_bidi]]
+local = "~/dev/projects"
+remote = "~/dev/projects"
+exclude = ["target/", "node_modules/", ".jackin/"]
+
+[remote.dev-server.install]
+command = "curl -fsSL https://jackin.tailrocks.com/install.sh | bash"
+```
+
+### CLI
+
+```sh
+# Bring up the remote, sync config, run the local console attached to
+# the remote agent fleet:
+jackin --remote dev-server console
+
+# Run a one-off load against the remote:
+jackin --remote dev-server load the-architect
+
+# Sync stale state without launching anything:
+jackin --remote dev-server sync
+```
+
+### Handler relay
+
+When the operator clicks a link in the *local* console, the click fires
+on the *local* host (browser, IDE) — not on the remote. Implementation:
+the remote sends a structured `RemoteAction { kind: web|ide|diff,
+argument: url|path }` event over the SSH channel; the local
+`jackin-remote` decodes it and invokes the configured local handler.
+
+### Credentials
+
+The operator's local credential resolution
+([credential source pattern](/reference/roadmap/credential-source-pattern/))
+runs locally. Resolved credentials are passed to the remote *per
+invocation*, never persisted there. This matches multicode's posture
+and avoids leaving long-lived secrets on a shared host.
+
+## Scope (V1)
+
+- A `jackin-remote` binary, cross-compilable from the same repo.
+- SSH-based control + rsync-based state sync.
+- Per-host config under `[remote.<name>]`.
+- `jackin --remote <name> ...` flag at the top of every subcommand.
+- Local handler relay for `web`, `ide`, `diff`.
+- Local credential resolution; per-invocation push to remote.
+- Install command: one-time bootstrap of the remote host.
+- Console attaches to remote agents transparently.
+
+## Defer
+
+- Multi-remote orchestration ("dispatch this queue across three
+  hosts"). Single-remote in V1.
+- Audio/visual desktop redirection (ssh -Y). Out of scope.
+- Container migration between hosts. Out of scope.
+- Direct gRPC alternative (Option B). Defer; revisit if SSH-bridge
+  pain is real.
+- Mobile / web client. Out of scope.
+
+## Open Questions
+
+- **Sync of `~/.jackin/data/<container>/`.** Does the local copy mirror
+  the remote, or does only the remote keep state? Recommended: *only
+  the remote*. Local copy via rsync is a recovery aid, not a primary
+  copy. Avoids confusing "which side is authoritative" questions.
+- **Status bus over SSH.** [Agent runtime
+  status](/reference/roadmap/agent-runtime-status/) events need to
+  reach the local console. SSE-style stream over the SSH channel is
+  natural. Confirm latency is acceptable for a console redraw.
+- **Kubernetes overlap.** When the K8s platform vision lands, does
+  `jackin-remote` get deprecated, refactored, or absorbed? Recommended:
+  *design now so it can be a thin shim later* — most of the work
+  (handler relay, credential push, console attach) is reusable.
+- **Trust model.** A compromised remote can read everything jackin'
+  knows about. This is implicit in any remote-execution tool;
+  document it clearly. Recommended: *don't try to make remote-host
+  isolation a feature*; that's the wrong scope.
+
+## Related Files
+
+- New crate or workspace member (`jackin-remote/`).
+- <RepoFile path="src/cli/agent.rs" /> — `--remote` flag plumbing
+- New module — SSH bridge + rsync orchestration + handler relay
+- The handler-system module — local-side invocation paths
+- The credential-source module — per-invocation push
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Operator handler system](/reference/roadmap/operator-handler-system/) —
+  local handler invocation
+- [Credential source pattern](/reference/roadmap/credential-source-pattern/) —
+  local resolution → remote push
+- [Roadmap vision](/reference/roadmap/#vision) — the long-term K8s
+  platform direction this lives between

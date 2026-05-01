@@ -1,0 +1,131 @@
+---
+title: "Workspace Description Field"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 1, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+When an operator manages more than two or three saved workspaces, the
+workspace name and last-used agent are not enough to keep track of what each
+one is for. There's no place to attach a note like "preview branch for issue
+#412" or "isolated copy I'm using to bisect the regression in v0.42".
+
+multicode addresses this with a free-text description field that is shown in
+the overview table and inline-editable from the TUI (`e` keystroke). Operators
+treat it as a sticky reminder.
+
+## Why It Matters
+
+- jackin's `workspace list` and `workspace show` reveal mounts and agent
+  bindings but not *intent* — operators end up encoding intent in the
+  workspace *name*, which is awkward.
+- This is the smallest feature in the [Universal Orchestrator
+  Program](/reference/roadmap/multicode-inspired-features/) that demonstrably
+  improves day-to-day operator UX.
+- It plumbs through the same surfaces that several later items will reuse
+  (workspace config schema, console rendering, future TUI cell rendering),
+  so getting it right once pays forward.
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [Description](https://github.com/graemerocher/multicode#description)
+- Source — [`lib/src/services/workspace_archive.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/workspace_archive.rs) (description field is part of `PersistentWorkspaceSnapshot`)
+
+The field lives on `PersistentWorkspaceSnapshot.description`, persisted as a
+JSON-shaped per-workspace metadata file at
+`~/.multicode/workspaces/<key>.json`. The TUI exposes it through
+`EditDescription` mode: select a row, press `e`, type, `Enter` saves, `Esc`
+cancels. No markdown rendering — descriptions are plain text, displayed
+verbatim. There's no length limit enforced beyond what fits the table cell.
+
+## Recommended Shape
+
+A single optional string field on `WorkspaceConfig`, surfaced in the same
+three places jackin already surfaces other workspace metadata.
+
+### Config
+
+```toml
+[workspaces.jackin]
+workdir = "/workspace/jackin"
+description = "Issue #412 isolated repro branch"
+
+[[workspaces.jackin.mounts]]
+src = "~/projects/jackin"
+dst = "/workspace/jackin"
+isolation = "worktree"
+```
+
+`description` is optional; absent means no description (not empty string).
+
+### CLI
+
+```sh
+jackin workspace create my-ws --workdir /workspace/x \
+  --description "Issue #412 isolated repro branch"
+
+jackin workspace edit my-ws --description "..."
+jackin workspace edit my-ws --clear-description
+
+jackin workspace show my-ws  # renders description as a top-level field
+jackin workspace list        # renders a Description column (truncated)
+```
+
+The `--clear-description` flag matches the existing `--clear-default-agent`
+shape in <RepoFile path="src/cli/workspace.rs" />.
+
+### Console
+
+`workspace show` adds a Description row at the top of the panel. The
+console's workspace picker keeps the existing list shape but appends the
+description as a second line under each workspace name (truncated to one
+line; Esc-to-collapse if it ever overflows).
+
+## Scope (V1)
+
+- `description` field on `WorkspaceConfig`, optional string, no length cap
+  in storage (CLI/console truncate at render time).
+- `workspace create --description` and `workspace edit --description` /
+  `--clear-description`.
+- `workspace show` and `workspace list` render the field.
+- Console workspace picker shows the description as a one-line subtitle.
+- Roundtrips cleanly through TOML serialization (preserve operator
+  whitespace; do not collapse multi-line descriptions but render only the
+  first line in lists).
+
+## Defer
+
+- Markdown rendering. Descriptions are plain text.
+- Per-instance descriptions (the operator might want a different description
+  on `agent-smith` vs `the-architect` even when both reference the same
+  workspace). Out of scope; a workspace-level field covers the 95% case.
+- A separate description on agent class manifests
+  (`jackin.agent.toml [identity].description`). Useful and small; deserves
+  its own follow-up so it can be reviewed in isolation.
+
+## Open Questions
+
+- Should the field be a single string or an optional `[description]` block
+  with `text` + `tags`? The block form is over-engineered for V1; recommend
+  *plain string*.
+- How does the field interact with [worktree
+  isolation](/reference/roadmap/per-mount-isolation/)'s preserved-state
+  notices? When jackin' prints "preserved isolated worktree for X", it
+  should include the description if present.
+
+## Related Files
+
+- <RepoFile path="src/workspace/mod.rs" /> — `WorkspaceConfig` gains the field
+- <RepoFile path="src/cli/workspace.rs" /> — CLI flag plumbing
+- <RepoFile path="src/config/workspaces.rs" /> — `workspace show` renderer
+- <RepoFile path="src/console/manager/state.rs" /> — workspace picker
+  rendering
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Custom operator tools](/reference/roadmap/custom-operator-tools/) — also
+  needs a stable workspace-list rendering surface

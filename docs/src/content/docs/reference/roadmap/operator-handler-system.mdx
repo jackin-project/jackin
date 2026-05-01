@@ -1,0 +1,166 @@
+---
+title: "Operator Handler System (IDE / diff / browser launchers)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 1, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+When an operator wants to act on something the agent produced — review a
+diff, open the workspace in an IDE, follow a link the agent printed — they
+have to context-switch to a separate shell, copy the path, run the right
+launcher manually. Every adjacent tool in this space (multicode, Conductor,
+Docker Sandboxes) ships an external-launcher abstraction precisely because
+this friction kills the "left it running overnight" workflow.
+
+jackin' has no such abstraction today, so each future feature that needs to
+launch an external tool would invent its own.
+
+## Why It Matters
+
+- The console (today) and any future TUI need to know how to "open" a path,
+  URL, or repo without hardcoding `open` / `xdg-open`.
+- Multiple downstream items in this program need it: [GitHub link
+  tracking](/reference/roadmap/github-link-tracking/) opens issue/PR URLs,
+  [agent tag protocol](/reference/roadmap/agent-tag-protocol/) opens repo
+  paths, [custom operator tools](/reference/roadmap/custom-operator-tools/)
+  expand exec templates that eventually want the same launcher resolution.
+- Designing the abstraction once means cross-platform handling (`open` on
+  macOS, `xdg-open` on Linux, OS-native file URLs) lives in one place.
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [Editor Tool](https://github.com/graemerocher/multicode#editor-tool) (covers the `[compare]` block for IDE selection)
+- Config — [`config.toml` `[handler]` block](https://github.com/yawkat/multicode/blob/main/config.toml)
+
+```toml
+[handler]
+review = "/usr/bin/smerge ."          # chdir-mode launcher (no {} placeholder)
+review-pty = false                     # allocate a PTY for the launcher?
+web = "/usr/bin/firefox {}"            # template-mode launcher (single {} required)
+```
+
+multicode also exposes a `[compare]` block (in the graemerocher fork) that
+specifies the IDE for "open in editor":
+
+```toml
+[compare]
+tool = "vscode"   # or "intellij"
+command = "..."   # optional override
+```
+
+The TUI keystrokes `r` (review = open diff viewer for repo) and `e` (open in
+IDE) call the resolved handler. Both blocks are loaded once at startup; no
+hot-reload.
+
+## Recommended Shape
+
+One unified `[handler]` block. The `[compare]`-style IDE selector folds in
+as another handler kind, not a separate block.
+
+### Config
+
+```toml
+[handler.diff]
+# Diff viewer for a repo path. Invoked chdir-mode by default (cwd = arg).
+command = "/opt/homebrew/bin/smerge"
+mode = "chdir"
+
+[handler.web]
+# URL launcher.
+command = "open {}"   # macOS default; Linux default would be `xdg-open {}`
+mode = "template"
+
+[handler.ide]
+# IDE on a workspace path. Either a tool name (resolved via well-known list)
+# or a full command.
+tool = "vscode"
+# command = "code -n -g {}"     # optional explicit override
+```
+
+Resolution rules:
+
+- `diff` defaults to `git diff` (in-terminal) if no command is configured.
+- `web` defaults to `xdg-open {}` on Linux, `open {}` on macOS, none on
+  unsupported platforms (handler returns "no web handler configured").
+- `ide.tool` accepts at least `vscode`, `intellij`, `zed`, `cursor`, plus
+  `none` to disable. The well-known table is small and operator-extensible
+  via `command = "..."`.
+- `mode = "chdir"` means the handler runs with cwd set to the argument and
+  no argument substitution; `mode = "template"` requires a single `{}` and
+  substitutes verbatim.
+
+### CLI
+
+```sh
+jackin open <selector>           # IDE handler
+jackin diff <selector>           # diff handler (in-terminal `git diff` by default)
+jackin web <url>                 # web handler — explicit URL form
+```
+
+Subcommands accept the same selector grammar as `jackin load`. They resolve
+the workspace's primary mount path (or, if isolated, the materialized
+worktree path under
+`<data_dir>/jackin-<container>/git/worktree/repo/<dst-tree>/<container>/`)
+before invoking the handler.
+
+### Console
+
+Single keystroke per handler when a workspace row is selected: `o` (open in
+IDE), `d` (diff), `w` (web — only meaningful when a link is selected).
+
+## Scope (V1)
+
+- `[handler.diff]`, `[handler.web]`, `[handler.ide]` config blocks at the
+  operator-config level.
+- Cross-platform defaults baked in for `web` and a sensible default for
+  `diff` (`git diff` in terminal).
+- IDE well-known table covering the four named editors above.
+- CLI subcommands `jackin open`, `jackin diff`, `jackin web`.
+- Console keybindings for diff and IDE.
+- For worktree-isolated mounts, default to opening the materialized
+  worktree; provide a flag (CLI) and Shift-modifier (console) to open the
+  host repo path instead.
+
+## Defer
+
+- Per-workspace handler overrides. Operator-config-level only in V1; if a
+  use case surfaces (e.g. one workspace wants its own IDE), revisit.
+- In-console diff renderer. multicode uses an external viewer; jackin
+  console gets `git diff` in a paged view, that's enough.
+- PTY allocation for the diff handler (`review-pty` in multicode). Defer
+  until someone reports an issue with a TTY-aware diff tool.
+
+## Open Questions
+
+- Where does the operator-config file live for handlers? Options: extend
+  the existing operator config under `[handler]`, or a new
+  `~/.config/jackin/handlers.toml`. Recommended default: *extend operator
+  config* — single-file ergonomics matter.
+- Should `jackin diff` default to in-terminal `git diff` (current
+  recommendation) or refuse to run without a configured handler? Recommended
+  default: *in-terminal default*; explicit configuration is a polish, not a
+  prerequisite.
+- For worktree-isolated mounts, should `jackin open` default to the
+  materialized worktree or the host repo? See default above; this might
+  flip after operators try V1.
+
+## Related Files
+
+- New module (e.g. `src/handler.rs`) — config + resolution + execution
+- <RepoFile path="src/cli/agent.rs" /> — adds `jackin open` / `jackin diff`
+  / `jackin web` subcommands
+- <RepoFile path="src/console/manager/state.rs" /> — keybindings
+- <RepoFile path="src/workspace/resolve.rs" /> — primary-mount resolution
+  for the handler argument
+
+## See Also
+
+- [GitHub link tracking](/reference/roadmap/github-link-tracking/) —
+  consumes `web` handler
+- [Agent tag protocol](/reference/roadmap/agent-tag-protocol/) — emitted
+  `<jackin:repo>` tags resolve through `diff` and `ide`
+- [Custom operator tools](/reference/roadmap/custom-operator-tools/) — also
+  uses the handler resolution machinery

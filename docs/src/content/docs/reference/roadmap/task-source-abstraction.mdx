@@ -1,0 +1,210 @@
+---
+title: "Task Source Abstraction"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 4, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+The autonomous-queue idea (next leaf) needs *something to dispatch*. Hardcoding
+"GitHub issues" as the only source — multicode's choice — works for that
+project's Micronaut workflow, but locks jackin' into a single integration. The
+cost of designing a small abstraction up front is low; the cost of retrofitting
+one is high.
+
+The right move is to define a `TaskSource` trait, ship GitHub issues as the
+first concrete implementation, and ensure the queue, console, and persistence
+all see tasks through the trait.
+
+## Why It Matters
+
+- jackin's positioning is "one tool for everyone" — a queue that only ingests
+  GitHub issues is not that tool.
+- Internal teams that use Linear, JIRA, plain text files, or a stdin pipe of
+  prompts are exactly the population the program is targeting. They should be
+  able to plug in without forking jackin'.
+- The trait is small. Defining it now and implementing GitHub against it is
+  perhaps 10% more work than implementing GitHub directly, and it preserves
+  the design optionality for free.
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [Autonomous queueing](https://github.com/graemerocher/multicode#autonomous-queueing) (closest — describes the GitHub-issue scanner that this leaf generalizes)
+- *No abstraction in multicode* — this leaf proposes a `TaskSource` trait jackin'-side; multicode hardcodes GitHub. Source code: [`lib/src/manager.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/manager.rs) is where their queue logic lives.
+
+multicode's autonomous-issue-scanning has no abstraction — it talks directly
+to GitHub via Octocrab and turns issues into queued workspaces. Their
+config:
+
+```toml
+[autonomous]
+max-parallel-issues = 5
+issue-scan-delay-seconds = 900
+scan-on-startup = true
+```
+
+Each workspace can be assigned to a GitHub repo; the scanner finds open
+issues and queues them.
+
+What's right: per-workspace assignment, scan cadence, parallelism cap.
+What's wrong for jackin': "issues" as the universal noun.
+
+## Recommended Shape
+
+### Trait
+
+```rust
+pub trait TaskSource {
+    /// Stable identifier — written into queue records, used for dedup.
+    fn id(&self) -> &str;
+
+    /// Human-readable description for the console / logs.
+    fn label(&self) -> &str;
+
+    /// Discover newly-available tasks. Idempotent: returning a task that
+    /// the queue has already claimed is fine — the queue de-dupes by
+    /// `Task.id`.
+    async fn poll(&mut self) -> Result<Vec<Task>, TaskSourceError>;
+
+    /// Optional: report task completion back to the source (post a PR
+    /// comment, close the issue, etc.). Default: no-op.
+    async fn report(&mut self, task: &Task, outcome: &TaskOutcome)
+        -> Result<(), TaskSourceError> { Ok(()) }
+}
+
+pub struct Task {
+    pub id: String,                          // stable across polls (e.g. "github:owner/repo#412")
+    pub source: String,                      // source.id()
+    pub kind: TaskKind,                      // Issue | Prompt | File | Custom
+    pub title: String,
+    pub body: String,                        // markdown / freeform input the agent sees
+    pub links: Vec<String>,                  // emitted as <jackin:issue> / <jackin:link>
+    pub labels: Vec<String>,                 // for filtering
+    pub created_at: SystemTime,
+}
+```
+
+### V1 source: GitHub issues
+
+```toml
+[task_sources.fix-issues]
+type = "github_issues"
+repo = "example-org/example"
+labels = ["bug", "good-first-issue"]
+exclude_labels = ["wontfix"]
+state = "open"
+limit_per_poll = 25
+```
+
+GitHub source uses the same Octocrab client and credential resolution as
+[GitHub link tracking](/reference/roadmap/github-link-tracking/). Tasks
+include the issue URL in `links` so the dispatched agent automatically
+sees `<jackin:issue>...</jackin:issue>` (the [tag
+protocol](/reference/roadmap/agent-tag-protocol/) seam emits one for the
+operator's surface as well).
+
+### V1 source: file-glob
+
+```toml
+[task_sources.review-spec]
+type = "file_glob"
+pattern = "specs/*.md"
+poll_interval_seconds = 60
+```
+
+For each matching file, generate a Task whose body is the file content.
+Useful for "dispatch an agent per spec doc". Cheap to implement;
+demonstrates the trait isn't GitHub-only.
+
+### V1 source: stdin-pipe (CLI-only)
+
+```sh
+echo -e "Implement function X\n---\nImplement function Y" | jackin queue feed <workspace>
+```
+
+`---` separates tasks. Single-shot — for scripting and one-off batches.
+Doesn't appear in TOML.
+
+### Persistence
+
+Sources have config in TOML; the queue's view of *tasks* lives in the
+[persistent storage layer](/reference/roadmap/persistent-storage-layer/),
+in a `tasks` table:
+
+```sql
+CREATE TABLE tasks (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    links TEXT,                              -- JSON array
+    labels TEXT,                             -- JSON array
+    discovered_at INTEGER NOT NULL,
+    state TEXT NOT NULL,                     -- 'queued' | 'in_progress' | 'completed' | 'failed'
+    instance_name TEXT,                      -- which jackin instance is/was working it
+    completed_at INTEGER,
+    outcome TEXT
+);
+```
+
+## Scope (V1)
+
+- `TaskSource` trait + `Task` / `TaskOutcome` types.
+- Three concrete implementations: `github_issues`, `file_glob`,
+  `stdin_pipe` (CLI-only).
+- `[task_sources.<name>]` TOML block at operator-config level.
+- Source assignment is per-workspace (`[workspaces.X.task_sources]`
+  array of source names), matching multicode's "workspace assigned to
+  a repo" model.
+- `tasks` schema lives in the persistent storage module.
+- Source poll cadence per source (`poll_interval_seconds` field on the
+  config block).
+
+## Defer
+
+- Linear / JIRA / Slack / Asana sources. Document the trait so
+  third-party crates can implement them; keep jackin' core lean.
+- Multi-source queues with priority. V1: one source per workspace, FIFO
+  within a source.
+- Source `report()` callbacks. The trait has the seam; no V1
+  implementation calls it.
+- Source config hot-reload. Restart the operator's console session.
+
+## Open Questions
+
+- **Source authentication.** GitHub PAT comes from the existing
+  credential pattern; what about a hypothetical JIRA source's API
+  token? Recommended: *each source declares its own credential needs
+  via the [credential source pattern](/reference/roadmap/credential-source-pattern/)*.
+- **Where does a third-party source live?** A Cargo workspace member,
+  a feature flag, a separately-published crate? Recommended: *V1 ships
+  GitHub/file/stdin in tree*; defer the third-party-source story until
+  someone asks.
+- **Task identity stability.** `github:owner/repo#412` is stable; what
+  about `file_glob:specs/foo.md` if the file is renamed? Recommended:
+  *file path is the stable ID*, rename = new task. Operators can
+  re-queue if needed.
+
+## Related Files
+
+- New module (e.g. `src/queue/task_source.rs`) —
+  trait + V1 implementations
+- The persistent-storage module — `tasks` schema
+- <RepoFile path="src/config/mod.rs" /> — `[task_sources]` parsing
+- <RepoFile path="src/workspace/mod.rs" /> — workspace's task_sources
+  field
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) —
+  primary consumer
+- [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) —
+  task storage
+- [Credential source pattern](/reference/roadmap/credential-source-pattern/) —
+  per-source credential resolution
+- [Agent tag protocol](/reference/roadmap/agent-tag-protocol/) — tasks
+  include emitted-link metadata

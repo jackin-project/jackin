@@ -64,6 +64,10 @@ The current implementation is Claude-specific end-to-end (manifest schema, deriv
 
 - **[Per-mount isolation for parallel agents](/reference/roadmap/per-mount-isolation/)** — declarative `shared | worktree` mode per mount (clone mode planned for V1.1) so parallel agents stop sharing one working tree
 
+### Operator surface and fleet operations
+
+- **[Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)** — phased program of 18 leaf items closing the gap between jackin's primitives and the operator surface that adjacent tools (notably [`multicode`](https://github.com/yawkat/multicode)) ship today. Covers live agent observability, per-instance persistent storage, declarative resource limits, autonomous task queue, remote operation, and skill mounts — the missing pieces that prevent jackin' from being the canonical orchestrator teams compose on instead of building their own.
+
 <Aside type="tip">
 Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap → Open items** and **Roadmap → Resolved**. Each page is a self-contained proposal with problem statement, options, and related files.
 </Aside>

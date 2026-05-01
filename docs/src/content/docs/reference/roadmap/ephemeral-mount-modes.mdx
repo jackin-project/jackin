@@ -1,0 +1,238 @@
+---
+title: "Ephemeral Mount Modes (`tmpfs`, `ephemeral`)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 1, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+jackin's [per-mount isolation](/reference/roadmap/per-mount-isolation/)
+vocabulary is `shared | worktree` (V1), with `clone` planned for V1.1.
+These modes describe **git semantics** for the mounted path. They don't
+cover a different axis the operator also cares about: **storage kind**.
+
+Specifically, two storage shapes have no declarative way to be expressed
+today:
+
+- A path the agent can read and write, but whose contents should NOT
+  appear on the host filesystem and SHOULD reset between launches.
+  (Examples: `~/.gradle/daemon`, an agent's `/var/tmp`, an OpenCode
+  session-state directory that should be per-instance.)
+- A path that lives in tmpfs (memory-backed) for performance or for
+  guaranteed teardown when the container exits. (Examples: `/tmp`, a
+  temporary `~/.ssh` shadow during a rebase script.)
+
+Today an operator can only achieve the first by writing a Docker volume
+into a `--mount` arg and managing its lifecycle by hand, and the second
+by passing `--tmpfs` ad-hoc. Neither lives in `jackin.agent.toml` or the
+workspace config.
+
+multicode confirms this is a real, frequently-used distinction. Their
+example `config.toml` declares 7 paths under `isolated` and 1 under
+`tmpfs` — both essential to keeping concurrent agents from corrupting
+each other's caches and to keeping host state clean.
+
+## Why It Matters
+
+- **Parallel agents share host caches today.** Two agents both running
+  `gradle build` race on `~/.gradle/daemon` because jackin' has no way
+  to declare "this directory is per-instance, not host-shared".
+- **Toolchain hygiene matters at scale.** With the [autonomous task
+  queue](/reference/roadmap/autonomous-task-queue/) in place, an agent
+  fleet runs hundreds of builds a day. Each one should start with a
+  clean per-instance scratch space; today, they don't.
+- **`/tmp` should default to tmpfs.** Many agent classes bake
+  configuration assuming `/tmp` is fast and ephemeral. jackin's default
+  `/tmp` is the container's own filesystem — fine for correctness, but
+  larger and slower than necessary.
+- This is the **only mount-mode gap** found in the verification pass
+  comparing jackin' against multicode's `[isolation]` block. Closing it
+  brings the mount surface to parity.
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [Isolation](https://github.com/graemerocher/multicode#isolation) (mounting policy and Apple-container subsections describe per-workspace isolation rules)
+- Config — [`config.toml` `[isolation]` block](https://github.com/yawkat/multicode/blob/main/config.toml) — the `isolated = [...]` and `tmpfs = [...]` lists in the example
+
+```toml
+[isolation]
+isolated = [
+  "~/.local/share/opencode",
+  "/var/tmp",
+  "~/.gradle/daemon",
+  "~/.gradle/.tmp",
+  "~/.gradle/kotlin-profile",
+  "~/.local/share/kotlin",
+  "~/.local/state/opencode",
+]
+tmpfs = [
+  "/tmp",
+]
+```
+
+Semantics:
+
+- **`isolated`**: the path inside the workspace is mapped to a
+  per-workspace dedicated mount (or tmpfs overlay). It's writable while
+  the workspace runs but **not visible on the host** and **wiped per
+  workspace start**. Implementation: `bwrap --tmpfs <path>` overlays or
+  a dedicated mount; the path doesn't share with host.
+- **`tmpfs`**: explicit tmpfs mount. Memory-backed, ephemeral, gone on
+  exit. Implementation: `bwrap --tmpfs <path>`.
+
+The two are subtly different: `isolated` may be backed by disk for
+larger working sets (build artifacts), while `tmpfs` is always memory.
+multicode lets the operator pick.
+
+## Recommended Shape
+
+Extend the [per-mount isolation](/reference/roadmap/per-mount-isolation/)
+enum vocabulary by **two more modes**, plus extend the workspace mount
+schema so they don't all need a host `src`.
+
+### Schema extension
+
+The existing per-mount isolation schema requires a host `src`:
+
+```toml
+[[workspaces.X.mounts]]
+src = "~/projects/x"
+dst = "/workspace/x"
+isolation = "worktree"
+```
+
+Add two modes that don't need `src`:
+
+```toml
+[[workspaces.X.mounts]]
+dst = "/tmp"
+isolation = "tmpfs"
+size = "512MiB"          # optional; Docker default 64MiB is small
+
+[[workspaces.X.mounts]]
+dst = "/home/agent/.gradle/daemon"
+isolation = "ephemeral"
+# 'ephemeral' = per-instance Docker volume, persists across container
+# restarts of the same instance, deleted on `purge`. Not bind-mounted
+# to host.
+```
+
+V1 enum vocabulary becomes: `shared | worktree | tmpfs | ephemeral`
+(plus `clone` when V1.1 ships). Validation:
+
+- `tmpfs` and `ephemeral` reject `src` (no host source).
+- `tmpfs` and `ephemeral` reject `readonly` (writability is their
+  whole point; if you want read-only, you want `shared` with
+  `readonly = true`).
+- `tmpfs` accepts an optional `size` field with the same parsing rules
+  as [declarative resource limits](/reference/roadmap/declarative-resource-limits/).
+
+### Backend translation
+
+- **Docker (today)**: `tmpfs` → `--tmpfs <dst>:size=<n>,mode=1777`.
+  `ephemeral` → `--mount type=volume,source=jackin-<container>-<slug>,target=<dst>`,
+  with the volume created on first `load` and deleted by `purge` (the
+  per-instance cleanup helper already enumerates Docker volumes by
+  label; add a label and reuse it).
+- **Apple container** (when [selectable
+  backends](/reference/roadmap/selectable-sandbox-backends/) ships):
+  use the equivalent allocation primitives.
+- **bwrap** (if it ever lands): `--tmpfs` for both modes; the
+  ephemeral case is bwrap's natural shape.
+
+### Agent class declarations
+
+Agent classes can declare ephemeral defaults in `jackin.agent.toml`:
+
+```toml
+[[runtime.mounts]]
+dst = "/home/agent/.gradle/daemon"
+isolation = "ephemeral"
+
+[[runtime.mounts]]
+dst = "/tmp"
+isolation = "tmpfs"
+size = "1GiB"
+```
+
+These are agent-class-level defaults that workspaces inherit unless
+overridden by a workspace mount on the same `dst`. Useful so a Java
+agent class can declare its Gradle hygiene once and every workspace
+gets the right behavior.
+
+## Scope (V1)
+
+- Extend per-mount-isolation enum to `shared | worktree | tmpfs |
+  ephemeral`.
+- TOML schema extension for `dst`-only mounts (no `src`).
+- Optional `size` field on `tmpfs`.
+- Docker translator for both new modes.
+- Per-instance volume label scheme (`jackin.instance=<container>`,
+  `jackin.dst=<slug>`) so cleanup can enumerate.
+- Agent-class-level mount defaults via `[[runtime.mounts]]` in
+  `jackin.agent.toml`; workspace mounts override on `dst`.
+- `purge` cleans up Docker volumes labeled with the instance name.
+- Docs update for [per-mount isolation](/reference/roadmap/per-mount-isolation/)
+  and the architecture reference.
+
+## Defer
+
+- `tmpfs` size enforcement beyond Docker's default behavior. Use
+  Docker's, document the limit.
+- `ephemeral` mode with **persistent** behavior across `purge`
+  (operator-managed volume name). Out of V1; if needed, add a fifth
+  mode `volume = "<name>"` that doesn't auto-clean.
+- File ownership / mode flags on `tmpfs` (`mode = "0700"`). Defer
+  until a use case surfaces.
+- Cross-instance shared ephemeral volumes ("all my Java agents share
+  one Gradle daemon dir"). Out of V1; the use case is handled by
+  shared-cache mounts under
+  [shared cache pattern](/reference/roadmap/per-mount-isolation/) (a
+  shared `~/.gradle` mount overlaid on an isolated source tree).
+
+## Open Questions
+
+- **Naming.** `ephemeral` is descriptive but not great. Alternatives:
+  `instance` (it's per-instance), `volume` (it's a Docker volume),
+  `private` (it's not host-visible). Recommended: *`ephemeral`* —
+  matches the operator's mental model ("this is gone when I purge").
+- **Default `tmpfs` for `/tmp`.** Should every agent class get
+  `/tmp` as tmpfs by default, or stay opt-in? Recommended: *opt-in*
+  for V1 — defaults can change downstream after seeing real usage.
+- **Interaction with [worktree
+  isolation](/reference/roadmap/per-mount-isolation/).** A workspace
+  with a worktree-isolated source mount and a sibling ephemeral
+  mount should compose cleanly (parent-mount-before-child rule).
+  Confirm the existing collapse/ordering logic handles a no-`src`
+  child mount correctly.
+- **Is this its own leaf or an extension to per-mount-isolation?**
+  This leaf treats it as a Phase 1 standalone item because it ships
+  independently and the design doesn't require any per-mount-
+  isolation refactor. The per-mount-isolation doc gets a note
+  pointing here once this is implemented.
+
+## Related Files
+
+- <RepoFile path="src/workspace/mod.rs" /> — `MountConfig`,
+  `MountIsolation` enum extension
+- <RepoFile path="src/workspace/mounts.rs" /> — parser for the new
+  modes; rejects `src` for `tmpfs`/`ephemeral`
+- <RepoFile path="src/runtime/launch.rs" /> — Docker arg construction
+- <RepoFile path="src/runtime/cleanup.rs" /> — volume cleanup on
+  `purge`
+- <RepoFile path="src/manifest/mod.rs" /> — `[[runtime.mounts]]`
+  agent-class defaults
+- <RepoFile path="src/cli/workspace.rs" /> — `--mount-isolation tmpfs`
+  / `ephemeral` in workspace edit/create
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Per-mount isolation](/reference/roadmap/per-mount-isolation/) —
+  the existing modes; this leaf extends the enum vocabulary
+- [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) —
+  cross-backend translation home
+- [Declarative resource limits](/reference/roadmap/declarative-resource-limits/) —
+  shares the size-parsing helper

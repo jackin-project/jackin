@@ -1,0 +1,207 @@
+---
+title: "Token & Cost Telemetry"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 3, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+jackin' has no idea how much an agent has cost the operator. Token usage,
+cache reads/writes, dollar cost — all of it is invisible. For a developer
+running one Claude session this is fine; for a team running several
+parallel agents on different projects, it's expensive ignorance:
+
+- The operator can't tell which workspace burned 10× more tokens than the
+  others.
+- The autonomous queue (Phase 4) can't enforce a per-task or per-day
+  budget.
+- The cost model can't be optimized — operators don't see when prompt
+  caching is saving them money vs. when it isn't.
+
+multicode tracks this per-workspace and renders it in their TUI. The
+telemetry primitives are simple; the value is high.
+
+## Why It Matters
+
+- It's the simplest cost-awareness primitive that doesn't require a
+  vendor-specific billing integration.
+- It makes [declarative resource
+  limits](/reference/roadmap/declarative-resource-limits/) feel
+  finished — operators see RAM/CPU usage, but cost is the dimension they
+  most care about for AI agents.
+- It enables future budget gates ("don't queue another task if this
+  workspace exceeded $X today") without those gates having to reinvent
+  the underlying tracking.
+
+## Inspiration in multicode
+
+**Sources**:
+- No dedicated README section (implementation-only feature)
+- Source — [`lib/src/services/usage_aggregation_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/usage_aggregation_service.rs) (token + cost aggregation)
+- Source — [`lib/src/services/resource_usage_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/resource_usage_service.rs) (CPU + RAM + OOM sampling)
+
+multicode's `usage_aggregation_service` (see [`lib/src/services/usage_aggregation_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/usage_aggregation_service.rs))
+parses the OpenCode message history, sums input/output
+tokens per session, multiplies by a synthetic per-model cost table, and
+exposes:
+
+- `usage_total_tokens: u64`
+- `usage_total_cost: f64`
+- `usage_cpu_percent: u16` (CPU)
+- `usage_ram_bytes: u64` (RAM)
+- `oom_kill_count: u64`
+
+These live on the workspace snapshot (transient — lost across TUI
+restarts). The TUI renders cost and tokens as columns in the workspace
+table.
+
+The cost table is hardcoded per model. Re-using their per-1000-token
+prices and approach is fine; the more interesting work is making
+jackin's pricing pluggable across runtimes.
+
+## Recommended Shape
+
+A small **usage adapter** per runtime, parallel to (and consuming the
+same input stream as) the
+[agent runtime status](/reference/roadmap/agent-runtime-status/) and
+[tag protocol](/reference/roadmap/agent-tag-protocol/) parsers. Output
+samples land in the
+[persistent storage layer](/reference/roadmap/persistent-storage-layer/)'s
+`usage_samples` table.
+
+### Sample event
+
+```rust
+pub struct UsageSample {
+    pub at: SystemTime,
+    pub token_input: u64,
+    pub token_output: u64,
+    pub token_cache_read: u64,
+    pub token_cache_write: u64,
+    pub model: String,                  // 'claude-opus-4-7', 'gpt-5-codex', etc.
+    pub cost_usd_micros: i64,           // computed from a model→price table
+}
+```
+
+`cost_usd_micros` is integer to avoid floating-point summation drift
+across thousands of samples. Renderers divide by 1e6 for display.
+
+### Per-runtime adapters
+
+- **Claude.** Parse the agent's stream-json transcript or the operator-
+  visible Claude billing line; both expose token counts. The adapter
+  emits a `UsageSample` per assistant message with token data.
+- **Codex.** Codex's app-server emits token usage events; map directly.
+- **Amp.** Amp's thread API includes token counts; map.
+
+Each adapter reads the runtime's structured output (same input stream
+as the status adapter) and emits samples. The adapter knows its
+runtime; the consumer doesn't.
+
+### Pricing table
+
+```toml
+# ~/.config/jackin/pricing.toml (or section of operator config)
+
+[pricing.models."claude-opus-4-7"]
+input_per_million = 15.00
+output_per_million = 75.00
+cache_read_per_million = 1.50
+cache_write_per_million = 18.75
+
+[pricing.models."gpt-5-codex"]
+input_per_million = 5.00
+output_per_million = 15.00
+```
+
+Operator-overridable; jackin' ships a default table for current models.
+Stale prices are a documentation issue, not a runtime issue — the
+table is just a multiplier.
+
+When a sample arrives for a model not in the table, jackin' records
+the tokens, leaves cost as null, and prints a one-line warning at next
+console open ("no pricing for model X — tokens tracked but cost unknown").
+
+### Console rendering
+
+The per-agent table (when [console resource
+panel](/reference/roadmap/console-resource-panel/) is open) gains a
+"Cost (today)" column showing the running cost since 00:00 local time.
+A second `Tokens (1h)` column may surface the rolling-1-hour rate;
+defer if cell width gets tight.
+
+A `jackin usage <selector>` CLI command dumps a structured summary
+for scripting:
+
+```sh
+$ jackin usage the-architect --json
+{
+  "instance": "jackin-the-architect",
+  "today_cost_usd": 4.12,
+  "today_tokens": { "input": 124000, "output": 38500, ... },
+  "lifetime_cost_usd": 67.40
+}
+```
+
+## Scope (V1)
+
+- Per-runtime usage adapter consuming the runtime's structured output
+  stream.
+- `UsageSample` events appended to the storage layer's `usage_samples`
+  table.
+- Pricing table with operator override; ship sensible defaults.
+- Console "Cost (today)" column when the resource panel is open.
+- `jackin usage <selector>` CLI with `--json` and human-readable
+  formatting.
+- Cost computed at sample time and stored, not recomputed on render —
+  preserves history when prices change.
+
+## Defer
+
+- Budget gating ("kill the agent or refuse queue dispatch when daily
+  cost exceeds $X"). Useful but waits — it requires the queue to exist
+  first.
+- Multi-currency. USD only in V1; the internal representation is
+  micros-of-USD, conversion is a render-time concern.
+- Org-level aggregation across operators. Out of scope.
+- Token-savings reporting from prompt caching. Tracked as a column;
+  not separately summarized in V1.
+- Per-tool-call cost attribution (which tool call cost the most).
+  Defer; needs richer event extraction than V1's per-message sampling.
+
+## Open Questions
+
+- **What's the canonical input for the Claude usage adapter?** Claude
+  Code's stream-json transcript exposes tokens per message; the
+  question is whether jackin' attaches as a sidecar consumer or
+  intercepts the runtime's stdout. The latter risks interfering with
+  the operator's own view of the agent. Recommended default: *stream-
+  json sidecar*, gated behind the same opt-in as the status adapter.
+- **Default pricing table source.** Hand-maintained in this repo, or
+  fetched from an Anthropic/OpenAI-published source at build time?
+  Recommended: *hand-maintained for V1*; revisit if it stales out fast.
+- **Daily cost reset boundary.** Local midnight, UTC midnight, or
+  rolling 24-hour? Recommended: *local midnight* for the "today"
+  column; CLI exposes any window.
+
+## Related Files
+
+- New module (e.g. `src/runtime/usage.rs`) — adapter
+  trait + sampler
+- The persistent-storage module — owns `usage_samples` schema
+- <RepoFile path="src/cli/agent.rs" /> — `jackin usage` subcommand
+- <RepoFile path="src/console/manager/state.rs" /> — column rendering
+- New config block — `[pricing.models]`
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) —
+  required (sample storage)
+- [Agent runtime status](/reference/roadmap/agent-runtime-status/) —
+  parallel consumer of the same input stream
+- [Console resource panel](/reference/roadmap/console-resource-panel/) —
+  rendering home
+- [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) —
+  future budget-gating consumer

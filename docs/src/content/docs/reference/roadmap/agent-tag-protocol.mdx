@@ -1,0 +1,181 @@
+---
+title: "Agent Tag Protocol (`<jackin:*>` operator-surface markers)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 2, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+Agents produce useful machine-readable signals during their work — "I'm
+investigating issue #412", "I just opened PR #520", "the repo I'm editing is
+at /workspace/jackin". Today jackin' has no way to *capture* these signals;
+the operator either reads them in the agent's prose output or doesn't see
+them at all. As a result, jackin's UI cannot show live PR status, can't link
+the active workspace to its issue, and can't surface the agent's repo-of-
+record without scraping its stdout.
+
+multicode demonstrates that a tiny opt-in protocol — XML-like tags emitted
+by the agent and parsed by the orchestrator — is sufficient to turn the
+agent into an observable workflow node.
+
+## Why It Matters
+
+- It's the cheapest way to make the operator console *informative* without
+  adding agent-side complexity. Agents emit one line of pseudo-XML; jackin
+  parses, indexes, and renders.
+- It enables the [GitHub link
+  tracking](/reference/roadmap/github-link-tracking/) feature — without a
+  way for the agent to declare "the issue I'm working" the live-status
+  cache has no input.
+- It is **forever** once published. Choosing the namespace and vocabulary
+  carefully now is cheaper than re-doing it later.
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [Git / GitHub integration](https://github.com/graemerocher/multicode#git--github-integration) (documents the `<multicode:*>` tag emission protocol from the operator's perspective)
+- Skills — [`workspace-skills/machine-readable-issue/SKILL.md`](https://github.com/yawkat/multicode/blob/main/workspace-skills/machine-readable-issue/SKILL.md), [`machine-readable-pr/SKILL.md`](https://github.com/yawkat/multicode/blob/main/workspace-skills/machine-readable-pr/SKILL.md), [`machine-readable-clone/SKILL.md`](https://github.com/yawkat/multicode/blob/main/workspace-skills/machine-readable-clone/SKILL.md) (the skills that instruct agents to emit tags)
+
+```text
+<multicode:issue>https://github.com/example-org/example/issues/12345</multicode:issue>
+<multicode:pr>https://github.com/example-org/example/pull/520</multicode:pr>
+<multicode:repo>/workspace/example</multicode:repo>
+```
+
+Skill markdown files (under `workspace-skills/`) instruct the agent to emit
+these markers when investigating an issue, opening a PR, or working on a
+repo. The TUI parser:
+
+1. Reads the agent's transcript history (SSE events for OpenCode).
+2. Extracts every `<multicode:KIND>VALUE</multicode:KIND>` match into the
+   workspace's `agent_provided` snapshot.
+3. Drives icons + GitHub status polling off the captured links.
+
+Important properties:
+
+- **Skill-driven**, not entrypoint-driven. The runtime doesn't enforce
+  emission; agent classes opt in via the skill the operator includes.
+- **Idempotent**. Re-emitting the same tag is a no-op (deduped by value).
+- **Optional**. Agents that don't emit tags work fine; the UI degrades.
+
+## Recommended Shape
+
+A jackin'-namespaced version with a small core vocabulary, an extension
+point for future kinds, and explicit multi-vendor compatibility (jackin'
+honors `<multicode:*>` too, so an agent class designed for either tool
+keeps working).
+
+### Vocabulary (V1)
+
+| Tag | Value | Purpose |
+|---|---|---|
+| `<jackin:repo>PATH-OR-URL</jackin:repo>` | absolute path inside container or remote URL | Declares the repo the agent is working on |
+| `<jackin:issue>URL</jackin:issue>` | full GitHub issue URL | Declares the issue under investigation |
+| `<jackin:pr>URL</jackin:pr>` | full GitHub PR URL | Declares the PR being authored or reviewed |
+| `<jackin:link>URL</jackin:link>` | any URL | Generic operator-clickable link |
+| `<jackin:status>VALUE</jackin:status>` | freeform short string | Optional human-readable status override (rendered in the console next to runtime status) |
+
+Multi-vendor compat: `<multicode:repo>` etc. parse identically to the
+`<jackin:*>` form. Both populate the same in-memory snapshot. Other
+vendor namespaces can be added behind a feature flag if/when the
+ecosystem demands.
+
+### Parser placement
+
+The parser sits *upstream* of the [agent runtime
+status](/reference/roadmap/agent-runtime-status/) bus — same input
+stream (the runtime's structured output), different consumer. It emits
+`AgentTagEvent` values onto its own channel; downstream consumers
+([GitHub link tracking](/reference/roadmap/github-link-tracking/),
+console rendering, persistent storage) subscribe.
+
+The parser must be **defensive**:
+
+- Tags inside fenced code blocks are ignored (so an agent can document
+  the protocol without triggering it).
+- Malformed tags are silently skipped, never errored.
+- A tag value longer than 4 KiB is dropped with a debug log (defends
+  against runaway emission).
+- Extracted URLs are validated (must parse as URL with `http(s)` scheme;
+  paths must look like absolute paths).
+
+### Skill bundles
+
+To make adoption cheap, a small repo of jackin-managed skills lives at
+`jackin-project/jackin-skills` (or as a section of
+`jackin-project/jackin-marketplace`). Includes:
+
+- `jackin-machine-readable-issue` — instructs the agent to emit
+  `<jackin:issue>` when investigating
+- `jackin-machine-readable-pr` — instructs on PR open/review
+- `jackin-machine-readable-repo` — instructs on workspace identification
+
+Operators add these to their agent class's skill list (mechanism per
+runtime; for Claude, that's the `[claude.plugins]` array).
+
+## Scope (V1)
+
+- The five-tag vocabulary above, with `<jackin:*>` and `<multicode:*>`
+  both honored.
+- Parser module that consumes the runtime's structured output and emits
+  tag events.
+- In-memory per-instance index: `repo: Vec<String>`, `issue: Vec<String>`,
+  `pr: Vec<String>`, `link: Vec<String>`, `status: Option<String>`.
+- Console renders captured links as clickable items next to the agent
+  row (using the [operator handler
+  system](/reference/roadmap/operator-handler-system/) for click).
+- One published skill bundle (separate repo) that agent classes can
+  include to enable emission.
+
+## Defer
+
+- Persistence of tag history. V1 in-memory only;
+  [persistent storage layer](/reference/roadmap/persistent-storage-layer/)
+  adds it later.
+- Per-instance custom-link CRUD from the console (multicode has this).
+  Defer; the agent-emitted set is enough.
+- Tag protocol versioning (`<jackin:repo version="2">...</jackin:repo>`).
+  V1 is unversioned; if we ever need to break compatibility, add the
+  attribute then.
+- Tag emission *from* jackin' to the agent (reverse direction). Out of
+  scope.
+
+## Open Questions
+
+- **Multi-vendor extent.** Just `<multicode:*>`, or also `<conductor:*>`,
+  `<sandbox:*>`, etc.? Recommended: *just multicode for now*; add others
+  on demand. The cost of being multi-vendor is tiny but maintaining the
+  list is real.
+- **Code-block fencing.** Should the parser recognize markdown code
+  fences in the agent's text output, or operate on raw bytes? Recommended:
+  *recognize fences for `<jackin:*>` parsing* — operators discussing the
+  protocol shouldn't accidentally trigger it.
+- **`status` tag semantics.** Is the agent's `<jackin:status>` value
+  authoritative, or just a display hint? Recommended: *display hint only* —
+  the runtime status adapter remains the source of truth.
+- **Self-emission for ecosystem skills.** Should jackin' emit tags on the
+  operator's behalf when, e.g., the operator starts a workspace from a
+  GitHub issue URL? Recommended: *yes, eventually*. The
+  [autonomous queue](/reference/roadmap/autonomous-task-queue/) will
+  emit `<jackin:issue>` on dispatch.
+
+## Related Files
+
+- New module (e.g. `src/runtime/tag_protocol.rs`) —
+  parser + in-memory index
+- <RepoFile path="src/runtime/launch.rs" /> — wires parser into the
+  runtime output stream alongside the status adapter
+- <RepoFile path="src/console/manager/state.rs" /> — link rendering
+- A new repo `jackin-project/jackin-skills` (or section of the existing
+  marketplace) — published skill bundle
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Agent runtime status](/reference/roadmap/agent-runtime-status/) —
+  parallel consumer of the same runtime output stream
+- [GitHub link tracking](/reference/roadmap/github-link-tracking/) —
+  primary consumer of `<jackin:issue>` / `<jackin:pr>`
+- [Operator handler system](/reference/roadmap/operator-handler-system/) —
+  invoked when the operator clicks a captured link
