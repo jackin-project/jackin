@@ -1,0 +1,343 @@
+---
+title: "Universal Orchestrator Program (multicode-Inspired)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design program (18 leaf items across 5 phases)
+
+## Goal
+
+Make jackin' the canonical, vendor-neutral orchestrator for parallel AI coding
+agents. Today the project's primitives — Docker isolation, per-mount worktrees,
+multi-runtime support, agent class repos — are the strongest in the space, but
+the **operator-facing surface** (live status, queue, telemetry, remote
+operation) lags behind every adjacent tool: `multicode`, Docker Sandboxes,
+Conductor, the upstream Claude Code devcontainer, and the various private
+internal tools teams keep reinventing.
+
+This program closes that gap. The thesis is that organizations should not be
+re-implementing the same orchestrator stack inside every codebase — instead,
+they should compose on top of jackin's primitives and share the operator
+surface. To make that possible, jackin' needs a small set of foundation
+features it currently lacks: live agent status, persistent operator-facing
+state, declarative resource limits, a task-source abstraction, and credential
+plurality.
+
+The reference comparison is [`yawkat/multicode`](https://github.com/yawkat/multicode)
+(and its [`graemerocher/multicode`](https://github.com/graemerocher/multicode)
+fork), which solves the *fleet-operations* problem on the same substrate
+jackin' already has. multicode's design choices are surveyed in detail below;
+each leaf item links back to the specific multicode mechanism that inspired it
+and explains how the jackin' equivalent should differ.
+
+This master doc is structured exactly like
+[Codebase readability & restructuring](/reference/roadmap/codebase-readability/)
+— phases with one-line rows, each linking to a self-contained leaf item.
+
+## Surface comparison: jackin' vs multicode
+
+This is the exhaustive feature inventory the program is built from. **Have**
+means present in jackin' today; **planned** means a roadmap item already
+exists; **gap** means truly missing. Items in *italics* are addressed by this
+program.
+
+| Concern | multicode | jackin' status |
+|---|---|---|
+| Agent isolation | `bwrap` + `systemd-run`; Apple `container` | Have — Docker + DinD; planned — [selectable backends](/reference/roadmap/selectable-sandbox-backends/) |
+| Per-agent working tree | Workspace dir; one repo per workspace | Have — V1 [worktree isolation](/reference/roadmap/per-mount-isolation/); clone planned |
+| Mount kinds beyond `shared`/`readonly` | `writable`, `readable`, `isolated`, `tmpfs` | Partial — `shared` + `readonly`; *gap on `tmpfs` and ephemeral, see [Ephemeral mount modes](/reference/roadmap/ephemeral-mount-modes/)* |
+| Multi-provider agent runtime | OpenCode + Codex (one per session) | Planned — [multi-runtime](/reference/roadmap/multi-runtime-support/) per-instance |
+| Resource limits per agent | `memory-high`, `memory-max`, `cpu` (cgroups) | *Gap — see [Declarative resource limits](/reference/roadmap/declarative-resource-limits/)* |
+| Live agent status (idle/busy/question) | Yes — derived from opencode SSE events | *Gap — see [Agent runtime status](/reference/roadmap/agent-runtime-status/)* |
+| Live machine resource panel (CPU/RAM/disk) | Yes — `/proc/stat`, `/proc/meminfo`, sampled per 2s | *Gap — see [Console resource panel](/reference/roadmap/console-resource-panel/)* |
+| Per-agent token / cost / OOM tracking | Yes — usage_aggregation_service | *Gap — see [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/)* |
+| Agent → operator tag protocol | Yes — `<multicode:repo>` / `<multicode:issue>` / `<multicode:pr>` | *Gap — see [Agent tag protocol](/reference/roadmap/agent-tag-protocol/)* |
+| Live GitHub link state polling | Yes — octocrab + per-workspace SQLite cache | *Gap — see [GitHub link tracking](/reference/roadmap/github-link-tracking/)* |
+| Persistent storage backend | Per-workspace SQLite + per-workspace JSON | *Gap — see [Persistent storage layer](/reference/roadmap/persistent-storage-layer/)* |
+| Workspace archive / unarchive | Yes — tar.zstd / tar.xz / zip with auto-detect | *Gap — see [Workspace archive](/reference/roadmap/workspace-archive/)* |
+| Per-workspace operator description | Yes — inline-editable note in TUI | *Gap — see [Workspace description](/reference/roadmap/workspace-description/)* |
+| External tool/IDE/diff launcher | Yes — `[handler]` block, `[[tool]]` array | *Gap — see [Operator handler system](/reference/roadmap/operator-handler-system/)* |
+| Custom operator-defined tools | Yes — `[[tool]]` array, hotkey + exec/prompt type | *Gap — see [Custom operator tools](/reference/roadmap/custom-operator-tools/)* |
+| Autonomous task queue | No (manual) — but the substrate (status, persistence) is there | *Gap — see [Autonomous task queue](/reference/roadmap/autonomous-task-queue/)* |
+| Task source abstraction | No — workspaces are manually created | *Gap — see [Task source abstraction](/reference/roadmap/task-source-abstraction/)* |
+| Idle runtime cleanup | Yes — `gradle --stop`, container recycle | *Gap — see [Idle runtime cleanup](/reference/roadmap/idle-runtime-cleanup/)* |
+| Remote orchestration | Yes — `multicode-remote` SSH bridge + rsync | *Gap — see [jackin-remote](/reference/roadmap/jackin-remote/)* |
+| Workspace skills mount | Yes — `add-skills-from` mounts to `~/.config/<provider>/skills/` | *Gap — see [Workspace skills mount](/reference/roadmap/workspace-skills-mount/)* |
+| Credential source plurality | Three backends — `env`, `command`, keychain | Partial — `op://` and `${env.VAR}` shipped; *see [Credential source pattern](/reference/roadmap/credential-source-pattern/)* |
+| GitHub CLI auth passthrough | Yes (read-only mount) | Have |
+| Operator console / TUI | Yes — ratatui, full-time | Have — `jackin console` (less feature-rich than CLI on purpose) |
+| Agent class repo contract | Implicit via `add-skills-from` | Have — `jackin.agent.toml` + `Dockerfile` |
+| Sensitive mount warnings | No | Have |
+
+### Where multicode genuinely shines
+
+The deep-dive identified five areas where multicode's design is materially
+ahead of jackin':
+
+1. **Live observability of the agent.** multicode parses opencode SSE events
+   in real time, derives `Idle | Busy | Question` status, surfaces it as a
+   colored column, and persists token/cost/OOM counts. jackin's CLI is
+   intentionally opaque to agent runtime; closing this gap is the prerequisite
+   for almost everything in Phase 2 onward.
+2. **Per-workspace persistent SQLite.** A small but distinctive choice that
+   underpins their GitHub status cache, archive metadata, custom links, and
+   future telemetry. jackin' currently has zero structured persistence beyond
+   per-instance filesystem state — adding it once enables five other items
+   here.
+3. **The agent → TUI tag protocol.** `<multicode:issue>`, `<multicode:pr>`,
+   `<multicode:repo>` turn the agent into an observable workflow node without
+   tooling having to scrape stdout. The protocol is small, optional, and
+   skill-driven — the right shape to borrow in a vendor-neutral form.
+4. **Per-workspace resource limits as first-class config.** `memory-high` /
+   `memory-max` / `cpu` are declared in TOML and translated to `systemd-run`
+   properties. jackin's Docker substrate has the same primitives via cgroups;
+   the absence is just config-surface design, not a runtime gap.
+5. **Operator extension points.** The `[handler]` block (review viewer, web
+   launcher) and `[[tool]]` array (custom hotkeys with exec/prompt actions)
+   make the TUI an extensible operator surface, not a fixed UI. jackin's
+   console is currently fixed-shape.
+
+### Where jackin' is materially ahead — and should stay ahead
+
+These are the design choices the program intentionally **does not borrow**.
+They are jackin's identity:
+
+- **Cross-platform Docker substrate** vs Linux-only `bwrap`. Switching would
+  forfeit macOS/Windows support; the right shape is the existing
+  [selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/)
+  roadmap.
+- **Per-instance multi-runtime** vs one provider per session. Operators
+  running one Claude agent and one Codex agent in the same console is the
+  jackin' design target;
+  [multi-runtime](/reference/roadmap/multi-runtime-support/) keeps the
+  per-instance boundary deliberately.
+- **Agent class repos as the unit of distribution** vs ad-hoc skill mounts.
+  multicode mounts skill markdown files; jackin' ships full agent classes
+  (Dockerfile + manifest + plugins). Workspace-skills mount is a *complement*
+  to that model, not a replacement.
+- **CLI-first with TUI as a simplified front** vs TUI-first. Niche operator
+  flows belong on the CLI; the console stays approachable. See the
+  `naming conventions` section in <RepoFile path="docs/AGENTS.md" />.
+- **Toolchain-neutral**. multicode bakes in Java/Gradle defaults because it
+  was built for Micronaut. jackin' does not — agent classes carry toolchain
+  choices, the orchestrator stays neutral.
+
+## Phase 1 — Foundation gaps (parallel-safe, low risk)
+
+These are surface-level features that don't touch agent runtime or persistence.
+Each is small enough to be one PR per item and they can land in any order.
+They are the lightest borrows from multicode and the most obvious
+operator-quality wins. Ephemeral mount modes touches isolation but is purely
+additive to the V1 enum.
+
+| Item | Inspiration in multicode | Depends on |
+|---|---|---|
+| [Workspace description](/reference/roadmap/workspace-description/) | Inline-editable note in TUI overview | — |
+| [Operator handler system](/reference/roadmap/operator-handler-system/) | `[handler]` block (review/web) | — |
+| [Workspace archive](/reference/roadmap/workspace-archive/) | TUI `a` archive + auto-detect on startup | — |
+| [Declarative resource limits](/reference/roadmap/declarative-resource-limits/) | `[isolation]` `memory-high`/`memory-max`/`cpu` | — |
+| [Ephemeral mount modes](/reference/roadmap/ephemeral-mount-modes/) | `[isolation] isolated = [...]` and `tmpfs = [...]` | — |
+
+## Phase 2 — Live operator surface
+
+These items make the operator console observable. They touch agent runtime
+output (status), Docker stats (resource panel), agent stdout parsing (tag
+protocol), and a remote API (GitHub polling). They depend on each other only
+loosely — the SQLite layer in Phase 3 is helpful for GitHub link tracking but
+not strictly required for an in-memory V1.
+
+| Item | Inspiration in multicode | Depends on |
+|---|---|---|
+| [Agent runtime status](/reference/roadmap/agent-runtime-status/) | `root_session_status` derived from SSE | Multi-runtime adapter seam |
+| [Console resource panel](/reference/roadmap/console-resource-panel/) | `/proc/stat` + `/proc/meminfo` polling | Resource limits (Phase 1) |
+| [Agent tag protocol](/reference/roadmap/agent-tag-protocol/) | `<multicode:*>` skill-driven tags | Agent runtime status |
+| [GitHub link tracking](/reference/roadmap/github-link-tracking/) | octocrab polling + SQLite cache | Tag protocol; persistent storage (Phase 3) |
+| [Custom operator tools](/reference/roadmap/custom-operator-tools/) | `[[tool]]` array (hotkey + exec/prompt) | Operator handler system (Phase 1) |
+
+## Phase 3 — Persistence & telemetry (foundation for Phase 4)
+
+A small SQLite layer scoped per-instance, plus the cost/token/usage tracking
+that consumes it. This phase is genuinely foundational — three Phase 4 items
+and at least one Phase 2 item rely on it.
+
+| Item | Inspiration in multicode | Depends on |
+|---|---|---|
+| [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) | Per-workspace `.multicode/cache.sqlite` | — |
+| [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) | `usage_aggregation_service` | Persistent storage; agent runtime status |
+
+## Phase 4 — Fleet operations
+
+The autonomous-queue cluster. Once the operator surface is observable and
+state is persistent, jackin' has every primitive needed to host a queue:
+"point a workspace at a task source, leave it alone, come back to N attempted
+PRs." Each piece is independently usable but the queue itself depends on
+sources, status, and persistence already being in place.
+
+| Item | Inspiration in multicode | Depends on |
+|---|---|---|
+| [Task source abstraction](/reference/roadmap/task-source-abstraction/) | Implicit (autonomous queue scans GitHub issues) | — |
+| [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) | `max-parallel-issues`, `issue-scan-delay-seconds`, etc. | Task source; persistent storage; agent runtime status |
+| [Idle runtime cleanup](/reference/roadmap/idle-runtime-cleanup/) | `idle-runtime-cleanup` toggle, `gradle --stop` | Agent runtime status |
+
+## Phase 5 — Distributed operation & extensibility
+
+These items shift jackin' from "one operator on one machine" to "a tool a team
+or organization composes on." They are large, deferable, and explicitly gated
+on the rest of the program landing first. None of them blocks anything else.
+
+| Item | Inspiration in multicode | Depends on |
+|---|---|---|
+| [jackin-remote](/reference/roadmap/jackin-remote/) | `multicode-remote` SSH bridge + rsync | All Phase 1–3; multi-runtime |
+| [Credential source pattern](/reference/roadmap/credential-source-pattern/) | `[github].token` with `env`, `command`, or keychain backend | — (cross-cutting refactor) |
+| [Workspace skills mount](/reference/roadmap/workspace-skills-mount/) | `add-skills-from` provider-skill bind mounts | Multi-runtime |
+
+## Execution order (recommended)
+
+This is a *guide*, not a constraint — items marked "parallel-safe" can land in
+any order within their phase.
+
+1. **Phase 1 quick wins** — workspace description, archive, handler system,
+   resource limits. Each ships a small PR and shrinks the gap visibly. Aim
+   for these to land while [multi-runtime](/reference/roadmap/multi-runtime-support/)
+   Phase 1 is in flight, since they share neither code nor reviewers.
+2. **Persistent storage layer (Phase 3)** — land this *before* Phase 2's
+   GitHub link tracking and *before* Phase 4 starts. It's small enough to
+   bring forward and large enough downstream that retrofitting hurts. Token &
+   cost telemetry can lag.
+3. **Phase 2 live surface** — agent runtime status first (it's the seam every
+   later observability item depends on). Then console resource panel, tag
+   protocol, GitHub link tracking, custom tools — in roughly that order.
+4. **Phase 4 fleet operations** — task source abstraction, then queue, then
+   idle cleanup. Don't start until Phase 3 storage is shipped.
+5. **Phase 5 distribution & extensibility** — defer until at least Phase 1–3
+   are complete. jackin-remote in particular benefits from the Kubernetes
+   platform work (see [roadmap vision](/reference/roadmap/#vision)) and may be
+   reshaped or absorbed by it.
+
+## Key structural insights
+
+These three observations shaped the phase split:
+
+1. **Live status is the substrate, not a feature.** Almost every multicode
+   capability — autonomous queue, GitHub link cache, idle cleanup, cost
+   tracking — derives from a runtime-aware status stream. Without it, jackin'
+   can't host the rest of the program. That's why
+   [agent runtime status](/reference/roadmap/agent-runtime-status/) leads
+   Phase 2 and is on the dependency edge of three other items.
+2. **Per-instance SQLite enables five separable items.** GitHub cache,
+   archive flag, agent-provided links, custom links, telemetry. Designing it
+   once at Phase 3 instead of bolting per-feature stores onto each Phase 2/4
+   item is the cheapest path. The schema is small (a handful of tables) and
+   the operational story (one DB per `~/.jackin/data/<instance>/`) is
+   already shaped for it.
+3. **The TUI tag protocol is small but consequential.** `<jackin:*>` is a
+   forever decision once published. The leaf doc treats it as a vendor-neutral
+   namespace with skill-driven emission and graceful console degradation —
+   not a runtime contract. That keeps it inside jackin's "agent runtime is
+   opaque" identity while still enabling the live surface multicode shows is
+   useful.
+
+## Out of scope for this program
+
+The following adjacent items have their own roadmap items and are referenced,
+not duplicated, here:
+
+- [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — Codex
+  / Amp / Claude as selectable per-instance runtimes. This program's Phase 2+
+  items assume the runtime adapter seam from that work exists.
+- [Per-mount isolation](/reference/roadmap/per-mount-isolation/) — `worktree`
+  mode shipped in V1; `clone` mode planned for V1.1. This program's queue
+  and parallel-agent assumptions rely on isolated mounts.
+- [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) —
+  cross-backend resource-limit translation lives there, not in this program.
+- [1Password integration](/reference/roadmap/onepassword-integration/) and
+  [Claude auth strategy](/reference/roadmap/claude-auth-strategy/) — both
+  consume the [credential source pattern](/reference/roadmap/credential-source-pattern/)
+  cross-cutting note.
+- [Custom plugin marketplace](/reference/roadmap/custom-plugin-marketplace/) —
+  Claude-specific; orthogonal to the multi-runtime skill-mount approach in
+  Phase 5.
+
+## Open program-level questions
+
+Three calls that affect more than one leaf and should be made before the
+program's first PR lands. Each leaf item that depends on the answer flags it
+explicitly.
+
+1. **TUI tag protocol commitment.** Adopt `<jackin:*>` as a vendor-neutral
+   namespace, decline outright, or keep multi-vendor (`<jackin:*>` plus
+   honoring `<multicode:*>` etc.)? Recommended default: *adopt with namespace,
+   document multi-vendor as future-compatible*.
+2. **Persistent storage scope.** Per-instance SQLite (one DB per agent) or
+   single global SQLite (one DB for the operator)? Recommended default:
+   *per-instance*, mirroring multicode and matching jackin's existing
+   `~/.jackin/data/<instance>/` layout.
+3. **Task source identity.** Is a task source workspace-bound, agent-bound, or
+   operator-global? Recommended default: *workspace-bound*, since the queue's
+   parallelism limit (`max_parallel`) is naturally scoped to one workspace's
+   resources.
+
+## See also
+
+- [Codebase readability & restructuring](/reference/roadmap/codebase-readability/) —
+  the structural reference for this program's tree shape
+- [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — the
+  primary upstream dependency
+- [Per-mount isolation](/reference/roadmap/per-mount-isolation/) — the
+  parallel-agent prerequisite
+- [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) —
+  where cross-backend resource-limit translation lives
+
+## Source materials
+
+The two multicode repositories that informed this program:
+
+- [`yawkat/multicode`](https://github.com/yawkat/multicode) — the original
+  Micronaut-issue orchestrator (OpenCode provider). Canonical source for
+  description, archive, multicode-remote, isolation, GitHub integration,
+  authentication, and the workspace-skills system.
+- [`graemerocher/multicode`](https://github.com/graemerocher/multicode) —
+  fork that adds Codex provider support, an editor-tool selector, and an
+  expanded `[autonomous]` queue config. Canonical source for editor tool,
+  autonomous queueing, agent configuration, and Apple-container Isolation
+  extensions. This fork has the more comprehensive operator-facing README
+  and is preferred for README links.
+
+### README sections referenced by the leaves
+
+| README anchor | Used by |
+|---|---|
+| [Editor Tool](https://github.com/graemerocher/multicode#editor-tool) | [operator-handler-system](/reference/roadmap/operator-handler-system/) |
+| [Workspaces](https://github.com/graemerocher/multicode#workspaces) | (jackin already has) |
+| [Autonomous queueing](https://github.com/graemerocher/multicode#autonomous-queueing) | [task-source-abstraction](/reference/roadmap/task-source-abstraction/), [autonomous-task-queue](/reference/roadmap/autonomous-task-queue/), [idle-runtime-cleanup](/reference/roadmap/idle-runtime-cleanup/) |
+| [Agent configuration](https://github.com/graemerocher/multicode#agent-configuration) | (already covered by [multi-runtime](/reference/roadmap/multi-runtime-support/)) |
+| [Isolation](https://github.com/graemerocher/multicode#isolation) | [declarative-resource-limits](/reference/roadmap/declarative-resource-limits/), [ephemeral-mount-modes](/reference/roadmap/ephemeral-mount-modes/), [workspace-skills-mount](/reference/roadmap/workspace-skills-mount/) |
+| [Git / GitHub integration](https://github.com/graemerocher/multicode#git--github-integration) | [agent-tag-protocol](/reference/roadmap/agent-tag-protocol/), [github-link-tracking](/reference/roadmap/github-link-tracking/) |
+| [Authentication](https://github.com/graemerocher/multicode#authentication) | [credential-source-pattern](/reference/roadmap/credential-source-pattern/) |
+| [Description](https://github.com/graemerocher/multicode#description) | [workspace-description](/reference/roadmap/workspace-description/) |
+| [Archiving](https://github.com/graemerocher/multicode#archiving) | [workspace-archive](/reference/roadmap/workspace-archive/) |
+| [multicode-remote](https://github.com/graemerocher/multicode#multicode-remote) | [jackin-remote](/reference/roadmap/jackin-remote/) |
+
+### Source files referenced by the leaves
+
+For features without dedicated README documentation, leaves link directly to
+multicode source. Use the `yawkat/multicode/main` branch as the canonical
+implementation reference unless otherwise noted.
+
+| Multicode source | Used by |
+|---|---|
+| [`config.toml`](https://github.com/yawkat/multicode/blob/main/config.toml) | reference for every TOML schema borrow |
+| [`lib/src/database.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/database.rs), [`schema.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/schema.rs), [`services/persistent_storage.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/persistent_storage.rs) | [persistent-storage-layer](/reference/roadmap/persistent-storage-layer/) |
+| [`services/github_status_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/github_status_service.rs) | [github-link-tracking](/reference/roadmap/github-link-tracking/) |
+| [`services/usage_aggregation_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/usage_aggregation_service.rs) | [token-cost-telemetry](/reference/roadmap/token-cost-telemetry/) |
+| [`services/resource_usage_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/resource_usage_service.rs) | [console-resource-panel](/reference/roadmap/console-resource-panel/), [token-cost-telemetry](/reference/roadmap/token-cost-telemetry/) |
+| [`services/root_session_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/root_session_service.rs), [`opencode_client_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/opencode_client_service.rs) | [agent-runtime-status](/reference/roadmap/agent-runtime-status/) |
+| [`services/workspace_archive.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/workspace_archive.rs) | [workspace-archive](/reference/roadmap/workspace-archive/), [workspace-description](/reference/roadmap/workspace-description/) |
+| [`lib/src/manager.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/manager.rs) | [autonomous-task-queue](/reference/roadmap/autonomous-task-queue/), [task-source-abstraction](/reference/roadmap/task-source-abstraction/) |
+| [`lib/src/remote_action.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/remote_action.rs), [`remote/src/orchestration.rs`](https://github.com/yawkat/multicode/blob/main/remote/src/orchestration.rs) | [jackin-remote](/reference/roadmap/jackin-remote/) |
+| [`tui/src/app.rs`](https://github.com/yawkat/multicode/blob/main/tui/src/app.rs), [`render.rs`](https://github.com/yawkat/multicode/blob/main/tui/src/render.rs) | [console-resource-panel](/reference/roadmap/console-resource-panel/), [custom-operator-tools](/reference/roadmap/custom-operator-tools/) |
+| [`workspace-skills/`](https://github.com/yawkat/multicode/tree/main/workspace-skills) | [agent-tag-protocol](/reference/roadmap/agent-tag-protocol/), [workspace-skills-mount](/reference/roadmap/workspace-skills-mount/) |
+
+For verification: each leaf's `## Inspiration in multicode` section starts
+with a **Sources** block carrying the same links scoped to that leaf, so
+opening any leaf gives you a one-click path to the multicode reference.

@@ -1,0 +1,230 @@
+---
+title: "Persistent Storage Layer (per-instance SQLite)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 3, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+jackin' currently has zero structured persistence. Per-instance state is
+filesystem-shaped (`~/.jackin/data/<container>/.claude/`,
+`.config/gh/`, `.jackin/plugins.json`, `.jackin/isolation.json`), and the
+operator config is a single TOML file. There's no way to store:
+
+- A history of agent status transitions ("when did this agent last go
+  busy?")
+- Cached GitHub link state (refresh windows, last-fetched, last-error)
+- Token / cost samples over time
+- Tool fire history (audit log)
+- The autonomous queue's pending and completed tasks
+
+Every Phase 2 and Phase 4 item that needs any of the above either does
+its own ad-hoc JSON file (which gets messy) or skips the feature.
+
+This is the **load-bearing** Phase 3 item — the substrate for half of
+the program.
+
+## Why It Matters
+
+- Designing one storage layer once is dramatically cheaper than five
+  ad-hoc state files. The schema is small (a handful of tables); the
+  operational story is simple (one DB per instance, alongside existing
+  state).
+- Several leaves explicitly reference this item:
+  [GitHub link tracking](/reference/roadmap/github-link-tracking/),
+  [token & cost telemetry](/reference/roadmap/token-cost-telemetry/),
+  [autonomous task queue](/reference/roadmap/autonomous-task-queue/),
+  [agent runtime status](/reference/roadmap/agent-runtime-status/)
+  (status_log table), and the auto-archive integration of
+  [workspace archive](/reference/roadmap/workspace-archive/).
+- Adding it after the consumers exist is much more painful than adding
+  it first — that's the case for landing it early in Phase 3 even
+  though no consumer in isolation justifies it.
+
+## Inspiration in multicode
+
+**Sources**:
+- No dedicated README section (implementation-only feature)
+- Source — [`lib/src/database.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/database.rs) (Diesel + SQLite setup, migrations)
+- Source — [`lib/src/schema.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/schema.rs) (full table definitions)
+- Source — [`lib/src/services/persistent_storage.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/persistent_storage.rs) (read/write helpers)
+- Source — [`lib/diesel.toml`](https://github.com/yawkat/multicode/blob/main/lib/diesel.toml) (migration toolchain config)
+
+- Per-workspace SQLite at `.multicode/cache.sqlite` (one DB per
+  workspace).
+- Schema is small: primarily `github_link_statuses` (URL-keyed cache),
+  plus a handful of metadata tables for archive format and snapshot
+  state.
+- Migrations via Diesel's embedded migrations (build-time SQL files
+  → embedded into the binary).
+- Concurrency via single-writer SQLite, with a brief upsert-retry
+  helper (5 attempts, exponential backoff base 100ms) for the rare
+  contention case.
+
+multicode also keeps a JSON snapshot file (`~/.multicode/workspaces/<key>.json`)
+*alongside* the SQLite — the JSON holds the persistent operator-facing
+state (description, archive flag, agent-provided links) while the SQLite
+holds the cached / queryable parts. We should not split this way; it
+duplicates state. SQLite alone is the right choice for jackin'.
+
+## Recommended Shape
+
+One SQLite database **per instance**, at
+`~/.jackin/data/<container>/jackin.db`. Schema versioned via
+embedded migrations. Async access via `sqlx` (jackin' is already async-
+ready) or `rusqlite` with a small async wrapper — pick once, document
+the rationale in an ADR.
+
+### Tables (V1)
+
+```sql
+-- Status transitions. Rolling N=10000 entries, then trim oldest.
+CREATE TABLE status_log (
+    id INTEGER PRIMARY KEY,
+    occurred_at INTEGER NOT NULL,            -- epoch seconds
+    new_status TEXT NOT NULL,                -- 'idle' | 'busy' | 'question' | ...
+    metadata TEXT                            -- optional JSON blob (e.g. prompt for 'question')
+);
+
+-- Captured agent tag emissions. Idempotent on (kind, value).
+CREATE TABLE agent_tags (
+    kind TEXT NOT NULL,                      -- 'repo' | 'issue' | 'pr' | 'link'
+    value TEXT NOT NULL,
+    first_seen INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL,
+    PRIMARY KEY (kind, value)
+);
+
+-- GitHub link cache. Owned by github-link-tracking; defined here so
+-- the schema is in one place.
+CREATE TABLE github_link_statuses (
+    url TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    host TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    resource_number INTEGER NOT NULL,
+    issue_state TEXT,
+    pr_state TEXT,
+    build_state TEXT,
+    review_state TEXT,
+    pr_is_draft INTEGER,                     -- 0/1
+    fetched_at INTEGER NOT NULL,
+    refresh_after INTEGER NOT NULL,
+    last_error TEXT
+);
+
+-- Token / cost samples. Rolling N=86400 entries (~1/sec for 24h).
+CREATE TABLE usage_samples (
+    occurred_at INTEGER PRIMARY KEY,
+    token_input INTEGER,
+    token_output INTEGER,
+    token_cache_read INTEGER,
+    token_cache_write INTEGER,
+    cost_usd_micros INTEGER                  -- $cost * 1e6, integer-safe
+);
+
+-- Tool fire audit. Rolling N=1000 entries.
+CREATE TABLE tool_history (
+    id INTEGER PRIMARY KEY,
+    occurred_at INTEGER NOT NULL,
+    tool_key TEXT NOT NULL,
+    exit_code INTEGER,
+    duration_ms INTEGER
+);
+
+-- Schema version. One row.
+CREATE TABLE _meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+```
+
+Future leaves add more tables; the migration framework handles upgrades.
+
+### Lifecycle
+
+- **Created on first instance load.** If the file doesn't exist, run
+  the migration suite and set `_meta.schema_version`.
+- **Migrated on subsequent loads.** If `_meta.schema_version` < current,
+  run pending migrations.
+- **Archived with the data dir.**
+  [Workspace archive](/reference/roadmap/workspace-archive/) compresses
+  the whole `~/.jackin/data/<container>/` tree, including the DB.
+- **Deleted with `purge`.** Standard data-dir teardown.
+
+### Concurrency model
+
+Single writer (the running `jackin` process for that instance), many
+readers. Console subscribers may read concurrently. SQLite's WAL mode
+handles this; turn it on at DB creation time. No multi-writer scenarios
+exist in V1 because each instance has at most one running jackin
+process.
+
+### Trimming
+
+Tables with rolling-window semantics (`status_log`, `usage_samples`,
+`tool_history`) get trimmed on every Nth insert (cheap, bounded), not
+on a background timer. Counts above are starting points; tune after
+observing real footprint.
+
+## Scope (V1)
+
+- One SQLite DB per `~/.jackin/data/<container>/`, at `jackin.db`.
+- Schema above; migrations embedded in the binary via the chosen
+  toolkit.
+- WAL mode enabled at creation.
+- Async access via the chosen sqlite client.
+- Rolling-window trim per table.
+- DB creation failure is a hard error at instance load (don't
+  silently start without persistence — would diverge silently).
+- Migration failure halts load with a clear message; operator
+  decides whether to `purge` or wait for a fix.
+
+## Defer
+
+- Cross-instance shared SQLite (one operator-global DB). Per-instance
+  is the right boundary for V1 — independent lifecycle, archive-
+  friendly, no cross-instance state to leak.
+- Encrypted-at-rest. SQLite has SEE; not in V1.
+- Replication / sync. Out of scope.
+- Read-only export / dump command (`jackin debug dump-db <name>`).
+  Useful but small; defer.
+
+## Open Questions
+
+- **`sqlx` vs `rusqlite`.** `sqlx` is async-native and matches jackin's
+  Tokio runtime, but adds a meaningful build-time cost (offline mode
+  with macro-checked queries). `rusqlite` is simpler and battle-tested
+  but blocking — needs `spawn_blocking` discipline. Recommended:
+  *write an ADR* (see [ADR roadmap](/reference/roadmap/architecture-decision-records/));
+  this is the kind of decision that earns one.
+- **Schema in code vs schema in `.sql` files.** Diesel-style embedded
+  migrations are clean but add a new toolchain dependency. A small
+  in-code migration list works fine for V1's table count. Recommended:
+  *in-code for V1*; revisit if the schema explodes.
+- **Per-instance vs single global DB.** Confirmed in the master:
+  *per-instance*. This open question exists only as a checkpoint for
+  the alternate path in case operator feedback shifts the call.
+
+## Related Files
+
+- New module (e.g. `src/storage/mod.rs` or a new
+  crate-internal `storage/`) — DB pool, migrations, query helpers
+- <RepoFile path="src/runtime/launch.rs" /> — DB creation on first load
+- <RepoFile path="src/runtime/cleanup.rs" /> — DB teardown on `purge`
+- Future ADR file under `docs/src/content/docs/internal/adrs/` —
+  sqlx vs rusqlite decision
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) —
+  primary V1 consumer
+- [GitHub link tracking](/reference/roadmap/github-link-tracking/) —
+  schema home for the link cache
+- [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) —
+  Phase 4 consumer
+- [Architecture Decision Records](/reference/roadmap/architecture-decision-records/) —
+  the right home for the sqlx-vs-rusqlite decision
