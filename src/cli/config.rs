@@ -5,16 +5,16 @@ use super::{BANNER, HELP_STYLES};
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum ConfigCommand {
     /// Manage global mount configurations
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Mount(MountCommand),
     /// Manage trust for third-party agent sources
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Trust(TrustCommand),
     /// Manage Claude Code authentication forwarding from host
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Auth(AuthCommand),
     /// Manage operator env vars at global and per-agent scope
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(EnvCommand),
 }
 
@@ -332,6 +332,20 @@ mod tests {
             cli.command,
             Some(Command::Config(ConfigCommand::Trust(TrustCommand::List)))
         ));
+    }
+
+    // ── help subcommand disabled ────────────────────────────────────────
+
+    #[test]
+    fn config_auth_rejects_help_subcommand() {
+        let err = Cli::try_parse_from(["jackin", "config", "auth", "help"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
+    }
+
+    #[test]
+    fn config_mount_rejects_help_subcommand() {
+        let err = Cli::try_parse_from(["jackin", "config", "mount", "help"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
     }
 
     // ── Config mount help ───────────────────────────────────────────────

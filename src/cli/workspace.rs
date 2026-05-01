@@ -190,7 +190,7 @@ Examples:
         name: String,
     },
     /// Manage operator env vars at workspace and workspace-agent scope
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(WorkspaceEnvCommand),
 }
 
@@ -570,6 +570,14 @@ mod tests {
             }
             other => panic!("unexpected command {other:?}"),
         }
+    }
+
+    // ── help subcommand disabled ────────────────────────────────────────
+
+    #[test]
+    fn workspace_rejects_help_subcommand() {
+        let err = Cli::try_parse_from(["jackin", "workspace", "help"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
     }
 
     // ── Workspace subcommand help ───────────────────────────────────────
