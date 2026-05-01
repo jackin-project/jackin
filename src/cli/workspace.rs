@@ -572,6 +572,14 @@ mod tests {
         }
     }
 
+    // ── help subcommand disabled ────────────────────────────────────────
+
+    #[test]
+    fn workspace_rejects_help_subcommand() {
+        let err = Cli::try_parse_from(["jackin", "workspace", "help"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
+    }
+
     // ── Workspace subcommand help ───────────────────────────────────────
 
     #[test]

@@ -334,6 +334,20 @@ mod tests {
         ));
     }
 
+    // ── help subcommand disabled ────────────────────────────────────────
+
+    #[test]
+    fn config_auth_rejects_help_subcommand() {
+        let err = Cli::try_parse_from(["jackin", "config", "auth", "help"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
+    }
+
+    #[test]
+    fn config_mount_rejects_help_subcommand() {
+        let err = Cli::try_parse_from(["jackin", "config", "mount", "help"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
+    }
+
     // ── Config mount help ───────────────────────────────────────────────
 
     #[test]

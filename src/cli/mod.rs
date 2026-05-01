@@ -163,6 +163,35 @@ mod tests {
         );
     }
 
+    // ── help subcommand disabled ────────────────────────────────────────
+
+    #[test]
+    fn root_help_does_not_list_help_subcommand() {
+        let help = help_text(&["jackin", "--help"]);
+        assert!(
+            !help.contains("\n  help"),
+            "root `help` subcommand should be disabled"
+        );
+    }
+
+    #[test]
+    fn config_help_does_not_list_help_subcommand() {
+        let help = help_text(&["jackin", "config", "--help"]);
+        assert!(
+            !help.contains("\n  help"),
+            "`config help` subcommand should be disabled"
+        );
+    }
+
+    #[test]
+    fn workspace_help_does_not_list_help_subcommand() {
+        let help = help_text(&["jackin", "workspace", "--help"]);
+        assert!(
+            !help.contains("\n  help"),
+            "`workspace help` subcommand should be disabled"
+        );
+    }
+
     // ── Subcommand banner consistency ───────────────────────────────────
 
     #[test]
