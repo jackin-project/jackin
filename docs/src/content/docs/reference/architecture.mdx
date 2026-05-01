@@ -145,9 +145,9 @@ Every command that opens or reopens an agent foreground session — `jackin load
 
 - **Container is still running** → preserve everything for `jackin hardline` to reconnect later. No isolated-worktree action.
 - **Stopped, non-zero exit or OOM** → preserve the container, DinD, and isolated worktrees so `jackin hardline` can restart in place.
-- **Stopped, exit code 0 (clean)** → attempt safe isolated-worktree cleanup. A worktree is safe to delete only when it has no uncommitted changes and no branch-only commits that would be lost (either `HEAD == base_commit`, or every local commit is reachable from the upstream tracking branch). Clean+pushed worktrees are auto-deleted; clean+unpushed ones are preserved or prompted.
-- **Clean exit with unsafe cleanup**, interactive stdin → ask the operator whether to return to the agent (restart + re-attach), preserve recovery state, or force-delete.
-- **Clean exit with unsafe cleanup**, non-interactive → preserve the recovery state and print the worktree path plus how to return, inspect, or discard.
+- **Stopped, exit code 0 (clean)** → attempt safe isolated-worktree cleanup. A worktree is safe to delete only when it has no uncommitted changes and **every** local branch in the worktree is safe — agents routinely rename the scratch branch to `feature/*` before opening a PR, so the safety check enumerates `git for-each-ref refs/heads/` rather than inspecting only the recorded scratch branch. A branch is safe when its tip is at `base_commit`, when its upstream is configured and `git rev-list <upstream>..<branch>` is empty, or when its upstream tracking is `[gone]` (the squash-merged-and-pruned heuristic — without it, the GitHub-default merge-and-delete-branch flow leaves a graveyard of preserved worktrees).
+- **Clean exit with unsafe cleanup**, interactive stdin → ask the operator whether to return to the agent (restart + re-attach), preserve recovery state, or force-delete. The prompt wording branches on whether the worktree is dirty (`uncommitted changes`) or clean-but-unpushed (`unpushed commits on a local branch`).
+- **Clean exit with unsafe cleanup**, non-interactive → preserve the recovery state and print the worktree path plus the per-reason phrasing and how to return, inspect, or discard.
 
 The same finalizer runs after `hardline` attaches, so the cleanup decision is independent of how the foreground session was opened.
 

@@ -1,7 +1,6 @@
 // All git invocations from this module are local-only:
 //   git status --porcelain
-//   git rev-parse HEAD
-//   git for-each-ref --format=%(upstream:short) refs/heads/...
+//   git for-each-ref --format=... refs/heads/
 //   git rev-list <upstream>..<branch>
 //   git worktree remove --force
 //   git branch -D
@@ -48,9 +47,32 @@ pub enum FinalizeDecision {
     ReturnToAgent,
 }
 
+/// Why the post-attach finalizer is preserving a worktree instead of
+/// auto-cleaning it.
+///
+/// Drives the prompt wording so the operator sees a description that
+/// matches what is actually at risk — a clean tree with unpushed
+/// commits looks nothing like a dirty tree, and using one catch-all
+/// message for both trains operators to ignore the prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreservedReason {
+    /// `git status --porcelain` returned non-empty output. There are
+    /// real working-tree edits that have not been committed.
+    Dirty,
+    /// The working tree is clean but at least one local branch has
+    /// commits that we cannot prove have shipped (no upstream, real
+    /// commits past upstream, or a git capture failure on the per-branch
+    /// loop). Includes the detached-HEAD-past-base case.
+    Unpushed,
+}
+
 pub trait FinalizerPrompt {
-    fn ask_unsafe_cleanup(&mut self, container: &str, worktree_path: &str)
-    -> anyhow::Result<usize>;
+    fn ask_unsafe_cleanup(
+        &mut self,
+        container: &str,
+        worktree_path: &str,
+        reason: PreservedReason,
+    ) -> anyhow::Result<usize>;
 }
 
 pub struct StdinPrompt;
@@ -59,10 +81,16 @@ impl FinalizerPrompt for StdinPrompt {
         &mut self,
         container: &str,
         worktree_path: &str,
+        reason: PreservedReason,
     ) -> anyhow::Result<usize> {
-        let msg = format!(
-            "Isolated worktree for {container} still has uncommitted changes:\n  {worktree_path}\n\nWhat do you want to do?"
-        );
+        let msg = match reason {
+            PreservedReason::Dirty => format!(
+                "Isolated worktree for {container} has uncommitted changes:\n  {worktree_path}\n\nWhat do you want to do?"
+            ),
+            PreservedReason::Unpushed => format!(
+                "Isolated worktree for {container} has unpushed commits on a local branch:\n  {worktree_path}\n\nWhat do you want to do?"
+            ),
+        };
         crate::tui::prompt::prompt_choice(
             &msg,
             &[
@@ -115,7 +143,7 @@ fn finalize_clean_exit(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<FinalizeDecision> {
     let records = read_records(container_state_dir)?;
-    let mut preserved_records: Vec<IsolationRecord> = Vec::new();
+    let mut preserved_records: Vec<(IsolationRecord, PreservedReason)> = Vec::new();
 
     // First pass: assess each record. Auto-clean safe ones; collect every
     // preserved record so the prompt loop below can address them all (a
@@ -136,7 +164,7 @@ fn finalize_clean_exit(
             }
             CleanupAssessment::PreservedDirty => {
                 mark_preserved(container_state_dir, &record, CleanupStatus::PreservedDirty)?;
-                preserved_records.push(record);
+                preserved_records.push((record, PreservedReason::Dirty));
             }
             CleanupAssessment::PreservedUnpushed => {
                 mark_preserved(
@@ -144,7 +172,7 @@ fn finalize_clean_exit(
                     &record,
                     CleanupStatus::PreservedUnpushed,
                 )?;
-                preserved_records.push(record);
+                preserved_records.push((record, PreservedReason::Unpushed));
             }
         }
     }
@@ -156,10 +184,15 @@ fn finalize_clean_exit(
     if !is_interactive {
         // Non-interactive: print one warning per preserved record so the
         // operator sees every worktree path that survived, not just the
-        // first one.
-        for rec in &preserved_records {
+        // first one. Include the per-reason phrasing so the warning is
+        // actionable without having to inspect cleanup_status by hand.
+        for (rec, reason) in &preserved_records {
+            let reason_str = match reason {
+                PreservedReason::Dirty => "uncommitted changes",
+                PreservedReason::Unpushed => "unpushed commits on a local branch",
+            };
             eprintln!(
-                "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: see cleanup status\n         run `jackin hardline {short}` to return, inspect the path above directly, or `jackin purge {short}` to discard",
+                "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: {reason_str}\n         run `jackin hardline {short}` to return, inspect the path above directly, or `jackin purge {short}` to discard",
                 wt = rec.worktree_path,
                 short = container_name.trim_start_matches("jackin-"),
             );
@@ -183,8 +216,8 @@ fn finalize_clean_exit(
     // and continue. The caller treats the resulting `Preserved` as
     // "container survives, run `jackin purge` later to retry."
     let mut any_preserved_after_prompt = false;
-    for rec in preserved_records {
-        match prompt.ask_unsafe_cleanup(container_name, &rec.worktree_path)? {
+    for (rec, reason) in preserved_records {
+        match prompt.ask_unsafe_cleanup(container_name, &rec.worktree_path, reason)? {
             0 => return Ok(FinalizeDecision::ReturnToAgent),
             1 => {
                 // Already marked PreservedDirty / PreservedUnpushed above;
@@ -227,12 +260,43 @@ enum CleanupAssessment {
 /// state we couldn't observe; doing so would garbage-collect unpushed
 /// commits the operator made inside the container.
 ///
+/// The contract is enforced **per local branch in the worktree**, not
+/// just `record.scratch_branch`. Agents (and external tooling such as
+/// the Superpowers plugin in Claude Code) routinely create their own
+/// `feature/*` branch inside the worktree and abandon the scratch
+/// branch at `base_commit`. The original implementation hardcoded
+/// `record.scratch_branch` in the upstream/rev-list checks and so
+/// always saw "no upstream" even when the agent's actual branch had
+/// already been pushed and squash-merged on the remote — producing
+/// the spurious "still has uncommitted changes" prompt on every
+/// clean exit.
+///
+/// Per-branch policy table (from worktree-cleanup-assessment.mdx):
+///
+/// | Branch state                                                  | Decision |
+/// |---------------------------------------------------------------|----------|
+/// | tip == `base_commit`                                          | Safe     |
+/// | tip moved, no upstream                                        | Unsafe   |
+/// | tip moved, upstream set, ref present, `rev-list` empty        | Safe     |
+/// | tip moved, upstream set, ref present, `rev-list` non-empty    | Unsafe   |
+/// | tip moved, upstream set, upstream `[gone]` (pruned)           | Safe     |
+/// | any `git` capture error                                       | Unsafe   |
+///
+/// `[gone]` upstream is treated as Safe because squash-merge with
+/// remote-branch-deletion is the dominant GitHub workflow: there is
+/// no purely-local git operation that proves "my local branch was
+/// squash-merged into main" (squash-merge breaks `git branch -r
+/// --contains HEAD` reachability by design), and without this rule
+/// every squash-merged worktree would be permanently preserved.
+/// Operator-error mitigation: the host repo's reflog still holds the
+/// commits if an operator deletes a remote branch by accident.
+///
 /// Each `runner.capture` failure is matched explicitly and routed to
 /// `PreservedUnpushed` (the "I don't know, keep it" outcome) with a
 /// `debug_log!` of the underlying error so `--debug` shows what went
-/// wrong. The empty-string outputs that git itself can produce
-/// (no upstream, no commits ahead) keep their natural meaning.
+/// wrong.
 #[allow(clippy::unnecessary_wraps)] // Result lets us propagate from inner ? if a future revision adds Err arms
+#[allow(clippy::too_many_lines)] // Linear policy table is clearer inline than split across helpers
 fn assess_cleanup(
     record: &IsolationRecord,
     runner: &mut impl CommandRunner,
@@ -255,66 +319,22 @@ fn assess_cleanup(
     if !porcelain.trim().is_empty() {
         return Ok(CleanupAssessment::PreservedDirty);
     }
-    let head = match runner.capture(
-        "git",
-        &["-C", &record.worktree_path, "rev-parse", "HEAD"],
-        None,
-    ) {
-        Ok(s) => s.trim().to_string(),
-        Err(e) => {
-            debug_log!(
-                "isolation",
-                "finalize assess: rev-parse HEAD failed for {wt}: {e}; preserving as unpushed (cannot compare to base)",
-                wt = record.worktree_path,
-            );
-            return Ok(CleanupAssessment::PreservedUnpushed);
-        }
-    };
-    // Defense in depth: even on Ok, refuse to compare empty HEAD to
-    // empty base_commit (both unlikely, but the comparison would yield
-    // SafeToDelete which is exactly the wrong answer).
-    if head.is_empty() {
-        debug_log!(
-            "isolation",
-            "finalize assess: rev-parse HEAD returned empty for {wt}; preserving as unpushed",
-            wt = record.worktree_path,
-        );
-        return Ok(CleanupAssessment::PreservedUnpushed);
-    }
-    if head == record.base_commit {
-        return Ok(CleanupAssessment::SafeToDelete);
-    }
-    let upstream = match runner.capture(
+
+    // Enumerate every local branch in the worktree and classify each.
+    // Format columns separated by tab (\t = %09 in git format-spec):
+    //   refname:short  objectname  upstream:short  upstream:track
+    // upstream:track yields the literal string "[gone]" (with brackets)
+    // when the configured upstream ref no longer resolves locally —
+    // typically because the remote branch was deleted after a PR merge
+    // and the next `git fetch --prune` removed the remote-tracking ref.
+    let raw = match runner.capture(
         "git",
         &[
             "-C",
             &record.worktree_path,
             "for-each-ref",
-            "--format=%(upstream:short)",
-            &format!("refs/heads/{}", record.scratch_branch),
-        ],
-        None,
-    ) {
-        Ok(s) => s.trim().to_string(),
-        Err(e) => {
-            debug_log!(
-                "isolation",
-                "finalize assess: for-each-ref failed for {wt}: {e}; preserving as unpushed (cannot resolve upstream)",
-                wt = record.worktree_path,
-            );
-            return Ok(CleanupAssessment::PreservedUnpushed);
-        }
-    };
-    if upstream.is_empty() {
-        return Ok(CleanupAssessment::PreservedUnpushed);
-    }
-    let branch_minus_upstream = match runner.capture(
-        "git",
-        &[
-            "-C",
-            &record.worktree_path,
-            "rev-list",
-            &format!("{upstream}..{}", record.scratch_branch),
+            "--format=%(refname:short)%09%(objectname)%09%(upstream:short)%09%(upstream:track)",
+            "refs/heads/",
         ],
         None,
     ) {
@@ -322,17 +342,109 @@ fn assess_cleanup(
         Err(e) => {
             debug_log!(
                 "isolation",
-                "finalize assess: rev-list failed for {wt}: {e}; preserving as unpushed (cannot verify all commits pushed)",
+                "finalize assess: for-each-ref refs/heads/ failed for {wt}: {e}; preserving as unpushed (cannot enumerate branches)",
                 wt = record.worktree_path,
             );
             return Ok(CleanupAssessment::PreservedUnpushed);
         }
     };
-    if branch_minus_upstream.trim().is_empty() {
-        Ok(CleanupAssessment::SafeToDelete)
-    } else {
-        Ok(CleanupAssessment::PreservedUnpushed)
+    if raw.trim().is_empty() {
+        // A worktree with zero local branches is pathological — even a
+        // freshly materialized worktree carries the scratch branch.
+        // Refuse to delete what we can't account for.
+        debug_log!(
+            "isolation",
+            "finalize assess: for-each-ref refs/heads/ returned no branches for {wt}; preserving as unpushed",
+            wt = record.worktree_path,
+        );
+        return Ok(CleanupAssessment::PreservedUnpushed);
     }
+
+    for line in raw.lines() {
+        let line = line.trim_end_matches(['\r', '\n']);
+        if line.is_empty() {
+            continue;
+        }
+        // `split('\t')` keeps trailing empty fields (e.g. when both
+        // upstream:short and upstream:track are empty), which is what we
+        // want — the column count is fixed at four.
+        let mut parts = line.split('\t');
+        let name = parts.next().unwrap_or("");
+        let tip = parts.next().unwrap_or("").trim();
+        let upstream = parts.next().unwrap_or("").trim();
+        let track = parts.next().unwrap_or("").trim();
+
+        if name.is_empty() || tip.is_empty() {
+            // Malformed row — fail closed.
+            debug_log!(
+                "isolation",
+                "finalize assess: malformed for-each-ref row for {wt}: {line:?}; preserving as unpushed",
+                wt = record.worktree_path,
+            );
+            return Ok(CleanupAssessment::PreservedUnpushed);
+        }
+
+        if tip == record.base_commit {
+            // Branch tip is at the recorded base — by definition no work
+            // was done on this branch (covers the abandoned scratch
+            // branch in the captured rename case).
+            continue;
+        }
+
+        if upstream.is_empty() {
+            // Tip moved past base, no upstream configured — genuinely
+            // local-only work that we must preserve.
+            debug_log!(
+                "isolation",
+                "finalize assess: branch {name} in {wt} is ahead of base with no upstream; preserving as unpushed",
+                wt = record.worktree_path,
+            );
+            return Ok(CleanupAssessment::PreservedUnpushed);
+        }
+
+        // `[gone]` (or bare `gone` in some git versions) means the
+        // upstream ref is configured but the remote-tracking ref was
+        // pruned. Treat as Safe — see the policy comment above.
+        if track.contains("gone") {
+            debug_log!(
+                "isolation",
+                "finalize assess: branch {name} in {wt} has upstream={upstream} marked gone; treating as merged-and-pruned (safe)",
+                wt = record.worktree_path,
+            );
+            continue;
+        }
+
+        let ahead = match runner.capture(
+            "git",
+            &[
+                "-C",
+                &record.worktree_path,
+                "rev-list",
+                &format!("{upstream}..{name}"),
+            ],
+            None,
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                debug_log!(
+                    "isolation",
+                    "finalize assess: rev-list {upstream}..{name} failed for {wt}: {e}; preserving as unpushed (cannot verify all commits pushed)",
+                    wt = record.worktree_path,
+                );
+                return Ok(CleanupAssessment::PreservedUnpushed);
+            }
+        };
+        if !ahead.trim().is_empty() {
+            debug_log!(
+                "isolation",
+                "finalize assess: branch {name} in {wt} has commits past upstream {upstream}; preserving as unpushed",
+                wt = record.worktree_path,
+            );
+            return Ok(CleanupAssessment::PreservedUnpushed);
+        }
+    }
+
+    Ok(CleanupAssessment::SafeToDelete)
 }
 
 fn mark_preserved(
@@ -352,7 +464,12 @@ mod tests {
 
     struct NoPrompt;
     impl FinalizerPrompt for NoPrompt {
-        fn ask_unsafe_cleanup(&mut self, _c: &str, _w: &str) -> anyhow::Result<usize> {
+        fn ask_unsafe_cleanup(
+            &mut self,
+            _c: &str,
+            _w: &str,
+            _r: PreservedReason,
+        ) -> anyhow::Result<usize> {
             panic!("prompt should not be called in this test");
         }
     }
@@ -440,6 +557,12 @@ mod tests {
         }
     }
 
+    /// Format one for-each-ref row exactly the way the production
+    /// query renders it (tab-separated columns).
+    fn ferow(name: &str, tip: &str, upstream: &str, track: &str) -> String {
+        format!("{name}\t{tip}\t{upstream}\t{track}")
+    }
+
     #[test]
     fn clean_worktree_with_head_equal_base_deletes_record() {
         let dir = TempDir::new().unwrap();
@@ -447,8 +570,11 @@ mod tests {
         std::fs::create_dir_all(&r.original_src).unwrap();
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
 
-        // Capture queue: status --porcelain (clean), rev-parse HEAD (== base)
-        let mut runner = fake_with_outputs(&["", "abc\n"]);
+        // Capture queue:
+        //   status --porcelain  (clean)
+        //   for-each-ref refs/heads/  (single scratch branch at base_commit)
+        let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
+        let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -478,10 +604,13 @@ mod tests {
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         // Capture queue:
         //   status --porcelain (clean)
-        //   rev-parse HEAD (different from base)
-        //   for-each-ref upstream:short -> "origin/jackin/scratch/x"
+        //   for-each-ref -> single branch ahead of base with reachable upstream
         //   rev-list <upstream>..<branch> -> "" (all reachable)
-        let mut runner = fake_with_outputs(&["", "newhead\n", "origin/jackin/scratch/x\n", ""]);
+        let branches = format!(
+            "{}\n",
+            ferow("jackin/scratch/x", "newhead", "origin/jackin/scratch/x", "",)
+        );
+        let mut runner = fake_with_outputs(&["", &branches, ""]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -504,11 +633,18 @@ mod tests {
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         // Capture queue:
         //   status --porcelain (clean)
-        //   rev-parse HEAD (different)
-        //   for-each-ref upstream:short -> "origin/jackin/scratch/x"
+        //   for-each-ref -> single branch ahead of base with upstream set
         //   rev-list <upstream>..<branch> -> "deadbeef" (one local commit not on upstream)
-        let mut runner =
-            fake_with_outputs(&["", "newhead\n", "origin/jackin/scratch/x\n", "deadbeef\n"]);
+        let branches = format!(
+            "{}\n",
+            ferow(
+                "jackin/scratch/x",
+                "newhead",
+                "origin/jackin/scratch/x",
+                "[ahead 1]",
+            )
+        );
+        let mut runner = fake_with_outputs(&["", &branches, "deadbeef\n"]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -533,9 +669,9 @@ mod tests {
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         // Capture queue:
         //   status --porcelain (clean)
-        //   rev-parse HEAD (different)
-        //   for-each-ref upstream:short -> "" (no upstream)
-        let mut runner = fake_with_outputs(&["", "newhead\n", ""]);
+        //   for-each-ref -> single branch ahead of base with no upstream
+        let branches = format!("{}\n", ferow("jackin/scratch/x", "newhead", "", ""));
+        let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -553,8 +689,42 @@ mod tests {
 
     struct ScriptedPrompt(VecDeque<usize>);
     impl FinalizerPrompt for ScriptedPrompt {
-        fn ask_unsafe_cleanup(&mut self, _c: &str, _w: &str) -> anyhow::Result<usize> {
+        fn ask_unsafe_cleanup(
+            &mut self,
+            _c: &str,
+            _w: &str,
+            _r: PreservedReason,
+        ) -> anyhow::Result<usize> {
             Ok(self.0.pop_front().expect("scripted prompt exhausted"))
+        }
+    }
+
+    /// Capture-and-assert version of `ScriptedPrompt`: records every
+    /// reason it was passed so tests can pin the per-assessment wording
+    /// path through the prompt.
+    struct RecordingPrompt {
+        answers: VecDeque<usize>,
+        seen: Vec<PreservedReason>,
+    }
+
+    impl RecordingPrompt {
+        fn new(answers: impl IntoIterator<Item = usize>) -> Self {
+            Self {
+                answers: VecDeque::from_iter(answers),
+                seen: Vec::new(),
+            }
+        }
+    }
+
+    impl FinalizerPrompt for RecordingPrompt {
+        fn ask_unsafe_cleanup(
+            &mut self,
+            _c: &str,
+            _w: &str,
+            r: PreservedReason,
+        ) -> anyhow::Result<usize> {
+            self.seen.push(r);
+            Ok(self.answers.pop_front().expect("scripted prompt exhausted"))
         }
     }
 
@@ -702,42 +872,13 @@ mod tests {
     }
 
     #[test]
-    fn assess_cleanup_rev_parse_failure_preserves_unpushed() {
-        let dir = TempDir::new().unwrap();
-        let r = rec(dir.path());
-        std::fs::create_dir_all(&r.original_src).unwrap();
-        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-        // status returns clean (empty), then rev-parse HEAD errors.
-        let mut runner = fake_failing_capture(&[""], "rev-parse HEAD");
-        let mut p = NoPrompt;
-        let dec = finalize_foreground_session(
-            "jackin-x",
-            dir.path(),
-            AttachOutcome::stopped(0),
-            false,
-            &mut p,
-            &mut runner,
-        )
-        .unwrap();
-        assert_eq!(dec, FinalizeDecision::Preserved);
-        let recs = read_records(dir.path()).unwrap();
-        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
-        assert!(
-            !runner
-                .run_recorded
-                .iter()
-                .any(|c| c.contains("worktree remove --force"))
-        );
-    }
-
-    #[test]
     fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-        // status clean, HEAD differs from base, then for-each-ref errors.
-        let mut runner = fake_failing_capture(&["", "newhead\n"], "for-each-ref");
+        // status clean, then for-each-ref refs/heads/ errors.
+        let mut runner = fake_failing_capture(&[""], "for-each-ref");
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -765,11 +906,21 @@ mod tests {
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-        // Make it all the way to rev-list, then fail. Without this fix the
-        // empty-string fallback would have returned SafeToDelete here and
-        // the unpushed commits would have been garbage-collected.
-        let mut runner =
-            fake_failing_capture(&["", "newhead\n", "origin/jackin/scratch/x\n"], "rev-list");
+        // status clean, for-each-ref returns one branch ahead with
+        // upstream still configured (not gone), then rev-list fails.
+        // Without the fail-closed `Err` arm the empty-string fallback
+        // would return SafeToDelete here and the unpushed commits would
+        // be garbage-collected.
+        let branches = format!(
+            "{}\n",
+            ferow(
+                "jackin/scratch/x",
+                "newhead",
+                "origin/jackin/scratch/x",
+                "[ahead 1]",
+            )
+        );
+        let mut runner = fake_failing_capture(&["", &branches], "rev-list");
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
             "jackin-x",
@@ -1026,17 +1177,15 @@ mod tests {
     }
 
     #[test]
-    fn assess_cleanup_empty_head_does_not_compare_equal_to_empty_base() {
-        // Defense in depth: even if both `head` and `base_commit` are
-        // somehow empty strings (corrupted record + degraded git),
-        // the assessment must NOT return SafeToDelete via "" == "".
+    fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
+        // Defense in depth: a worktree that reports zero local branches
+        // is pathological — even a freshly materialized worktree carries
+        // the scratch branch. Refuse to delete what we can't account for.
         let dir = TempDir::new().unwrap();
-        let mut r = rec(dir.path());
-        r.base_commit = String::new();
+        let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
-        // status clean, then rev-parse returns empty (not an error, but
-        // empty stdout — pathological but possible with broken git wrappers).
+        // status clean, then for-each-ref returns empty (no branches).
         let mut runner = fake_with_outputs(&["", ""]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
@@ -1051,5 +1200,276 @@ mod tests {
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    }
+
+    // ---------------------------------------------------------------
+    // Per-branch policy table (Piece 1 of the worktree-cleanup
+    // assessment fix). Each test pins one row of the table, with the
+    // worktree state shape that produces the captured-state bug from
+    // worktree-cleanup-assessment.mdx.
+    // ---------------------------------------------------------------
+
+    /// Renamed-branch happy path. Scratch branch parked at base_commit;
+    /// agent's renamed `feature/x` branch is ahead of base with a
+    /// reachable upstream and rev-list returns empty (all commits
+    /// pushed). Pre-fix this returned PreservedUnpushed because the
+    /// upstream check was hardcoded against the abandoned scratch
+    /// branch (which has no upstream by construction).
+    #[test]
+    fn renamed_branch_pushed_clean_is_safe_to_delete() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        // status clean,
+        // for-each-ref enumerates two branches:
+        //   - scratch at base_commit (no upstream)
+        //   - feature/x ahead, upstream set, no [gone]
+        // rev-list <upstream>..feature/x → empty (everything pushed)
+        let branches = [
+            ferow("jackin/scratch/x", "abc", "", ""),
+            ferow("feature/x", "newhead", "origin/feature/x", ""),
+        ]
+        .join("\n")
+            + "\n";
+        let mut runner = fake_with_outputs(&["", &branches, ""]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert!(read_records(dir.path()).unwrap().is_empty());
+    }
+
+    /// Squash-merged-and-pruned branch. Scratch parked at base; the
+    /// agent's `feature/x` branch is ahead with upstream set, but the
+    /// upstream-tracking column shows `[gone]` because the remote
+    /// branch was deleted after the PR merge and pruned locally. The
+    /// `[gone]` heuristic must mark this Safe; pre-fix the rev-list
+    /// would have errored on the missing upstream and the Err arm
+    /// would have routed to PreservedUnpushed.
+    #[test]
+    fn squash_merged_pruned_branch_is_safe_to_delete() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let branches = [
+            ferow("jackin/scratch/x", "abc", "", ""),
+            ferow("feature/x", "newhead", "origin/feature/x", "[gone]"),
+        ]
+        .join("\n")
+            + "\n";
+        // No rev-list call expected — `[gone]` short-circuits to Safe.
+        let mut runner = fake_with_outputs(&["", &branches]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert!(read_records(dir.path()).unwrap().is_empty());
+        assert!(
+            !runner.recorded.iter().any(|c| c.contains("rev-list")),
+            "[gone] short-circuit must not invoke rev-list; recorded={:?}",
+            runner.recorded,
+        );
+    }
+
+    /// Renamed branch ahead of base with no upstream — genuine local
+    /// work; preserve. Pre-fix this also returned PreservedUnpushed
+    /// (correct outcome) but only by accident of the wrong-branch check.
+    #[test]
+    fn renamed_branch_no_upstream_preserves_unpushed() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let branches = [
+            ferow("jackin/scratch/x", "abc", "", ""),
+            ferow("feature/x", "newhead", "", ""),
+        ]
+        .join("\n")
+            + "\n";
+        let mut runner = fake_with_outputs(&["", &branches]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    }
+
+    /// Renamed branch ahead with upstream set, rev-list returns commits
+    /// → real unpushed work, preserve.
+    #[test]
+    fn renamed_branch_with_unpushed_commits_preserves() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let branches = [
+            ferow("jackin/scratch/x", "abc", "", ""),
+            ferow("feature/x", "newhead", "origin/feature/x", "[ahead 2]"),
+        ]
+        .join("\n")
+            + "\n";
+        let mut runner = fake_with_outputs(&["", &branches, "deadbeef\ncafef00d\n"]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    }
+
+    /// Multiple non-trivial branches, all safe by different paths
+    /// (one merged-and-pruned, one pushed-clean). All-Safe → cleanup.
+    #[test]
+    fn multiple_branches_all_safe_deletes_record() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let branches = [
+            ferow("jackin/scratch/x", "abc", "", ""),
+            ferow("feature/a", "aaaa", "origin/feature/a", "[gone]"),
+            ferow("feature/b", "bbbb", "origin/feature/b", ""),
+        ]
+        .join("\n")
+            + "\n";
+        // status clean, branch enumeration, rev-list for feature/b only
+        // (feature/a short-circuits via [gone], scratch via tip==base).
+        let mut runner = fake_with_outputs(&["", &branches, ""]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Cleaned);
+        assert!(read_records(dir.path()).unwrap().is_empty());
+        let revlist_calls = runner
+            .recorded
+            .iter()
+            .filter(|c| c.contains("rev-list"))
+            .count();
+        assert_eq!(
+            revlist_calls, 1,
+            "[gone] and tip==base must short-circuit; only feature/b should hit rev-list. recorded={:?}",
+            runner.recorded,
+        );
+    }
+
+    /// Multiple branches, one with real unpushed work → preserve.
+    #[test]
+    fn multiple_branches_one_unsafe_preserves() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let branches = [
+            ferow("jackin/scratch/x", "abc", "", ""),
+            ferow("feature/a", "aaaa", "origin/feature/a", ""),
+            ferow("feature/b", "bbbb", "", ""), // ahead, no upstream → unsafe
+        ]
+        .join("\n")
+            + "\n";
+        // for-each-ref, then rev-list for feature/a (empty == pushed),
+        // then enumeration hits feature/b and short-circuits to
+        // PreservedUnpushed without another rev-list.
+        let mut runner = fake_with_outputs(&["", &branches, ""]);
+        let mut p = NoPrompt;
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            false,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        let recs = read_records(dir.path()).unwrap();
+        assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+    }
+
+    /// Prompt-wording variant: a PreservedUnpushed assessment must
+    /// reach the prompt with reason=Unpushed (not Dirty). Pre-fix,
+    /// `ask_unsafe_cleanup` had no reason argument so the wording was
+    /// hardcoded to "uncommitted changes" for both paths.
+    #[test]
+    fn unpushed_branch_prompts_with_unpushed_reason() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
+        // status clean → for-each-ref → ahead+no-upstream → preserve
+        let mut runner = fake_with_outputs(&["", &branches]);
+        let mut p = RecordingPrompt::new([1]); // operator picks "preserve"
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        assert_eq!(p.seen, vec![PreservedReason::Unpushed]);
+    }
+
+    /// Counterpart: a dirty worktree must reach the prompt with
+    /// reason=Dirty so the operator sees "uncommitted changes".
+    #[test]
+    fn dirty_worktree_prompts_with_dirty_reason() {
+        let dir = TempDir::new().unwrap();
+        let r = rec(dir.path());
+        std::fs::create_dir_all(&r.original_src).unwrap();
+        write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+        let mut runner = fake_with_outputs(&[" M file\n"]);
+        let mut p = RecordingPrompt::new([1]);
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::stopped(0),
+            true,
+            &mut p,
+            &mut runner,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+        assert_eq!(p.seen, vec![PreservedReason::Dirty]);
     }
 }

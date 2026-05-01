@@ -4,7 +4,11 @@ title: "Worktree Cleanup Assessment Misjudges Renamed and Squash-Merged Branches
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: Open
+**Status**: Resolved
+
+Implemented. `assess_cleanup` in <RepoFile path="src/isolation/finalize.rs" /> now enumerates every local branch in the worktree (instead of hardcoding `record.scratch_branch`) and applies the per-branch policy table from the **Proposed Fix** section below; `[gone]` upstream is treated as Safe so squash-merged-and-pruned branches no longer trip the prompt. The prompt also takes a new `PreservedReason` discriminator (`Dirty` vs `Unpushed`) so the wording matches what is actually at risk — operators no longer see "still has uncommitted changes" alongside a clean tree. The non-interactive `[jackin] preserved isolated worktree …` warning gets the same per-reason phrasing.
+
+The sections below preserve the original analysis.
 
 ## Problem
 
