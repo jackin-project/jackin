@@ -20,16 +20,10 @@ env:
   # TODO.md "Follow-ups" → "lychee-action-sha-pin".
   #
   # Pinned past lychee-action's v0.23.0 default because v0.24.x is the first
-  # release that extracts <loc> URLs from XML sitemaps (lycheeverse/lychee#2071,
-  # released 2026-04-24). The deploy and check-deployed jobs need that to feed
+  # release that extracts <loc> URLs from XML sitemaps (lycheeverse/lychee#2071).
+  # The deploy and check-deployed jobs need that to feed
   # `--files-from lychee/deployed-pages.txt`.
-  #
-  # Using v0.24.1 specifically: lychee v0.24.0 ships its release tarball with a
-  # newly-added top-level subfolder, which lychee-action v2.8.0 cannot extract.
-  # v0.24.1 keeps the flat tarball layout AND keeps the sitemap fix. The action
-  # SHA above is post-v2.8.0 master (faea714) which adds subfolder-aware install
-  # — required for any future v0.24.0+ rollback. Bump in lockstep across the file.
-  LYCHEE_VERSION: 'v0.24.1'
+  LYCHEE_VERSION: 'v0.24.2'
 
 concurrency:
   group: pages-${{ github.event_name }}-${{ github.ref }}

@@ -34,8 +34,8 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 - **What:** in [`.github/workflows/docs.yml`](.github/workflows/docs.yml), revert the `lycheeverse/lychee-action` SHA pin from `faea714062690f6c2e6f7f388469ec4fa6d9c4e1` (master, post-v2.8.0) to a SHA from a tagged release.
 - **Why:** SHA-pinning to a tagged release is more discoverable than pinning to a master commit, surfaces release notes during routine dependency review, and keeps the audit trail aligned with what's published in the marketplace.
 - **Tracking:** <https://github.com/lycheeverse/lychee-action/releases> — first tag at or after commit `faea714` (which introduces v0.24.x subfolder-aware install).
-- **Last verified:** 2026-04-25 — latest tag is `v2.8.0`; `faea714` is current `master` HEAD; pin introduced in [#176](https://github.com/jackin-project/jackin/pull/176).
-- **Done when:** a tag at or after `faea714` ships. Replace the SHA in `docs.yml` with that tag's commit SHA, update the inline comment from "post-v2.8.0 master" to the tag name, and bump `LYCHEE_VERSION` to whatever the new release defaults to (or pin explicitly).
+- **Last verified:** 2026-05-01 — latest `lycheeverse/lychee-action` tag is still `v2.8.0`; `faea714` remains current `master` HEAD; pin introduced in [#176](https://github.com/jackin-project/jackin/pull/176). `LYCHEE_VERSION` independently bumped to `v0.24.2` ([release notes](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.24.2)) — tarball layout unchanged from v0.24.1 (PR [#2165](https://github.com/lycheeverse/lychee/pull/2165) is binstall-metadata only), so the post-v2.8.0 master SHA is still required.
+- **Done when:** a tag at or after `faea714` ships. Replace the SHA in `docs.yml` with that tag's commit SHA, update the inline comment from "post-v2.8.0 master" to the tag name, and re-confirm `LYCHEE_VERSION` matches whatever the new release defaults to (or keep the explicit pin if newer).
 
 ### Internal cleanups
 
