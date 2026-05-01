@@ -133,6 +133,26 @@ bun install --frozen-lockfile
 - `mailto:` links are included in lychee checks, so use real, intentional email
   addresses rather than placeholders.
 - Sidebar and top-nav are configured in `astro.config.ts`.
+- **Roadmap sidebar discipline.** Every MDX file under
+  `src/content/docs/reference/roadmap/` must have a matching entry in
+  the sidebar in `astro.config.ts` (under `Reference → Roadmap → Open
+  items`, `Resolved`, or `Codebase health` as appropriate for its
+  `**Status**` field). Whenever you add, rename, delete, or change the
+  status of a roadmap item — or restructure the directory — verify
+  the sidebar still matches the directory contents in the same PR.
+  Operators rely on the sidebar (not the overview prose) to discover
+  open work, so an item reachable only via direct URL or the
+  overview page is effectively hidden. To audit:
+
+  ```sh
+  ls docs/src/content/docs/reference/roadmap/*.mdx \
+    | xargs -n1 basename -s .mdx | sort > /tmp/roadmap-files
+  grep -oE "reference/roadmap/[a-z0-9-]+" docs/astro.config.ts \
+    | sed 's|reference/roadmap/||' | sort -u > /tmp/roadmap-sidebar
+  diff /tmp/roadmap-files /tmp/roadmap-sidebar
+  ```
+
+  The diff must be empty.
 - Use Starlight components for callouts (`<Aside type="note|tip|caution">`),
   steps (`<Steps>` around an `<ol>`), and tabs (`<Tabs><TabItem>`). Import from
   `@astrojs/starlight/components`.

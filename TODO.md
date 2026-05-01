@@ -69,7 +69,7 @@ Roadmap items — open work and resolved design docs — live in the docs site, 
 - Per-item design docs: [`docs/src/content/docs/reference/roadmap/`](docs/src/content/docs/reference/roadmap/)
 - Browsable: <https://jackin.tailrocks.com/reference/roadmap/>
 
-To add a new item, create an MDX page under the directory above and add a sidebar entry in [`docs/astro.config.ts`](docs/astro.config.ts) under `Roadmap → Open items`.
+To add a new item, create an MDX page under the directory above and add a sidebar entry in [`docs/astro.config.ts`](docs/astro.config.ts) under `Roadmap → Open items`. Whenever you add, rename, delete, or change a roadmap item's `**Status**` (Open ↔ Resolved), update the sidebar in the same PR — the directory and the sidebar must stay in sync. Operators discover open work through the sidebar; an item reachable only via the overview page or direct URL is effectively hidden. See `docs/AGENTS.md` → "Content Notes" for the audit command that diffs the directory against the sidebar.
 
 Each design doc should include (see any existing page as a template):
 
@@ -100,6 +100,7 @@ Docs rot silently. Every PR must include a one-pass verification that structure-
 
 - [ ] If the PR resolves or advances an item under `docs/src/content/docs/reference/roadmap/`, update that item's `Status` field (`Open | Deferred | Resolved`) and `Related Files` section in the same PR.
 - [ ] If the PR references `src/` paths that have since moved (e.g., a roadmap doc mentions `src/runtime.rs` which is now `src/runtime/`), fix those path references.
+- [ ] If the PR adds, renames, deletes, or moves a roadmap MDX file between status sections, update [`docs/astro.config.ts`](docs/astro.config.ts) so `Reference → Roadmap` (Open / Resolved / Codebase health) matches the directory. Run the audit command in `docs/AGENTS.md` → "Content Notes" → "Roadmap sidebar discipline" to confirm the diff is empty.
 
 ### How to verify
 
