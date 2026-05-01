@@ -8,6 +8,12 @@ const ISOLATION_FILE: &str = "isolation.json";
 const STATE_DIR: &str = ".jackin";
 const CURRENT_VERSION: u32 = 1;
 
+/// Persisted cleanup state written into `isolation.json`.
+///
+/// `PreservedDirty` and `PreservedUnpushed` map one-to-one to the
+/// `PreservedReason::Dirty` and `PreservedReason::Unpushed` variants in
+/// `finalize.rs`, which drive the transient prompt wording. When adding a
+/// new preservation cause, update both types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CleanupStatus {
