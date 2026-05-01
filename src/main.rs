@@ -43,10 +43,11 @@ fn main() {
             println!();
             std::process::exit(0);
         }
-        Action::PrintHelp { command: _ } => {
-            // Implemented in Task 4 — placeholder to keep binary compiling.
-            eprintln!("error: help not yet implemented");
-            std::process::exit(2);
+        Action::PrintHelp { command } => {
+            if let Err(e) = jackin::cli::help::exec(&command) {
+                jackin::tui::fatal(&format!("{e:#}"));
+                std::process::exit(1);
+            }
         }
         Action::ErrorNotTtyCapable { deprecated_alias } => {
             if deprecated_alias {

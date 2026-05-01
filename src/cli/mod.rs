@@ -33,6 +33,7 @@ pub mod agent;
 pub mod cleanup;
 pub mod config;
 pub mod dispatch;
+pub mod help;
 pub mod workspace;
 
 pub use config::{AuthCommand, ConfigCommand, EnvCommand, MountCommand, TrustCommand};
@@ -46,7 +47,14 @@ pub use workspace::{WorkspaceCommand, WorkspaceEnvCommand};
 /// [`ConsoleArgs`] make `jackin --debug` equivalent to
 /// `jackin console --debug`.
 #[derive(Debug, Parser)]
-#[command(name = "jackin", version = env!("JACKIN_VERSION"), styles = HELP_STYLES, before_help = BANNER, disable_help_subcommand = true)]
+#[command(
+    name = "jackin",
+    version = env!("JACKIN_VERSION"),
+    styles = HELP_STYLES,
+    before_help = BANNER,
+    disable_help_subcommand = true,
+    after_help = "Run 'jackin help <command>' for more detailed information."
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
