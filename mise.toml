@@ -2,4 +2,8 @@
 bun = "1.3.13"
 just = "1.50.0"
 node = "24.15.0"
-rust = "1.95.0"
+# rust is read from `rust-toolchain.toml` via the `idiomatic_version_file`
+# setting below — single source of truth for the toolchain channel.
+
+[settings]
+idiomatic_version_file_enable_tools = ["rust"]

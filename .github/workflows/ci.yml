@@ -14,16 +14,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+      - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
         with:
+          # Toolchain channel comes from rust-toolchain.toml.
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+          # `-D warnings` is enforced explicitly on the clippy step below;
+          # leaving the action's default RUSTFLAGS would also apply it to
+          # `cargo build`/`cargo check`/`cargo nextest run`, which is a
+          # behavioral change we don't want to bundle into this PR.
+          rustflags: ""
       - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
         with:
           tool: cargo-nextest
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
       - run: cargo nextest run
+
+  msrv:
+    # Verify that the crate still builds on its declared MSRV
+    # (`rust-version` in Cargo.toml). This is independent of the toolchain
+    # pin in rust-toolchain.toml, which tracks the latest tested stable
+    # used for day-to-day builds.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
+        with:
+          # Override rust-toolchain.toml: this job exists specifically to
+          # verify the floor declared in `Cargo.toml`'s `rust-version`.
+          toolchain: "1.94.0"
+          cache-key: msrv-1.94.0
+          rustflags: ""
+      - name: cargo check on MSRV
+        run: cargo check --workspace --all-targets --locked
+        env:
+          RUSTUP_TOOLCHAIN: "1.94.0"
 
   build-validator:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -37,12 +62,12 @@ jobs:
             cross: true
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+      - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
         with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: validator-${{ matrix.target }}
+          # Toolchain channel comes from rust-toolchain.toml.
+          target: ${{ matrix.target }}
+          cache-key: validator-${{ matrix.target }}
+          rustflags: ""
 
       - name: Install cross
         if: matrix.cross

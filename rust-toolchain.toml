@@ -1,0 +1,7 @@
+# Source of truth for the latest tested Rust channel.
+# Read by rustup, rust-analyzer, mise (via idiomatic_version_file),
+# and CI (via actions-rust-lang/setup-rust-toolchain).
+# MSRV floor is `rust-version` in Cargo.toml, verified by the `msrv` CI job.
+
+[toolchain]
+channel = "1.95.0"
