@@ -25,6 +25,24 @@ jobs:
       - run: cargo clippy -- -D warnings
       - run: cargo nextest run
 
+  msrv:
+    # Verify that the crate still builds on its declared MSRV
+    # (`rust-version` in Cargo.toml). This is independent of the toolchain
+    # pin in rust-toolchain.toml, which tracks the latest tested stable
+    # used for day-to-day builds.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install MSRV toolchain (1.94.0)
+        run: rustup toolchain install 1.94.0 --profile minimal --no-self-update
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: msrv-1.94.0
+      - name: cargo check on MSRV
+        run: cargo +1.94.0 check --workspace --all-targets --locked
+        env:
+          RUSTUP_TOOLCHAIN: "1.94.0"
+
   build-validator:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: check

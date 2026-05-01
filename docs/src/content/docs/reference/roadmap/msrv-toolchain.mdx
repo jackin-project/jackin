@@ -3,33 +3,20 @@ title: "MSRV & toolchain pin"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — Phase 1, no confirmation needed
+**Status**: Resolved — `rust-toolchain.toml` added, MSRV verified in CI
 
 ## Problem
 
-Three files each assert a Rust version independently — <RepoFile path="mise.toml" /> (1.95.0), <RepoFile path="Cargo.toml" /> rust-version (1.94), CI SHA (1.95.0). No `rust-toolchain.toml` exists. The declared MSRV of 1.94 is never verified in CI.
+Three files each asserted a Rust version independently — <RepoFile path="mise.toml" /> (1.95.0), <RepoFile path="Cargo.toml" /> rust-version (1.94), CI SHA (1.95.0). No `rust-toolchain.toml` existed. The declared MSRV of 1.94 was never verified in CI.
 
-## Steps
+## Resolution
 
-1. Create `rust-toolchain.toml` at repo root:
-   ```toml
-   [toolchain]
-   channel = "1.95.0"
-   ```
-   `rust-analyzer` reads this automatically for IDE toolchain selection.
+1. <RepoFile path="rust-toolchain.toml" /> pins the canonical "latest tested" channel (`1.95.0`) and is read automatically by `rustup` and `rust-analyzer`. The header comment lists every other file that has to move with it.
+2. <RepoFile path="mise.toml" /> now carries an inline comment cross-referencing `rust-toolchain.toml` so the two pins do not silently drift.
+3. <RepoFile path=".github/workflows/ci.yml" /> has a dedicated `msrv` job that installs `1.94.0` via `rustup` and runs `cargo +1.94.0 check --workspace --all-targets --locked`. If that job fails, either bump `rust-version` in <RepoFile path="Cargo.toml" /> to the new floor or revert the offending change.
 
-2. Update <RepoFile path="mise.toml" /> to add a comment cross-referencing `rust-toolchain.toml`.
+## Caveats (still relevant)
 
-3. Add MSRV check step to <RepoFile path=".github/workflows/ci.yml" />:
-   ```yaml
-   - name: Check MSRV
-     run: cargo +1.94.0 check
-     env:
-       RUSTUP_TOOLCHAIN: "1.94.0"
-   ```
-
-## Caveats
-
-- `dtolnay/rust-toolchain` does NOT read `rust-toolchain.toml` — its version is encoded in the action SHA. The SHA in `ci.yml` and `release.yml` must be manually kept in sync with `rust-toolchain.toml`.
-- If `cargo +1.94.0 check` fails, code uses features stabilized after 1.94 — update `rust-version` in <RepoFile path="Cargo.toml" /> to the correct floor.
+- `dtolnay/rust-toolchain` does NOT read `rust-toolchain.toml` — its version is encoded in the action SHA. The SHAs in <RepoFile path=".github/workflows/ci.yml" /> and <RepoFile path=".github/workflows/release.yml" /> must be manually kept in sync with the `channel` value in `rust-toolchain.toml` whenever the latest-tested-stable bumps.
+- If `cargo +1.94.0 check` ever starts failing because of a newly stabilized feature, update `rust-version` in <RepoFile path="Cargo.toml" /> to the correct floor and update the MSRV job's pinned `1.94.0` literals together (they are intentionally explicit so the floor is greppable).
 - `u64::is_multiple_of` (used in <RepoFile path="src/tui/animation.rs" /> lines 70, 264, 432, 437) was stabilized in 1.86 — safely within the 1.94 MSRV.
