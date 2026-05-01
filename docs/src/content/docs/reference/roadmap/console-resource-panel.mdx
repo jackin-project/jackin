@@ -1,0 +1,150 @@
+---
+title: "Console Resource Panel (machine + per-agent live usage)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 2, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+The operator console renders a fixed view: workspace list, agent picker,
+mounts. It doesn't show *what's happening on the machine*. When five agents
+are running and one is consuming 14 GiB of RAM, the operator finds out by
+watching their machine swap, not by looking at the console.
+
+This is the second major UX gap (after [agent runtime
+status](/reference/roadmap/agent-runtime-status/)). Without it, the
+[declarative resource limits](/reference/roadmap/declarative-resource-limits/)
+work is invisible — operators can't see what the limits are *doing*.
+
+## Why It Matters
+
+- Direct visibility into per-agent CPU/RAM usage closes the feedback loop
+  on resource limits: operator sets `memory_max = 16 GiB`, watches the
+  agent crawl up to 14 GiB, makes an informed decision about whether to
+  raise the limit or kill the agent.
+- The host-level summary (total CPU/RAM used, free, by jackin' vs system)
+  tells the operator at a glance whether they have headroom for another
+  agent.
+- This is one of the surfaces that makes jackin' feel *alive* rather than
+  a one-shot launcher; the gap shows up in every tool comparison.
+
+## Inspiration in multicode
+
+**Sources**:
+- No dedicated README section (implementation-only feature)
+- Source — [`lib/src/services/resource_usage_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/resource_usage_service.rs) (per-workspace + machine sampling)
+- Source — [`tui/src/render.rs`](https://github.com/yawkat/multicode/blob/main/tui/src/render.rs) (panel rendering)
+
+multicode samples three sources every 2 seconds:
+
+- `/proc/stat` for total CPU usage delta
+- `/proc/meminfo` for RAM
+- `du -sBc` (or platform equivalent) for workspace disk usage
+
+Per-workspace samples come from cgroup files inside the systemd unit:
+`cpuacct.usage_nsec` (delta over the 2s window → percent), `memory.current`
+(current bytes), and `MemoryOomCount` from systemd properties.
+
+The TUI displays these as columns: machine CPU%, machine RAM, per-workspace
+CPU%, per-workspace RAM. RAM cells turn yellow when within 512 MB of
+`memory_max`. OOM kills are highlighted explicitly.
+
+## Recommended Shape
+
+Two distinct concerns plumbed through the same console panel:
+
+1. **Per-agent usage** — live CPU% and RAM bytes per running container,
+   plus configured limit (from
+   [declarative resource limits](/reference/roadmap/declarative-resource-limits/))
+   for context.
+2. **Machine summary** — total host CPU%, total host RAM used/free, total
+   disk space used by `~/.jackin/data/`.
+
+### Per-agent sampling
+
+Use the Docker stats API (`docker stats --no-stream` or, post-[Bollard
+migration](/reference/roadmap/bollard-migration/), the typed
+`ContainerStats` endpoint). Sample every 2 seconds while the console is
+open; pause sampling when the panel is collapsed.
+
+Fields per agent:
+
+- `cpu_percent: f32` (relative to one host core)
+- `memory_bytes: u64` (current RSS-equivalent)
+- `memory_limit_bytes: u64?` (from declared limit; renders "no limit" when absent)
+- `oom_killed: bool` (sticky from last OOM, cleared on container restart)
+
+### Machine sampling
+
+Cross-platform — use the `sysinfo` crate (already a candidate dependency
+for this kind of work) for CPU/RAM. For the data-dir disk usage, walk
+`~/.jackin/data/` once on console open and incrementally on archive
+events; do not poll on every render.
+
+### Console rendering
+
+A new optional panel (toggled with a keystroke, e.g. `t` for "telemetry")
+that splits the bottom of the console into two regions: machine summary
+on the left, per-agent table on the right. When collapsed, the panel is
+absent and sampling pauses.
+
+When [agent runtime
+status](/reference/roadmap/agent-runtime-status/) is in place, the
+per-agent table includes a status column to its left.
+
+## Scope (V1)
+
+- Per-agent CPU%, RAM, RAM-vs-limit, OOM flag — sampled via Docker stats.
+- Machine summary: total CPU%, total RAM, data-dir disk usage.
+- 2-second sample interval while panel is open; paused when closed.
+- Console keystroke toggles the panel; defaults to closed.
+- Sample failures (Docker unreachable, container gone) degrade silently —
+  show "?" cells, not error toasts.
+
+## Defer
+
+- Network I/O bytes per agent. Useful but lower-priority.
+- Disk I/O per agent. Same.
+- Historical graphs (sparklines, rolling 5-minute window). Defer until
+  [persistent storage layer](/reference/roadmap/persistent-storage-layer/)
+  ships and we can keep a rolling sample buffer.
+- Alert thresholds ("notify me when an agent exceeds 90% of limit").
+  Defer; operators can watch the cell color in V1.
+- CSV/Prometheus export. Defer.
+
+## Open Questions
+
+- **Sampling backend abstraction.** Sample-via-Docker today; sample-via-
+  cgroup-files when [selectable
+  backends](/reference/roadmap/selectable-sandbox-backends/) lands. Which
+  module owns the abstraction? Recommended: *the runtime backend trait
+  owns it*, mirroring how each backend already owns mount translation.
+- **Always-on vs on-demand sampling.** multicode samples constantly even
+  when the panel isn't visible, because the data feeds usage aggregation.
+  jackin's V1 doesn't need that yet — pause when closed is the right
+  call. Revisit when [token & cost
+  telemetry](/reference/roadmap/token-cost-telemetry/) needs continuous
+  series.
+- **Keystroke choice.** `t` for telemetry, `r` for resources, `m` for
+  metrics — pick once and document. Defer to console UX review.
+
+## Related Files
+
+- New module (e.g. `src/console/panels/resources.rs`) —
+  panel rendering + sampling loop
+- <RepoFile path="src/console/manager/state.rs" /> — keybinding wiring
+- <RepoFile path="src/runtime/launch.rs" /> — sampling adapter trait
+  starts here, moves into per-backend modules over time
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Declarative resource limits](/reference/roadmap/declarative-resource-limits/) —
+  the configured-limit value the panel renders alongside live usage
+- [Agent runtime status](/reference/roadmap/agent-runtime-status/) —
+  status column lives in the same per-agent table
+- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) —
+  later turns the per-agent column into a richer telemetry view
+- [Bollard migration](/reference/roadmap/bollard-migration/) — typed
+  Docker stats API simplifies the sampler

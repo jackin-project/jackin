@@ -1,0 +1,181 @@
+---
+title: "GitHub Link Tracking & Live Status"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 2, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+Once the agent has emitted `<jackin:issue>` or `<jackin:pr>` tags via the
+[agent tag protocol](/reference/roadmap/agent-tag-protocol/), the operator
+wants to see their *live* state: is the issue still open? Did the PR get
+approved? Did CI go green? Today jackin' has no GitHub status awareness at
+all — the operator switches to a browser tab to check.
+
+Polling GitHub for every link on every console redraw would burn the rate
+limit instantly, so this needs a small cache and an awareness of which
+states change rarely vs frequently.
+
+## Why It Matters
+
+- It's the most operator-visible payoff of the [tag
+  protocol](/reference/roadmap/agent-tag-protocol/) — without live status,
+  the protocol just stores URLs.
+- It lets the autonomous queue (Phase 4) act on PR state ("re-queue a
+  task whose PR was rejected") without re-implementing GitHub polling
+  inside the queue.
+- It's the lowest-risk way to introduce a third-party network dependency
+  (Octocrab) into jackin's runtime — the surface is narrow (read-only
+  status fetches) and the failure mode is obvious (status cell shows "?").
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [Git / GitHub integration](https://github.com/graemerocher/multicode#git--github-integration) (status icons + their meanings)
+- Source — [`lib/src/services/github_status_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/github_status_service.rs) (cadence table, octocrab client, SQLite cache)
+- Source — [`lib/src/schema.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/schema.rs) (`github_link_statuses` table definition)
+
+multicode polls GitHub via Octocrab on a per-link cadence that varies by
+state. Cached in per-workspace SQLite (`.multicode/cache.sqlite`), table
+`github_link_statuses`. Refresh windows:
+
+| State | Refresh after |
+|---|---|
+| Open issue | 10 min |
+| Closed issue | 60 min |
+| PR building | 1 min |
+| PR built, review pending | 5 min |
+| PR approved, awaiting merge | 10 min |
+| PR closed/merged | 60 min |
+| On fetch error | 5 min retry |
+
+Cached fields per row include: URL, kind (issue/PR), host, owner, repo,
+resource number, issue state, PR state, build state, review state, draft
+flag, fetched-at, refresh-after, last error.
+
+The TUI renders icons:
+
+- Issue: blue circle (open), gray X (closed)
+- PR: state colors plus draft badge, build status (running/success/fail),
+  review status (none/pending/changes/approved)
+
+## Recommended Shape
+
+Reuse multicode's polling cadence model verbatim — they did the work to
+calibrate it against real GitHub usage. Use Octocrab as the client.
+Persist via the [persistent storage layer](/reference/roadmap/persistent-storage-layer/).
+
+### Auth source
+
+Reuses the [credential source pattern](/reference/roadmap/credential-source-pattern/):
+the operator's GitHub PAT comes from one of `env`, `command`, `op://`,
+or `keychain`. Required scopes: `public_repo` for public repos,
+`repo` for private. `read:user` for resolving avatars later.
+
+The existing `gh` CLI passthrough is *separate* and remains how the
+container talks to GitHub. The link-tracking client is operator-host
+only — the agent doesn't see the token.
+
+### Schema (in the SQLite layer)
+
+```sql
+CREATE TABLE github_link_statuses (
+    url TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,                  -- 'issue' or 'pr'
+    host TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    resource_number INTEGER NOT NULL,
+    issue_state TEXT,                    -- 'open' | 'closed' | NULL
+    pr_state TEXT,                       -- 'open' | 'merged' | 'closed' | NULL
+    build_state TEXT,                    -- 'pending' | 'success' | 'failure' | 'error' | NULL
+    review_state TEXT,                   -- 'none' | 'pending' | 'changes_requested' | 'approved'
+    pr_is_draft BOOLEAN,
+    fetched_at INTEGER NOT NULL,         -- epoch seconds
+    refresh_after INTEGER NOT NULL,      -- epoch seconds
+    last_error TEXT
+);
+```
+
+Cache is per-instance (each `~/.jackin/data/<container>/` has its own
+SQLite). Sharing a cache across instances would be a small efficiency win
+but creates state-isolation questions — defer.
+
+### Fetcher loop
+
+A single async task per running console session (not per-instance) walks
+all known links across instances, picks ones whose `refresh_after` is
+in the past, fetches in batches of N (default 5) to avoid burst rate
+limit consumption, updates the cache.
+
+Failures: log to `last_error`, set `refresh_after = now + 5 min`,
+console renders a yellow "?" until success.
+
+### Console rendering
+
+Each instance row gets a "Links" cell (or expand-to-detail panel) that
+shows captured `<jackin:issue>` and `<jackin:pr>` markers as colored
+icons, with hover/select revealing details. Clicking opens via the
+[`web` handler](/reference/roadmap/operator-handler-system/).
+
+## Scope (V1)
+
+- Octocrab-based fetcher with multicode's cadence table.
+- Per-instance SQLite cache (depends on
+  [persistent storage layer](/reference/roadmap/persistent-storage-layer/)).
+- Console icons for issue/PR state, build, review.
+- Operator-host PAT via the existing credential resolution
+  (`op://`, `${env.VAR}`, literal). New backends added when [credential
+  source pattern](/reference/roadmap/credential-source-pattern/) lands.
+- Console "Links" panel/cell rendering.
+- Click-to-open via the `web` handler from
+  [operator handler system](/reference/roadmap/operator-handler-system/).
+
+## Defer
+
+- Custom-link CRUD from the console (multicode allows manually adding
+  links not emitted by the agent). Useful but waits — the agent-emitted
+  flow covers the 95% case.
+- GitHub Enterprise host support beyond the standard
+  `https://github.com/<owner>/<repo>` URL pattern. multicode supports it;
+  jackin' V1 should too if cost is low (Octocrab handles GHE clients
+  with one extra config line). Confirm in design.
+- PR review summary text (who approved, what comments). Just state in V1.
+- Cross-link aggregation ("show me all open PRs across all instances").
+  Defer until Phase 4.
+- GitLab / Bitbucket. Defer indefinitely; if demand surfaces, abstract
+  the fetcher behind a `LinkProvider` trait.
+
+## Open Questions
+
+- **Per-instance cache vs operator-global.** Per-instance matches
+  jackin's existing data layout but means a link tracked by two
+  instances gets fetched twice. Recommended default: *per-instance for
+  V1*; revisit if rate-limit pressure shows up.
+- **Token scope guidance.** What's the minimum-privilege token the docs
+  should recommend? `public_repo` works for public-only; private repos
+  need `repo`. multicode docs are clear on this; jackin's docs should
+  match.
+- **GitHub App alternative.** Long-term, a GitHub App (with
+  per-installation tokens) is more durable than a PAT. Defer the design
+  but flag it for the multi-tenant Kubernetes future.
+
+## Related Files
+
+- New module (e.g. `src/runtime/link_tracking.rs`) —
+  fetcher loop + cadence + cache writes
+- <RepoFile path="src/console/manager/state.rs" /> — links panel
+- `src/console/manager/render/` — icon rendering
+- The persistent-storage module owns the SQL schema
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Agent tag protocol](/reference/roadmap/agent-tag-protocol/) — input
+- [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) —
+  cache home
+- [Operator handler system](/reference/roadmap/operator-handler-system/) —
+  click-to-open target
+- [Credential source pattern](/reference/roadmap/credential-source-pattern/) —
+  GitHub PAT plumbing

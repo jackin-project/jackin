@@ -1,0 +1,173 @@
+---
+title: "Workspace Archive / Unarchive"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 1, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+jackin's workspace lifecycle is binary: a workspace is either *live* (loaded
+or loadable) or *gone* (`workspace remove` deletes the config; `purge`
+deletes the per-instance state). Operators who want to "park" a workspace —
+keep its data but get it out of the active list — have no option.
+
+The gap matters most for workspaces that finished their job but produced
+preserved state: a worktree-isolated mount with unpushed commits, an agent
+session whose history might still be useful, a long-running investigation
+the operator wants to be able to revive in a week.
+
+multicode solves this with archive: compress the workspace directory into a
+single file (`.tar.zstd` / `.tar.xz` / `.zip`), mark it archived, hide it
+from the default view. Unarchive reverses the operation. The TUI auto-detects
+archive files at startup and offers them in a separate "archived" view.
+
+## Why It Matters
+
+- The natural pair to [worktree cleanup
+  assessment](/reference/roadmap/worktree-cleanup-assessment/): when clean
+  exit can't safely delete and the operator doesn't want to inspect
+  immediately, archive is what they should do instead.
+- jackin's per-instance state directories grow without bound today. Even on
+  a developer laptop, six idle agents with persisted Claude history is
+  ~50 MB of clutter. Compressed archives reduce that meaningfully.
+- It pairs naturally with [task queue](/reference/roadmap/autonomous-task-queue/):
+  a queue that has fully processed an issue can auto-archive the resulting
+  per-task workspace if configured to.
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [Archiving](https://github.com/graemerocher/multicode#archiving)
+- Source — [`lib/src/services/workspace_archive.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/workspace_archive.rs)
+
+multicode's archive lives in `lib/src/services/workspace_archive.rs`
+(in their tree). Behaviors borrowed:
+
+- **Three formats supported** with auto-detect: `.tar.zstd` (default,
+  fastest), `.tar.xz` (smallest), `.zip` (most portable). Format chosen at
+  archive time, recorded in the persistent metadata so unarchive picks the
+  right decoder without trial-and-error.
+- **Auto-detection at startup**: if the workspace directory contains a
+  recognized archive file, treat the workspace as archived without needing
+  explicit config state.
+- **Archive flag in persistent metadata**: `archived: bool` on the workspace
+  snapshot, separate from the file-system existence check. This lets the
+  TUI show archived workspaces in a collapsed section even before the
+  archive file is opened.
+- **TUI keystroke `a`** archives the selected workspace; clicking the
+  collapsed archive header expands the list of archived workspaces.
+
+What jackin' should do *differently*:
+
+- Archives are per-*instance*, not per-workspace. jackin's data unit is
+  `~/.jackin/data/<container>/`, and that's what should compress.
+- Workspace config (TOML) is not archived — only the runtime state is.
+  Reason: archives are recoverable independent of config, and operators
+  often re-edit a workspace's mount list before unarchiving.
+
+## Recommended Shape
+
+### CLI
+
+```sh
+jackin archive <selector>                # archive an instance's data dir
+jackin archive <selector> --format zstd  # default; alternatives: xz, zip
+jackin archive list                      # list archived instances
+jackin unarchive <selector>              # restore to ~/.jackin/data/<container>/
+jackin archive remove <selector>         # delete the archive
+```
+
+Archives live at `~/.jackin/archive/<container>.<ext>` (one tarball per
+instance). `archive list` reads filenames + a tiny index file
+(`~/.jackin/archive/index.json`) for descriptions and timestamps.
+
+### Behavior
+
+- `jackin archive <name>` requires the agent to be ejected first. If the
+  container is running, the command rejects with "eject first" — same
+  guard pattern as `jackin purge`.
+- The compressed file contains the entire `~/.jackin/data/<container>/`
+  tree, including isolation.json, runtime state, agent session history,
+  per-instance git metadata. The host repo's `.git/` is *not* included
+  (that's outside the data dir; the materialized worktree is captured but
+  refs/objects need to be recovered from the host on unarchive — see Open
+  Questions).
+- `jackin unarchive <name>` restores to the same path. Refuses if the data
+  dir already exists (operator must `purge` first or pick a new selector).
+- `jackin archive list` shows: name, format, archive size, archived-at
+  timestamp, optional description (from
+  [workspace-description](/reference/roadmap/workspace-description/) if
+  present at archive time, captured into the index).
+- `jackin console` has an optional "Archived" expandable section in the
+  workspace picker.
+
+### Auto-archive integration
+
+Two hooks where automatic archive makes sense:
+
+- **Foreground session finalization** (the existing `worktree-cleanup-assessment`
+  flow): instead of leaving "preserved_dirty" / "preserved_unpushed" state
+  on disk indefinitely, offer archive as a third option alongside "preserve"
+  and "force delete".
+- **Queue completion** (Phase 4): when the queue finishes a task and the
+  per-task instance has nothing left to inspect, auto-archive if a flag
+  is set on the queue.
+
+## Scope (V1)
+
+- `jackin archive` / `jackin unarchive` / `jackin archive list` /
+  `jackin archive remove` subcommands.
+- Three formats with auto-detect by extension; default `.tar.zstd`.
+- Archive index at `~/.jackin/archive/index.json` (small JSON;
+  description + format + archived-at + size).
+- Refuses on running agents; matches the `purge` guard.
+- Console workspace picker gains an "Archived" collapsible row.
+- Manual archive only; no auto-archive integration in V1 (defer to a
+  follow-up in the same phase if Phase 1 lands cleanly).
+
+## Defer
+
+- Auto-archive integration with worktree cleanup or the queue. V1 is manual.
+- Encrypted archives. Operators who need encryption can use full-disk
+  encryption or wrap the archive file themselves.
+- Off-host archive destinations (S3, network mount). Local-only in V1.
+- Archive of multi-instance bundles ("archive all containers in workspace
+  X"). Per-instance only in V1; bulk operations are a CLI helper later.
+- Including the host repo's `.git/` in the archive for worktree-isolated
+  mounts. The right answer is to recover from the host repo on unarchive
+  (which preserves the original ref-sharing semantics); copying the host
+  `.git/` would break that contract.
+
+## Open Questions
+
+- **Worktree-isolated mounts on unarchive.** If the host repo has moved or
+  been deleted between archive and unarchive, the materialized worktree
+  pointer files reference paths that no longer resolve. V1 should detect
+  this on unarchive, print a clear message, and leave the unarchived data
+  dir in a recoverable state (worktree files present, just no ref
+  resolution until the operator points the host repo back).
+- **Archive index format.** JSON is the simplest; SQLite (see [persistent
+  storage layer](/reference/roadmap/persistent-storage-layer/)) might be
+  the right home if Phase 3 lands first. Recommend *defer* the choice
+  until Phase 3 design solidifies — JSON is a fine V1 placeholder.
+- **Compression level defaults.** zstd 19 vs zstd 3 trade ~3× compression
+  time for ~10% size. multicode uses default. Recommend *zstd default*
+  (level 3); operators who want more can pass `--level`.
+
+## Related Files
+
+- New module (e.g. `src/archive.rs`) — archive/unarchive primitives
+- <RepoFile path="src/cli/cleanup.rs" /> — `archive` / `unarchive`
+  subcommand wiring (sits naturally next to `purge`)
+- <RepoFile path="src/runtime/cleanup.rs" /> — running-agent guard reuse
+- <RepoFile path="src/console/manager/state.rs" /> — archived row in the
+  workspace picker
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Worktree cleanup assessment](/reference/roadmap/worktree-cleanup-assessment/) —
+  the upstream of the auto-archive integration deferred to V1.1
+- [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) —
+  potential home for the archive index

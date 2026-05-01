@@ -1,0 +1,190 @@
+---
+title: "Custom Operator Tools (`[[tool]]` extension points)"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Phase 2, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+
+## Problem
+
+Different teams want different operator-side actions: "run my repo's lint
+script against the agent's worktree", "open my org's issue tracker URL for
+the active issue", "snapshot the agent's data dir before a risky test",
+"slack the team that the agent finished". Today the only way to express
+these is to wrap jackin' in shell aliases or external scripts.
+
+multicode addresses this with a `[[tool]]` array: each entry is a hotkey
+that runs a command (or prompts for input and runs a command) when pressed
+in the TUI. Reserved keys (`q`, `a`, `d`, `s`) are off-limits; everything
+else is operator-defined.
+
+## Why It Matters
+
+- It's the difference between jackin' being a *fixed* operator surface and
+  an *extensible* one. The latter is what teams need to standardize on
+  jackin' instead of building custom CLI wrappers.
+- It pairs cleanly with [agent runtime
+  status](/reference/roadmap/agent-runtime-status/) and [tag
+  protocol](/reference/roadmap/agent-tag-protocol/): the captured tags
+  become substitution arguments for the tool command, so a tool can be as
+  simple as "open the issue URL the agent declared".
+- It uses the same handler-resolution machinery as the [operator handler
+  system](/reference/roadmap/operator-handler-system/) — different config
+  surface, same primitives.
+
+## Inspiration in multicode
+
+**Sources**:
+- No dedicated README section
+- Config — [`config.toml` `[[tool]]` array](https://github.com/yawkat/multicode/blob/main/config.toml) (the example only shows one tool — `bash` on `b` — but the schema is the same)
+- Source — [`tui/src/app.rs`](https://github.com/yawkat/multicode/blob/main/tui/src/app.rs) (tool firing, reserved-key validation)
+
+```toml
+[[tool]]
+type = "exec"
+name = "Run lint"
+key = "l"
+exec = "bun run lint"
+
+[[tool]]
+type = "prompt"
+name = "Slack the team"
+key = "k"
+prompt = "What did the agent ship?"
+```
+
+multicode has two `type` values:
+
+- `exec` — runs the command verbatim (shell-words parsed). The TUI
+  invokes the tool with cwd = workspace dir. Output displayed in a modal.
+- `prompt` — opens an input modal asking the operator's question, then
+  runs an associated command with the operator's answer interpolated.
+  Times out at 300 seconds.
+
+Reserved keys are documented; collisions error at config load.
+
+## Recommended Shape
+
+Same shape, with two extensions: argument substitution from captured
+agent tags, and per-agent-class scoping so a Rust agent gets `cargo`
+shortcuts and a JS agent gets `bun` shortcuts.
+
+### Config
+
+```toml
+# ~/.config/jackin/config.toml
+
+[[tool]]
+key = "l"
+name = "Run lint"
+exec = "cargo clippy"
+# Optional scope filter — only show this tool when the workspace is
+# loaded against a matching agent class. Same selector grammar as
+# [docker.mounts] scope.
+scope = "the-architect"
+
+[[tool]]
+key = "i"
+name = "Open emitted issue"
+exec = "open {issue}"
+# {issue} substitutes the agent's most-recent <jackin:issue> URL.
+# Available substitutions: {repo}, {issue}, {pr}, {link}, {workspace},
+# {instance}, {workdir}.
+
+[[tool]]
+key = "n"
+name = "Note for ops log"
+type = "prompt"
+prompt = "What happened?"
+exec = "echo {input} >> ~/jackin-ops.log"
+```
+
+`type` defaults to `"exec"`. `scope` defaults to no filter (tool always
+visible).
+
+### Reserved keys
+
+jackin's existing reserved keystrokes (the navigation set in the
+console, plus quit/exile/eject) are off-limits. Tool config validation
+errors at config load if a custom tool collides with a reserved key.
+
+### Substitution
+
+When the tool fires, jackin' resolves `{X}` placeholders against the
+selected workspace's runtime state:
+
+- `{instance}` — container name
+- `{workspace}` — workspace name
+- `{workdir}` — primary mount destination inside the container
+- `{host_workdir}` — the materialized host path (worktree if isolated)
+- `{repo}`, `{issue}`, `{pr}`, `{link}` — most-recent value from the
+  [tag protocol](/reference/roadmap/agent-tag-protocol/) index
+- `{input}` — only for `type = "prompt"`; the operator's response
+
+Missing placeholders error at fire time with a helpful message ("no
+`<jackin:issue>` recorded for this instance"); they don't silently
+expand to empty.
+
+### Where commands run
+
+Tools run on the **operator host**, not inside the container. They get
+the operator's environment plus a few injected variables matching the
+substitution set. If a team needs to run *inside* the container, they
+can `docker exec` from the tool command — explicit and intentional.
+
+## Scope (V1)
+
+- `[[tool]]` array at the operator-config level.
+- `type = "exec"` and `type = "prompt"` (default `exec`).
+- `scope` filter on agent class selector.
+- Substitution for `{instance}`, `{workspace}`, `{workdir}`,
+  `{host_workdir}`, `{input}`, plus tag-protocol values once that
+  ships.
+- Reserved-key collision detection at config load.
+- 300-second prompt timeout (matches multicode).
+- Tool firing routes through the
+  [operator handler system](/reference/roadmap/operator-handler-system/)
+  for command resolution and output rendering.
+
+## Defer
+
+- Per-workspace tool overrides. Operator-config-level only in V1.
+- Streaming output for long-running tools. V1 captures and displays
+  on completion, like multicode.
+- Tool authoring helpers (operator-facing CLI for "scaffold a tool
+  config from this command"). Defer until friction surfaces.
+- Tool emission of `<jackin:*>` tags (so a tool can update the
+  per-instance tag index). Interesting; defer.
+- Tool composability (one tool invokes another). Out of scope.
+
+## Open Questions
+
+- **Where does the tool's stdout go?** A modal that overlays the
+  console matches multicode but interrupts flow. A scrolling log
+  panel is friendlier but requires the [console resource
+  panel](/reference/roadmap/console-resource-panel/) infrastructure.
+  Recommended default: *modal for V1*, log panel later.
+- **Do tools work outside the console?** A `jackin tool run <key>`
+  CLI command would be useful for scripting. Recommended: *yes,
+  V1.1*; V1 ships console-only.
+- **Substitution scope when no agent is loaded.** If the operator
+  picks a workspace but no agent has run yet, `{instance}` and
+  `{workdir}` are unset. Recommended: *fire-time error*, never
+  silent empty.
+
+## Related Files
+
+- New module (e.g. `src/console/tools.rs`) — tool
+  config + substitution + firing
+- <RepoFile path="src/config/mod.rs" /> — `[[tool]]` parsing
+- <RepoFile path="src/console/manager/state.rs" /> — keybinding
+  registration and modal rendering
+- The handler system module — output rendering routes through there
+
+## See Also
+
+- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Operator handler system](/reference/roadmap/operator-handler-system/) —
+  shared command-resolution machinery
+- [Agent tag protocol](/reference/roadmap/agent-tag-protocol/) — source
+  of `{repo}`, `{issue}`, `{pr}`, `{link}` substitutions
