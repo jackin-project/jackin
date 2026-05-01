@@ -197,18 +197,32 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN claude --version
 ```
 
-**Codex install_block** (new, version-pinned):
+**Codex install_block** (new):
 
 ```
 USER agent
-RUN curl -fsSL https://github.com/openai/codex/releases/download/v<PINNED>/codex-x86_64-unknown-linux-musl \
-      -o /tmp/codex \
- && sudo install -m 0755 /tmp/codex /usr/local/bin/codex \
- && rm /tmp/codex \
- && codex --version
+ARG TARGETARCH
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) ARCH=x86_64-unknown-linux-musl ;; \
+      arm64) ARCH=aarch64-unknown-linux-musl ;; \
+      *) echo "unsupported arch ${TARGETARCH}"; exit 1 ;; \
+    esac; \
+    TAG=$(curl -sfIL -o /dev/null -w '%{url_effective}' \
+            https://github.com/openai/codex/releases/latest \
+          | sed 's|.*/tag/||'); \
+    curl -fsSL "https://github.com/openai/codex/releases/download/${TAG}/codex-${ARCH}.tar.gz" \
+      | tar -xz -C /usr/local/bin; \
+    chmod +x /usr/local/bin/codex; \
+    mkdir -p /etc/jackin && codex --version > /etc/jackin/codex.version
 ```
 
-The exact pinned Codex version is selected during implementation against whatever upstream tag is current and stable on the day the implementation PR is opened. Updating Codex requires `--rebuild`.
+Notes on this shape:
+
+- Multi-arch via `TARGETARCH` (BuildKit-provided automatic ARG). Defaults to `amd64` if unset; explicitly errors on unsupported architectures rather than silently producing a broken image.
+- Resolves the latest stable tag at build time by following the redirect on `releases/latest`, mirroring how Claude's install is fluid (`https://claude.ai/install.sh`) rather than version-pinned. Operators rebuild to update; `JACKIN_CACHE_BUST` already guards the install layer.
+- Persists `codex --version` output to `/etc/jackin/codex.version` for runtime diagnostics. Future work may mirror this for Claude.
+- Tarball is unpacked directly into `/usr/local/bin/`. The Codex release tarball is structured with a flat `codex` binary at the root; if upstream ever changes that layout, this RUN fails fast rather than installing nothing useful.
 
 ### Entrypoint dispatch
 
@@ -232,7 +246,7 @@ case "${JACKIN_HARNESS:?JACKIN_HARNESS must be set}" in
     LAUNCH=(claude --dangerously-skip-permissions --verbose)
     ;;
   codex)
-    # config.toml is mounted RO from host (see "State and auth"); no in-container generation needed.
+    # config.toml is mounted RW from host (see "State and auth"); no in-container generation needed.
     LAUNCH=(codex)
     ;;
   *)
@@ -421,7 +435,7 @@ Follow-up PR (separate, `jackin-project/jackin-agent-smith`):
 
 ## Open questions
 
-- **Codex argv default.** Whether `codex` (bare) or `codex chat` (or another subcommand) is the right interactive launch is decided during implementation against the pinned Codex version. The entrypoint script's `LAUNCH=(codex)` is a placeholder.
+- **Codex argv default.** Whether `codex` (bare) or `codex chat` (or another subcommand) is the right interactive launch is decided during implementation against whatever Codex release the build resolves at the time. The entrypoint script's `LAUNCH=(codex)` is a placeholder.
 - **`OPENAI_API_KEY` vs separate Anthropic vs OpenAI env namespacing.** This slice uses the standard `OPENAI_API_KEY`. If operators commonly want both Claude (subscription) and Codex (key) on the same machine, the existing operator-env mechanism handles namespacing already — but worth re-checking against real operator workflows after the slice lands.
 - **Whether the `harness` workspace field should error or warn when set to a value no agent in the workspace supports.** Current spec: hard error at launch. Could be relaxed to a warning if real workflows want to mix.
 - **Whether `docker pull` on every derived build adds enough latency to matter.** Likely no; most operators rebuild infrequently. Worth measuring after landing.
