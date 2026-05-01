@@ -70,32 +70,45 @@ impl Harness {
 impl FromStr for Harness { /* parse "claude" / "codex"; reject others with clear error */ }
 ```
 
-Per-harness data, in `src/harness/profile.rs`:
+Per-harness data, in `src/harness/profile.rs`. New types introduced by this slice are marked **NEW**:
 
 ```rust
-pub struct HarnessProfile {
+pub struct HarnessProfile {                       // NEW
     /// Lines appended to the derived Dockerfile to install this harness.
-    pub install_block: &'static str,
+    pub install_block: String,
     /// argv `exec`'d by the entrypoint when this harness is selected.
-    pub launch_argv: &'static [&'static str],
+    pub launch_argv: Vec<String>,
     /// Env vars that must be present at launch; absence is a hard error.
-    pub required_env: &'static [&'static str],
+    /// Names are inherent string literals, not config-shaped — kept as &'static.
+    pub required_env: Vec<&'static str>,
     /// Whether this harness loads jackin-managed plugins at startup.
     pub installs_plugins: bool,
     /// Container-side paths this harness expects state to be mounted at.
     pub container_state_paths: ContainerStatePaths,
 }
 
-pub struct ContainerStatePaths {
-    pub home_subpaths: &'static [(&'static str, MountKind)],
-    // e.g. Claude: [(".claude", Dir), (".claude.json", File), (".jackin/plugins.json", File)]
-    //      Codex:  [(".codex/config.toml", File)]
+pub struct ContainerStatePaths {                  // NEW
+    /// Pairs of (path-relative-to-/home/agent, kind). Example:
+    /// Claude: [(".claude", Dir), (".claude.json", File), (".jackin/plugins.json", File)]
+    /// Codex:  [(".codex/config.toml", File)]
+    pub home_subpaths: Vec<(String, MountKind)>,
 }
 
-pub fn profile(h: Harness) -> &'static HarnessProfile { match h { ... } }
+pub enum MountKind { File, Dir }                  // NEW
+
+pub fn profile(h: Harness) -> HarnessProfile { match h { ... } }
 ```
 
-For behavior that genuinely differs and cannot be reduced to data — auth provisioning, version probing — small fns are also matched on `Harness`, kept colocated where their Claude-only ancestor lives today (e.g. in `instance/auth.rs`).
+**Why owned types, not `&'static`.** Per-harness data is *configuration-shaped*: today's values are literals, but `install_block` is the most likely candidate to grow runtime parameterization later (e.g. injecting a value computed by jackin rather than substituted by Docker). Owned `String`/`Vec<String>` allocate once when a launch resolves its profile — microseconds — and don't lock consumers into compile-time constness. `required_env` keeps `&'static str` for the names because env-var names are inherent string literals with no plausible runtime variation.
+
+For behavior that genuinely differs and cannot be reduced to data — auth provisioning, version probing — small fns or methods are also matched on `Harness`, kept colocated where their Claude-only ancestor lives today (e.g. in `instance/auth.rs`).
+
+**Where harness-specific behavior lives** — pick one of two:
+
+- **Free fn** (e.g. `harness_mounts(h, &state) -> Vec<String>` in `runtime/launch.rs`) when the work is "transform inputs to outputs" with no persisted-state ownership.
+- **`impl AgentState` associated fn** (e.g. `provision_codex_auth(...)` mirroring the existing `provision_claude_auth`) when the work mutates or initializes the per-instance state directory.
+
+Implementers should follow this rule rather than mixing patterns ad-hoc.
 
 No trait. The roadmap explicitly asks for "a small built-in harness abstraction, not a marketplace for harnesses," and a trait designed against only two implementations is more likely to misshape than to help. When Amp lands (its own spec), the right move is to either keep the enum or refactor toward a trait with concrete pressure from three implementations, not to guess up-front.
 
@@ -130,13 +143,17 @@ marketplaces = []
 
 ### Workspace config
 
-The harness selection is a workspace-level setting:
+The harness selection is a workspace-level setting. The example below shows only the parts relevant to this slice; existing fields like per-agent overrides (`[workspaces.<name>.agents.<class>.env]`) and array-of-table mounts (`[[workspaces.<name>.mounts]]`) keep their current shape — see `src/config/mod.rs` for the canonical schema.
 
 ```toml
 [workspaces.prod]
 harness = "claude"           # NEW; defaults to "claude" if omitted
-agents = ["agent-smith", "the-architect"]
-mounts = [...]
+
+[workspaces.prod.env]
+# ... existing per-workspace env declarations
+
+[[workspaces.prod.mounts]]
+# ... existing per-workspace mount declarations
 ```
 
 When `jackin load <agent>` runs inside `prod`:
@@ -180,7 +197,7 @@ This slice ships the `claude` → `agent` and `/home/claude` → `/home/agent` r
 
 **Derived image** (`src/derived_image.rs`):
 
-`render_derived_dockerfile(base, hook, supported: &[Harness])` becomes harness-aware. The function:
+The existing signature is `pub fn render_derived_dockerfile(base_dockerfile: &str, pre_launch_hook: Option<&str>) -> String`. The slice changes it to `pub fn render_derived_dockerfile(base_dockerfile: &str, pre_launch_hook: Option<&str>, supported: &[Harness]) -> String`. The only caller today is `derived_image::create_derived_build_context`; both it and the existing tests in `derived_image.rs` are updated to thread `&validated.manifest.harness.supported` through. The function:
 
 1. Inserts the existing UID/GID rewrite block, but targeting `agent` instead of `claude`.
 2. Concatenates each `profile(h).install_block` for `h` in `supported`.
@@ -220,7 +237,8 @@ RUN set -eux; \
 Notes on this shape:
 
 - Multi-arch via `TARGETARCH` (BuildKit-provided automatic ARG). Defaults to `amd64` if unset; explicitly errors on unsupported architectures rather than silently producing a broken image.
-- Resolves the latest stable tag at build time by following the redirect on `releases/latest`, mirroring how Claude's install is fluid (`https://claude.ai/install.sh`) rather than version-pinned. Operators rebuild to update; `JACKIN_CACHE_BUST` already guards the install layer.
+- Resolves the latest stable tag at build time by following the redirect on `releases/latest`, mirroring how Claude's install is fluid (`https://claude.ai/install.sh`) rather than version-pinned. Operators rebuild to update.
+- **Block ordering matters for cache-bust to propagate.** The Claude install_block declares `ARG JACKIN_CACHE_BUST=0` and runs first. Bumping CACHE_BUST invalidates Claude's RUN, which invalidates the layer chain downstream — including Codex's RUN that has no CACHE_BUST reference of its own. `render_derived_dockerfile` MUST emit Claude's block before Codex's. (If we ever ship a Claude-less agent class, Codex will need its own `ARG JACKIN_CACHE_BUST=0` declaration plus a no-op reference inside the RUN. Out of scope for V1, where every agent class supports Claude.)
 - Persists `codex --version` output to `/etc/jackin/codex.version` for runtime diagnostics. Future work may mirror this for Claude.
 - Tarball is unpacked directly into `/usr/local/bin/`. The Codex release tarball is structured with a flat `codex` binary at the root; if upstream ever changes that layout, this RUN fails fast rather than installing nothing useful.
 
@@ -265,6 +283,8 @@ exec "${LAUNCH[@]}"
 
 The exact codex argv (interactive default vs subcommand) is finalized during implementation by reading the current Codex CLI release notes; the `LAUNCH=(codex)` placeholder above represents the expected interactive default.
 
+**`JACKIN_HARNESS` vs `JACKIN_CLAUDE_ENV` (coexist deliberately).** The legacy constant `JACKIN_RUNTIME_ENV_NAME` in `src/env_model.rs:21` resolves to the env-var name `JACKIN_CLAUDE_ENV` with value `"jackin"`. That variable identifies that the process is running *inside* a jackin container — it is not a harness selector. The new `JACKIN_HARNESS` env var introduced by this slice is the harness selector (`claude` or `codex`). The two solve different problems and live alongside each other in V1. Generalizing/renaming the legacy `JACKIN_CLAUDE_ENV` is explicitly out of scope (see Non-Goals).
+
 ### State and auth
 
 **Host state directory layout** (`~/.jackin/data/jackin-<class>/`):
@@ -273,16 +293,20 @@ The exact codex argv (interactive default vs subcommand) is finalized during imp
 ~/.jackin/data/jackin-agent-smith/
   .claude.json                   # Claude (existing)
   .claude/                       # Claude (existing)
-  plugins.json                   # Claude (existing)
+  .jackin/plugins.json           # Claude (existing; nested under .jackin/)
   config.toml                    # Codex (NEW; only present when codex used)
-  gh/                            # both (existing)
+  .config/gh/                    # both (existing; gh CLI config)
 ```
+
+The Claude state path layout above matches what `AgentState::prepare` constructs today (`instance/mod.rs:48-53`). The new `config.toml` for Codex sits at the root of the per-instance data dir alongside the existing files.
 
 Files do not collide between harnesses. Each harness writes only its own files. The directory continues to be keyed on the bare container name, so existing Claude operators see no path change.
 
 **Mount construction** (`src/runtime/launch.rs`):
 
-A new fn `harness_mounts(h: Harness, &state) -> Vec<MountSpec>` returns the per-harness mounts. The launch flow concatenates this with the harness-neutral mount set (workspace, terminfo, gh config, etc.).
+A new fn `harness_mounts(h: Harness, state: &AgentState) -> Vec<String>` returns the per-harness mount strings, formatted in the existing `"src:dst"` / `"src:dst:ro"` style used throughout `runtime/launch.rs` (e.g. the existing `claude_dir_mount = format!("{}:/home/claude/.claude", state.claude_dir.display())` at line 453). No new `MountSpec` type is introduced; the slice keeps the string idiom.
+
+The launch flow concatenates `harness_mounts(...)` with the harness-neutral mount set (workspace, terminfo, gh config, etc.).
 
 | Harness | Host source | Container destination | Mode |
 |---|---|---|---|
@@ -293,9 +317,29 @@ A new fn `harness_mounts(h: Harness, &state) -> Vec<MountSpec>` returns the per-
 
 **Mode rationale.** Read-only is reserved for jackin-directive files — those where jackin's intent is canonical and the runtime is expected to consume but never write back (`plugins.json` is the only one in V1). Operator-style runtime configs (`.claude.json`, Codex's `config.toml`) are mounted RW because the runtime owns its own config evolution: Claude may persist login state, MRU lists, and similar; Codex may persist last-used model, history pointers, and similar. Mounting these RO would surface as cryptic permission errors at runtime with no upside, since jackin can simply rewrite the file on the next launch if it wants to win.
 
-**Claude auth** (`src/instance/auth.rs::provision_claude_auth`): preserved verbatim, gated by `harness == Harness::Claude` at the call site in `instance/mod.rs`.
+**`AgentState::prepare` becomes harness-aware.** Today's signature is `pub fn prepare(paths, container_name, manifest, auth_forward, host_home) -> (Self, AuthProvisionOutcome)`. The slice adds a `harness: Harness` parameter so `prepare` can dispatch on it:
 
-**Codex auth**: env-only. New `provision_codex_auth(state, manifest)` writes the host-side `config.toml`:
+- `harness == Claude` → calls the existing `Self::provision_claude_auth(...)` and writes `plugins.json` (today's behavior).
+- `harness == Codex` → calls the new `Self::provision_codex_auth(...)`; **does not** write `plugins.json` (Codex has no plugin concept). The `AgentState` struct gains a `codex_config_toml: Option<PathBuf>` field, populated only on the Codex path; existing Claude fields stay populated as today.
+
+`AuthProvisionOutcome` keeps its current variants — they describe Claude-specific outcomes (Synced, Skipped, HostMissing, TokenMode). For Codex, `prepare` returns `AuthProvisionOutcome::Skipped` since no host auth forwarding occurs (env-only). A future spec may rename or generalize this enum; not in scope here.
+
+**Claude auth** (`AgentState::provision_claude_auth` in `src/instance/auth.rs`): preserved verbatim. Today this is `impl AgentState { pub(super) fn provision_claude_auth(claude_json, claude_dir, mode, host_home) -> Result<AuthProvisionOutcome> }` — an associated function, not a method (no `self`). It stays exactly that way and is invoked only from the Claude arm of `prepare`.
+
+**Codex auth**: env-only. A new associated function `AgentState::provision_codex_auth` is added in `src/instance/auth.rs`, mirroring the existing pattern:
+
+```rust
+impl AgentState {
+    pub(super) fn provision_codex_auth(
+        config_toml: &Path,
+        manifest: &AgentManifest,
+    ) -> anyhow::Result<()> {
+        // write host-side config.toml from manifest [codex] + jackin defaults
+    }
+}
+```
+
+The host-side `config.toml` content:
 
 ```toml
 # Generated by jackin; do not edit.
@@ -312,7 +356,7 @@ Reasoning for the policy values: jackin's container is already the operator's tr
 
 ### CLI surface
 
-- **New flag:** `jackin load <agent> [--harness <claude|codex>]`. Resolution order: CLI flag → workspace config → `"claude"` fallback.
+- **New flag:** `jackin load <agent> --harness <claude|codex>` (optional). Resolution order: CLI flag → workspace config `harness` field → `"claude"` fallback.
 - **`jackin status`, `jackin attach`, `jackin destroy`:** operate on bare container names; no surface change.
 - **`jackin sync`:** Claude-only in V1. For Codex emits `jackin sync is Claude-only in V1; OpenAI keys are forwarded via OPENAI_API_KEY in operator env`.
 - **`jackin console`:** unchanged in this slice. Harness picker is a deferred spec.
@@ -408,7 +452,8 @@ Direct edits in this slice:
 - `src/instance/mod.rs`
 - `src/instance/auth.rs` (Codex provisioning fn added)
 - `src/instance/plugins.rs` (still Claude-only; gated by harness check at call site)
-- `src/cli/load.rs` (add `--harness` flag)
+- `src/cli/mod.rs` (add `harness: Option<Harness>` field to `LoadArgs`)
+- `src/cli/agent.rs` (route `--harness` through the `Command::Load` dispatch sites; multiple match arms today wrap `LoadArgs`)
 - `src/cli/config.rs` (CLI help/example strings referencing `/home/claude/...` flip to `/home/agent/...`)
 - `src/config/persist.rs` (workspace `harness` field round-trip)
 - `src/workspace/resolve.rs` (resolve workspace harness)
