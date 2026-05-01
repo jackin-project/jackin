@@ -11,8 +11,8 @@ Three files each asserted a Rust version independently — <RepoFile path="mise.
 
 ## Resolution
 
-1. <RepoFile path="rust-toolchain.toml" /> pins the canonical "latest tested" channel (`1.95.0`) and is read automatically by `rustup` and `rust-analyzer`. The header comment lists every other file that has to move with it.
-2. <RepoFile path="mise.toml" /> now carries an inline comment cross-referencing `rust-toolchain.toml` so the two pins do not silently drift.
+1. <RepoFile path="rust-toolchain.toml" /> is the single source of truth for the "latest tested" channel (`1.95.0`). It is read automatically by `rustup` and `rust-analyzer`.
+2. <RepoFile path="mise.toml" /> opts into mise's `idiomatic_version_file_enable_tools = ["rust"]` setting and no longer hard-codes the rust version, so mise also reads `rust-toolchain.toml`. There is nothing to keep in sync between the two files.
 3. <RepoFile path=".github/workflows/ci.yml" /> has a dedicated `msrv` job that installs `1.94.0` via `rustup` and runs `cargo +1.94.0 check --workspace --all-targets --locked`. If that job fails, either bump `rust-version` in <RepoFile path="Cargo.toml" /> to the new floor or revert the offending change.
 
 ## Caveats (still relevant)

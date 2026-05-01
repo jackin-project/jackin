@@ -1,19 +1,8 @@
-# Pinned toolchain for local builds and rust-analyzer.
-#
-# `rust-analyzer` and `cargo` (when invoked via rustup) read this file
-# automatically, so contributors don't need to remember which version the
-# project targets. Keep this in sync with:
-#
-#   - mise.toml (`rust = "..."`) — the version mise hands out to operators
-#     who use it for tool management.
-#   - .github/workflows/ci.yml + release.yml — the `dtolnay/rust-toolchain`
-#     action SHAs (the action does NOT read this file; its version is
-#     encoded in the pinned SHA, so the SHAs must be bumped manually
-#     whenever this `channel` changes).
-#
-# The MSRV ("minimum supported Rust version") is declared separately in
-# Cargo.toml as `rust-version`. CI verifies it with the dedicated `msrv`
-# job. This toolchain pin is the *latest* tested version, not the floor.
+# Source of truth for the latest tested Rust channel.
+# Read by rustup, rust-analyzer, and mise (via idiomatic_version_file).
+# When bumping, also update the dtolnay/rust-toolchain action SHAs in
+# .github/workflows/{ci,release}.yml — that action does not read this file.
+# MSRV floor is `rust-version` in Cargo.toml, verified by the `msrv` CI job.
 
 [toolchain]
 channel = "1.95.0"
