@@ -11,12 +11,12 @@ Three files each asserted a Rust version independently — <RepoFile path="mise.
 
 ## Resolution
 
-1. <RepoFile path="rust-toolchain.toml" /> is the single source of truth for the "latest tested" channel (`1.95.0`). It is read automatically by `rustup` and `rust-analyzer`.
+1. <RepoFile path="rust-toolchain.toml" /> is the single source of truth for the "latest tested" channel (`1.95.0`). It is read automatically by `rustup`, `rust-analyzer`, mise, and CI.
 2. <RepoFile path="mise.toml" /> opts into mise's `idiomatic_version_file_enable_tools = ["rust"]` setting and no longer hard-codes the rust version, so mise also reads `rust-toolchain.toml`. There is nothing to keep in sync between the two files.
-3. <RepoFile path=".github/workflows/ci.yml" /> has a dedicated `msrv` job that installs `1.94.0` via `rustup` and runs `cargo +1.94.0 check --workspace --all-targets --locked`. If that job fails, either bump `rust-version` in <RepoFile path="Cargo.toml" /> to the new floor or revert the offending change.
+3. <RepoFile path=".github/workflows/ci.yml" /> and <RepoFile path=".github/workflows/release.yml" /> use `actions-rust-lang/setup-rust-toolchain`, which reads `rust-toolchain.toml` automatically. Bumping the latest-tested-stable channel is now a one-line edit to `rust-toolchain.toml`; the workflow files do not carry the version literal.
+4. A dedicated `msrv` job in <RepoFile path=".github/workflows/ci.yml" /> installs `1.94.0` (the floor declared in <RepoFile path="Cargo.toml" />'s `rust-version`) and runs `cargo check --workspace --all-targets --locked`. If that job fails, either bump `rust-version` to the new floor or revert the offending change.
 
 ## Caveats (still relevant)
 
-- `dtolnay/rust-toolchain` does NOT read `rust-toolchain.toml` — its version is encoded in the action SHA. The SHAs in <RepoFile path=".github/workflows/ci.yml" /> and <RepoFile path=".github/workflows/release.yml" /> must be manually kept in sync with the `channel` value in `rust-toolchain.toml` whenever the latest-tested-stable bumps.
-- If `cargo +1.94.0 check` ever starts failing because of a newly stabilized feature, update `rust-version` in <RepoFile path="Cargo.toml" /> to the correct floor and update the MSRV job's pinned `1.94.0` literals together (they are intentionally explicit so the floor is greppable).
+- If the `msrv` job ever starts failing because of a newly stabilized feature, update `rust-version` in <RepoFile path="Cargo.toml" /> to the correct floor and update the MSRV job's pinned `1.94.0` literal together (it is intentionally explicit so the floor is greppable).
 - `u64::is_multiple_of` (used in <RepoFile path="src/tui/animation.rs" /> lines 70, 264, 432, 437) was stabilized in 1.86 — safely within the 1.94 MSRV.

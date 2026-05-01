@@ -1,7 +1,6 @@
 # Source of truth for the latest tested Rust channel.
-# Read by rustup, rust-analyzer, and mise (via idiomatic_version_file).
-# When bumping, also update the dtolnay/rust-toolchain action SHAs in
-# .github/workflows/{ci,release}.yml — that action does not read this file.
+# Read by rustup, rust-analyzer, mise (via idiomatic_version_file),
+# and CI (via actions-rust-lang/setup-rust-toolchain).
 # MSRV floor is `rust-version` in Cargo.toml, verified by the `msrv` CI job.
 
 [toolchain]
