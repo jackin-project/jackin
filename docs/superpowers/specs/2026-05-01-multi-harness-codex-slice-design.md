@@ -270,12 +270,14 @@ Files do not collide between harnesses. Each harness writes only its own files. 
 
 A new fn `harness_mounts(h: Harness, &state) -> Vec<MountSpec>` returns the per-harness mounts. The launch flow concatenates this with the harness-neutral mount set (workspace, terminfo, gh config, etc.).
 
-| Harness | Host source | Container destination |
-|---|---|---|
-| Claude | `<datadir>/.claude/` | `/home/agent/.claude/` |
-| Claude | `<datadir>/.claude.json` | `/home/agent/.claude.json` |
-| Claude | `<datadir>/plugins.json` | `/home/agent/.jackin/plugins.json:ro` |
-| Codex | `<datadir>/config.toml` | `/home/agent/.codex/config.toml:ro` |
+| Harness | Host source | Container destination | Mode |
+|---|---|---|---|
+| Claude | `<datadir>/.claude/` | `/home/agent/.claude/` | RW |
+| Claude | `<datadir>/.claude.json` | `/home/agent/.claude.json` | RW |
+| Claude | `<datadir>/plugins.json` | `/home/agent/.jackin/plugins.json` | RO |
+| Codex | `<datadir>/config.toml` | `/home/agent/.codex/config.toml` | RW |
+
+**Mode rationale.** Read-only is reserved for jackin-directive files — those where jackin's intent is canonical and the runtime is expected to consume but never write back (`plugins.json` is the only one in V1). Operator-style runtime configs (`.claude.json`, Codex's `config.toml`) are mounted RW because the runtime owns its own config evolution: Claude may persist login state, MRU lists, and similar; Codex may persist last-used model, history pointers, and similar. Mounting these RO would surface as cryptic permission errors at runtime with no upside, since jackin can simply rewrite the file on the next launch if it wants to win.
 
 **Claude auth** (`src/instance/auth.rs::provision_claude_auth`): preserved verbatim, gated by `harness == Harness::Claude` at the call site in `instance/mod.rs`.
 
@@ -354,7 +356,7 @@ The only operator-visible breakage is mount destinations pointing at `/home/clau
   - Derived Dockerfile contains both Claude and Codex install blocks (when both supported).
   - `docker run` argv includes `-e JACKIN_HARNESS=codex` and `-e OPENAI_API_KEY=...`.
   - Codex `config.toml` is written to `~/.jackin/data/jackin-<class>/config.toml`.
-  - Container destination mounts include `/home/agent/.codex/config.toml:ro`.
+  - Container destination mounts include `/home/agent/.codex/config.toml` (RW).
   - Does NOT include `/home/agent/.claude*` mounts.
 - `tests/claude_launch.rs` (existing tests, updated): every assertion that mentions `/home/claude` is updated to `/home/agent`. No semantic change.
 - `tests/harness_validation.rs` (new): manifest validation paths for `[harness]` table edge cases.
