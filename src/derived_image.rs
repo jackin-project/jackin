@@ -212,7 +212,7 @@ COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh"#;
     #[test]
     fn entrypoint_registers_security_tool_mcp_servers() {
         assert!(ENTRYPOINT_SH.contains("claude mcp add tirith -- tirith mcp-server"));
-        assert!(ENTRYPOINT_SH.contains("claude mcp add shellfirm -- shellfirm mcp-server"));
+        assert!(ENTRYPOINT_SH.contains("claude mcp add shellfirm -- shellfirm mcp"));
     }
 
     #[test]
