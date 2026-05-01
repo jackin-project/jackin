@@ -123,6 +123,61 @@ export default defineConfig({
                   ],
                 },
                 {
+                  label: 'Operator surface',
+                  collapsed: true,
+                  items: [
+                    { label: 'Overview', slug: 'reference/roadmap/multicode-inspired-features' },
+                    {
+                      label: 'Phase 1 — Foundation gaps',
+                      collapsed: true,
+                      items: [
+                        { label: 'Workspace description', slug: 'reference/roadmap/workspace-description' },
+                        { label: 'Operator handler system', slug: 'reference/roadmap/operator-handler-system' },
+                        { label: 'Workspace archive', slug: 'reference/roadmap/workspace-archive' },
+                        { label: 'Declarative resource limits', slug: 'reference/roadmap/declarative-resource-limits' },
+                        { label: 'Ephemeral mount modes', slug: 'reference/roadmap/ephemeral-mount-modes' },
+                      ],
+                    },
+                    {
+                      label: 'Phase 2 — Live operator surface',
+                      collapsed: true,
+                      items: [
+                        { label: 'Agent runtime status', slug: 'reference/roadmap/agent-runtime-status' },
+                        { label: 'Console resource panel', slug: 'reference/roadmap/console-resource-panel' },
+                        { label: 'Agent tag protocol', slug: 'reference/roadmap/agent-tag-protocol' },
+                        { label: 'GitHub link tracking', slug: 'reference/roadmap/github-link-tracking' },
+                        { label: 'Custom operator tools', slug: 'reference/roadmap/custom-operator-tools' },
+                      ],
+                    },
+                    {
+                      label: 'Phase 3 — Persistence & telemetry',
+                      collapsed: true,
+                      items: [
+                        { label: 'Persistent storage layer', slug: 'reference/roadmap/persistent-storage-layer' },
+                        { label: 'Token & cost telemetry', slug: 'reference/roadmap/token-cost-telemetry' },
+                      ],
+                    },
+                    {
+                      label: 'Phase 4 — Fleet operations',
+                      collapsed: true,
+                      items: [
+                        { label: 'Task source abstraction', slug: 'reference/roadmap/task-source-abstraction' },
+                        { label: 'Autonomous task queue', slug: 'reference/roadmap/autonomous-task-queue' },
+                        { label: 'Idle runtime cleanup', slug: 'reference/roadmap/idle-runtime-cleanup' },
+                      ],
+                    },
+                    {
+                      label: 'Phase 5 — Distributed & extensibility',
+                      collapsed: true,
+                      items: [
+                        { label: 'jackin-remote', slug: 'reference/roadmap/jackin-remote' },
+                        { label: 'Credential source pattern', slug: 'reference/roadmap/credential-source-pattern' },
+                        { label: 'Workspace skills mount', slug: 'reference/roadmap/workspace-skills-mount' },
+                      ],
+                    },
+                  ],
+                },
+                {
                   label: 'Codebase health',
                   collapsed: true,
                   items: [
