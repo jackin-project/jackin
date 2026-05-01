@@ -97,6 +97,7 @@ export default defineConfig({
                     { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
                     { label: '1Password integration', slug: 'reference/roadmap/onepassword-integration' },
                     { label: 'Reliable Claude authentication strategy', slug: 'reference/roadmap/claude-auth-strategy' },
+                    { label: 'Multi-runtime support (Codex & Amp)', slug: 'reference/roadmap/multi-runtime-support' },
                     { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
                     { label: 'Rootless DinD', slug: 'reference/roadmap/rootless-dind' },
                     { label: 'Selectable sandbox backends', slug: 'reference/roadmap/selectable-sandbox-backends' },
