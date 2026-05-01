@@ -33,6 +33,7 @@ pub mod agent;
 pub mod cleanup;
 pub mod config;
 pub mod dispatch;
+pub mod help;
 pub mod workspace;
 
 pub use config::{AuthCommand, ConfigCommand, EnvCommand, MountCommand, TrustCommand};
@@ -46,7 +47,14 @@ pub use workspace::{WorkspaceCommand, WorkspaceEnvCommand};
 /// [`ConsoleArgs`] make `jackin --debug` equivalent to
 /// `jackin console --debug`.
 #[derive(Debug, Parser)]
-#[command(name = "jackin", version = env!("JACKIN_VERSION"), styles = HELP_STYLES, before_help = BANNER, disable_help_subcommand = true)]
+#[command(
+    name = "jackin",
+    version = env!("JACKIN_VERSION"),
+    styles = HELP_STYLES,
+    before_help = BANNER,
+    disable_help_subcommand = true,
+    after_help = "Run 'jackin help <command>' for more detailed information."
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -87,6 +95,19 @@ pub enum Command {
     /// View and modify operator configuration
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
+    /// Print help documentation for a jackin command
+    ///
+    /// With no arguments, displays the jackin manual.
+    /// With a command name, displays the manual for that command:
+    ///
+    ///   jackin help config
+    ///   jackin help config auth
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Help {
+        /// Command path to get help for (e.g. `config auth`)
+        #[arg(trailing_var_arg = true, num_args = 0..)]
+        command: Vec<String>,
+    },
 }
 
 #[cfg(test)]
@@ -166,11 +187,12 @@ mod tests {
     // ── help subcommand disabled ────────────────────────────────────────
 
     #[test]
-    fn root_help_does_not_list_help_subcommand() {
+    fn root_help_lists_help_subcommand() {
+        // Our explicit `help` command must appear in the top-level listing.
         let help = help_text(&["jackin", "--help"]);
         assert!(
-            !help.contains("\n  help"),
-            "root `help` subcommand should be disabled"
+            help.contains("\n  help "),
+            "root `help` subcommand should be listed"
         );
     }
 
@@ -190,6 +212,35 @@ mod tests {
             !help.contains("\n  help"),
             "`workspace help` subcommand should be disabled"
         );
+    }
+
+    // ── Help command ────────────────────────────────────────────────────
+
+    #[test]
+    fn parses_help_with_no_args() {
+        let cli = Cli::try_parse_from(["jackin", "help"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Help { ref command }) if command.is_empty()
+        ));
+    }
+
+    #[test]
+    fn parses_help_with_single_subcommand() {
+        let cli = Cli::try_parse_from(["jackin", "help", "config"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Help { ref command }) if command == &["config"]
+        ));
+    }
+
+    #[test]
+    fn parses_help_with_nested_subcommand() {
+        let cli = Cli::try_parse_from(["jackin", "help", "config", "auth"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Help { ref command }) if command == &["config", "auth"]
+        ));
     }
 
     // ── Subcommand banner consistency ───────────────────────────────────

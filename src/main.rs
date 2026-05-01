@@ -43,6 +43,12 @@ fn main() {
             println!();
             std::process::exit(0);
         }
+        Action::PrintHelp { command } => {
+            if let Err(e) = jackin::cli::help::exec(&command) {
+                jackin::tui::fatal(&format!("{e:#}"));
+                std::process::exit(1);
+            }
+        }
         Action::ErrorNotTtyCapable { deprecated_alias } => {
             if deprecated_alias {
                 eprintln!("{}", dispatch::LAUNCH_DEPRECATION_WARNING);
