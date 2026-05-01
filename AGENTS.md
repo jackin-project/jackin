@@ -75,6 +75,14 @@ When performing code review or automated scanning on this repository, do not fla
 
 The catalog itself is a forward-looking backlog — consult it on demand when a review task calls for it. It is not operational context and should not be loaded at session start.
 
+### Applying review fixes to an open PR
+
+When the operator asks for code review fixes on a PR that has **not yet been merged**, commit the fixes directly to the PR's existing branch — do not create a new branch or open a new PR unless the operator explicitly requests it.
+
+- Check out the PR branch (`gh pr checkout <PR>` or `git checkout <branch>`) before making changes.
+- Commit fixes to that branch and push; the open PR picks up the new commits automatically.
+- Creating a separate PR on top of an unmerged PR fragments review history and forces an extra merge step — avoid it.
+
 ## Walking the operator through local validation (agent-only)
 
 When walking the operator through manual validation of a jackin feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
