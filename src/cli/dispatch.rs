@@ -46,6 +46,8 @@ pub enum Action {
     /// Print top-level `--help` and exit 0. This is the silent fallback
     /// chosen for bare `jackin` on a non-interactive stdout.
     PrintHelpAndExit,
+    /// Display long-form man page help for a command and exit.
+    PrintHelp { command: Vec<String> },
     /// Error: explicit console request on a non-TTY terminal. Carries
     /// `deprecated_alias` so the dispatcher can still emit the `launch`
     /// deprecation warning before the error exit.
@@ -104,6 +106,7 @@ pub fn classify(cli: Cli, tui_capable: bool) -> Action {
                 }
             }
         }
+        Some(Command::Help { command }) => Action::PrintHelp { command },
         Some(other) => Action::RunCommand(other),
         None => {
             if tui_capable {
@@ -279,5 +282,22 @@ mod tests {
         assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("40x15"));
         // The jackin' apostrophe naming rule applies to user-visible strings.
         assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("jackin'"));
+    }
+
+    #[test]
+    fn help_with_no_args_classifies_to_print_help() {
+        let cli = Cli::try_parse_from(["jackin", "help"]).unwrap();
+        let action = classify(cli, true);
+        assert!(matches!(action, Action::PrintHelp { ref command } if command.is_empty()));
+    }
+
+    #[test]
+    fn help_with_args_classifies_to_print_help() {
+        let cli = Cli::try_parse_from(["jackin", "help", "config", "auth"]).unwrap();
+        let action = classify(cli, false);
+        assert!(matches!(
+            action,
+            Action::PrintHelp { ref command } if command == &["config", "auth"]
+        ));
     }
 }

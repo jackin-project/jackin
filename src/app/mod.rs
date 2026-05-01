@@ -995,6 +995,10 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
         },
+        Command::Help { .. } => {
+            // Handled upstream in dispatch before reaching this function.
+            unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
+        }
     }
 }
 
