@@ -46,7 +46,7 @@ pub use workspace::{WorkspaceCommand, WorkspaceEnvCommand};
 /// [`ConsoleArgs`] make `jackin --debug` equivalent to
 /// `jackin console --debug`.
 #[derive(Debug, Parser)]
-#[command(name = "jackin", version = env!("JACKIN_VERSION"), styles = HELP_STYLES, before_help = BANNER)]
+#[command(name = "jackin", version = env!("JACKIN_VERSION"), styles = HELP_STYLES, before_help = BANNER, disable_help_subcommand = true)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -82,10 +82,10 @@ pub enum Command {
     #[command(hide = true)]
     Launch(LaunchArgs),
     /// Manage saved workspaces
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Workspace(WorkspaceCommand),
     /// View and modify operator configuration
-    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES)]
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
 }
 
