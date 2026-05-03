@@ -21,6 +21,7 @@ trusted = true
 # Production workspace — the big one
 [workspaces.prod]
 workdir = "/workspace/prod"
+harness = "codex"
 
 [workspaces.prod.env]
 # Rotate quarterly (last: 2026-Q1)
