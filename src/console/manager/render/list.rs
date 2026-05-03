@@ -995,6 +995,7 @@ mod subpanel_padding_tests {
             mounts: vec![],
             allowed_agents: names.iter().map(|s| (*s).into()).collect(),
             default_agent: default.map(String::from),
+            harness: None,
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),

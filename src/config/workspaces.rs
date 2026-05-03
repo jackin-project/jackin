@@ -257,6 +257,7 @@ mod tests {
             }],
             allowed_agents: vec!["agent-smith".to_string()],
             default_agent: Some("agent-smith".to_string()),
+            harness: None,
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),

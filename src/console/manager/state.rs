@@ -1152,6 +1152,7 @@ mod tests {
             }],
             allowed_agents: vec![],
             default_agent: None,
+            harness: None,
             last_agent: None,
             env: BTreeMap::default(),
             agents: BTreeMap::default(),

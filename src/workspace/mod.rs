@@ -42,6 +42,12 @@ pub struct WorkspaceConfig {
     pub allowed_agents: Vec<String>,
     #[serde(default)]
     pub default_agent: Option<String>,
+    /// Workspace-level default harness (claude or codex). When unset,
+    /// `resolved_harness()` falls back to Claude. The field is omitted
+    /// from serialized output when `None` so legacy config files stay
+    /// byte-for-byte stable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<crate::harness::Harness>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_agent: Option<String>,
     /// Workspace-level operator env map. Keys are env var names;
@@ -81,6 +87,14 @@ pub struct KeepAwakeConfig {
 impl KeepAwakeConfig {
     const fn is_default(&self) -> bool {
         !self.enabled
+    }
+}
+
+impl WorkspaceConfig {
+    /// Returns the workspace's selected harness, defaulting to Claude
+    /// when no harness field is set (legacy workspace).
+    pub fn resolved_harness(&self) -> crate::harness::Harness {
+        self.harness.unwrap_or(crate::harness::Harness::Claude)
     }
 }
 
@@ -250,6 +264,48 @@ mod tests {
             }],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn workspace_serializes_harness_when_set() {
+        let ws = WorkspaceConfig {
+            workdir: "/tmp/x".to_string(),
+            harness: Some(crate::harness::Harness::Codex),
+            ..Default::default()
+        };
+
+        let toml_str = toml::to_string(&ws).unwrap();
+        assert!(toml_str.contains("harness = \"codex\""));
+    }
+
+    #[test]
+    fn workspace_omits_harness_field_when_unset() {
+        let ws = WorkspaceConfig {
+            workdir: "/tmp/x".to_string(),
+            ..Default::default()
+        };
+
+        let toml_str = toml::to_string(&ws).unwrap();
+        assert!(!toml_str.contains("harness"));
+    }
+
+    #[test]
+    fn workspace_resolves_to_claude_when_unset() {
+        let ws = WorkspaceConfig {
+            workdir: "/tmp/x".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(ws.resolved_harness(), crate::harness::Harness::Claude);
+    }
+
+    #[test]
+    fn workspace_resolves_to_codex_when_set() {
+        let ws = WorkspaceConfig {
+            workdir: "/tmp/x".to_string(),
+            harness: Some(crate::harness::Harness::Codex),
+            ..Default::default()
+        };
+        assert_eq!(ws.resolved_harness(), crate::harness::Harness::Codex);
     }
 
     #[test]
@@ -595,6 +651,7 @@ isolation = "worktree"
             ],
             allowed_agents: Vec::new(),
             default_agent: None,
+            harness: None,
             last_agent: None,
             env: BTreeMap::new(),
             agents: BTreeMap::new(),
