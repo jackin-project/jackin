@@ -170,11 +170,11 @@ Under rule C, a mount is redundant when another mount in the same workspace stri
 
 ## `workspace env`
 
-Manage operator env vars at workspace and workspace-agent scope.
+Manage operator env vars at workspace and workspace-role scope.
 
 Values are stored verbatim — `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work. jackin' resolves values at launch time through the operator-env layer; there is no editor-side validation of key names or value shape.
 
-Without `--agent`, writes and reads target `[workspaces.<WORKSPACE>.env]`. With `--agent <SELECTOR>`, they target `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]`. The workspace must already exist — unknown workspaces fail fast with a non-zero exit. The agent selector is not pre-validated.
+Without `--role`, writes and reads target `[workspaces.<WORKSPACE>.env]`. With `--role <SELECTOR>`, they target `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]`. The workspace must already exist — unknown workspaces fail fast with a non-zero exit. The role selector is not pre-validated.
 
 ### `workspace env set`
 
@@ -186,15 +186,15 @@ Set or overwrite an env var at the chosen scope.
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | Apply to `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]` instead of the workspace-wide table |
+| `--role <SELECTOR>` | Apply to `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]` instead of the workspace-wide table |
 | `--comment <TEXT>` | Write a TOML line comment directly above the key |
 
 ```bash
 # Workspace scope
 jackin workspace env set prod DB_URL "op://Work/Prod/db-url"
 
-# Workspace-agent scope
-jackin workspace env set prod OPENAI_KEY "op://Work/OpenAI/key" --agent agent-smith
+# Workspace-role scope
+jackin workspace env set prod OPENAI_KEY "op://Work/OpenAI/key" --role agent-smith
 
 # Attach a comment
 jackin workspace env set prod DEBUG "1" --comment "temporary; remove after Q2"
@@ -210,11 +210,11 @@ Remove an env var from the chosen scope. Idempotent: if the key is not present, 
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | Unset from `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]` instead of the workspace-wide table |
+| `--role <SELECTOR>` | Unset from `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]` instead of the workspace-wide table |
 
 ```bash
 jackin workspace env unset prod DB_URL
-jackin workspace env unset prod OPENAI_KEY --agent agent-smith
+jackin workspace env unset prod OPENAI_KEY --role agent-smith
 ```
 
 ### `workspace env list`
@@ -227,9 +227,9 @@ Show the env vars registered at the chosen scope as a table with `Key` and `Valu
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | List vars from `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]` instead of the workspace-wide table |
+| `--role <SELECTOR>` | List vars from `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]` instead of the workspace-wide table |
 
 ```bash
 jackin workspace env list prod
-jackin workspace env list prod --agent agent-smith
+jackin workspace env list prod --role agent-smith
 ```

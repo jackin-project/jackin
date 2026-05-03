@@ -9,15 +9,15 @@ use crate::selector::RoleSelector;
 /// Applied to role containers, `DinD` sidecars, and networks.
 pub(super) const LABEL_MANAGED: &str = "jackin.managed=true";
 /// Role containers only — distinguishes them from `DinD` sidecars.
-pub(super) const LABEL_ROLE_AGENT: &str = "jackin.kind=agent";
+pub(super) const LABEL_KIND_ROLE: &str = "jackin.kind=role";
 /// `DinD` sidecars only — distinguishes them from role containers.
-pub(super) const LABEL_ROLE_DIND: &str = "jackin.kind=dind";
+pub(super) const LABEL_KIND_DIND: &str = "jackin.kind=dind";
 /// Filter expression for `docker ps --filter` to find managed containers.
 pub(super) const FILTER_MANAGED: &str = "label=jackin.managed=true";
 /// Filter expression for `docker ps --filter` to find role containers.
-pub(super) const FILTER_ROLE_AGENT: &str = "label=jackin.kind=agent";
+pub(super) const FILTER_KIND_ROLE: &str = "label=jackin.kind=role";
 /// Filter expression for `docker ps --filter` to find `DinD` sidecars.
-pub(super) const FILTER_ROLE_DIND: &str = "label=jackin.kind=dind";
+pub(super) const FILTER_KIND_DIND: &str = "label=jackin.kind=dind";
 /// Filter expression for `docker ps --filter` to find roles whose
 /// workspace opted into the keep-awake reconciler.
 pub(super) const FILTER_KEEP_AWAKE: &str = "label=jackin.keep_awake=true";

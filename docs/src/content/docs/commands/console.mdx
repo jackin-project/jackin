@@ -121,10 +121,10 @@ General tab; it is now editable here. The General tab now shows only
 The Environments tab in the `jackin console` workspace editor manages
 environment variables at two scopes:
 
-- **Workspace environment** — applies to every agent launch in this
+- **Workspace environment** — applies to every role launch in this
   workspace, stored under `[workspaces.<name>.env]`.
-- **Per-agent overrides** — applies only when a specific agent is launched in
-  this workspace, stored under `[workspaces.<name>.agents.<agent>.env]`.
+- **Per-role overrides** — apply only when a specific role is launched in
+  this workspace, stored under `[workspaces.<name>.roles.<role>.env]`.
 
 Values are stored as-typed. Use `op://...` for 1Password references, `$VAR`
 or `${VAR}` for shell-variable substitution, or a literal string.

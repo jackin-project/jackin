@@ -4,7 +4,7 @@ use crate::selector::RoleSelector;
 use owo_colors::OwoColorize;
 
 use super::discovery::{capture_managed_container_rows, list_managed_role_names, list_role_names};
-use super::naming::{FILTER_MANAGED, FILTER_ROLE_DIND, dind_certs_volume};
+use super::naming::{FILTER_KIND_DIND, FILTER_MANAGED, dind_certs_volume};
 
 pub fn purge_class_data(paths: &JackinPaths, selector: &RoleSelector) -> anyhow::Result<()> {
     if !paths.data_dir.exists() {
@@ -68,7 +68,7 @@ fn collect_labeled_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<D
             "ps",
             "-a",
             "--filter",
-            FILTER_ROLE_DIND,
+            FILTER_KIND_DIND,
             "--format",
             "{{.Names}}\t{{.Label \"jackin.role\"}}",
         ],
@@ -387,7 +387,7 @@ jackin-agent-smith-clone-1"
         assert_eq!(
             runner.recorded,
             vec![
-                "docker ps -a --filter label=jackin.kind=agent --format {{.Names}}",
+                "docker ps -a --filter label=jackin.kind=role --format {{.Names}}",
                 "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.role\"}}\t{{.Label \"jackin.kind\"}}",
                 "docker rm -f jackin-agent-smith",
                 "docker rm -f jackin-agent-smith-dind",
@@ -429,7 +429,7 @@ jackin-agent-smith-clone-1"
         assert_eq!(
             runner.recorded,
             vec![
-                "docker ps -a --filter label=jackin.kind=agent --format {{.Names}}",
+                "docker ps -a --filter label=jackin.kind=role --format {{.Names}}",
                 "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.role\"}}\t{{.Label \"jackin.kind\"}}",
                 "docker rm -f jackin-agent-smith",
                 "docker rm -f jackin-agent-smith-dind",

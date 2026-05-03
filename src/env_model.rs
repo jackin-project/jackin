@@ -21,12 +21,12 @@
 ///
 /// Matches the `CI=true` / `DEBUG=1` convention: a single-purpose
 /// boolean-shaped flag scripts can test with `if [ "$JACKIN" = "1" ]`.
-pub const JACKIN_RUNTIME_ENV_NAME: &str = "JACKIN";
+pub const JACKIN_ENV_NAME: &str = "JACKIN";
 
-/// Value set for [`JACKIN_RUNTIME_ENV_NAME`].  Manifests that try to declare
+/// Value set for [`JACKIN_ENV_NAME`].  Manifests that try to declare
 /// `JACKIN` are rejected at validation time because the value is fixed by
 /// jackin.
-pub const JACKIN_RUNTIME_ENV_VALUE: &str = "1";
+pub const JACKIN_ENV_VALUE: &str = "1";
 
 /// Env var that carries the `DinD` hostname into the role container.
 ///
@@ -48,7 +48,7 @@ pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 /// Environment variables reserved by the jackin runtime.
 ///
 /// Each entry is `(name, default)`.  `Some(value)` indicates a fixed value
-/// assigned by jackin (currently only [`JACKIN_RUNTIME_ENV_NAME`]); `None`
+/// assigned by jackin (currently only [`JACKIN_ENV_NAME`]); `None`
 /// indicates a runtime-generated value (hostname, Docker TLS paths, agent
 /// slug, role selector, ...).
 ///
@@ -56,7 +56,7 @@ pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 /// runtime filter in `runtime::launch` skips them via [`is_reserved`] so
 /// that a resolved env set cannot smuggle a value past validation.
 pub(crate) const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
-    (JACKIN_RUNTIME_ENV_NAME, Some(JACKIN_RUNTIME_ENV_VALUE)),
+    (JACKIN_ENV_NAME, Some(JACKIN_ENV_VALUE)),
     (JACKIN_DIND_HOSTNAME_ENV_NAME, None),
     (JACKIN_AGENT_ENV_NAME, None),
     (JACKIN_ROLE_ENV_NAME, None),

@@ -15,7 +15,7 @@ use super::discovery::list_running_agent_display_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
 use super::image::build_agent_image;
 use super::naming::{
-    LABEL_KEEP_AWAKE, LABEL_MANAGED, LABEL_ROLE_AGENT, LABEL_ROLE_DIND, dind_certs_volume,
+    LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
     format_role_display, image_name,
 };
 use super::repo_cache::resolve_agent_repo;
@@ -526,7 +526,7 @@ fn launch_role_runtime(
         "--label",
         LABEL_MANAGED,
         "--label",
-        LABEL_ROLE_DIND,
+        LABEL_KIND_DIND,
         "--label",
         &role_label,
         "-e",
@@ -612,7 +612,7 @@ fn launch_role_runtime(
         "--label",
         LABEL_MANAGED,
         "--label",
-        LABEL_ROLE_AGENT,
+        LABEL_KIND_ROLE,
         "--label",
         &class_label,
         "--label",
@@ -662,8 +662,8 @@ fn launch_role_runtime(
     let mut env_strings: Vec<String> = Vec::new();
     env_strings.push(format!(
         "{}={}",
-        crate::env_model::JACKIN_RUNTIME_ENV_NAME,
-        crate::env_model::JACKIN_RUNTIME_ENV_VALUE
+        crate::env_model::JACKIN_ENV_NAME,
+        crate::env_model::JACKIN_ENV_VALUE
     ));
     for (key, value) in &resolved_env.vars {
         if crate::env_model::is_reserved(key) {

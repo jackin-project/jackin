@@ -1,6 +1,6 @@
 use crate::docker::CommandRunner;
 
-use super::naming::{FILTER_MANAGED, FILTER_ROLE_AGENT, format_role_display};
+use super::naming::{FILTER_KIND_ROLE, FILTER_MANAGED, format_role_display};
 
 pub fn list_running_agent_names(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<String>> {
     list_role_names(runner, false)
@@ -72,7 +72,7 @@ pub(crate) fn list_role_names(
                 "ps",
                 "-a",
                 "--filter",
-                FILTER_ROLE_AGENT,
+                FILTER_KIND_ROLE,
                 "--format",
                 "{{.Names}}",
             ],
@@ -81,13 +81,7 @@ pub(crate) fn list_role_names(
     } else {
         runner.capture(
             "docker",
-            &[
-                "ps",
-                "--filter",
-                FILTER_ROLE_AGENT,
-                "--format",
-                "{{.Names}}",
-            ],
+            &["ps", "--filter", FILTER_KIND_ROLE, "--format", "{{.Names}}"],
             None,
         )?
     };
@@ -113,7 +107,7 @@ pub fn list_running_agent_display_names(
         &[
             "ps",
             "--filter",
-            FILTER_ROLE_AGENT,
+            FILTER_KIND_ROLE,
             "--format",
             "{{.Names}}\t{{.Label \"jackin.display_name\"}}",
         ],
@@ -164,7 +158,7 @@ mod tests {
 
         assert_eq!(names, vec!["jackin-agent-smith"]);
         assert!(runner.recorded.iter().any(|call| {
-            call == "docker ps -a --filter label=jackin.kind=agent --format {{.Names}}"
+            call == "docker ps -a --filter label=jackin.kind=role --format {{.Names}}"
         }));
     }
 
@@ -190,7 +184,7 @@ mod tests {
 
         assert_eq!(names, vec!["Agent Smith"]);
         assert!(runner.recorded.iter().any(|call| {
-            call == "docker ps --filter label=jackin.kind=agent --format {{.Names}}\t{{.Label \"jackin.display_name\"}}"
+            call == "docker ps --filter label=jackin.kind=role --format {{.Names}}\t{{.Label \"jackin.display_name\"}}"
         }));
     }
 }

@@ -105,11 +105,11 @@ jackin config auth set sync     # default — overwrite from host on each launch
 jackin config auth set ignore   # never forward
 ```
 
-### Override per agent
+### Override per role
 
 ```bash
-jackin config auth set ignore --agent agent-smith
-jackin config auth set sync --agent chainargos/the-architect
+jackin config auth set ignore --role agent-smith
+jackin config auth set sync --role chainargos/the-architect
 ```
 
 ### Show the current mode
@@ -118,8 +118,8 @@ jackin config auth set sync --agent chainargos/the-architect
 # Global default
 jackin config auth show
 
-# Effective mode for a specific agent (includes per-agent override)
-jackin config auth show --agent agent-smith
+# Effective mode for a specific role (includes per-role override)
+jackin config auth show --role agent-smith
 ```
 
 ### config.toml format
@@ -129,7 +129,7 @@ jackin config auth show --agent agent-smith
 [claude]
 auth_forward = "sync"
 
-# Per-agent override
+# Per-role override
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
@@ -198,8 +198,8 @@ If the agent shows "Not logged in" or falls back to a different model tier (e.g.
 To stop forwarding and clear existing credentials:
 
 ```bash
-jackin config auth set ignore --agent <agent>
-jackin load <agent>  # next launch will reset to {}
+jackin config auth set ignore --role <role>
+jackin load <role>  # next launch will reset to {}
 ```
 
 Or purge all state:

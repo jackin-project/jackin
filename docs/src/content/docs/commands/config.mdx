@@ -94,15 +94,15 @@ Set the authentication forwarding mode.
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | Apply to a specific agent instead of globally |
+| `--role <SELECTOR>` | Apply to a specific role instead of globally |
 
 ```bash
 # Set global default
 jackin config auth set copy
 
-# Override for a specific agent
-jackin config auth set ignore --agent agent-smith
-jackin config auth set sync --agent chainargos/the-architect
+# Override for a specific role
+jackin config auth set ignore --role agent-smith
+jackin config auth set sync --role chainargos/the-architect
 ```
 
 ### `config auth show`
@@ -115,20 +115,20 @@ Show the current authentication forwarding mode.
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | Show effective mode for a specific agent (includes per-agent override) |
+| `--role <SELECTOR>` | Show effective mode for a specific role (includes per-role override) |
 
 ```bash
 jackin config auth show
-jackin config auth show --agent agent-smith
+jackin config auth show --role agent-smith
 ```
 
 ## `config env`
 
-Manage operator env vars at global and per-agent scope.
+Manage operator env vars at global and per-role scope.
 
 Values are stored verbatim — whatever you type is what goes into the TOML. No editor-side validation of key names or value shape. jackin' resolves values at launch time through the operator-env layer, so `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work.
 
-Without `--agent`, writes and reads target the global `[env]` table. With `--agent <SELECTOR>`, they target `[roles.<SELECTOR>.env]`. The agent selector is not pre-validated — the table path is written even if the agent is not registered, matching how `config auth set --agent` behaves.
+Without `--role`, writes and reads target the global `[env]` table. With `--role <SELECTOR>`, they target `[roles.<SELECTOR>.env]`. The role selector is not pre-validated — the table path is written even if the role is not registered, matching how `config auth set --role` behaves.
 
 ### `config env set`
 
@@ -140,15 +140,15 @@ Set or overwrite an env var at the chosen scope.
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | Apply to `[roles.<SELECTOR>.env]` instead of the global `[env]` |
+| `--role <SELECTOR>` | Apply to `[roles.<SELECTOR>.env]` instead of the global `[env]` |
 | `--comment <TEXT>` | Write a TOML line comment directly above the key |
 
 ```bash
 # Global scope — 1Password reference
 jackin config env set API_TOKEN "op://Personal/api/token"
 
-# Per-agent override
-jackin config env set LOG_LEVEL debug --agent agent-smith
+# Per-role override
+jackin config env set LOG_LEVEL debug --role agent-smith
 
 # Attach a comment (useful for rotation reminders)
 jackin config env set OPENAI_KEY "op://Work/OpenAI/key" --comment "rotate quarterly"
@@ -164,11 +164,11 @@ Remove an env var from the chosen scope. Idempotent: if the key is not present, 
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | Unset from `[roles.<SELECTOR>.env]` instead of the global `[env]` |
+| `--role <SELECTOR>` | Unset from `[roles.<SELECTOR>.env]` instead of the global `[env]` |
 
 ```bash
 jackin config env unset API_TOKEN
-jackin config env unset LOG_LEVEL --agent agent-smith
+jackin config env unset LOG_LEVEL --role agent-smith
 ```
 
 ### `config env list`
@@ -181,9 +181,9 @@ Show the env vars registered at the chosen scope as a table with `Key` and `Valu
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | List vars from `[roles.<SELECTOR>.env]` instead of the global `[env]` |
+| `--role <SELECTOR>` | List vars from `[roles.<SELECTOR>.env]` instead of the global `[env]` |
 
 ```bash
 jackin config env list
-jackin config env list --agent agent-smith
+jackin config env list --role agent-smith
 ```

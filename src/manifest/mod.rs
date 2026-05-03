@@ -1,6 +1,4 @@
-pub use crate::env_model::{
-    JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_RUNTIME_ENV_NAME, JACKIN_RUNTIME_ENV_VALUE,
-};
+pub use crate::env_model::{JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_ENV_NAME, JACKIN_ENV_VALUE};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
