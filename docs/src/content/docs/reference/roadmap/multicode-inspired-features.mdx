@@ -9,7 +9,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 Make jackin' the canonical, vendor-neutral orchestrator for parallel AI coding
 agents. Today the project's primitives — Docker isolation, per-mount worktrees,
-multi-runtime support, agent class repos — are the strongest in the space, but
+multi-runtime support, role repos — are the strongest in the space, but
 the **operator-facing surface** (live status, queue, telemetry, remote
 operation) lags behind every adjacent tool: `multicode`, Docker Sandboxes,
 Conductor, the upstream Claude Code devcontainer, and the various private
@@ -66,7 +66,7 @@ program.
 | Credential source plurality | Three backends — `env`, `command`, keychain | Partial — `op://` and `${env.VAR}` shipped; *see [Credential source pattern](/reference/roadmap/credential-source-pattern/)* |
 | GitHub CLI auth passthrough | Yes (read-only mount) | Have |
 | Operator console / TUI | Yes — ratatui, full-time | Have — `jackin console` (less feature-rich than CLI on purpose) |
-| Agent class repo contract | Implicit via `add-skills-from` | Have — `jackin.agent.toml` + `Dockerfile` |
+| Role repo contract | Implicit via `add-skills-from` | Have — `jackin.role.toml` + `Dockerfile` |
 | Sensitive mount warnings | No | Have |
 
 ### Where multicode genuinely shines
@@ -111,15 +111,15 @@ They are jackin's identity:
   jackin' design target;
   [multi-runtime](/reference/roadmap/multi-runtime-support/) keeps the
   per-instance boundary deliberately.
-- **Agent class repos as the unit of distribution** vs ad-hoc skill mounts.
-  multicode mounts skill markdown files; jackin' ships full agent classes
+- **Role repos as the unit of distribution** vs ad-hoc skill mounts.
+  multicode mounts skill markdown files; jackin' ships full roles
   (Dockerfile + manifest + plugins). Workspace-skills mount is a *complement*
   to that model, not a replacement.
 - **CLI-first with TUI as a simplified front** vs TUI-first. Niche operator
   flows belong on the CLI; the console stays approachable. See the
   `naming conventions` section in <RepoFile path="docs/AGENTS.md" />.
 - **Toolchain-neutral**. multicode bakes in Java/Gradle defaults because it
-  was built for Micronaut. jackin' does not — agent classes carry toolchain
+  was built for Micronaut. jackin' does not — roles carry toolchain
   choices, the orchestrator stays neutral.
 
 ## Phase 1 — Foundation gaps (parallel-safe, low risk)

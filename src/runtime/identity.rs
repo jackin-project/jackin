@@ -108,8 +108,8 @@ mod tests {
         };
 
         let rows = build_config_rows(
-            "Agent",
-            "jackin-agent",
+            "Role",
+            "jackin-role",
             &workspace,
             &git,
             "img",
@@ -138,8 +138,8 @@ mod tests {
         };
 
         let rows = build_config_rows(
-            "Agent",
-            "jackin-agent",
+            "Role",
+            "jackin-role",
             &workspace,
             &git,
             "img",
@@ -171,8 +171,8 @@ mod tests {
         };
 
         let rows = build_config_rows(
-            "Agent",
-            "jackin-agent",
+            "Role",
+            "jackin-role",
             &workspace,
             &git,
             "img",

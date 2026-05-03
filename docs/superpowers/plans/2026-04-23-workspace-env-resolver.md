@@ -25,7 +25,7 @@
 | `src/config/persist.rs`                                                  | Call `operator_env::validate_reserved_names` from `load_or_init` before `validate_workspaces`. |
 | `src/runtime/launch.rs`                                                  | Call `operator_env::resolve_operator_env` after manifest env resolution; overlay map on `resolved_env.vars` (operator wins); filter reserved names; print counts/refs diagnostic. |
 | `docs/src/content/docs/guides/environment-variables.mdx`                 | New guide: operator env layers, syntax dispatch, `op` CLI integration, debugging, examples. |
-| `docs/src/content/docs/reference/configuration.mdx`                      | Document `[env]`, `[agents.*.env]`, `[workspaces.*.env]`, `[workspaces.*.agents.*.env]`, and the layer order. |
+| `docs/src/content/docs/reference/configuration.mdx`                      | Document `[env]`, `[roles.*.env]`, `[workspaces.*.env]`, `[workspaces.*.agents.*.env]`, and the layer order. |
 | `docs/src/content/docs/guides/authentication.mdx`                        | Add cross-link to the new env-variables guide (operator secrets supplement auth forwarding). |
 | `docs/src/content/docs/reference/roadmap/onepassword-integration.mdx`    | Status update: option 2 (workspace-managed references) is now implemented for env; file mounts remain deferred. |
 | `docs/astro.config.ts`                                                   | Register the new `environment-variables.mdx` page in the sidebar (Guides). |
@@ -869,10 +869,10 @@ OPERATOR_HOST = "$HOME_VAR"
     #[test]
     fn deserializes_per_agent_env_map() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
-[agents.agent-smith.env]
+[roles.agent-smith.env]
 AGENT_TOKEN = "op://Shared/smith/token"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
@@ -886,7 +886,7 @@ AGENT_TOKEN = "op://Shared/smith/token"
     #[test]
     fn deserializes_per_workspace_env_map() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [workspaces.big-monorepo]
@@ -907,7 +907,7 @@ WORKSPACE_VAR = "literal"
     #[test]
     fn deserializes_workspace_agent_override_env() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [workspaces.big-monorepo]
@@ -932,7 +932,7 @@ PER_WORKSPACE_PER_AGENT = "specific"
     #[test]
     fn env_maps_default_to_empty_when_omitted() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
@@ -942,17 +942,17 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
     #[test]
     fn deserializes_agent_with_slash_in_name_using_quoted_keys() {
-        // The spec calls out `[agents."chainargos/agent-jones".env]`
+        // The spec calls out `[roles."chainargos/agent-jones".env]`
         // and `[workspaces.<ws>.agents."chainargos/agent-jones".env]`
         // as the TOML shape for third-party agent selectors that
         // include a `/`. Standard TOML quoted keys suffice — this
         // test locks in that shape so a future refactor does not
         // accidentally require un-quoted identifiers.
         let toml_str = r#"
-[agents."chainargos/agent-jones"]
+[roles."chainargos/agent-jones"]
 git = "https://github.com/chainargos/jackin-agent-jones.git"
 
-[agents."chainargos/agent-jones".env]
+[roles."chainargos/agent-jones".env]
 DATABASE_URL = "op://Work/agent-jones/db"
 
 [workspaces.big-monorepo]
@@ -1004,9 +1004,9 @@ pub struct WorkspaceConfig {
     #[serde(default)]
     pub mounts: Vec<MountConfig>,
     #[serde(default)]
-    pub allowed_agents: Vec<String>,
+    pub allowed_roles: Vec<String>,
     #[serde(default)]
-    pub default_agent: Option<String>,
+    pub default_role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_agent: Option<String>,
     /// Workspace-level operator env map. Keys are env var names;
@@ -1085,7 +1085,7 @@ pub use crate::workspace::WorkspaceAgentOverride;
 
 Note: `AgentSource` now derives `Default` (previously it did not). This is additive and safe — all existing construction sites pass every field explicitly. If clippy complains about `Default` on a type that already has an explicit `new`-style use, leave the derive in place; the tests reference `AgentSource::default()` implicitly via the new BTreeMap default.
 
-Note: `WorkspaceConfig` now has two new fields (`env`, `agents`). Existing construction sites in tests and non-test code set the entire struct literal (e.g. `WorkspaceConfig { workdir, mounts, allowed_agents, default_agent, last_agent }`). Those sites must be updated — see Step 3.6.
+Note: `WorkspaceConfig` now has two new fields (`env`, `agents`). Existing construction sites in tests and non-test code set the entire struct literal (e.g. `WorkspaceConfig { workdir, mounts, allowed_roles, default_role, last_agent }`). Those sites must be updated — see Step 3.6.
 
 - [ ] **Step 3.6: Update every `WorkspaceConfig { ... }` struct literal in the repo to initialize the two new fields**
 
@@ -1110,8 +1110,8 @@ For each file, append `env: std::collections::BTreeMap::new(),` and `agents: std
 WorkspaceConfig {
     workdir: "/workspace/project".into(),
     mounts: vec![ /* ... */ ],
-    allowed_agents: vec![],
-    default_agent: None,
+    allowed_roles: vec![],
+    default_role: None,
     last_agent: None,
 }
 ```
@@ -1122,8 +1122,8 @@ After:
 WorkspaceConfig {
     workdir: "/workspace/project".into(),
     mounts: vec![ /* ... */ ],
-    allowed_agents: vec![],
-    default_agent: None,
+    allowed_roles: vec![],
+    default_role: None,
     last_agent: None,
     env: std::collections::BTreeMap::new(),
     agents: std::collections::BTreeMap::new(),
@@ -1163,7 +1163,7 @@ feat(config): add operator env maps on AppConfig / AgentSource / WorkspaceConfig
 Introduce the four-layer operator env schema:
 
 - [env]                              → AppConfig::env
-- [agents.<name>.env]                → AgentSource::env
+- [roles.<name>.env]                → AgentSource::env
 - [workspaces.<name>.env]            → WorkspaceConfig::env
 - [workspaces.<name>.agents.<agent>.env] → WorkspaceAgentOverride::env
   (via a new WorkspaceAgentOverride type and a
@@ -1313,7 +1313,7 @@ impl std::fmt::Display for EnvLayer {
 ///
 /// Order, low → high priority:
 ///   1. `global`          — `[env]`
-///   2. `agent`           — `[agents.<agent>.env]`
+///   2. `agent`           — `[roles.<agent>.env]`
 ///   3. `workspace`       — `[workspaces.<ws>.env]`
 ///   4. `workspace_agent` — `[workspaces.<ws>.agents.<agent>.env]`
 pub fn merge_layers(
@@ -1424,8 +1424,8 @@ Append to the `#[cfg(test)] mod tests` block in `src/operator_env.rs`:
                 dst: "/x".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
+            allowed_roles: vec![],
+            default_role: None,
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
@@ -1453,8 +1453,8 @@ Append to the `#[cfg(test)] mod tests` block in `src/operator_env.rs`:
                 dst: "/x".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
+            allowed_roles: vec![],
+            default_role: None,
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
@@ -1628,7 +1628,7 @@ Append to the `#[cfg(test)] mod tests` block in `src/config/persist.rs`:
             r#"[env]
 DOCKER_HOST = "override-attempt"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 "#,
         )
@@ -1737,8 +1737,8 @@ Append to the `#[cfg(test)] mod tests` block in `src/operator_env.rs`:
                 dst: "/x".to_string(),
                 readonly: false,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
+            allowed_roles: vec![],
+            default_role: None,
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
@@ -2158,7 +2158,7 @@ Add to the `#[cfg(test)] mod tests` block at the end of `src/runtime/launch.rs`:
             r#"[env]
 OPERATOR_SMOKE = "smoke-literal"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -2184,7 +2184,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2238,7 +2238,7 @@ plugins = []
             r#"[env]
 OPERATOR_SMOKE = "operator-wins"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -2264,7 +2264,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [env.OPERATOR_SMOKE]
@@ -2319,7 +2319,7 @@ plugins = []
             r#"[env]
 FROM_HOST = "$JACKIN_PR2_SMOKE_HOST_VAR"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -2345,7 +2345,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2950,7 +2950,7 @@ Add to `src/runtime/launch.rs` `#[cfg(test)] mod tests`:
             r#"[env]
 OPERATOR_TOKEN = "op://Personal/api/token"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -2976,7 +2976,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -3088,7 +3088,7 @@ jackin' lets operators declare environment variables in four config layers that 
 
 ## Why operator env
 
-Agent manifests (`jackin.agent.toml`) declare the env *shape* — what keys an agent expects, what's interactive, what has a default. Operator env layers declare the *values* for a specific operator on a specific workspace with a specific agent. Keeping shape and values in different places means:
+Agent manifests (`jackin.role.toml`) declare the env *shape* — what keys an agent expects, what's interactive, what has a default. Operator env layers declare the *values* for a specific operator on a specific workspace with a specific agent. Keeping shape and values in different places means:
 
 - Third-party agents never see your secrets in their git history.
 - The same agent can run with different credentials in different workspaces (personal laptop vs company monorepo).
@@ -3099,7 +3099,7 @@ Agent manifests (`jackin.agent.toml`) declare the env *shape* — what keys an a
 Four layers are merged with later-wins semantics:
 
 1. **Global** — `[env]` at the top of `~/.config/jackin/config.toml`.
-2. **Agent** — `[agents.<selector>.env]`.
+2. **Agent** — `[roles.<selector>.env]`.
 3. **Workspace** — `[workspaces.<name>.env]`.
 4. **Workspace × Agent** — `[workspaces.<name>.agents.<selector>.env]`.
 
@@ -3125,7 +3125,7 @@ Each value in an env map is one of:
 OPERATOR_ORG = "acme-corp"
 
 # Agent layer — only when loading agent-smith
-[agents.agent-smith.env]
+[roles.agent-smith.env]
 API_TOKEN = "op://Personal/acme-api/token"
 
 # Workspace layer — only when launching in "big-monorepo"
@@ -3186,7 +3186,7 @@ Resolved values are never printed — only `op://` references (which are not sec
 
 ## Interaction with manifest env
 
-Manifest-declared env (`jackin.agent.toml`'s `[env]` table) is resolved first (with interactive prompts as needed). Operator env is resolved second and overlaid on top: **operator wins on key conflict**. This lets operators pin a value that the manifest would otherwise prompt for, or swap a manifest default for a workspace-specific secret.
+Manifest-declared env (`jackin.role.toml`'s `[env]` table) is resolved first (with interactive prompts as needed). Operator env is resolved second and overlaid on top: **operator wins on key conflict**. This lets operators pin a value that the manifest would otherwise prompt for, or swap a manifest default for a workspace-specific secret.
 
 See [Authentication Forwarding](/guides/authentication) for the companion mechanism that forwards Claude Code credentials from host to container. Env layers and auth forwarding are orthogonal — use both.
 ```
@@ -3216,7 +3216,7 @@ Four layers contribute env vars to the agent container, merged with later-wins s
 OPERATOR_ORG = "acme-corp"
 
 # Layer 2 — per agent
-[agents.agent-smith.env]
+[roles.agent-smith.env]
 API_TOKEN = "op://Personal/api/token"
 
 # Layer 3 — per workspace
@@ -3328,7 +3328,7 @@ Append after the `## [Unreleased]` header:
 ```markdown
 ### Added
 
-- Operator-controlled environment variables in `config.toml`. Four layers are merged with later-wins semantics at launch: global `[env]`, per-agent `[agents.<selector>.env]`, per-workspace `[workspaces.<name>.env]`, and per-(workspace × agent) `[workspaces.<name>.agents.<selector>.env]`. Values are either literal strings, host env references (`$NAME` / `${NAME}`), or 1Password references (`op://VAULT/ITEM/FIELD`) resolved via the `op` CLI. Reserved runtime names (`JACKIN_CLAUDE_ENV`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are rejected at config load. Resolved values are injected via `docker run -e` on top of manifest-declared env (operator wins on conflicts). See the new [Environment Variables](guides/environment-variables) guide. [#<pr-number>]
+- Operator-controlled environment variables in `config.toml`. Four layers are merged with later-wins semantics at launch: global `[env]`, per-agent `[roles.<selector>.env]`, per-workspace `[workspaces.<name>.env]`, and per-(workspace × agent) `[workspaces.<name>.agents.<selector>.env]`. Values are either literal strings, host env references (`$NAME` / `${NAME}`), or 1Password references (`op://VAULT/ITEM/FIELD`) resolved via the `op` CLI. Reserved runtime names (`JACKIN_CLAUDE_ENV`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are rejected at config load. Resolved values are injected via `docker run -e` on top of manifest-declared env (operator wins on conflicts). See the new [Environment Variables](guides/environment-variables) guide. [#<pr-number>]
 ```
 
 Leave `<pr-number>` as a literal placeholder; it will be filled in after the PR is opened.

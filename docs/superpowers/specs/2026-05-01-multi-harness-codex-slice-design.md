@@ -2,15 +2,15 @@
 
 **Status:** Proposed
 **Date:** 2026-05-01
-**Scope:** `jackin` crate, `docker/construct/`, `docker/runtime/entrypoint.sh`, manifest schema, workspace config schema, first-party agent repo follow-up
+**Scope:** `jackin` crate, `docker/construct/`, `docker/runtime/entrypoint.sh`, manifest schema, workspace config schema, first-party role repo follow-up
 **PR shape:** single coordinated feature branch; agent-smith repo update lands as a small follow-up PR
 **Related roadmap:** [Multi-Runtime Support for Codex and Amp](../../src/content/docs/reference/roadmap/multi-runtime-support.mdx)
 
 ## Problem
 
-jackin's stated value is operator-side isolation: agent classes as Dockerfiles, named workspaces, scoped mounts, isolated container lifecycles. None of that value is intrinsically tied to Claude. But today every layer of the implementation — manifest schema, derived image, entrypoint, runtime user, persisted state, auth forwarding, version probing, mount destinations — assumes Claude Code in concrete, not just naming.
+jackin's stated value is operator-side isolation: roles as Dockerfiles, named workspaces, scoped mounts, isolated container lifecycles. None of that value is intrinsically tied to Claude. But today every layer of the implementation — manifest schema, derived image, entrypoint, runtime user, persisted state, auth forwarding, version probing, mount destinations — assumes Claude Code in concrete, not just naming.
 
-That coupling makes the project look more harness-agnostic than it really is, and it blocks the next obvious operator win: running the same agent class under Codex (or, later, Amp) without forking the agent repo.
+That coupling makes the project look more harness-agnostic than it really is, and it blocks the next obvious operator win: running the same role under Codex (or, later, Amp) without forking the role repo.
 
 The roadmap describes a five-phase plan to land Codex and Amp. This spec is **not** that whole plan. It is a tightly scoped vertical slice that:
 
@@ -26,7 +26,7 @@ After this slice merges, Amp and the deferred items become smaller, well-scoped 
 2. Introduce a small built-in harness abstraction (enum + per-harness data + small fns) that all harness-shaped code in the crate routes through. No trait, no marketplace.
 3. Rename the in-container OS user from `claude` to `agent` and `/home/claude` to `/home/agent`. This is a deliberate breaking change.
 4. Move harness selection to the **workspace** config, with a per-launch CLI override.
-5. Use **one image per agent class**, with all supported harnesses installed at build time. Container identity does not carry the harness; `JACKIN_HARNESS` is passed at `docker run` time.
+5. Use **one image per role**, with all supported harnesses installed at build time. Container identity does not carry the harness; `JACKIN_HARNESS` is passed at `docker run` time.
 6. Keep Claude behavior bit-identical from the operator's perspective except for the `/home/agent` path change.
 7. Land the construct image rename in-place on `:trixie` so existing `FROM` lines keep working after a `docker pull`.
 8. Ship the slice atomically: no intermediate state where the user is named `claude` but runs Codex.
@@ -34,7 +34,7 @@ After this slice merges, Amp and the deferred items become smaller, well-scoped 
 ## Non-Goals
 
 - TUI harness picker. `jackin console` ships unchanged in this slice; the picker is a follow-up spec.
-- Per-agent-class harness override. Workspace is the only scope in V1. The agent class manifest declares which harnesses it *supports*; it does not declare a default.
+- Per-agent-class harness override. Workspace is the only scope in V1. The role manifest declares which harnesses it *supports*; it does not declare a default.
 - Amp support. Phase 3 of the roadmap. The seam is designed to admit Amp later by adding one enum variant + one profile + match arms.
 - Codex auto-update / version probe. `--rebuild` is the V1 update path for Codex.
 - `jackin sync` for Codex. Sync is Claude-OAuth-shaped; for Codex it returns a clear "Claude-only in V1" error.
@@ -47,7 +47,7 @@ After this slice merges, Amp and the deferred items become smaller, well-scoped 
 
 ### Naming and concept
 
-The concept currently called "runtime" in the roadmap is renamed to **`harness`** in this spec, in code, in manifest tables, and in operator-facing docs. The agent class (jackin-agent-smith, jackin-the-architect) stays the unit of "what tools and Dockerfile shape." The harness (claude, codex) is the unit of "what AI CLI runs inside."
+The concept currently called "runtime" in the roadmap is renamed to **`harness`** in this spec, in code, in manifest tables, and in operator-facing docs. The role (jackin-agent-smith, jackin-the-architect) stays the unit of "what tools and Dockerfile shape." The harness (claude, codex) is the unit of "what AI CLI runs inside."
 
 Reasoning: "runtime" is overloaded inside jackin (Docker runtime, jackin runtime) and the operator-facing concept is closer to "the harness that runs the model."
 
@@ -123,7 +123,7 @@ dockerfile = "Dockerfile"
 name = "Agent Smith"
 
 [harness]                          # NEW, optional
-supported = ["claude", "codex"]    # which harnesses this agent class can run
+supported = ["claude", "codex"]    # which harnesses this role can run
 
 [claude]                           # required iff "claude" in [harness].supported
 plugins = []
@@ -132,7 +132,7 @@ marketplaces = []
 [codex]                            # required iff "codex" in [harness].supported (empty in V1)
 ```
 
-**Default behavior when `[harness]` is absent:** treat as `supported = ["claude"]`. Every existing agent repo and manifest in the wild keeps working without edits.
+**Default behavior when `[harness]` is absent:** treat as `supported = ["claude"]`. Every existing role repo and manifest in the wild keeps working without edits.
 
 **Validation rules** (new, in `src/manifest/validate.rs`):
 
@@ -160,13 +160,13 @@ When `jackin load <agent>` runs inside `prod`:
 
 1. Resolve workspace's `harness` (default `"claude"` if absent).
 2. CLI `--harness <h>` overrides for one launch.
-3. Validate the chosen harness is in the agent class's manifest `[harness].supported`. If not, fail-fast with: `agent "<class>" does not support harness "<h>"; supported: [...]`.
+3. Validate the chosen harness is in the role's manifest `[harness].supported`. If not, fail-fast with: `agent "<class>" does not support harness "<h>"; supported: [...]`.
 
 Per-agent harness override is not in this slice. If someone wants `agent-smith` on Claude but `the-architect` on Codex within the same workspace, V1 says: use two workspaces. We can add per-agent override later if real demand emerges.
 
 ### Image identity
 
-**One image per agent class.** No harness suffix in image or container name. `image_name(selector)` keeps its current shape: `jackin-<class>`.
+**One image per role.** No harness suffix in image or container name. `image_name(selector)` keeps its current shape: `jackin-<class>`.
 
 The derived Dockerfile installs *every* supported harness from the manifest. For an `agent-smith` whose manifest declares `supported = ["claude", "codex"]`, the image contains both Claude and Codex CLIs.
 
@@ -193,7 +193,7 @@ This slice ships the `claude` → `agent` and `/home/claude` → `/home/agent` r
 
 **Tag strategy:** `:trixie` is rebuilt in place with the new shape. The image's content digest changes; the tag does not. Operators who pull `:trixie` fresh after the slice ships pick up the new shape automatically. Operators with cached `:trixie` need a `docker pull` — handled by adding `--pull` to jackin's derived build invocation.
 
-**Why in-place rather than `:trixie-2`:** smaller surface to coordinate. Agent repos do not need to update `FROM` lines, which means there is no version skew window where some agent repos point at the old tag and some at the new. Failure mode (cached old `:trixie` produces broken builds) is mitigated by the auto-`--pull`.
+**Why in-place rather than `:trixie-2`:** smaller surface to coordinate. Role repos do not need to update `FROM` lines, which means there is no version skew window where some role repos point at the old tag and some at the new. Failure mode (cached old `:trixie` produces broken builds) is mitigated by the auto-`--pull`.
 
 **Derived image** (`src/derived_image.rs`):
 
@@ -238,7 +238,7 @@ Notes on this shape:
 
 - Multi-arch via `TARGETARCH` (BuildKit-provided automatic ARG). Defaults to `amd64` if unset; explicitly errors on unsupported architectures rather than silently producing a broken image.
 - Resolves the latest stable tag at build time by following the redirect on `releases/latest`, mirroring how Claude's install is fluid (`https://claude.ai/install.sh`) rather than version-pinned. Operators rebuild to update.
-- **Block ordering matters for cache-bust to propagate.** The Claude install_block declares `ARG JACKIN_CACHE_BUST=0` and runs first. Bumping CACHE_BUST invalidates Claude's RUN, which invalidates the layer chain downstream — including Codex's RUN that has no CACHE_BUST reference of its own. `render_derived_dockerfile` MUST emit Claude's block before Codex's. (If we ever ship a Claude-less agent class, Codex will need its own `ARG JACKIN_CACHE_BUST=0` declaration plus a no-op reference inside the RUN. Out of scope for V1, where every agent class supports Claude.)
+- **Block ordering matters for cache-bust to propagate.** The Claude install_block declares `ARG JACKIN_CACHE_BUST=0` and runs first. Bumping CACHE_BUST invalidates Claude's RUN, which invalidates the layer chain downstream — including Codex's RUN that has no CACHE_BUST reference of its own. `render_derived_dockerfile` MUST emit Claude's block before Codex's. (If we ever ship a Claude-less role, Codex will need its own `ARG JACKIN_CACHE_BUST=0` declaration plus a no-op reference inside the RUN. Out of scope for V1, where every role supports Claude.)
 - Persists `codex --version` output to `/etc/jackin/codex.version` for runtime diagnostics. Future work may mirror this for Claude.
 - Tarball is unpacked directly into `/usr/local/bin/`. The Codex release tarball is structured with a flat `codex` binary at the root; if upstream ever changes that layout, this RUN fails fast rather than installing nothing useful.
 
@@ -467,16 +467,16 @@ Direct edits in this slice:
 
 Docs touched:
 
-- `docs/src/content/docs/developing/agent-manifest.mdx` — document `[harness]` table.
+- `docs/src/content/docs/developing/role-manifest.mdx` — document `[harness]` table.
 - `docs/src/content/docs/guides/authentication.mdx` — note Codex env-only auth.
 - `docs/src/content/docs/reference/architecture.mdx` — refresh runtime/harness terminology.
-- `docs/src/content/docs/developing/creating-agents.mdx` — example multi-harness manifest.
+- `docs/src/content/docs/developing/creating-roles.mdx` — example multi-harness manifest.
 - `docs/src/content/docs/reference/roadmap/multi-runtime-support.mdx` — annotate that the foundation slice has shipped under "harness" terminology; preserve as historical roadmap context.
 - `DEPRECATED.md` — `/home/claude` mount paths.
 
 Follow-up PR (separate, `jackin-project/jackin-agent-smith`):
 
-- `jackin.agent.toml` — add `[harness] supported = ["claude", "codex"]`.
+- `jackin.role.toml` — add `[harness] supported = ["claude", "codex"]`.
 
 ## Open questions
 
@@ -490,7 +490,7 @@ Follow-up PR (separate, `jackin-project/jackin-agent-smith`):
 Three forces shaped this design:
 
 1. **Vertical slice over abstraction-first.** A `RuntimeAdapter` trait designed against only Claude and one half-imagined Codex would miss the actual seams. Letting Codex push back on real code produces a smaller, sharper interface.
-2. **Workspace-level harness scope keeps the slice atomic.** If harness lived on the agent class, every agent repo would need updating in lockstep. If harness were per-launch only, workspaces would have no harness identity at all. Workspace scope sits at the right altitude for jackin's existing model.
-3. **One image with both harnesses installed makes the workspace abstraction feel free.** The alternative — image-per-(class,harness) — meant container-name suffixing, which meant data-directory migration. Each of those was real operator pain that didn't deliver isolation jackin actually needed (since Docker containers are already isolated). One image keeps the mental model simple: an agent class is a unit of tools; a harness is a unit of "which AI runs."
+2. **Workspace-level harness scope keeps the slice atomic.** If harness lived on the role, every role repo would need updating in lockstep. If harness were per-launch only, workspaces would have no harness identity at all. Workspace scope sits at the right altitude for jackin's existing model.
+3. **One image with both harnesses installed makes the workspace abstraction feel free.** The alternative — image-per-(class,harness) — meant container-name suffixing, which meant data-directory migration. Each of those was real operator pain that didn't deliver isolation jackin actually needed (since Docker containers are already isolated). One image keeps the mental model simple: an role is a unit of tools; a harness is a unit of "which AI runs."
 
 The remaining unavoidable cost is the `agent` user rename. That cost was always going to come due — the roadmap is explicit that Claude-shape leakage into paths is the foundation problem. Paying it once, atomically, in the same slice that adds Codex, is cheaper than paying it twice or leaving it half-done.

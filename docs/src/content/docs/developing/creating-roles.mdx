@@ -1,6 +1,6 @@
 ---
 title: Creating an Agent
-description: Build your own agent repo with a custom toolchain
+description: Build your own role repo with a custom toolchain
 ---
 import { Aside, Steps } from '@astrojs/starlight/components'
 
@@ -113,9 +113,9 @@ USER agent
 
 ## Claude plugins
 
-Agent repos can declare Claude Code plugins to install. Add them to the `[claude]` section in your manifest:
+Role repos can declare Claude Code plugins to install. Add them to the `[claude]` section in your manifest:
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
 
 [claude]
@@ -129,7 +129,7 @@ These plugin IDs are written into the agent's runtime state and installed automa
 
 If you need plugins from a custom marketplace, declare the marketplace separately and keep plugin IDs fully qualified:
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
 
 [claude]
@@ -155,9 +155,9 @@ jackin adds each declared marketplace at container startup, then installs each p
 
 ## Supporting multiple harnesses
 
-An agent class can support more than one harness while keeping one shared Dockerfile:
+An role can support more than one harness while keeping one shared Dockerfile:
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
 
 [harness]

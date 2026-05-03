@@ -5,9 +5,8 @@
 use ratatui::{Frame, layout::Rect};
 
 use super::super::super::widgets::{
-    agent_picker, confirm, confirm_save, error_popup, file_browser, github_picker,
-    mount_dst_choice, op_picker, save_discard, scope_picker, source_picker, text_input,
-    workdir_pick,
+    confirm, confirm_save, error_popup, file_browser, github_picker, mount_dst_choice, op_picker,
+    role_picker, save_discard, scope_picker, source_picker, text_input, workdir_pick,
 };
 use super::super::state::Modal;
 use super::centered_rect_fixed;
@@ -38,7 +37,7 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
             (60, error_popup::required_height(state, inner_width))
         }
         Modal::OpPicker { .. } => (80, 22),
-        Modal::AgentPicker { state } | Modal::AgentOverridePicker { state } => {
+        Modal::RolePicker { state } | Modal::RoleOverridePicker { state } => {
             let rows = (state.filtered.len() as u16).saturating_add(6).min(15);
             (50, rows)
         }
@@ -68,8 +67,8 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
             state.tick();
             op_picker::render::render(frame, modal_area, state);
         }
-        Modal::AgentPicker { state } | Modal::AgentOverridePicker { state } => {
-            agent_picker::render(frame, modal_area, state);
+        Modal::RolePicker { state } | Modal::RoleOverridePicker { state } => {
+            role_picker::render(frame, modal_area, state);
         }
         Modal::SourcePicker { state } => source_picker::render(frame, modal_area, state),
         Modal::ScopePicker { state } => scope_picker::render(frame, modal_area, state),

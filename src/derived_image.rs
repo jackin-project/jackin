@@ -1,4 +1,4 @@
-use crate::repo::ValidatedAgentRepo;
+use crate::repo::ValidatedRoleRepo;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -24,7 +24,7 @@ pub fn render_derived_dockerfile(
 USER root
 COPY {hook_path} /home/agent/.jackin-runtime/pre-launch.sh
 RUN chmod +x /home/agent/.jackin-runtime/pre-launch.sh
-USER agent
+USER role
 "
         )
     });
@@ -32,7 +32,7 @@ USER agent
     // Concatenate per-harness install blocks. Claude, when present,
     // MUST come first so its ARG JACKIN_CACHE_BUST invalidates the
     // layer chain downstream into Codex's RUN. The slice's V1
-    // invariant is "every agent class supports Claude"; if that ever
+    // invariant is "every role class supports Claude"; if that ever
     // changes, Codex's profile install_block will need its own
     // ARG JACKIN_CACHE_BUST line.
     let mut install_blocks = String::new();
@@ -51,20 +51,20 @@ USER agent
 USER root
 ARG JACKIN_HOST_UID=1000
 ARG JACKIN_HOST_GID=1000
-RUN current_gid=\"$(id -g agent)\" \
-    && current_uid=\"$(id -u agent)\" \
+RUN current_gid=\"$(id -g role)\" \
+    && current_uid=\"$(id -u role)\" \
     && if [ \"$current_gid\" != \"$JACKIN_HOST_GID\" ]; then \
-         groupmod -o -g \"$JACKIN_HOST_GID\" agent \
-         && usermod -g \"$JACKIN_HOST_GID\" agent; \
+         groupmod -o -g \"$JACKIN_HOST_GID\" role \
+         && usermod -g \"$JACKIN_HOST_GID\" role; \
        fi \
     && if [ \"$current_uid\" != \"$JACKIN_HOST_UID\" ]; then \
-         usermod -o -u \"$JACKIN_HOST_UID\" agent; \
+         usermod -o -u \"$JACKIN_HOST_UID\" role; \
        fi \
-    && chown -R agent:agent /home/agent
+    && chown -R role:role /home/agent
 {install_blocks}{hook_section}USER root
 COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh
 RUN chmod +x /home/agent/entrypoint.sh
-USER agent
+USER role
 ENTRYPOINT [\"/home/agent/entrypoint.sh\"]
 "
     )
@@ -72,7 +72,7 @@ ENTRYPOINT [\"/home/agent/entrypoint.sh\"]
 
 pub fn create_derived_build_context(
     repo_dir: &Path,
-    validated: &ValidatedAgentRepo,
+    validated: &ValidatedRoleRepo,
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
@@ -154,7 +154,7 @@ fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
             std::fs::copy(entry.path(), destination)?;
         } else if file_type.is_symlink() {
             anyhow::bail!(
-                "invalid agent repo: derived build context does not support symlinks: {}",
+                "invalid role repo: derived build context does not support symlinks: {}",
                 entry.path().display()
             );
         }
@@ -195,7 +195,7 @@ mod tests {
             &[Harness::Claude],
         );
 
-        assert!(dockerfile.contains("USER agent\n"));
+        assert!(dockerfile.contains("USER role\n"));
         assert!(dockerfile.contains("ARG JACKIN_CACHE_BUST=0"));
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(dockerfile.contains("RUN claude --version"));
@@ -214,9 +214,9 @@ mod tests {
 
         assert!(dockerfile.contains("ARG JACKIN_HOST_UID=1000"));
         assert!(dockerfile.contains("ARG JACKIN_HOST_GID=1000"));
-        assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
-        assert!(dockerfile.contains("usermod -g \"$JACKIN_HOST_GID\" agent"));
-        assert!(dockerfile.contains("usermod -o -u \"$JACKIN_HOST_UID\" agent"));
+        assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" role"));
+        assert!(dockerfile.contains("usermod -g \"$JACKIN_HOST_GID\" role"));
+        assert!(dockerfile.contains("usermod -o -u \"$JACKIN_HOST_UID\" role"));
     }
 
     #[test]
@@ -282,7 +282,7 @@ mod tests {
         );
 
         assert!(dockerfile.contains("/home/agent"));
-        assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
+        assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" role"));
         assert!(dockerfile.contains("ENTRYPOINT [\"/home/agent/entrypoint.sh\"]"));
         assert!(!dockerfile.contains("/home/claude"));
     }
@@ -361,7 +361,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            repo.path().join("jackin.agent.toml"),
+            repo.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -370,7 +370,7 @@ plugins = []
         )
         .unwrap();
 
-        let validated = crate::repo::validate_agent_repo(repo.path()).unwrap();
+        let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
         let build = create_derived_build_context(repo.path(), &validated).unwrap();
 
         assert!(build.context_dir.join("Dockerfile").is_file());
@@ -399,7 +399,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo.path().join("jackin.agent.toml"),
+            repo.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -408,7 +408,7 @@ plugins = []
         )
         .unwrap();
 
-        let validated = crate::repo::validate_agent_repo(repo.path()).unwrap();
+        let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
         let build = create_derived_build_context(repo.path(), &validated).unwrap();
         let dockerignore =
             std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
@@ -428,7 +428,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo.path().join("jackin.agent.toml"),
+            repo.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -443,7 +443,7 @@ plugins = []
         )
         .unwrap();
 
-        let validated = crate::repo::validate_agent_repo(repo.path()).unwrap();
+        let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
         let error = create_derived_build_context(repo.path(), &validated)
             .expect_err("symlinks should be rejected");
 

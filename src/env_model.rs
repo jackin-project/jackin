@@ -16,7 +16,7 @@
 //! constant — and the runtime now consults it through
 //! [`is_reserved`] instead of maintaining its own.
 
-/// Env var injected by jackin into every agent container so that child
+/// Env var injected by jackin into every role container so that child
 /// processes can detect they are running inside a jackin-managed runtime.
 pub const JACKIN_RUNTIME_ENV_NAME: &str = "JACKIN_CLAUDE_ENV";
 
@@ -25,7 +25,7 @@ pub const JACKIN_RUNTIME_ENV_NAME: &str = "JACKIN_CLAUDE_ENV";
 /// fixed by jackin.
 pub const JACKIN_RUNTIME_ENV_VALUE: &str = "jackin";
 
-/// Env var that carries the `DinD` hostname into the agent container.
+/// Env var that carries the `DinD` hostname into the role container.
 ///
 /// In-container tooling reaches the sibling docker-in-docker daemon through
 /// this hostname.  The value is runtime-generated (derived from the container
@@ -96,7 +96,7 @@ pub(crate) fn extract_interpolation_refs(s: &str) -> Vec<&str> {
 ///
 /// Used in two places:
 ///
-/// * Manifest validation (`AgentManifest::validate`) to reject cyclic
+/// * Manifest validation (`RoleManifest::validate`) to reject cyclic
 ///   env graphs at load time. The returned order is discarded.
 /// * Runtime env resolution (`env_resolver::resolve_env`) to process
 ///   declarations in dependency order before interpolation.

@@ -1,5 +1,5 @@
 use crate::config::AuthForwardMode;
-use crate::manifest::AgentManifest;
+use crate::manifest::RoleManifest;
 use crate::paths::JackinPaths;
 use std::path::{Path, PathBuf};
 
@@ -28,7 +28,7 @@ pub enum AuthProvisionOutcome {
 }
 
 #[derive(Debug, Clone)]
-pub struct AgentState {
+pub struct RoleState {
     pub root: PathBuf,
     pub claude_dir: PathBuf,
     pub claude_json: PathBuf,
@@ -40,11 +40,11 @@ pub struct AgentState {
     pub codex_config_toml: Option<PathBuf>,
 }
 
-impl AgentState {
+impl RoleState {
     pub fn prepare(
         paths: &JackinPaths,
         container_name: &str,
-        manifest: &AgentManifest,
+        manifest: &RoleManifest,
         auth_forward: AuthForwardMode,
         host_home: &Path,
         harness: crate::harness::Harness,
@@ -113,9 +113,9 @@ mod tests {
     use crate::paths::JackinPaths;
     use tempfile::tempdir;
 
-    fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::AgentManifest {
+    fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::RoleManifest {
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -128,7 +128,7 @@ plugins = []
             "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
-        crate::manifest::AgentManifest::load(temp.path()).unwrap()
+        crate::manifest::RoleManifest::load(temp.path()).unwrap()
     }
 
     #[test]
@@ -137,7 +137,7 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
         let manifest = simple_manifest(&temp);
 
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -158,7 +158,7 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
 
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -174,9 +174,9 @@ supported = ["codex"]
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
-        let (state, outcome) = AgentState::prepare(
+        let (state, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,

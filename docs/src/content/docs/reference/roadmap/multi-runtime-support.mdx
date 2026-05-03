@@ -12,7 +12,7 @@ The foundation slice shipped under **harness** terminology. This roadmap preserv
 
 ## Problem
 
-jackin' already solves several operator problems in a runtime-independent way: agent classes as Dockerfiles, named workspaces, scoped mounts, isolated container lifecycles, and per-agent persisted state. But the actual runtime contract is still Claude-specific end to end.
+jackin' already solves several operator problems in a runtime-independent way: roles as Dockerfiles, named workspaces, scoped mounts, isolated container lifecycles, and per-agent persisted state. But the actual runtime contract is still Claude-specific end to end.
 
 Today the codebase assumes Claude in all of these places:
 
@@ -29,7 +29,7 @@ That means the roadmap already names Codex and Amp as desirable runtimes, but th
 
 ## Why It Matters
 
-- The main value of jackin' for local development is not Claude itself. It is the isolation, mount scoping, reusable agent classes, and multi-agent workflow.
+- The main value of jackin' for local development is not Claude itself. It is the isolation, mount scoping, reusable roles, and multi-agent workflow.
 - Operators increasingly switch between Claude Code, Codex CLI, and Amp depending on the task, model quality, or workflow style.
 - The current implementation makes the project look more runtime-agnostic than it really is. The [open review findings](/reference/roadmap/open-review-findings/) already call this out explicitly.
 - Supporting Codex and Amp does not require full Claude parity on day one. A smaller "secure and usable inside jackin" baseline would already unlock real value.
@@ -48,20 +48,20 @@ The current implementation is Claude-shaped in concrete, not just in naming:
 - <RepoFile path="src/runtime/launch.rs" /> mounts only Claude state files and prints Claude-specific auth diagnostics.
 - <RepoFile path="src/runtime/image.rs" /> and <RepoFile path="src/version_check.rs" /> only know how to detect and refresh Claude versions.
 
-### Existing org agent repos
+### Existing org role repos
 
 The two current first-party agents are useful signals for the migration plan:
 
 - [`jackin-agent-smith`](https://github.com/jackin-project/jackin-agent-smith) is intentionally minimal. Its runtime-specific behavior is mostly just official Claude plugins and one env default (`CLAUDE_CODE_NO_FLICKER=1`). It is the best first candidate for validating Codex and Amp support.
 - [`jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) shares the same Dockerfile contract but depends on a much richer Claude plugin story, including the custom [`jackin-marketplace`](https://github.com/jackin-project/jackin-marketplace). That makes it a good stress test for migration boundaries, but a bad reason to block initial Codex/Amp support on plugin parity.
 
-The important observation is that both agent repos already separate shared toolchain concerns from runtime concerns fairly well:
+The important observation is that both role repos already separate shared toolchain concerns from runtime concerns fairly well:
 
 - the Dockerfile defines the toolchain
 - identity and env prompts are generic
 - only the `[claude]` table is truly Claude-specific
 
-That argues for keeping one shared agent repo per role, not creating separate `*-codex` or `*-amp` repo forks.
+That argues for keeping one shared role repo per role, not creating separate `*-codex` or `*-amp` repo forks.
 
 ### External runtime realities
 
@@ -74,12 +74,12 @@ The public Codex and Amp CLIs point toward a pragmatic first implementation shap
 
 Add first-class built-in support for `claude`, `codex`, and `amp` as selectable runtimes while preserving the parts of jackin' that already work well:
 
-- one agent repo defines the environment layer
+- one role repo defines the environment layer
 - one workspace model defines file visibility
 - one runtime lifecycle manages isolated containers and DinD
 - one operator can run multiple agents in parallel
 
-The first successful version should let an operator do this with the same agent class:
+The first successful version should let an operator do this with the same role:
 
 ```sh
 jackin load agent-smith --runtime claude
@@ -182,7 +182,7 @@ The current `claude` username and `/home/claude` path leak Claude-specific assum
 - entrypoint and runtime helper scripts under `docker/runtime/`
 - mount destinations in <RepoFile path="src/runtime/launch.rs" />
 - docs examples and built-in mount defaults such as Gradle caches
-- first-party agent repos that occasionally reference `/home/claude`
+- first-party role repos that occasionally reference `/home/claude`
 
 If jackin' is going to support multiple runtimes cleanly, the runtime account should become a neutral operator-facing concept such as `agent` with home directory `/home/agent`.
 
@@ -257,7 +257,7 @@ Amp's thread sync is already cloud-backed, so jackin' does not need to recreate 
 The first Codex/Amp release does **not** need all of these:
 
 - Claude marketplace support equivalent for other runtimes
-- generic plugin or skill installation in `jackin.agent.toml`
+- generic plugin or skill installation in `jackin.role.toml`
 - runtime-native MCP management beyond simple config-file injection
 - automatic host-session auth forwarding like Claude `sync`
 - fully generalized runtime auto-update detection
@@ -355,7 +355,7 @@ If a later pass proves that Amp skills or Codex-specific config deserve first-cl
 - <RepoFile path="src/runtime/launch.rs" />
 - <RepoFile path="src/runtime/image.rs" />
 - <RepoFile path="src/version_check.rs" />
-- <RepoFile path="docs/src/content/docs/developing/agent-manifest.mdx" />
-- <RepoFile path="docs/src/content/docs/developing/creating-agents.mdx" />
+- <RepoFile path="docs/src/content/docs/developing/role-manifest.mdx" />
+- <RepoFile path="docs/src/content/docs/developing/creating-roles.mdx" />
 - <RepoFile path="docs/src/content/docs/guides/authentication.mdx" />
 - <RepoFile path="docs/src/content/docs/reference/architecture.mdx" />

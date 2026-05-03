@@ -36,7 +36,7 @@ Examples:
   jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
   jackin workspace create my-app --workdir ~/Projects/my-app --harness codex
   jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
-  jackin workspace create restricted --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith"
+  jackin workspace create restricted --workdir ~/app --allowed-role agent-smith --default-role agent-smith"
     )]
     Create {
         /// Unique name for this workspace
@@ -50,12 +50,12 @@ Examples:
         /// Do not auto-mount the workdir; provide all mounts explicitly with --mount
         #[arg(long, default_value_t = false)]
         no_workdir_mount: bool,
-        /// Restrict which agents may use this workspace (repeatable)
-        #[arg(long = "allowed-agent")]
-        allowed_agents: Vec<String>,
-        /// Agent to select by default when loading this workspace
-        #[arg(long = "default-agent")]
-        default_agent: Option<String>,
+        /// Restrict which roles may use this workspace (repeatable)
+        #[arg(long = "allowed-role")]
+        allowed_roles: Vec<String>,
+        /// Role to select by default when loading this workspace
+        #[arg(long = "default-role")]
+        default_role: Option<String>,
         /// Default harness for this workspace (claude or codex)
         #[arg(long, value_parser = parse_harness)]
         harness: Option<crate::harness::Harness>,
@@ -69,7 +69,7 @@ Examples:
         )]
         mount_isolation: Vec<(String, MountIsolation)>,
         /// Opt the workspace into the macOS keep-awake reconciler.
-        /// While any agent in this workspace is running, jackin holds a
+        /// While any role in this workspace is running, jackin holds a
         /// `caffeinate -imsu` assertion so the host stays awake. Silent
         /// no-op on Linux/Windows.
         #[arg(long = "keep-awake", default_value_t = false)]
@@ -100,9 +100,9 @@ Examples:
   jackin workspace edit my-app --mount ~/cache:/cache:ro
   jackin workspace edit my-app --remove-destination /old-mount
   jackin workspace edit my-app --no-workdir-mount
-  jackin workspace edit my-app --allowed-agent chainargos/the-architect
-  jackin workspace edit my-app --default-agent agent-smith
-  jackin workspace edit my-app --clear-default-agent
+  jackin workspace edit my-app --allowed-role chainargos/the-architect
+  jackin workspace edit my-app --default-role agent-smith
+  jackin workspace edit my-app --clear-default-role
   jackin workspace edit my-app --harness codex
   jackin workspace edit my-app --clear-harness
   jackin workspace edit my-app --mount ~/Projects/my-app --yes
@@ -123,19 +123,19 @@ Examples:
         /// Remove the auto-mounted workdir (the mount where src = dst = workdir)
         #[arg(long, default_value_t = false)]
         no_workdir_mount: bool,
-        /// Grant an agent access to this workspace (repeatable)
-        #[arg(long = "allowed-agent")]
-        allowed_agents: Vec<String>,
-        /// Revoke an agent's access to this workspace (repeatable)
-        #[arg(long = "remove-allowed-agent")]
+        /// Grant an role access to this workspace (repeatable)
+        #[arg(long = "allowed-role")]
+        allowed_roles: Vec<String>,
+        /// Revoke an role's access to this workspace (repeatable)
+        #[arg(long = "remove-allowed-role")]
         remove_allowed_agents: Vec<String>,
-        /// Set the default agent for this workspace
-        #[arg(long = "default-agent")]
-        default_agent: Option<String>,
-        /// Clear the current default agent
+        /// Set the default role for this workspace
+        #[arg(long = "default-role")]
+        default_role: Option<String>,
+        /// Clear the current default role
         #[arg(
-            long = "clear-default-agent",
-            conflicts_with = "default_agent",
+            long = "clear-default-role",
+            conflicts_with = "default_role",
             default_value_t = false
         )]
         clear_default_agent: bool,
@@ -210,25 +210,25 @@ Examples:
         /// Name of the workspace to delete
         name: String,
     },
-    /// Manage operator env vars at workspace and workspace-agent scope
+    /// Manage operator env vars at workspace and workspace-role scope
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(WorkspaceEnvCommand),
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum WorkspaceEnvCommand {
-    /// Set an env var at workspace or workspace-agent scope
+    /// Set an env var at workspace or workspace-role scope
     ///
-    /// Without `--agent`, writes to `[workspaces.<workspace>.env]`. With
-    /// `--agent <SELECTOR>`, writes to `[workspaces.<workspace>.agents.<selector>.env]`.
-    /// The agent selector is not pre-validated.
+    /// Without `--role`, writes to `[workspaces.<workspace>.env]`. With
+    /// `--role <SELECTOR>`, writes to `[workspaces.<workspace>.roles.<selector>.env]`.
+    /// The role selector is not pre-validated.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
   jackin workspace env set prod DB_URL \"op://Work/Prod/db-url\"
-  jackin workspace env set prod OPENAI_KEY \"op://Work/OpenAI/key\" --agent agent-smith
+  jackin workspace env set prod OPENAI_KEY \"op://Work/OpenAI/key\" --role agent-smith
   jackin workspace env set prod DEBUG \"1\" --comment \"temporary; remove after Q2\""
     )]
     Set {
@@ -238,14 +238,14 @@ Examples:
         key: String,
         /// Env var value (use `op://...`, `$VAR`, `${VAR}`, or literal)
         value: String,
-        /// Apply to a specific agent inside this workspace
+        /// Apply to a specific role inside this workspace
         #[arg(long)]
-        agent: Option<String>,
+        role: Option<String>,
         /// Write a TOML comment line above the key
         #[arg(long)]
         comment: Option<String>,
     },
-    /// Unset an env var at workspace or workspace-agent scope
+    /// Unset an env var at workspace or workspace-role scope
     ///
     /// Idempotent: if the key is not present, prints "KEY not set." and
     /// exits 0 without saving the config.
@@ -255,32 +255,32 @@ Examples:
         after_long_help = "\
 Examples:
   jackin workspace env unset prod DB_URL
-  jackin workspace env unset prod OPENAI_KEY --agent agent-smith"
+  jackin workspace env unset prod OPENAI_KEY --role agent-smith"
     )]
     Unset {
         /// Workspace name
         workspace: String,
         /// Env var name to remove
         key: String,
-        /// Unset from a specific agent inside this workspace
+        /// Unset from a specific role inside this workspace
         #[arg(long)]
-        agent: Option<String>,
+        role: Option<String>,
     },
-    /// List env vars at workspace or workspace-agent scope
+    /// List env vars at workspace or workspace-role scope
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
   jackin workspace env list prod
-  jackin workspace env list prod --agent agent-smith"
+  jackin workspace env list prod --role agent-smith"
     )]
     List {
         /// Workspace name
         workspace: String,
-        /// List vars for a specific agent inside this workspace
+        /// List vars for a specific role inside this workspace
         #[arg(long)]
-        agent: Option<String>,
+        role: Option<String>,
     },
 }
 
@@ -327,9 +327,9 @@ mod tests {
             "/tmp/project:/workspace/project",
             "--mount",
             "/tmp/cache:/workspace/cache:ro",
-            "--allowed-agent",
+            "--allowed-role",
             "agent-smith",
-            "--default-agent",
+            "--default-role",
             "agent-smith",
         ])
         .unwrap();
@@ -589,9 +589,9 @@ mod tests {
             "workspace",
             "edit",
             "big-monorepo",
-            "--default-agent",
+            "--default-role",
             "agent-smith",
-            "--clear-default-agent",
+            "--clear-default-role",
         ])
         .unwrap_err();
 
@@ -697,7 +697,7 @@ mod tests {
         assert!(help.contains("Modify an existing workspace"));
         assert!(help.contains("Examples:"));
         assert!(help.contains("jackin workspace edit my-app --workdir ~/new-dir"));
-        assert!(help.contains("--clear-default-agent"));
+        assert!(help.contains("--clear-default-role"));
     }
 
     #[test]

@@ -25,7 +25,7 @@ directly:
   Docker volumes parameterized by `devcontainerId`
 
 jackin' already does things the upstream devcontainer can't — Docker-in-Docker,
-per-agent networks, workspace mounting, namespaced agent repos, DinD TLS,
+per-agent networks, workspace mounting, namespaced role repos, DinD TLS,
 plugin marketplaces, construct/derived-layer split — but several tactical
 pieces of the upstream setup are genuinely useful and map directly onto
 existing open items ([network policy controls](/reference/roadmap/) and
@@ -83,7 +83,7 @@ Source: <RepoFile path="docker/runtime/entrypoint.sh" />
 - Final stage must be `FROM projectjackin/construct:trixie` (validated contract)
 - Agents layer in their own toolchains via `mise` (Rust for the-architect,
   Node LTS for agent-smith, plus OpenTofu for the-architect)
-- Plugins declared in `jackin.agent.toml`, installed at runtime by
+- Plugins declared in `jackin.role.toml`, installed at runtime by
   `install-claude-plugins.sh`
 
 ### Upstream Claude Code devcontainer
@@ -132,7 +132,7 @@ Source: <RepoFile path="docker/runtime/entrypoint.sh" />
 | Shell history persistence | named volume per `devcontainerId` | not persisted (inside container layer) |
 | Claude config persistence | named volume `claude-code-config-*` | host bind mount `~/.jackin/data/{name}/.claude` |
 | GitHub auth persistence | not persisted explicitly | host bind mount `~/.jackin/data/{name}/.config/gh` |
-| Plugin marketplace | none | `jackin.agent.toml` + `install-claude-plugins.sh` |
+| Plugin marketplace | none | `jackin.role.toml` + `install-claude-plugins.sh` |
 | Multi-agent | single environment | namespaced agents, per-workspace selection |
 
 ## Findings
@@ -157,7 +157,7 @@ update endpoints). Capabilities required: `--cap-add=NET_ADMIN`,
    flips the entrypoint to run it. Zero default behavior change; operators
    opt in per launch.
 2. **Make it a per-agent declaration.** Add a `[network]` section to
-   `jackin.agent.toml` where agent authors can declare the required egress
+   `jackin.role.toml` where agent authors can declare the required egress
    list. jackin merges the declared list with an operator-level allowlist in
    `config.toml`. Cost: schema + merge logic.
 3. **Make it a per-workspace declaration.** Same mechanism but keyed on

@@ -8,11 +8,11 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-`jackin.agent.toml` could declare Claude plugin IDs, but jackin only added the official Anthropic marketplace during runtime bootstrap. Custom marketplaces still required manual `/plugin marketplace add` commands inside the container before project-specific plugins could be installed.
+`jackin.role.toml` could declare Claude plugin IDs, but jackin only added the official Anthropic marketplace during runtime bootstrap. Custom marketplaces still required manual `/plugin marketplace add` commands inside the container before project-specific plugins could be installed.
 
 ## Why It Matters
 
-Agent repos need reproducible startup. Without manifest-declared marketplaces, teams could not ship a self-contained agent config that automatically installs project-specific plugins such as `jackin-dev`, especially when the marketplace lived in a monorepo and needed sparse checkout paths.
+Role repos need reproducible startup. Without manifest-declared marketplaces, teams could not ship a self-contained agent config that automatically installs project-specific plugins such as `jackin-dev`, especially when the marketplace lived in a monorepo and needed sparse checkout paths.
 
 ## Related Files
 
@@ -20,5 +20,5 @@ Agent repos need reproducible startup. Without manifest-declared marketplaces, t
 - <RepoFile path="src/manifest/validate.rs" /> — marketplace validation
 - <RepoFile path="src/instance/plugins.rs" /> — plugin-state preparation and marketplace serialization
 - <RepoFile path="docker/construct/install-claude-plugins.sh" />
-- <RepoFile path="docs/src/content/docs/developing/agent-manifest.mdx" />
-- <RepoFile path="docs/src/content/docs/developing/creating-agents.mdx" />
+- <RepoFile path="docs/src/content/docs/developing/role-manifest.mdx" />
+- <RepoFile path="docs/src/content/docs/developing/creating-roles.mdx" />

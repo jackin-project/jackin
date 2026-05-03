@@ -5,18 +5,18 @@ description: How agent repositories work and how they're discovered
 import { Aside } from '@astrojs/starlight/components'
 
 
-## What is an agent repo?
+## What is an role repo?
 
-An agent repo is a GitHub repository that defines a specific agent class. It contains:
+An role repo is a GitHub repository that defines a specific role. It contains:
 
 1. A **Dockerfile** — the agent's environment definition (tools, languages, SDKs)
-2. A **manifest file** (`jackin.agent.toml`) — metadata about the agent
+2. A **manifest file** (`jackin.role.toml`) — metadata about the agent
 
 When you run `jackin load agent-smith`, jackin' looks for a GitHub repo named `jackin-agent-smith` and builds a container from it.
 
-An agent repo is where you decide what kind of worker you are creating. In most teams, that means creating role-specific environments rather than one universal image. A frontend-oriented agent repo can install browser tooling and UI-focused plugins, while a backend-oriented repo can install server toolchains and database clients.
+An role repo is where you decide what kind of worker you are creating. In most teams, that means creating role-specific environments rather than one universal image. A frontend-oriented role repo can install browser tooling and UI-focused plugins, while a backend-oriented repo can install server toolchains and database clients.
 
-An agent class is best thought of as a reusable tool profile. It is where you decide things like:
+An role is best thought of as a reusable tool profile. It is where you decide things like:
 
 - which language toolchains are installed
 - which helper scripts and shell defaults are present
@@ -25,7 +25,7 @@ An agent class is best thought of as a reusable tool profile. It is where you de
 
 ## Naming convention
 
-Agent repos follow the `jackin-{class-name}` naming pattern:
+Role repos follow the `jackin-{class-name}` naming pattern:
 
 | Class name | GitHub repo | Load command |
 |---|---|---|
@@ -45,9 +45,9 @@ Organizations can create agents under their namespace:
 
 The namespace prefix maps directly to the GitHub organization or user.
 
-## When should you create another agent class?
+## When should you create another role?
 
-Create another agent class when the work needs a meaningfully different environment.
+Create another role when the work needs a meaningfully different environment.
 
 Common reasons include:
 
@@ -63,7 +63,7 @@ The goal is not to create lots of arbitrary images. The goal is to avoid one kit
 
 Agents can declare a display name in their manifest:
 
-```toml title="jackin.agent.toml"
+```toml title="jackin.role.toml"
 [identity]
 name = "Agent Smith"
 ```
@@ -72,7 +72,7 @@ This name appears in jackin's TUI and output. When omitted, the class selector n
 
 ## Caching
 
-Agent repos are cloned to `~/.jackin/agents/` on first load. Subsequent loads use the cached checkout. jackin' updates the repo on each load to keep the cache current.
+Role repos are cloned to `~/.jackin/agents/` on first load. Subsequent loads use the cached checkout. jackin' updates the repo on each load to keep the cache current.
 
 jackin' is intentionally strict about that cache:
 
@@ -86,9 +86,9 @@ Pass `--rebuild` to force jackin' to rebuild the Docker image from scratch. This
 </Aside>
 ## The repo contract
 
-Every agent repo must satisfy a contract:
+Every role repo must satisfy a contract:
 
-1. **Must contain `jackin.agent.toml`** at the repository root
+1. **Must contain `jackin.role.toml`** at the repository root
 2. **Must contain a Dockerfile** at the path declared in the manifest
 3. **The Dockerfile path must be relative** and must stay inside the repo checkout (no `../` escapes)
 4. **The final Dockerfile stage must use the construct base**:
@@ -103,13 +103,13 @@ Every agent repo must satisfy a contract:
 6. **No symlinks** — the derived build-context generator currently rejects symlinks
 
 <Aside type="caution">
-Agent repos only own their agent-specific environment layer. jackin' owns everything else: validating the contract, generating the derived Dockerfile, installing Claude Code, injecting the entrypoint, mounting workspaces, and wiring Docker-in-Docker.
+Role repos only own their agent-specific environment layer. jackin' owns everything else: validating the contract, generating the derived Dockerfile, installing Claude Code, injecting the entrypoint, mounting workspaces, and wiring Docker-in-Docker.
 </Aside>
-## Example agent repo
+## Example role repo
 
-A minimal agent repo for a Node.js development agent:
+A minimal role repo for a Node.js development agent:
 
-```toml title="jackin.agent.toml"
+```toml title="jackin.role.toml"
 dockerfile = "Dockerfile"
 
 [claude]

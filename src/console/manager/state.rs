@@ -10,9 +10,9 @@ use crate::console::op_cache::OpCache;
 use crate::workspace::WorkspaceConfig;
 
 use crate::console::widgets::{
-    agent_picker::AgentPickerState, confirm::ConfirmState, confirm_save::ConfirmSaveState,
-    error_popup::ErrorPopupState, file_browser::FileBrowserState, github_picker::GithubPickerState,
-    mount_dst_choice::MountDstChoiceState, op_picker::OpPickerState,
+    confirm::ConfirmState, confirm_save::ConfirmSaveState, error_popup::ErrorPopupState,
+    file_browser::FileBrowserState, github_picker::GithubPickerState,
+    mount_dst_choice::MountDstChoiceState, op_picker::OpPickerState, role_picker::RolePickerState,
     scope_picker::ScopePickerState, source_picker::SourcePickerState, text_input::TextInputState,
     workdir_pick::WorkdirPickState,
 };
@@ -94,9 +94,9 @@ pub struct WorkspaceSummary {
     pub workdir: String,
     pub mount_count: usize,
     pub readonly_mount_count: usize,
-    pub allowed_agent_count: usize,
-    pub default_agent: Option<String>,
-    pub last_agent: Option<String>,
+    pub allowed_role_count: usize,
+    pub default_role: Option<String>,
+    pub last_role: Option<String>,
 }
 
 #[derive(Debug)]
@@ -194,7 +194,7 @@ pub enum EditorMode {
 pub enum EditorTab {
     General,
     Mounts,
-    Agents,
+    Roles,
     Secrets,
 }
 
@@ -249,14 +249,14 @@ pub enum Modal<'a> {
     },
     /// Manager-list disambiguation picker (`ManagerState.list_modal`
     /// slot, same as `GithubPicker`).
-    AgentPicker {
-        state: AgentPickerState,
+    RolePicker {
+        state: RolePickerState,
     },
     /// Editor-tab override picker (`EditorState.modal` slot, not the
     /// launch-disambiguation slot on `ManagerState`) so the editor's
     /// commit handler can create the override entry and auto-expand.
-    AgentOverridePicker {
-        state: AgentPickerState,
+    RoleOverridePicker {
+        state: RolePickerState,
     },
     SourcePicker {
         state: SourcePickerState,
@@ -308,7 +308,7 @@ pub enum ConfirmTarget {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SecretsScopeTag {
     Workspace,
-    Agent(String),
+    Role(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -364,9 +364,9 @@ impl WorkspaceSummary {
             workdir: ws.workdir.clone(),
             mount_count: ws.mounts.len(),
             readonly_mount_count: ws.mounts.iter().filter(|m| m.readonly).count(),
-            allowed_agent_count: ws.allowed_agents.len(),
-            default_agent: ws.default_agent.clone(),
-            last_agent: ws.last_agent.clone(),
+            allowed_role_count: ws.allowed_roles.len(),
+            default_role: ws.default_role.clone(),
+            last_role: ws.last_role.clone(),
         }
     }
 }
@@ -554,10 +554,10 @@ impl EditorState<'_> {
         if self.pending.workdir != self.original.workdir {
             n += 1;
         }
-        if self.pending.default_agent != self.original.default_agent {
+        if self.pending.default_role != self.original.default_role {
             n += 1;
         }
-        if self.pending.allowed_agents != self.original.allowed_agents {
+        if self.pending.allowed_roles != self.original.allowed_roles {
             n += 1;
         }
         if self.pending.keep_awake != self.original.keep_awake {
@@ -574,17 +574,17 @@ impl EditorState<'_> {
             .filter(|d| !matches!(d, MountDiff::Unchanged(_)))
             .count();
         n += env_change_count(&self.original.env, &self.pending.env);
-        // Per-agent overrides: union the keys; an agent present on
+        // Per-role overrides: union the keys; an role present on
         // only one side counts its whole env map as added/removed.
         let agent_keys: std::collections::BTreeSet<&String> = self
             .original
-            .agents
+            .roles
             .keys()
-            .chain(self.pending.agents.keys())
+            .chain(self.pending.roles.keys())
             .collect();
-        for agent in agent_keys {
-            let orig = self.original.agents.get(agent).map(|o| &o.env);
-            let pend = self.pending.agents.get(agent).map(|p| &p.env);
+        for role in agent_keys {
+            let orig = self.original.roles.get(role).map(|o| &o.env);
+            let pend = self.pending.roles.get(role).map(|p| &p.env);
             let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
             let orig_env = orig.unwrap_or(&empty);
             let pend_env = pend.unwrap_or(&empty);
@@ -726,14 +726,14 @@ mod tests {
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
-            allowed_agents: vec!["agent-smith".into()],
+            allowed_roles: vec!["agent-smith".into()],
             ..Default::default()
         };
         let sum = WorkspaceSummary::from_config("big-monorepo", &ws);
         assert_eq!(sum.name, "big-monorepo");
         assert_eq!(sum.mount_count, 2);
         assert_eq!(sum.readonly_mount_count, 1);
-        assert_eq!(sum.allowed_agent_count, 1);
+        assert_eq!(sum.allowed_role_count, 1);
     }
 
     #[test]
@@ -952,27 +952,25 @@ mod tests {
         assert_eq!(e.change_count(), 1);
     }
 
-    /// Adding and removing per-agent env override keys each contribute +1
+    /// Adding and removing per-role env override keys each contribute +1
     /// via the same `env_change_count` helper as workspace-level env.
     #[test]
     fn change_count_agent_env_delta() {
-        use crate::workspace::WorkspaceAgentOverride;
-        // Seed one agent with one env key.
+        use crate::workspace::WorkspaceRoleOverride;
+        // Seed one role with one env key.
         let mut ws = empty_ws("/a");
-        let mut agent_x_env = std::collections::BTreeMap::new();
-        agent_x_env.insert(
+        let mut role_x_env = std::collections::BTreeMap::new();
+        role_x_env.insert(
             "LOG_LEVEL".into(),
             crate::operator_env::EnvValue::Plain("info".into()),
         );
-        ws.agents.insert(
-            "agent-x".into(),
-            WorkspaceAgentOverride { env: agent_x_env },
-        );
+        ws.roles
+            .insert("agent-x".into(), WorkspaceRoleOverride { env: role_x_env });
         let mut e = EditorState::new_edit("a".into(), ws);
         assert_eq!(e.change_count(), 0);
 
         // Add a new key to pending.
-        e.pending.agents.get_mut("agent-x").unwrap().env.insert(
+        e.pending.roles.get_mut("agent-x").unwrap().env.insert(
             "DEBUG".into(),
             crate::operator_env::EnvValue::Plain("1".into()),
         );
@@ -980,7 +978,7 @@ mod tests {
 
         // Remove the original key. Net delta: 2 (one add + one remove).
         e.pending
-            .agents
+            .roles
             .get_mut("agent-x")
             .unwrap()
             .env
@@ -988,12 +986,12 @@ mod tests {
         assert_eq!(e.change_count(), 2);
     }
 
-    /// Any env mutation (workspace-level or per-agent) flips `is_dirty()`
+    /// Any env mutation (workspace-level or per-role) flips `is_dirty()`
     /// to true because `pending != original` in the underlying
     /// `WorkspaceConfig` `PartialEq`.
     #[test]
     fn is_dirty_from_env_mutation() {
-        use crate::workspace::WorkspaceAgentOverride;
+        use crate::workspace::WorkspaceRoleOverride;
 
         // Workspace env path.
         let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
@@ -1003,12 +1001,12 @@ mod tests {
             .insert("K".into(), crate::operator_env::EnvValue::Plain("v".into()));
         assert!(e.is_dirty(), "workspace env set must make state dirty");
 
-        // Per-agent env path.
+        // Per-role env path.
         let mut e2 = EditorState::new_edit("a".into(), empty_ws("/a"));
         assert!(!e2.is_dirty());
-        e2.pending.agents.insert(
+        e2.pending.roles.insert(
             "agent-x".into(),
-            WorkspaceAgentOverride {
+            WorkspaceRoleOverride {
                 env: {
                     let mut m = std::collections::BTreeMap::new();
                     m.insert("K".into(), crate::operator_env::EnvValue::Plain("v".into()));
@@ -1016,7 +1014,7 @@ mod tests {
                 },
             },
         );
-        assert!(e2.is_dirty(), "agent env set must make state dirty");
+        assert!(e2.is_dirty(), "role env set must make state dirty");
     }
 
     #[test]
@@ -1150,12 +1148,12 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
+            allowed_roles: vec![],
+            default_role: None,
             harness: None,
-            last_agent: None,
+            last_role: None,
             env: BTreeMap::default(),
-            agents: BTreeMap::default(),
+            roles: BTreeMap::default(),
             keep_awake: KeepAwakeConfig::default(),
         };
         let mut e = EditorState::new_edit("ws".into(), ws);

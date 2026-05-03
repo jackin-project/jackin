@@ -1,8 +1,8 @@
 use crate::config::AppConfig;
 use crate::docker::{CommandRunner, RunOptions};
-use crate::instance::{AgentState, primary_container_name};
+use crate::instance::{RoleState, primary_container_name};
 use crate::paths::JackinPaths;
-use crate::selector::ClassSelector;
+use crate::selector::RoleSelector;
 use crate::tui;
 use crate::version_check;
 use fs2::FileExt;
@@ -16,7 +16,7 @@ use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_ho
 use super::image::build_agent_image;
 use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_MANAGED, LABEL_ROLE_AGENT, LABEL_ROLE_DIND, dind_certs_volume,
-    format_agent_display, image_name,
+    format_role_display, image_name,
 };
 use super::repo_cache::resolve_agent_repo;
 
@@ -105,8 +105,8 @@ fn resolve_harness(
 }
 
 fn validate_harness_supported(
-    selector: &ClassSelector,
-    manifest: &crate::manifest::AgentManifest,
+    selector: &RoleSelector,
+    manifest: &crate::manifest::RoleManifest,
     harness: crate::harness::Harness,
 ) -> anyhow::Result<()> {
     let supported = manifest.supported_harnesses();
@@ -120,7 +120,7 @@ fn validate_harness_supported(
         .collect::<Vec<_>>()
         .join(", ");
     anyhow::bail!(
-        "agent \"{}\" does not support harness \"{}\"; supported: [{}]",
+        "role \"{}\" does not support harness \"{}\"; supported: [{}]",
         selector.key(),
         harness.slug(),
         supported_list
@@ -148,7 +148,7 @@ fn verify_required_harness_env(
     }
 
     anyhow::bail!(
-        "harness \"{}\" requires {} in the resolved launch env; declare it in workspace/global env or agent manifest env",
+        "harness \"{}\" requires {} in the resolved launch env; declare it in workspace/global env or role manifest env",
         harness.slug(),
         missing.join(", ")
     );
@@ -157,21 +157,21 @@ fn verify_required_harness_env(
 struct StepCounter {
     current: u32,
     quiet: bool,
-    agent_name: String,
+    role_name: String,
 }
 
 impl StepCounter {
-    fn new(quiet: bool, agent_name: &str) -> Self {
+    fn new(quiet: bool, role_name: &str) -> Self {
         Self {
             current: 0,
             quiet,
-            agent_name: agent_name.to_string(),
+            role_name: role_name.to_string(),
         }
     }
 
     fn next(&mut self, text: &str) {
         self.current += 1;
-        tui::set_terminal_title(&format!("{} \u{2014} {text}", self.agent_name));
+        tui::set_terminal_title(&format!("{} \u{2014} {text}", self.role_name));
         if self.quiet {
             tui::step_quiet(self.current, text);
         } else {
@@ -180,7 +180,7 @@ impl StepCounter {
     }
 
     fn done(&self) {
-        tui::set_terminal_title(&self.agent_name);
+        tui::set_terminal_title(&self.role_name);
     }
 }
 
@@ -222,7 +222,7 @@ const STANDARD_TERMS: &[&str] = &[
 /// "src:dst:ro" idiom, ready to be passed to `docker run -v`.
 fn harness_mounts(
     harness: crate::harness::Harness,
-    state: &crate::instance::AgentState,
+    state: &crate::instance::RoleState,
 ) -> Vec<String> {
     use crate::harness::Harness;
 
@@ -246,7 +246,7 @@ fn harness_mounts(
 }
 
 /// Translate a [`MaterializedWorkspace`] into the `-v` argument values
-/// for `docker run`. Pulled out of `load_agent_with` so the mount-flag
+/// for `docker run`. Pulled out of `load_role_with` so the mount-flag
 /// shape — including the `:ro` placement on worktree-mode override
 /// files — can be unit-tested without docker mocks.
 ///
@@ -264,7 +264,7 @@ fn harness_mounts(
 ///    verification check passes inside the container.
 ///
 /// `:ro` on the override files is defensive hardening: git only reads
-/// them during normal agent work, and a misbehaving agent could
+/// them during normal role work, and a misbehaving role could
 /// otherwise rewrite the gitdir pointer to redirect operations at a
 /// different repo entirely.
 fn build_workspace_mount_strings(
@@ -360,31 +360,31 @@ fn export_host_terminfo(
     Ok(terminfo_dir)
 }
 
-// ── Agent source trust ───────────────────────────────────────────────────
+// ── Role source trust ───────────────────────────────────────────────────
 
-/// Display an untrusted-agent warning and ask the operator to confirm.
+/// Display an untrusted-role warning and ask the operator to confirm.
 /// Aborts when stdin is not a terminal or the operator declines.
 fn confirm_agent_trust(
-    selector: &ClassSelector,
-    source: &crate::config::AgentSource,
+    selector: &RoleSelector,
+    source: &crate::config::RoleSource,
 ) -> anyhow::Result<()> {
     if !std::io::stdin().is_terminal() {
         anyhow::bail!(
-            "untrusted agent source \"{selector}\" from {}\n\
+            "untrusted role source \"{selector}\" from {}\n\
              Trust it first: `jackin config trust grant {selector}`, or add `trusted = true` in config.toml.",
             source.git,
         );
     }
 
     eprintln!();
-    eprintln!("{}", "!! Untrusted agent source !!".red().bold());
+    eprintln!("{}", "!! Untrusted role source !!".red().bold());
     eprintln!();
-    eprintln!("  agent:  {}", selector.to_string().bold());
+    eprintln!("  role:  {}", selector.to_string().bold());
     eprintln!("  source: {}", source.git.yellow());
     eprintln!();
     eprintln!(
         "  {}",
-        "jackin' has never loaded this agent before. Trusting it means:".bold()
+        "jackin' has never loaded this role before. Trusting it means:".bold()
     );
     eprintln!(
         "    {} Its {} will be executed during the image build",
@@ -397,7 +397,7 @@ fn confirm_agent_trust(
         "on your machine".bold()
     );
     eprintln!(
-        "    {} The agent will have access to your {}",
+        "    {} The role will have access to your {}",
         "-".dimmed(),
         "mounted workspace files".bold()
     );
@@ -406,13 +406,13 @@ fn confirm_agent_trust(
     eprintln!();
 
     let confirmed = dialoguer::Confirm::new()
-        .with_prompt("Do you trust this agent source and want to proceed?")
+        .with_prompt("Do you trust this role source and want to proceed?")
         .default(false)
         .interact()?;
 
     if !confirmed {
         anyhow::bail!(
-            "agent source \"{selector}\" not trusted — aborting.\n\
+            "role source \"{selector}\" not trusted — aborting.\n\
              To trust it later, run `jackin config trust grant {selector}` or try loading again."
         );
     }
@@ -425,16 +425,16 @@ struct LaunchContext<'a> {
     image: &'a str,
     network: &'a str,
     dind: &'a str,
-    selector: &'a ClassSelector,
+    selector: &'a RoleSelector,
     agent_display_name: &'a str,
     workspace: &'a crate::isolation::materialize::MaterializedWorkspace,
-    state: &'a AgentState,
+    state: &'a RoleState,
     git: &'a GitIdentity,
     debug: bool,
     harness: crate::harness::Harness,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
     cache_dir: &'a std::path::Path,
-    /// Required so `launch_agent_runtime` can fire the `keep_awake`
+    /// Required so `launch_role_runtime` can fire the `keep_awake`
     /// reconciler between `docker run -d` and the foreground `docker
     /// attach`. Without that mid-flight call, caffeinate would never
     /// spawn for an interactive `jackin load`: the post-launch
@@ -444,9 +444,9 @@ struct LaunchContext<'a> {
     paths: &'a JackinPaths,
 }
 
-/// Create the Docker network, start `DinD`, and launch the agent container.
+/// Create the Docker network, start `DinD`, and launch the role container.
 #[allow(clippy::too_many_lines)]
-fn launch_agent_runtime(
+fn launch_role_runtime(
     ctx: &LaunchContext<'_>,
     steps: &mut StepCounter,
     runner: &mut impl CommandRunner,
@@ -476,7 +476,7 @@ fn launch_agent_runtime(
     };
 
     // Create Docker network
-    let agent_label = format!("jackin.agent={container_name}");
+    let role_label = format!("jackin.role={container_name}");
     runner.run(
         "docker",
         &[
@@ -485,7 +485,7 @@ fn launch_agent_runtime(
             "--label",
             LABEL_MANAGED,
             "--label",
-            &agent_label,
+            &role_label,
             network,
         ],
         None,
@@ -497,7 +497,7 @@ fn launch_agent_runtime(
     // `DOCKER_TLS_SAN` is read by docker:dind's `dockerd-entrypoint.sh` and
     // appended to the auto-generated server cert's Subject Alternative Names.
     // Without it, the cert only covers the short container ID, `docker`, and
-    // `localhost` — so agents connecting via `tcp://{dind}:2376` get a TLS
+    // `localhost` — so roles connecting via `tcp://{dind}:2376` get a TLS
     // hostname-mismatch error. We can't set `--hostname` to the same value
     // because namespaced class keys contain `__`, which is invalid in
     // RFC-1123 hostnames.
@@ -522,7 +522,7 @@ fn launch_agent_runtime(
         "--label",
         LABEL_ROLE_DIND,
         "--label",
-        &agent_label,
+        &role_label,
         "-e",
         "DOCKER_TLS_CERTDIR=/certs",
         "-e",
@@ -536,7 +536,7 @@ fn launch_agent_runtime(
     wait_for_dind(dind, &certs_volume, runner, *debug)?;
 
     // Step 4: Mount volumes and launch
-    steps.next("Launching agent");
+    steps.next("Launching role");
     steps.done();
 
     tui::print_deploying(agent_display_name);
@@ -611,7 +611,7 @@ fn launch_agent_runtime(
     }
 
     run_args.extend_from_slice(&[
-        // JACKIN_* runtime metadata is injected by jackin, not declared in agent manifests.
+        // JACKIN_* runtime metadata is injected by jackin, not declared in role manifests.
         "-e",
         &docker_host,
         "-e",
@@ -685,7 +685,7 @@ fn launch_agent_runtime(
     run_args.push(image);
     runner.run("docker", &run_args, None, &docker_run_opts)?;
 
-    // Reconcile keep_awake AFTER the agent container is running but
+    // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground attach blocks. This is the only window in
     // which an interactive `jackin load` can spawn caffeinate: the
     // pre-launch reconcile in `app::Command::Load` runs before the
@@ -797,15 +797,15 @@ pub fn inspect_attach_outcome(
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn load_agent(
+pub fn load_role(
     paths: &JackinPaths,
     config: &mut AppConfig,
-    selector: &ClassSelector,
+    selector: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
     runner: &mut impl CommandRunner,
     opts: &LoadOptions,
 ) -> anyhow::Result<()> {
-    load_agent_with(
+    load_role_with(
         paths,
         config,
         selector,
@@ -817,14 +817,14 @@ pub fn load_agent(
 }
 
 #[allow(clippy::too_many_lines)]
-fn load_agent_with(
+fn load_role_with(
     paths: &JackinPaths,
     config: &mut AppConfig,
-    selector: &ClassSelector,
+    selector: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
     runner: &mut impl CommandRunner,
     opts: &LoadOptions,
-    confirm_trust: impl FnOnce(&ClassSelector, &crate::config::AgentSource) -> anyhow::Result<()>,
+    confirm_trust: impl FnOnce(&RoleSelector, &crate::config::RoleSource) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     // Pre-launch garbage collection: remove orphaned DinD containers and
     // networks left behind by hard kills, terminal closures, or startup
@@ -844,24 +844,24 @@ fn load_agent_with(
         tui::intro_animation(intro_name);
     }
 
-    let (source, is_new) = config.resolve_agent_source(selector)?;
+    let (source, is_new) = config.resolve_role_source(selector)?;
 
     let mut steps = StepCounter::new(opts.no_intro, &selector.name);
 
-    // Step 1: Resolve agent identity (clone or update repo)
-    steps.next("Resolving agent identity");
+    // Step 1: Resolve role identity (clone or update repo)
+    steps.next("Resolving role identity");
 
     let (cached_repo, validated_repo, repo_lock) =
         resolve_agent_repo(paths, selector, &source.git, runner, opts.debug)?;
 
-    // Trust gate: prompt the operator before running an untrusted third-party agent
+    // Trust gate: prompt the operator before running an untrusted third-party role
     let newly_trusted = if source.trusted {
         false
     } else {
         confirm_trust(selector, &source)?;
         // Mutate the in-memory copy so callers downstream see the trust
         // without a reload; persist via editor below.
-        if let Some(entry) = config.agents.get_mut(&selector.key()) {
+        if let Some(entry) = config.roles.get_mut(&selector.key()) {
             entry.trusted = true;
         }
         true
@@ -869,20 +869,20 @@ fn load_agent_with(
 
     if is_new || newly_trusted {
         let mut editor = crate::config::ConfigEditor::open(paths)?;
-        if let Some(agent_source) = config.agents.get(&selector.key()) {
-            editor.upsert_agent_source(&selector.key(), agent_source);
+        if let Some(role_source) = config.roles.get(&selector.key()) {
+            editor.upsert_agent_source(&selector.key(), role_source);
         }
         editor.set_agent_trust(&selector.key(), true);
         *config = editor.save()?;
     }
 
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
-    steps.agent_name.clone_from(&agent_display_name);
+    steps.role_name.clone_from(&agent_display_name);
 
     let harness = resolve_harness(opts.harness, workspace.harness);
     validate_harness_supported(selector, &validated_repo.manifest, harness)?;
 
-    // Logo (if present in agent repo)
+    // Logo (if present in role repo)
     tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
 
     // Show a preliminary config summary (container name will be
@@ -909,12 +909,12 @@ fn load_agent_with(
         crate::env_resolver::resolve_env(&validated_repo.manifest.env, &prompter)?
     };
 
-    // Resolve operator env layers (global / agent / workspace /
-    // workspace × agent). op:// refs shell out to `op`; $NAME refs
+    // Resolve operator env layers (global / role / workspace /
+    // workspace × role). op:// refs shell out to `op`; $NAME refs
     // read the host env. Failures are aggregated into a single error.
     //
     // Workspace name: the launch pipeline does not currently pass a
-    // workspace *name* down into load_agent — only a ResolvedWorkspace
+    // workspace *name* down into load_role — only a ResolvedWorkspace
     // (mounts + workdir). Look up the name by scanning config.workspaces
     // for the entry whose workdir matches; this matches the same
     // identification rule used by `jackin workspace show`.
@@ -1038,7 +1038,7 @@ fn load_agent_with(
             verify_token_env_present(&operator_env)?;
         }
 
-        let (state, auth_outcome) = AgentState::prepare(
+        let (state, auth_outcome) = RoleState::prepare(
             paths,
             &container_name,
             &validated_repo.manifest,
@@ -1076,13 +1076,13 @@ fn load_agent_with(
             match auth_outcome {
                 crate::instance::AuthProvisionOutcome::Synced => {
                     eprintln!(
-                        "[jackin] Synced host Claude Code authentication into agent state \
+                        "[jackin] Synced host Claude Code authentication into role state \
                          (auth_forward=sync)."
                     );
                 }
                 crate::instance::AuthProvisionOutcome::TokenMode => {
                     eprintln!(
-                        "[jackin] auth_forward=token — agent will use CLAUDE_CODE_OAUTH_TOKEN \
+                        "[jackin] auth_forward=token — role will use CLAUDE_CODE_OAUTH_TOKEN \
                          from the resolved env."
                     );
                 }
@@ -1102,7 +1102,7 @@ fn load_agent_with(
 
         // Materialize workspace mounts: shared mounts pass through;
         // worktree-isolated mounts get a per-container `git worktree`
-        // staged on the host. Must run AFTER `AgentState::prepare` (so the
+        // staged on the host. Must run AFTER `RoleState::prepare` (so the
         // per-container state directory exists) and BEFORE the docker run
         // command is assembled (so the docker `-v` flags reflect the
         // per-mount bind sources).
@@ -1111,7 +1111,7 @@ fn load_agent_with(
         let container_state = paths.data_dir.join(&container_name);
         crate::debug_log!(
             "isolation",
-            "load_agent: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
+            "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
             force = opts.force,
         );
         let materialized = crate::isolation::materialize::materialize_workspace(
@@ -1157,7 +1157,7 @@ fn load_agent_with(
             certs_volume,
             network.clone(),
         );
-        let launch_result = launch_agent_runtime(&ctx, &mut steps, runner);
+        let launch_result = launch_role_runtime(&ctx, &mut steps, runner);
         if launch_result.is_err() {
             cleanup.run(runner);
         }
@@ -1168,7 +1168,7 @@ fn load_agent_with(
         // worktrees swept; dirty state is preserved (with an interactive prompt
         // when stdin is a TTY). A `ReturnToAgent` choice restarts + re-attaches
         // the container exactly once so the operator can address the dirty
-        // state inside the agent, then the safe cleanup is retried.
+        // state inside the role, then the safe cleanup is retried.
         let interactive_finalize = std::io::stdin().is_terminal();
         let mut prompt = crate::isolation::finalize::StdinPrompt;
         let outcome = inspect_attach_outcome(runner, &container_name)?;
@@ -1190,7 +1190,7 @@ fn load_agent_with(
             // back to Preserved and exit normally.
             //
             // Reconcile keep_awake BEFORE the restart re-attach, mirroring the
-            // mid-flight reconcile in `launch_agent_runtime`: between the
+            // mid-flight reconcile in `launch_role_runtime`: between the
             // original exit and this restart, a parallel jackin invocation
             // could observe `docker ps --filter ...` = 0 and kill caffeinate,
             // leaving the restart session unprotected. The lock inside
@@ -1236,7 +1236,7 @@ fn load_agent_with(
 
     // Update display name to include clone index (e.g. "The Architect (Clone 2)")
     let agent_display_name = match &load_result {
-        Ok(container_name) => format_agent_display(container_name, &agent_display_name),
+        Ok(container_name) => format_role_display(container_name, &agent_display_name),
         Err(_) => agent_display_name,
     };
 
@@ -1262,7 +1262,7 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
     );
 }
 
-/// Claim a unique container name for this agent class by acquiring an
+/// Claim a unique container name for this role class by acquiring an
 /// exclusive lock file.
 ///
 /// Tries the primary name first, then clone-1, clone-2, etc.  For each
@@ -1282,11 +1282,11 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
 /// the next clone index.
 ///
 /// The returned `File` holds the lock — it must be kept alive for the
-/// duration of the agent session.  The lock is automatically released
+/// duration of the role session.  The lock is automatically released
 /// when the file is dropped (normal exit or crash).
 fn claim_container_name(
     paths: &JackinPaths,
-    selector: &ClassSelector,
+    selector: &RoleSelector,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<(String, std::fs::File)> {
     let primary = primary_container_name(selector);
@@ -1383,11 +1383,11 @@ fn auth_token_source_reference(raw: Option<&str>) -> String {
 
 /// Look up the raw (unresolved) declaration value for `key` in the
 /// operator env config layers, using the same precedence as
-/// `resolve_operator_env` (global < agent < workspace < workspace ×
-/// agent — later wins).
+/// `resolve_operator_env` (global < role < workspace < workspace ×
+/// role — later wins).
 fn lookup_operator_env_raw(
     config: &crate::config::AppConfig,
-    agent_selector: Option<&str>,
+    role_selector: Option<&str>,
     workspace_name: Option<&str>,
     key: &str,
 ) -> Option<String> {
@@ -1397,18 +1397,18 @@ fn lookup_operator_env_raw(
     // earlier ones. Assign each layer's `.get(key).cloned()` in turn,
     // `or_else`-chaining lets `None` from a later layer fall back to
     // an earlier layer's value.
-    let workspace_agent = ws_opt.zip(agent_selector).and_then(|(ws, agent_name)| {
-        ws.agents
-            .get(agent_name)
+    let workspace_role = ws_opt.zip(role_selector).and_then(|(ws, role_name)| {
+        ws.roles
+            .get(role_name)
             .and_then(|overlay| overlay.env.get(key).map(|v| v.as_display_str().to_string()))
     });
     let workspace = ws_opt.and_then(|ws| ws.env.get(key).map(|v| v.as_display_str().to_string()));
-    let agent = agent_selector
-        .and_then(|agent_name| config.agents.get(agent_name))
+    let role = role_selector
+        .and_then(|role_name| config.roles.get(role_name))
         .and_then(|a| a.env.get(key).map(|v| v.as_display_str().to_string()));
     let global = config.env.get(key).map(|v| v.as_display_str().to_string());
 
-    workspace_agent.or(workspace).or(agent).or(global)
+    workspace_role.or(workspace).or(role).or(global)
 }
 
 struct LoadCleanup {
@@ -1469,20 +1469,20 @@ mod tests {
         MaterializedMount, MaterializedWorkspace, WorktreeAuxMounts,
     };
     use crate::paths::JackinPaths;
-    use crate::selector::ClassSelector;
+    use crate::selector::RoleSelector;
     use std::collections::VecDeque;
     use tempfile::tempdir;
 
     #[test]
     fn harness_mounts_for_claude_includes_claude_state() {
         use crate::harness::Harness;
-        use crate::instance::AgentState;
+        use crate::instance::RoleState;
 
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let manifest_temp = tempdir().unwrap();
         std::fs::write(
-            manifest_temp.path().join("jackin.agent.toml"),
+            manifest_temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -1495,9 +1495,9 @@ plugins = []
             "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
-        let manifest = crate::manifest::AgentManifest::load(manifest_temp.path()).unwrap();
+        let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
 
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -1528,13 +1528,13 @@ plugins = []
     #[test]
     fn harness_mounts_for_codex_only_has_config_toml() {
         use crate::harness::Harness;
-        use crate::instance::AgentState;
+        use crate::instance::RoleState;
 
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let manifest_temp = tempdir().unwrap();
         std::fs::write(
-            manifest_temp.path().join("jackin.agent.toml"),
+            manifest_temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -1549,9 +1549,9 @@ supported = ["codex"]
             "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
-        let manifest = crate::manifest::AgentManifest::load(manifest_temp.path()).unwrap();
+        let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
 
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -1822,7 +1822,7 @@ supported = ["codex"]
     fn validate_harness_supported_rejects_unsupported_choice() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -1830,13 +1830,13 @@ plugins = []
 "#,
         )
         .unwrap();
-        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
 
         let err = validate_harness_supported(&selector, &manifest, crate::harness::Harness::Codex)
             .unwrap_err();
         let message = err.to_string();
-        assert!(message.contains("agent \"agent-smith\""));
+        assert!(message.contains("role \"agent-smith\""));
         assert!(message.contains("harness \"codex\""));
         assert!(message.contains("supported: [claude]"));
     }
@@ -1858,8 +1858,8 @@ plugins = []
 
     #[test]
     fn trust_gate_rejects_untrusted_agent_in_non_interactive_context() {
-        let selector = ClassSelector::new(Some("evil-org"), "backdoor");
-        let source = crate::config::AgentSource {
+        let selector = RoleSelector::new(Some("evil-org"), "backdoor");
+        let source = crate::config::RoleSource {
             git: "https://github.com/evil-org/jackin-backdoor.git".to_string(),
             trusted: false,
             claude: None,
@@ -1870,12 +1870,12 @@ plugins = []
         let message = error.to_string();
 
         assert!(
-            message.contains("untrusted agent source"),
-            "expected 'untrusted agent source' in: {message}"
+            message.contains("untrusted role source"),
+            "expected 'untrusted role source' in: {message}"
         );
         assert!(
             message.contains("evil-org/backdoor"),
-            "expected agent selector in error: {message}"
+            "expected role selector in error: {message}"
         );
         assert!(
             message.contains("evil-org/jackin-backdoor.git"),
@@ -1889,13 +1889,13 @@ plugins = []
     /// function-pointer type to the trust prompt; the `Ok(())` is therefore
     /// load-bearing even though clippy flags it.
     #[allow(clippy::unnecessary_wraps)]
-    fn auto_trust(_: &ClassSelector, _: &crate::config::AgentSource) -> anyhow::Result<()> {
+    fn auto_trust(_: &RoleSelector, _: &crate::config::RoleSource) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Helper: trust callback that always declines.
-    fn deny_trust(_: &ClassSelector, _: &crate::config::AgentSource) -> anyhow::Result<()> {
-        anyhow::bail!("agent source not trusted — aborting")
+    fn deny_trust(_: &RoleSelector, _: &crate::config::RoleSource) -> anyhow::Result<()> {
+        anyhow::bail!("role source not trusted — aborting")
     }
 
     #[test]
@@ -1903,7 +1903,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+        let selector = RoleSelector::new(Some("chainargos"), "the-architect");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = paths.agents_dir.join("chainargos").join("the-architect");
@@ -1914,7 +1914,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -1924,7 +1924,7 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent_with(
+        load_role_with(
             &paths,
             &mut config,
             &selector,
@@ -1971,7 +1971,7 @@ plugins = ["code-review@claude-plugins-official"]
 
         // Regression guard: namespaced class keys contain `__`, which is invalid
         // in RFC-1123 hostnames. The DinD SAN must still carry the full
-        // container name so agents can connect via
+        // container name so roles can connect via
         // tcp://jackin-chainargos__the-architect-dind:2376 without TLS errors.
         let dind_cmd = runner
             .recorded
@@ -1991,7 +1991,7 @@ plugins = ["code-review@claude-plugins-official"]
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(Some("evil-org"), "backdoor");
+        let selector = RoleSelector::new(Some("evil-org"), "backdoor");
         let mut runner = FakeRunner::for_load_agent([String::new(), String::new()]);
 
         let repo_dir = paths.agents_dir.join("evil-org").join("backdoor");
@@ -2002,7 +2002,7 @@ plugins = ["code-review@claude-plugins-official"]
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2012,7 +2012,7 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        let error = load_agent_with(
+        let error = load_role_with(
             &paths,
             &mut config,
             &selector,
@@ -2042,7 +2042,7 @@ plugins = []
     fn load_agent_injects_configured_mounts() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(Some("chainargos"), "agent-brown");
+        let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = paths.agents_dir.join("chainargos").join("agent-brown");
@@ -2053,7 +2053,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2066,7 +2066,7 @@ plugins = []
         std::fs::create_dir_all(&mount_src).unwrap();
         std::fs::create_dir_all(&paths.config_dir).unwrap();
 
-        let config_content = r#"[agents."chainargos/agent-brown"]
+        let config_content = r#"[roles."chainargos/agent-brown"]
 git = "git@github.com:chainargos/jackin-agent-brown.git"
 trusted = true
 "#;
@@ -2094,7 +2094,7 @@ trusted = true
             keep_awake_enabled: false,
         };
 
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2117,7 +2117,7 @@ trusted = true
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = paths.agents_dir.join("agent-smith");
@@ -2128,7 +2128,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2138,7 +2138,7 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2194,14 +2194,14 @@ plugins = ["code-review@claude-plugins-official"]
             r#"[env]
 OPENAI_API_KEY = "test-openai-key"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
         )
         .unwrap();
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = paths.agents_dir.join("agent-smith");
@@ -2212,7 +2212,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -2229,7 +2229,7 @@ model = "gpt-5"
 
         let mut workspace = repo_workspace(&repo_dir);
         workspace.harness = Some(crate::harness::Harness::Codex);
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2272,14 +2272,14 @@ model = "gpt-5"
         paths.ensure_base_dirs().unwrap();
         std::fs::write(
             &paths.config_file,
-            r#"[agents.agent-smith]
+            r#"[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
         )
         .unwrap();
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = paths.agents_dir.join("agent-smith");
@@ -2290,7 +2290,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -2303,7 +2303,7 @@ supported = ["codex"]
 
         let mut workspace = repo_workspace(&repo_dir);
         workspace.harness = Some(crate::harness::Harness::Codex);
-        let err = load_agent(
+        let err = load_role(
             &paths,
             &mut config,
             &selector,
@@ -2327,7 +2327,7 @@ supported = ["codex"]
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -2344,7 +2344,7 @@ supported = ["codex"]
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2368,7 +2368,7 @@ plugins = []
             keep_awake_enabled: false,
         };
 
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2397,7 +2397,7 @@ plugins = []
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -2414,7 +2414,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2438,7 +2438,7 @@ plugins = []
             keep_awake_enabled: false,
         };
 
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2469,7 +2469,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner {
             fail_on: vec!["docker run -d -it --name jackin-agent-smith".to_string()],
             capture_queue: VecDeque::from(vec![
@@ -2490,7 +2490,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2500,7 +2500,7 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        let error = load_agent(
+        let error = load_role(
             &paths,
             &mut config,
             &selector,
@@ -2546,7 +2546,7 @@ plugins = ["code-review@claude-plugins-official"]
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -2563,7 +2563,7 @@ plugins = ["code-review@claude-plugins-official"]
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2573,7 +2573,7 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2615,7 +2615,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -2632,7 +2632,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2642,7 +2642,7 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2667,7 +2667,7 @@ plugins = []
             "DinD must mount cert volume"
         );
         // DinD's auto-generated server cert must include the container name as a
-        // Subject Alternative Name, because the agent connects via
+        // Subject Alternative Name, because the role connects via
         // DOCKER_HOST=tcp://jackin-agent-smith-dind:2376. Without this, the TLS
         // handshake fails because the default SANs only cover the short
         // container ID, `docker`, and `localhost`.
@@ -2681,7 +2681,7 @@ plugins = []
             "DinD SAN value must be prefixed with `DNS:` so openssl accepts it"
         );
 
-        // Agent container: TLS client config
+        // Role container: TLS client config
         let run_cmd = runner
             .recorded
             .iter()
@@ -2689,19 +2689,19 @@ plugins = []
             .unwrap();
         assert!(
             run_cmd.contains("DOCKER_HOST=tcp://jackin-agent-smith-dind:2376"),
-            "agent must use TLS port 2376"
+            "role must use TLS port 2376"
         );
         assert!(
             run_cmd.contains("DOCKER_TLS_VERIFY=1"),
-            "agent must verify TLS"
+            "role must verify TLS"
         );
         assert!(
             run_cmd.contains("DOCKER_CERT_PATH=/certs/client"),
-            "agent must know cert path"
+            "role must know cert path"
         );
         assert!(
             run_cmd.contains("jackin-agent-smith-dind-certs:/certs/client:ro"),
-            "agent must mount cert volume read-only"
+            "role must mount cert volume read-only"
         );
     }
 
@@ -2710,7 +2710,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -2727,7 +2727,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [identity]
@@ -2740,7 +2740,7 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2763,7 +2763,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -2780,7 +2780,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [identity]
@@ -2794,7 +2794,7 @@ plugins = []
 
         let mut workspace = repo_workspace(&repo_dir);
         workspace.keep_awake_enabled = true;
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2811,7 +2811,7 @@ plugins = []
             .unwrap();
         assert!(
             run_cmd.contains("--label jackin.keep_awake=true"),
-            "agent container with keep_awake_enabled must carry the keep_awake label, \
+            "role container with keep_awake_enabled must carry the keep_awake label, \
              so runtime::caffeinate::reconcile can detect it via docker ps --filter; \
              actual run command: {run_cmd}"
         );
@@ -2822,7 +2822,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -2839,7 +2839,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [identity]
@@ -2852,7 +2852,7 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir); // keep_awake_enabled defaults false
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2869,7 +2869,7 @@ plugins = []
             .unwrap();
         assert!(
             !run_cmd.contains("jackin.keep_awake"),
-            "agent container without keep_awake_enabled must not carry the label, \
+            "role container without keep_awake_enabled must not carry the label, \
              else the reconciler would hold caffeinate for opted-out workspaces; \
              actual run command: {run_cmd}"
         );
@@ -2880,7 +2880,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -2897,7 +2897,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2907,7 +2907,7 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2932,7 +2932,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -2949,7 +2949,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2963,7 +2963,7 @@ plugins = []
             debug: true,
             ..LoadOptions::default()
         };
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -3027,7 +3027,7 @@ plugins = []
             r#"[env]
 OPERATOR_SMOKE = "smoke-literal"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -3035,7 +3035,7 @@ trusted = true
         .unwrap();
 
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -3052,7 +3052,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -3062,7 +3062,7 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -3106,7 +3106,7 @@ plugins = []
             r#"[env]
 OPERATOR_SMOKE = "operator-wins"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -3114,7 +3114,7 @@ trusted = true
         .unwrap();
 
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -3131,7 +3131,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [env.OPERATOR_SMOKE]
@@ -3144,7 +3144,7 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -3185,7 +3185,7 @@ plugins = []
             r#"[env]
 FROM_HOST = "$JACKIN_PR2_SMOKE_HOST_VAR"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -3193,7 +3193,7 @@ trusted = true
         .unwrap();
 
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -3210,7 +3210,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -3231,7 +3231,7 @@ plugins = []
         };
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -3281,7 +3281,7 @@ plugins = []
             r#"[env]
 OPERATOR_TOKEN = {op = "op://abc-vault/abc-item/api-token", path = "Personal/api/token"}
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -3289,7 +3289,7 @@ trusted = true
         .unwrap();
 
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
@@ -3306,7 +3306,7 @@ trusted = true
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -3329,7 +3329,7 @@ plugins = []
         };
 
         let workspace = repo_workspace(&repo_dir);
-        load_agent(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -3357,7 +3357,7 @@ plugins = []
     fn claim_container_name_not_found_claims_primary() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         // inspect returns "" → NotFound
         let mut runner = FakeRunner::with_capture_queue([String::new()]);
 
@@ -3382,7 +3382,7 @@ plugins = []
     fn claim_container_name_running_skips_to_clone() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         // primary inspect → Running; clone-1 inspect → NotFound
         let mut runner =
             FakeRunner::with_capture_queue(["true 0 false".to_string(), String::new()]);
@@ -3403,7 +3403,7 @@ plugins = []
     fn claim_container_name_clean_exit_removes_and_reclaims() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         // primary inspect → Stopped / exit 0 / no OOM
         let mut runner = FakeRunner::with_capture_queue(["false 0 false".to_string()]);
 
@@ -3423,7 +3423,7 @@ plugins = []
     fn claim_container_name_crashed_skips_to_clone() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         // primary inspect → Stopped / exit 1; clone-1 → NotFound
         let mut runner =
             FakeRunner::with_capture_queue(["false 1 false".to_string(), String::new()]);
@@ -3444,7 +3444,7 @@ plugins = []
     fn claim_container_name_crashed_then_clean_exit_reclaims_slot_1() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         // primary → crashed; clone-1 → clean exit
         let mut runner = FakeRunner::with_capture_queue([
             "false 1 false".to_string(),

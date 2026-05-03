@@ -2,7 +2,7 @@ use clap::Args;
 
 use super::{BANNER, HELP_STYLES};
 
-/// Jack an agent into an isolated container
+/// Jack an role into an isolated container
 ///
 /// TARGET can be a path (~/Projects/my-app), a path with container
 /// destination (~/Projects/my-app:/app), or a saved workspace name.
@@ -18,7 +18,7 @@ use super::{BANNER, HELP_STYLES};
     styles = HELP_STYLES,
     after_long_help = "\
 Examples:
-  jackin load                                          # use workspace + last agent for cwd
+  jackin load                                          # use workspace + last role for cwd
   jackin load --rebuild                                # same, with fresh harness install
   jackin load agent-smith
   jackin load agent-smith ~/Projects/my-app
@@ -28,8 +28,8 @@ Examples:
   jackin load agent-smith ~/app --mount ~/cache:/cache:ro"
 )]
 pub struct LoadArgs {
-    /// Agent class selector (e.g. `agent-smith`, `chainargos/agent-brown`).
-    /// When omitted, uses the last-used or default agent for the workspace.
+    /// Role class selector (e.g. `agent-smith`, `chainargos/agent-brown`).
+    /// When omitted, uses the last-used or default role for the workspace.
     pub selector: Option<String>,
     /// Path, `path:container-dest`, or saved workspace name
     #[arg(value_name = "TARGET")]
@@ -74,28 +74,28 @@ fn parse_harness(s: &str) -> Result<crate::harness::Harness, String> {
         .map_err(|e: crate::harness::ParseHarnessError| e.to_string())
 }
 
-/// Reattach to a running agent's session
+/// Reattach to a running role's session
 ///
 /// When omitted, finds the saved workspace for the current directory and
-/// reconnects to a running agent container belonging to it.
+/// reconnects to a running role container belonging to it.
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     before_help = BANNER,
     styles = HELP_STYLES,
     after_long_help = "\
 Examples:
-  jackin hardline                              # auto-detect workspace + running agent for cwd
+  jackin hardline                              # auto-detect workspace + running role for cwd
   jackin hardline agent-smith
   jackin hardline chainargos/the-architect
   jackin hardline jackin-agent-smith-clone-1"
 )]
 pub struct HardlineArgs {
-    /// Agent class selector or container name to reconnect to.
-    /// When omitted, uses the running agent in the workspace for the current directory.
+    /// Role class selector or container name to reconnect to.
+    /// When omitted, uses the running role in the workspace for the current directory.
     pub selector: Option<String>,
 }
 
-/// Open the operator console to manage workspaces, launch agents, and more
+/// Open the operator console to manage workspaces, launch roles, and more
 ///
 /// Running `jackin` with no subcommand on an interactive terminal opens the
 /// same console. This struct also flattens into the top-level `Cli` so
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn load_help_shows_description_and_examples() {
         let help = help_text(&["jackin", "load", "--help"]);
-        assert!(help.contains("Jack an agent into an isolated container"));
+        assert!(help.contains("Jack an role into an isolated container"));
         assert!(help.contains("Examples:"));
         assert!(help.contains("jackin load agent-smith"));
         assert!(help.contains("jackin load agent-smith big-monorepo"));
@@ -350,7 +350,7 @@ mod tests {
     #[test]
     fn hardline_help_shows_examples() {
         let help = help_text(&["jackin", "hardline", "--help"]);
-        assert!(help.contains("Reattach to a running agent"));
+        assert!(help.contains("Reattach to a running role"));
         assert!(help.contains("jackin hardline agent-smith"));
         assert!(
             help.contains("jackin hardline ") && help.contains("auto-detect workspace"),

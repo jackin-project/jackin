@@ -8,7 +8,7 @@ jackin' lets operators declare environment variables in four config layers that 
 
 ## Why operator env
 
-Agent manifests (`jackin.agent.toml`) declare the env *shape* — what keys an agent expects, what's interactive, what has a default. Operator env layers declare the *values* for a specific operator on a specific workspace with a specific agent. Keeping shape and values in different places means:
+Agent manifests (`jackin.role.toml`) declare the env *shape* — what keys an agent expects, what's interactive, what has a default. Operator env layers declare the *values* for a specific operator on a specific workspace with a specific agent. Keeping shape and values in different places means:
 
 - Third-party agents never see your secrets in their git history.
 - The same agent can run with different credentials in different workspaces (personal laptop vs company monorepo).
@@ -19,7 +19,7 @@ Agent manifests (`jackin.agent.toml`) declare the env *shape* — what keys an a
 Four layers are merged with later-wins semantics:
 
 1. **Global** — `[env]` at the top of `~/.config/jackin/config.toml`.
-2. **Agent** — `[agents.<selector>.env]`.
+2. **Agent** — `[roles.<selector>.env]`.
 3. **Workspace** — `[workspaces.<name>.env]`.
 4. **Workspace × Agent** — `[workspaces.<name>.agents.<selector>.env]`.
 
@@ -45,7 +45,7 @@ Each value in an env map is one of:
 OPERATOR_ORG = "acme-corp"
 
 # Agent layer — only when loading agent-smith
-[agents.agent-smith.env]
+[roles.agent-smith.env]
 API_TOKEN = "op://Personal/acme-api/token"
 
 # Workspace layer — only when launching in "big-monorepo"
@@ -106,6 +106,6 @@ Resolved values are never printed — only `op://` references (which are not sec
 
 ## Interaction with manifest env
 
-Manifest-declared env (`jackin.agent.toml`'s `[env]` table) is resolved first (with interactive prompts as needed). Operator env is resolved second and overlaid on top: **operator wins on key conflict**. This lets operators pin a value that the manifest would otherwise prompt for, or swap a manifest default for a workspace-specific secret.
+Manifest-declared env (`jackin.role.toml`'s `[env]` table) is resolved first (with interactive prompts as needed). Operator env is resolved second and overlaid on top: **operator wins on key conflict**. This lets operators pin a value that the manifest would otherwise prompt for, or swap a manifest default for a workspace-specific secret.
 
 See [Authentication Forwarding](/guides/authentication) for the companion mechanism that forwards Claude Code credentials from host to container. Env layers and auth forwarding are orthogonal — use both.

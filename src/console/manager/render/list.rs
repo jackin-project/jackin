@@ -249,7 +249,7 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
 }
 
 fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
-    !ws.env.is_empty() || ws.agents.values().any(|o| !o.env.is_empty())
+    !ws.env.is_empty() || ws.roles.values().any(|o| !o.env.is_empty())
 }
 
 fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
@@ -265,7 +265,7 @@ fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u1
     };
 
     let workspace_keys = ws.env.len();
-    let agent_keys: usize = ws.agents.values().map(|o| o.env.len()).sum();
+    let agent_keys: usize = ws.roles.values().map(|o| o.env.len()).sum();
     let total_rows = workspace_keys + agent_keys;
     (total_rows + 2).min(20) as u16
 }
@@ -276,9 +276,9 @@ fn agents_block_agent_count(
 ) -> usize {
     let all_allowed = ws_config.is_none_or(super::super::agent_allow::allows_all_agents);
     if all_allowed {
-        config.agents.len()
+        config.roles.len()
     } else {
-        ws_config.map_or(0, |w| w.allowed_agents.len())
+        ws_config.map_or(0, |w| w.allowed_roles.len())
     }
 }
 
@@ -290,7 +290,7 @@ fn agents_block_height(agent_count: usize) -> u16 {
 }
 
 /// Cursor on the synthetic "Current directory" row — mirrors
-/// `workspace::current_dir_workspace`: src=dst=cwd, rw, any agent.
+/// `workspace::current_dir_workspace`: src=dst=cwd, rw, any role.
 fn render_current_dir_details_pane(
     frame: &mut Frame,
     area: Rect,
@@ -317,7 +317,7 @@ fn render_current_dir_details_pane(
         .split(area);
 
     // General — titled the same as the saved-workspace pane so the
-    // sub-panel titles (General / Mounts / Agents) match across both
+    // sub-panel titles (General / Mounts / Roles) match across both
     // panes. The "Current directory" signpost is already visible as
     // the left-list row label, so repeating it here was redundant.
     //
@@ -331,7 +331,7 @@ fn render_current_dir_details_pane(
             " General ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
-    // Two-space prefix keeps the label aligned with Mounts and Agents — see
+    // Two-space prefix keeps the label aligned with Mounts and Roles — see
     // `render_general_subpanel` for the shared convention.
     let general_lines = vec![Line::from(vec![
         Span::raw("  "),
@@ -347,8 +347,8 @@ fn render_current_dir_details_pane(
 
     render_mounts_subpanel(frame, rows[1], &mounts);
 
-    // Agents block — reuse the no-`ws_config` branch of the shared renderer,
-    // which lists every globally-configured agent (without per-agent
+    // Roles block — reuse the no-`ws_config` branch of the shared renderer,
+    // which lists every globally-configured role (without per-role
     // overrides since the cwd workspace has none).
     render_agents_subpanel(frame, rows[2], None, config);
 }
@@ -359,7 +359,7 @@ fn render_current_dir_details_pane(
 /// sections "What is a workspace?" + "Why save a workspace?".
 fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
     // Two stacked sub-panels so the section titles render as block titles
-    // with the same PHOSPHOR_DARK border used by General/Mounts/Agents.
+    // with the same PHOSPHOR_DARK border used by General/Mounts/Roles.
     // The "What is a workspace?" intro is short (fits in 4 rows); the
     // rest of the area hosts the bullet list + closing hint.
     let rows = Layout::default()
@@ -383,7 +383,7 @@ fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
             Style::default().fg(PHOSPHOR_GREEN),
         )),
         Line::from(Span::styled(
-            "  can launch agents into it from anywhere \u{2014} without",
+            "  can launch roles into it from anywhere \u{2014} without",
             Style::default().fg(PHOSPHOR_GREEN),
         )),
         Line::from(Span::styled(
@@ -404,8 +404,8 @@ fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
     let bullets = [
         "Name a project once, launch from any cwd",
         "Keep extra mounts consistent across sessions",
-        "Reuse one boundary with different agent classes",
-        "Set a default agent or restrict which classes apply",
+        "Reuse one boundary with different role classes",
+        "Set a default role or restrict which classes apply",
         "Let `jackin console` auto-detect and preselect it",
     ];
     let mut why_lines: Vec<Line<'static>> = bullets
@@ -432,12 +432,12 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
         ));
 
     // Each content row is prefixed with two spaces to match the Mounts and
-    // Agents sub-panels (see `SUBPANEL_CONTENT_INDENT`). Without the prefix the
+    // Roles sub-panels (see `SUBPANEL_CONTENT_INDENT`). Without the prefix the
     // label sat flush against the block's left border, breaking column
     // alignment with the other two blocks in the same pane.
     //
     // The `Last used` row used to live here; it now sits at the top of the
-    // Agents sub-panel where it semantically belongs (agent-identity data,
+    // Roles sub-panel where it semantically belongs (role-identity data,
     // not path/workspace-identity data).
     let lines = vec![Line::from(vec![
         Span::raw("  "),
@@ -452,7 +452,7 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
 }
 
 /// Number of leading spaces every content row in the General / Mounts /
-/// Environments / Agents sub-panels is prefixed with, so the first visible
+/// Environments / Roles sub-panels is prefixed with, so the first visible
 /// character lines up across all blocks (at
 /// `border_col + SUBPANEL_CONTENT_INDENT`). Pinned by
 /// `subpanel_content_column_alignment` in the visual regression tests.
@@ -496,9 +496,9 @@ fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::worksp
 struct EnvRow {
     /// The env-key name (left-aligned in the middle column).
     name: String,
-    /// `None` for a workspace-level key, `Some(agent_name)` for a per-agent
+    /// `None` for a workspace-level key, `Some(role_name)` for a per-role
     /// override. Workspace-level rows render with an empty right column;
-    /// per-agent rows show the agent name on the right in `PHOSPHOR_DIM`.
+    /// per-role rows show the role name on the right in `PHOSPHOR_DIM`.
     scope: Option<String>,
     /// `true` when the value is an `op://...` reference, so the row gets
     /// a leading `[op] ` marker. The value itself never renders.
@@ -517,14 +517,14 @@ struct EnvRow {
 ///  [op]  TEST                    agent-smith
 /// ```
 ///
-/// Workspace-level keys (`WorkspaceConfig.env`) and per-agent override
-/// keys (`WorkspaceAgentOverride.env`) are merged into a single list,
+/// Workspace-level keys (`WorkspaceConfig.env`) and per-role override
+/// keys (`WorkspaceRoleOverride.env`) are merged into a single list,
 /// sorted alphabetically by name. When the same name appears at both
-/// scopes, the workspace row comes first; agent rows for tied names
-/// then sort alphabetically by agent name. Each row has a fixed left
+/// scopes, the workspace row comes first; role rows for tied names
+/// then sort alphabetically by role name. Each row has a fixed left
 /// marker column (`[op] ` / 5 spaces) matching the editor's
 /// Environments-tab alignment, the env key in the middle, and the
-/// agent name on the right (workspace rows leave the right column
+/// role name on the right (workspace rows leave the right column
 /// blank). Values themselves never appear — only key names.
 ///
 /// Caller is expected to have already verified at least one env entry
@@ -553,18 +553,18 @@ fn render_environments_subpanel(
                 is_op: matches!(value, crate::operator_env::EnvValue::OpRef(_)),
             });
         }
-        for (agent, overrides) in &ws.agents {
+        for (role, overrides) in &ws.roles {
             for (key, value) in &overrides.env {
                 rows.push(EnvRow {
                     name: key.clone(),
-                    scope: Some(agent.clone()),
+                    scope: Some(role.clone()),
                     is_op: matches!(value, crate::operator_env::EnvValue::OpRef(_)),
                 });
             }
         }
     }
 
-    // Alphabetical, ties: workspace before agent; agent-vs-agent by name.
+    // Alphabetical, ties: workspace before role; role-vs-role by name.
     rows.sort_by(|a, b| {
         a.name
             .cmp(&b.name)
@@ -588,8 +588,8 @@ fn render_environments_subpanel(
     frame.render_widget(p, area);
 }
 
-/// `<indent><[op] | 5 spaces><space><name>...<pad>...<agent>` —
-/// agent is right-aligned to `inner_width`; dropped if the left
+/// `<indent><[op] | 5 spaces><space><name>...<pad>...<role>` —
+/// role is right-aligned to `inner_width`; dropped if the left
 /// content already fills the row.
 fn env_row_line(row: &EnvRow, inner_width: usize) -> Line<'static> {
     let outer_indent = " ".repeat(SUBPANEL_CONTENT_INDENT);
@@ -615,17 +615,17 @@ fn env_row_line(row: &EnvRow, inner_width: usize) -> Line<'static> {
         Style::default().fg(PHOSPHOR_GREEN),
     ));
 
-    if let Some(agent) = &row.scope {
+    if let Some(role) = &row.scope {
         // Reserve a 1-cell gap to the right border; when too narrow,
         // fall back to a single-space gap and let Paragraph clip.
-        let pad_count = if left_visible_width + 1 + agent.len() + 1 < inner_width {
-            inner_width - left_visible_width - agent.len() - 1
+        let pad_count = if left_visible_width + 1 + role.len() + 1 < inner_width {
+            inner_width - left_visible_width - role.len() - 1
         } else {
             1
         };
         spans.push(Span::raw(" ".repeat(pad_count)));
         spans.push(Span::styled(
-            agent.clone(),
+            role.clone(),
             Style::default().fg(PHOSPHOR_DIM),
         ));
     }
@@ -643,16 +643,16 @@ fn render_agents_subpanel(
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
-            " Agents ",
+            " Roles ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
 
-    let allowed = ws_config.map_or(&[][..], |w| w.allowed_agents.as_slice());
+    let allowed = ws_config.map_or(&[][..], |w| w.allowed_roles.as_slice());
     let all_allowed = ws_config.is_none_or(super::super::agent_allow::allows_all_agents);
 
     let mut lines: Vec<Line> = Vec::new();
 
-    let default = ws_config.and_then(|w| w.default_agent.as_deref());
+    let default = ws_config.and_then(|w| w.default_role.as_deref());
     let (value_text, value_style): (String, Style) = default.map_or_else(
         || ("(none)".to_string(), Style::default().fg(PHOSPHOR_DIM)),
         |name| (name.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
@@ -665,13 +665,13 @@ fn render_agents_subpanel(
     lines.push(Line::from(""));
 
     let agent_names: Vec<&str> = if all_allowed {
-        config.agents.keys().map(String::as_str).collect()
+        config.roles.keys().map(String::as_str).collect()
     } else {
         allowed.iter().map(String::as_str).collect()
     };
 
-    let name_style = |agent: &str| {
-        if config.agents.contains_key(agent) {
+    let name_style = |role: &str| {
+        if config.roles.contains_key(role) {
             Style::default().fg(PHOSPHOR_GREEN)
         } else {
             Style::default().fg(PHOSPHOR_DIM)
@@ -679,9 +679,9 @@ fn render_agents_subpanel(
     };
     let star_style = Style::default().fg(PHOSPHOR_DIM);
 
-    for agent in &agent_names {
-        let is_default = Some(*agent) == default;
-        let mut spans = vec![Span::styled(format!("  {agent}"), name_style(agent))];
+    for role in &agent_names {
+        let is_default = Some(*role) == default;
+        let mut spans = vec![Span::styled(format!("  {role}"), name_style(role))];
         if is_default {
             spans.push(Span::styled(" \u{2605}", star_style));
         }
@@ -939,7 +939,7 @@ mod mount_block_height_tests {
 #[cfg(test)]
 mod subpanel_padding_tests {
     //! Visual regression tests pinning the leading-padding convention shared
-    //! by the General / Mounts / Agents sub-panels. All three render content
+    //! by the General / Mounts / Roles sub-panels. All three render content
     //! rows starting at the same column so the first visible character of
     //! the three blocks, giving the right pane a tidy left edge.
     use super::{
@@ -983,9 +983,9 @@ mod subpanel_padding_tests {
             workdir: "/tmp/demo".into(),
             mount_count: 1,
             readonly_mount_count: 0,
-            allowed_agent_count: 0,
-            default_agent: None,
-            last_agent: None,
+            allowed_role_count: 0,
+            default_role: None,
+            last_role: None,
         }
     }
 
@@ -993,12 +993,12 @@ mod subpanel_padding_tests {
         WorkspaceConfig {
             workdir: "/tmp/demo".into(),
             mounts: vec![],
-            allowed_agents: names.iter().map(|s| (*s).into()).collect(),
-            default_agent: default.map(String::from),
+            allowed_roles: names.iter().map(|s| (*s).into()).collect(),
+            default_role: default.map(String::from),
             harness: None,
-            last_agent: None,
+            last_role: None,
             env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
         }
     }
@@ -1006,7 +1006,7 @@ mod subpanel_padding_tests {
     /// The first visible character of row 0 inside each sub-panel block
     /// must sit at the shared `SUBPANEL_CONTENT_INDENT`. Without the General
     /// block's two-space prefix the `w` of `workdir` rendered at column 1
-    /// (flush with the border) while Mounts/Agents rendered at column 2.
+    /// (flush with the border) while Mounts/Roles rendered at column 2.
     #[test]
     fn subpanel_content_column_alignment() {
         // General
@@ -1027,7 +1027,7 @@ mod subpanel_padding_tests {
         .unwrap();
         let mounts_col = first_content_indent(&term).expect("mounts has content");
 
-        // Agents, "any agent" branch (no allowed list)
+        // Roles, "any role" branch (no allowed list)
         let cfg = AppConfig::default();
         let backend = TestBackend::new(40, 4);
         let mut term = Terminal::new(backend).unwrap();
@@ -1035,7 +1035,7 @@ mod subpanel_padding_tests {
             render_agents_subpanel(f, Rect::new(0, 0, 40, 4), None, &cfg);
         })
         .unwrap();
-        let agents_any_col = first_content_indent(&term).expect("agents 'any' has content");
+        let agents_any_col = first_content_indent(&term).expect("roles 'any' has content");
 
         assert_eq!(
             general_col, SUBPANEL_CONTENT_INDENT,
@@ -1047,13 +1047,13 @@ mod subpanel_padding_tests {
         );
         assert_eq!(
             agents_any_col, SUBPANEL_CONTENT_INDENT,
-            "Agents (any) first char at col {agents_any_col}, expected {SUBPANEL_CONTENT_INDENT}"
+            "Roles (any) first char at col {agents_any_col}, expected {SUBPANEL_CONTENT_INDENT}"
         );
     }
 
     /// Scan row `y` inside a sub-panel block for the first cell whose
     /// symbol equals `needle`, returning the offset from the left border.
-    /// Used to locate the trailing star glyph on a default-agent row.
+    /// Used to locate the trailing star glyph on a default-role row.
     fn find_symbol_indent(terminal: &Terminal<TestBackend>, y: u16, needle: &str) -> Option<usize> {
         let buf = terminal.backend().buffer();
         let area = buf.area;
@@ -1093,13 +1093,13 @@ mod subpanel_padding_tests {
         last
     }
 
-    /// Non-default agent rows render the name starting at
+    /// Non-default role rows render the name starting at
     /// `SUBPANEL_CONTENT_INDENT` (col 2 from the border). With the
     /// trailing-star convention no glyph precedes the name.
     ///
-    /// With the lean Agents block (env detail moved to the
+    /// With the lean Roles block (env detail moved to the
     /// Environments block), the sub-panel lays out for two allowed
-    /// agents (alpha default, beta non-default):
+    /// roles (alpha default, beta non-default):
     ///   y=0 top border
     ///   y=1 `  Default <name>`
     ///   y=2 blank spacer
@@ -1109,10 +1109,10 @@ mod subpanel_padding_tests {
     fn agents_subpanel_non_default_agent_name_starts_at_col_2() {
         let ws = ws_config_with_allowed(&["alpha", "beta"], Some("alpha"));
         let mut cfg = AppConfig::default();
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
-        cfg.agents
-            .insert("beta".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
+        cfg.roles
+            .insert("beta".into(), crate::config::RoleSource::default());
 
         let backend = TestBackend::new(40, 7);
         let mut term = Terminal::new(backend).unwrap();
@@ -1139,7 +1139,7 @@ mod subpanel_padding_tests {
             .expect("beta row has content");
         assert_eq!(
             name_col, SUBPANEL_CONTENT_INDENT,
-            "non-default agent name should start at col {SUBPANEL_CONTENT_INDENT}, got {name_col}"
+            "non-default role name should start at col {SUBPANEL_CONTENT_INDENT}, got {name_col}"
         );
 
         // And there must be no trailing star on the non-default row.
@@ -1149,22 +1149,22 @@ mod subpanel_padding_tests {
         assert_eq!(
             last_col,
             SUBPANEL_CONTENT_INDENT + "beta".len() - 1,
-            "non-default agent row must have no trailing suffix past the name",
+            "non-default role row must have no trailing suffix past the name",
         );
     }
 
-    /// Default agent row carries a trailing star glyph positioned after
-    /// the agent name (separated by a space), not a leading star.
+    /// Default role row carries a trailing star glyph positioned after
+    /// the role name (separated by a space), not a leading star.
     ///
-    /// Agents sub-panel layout: top border at y=0, `Default <name>` at
-    /// y=1, blank at y=2, first agent row at y=3. For a single-allowed
-    /// workspace that agent IS the default.
+    /// Roles sub-panel layout: top border at y=0, `Default <name>` at
+    /// y=1, blank at y=2, first role row at y=3. For a single-allowed
+    /// workspace that role IS the default.
     #[test]
     fn agents_subpanel_default_agent_has_trailing_star() {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         let mut cfg = AppConfig::default();
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
 
         let backend = TestBackend::new(40, 6);
         let mut term = Terminal::new(backend).unwrap();
@@ -1174,30 +1174,30 @@ mod subpanel_padding_tests {
         .unwrap();
 
         let star_col = find_symbol_indent(&term, 3, "\u{2605}")
-            .expect("default agent row should contain a star glyph");
+            .expect("default role row should contain a star glyph");
         let expected = SUBPANEL_CONTENT_INDENT + "alpha".len() + 1;
         assert_eq!(
             star_col, expected,
-            "default agent star should trail the name at col {expected}, got {star_col}"
+            "default role star should trail the name at col {expected}, got {star_col}"
         );
     }
 
-    /// Default agent row's name column matches non-default rows (and the
+    /// Default role row's name column matches non-default rows (and the
     /// `SUBPANEL_CONTENT_INDENT` convention). The trailing star must not
     /// shift the name right.
     ///
-    /// y=1 is the `Default <agent>` row, whose label also starts at
+    /// y=1 is the `Default <role>` row, whose label also starts at
     /// `SUBPANEL_CONTENT_INDENT`. The invariant the test pins (every
     /// content row starts at col 2) still holds — what we're confirming
     /// is that the block's leading indent is consistent. We check the
-    /// agent row explicitly to guard against the trailing-star breaking
+    /// role row explicitly to guard against the trailing-star breaking
     /// the name-column alignment.
     #[test]
     fn agents_subpanel_default_agent_name_starts_at_col_2_regardless_of_star() {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         let mut cfg = AppConfig::default();
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
 
         let backend = TestBackend::new(40, 6);
         let mut term = Terminal::new(backend).unwrap();
@@ -1224,7 +1224,7 @@ mod subpanel_padding_tests {
             .expect("alpha row has content");
         assert_eq!(
             name_col, SUBPANEL_CONTENT_INDENT,
-            "default agent name should start at col {SUBPANEL_CONTENT_INDENT} even with the trailing star, got {name_col}"
+            "default role name should start at col {SUBPANEL_CONTENT_INDENT} even with the trailing star, got {name_col}"
         );
     }
 
@@ -1236,7 +1236,7 @@ mod subpanel_padding_tests {
     #[test]
     fn general_subpanel_no_longer_shows_last_used() {
         let mut s = summary();
-        s.last_agent = Some("alpha".into());
+        s.last_role = Some("alpha".into());
 
         let backend = TestBackend::new(60, 4);
         let mut term = Terminal::new(backend).unwrap();
@@ -1259,9 +1259,9 @@ mod subpanel_padding_tests {
         }
     }
 
-    // ── Agents sub-panel: Default row + per-agent overrides ───────────
+    // ── Roles sub-panel: Default row + per-role overrides ───────────
 
-    /// Render the Agents sub-panel into a `TestBackend` of the given size
+    /// Render the Roles sub-panel into a `TestBackend` of the given size
     /// and return one row of the buffer at `y` as a plain string. Used
     /// throughout this section to scrape per-row text after layout shifts.
     fn render_agents_row(
@@ -1286,27 +1286,27 @@ mod subpanel_padding_tests {
         row
     }
 
-    /// The Agents sub-panel renders `Default <agent>` at the top, above
-    /// the blank spacer and the per-agent rows.
+    /// The Roles sub-panel renders `Default <role>` at the top, above
+    /// the blank spacer and the per-role rows.
     #[test]
     fn agents_subpanel_shows_default_at_top() {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         let mut cfg = AppConfig::default();
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
 
         let row = render_agents_row(Some(&ws), &cfg, 60, 6, 1);
         assert!(
             row.contains("Default"),
-            "Agents row 1 must hold `Default`; got {row:?}"
+            "Roles row 1 must hold `Default`; got {row:?}"
         );
         assert!(
             row.contains("alpha"),
-            "Agents row 1 must hold the default agent name; got {row:?}"
+            "Roles row 1 must hold the default role name; got {row:?}"
         );
     }
 
-    /// When `default_agent` is `None`, the Default row shows `(none)`.
+    /// When `default_role` is `None`, the Default row shows `(none)`.
     #[test]
     fn agents_subpanel_default_none_renders_placeholder() {
         let ws = ws_config_with_allowed(&[], None);
@@ -1315,20 +1315,20 @@ mod subpanel_padding_tests {
         let row = render_agents_row(Some(&ws), &cfg, 60, 6, 1);
         assert!(
             row.contains("Default") && row.contains("(none)"),
-            "Default row should show `(none)` when no default agent is set; got {row:?}"
+            "Default row should show `(none)` when no default role is set; got {row:?}"
         );
     }
 
-    /// `Last used` must no longer appear anywhere in the Agents
+    /// `Last used` must no longer appear anywhere in the Roles
     /// sub-panel — it was demoted as part of the preview cleanup that
-    /// nested per-agent overrides under each agent name.
+    /// nested per-role overrides under each role name.
     #[test]
     fn agents_subpanel_no_longer_shows_last_used() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
-        ws.last_agent = Some("beta".into());
+        ws.last_role = Some("beta".into());
         let mut cfg = AppConfig::default();
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
 
         let backend = TestBackend::new(60, 8);
         let mut term = Terminal::new(backend).unwrap();
@@ -1346,29 +1346,29 @@ mod subpanel_padding_tests {
             }
             assert!(
                 !row.contains("Last used"),
-                "Agents sub-panel must not render `Last used`; got row {y}: {row:?}"
+                "Roles sub-panel must not render `Last used`; got row {y}: {row:?}"
             );
         }
     }
 
-    /// The Agents block is now a lean default + name list; per-agent
+    /// The Roles block is now a lean default + name list; per-role
     /// env overrides moved to the consolidated Environments block.
-    /// This test pins that the Agents sub-panel does NOT mention any
+    /// This test pins that the Roles sub-panel does NOT mention any
     /// override key names — the keys belong only in the Environments
     /// block now.
     #[test]
     fn preview_agents_block_no_longer_lists_overrides() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
-        let mut overrides = crate::workspace::WorkspaceAgentOverride::default();
+        let mut overrides = crate::workspace::WorkspaceRoleOverride::default();
         overrides.env.insert("API_KEY".into(), "literal".into());
         overrides
             .env
             .insert("LOG_LEVEL".into(), "op://Vault/Item/field".into());
-        ws.agents.insert("alpha".into(), overrides);
+        ws.roles.insert("alpha".into(), overrides);
 
         let mut cfg = AppConfig::default();
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
 
         let backend = TestBackend::new(60, 8);
         let mut term = Terminal::new(backend).unwrap();
@@ -1386,43 +1386,43 @@ mod subpanel_padding_tests {
             }
             joined.push('\n');
         }
-        // Per-agent override keys must NOT appear in the Agents block —
+        // Per-role override keys must NOT appear in the Roles block —
         // they live in the Environments block now.
         assert!(
             !joined.contains("API_KEY"),
-            "override key API_KEY must NOT appear in the Agents block; got {joined}"
+            "override key API_KEY must NOT appear in the Roles block; got {joined}"
         );
         assert!(
             !joined.contains("LOG_LEVEL"),
-            "override key LOG_LEVEL must NOT appear in the Agents block; got {joined}"
+            "override key LOG_LEVEL must NOT appear in the Roles block; got {joined}"
         );
         assert!(
             !joined.contains("[op]"),
-            "`[op]` marker must NOT appear in the Agents block; got {joined}"
+            "`[op]` marker must NOT appear in the Roles block; got {joined}"
         );
         assert!(
             !joined.contains("(no overrides)"),
-            "`(no overrides)` placeholder must NOT appear in the Agents block; got {joined}"
+            "`(no overrides)` placeholder must NOT appear in the Roles block; got {joined}"
         );
-        // Default + agent name still render.
+        // Default + role name still render.
         assert!(
             joined.contains("Default") && joined.contains("alpha"),
-            "Agents block must still show default + agent name; got {joined}"
+            "Roles block must still show default + role name; got {joined}"
         );
     }
 
-    /// When `allowed_agents` is empty (the "all agents allowed"
-    /// shorthand), the preview lists every globally-configured agent —
-    /// matching what the editor's Agents tab shows. No `any agent`
+    /// When `allowed_roles` is empty (the "all roles allowed"
+    /// shorthand), the preview lists every globally-configured role —
+    /// matching what the editor's Roles tab shows. No `any role`
     /// placeholder.
     #[test]
     fn preview_agents_block_lists_all_global_agents_when_allowed_empty() {
         let ws = ws_config_with_allowed(&[], None);
         let mut cfg = AppConfig::default();
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
-        cfg.agents
-            .insert("beta".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
+        cfg.roles
+            .insert("beta".into(), crate::config::RoleSource::default());
 
         let backend = TestBackend::new(60, 12);
         let mut term = Terminal::new(backend).unwrap();
@@ -1449,8 +1449,8 @@ mod subpanel_padding_tests {
             "beta should be listed under all-allowed shorthand; got {joined}"
         );
         assert!(
-            !joined.contains("any agent"),
-            "old `any agent` placeholder should be gone; got {joined}"
+            !joined.contains("any role"),
+            "old `any role` placeholder should be gone; got {joined}"
         );
     }
 
@@ -1507,8 +1507,8 @@ mod subpanel_padding_tests {
         // Sub-section header from the previous layout must NOT appear in
         // the flat list.
         assert!(
-            !joined.contains("All agents:"),
-            "flat layout must not render the `All agents:` sub-header; got {joined}"
+            !joined.contains("All roles:"),
+            "flat layout must not render the `All roles:` sub-header; got {joined}"
         );
         // Values must never appear in the preview.
         assert!(
@@ -1523,36 +1523,36 @@ mod subpanel_padding_tests {
 
     /// The Environments preview is one flat list sorted alphabetically
     /// by env name. Workspace-level rows have an empty right column;
-    /// per-agent override rows show the agent name on the right.
+    /// per-role override rows show the role name on the right.
     #[test]
     fn preview_environments_block_lists_envs_alphabetically_with_agent_on_right() {
         let mut ws = ws_config_with_allowed(&["beta", "alpha"], Some("alpha"));
         ws.env.insert("API_KEY".into(), "literal".into());
         ws.env.insert("DB_URL".into(), "postgres://...".into());
 
-        let mut alpha_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        let mut alpha_overrides = crate::workspace::WorkspaceRoleOverride::default();
         alpha_overrides
             .env
             .insert("LOG_LEVEL".into(), "debug".into());
-        ws.agents.insert("alpha".into(), alpha_overrides);
+        ws.roles.insert("alpha".into(), alpha_overrides);
 
-        let mut beta_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        let mut beta_overrides = crate::workspace::WorkspaceRoleOverride::default();
         beta_overrides.env.insert("DEBUG".into(), "1".into());
-        ws.agents.insert("beta".into(), beta_overrides);
+        ws.roles.insert("beta".into(), beta_overrides);
 
         let joined = render_env_to_string(&ws, 60, 14);
         // No sub-headers in the flat layout.
         assert!(
-            !joined.contains("All agents:"),
-            "flat layout must not render `All agents:`; got {joined}"
+            !joined.contains("All roles:"),
+            "flat layout must not render `All roles:`; got {joined}"
         );
         assert!(
             !joined.contains("alpha:"),
-            "flat layout must not render `<agent>:` sub-headers; got {joined}"
+            "flat layout must not render `<role>:` sub-headers; got {joined}"
         );
         assert!(
             !joined.contains("beta:"),
-            "flat layout must not render `<agent>:` sub-headers; got {joined}"
+            "flat layout must not render `<role>:` sub-headers; got {joined}"
         );
 
         // Find each name's y-row to pin alphabetical ordering across scopes.
@@ -1584,7 +1584,7 @@ mod subpanel_padding_tests {
              got y=({api},{db},{debug},{log})"
         );
 
-        // Agent labels live on the right edge of their row.
+        // Role labels live on the right edge of their row.
         for row in joined.lines() {
             if row.contains("DEBUG") {
                 assert!(
@@ -1601,9 +1601,9 @@ mod subpanel_padding_tests {
         }
     }
 
-    /// Agents listed in `allowed_agents` but with no env overrides do
+    /// Roles listed in `allowed_roles` but with no env overrides do
     /// NOT contribute rows to the Environments block — their absence is
-    /// the signal that they have no overrides. The Agents block still
+    /// the signal that they have no overrides. The Roles block still
     /// lists them.
     #[test]
     fn preview_environments_block_omits_agents_without_overrides() {
@@ -1611,11 +1611,11 @@ mod subpanel_padding_tests {
         ws.env.insert("API_KEY".into(), "literal".into());
         // Only alpha has overrides; beta is in the allowed list but
         // has no overrides.
-        let mut alpha_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        let mut alpha_overrides = crate::workspace::WorkspaceRoleOverride::default();
         alpha_overrides
             .env
             .insert("LOG_LEVEL".into(), "debug".into());
-        ws.agents.insert("alpha".into(), alpha_overrides);
+        ws.roles.insert("alpha".into(), alpha_overrides);
 
         let joined = render_env_to_string(&ws, 60, 10);
         assert!(
@@ -1629,7 +1629,7 @@ mod subpanel_padding_tests {
     }
 
     /// A workspace-level env key renders a row with the key name and an
-    /// empty right column (no agent label).
+    /// empty right column (no role label).
     #[test]
     fn preview_environments_flat_row_workspace_level_has_no_agent_label() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
@@ -1643,20 +1643,20 @@ mod subpanel_padding_tests {
             .expect("API_KEY row must appear");
         assert!(
             !api_row.contains("alpha"),
-            "workspace-level row must not show an agent label; got `{api_row}`"
+            "workspace-level row must not show an role label; got `{api_row}`"
         );
     }
 
-    /// A per-agent override env key renders a row with the key on the
-    /// left and the agent name on the right.
+    /// A per-role override env key renders a row with the key on the
+    /// left and the role name on the right.
     #[test]
     fn preview_environments_flat_row_per_agent_has_agent_label_on_right() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
-        let mut alpha_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        let mut alpha_overrides = crate::workspace::WorkspaceRoleOverride::default();
         alpha_overrides
             .env
             .insert("LOG_LEVEL".into(), "debug".into());
-        ws.agents.insert("alpha".into(), alpha_overrides);
+        ws.roles.insert("alpha".into(), alpha_overrides);
 
         let joined = render_env_to_string(&ws, 60, 4);
         let log_row = joined
@@ -1665,26 +1665,26 @@ mod subpanel_padding_tests {
             .expect("LOG_LEVEL row must appear");
         assert!(
             log_row.contains("alpha"),
-            "per-agent row must show the agent name; got `{log_row}`"
+            "per-role row must show the role name; got `{log_row}`"
         );
-        // Agent name sits to the right of the key name on the same row.
+        // Role name sits to the right of the key name on the same row.
         let key_pos = log_row.find("LOG_LEVEL").unwrap();
         let agent_pos = log_row.find("alpha").unwrap();
         assert!(
             agent_pos > key_pos,
-            "agent label must come AFTER the key name on the row; got key@{key_pos}, agent@{agent_pos}"
+            "role label must come AFTER the key name on the row; got key@{key_pos}, role@{agent_pos}"
         );
     }
 
-    /// Per-agent rows show the agent label one cell before the right
+    /// Per-role rows show the role label one cell before the right
     /// border, not flush against it. The cell at `inner_width - 1`
     /// (i.e. the column just inside the right border) must be a space.
     #[test]
     fn preview_environments_agent_label_has_one_cell_right_padding() {
         let mut ws = ws_config_with_allowed(&["agent-brown"], Some("agent-brown"));
-        let mut brown = crate::workspace::WorkspaceAgentOverride::default();
+        let mut brown = crate::workspace::WorkspaceRoleOverride::default();
         brown.env.insert("TEST5".into(), "v".into());
-        ws.agents.insert("agent-brown".into(), brown);
+        ws.roles.insert("agent-brown".into(), brown);
 
         let width: u16 = 60;
         let backend = TestBackend::new(width, 4);
@@ -1695,7 +1695,7 @@ mod subpanel_padding_tests {
         .unwrap();
         let buf = term.backend().buffer();
 
-        // Find the row containing TEST5; agent label `agent-brown`
+        // Find the row containing TEST5; role label `agent-brown`
         // must end one cell before the right border so the cell at
         // x = width - 2 (i.e. the one just inside the right border
         // at x = width - 1) is a space, and the label's last char
@@ -1718,12 +1718,12 @@ mod subpanel_padding_tests {
             cell_inside_border,
             " ",
             "cell at x={} (one inside right border) must be a space — \
-             agent label should have 1-cell right padding; got {:?}",
+             role label should have 1-cell right padding; got {:?}",
             width - 2,
             cell_inside_border
         );
 
-        // And the agent label's last char (`n` of `agent-brown`)
+        // And the role label's last char (`n` of `agent-brown`)
         // must sit at x = width - 3 — the cell just before the pad.
         let label_last = buf[(width - 3, y)].symbol();
         assert_eq!(
@@ -1736,18 +1736,18 @@ mod subpanel_padding_tests {
         );
     }
 
-    /// The same env name at workspace and agent scope renders TWO
-    /// distinct rows: workspace first (empty right column), agent
-    /// second (with agent label).
+    /// The same env name at workspace and role scope renders TWO
+    /// distinct rows: workspace first (empty right column), role
+    /// second (with role label).
     #[test]
     fn preview_environments_same_key_in_workspace_and_agent_renders_two_rows() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         ws.env.insert("API_KEY".into(), "workspace-value".into());
-        let mut alpha_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        let mut alpha_overrides = crate::workspace::WorkspaceRoleOverride::default();
         alpha_overrides
             .env
-            .insert("API_KEY".into(), "agent-value".into());
-        ws.agents.insert("alpha".into(), alpha_overrides);
+            .insert("API_KEY".into(), "role-value".into());
+        ws.roles.insert("alpha".into(), alpha_overrides);
 
         let joined = render_env_to_string(&ws, 60, 6);
         let api_rows: Vec<&str> = joined.lines().filter(|r| r.contains("API_KEY")).collect();
@@ -1756,34 +1756,34 @@ mod subpanel_padding_tests {
             2,
             "API_KEY must appear in TWO rows (workspace + alpha); got rows={api_rows:?}"
         );
-        // Workspace row first (no agent label), agent row second.
+        // Workspace row first (no role label), role row second.
         assert!(
             !api_rows[0].contains("alpha"),
-            "first API_KEY row must be workspace-level (no agent label); got `{}`",
+            "first API_KEY row must be workspace-level (no role label); got `{}`",
             api_rows[0]
         );
         assert!(
             api_rows[1].contains("alpha"),
-            "second API_KEY row must be the agent override (alpha label); got `{}`",
+            "second API_KEY row must be the role override (alpha label); got `{}`",
             api_rows[1]
         );
     }
 
     /// Rows sort alphabetically by name regardless of scope. Workspace
-    /// keys and per-agent keys interleave when their names interleave.
+    /// keys and per-role keys interleave when their names interleave.
     #[test]
     fn preview_environments_sorts_alphabetically_across_scopes() {
         let mut ws = ws_config_with_allowed(&["agent-smith", "agent-brown"], Some("agent-smith"));
         ws.env.insert("DB_URL".into(), "postgres://...".into());
         ws.env.insert("API_KEY".into(), "literal".into());
 
-        let mut smith = crate::workspace::WorkspaceAgentOverride::default();
+        let mut smith = crate::workspace::WorkspaceRoleOverride::default();
         smith.env.insert("DEBUG".into(), "1".into());
-        ws.agents.insert("agent-smith".into(), smith);
+        ws.roles.insert("agent-smith".into(), smith);
 
-        let mut brown = crate::workspace::WorkspaceAgentOverride::default();
+        let mut brown = crate::workspace::WorkspaceRoleOverride::default();
         brown.env.insert("LOG_LEVEL".into(), "debug".into());
-        ws.agents.insert("agent-brown".into(), brown);
+        ws.roles.insert("agent-brown".into(), brown);
 
         let joined = render_env_to_string(&ws, 60, 8);
         // Capture the y-row of each env-key name and assert ordering.
@@ -1799,7 +1799,7 @@ mod subpanel_padding_tests {
         assert_eq!(
             names,
             vec!["API_KEY", "DB_URL", "DEBUG", "LOG_LEVEL"],
-            "rows must be sorted alphabetically across workspace and agent scopes; got {order:?}"
+            "rows must be sorted alphabetically across workspace and role scopes; got {order:?}"
         );
     }
 
@@ -1848,27 +1848,27 @@ mod subpanel_padding_tests {
     }
 
     /// When the workspace has zero env entries at every scope
-    /// (workspace-level AND per-agent overrides), the right-pane
+    /// (workspace-level AND per-role overrides), the right-pane
     /// Environments preview block is omitted entirely — no header, no
-    /// body, no border. The Agents block fills the freed space.
+    /// body, no border. The Roles block fills the freed space.
     #[test]
     fn preview_omits_environments_block_when_workspace_has_no_env_vars() {
-        // Empty workspace env, no agent overrides.
+        // Empty workspace env, no role overrides.
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
 
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
 
         let summary = WorkspaceSummary {
             name: "demo".into(),
             workdir: "/workspace/demo".into(),
             mount_count: 0,
             readonly_mount_count: 0,
-            allowed_agent_count: 1,
-            default_agent: Some("alpha".into()),
-            last_agent: None,
+            allowed_role_count: 1,
+            default_role: Some("alpha".into()),
+            last_role: None,
         };
 
         let backend = TestBackend::new(60, 24);
@@ -1898,7 +1898,7 @@ mod subpanel_padding_tests {
     }
 
     /// The Environments block appears as soon as ANY env entry exists
-    /// at the workspace level, even if no per-agent override is set.
+    /// at the workspace level, even if no per-role override is set.
     #[test]
     fn preview_includes_environments_block_when_only_workspace_env_set() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
@@ -1906,17 +1906,17 @@ mod subpanel_padding_tests {
 
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
 
         let summary = WorkspaceSummary {
             name: "demo".into(),
             workdir: "/workspace/demo".into(),
             mount_count: 0,
             readonly_mount_count: 0,
-            allowed_agent_count: 1,
-            default_agent: Some("alpha".into()),
-            last_agent: None,
+            allowed_role_count: 1,
+            default_role: Some("alpha".into()),
+            last_role: None,
         };
 
         let backend = TestBackend::new(60, 24);
@@ -1945,30 +1945,30 @@ mod subpanel_padding_tests {
         );
     }
 
-    /// The Environments block appears when at least one per-agent
+    /// The Environments block appears when at least one per-role
     /// override is set, even if the workspace-level env map is empty.
     #[test]
     fn preview_includes_environments_block_when_only_per_agent_overrides_set() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
-        let mut alpha_overrides = crate::workspace::WorkspaceAgentOverride::default();
+        let mut alpha_overrides = crate::workspace::WorkspaceRoleOverride::default();
         alpha_overrides
             .env
             .insert("LOG_LEVEL".into(), "debug".into());
-        ws.agents.insert("alpha".into(), alpha_overrides);
+        ws.roles.insert("alpha".into(), alpha_overrides);
 
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
 
         let summary = WorkspaceSummary {
             name: "demo".into(),
             workdir: "/workspace/demo".into(),
             mount_count: 0,
             readonly_mount_count: 0,
-            allowed_agent_count: 1,
-            default_agent: Some("alpha".into()),
-            last_agent: None,
+            allowed_role_count: 1,
+            default_role: Some("alpha".into()),
+            last_role: None,
         };
 
         let backend = TestBackend::new(60, 24);
@@ -1989,21 +1989,21 @@ mod subpanel_padding_tests {
         }
         assert!(
             joined.contains("Environments"),
-            "Environments block header must appear when only per-agent overrides exist; got {joined}"
+            "Environments block header must appear when only per-role overrides exist; got {joined}"
         );
         assert!(
             joined.contains("LOG_LEVEL"),
-            "the per-agent override key must render; got {joined}"
+            "the per-role override key must render; got {joined}"
         );
     }
 
     /// The right-pane preview blocks render in the order
-    /// General → Mounts → Environments → Agents. Pinned by scraping the
+    /// General → Mounts → Environments → Roles. Pinned by scraping the
     /// block-title labels off a full-pane render and confirming their
     /// y-order.
     #[test]
     fn preview_block_order_is_general_mounts_environments_agents() {
-        // Build a workspace with a mount, an env var, and an agent so
+        // Build a workspace with a mount, an env var, and an role so
         // every block has visible content.
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         ws.workdir = "/workspace/demo".into();
@@ -2017,17 +2017,17 @@ mod subpanel_padding_tests {
 
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
-        cfg.agents
-            .insert("alpha".into(), crate::config::AgentSource::default());
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
 
         let summary = WorkspaceSummary {
             name: "demo".into(),
             workdir: "/workspace/demo".into(),
             mount_count: 1,
             readonly_mount_count: 0,
-            allowed_agent_count: 1,
-            default_agent: Some("alpha".into()),
-            last_agent: None,
+            allowed_role_count: 1,
+            default_role: Some("alpha".into()),
+            last_role: None,
         };
 
         let backend = TestBackend::new(60, 24);
@@ -2059,7 +2059,7 @@ mod subpanel_padding_tests {
             if envs_y.is_none() && row.contains(" Environments ") {
                 envs_y = Some(y);
             }
-            if agents_y.is_none() && row.contains(" Agents ") {
+            if agents_y.is_none() && row.contains(" Roles ") {
                 agents_y = Some(y);
             }
         }
@@ -2067,10 +2067,10 @@ mod subpanel_padding_tests {
         let g = general_y.expect("General block title must appear");
         let m = mounts_y.expect("Mounts block title must appear");
         let e = envs_y.expect("Environments block title must appear");
-        let a = agents_y.expect("Agents block title must appear");
+        let a = agents_y.expect("Roles block title must appear");
         assert!(
             g < m && m < e && e < a,
-            "block order must be General < Mounts < Environments < Agents; got y=({g},{m},{e},{a})"
+            "block order must be General < Mounts < Environments < Roles; got y=({g},{m},{e},{a})"
         );
     }
 }

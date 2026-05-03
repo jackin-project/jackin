@@ -490,16 +490,16 @@ fn build_confirm_save_lines(
             }
             out.push(Line::raw(""));
             out.push(Line::from(vec![
-                Span::styled("Allowed agents: ", heading),
+                Span::styled("Allowed roles: ", heading),
                 Span::styled(allowed_agents_summary(editor, config), value),
             ]));
             out.push(Line::raw(""));
             out.push(Line::from(vec![
-                Span::styled("Default agent: ", heading),
+                Span::styled("Default role: ", heading),
                 Span::styled(
                     editor
                         .pending
-                        .default_agent
+                        .default_role
                         .clone()
                         .unwrap_or_else(|| "(none)".into()),
                     value,
@@ -593,19 +593,19 @@ fn build_confirm_save_lines(
 
             let added_agents: Vec<_> = editor
                 .pending
-                .allowed_agents
+                .allowed_roles
                 .iter()
-                .filter(|a| !editor.original.allowed_agents.contains(a))
+                .filter(|a| !editor.original.allowed_roles.contains(a))
                 .collect();
             let removed_agents: Vec<_> = editor
                 .original
-                .allowed_agents
+                .allowed_roles
                 .iter()
-                .filter(|a| !editor.pending.allowed_agents.contains(a))
+                .filter(|a| !editor.pending.allowed_roles.contains(a))
                 .collect();
             if !added_agents.is_empty() || !removed_agents.is_empty() {
                 out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Allowed agents:", heading)));
+                out.push(Line::from(Span::styled("Allowed roles:", heading)));
                 for a in &added_agents {
                     out.push(Line::from(Span::styled(format!("  + {a}"), value)));
                 }
@@ -614,13 +614,13 @@ fn build_confirm_save_lines(
                 }
             }
 
-            if editor.pending.default_agent != editor.original.default_agent {
+            if editor.pending.default_role != editor.original.default_role {
                 out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Default agent:", heading)));
-                if let Some(old) = &editor.original.default_agent {
+                out.push(Line::from(Span::styled("Default role:", heading)));
+                if let Some(old) = &editor.original.default_role {
                     out.push(Line::from(Span::styled(format!("  - {old}"), dim)));
                 }
-                if let Some(new) = &editor.pending.default_agent {
+                if let Some(new) = &editor.pending.default_role {
                     out.push(Line::from(Span::styled(format!("  + {new}"), value)));
                 } else {
                     out.push(Line::from(Span::styled("  + (none)", value)));
@@ -675,12 +675,12 @@ fn mount_summary(m: &crate::workspace::MountConfig) -> String {
 
 fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {
     if super::super::agent_allow::allows_all_agents(&editor.pending) {
-        return format!("any ({} agents)", config.agents.len());
+        return format!("any ({} roles)", config.roles.len());
     }
-    editor.pending.allowed_agents.join(", ")
+    editor.pending.allowed_roles.join(", ")
 }
 
-/// Per-agent sections are prefixed with `  <agent>:` so a single
+/// Per-role sections are prefixed with `  <role>:` so a single
 /// "Env vars:" heading hosts both workspace and override deltas.
 fn env_diff_lines(
     original: &crate::workspace::WorkspaceConfig,
@@ -693,21 +693,18 @@ fn env_diff_lines(
 
     append_env_map_diff_lines(&mut out, None, &original.env, &pending.env, value, dim);
 
-    let agent_keys: std::collections::BTreeSet<&String> = original
-        .agents
-        .keys()
-        .chain(pending.agents.keys())
-        .collect();
+    let agent_keys: std::collections::BTreeSet<&String> =
+        original.roles.keys().chain(pending.roles.keys()).collect();
     let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
-    for agent in agent_keys {
-        let orig_env = original.agents.get(agent).map_or(&empty, |o| &o.env);
-        let pend_env = pending.agents.get(agent).map_or(&empty, |p| &p.env);
-        // Pre-check if there are any deltas for this agent; only emit
-        // the agent header when there are.
+    for role in agent_keys {
+        let orig_env = original.roles.get(role).map_or(&empty, |o| &o.env);
+        let pend_env = pending.roles.get(role).map_or(&empty, |p| &p.env);
+        // Pre-check if there are any deltas for this role; only emit
+        // the role header when there are.
         let mut probe: Vec<Line<'static>> = Vec::new();
         append_env_map_diff_lines(&mut probe, None, orig_env, pend_env, value, dim);
         if !probe.is_empty() {
-            out.push(Line::from(Span::styled(format!("  agent {agent}:"), value)));
+            out.push(Line::from(Span::styled(format!("  role {role}:"), value)));
             append_env_map_diff_lines(&mut out, Some("  "), orig_env, pend_env, value, dim);
         }
     }
@@ -715,9 +712,9 @@ fn env_diff_lines(
 }
 
 /// Append `+ KEY = VALUE` / `- KEY` lines to `out` for the diff between
-/// two env maps. `indent` (`None` or `Some("  ")`) controls per-agent
+/// two env maps. `indent` (`None` or `Some("  ")`) controls per-role
 /// sub-indent — workspace-level lines use two spaces to match existing
-/// diff styling; per-agent lines nest one extra level.
+/// diff styling; per-role lines nest one extra level.
 fn append_env_map_diff_lines(
     out: &mut Vec<ratatui::text::Line<'static>>,
     indent: Option<&str>,
@@ -790,7 +787,7 @@ fn build_prospective_mounts(
     out
 }
 
-/// Agents present only in `original` get all keys removed.
+/// Roles present only in `original` get all keys removed.
 fn apply_env_diff(
     ce: &mut crate::config::ConfigEditor,
     workspace_name: &str,
@@ -800,19 +797,16 @@ fn apply_env_diff(
     let ws_scope = EnvScope::Workspace(workspace_name.to_string());
     apply_env_map_diff(ce, &ws_scope, &original.env, &pending.env)?;
 
-    // Union so agents on only one side are caught.
-    let agent_keys: std::collections::BTreeSet<&String> = original
-        .agents
-        .keys()
-        .chain(pending.agents.keys())
-        .collect();
+    // Union so roles on only one side are caught.
+    let agent_keys: std::collections::BTreeSet<&String> =
+        original.roles.keys().chain(pending.roles.keys()).collect();
     let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
-    for agent in agent_keys {
-        let orig_env = original.agents.get(agent).map_or(&empty, |o| &o.env);
-        let pend_env = pending.agents.get(agent).map_or(&empty, |p| &p.env);
-        let scope = EnvScope::WorkspaceAgent {
+    for role in agent_keys {
+        let orig_env = original.roles.get(role).map_or(&empty, |o| &o.env);
+        let pend_env = pending.roles.get(role).map_or(&empty, |p| &p.env);
+        let scope = EnvScope::WorkspaceRole {
             workspace: workspace_name.to_string(),
-            agent: agent.clone(),
+            role: role.clone(),
         };
         apply_env_map_diff(ce, &scope, orig_env, pend_env)?;
     }
@@ -861,18 +855,18 @@ pub(super) fn build_workspace_edit(
             edit.remove_destinations.push(o.dst.clone());
         }
     }
-    for a in &pending.allowed_agents {
-        if !original.allowed_agents.contains(a) {
+    for a in &pending.allowed_roles {
+        if !original.allowed_roles.contains(a) {
             edit.allowed_agents_to_add.push(a.clone());
         }
     }
-    for a in &original.allowed_agents {
-        if !pending.allowed_agents.contains(a) {
+    for a in &original.allowed_roles {
+        if !pending.allowed_roles.contains(a) {
             edit.allowed_agents_to_remove.push(a.clone());
         }
     }
-    if pending.default_agent != original.default_agent {
-        edit.default_agent = Some(pending.default_agent.clone());
+    if pending.default_role != original.default_role {
+        edit.default_role = Some(pending.default_role.clone());
     }
     if pending.keep_awake.enabled != original.keep_awake.enabled {
         edit.keep_awake_enabled = Some(pending.keep_awake.enabled);
@@ -1765,12 +1759,12 @@ mod tests {
                 readonly: false,
                 isolation: MountIsolation::Worktree,
             }],
-            allowed_agents: vec![],
-            default_agent: None,
+            allowed_roles: vec![],
+            default_role: None,
             harness: None,
-            last_agent: None,
+            last_role: None,
             env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            roles: std::collections::BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
         };
         let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
@@ -1797,7 +1791,7 @@ mod tests {
 
     /// `detect_workspace_edit_drift` issues two `capture` calls on the
     /// runner: `list_records_for_workspace` is filesystem-only (no
-    /// runner traffic), but `list_agent_names(running)` issues a `docker
+    /// runner traffic), but `list_role_names(running)` issues a `docker
     /// ps` capture that returns the newline-separated container names.
     /// Tests construct the runner with the appropriate output queued.
     fn fake_runner_with_running(names: &[&str]) -> crate::runtime::FakeRunner {

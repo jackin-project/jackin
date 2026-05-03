@@ -96,7 +96,7 @@ impl FinalizerPrompt for StdinPrompt {
         crate::tui::prompt::prompt_choice(
             &msg,
             &[
-                "Return to agent to address it",
+                "Return to role to address it",
                 "Preserve worktree and exit",
                 "Force delete worktree and discard changes",
             ],
@@ -202,7 +202,7 @@ fn finalize_clean_exit(
         return Ok(FinalizeDecision::Preserved);
     }
 
-    // Interactive: prompt for each preserved record. "Return to agent"
+    // Interactive: prompt for each preserved record. "Return to role"
     // applies to the whole container (we restart it) so it short-circuits
     // immediately. "Preserve" and "Force delete" are per-record decisions.
     // The container teardown only happens (`Cleaned`) when *every*
@@ -263,12 +263,12 @@ enum CleanupAssessment {
 /// commits the operator made inside the container.
 ///
 /// The contract is enforced **per local branch in the worktree**, not
-/// just `record.scratch_branch`. Agents (and external tooling such as
+/// just `record.scratch_branch`. Roles (and external tooling such as
 /// the Superpowers plugin in Claude Code) routinely create their own
 /// `feature/*` branch inside the worktree and abandon the scratch
 /// branch at `base_commit`. The original implementation hardcoded
 /// `record.scratch_branch` in the upstream/rev-list checks and so
-/// always saw "no upstream" even when the agent's actual branch had
+/// always saw "no upstream" even when the role's actual branch had
 /// already been pushed and squash-merged on the remote — producing
 /// the spurious "still has uncommitted changes" prompt on every
 /// clean exit.
@@ -1121,7 +1121,7 @@ mod tests {
         write_records(dir.path(), &[r1, r2, r3]).unwrap();
         // All three records assess to PreservedDirty.
         let mut runner = fake_with_outputs(&[" M f1\n", " M f2\n", " M f3\n"]);
-        // Operator: force-delete first, then return-to-agent on second.
+        // Operator: force-delete first, then return-to-role on second.
         // Third should never be prompted.
         let mut p = ScriptedPrompt(VecDeque::from([2, 0]));
         let dec = finalize_foreground_session(
@@ -1277,7 +1277,7 @@ mod tests {
     // ---------------------------------------------------------------
 
     /// Renamed-branch happy path. Scratch branch parked at `base_commit`;
-    /// agent's renamed `feature/x` branch is ahead of base with a
+    /// role's renamed `feature/x` branch is ahead of base with a
     /// reachable upstream and rev-list returns empty (all commits
     /// pushed). Pre-fix this returned `PreservedUnpushed` because the
     /// upstream check was hardcoded against the abandoned scratch
@@ -1316,7 +1316,7 @@ mod tests {
     }
 
     /// Squash-merged-and-pruned branch. Scratch parked at base; the
-    /// agent's `feature/x` branch is ahead with upstream set, but the
+    /// role's `feature/x` branch is ahead with upstream set, but the
     /// upstream-tracking column shows `[gone]` because the remote
     /// branch was deleted after the PR merge and pruned locally. The
     /// `[gone]` heuristic must mark this Safe; pre-fix the rev-list

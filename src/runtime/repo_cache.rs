@@ -1,8 +1,8 @@
 use crate::docker::{CommandRunner, RunOptions};
 use crate::instance::primary_container_name;
 use crate::paths::JackinPaths;
-use crate::repo::{CachedRepo, validate_agent_repo};
-use crate::selector::ClassSelector;
+use crate::repo::{CachedRepo, validate_role_repo};
+use crate::selector::RoleSelector;
 use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
@@ -66,7 +66,7 @@ pub(super) fn is_git_dir(dir: &std::path::Path, runner: &mut impl CommandRunner)
     .is_some()
 }
 
-/// Resolve the agent repository: clone if missing, pull if already present.
+/// Resolve the role repository: clone if missing, pull if already present.
 /// Returns the validated repo metadata and cached repo paths.
 /// Prompt the user to confirm cached-repo removal when running in an
 /// interactive terminal.  Returns `true` when the user accepts.
@@ -82,11 +82,11 @@ pub(super) fn confirm_repo_removal_interactive() -> anyhow::Result<bool> {
 
 pub(super) fn resolve_agent_repo(
     paths: &JackinPaths,
-    selector: &ClassSelector,
+    selector: &RoleSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
     debug: bool,
-) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo, std::fs::File)> {
+) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
     resolve_agent_repo_with(
         paths,
         selector,
@@ -99,16 +99,16 @@ pub(super) fn resolve_agent_repo(
 
 pub(super) fn resolve_agent_repo_with(
     paths: &JackinPaths,
-    selector: &ClassSelector,
+    selector: &RoleSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
     debug: bool,
     confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
-) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedAgentRepo, std::fs::File)> {
+) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
     let cached_repo = CachedRepo::new(paths, selector);
     let repo_parent = cached_repo.repo_dir.parent().ok_or_else(|| {
         anyhow::anyhow!(
-            "agent repo path has no parent: {}",
+            "role repo path has no parent: {}",
             cached_repo.repo_dir.display()
         )
     })?;
@@ -116,7 +116,7 @@ pub(super) fn resolve_agent_repo_with(
 
     // Short-lived lock around git operations on the shared repo directory.
     // Multiple `jackin load` commands may run in parallel for the same
-    // agent class (spawning clones); the lock serializes only the git
+    // role class (spawning clones); the lock serializes only the git
     // clone/fetch/merge so they don't race on the same working tree.
     // The lock is released as soon as the git section completes.
     let lock_path = paths
@@ -143,7 +143,7 @@ pub(super) fn resolve_agent_repo_with(
         if !repo_matches(git_url, &remote_url) {
             let repo_display = cached_repo.repo_dir.display();
             eprintln!(
-                "{} cached agent repo remote does not match configured source",
+                "{} cached role repo remote does not match configured source",
                 "error:".red().bold()
             );
             eprintln!("  expected: {}", git_url.green());
@@ -156,11 +156,11 @@ pub(super) fn resolve_agent_repo_with(
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
                 runner.run("git", &["clone", git_url, &repo_path], None, &git_run_opts)?;
-                let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
+                let validated_repo = validate_role_repo(&cached_repo.repo_dir)?;
                 return Ok((cached_repo, validated_repo, lock_file));
             }
 
-            anyhow::bail!("cached agent repo remote mismatch — aborting");
+            anyhow::bail!("cached role repo remote mismatch — aborting");
         }
 
         let status = runner.capture(
@@ -177,7 +177,7 @@ pub(super) fn resolve_agent_repo_with(
         )?;
         anyhow::ensure!(
             status.is_empty(),
-            "cached agent repo contains local changes or extra files: {}. Remove the cached repo or clean it before loading.",
+            "cached role repo contains local changes or extra files: {}. Remove the cached repo or clean it before loading.",
             cached_repo.repo_dir.display()
         );
 
@@ -202,7 +202,7 @@ pub(super) fn resolve_agent_repo_with(
         runner.run("git", &["clone", git_url, &repo_path], None, &git_run_opts)?;
     }
 
-    let validated_repo = validate_agent_repo(&cached_repo.repo_dir)?;
+    let validated_repo = validate_role_repo(&cached_repo.repo_dir)?;
 
     // Return the repo lock so the caller can hold it until the build
     // context (a snapshot copy of the repo) is created.  This prevents
@@ -216,7 +216,7 @@ mod tests {
     use super::super::test_support::FakeRunner;
     use super::*;
     use crate::paths::JackinPaths;
-    use crate::selector::ClassSelector;
+    use crate::selector::RoleSelector;
     use tempfile::tempdir;
 
     #[test]
@@ -251,7 +251,7 @@ mod tests {
     fn resolve_agent_repo_rejects_cached_repo_with_wrong_remote() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
@@ -260,7 +260,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -283,7 +283,7 @@ plugins = []
         assert!(
             error
                 .to_string()
-                .contains("cached agent repo remote mismatch")
+                .contains("cached role repo remote mismatch")
         );
     }
 
@@ -291,7 +291,7 @@ plugins = []
     fn resolve_agent_repo_recovers_when_user_confirms_removal() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
@@ -300,7 +300,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -330,7 +330,7 @@ plugins = []
                 )
                 .unwrap();
                 std::fs::write(
-                    repo_dir_clone.join("jackin.agent.toml"),
+                    repo_dir_clone.join("jackin.role.toml"),
                     r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -361,7 +361,7 @@ plugins = []
     fn resolve_agent_repo_aborts_when_user_declines_removal() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
@@ -370,7 +370,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -394,7 +394,7 @@ plugins = []
         assert!(
             error
                 .to_string()
-                .contains("cached agent repo remote mismatch")
+                .contains("cached role repo remote mismatch")
         );
         // The cached repo directory should still exist
         assert!(repo_dir.join(".git").is_dir());
@@ -404,7 +404,7 @@ plugins = []
     fn resolve_agent_repo_rejects_cached_repo_with_local_changes() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
@@ -413,7 +413,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -442,7 +442,7 @@ plugins = []
     fn resolve_agent_repo_uses_run_for_clone_after_recovery() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
@@ -451,7 +451,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -473,7 +473,7 @@ plugins = []
                 )
                 .unwrap();
                 std::fs::write(
-                    repo_dir_clone.join("jackin.agent.toml"),
+                    repo_dir_clone.join("jackin.role.toml"),
                     r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -503,7 +503,7 @@ plugins = []
     fn resolve_agent_repo_uses_run_for_pull_on_clean_repo() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let repo_dir = paths.agents_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
@@ -512,7 +512,7 @@ plugins = []
         )
         .unwrap();
         std::fs::write(
-            repo_dir.join("jackin.agent.toml"),
+            repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]

@@ -130,18 +130,18 @@ jackin config auth show --agent agent-smith
 auth_forward = "sync"
 
 # Per-agent override
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "token"
 ```
 
 Resolution order: **per-agent override > global default > `sync`**.
 
 <Aside type="note">
-Auth forwarding is an operator-level setting. Agent manifests (`jackin.agent.toml`) cannot set or override this — it is always the operator's decision.
+Auth forwarding is an operator-level setting. Agent manifests (`jackin.role.toml`) cannot set or override this — it is always the operator's decision.
 </Aside>
 
 ## Codex authentication

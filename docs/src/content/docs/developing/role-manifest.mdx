@@ -1,19 +1,19 @@
 ---
 title: Agent Manifest
-description: "The jackin.agent.toml file that defines an agent"
+description: "The jackin.role.toml file that defines an agent"
 ---
 import { Aside } from '@astrojs/starlight/components'
 
 
 ## Overview
 
-Every agent repo must contain a `jackin.agent.toml` file at the repository root. This manifest tells jackin' how to build, configure, and identify the agent.
+Every role repo must contain a `jackin.role.toml` file at the repository root. This manifest tells jackin' how to build, configure, and identify the agent.
 
 jackin' enforces **strict parsing** — unknown fields are rejected with an error. This catches typos and prevents silent misconfiguration.
 
 ## Full schema
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
 
 [identity]
@@ -70,7 +70,7 @@ The Dockerfile path must:
 
 ## `[harness]`
 
-The optional `[harness]` table declares which AI harnesses this agent class can run. When omitted, jackin treats the manifest as Claude-only.
+The optional `[harness]` table declares which AI harnesses this role can run. When omitted, jackin treats the manifest as Claude-only.
 
 | Field | Required | Description |
 |---|---|---|
@@ -78,7 +78,7 @@ The optional `[harness]` table declares which AI harnesses this agent class can 
 
 Every harness listed in `supported` must have a matching table, even when that table is empty. A manifest with `supported = ["claude", "codex"]` needs both `[claude]` and `[codex]`.
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
 
 [harness]
@@ -100,7 +100,7 @@ model = "gpt-5"
 
 Example values:
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
 
 [claude]
@@ -129,7 +129,7 @@ The `[codex]` table is required when `"codex"` appears in `[harness].supported`.
 |---|---|---|
 | `model` | No | Optional Codex model written into jackin's generated `config.toml` |
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
 
 [harness]
@@ -150,7 +150,7 @@ Each marketplace block declares one Claude marketplace source to register before
 
 Example:
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 [claude]
 plugins = [
   "code-review@claude-plugins-official",
@@ -192,7 +192,7 @@ The script path must:
 
 Example:
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 [hooks]
 pre_launch = "hooks/pre-launch.sh"
 ```
@@ -332,7 +332,7 @@ Interactive prompts happen before the Docker image build, so you won't wait thro
 
 The smallest valid manifest:
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
 
 [claude]
@@ -341,7 +341,7 @@ plugins = []
 
 ## Complete example
 
-```toml [jackin.agent.toml]
+```toml [jackin.role.toml]
 dockerfile = "docker/Dockerfile.agent"
 
 [identity]

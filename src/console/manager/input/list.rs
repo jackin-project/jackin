@@ -35,7 +35,7 @@ pub(super) fn handle_list_key(
         KeyCode::Enter => match state.selected_row() {
             ManagerListRow::CurrentDirectory => {
                 // Launch against cwd. Run-loop routes through the same
-                // agent-picker stage as LaunchNamed.
+                // role-picker stage as LaunchNamed.
                 Ok(InputOutcome::LaunchCurrentDir)
             }
             ManagerListRow::NewWorkspace => {
@@ -163,12 +163,12 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
 
 /// Dispatch a key into whatever modal currently sits on `state.list_modal`.
 /// Today the slot can hold either `Modal::GithubPicker` (opened by `o` on
-/// a workspace row) or `Modal::AgentPicker` (opened by Enter when the
-/// highlighted workspace has multiple eligible agents). Any other variant
+/// a workspace row) or `Modal::RolePicker` (opened by Enter when the
+/// highlighted workspace has multiple eligible roles). Any other variant
 /// that sneaks in is treated as cancel so the operator isn't stuck.
 ///
 /// Returns the resulting `InputOutcome` so the `AgentPicker` commit path
-/// can surface the chosen agent up to `run_console` for launch.
+/// can surface the chosen role up to `run_console` for launch.
 pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some(modal) = state.list_modal.as_mut() else {
         return InputOutcome::Continue;
@@ -192,10 +192,10 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
-        Modal::AgentPicker { state: picker } => match picker.handle_key(key) {
-            ModalOutcome::Commit(agent) => {
+        Modal::RolePicker { state: picker } => match picker.handle_key(key) {
+            ModalOutcome::Commit(role) => {
                 state.list_modal = None;
-                InputOutcome::LaunchWithAgent(agent)
+                InputOutcome::LaunchWithAgent(role)
             }
             ModalOutcome::Cancel => {
                 state.list_modal = None;

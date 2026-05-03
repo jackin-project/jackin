@@ -48,7 +48,7 @@ pub fn inspect_container_state(runner: &mut impl CommandRunner, name: &str) -> C
     }
 }
 
-/// Re-attach to a running agent, or restart a crashed one in place.
+/// Re-attach to a running role, or restart a crashed one in place.
 ///
 /// Behavior by container state:
 ///   - `Running`                  → attach directly.

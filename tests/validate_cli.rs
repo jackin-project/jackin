@@ -11,7 +11,7 @@ fn validate_passes_for_valid_agent_repo() {
     )
     .unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
     )
     .unwrap();
@@ -35,7 +35,7 @@ fn validate_fails_for_wrong_base_image() {
     )
     .unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
     )
     .unwrap();
@@ -59,7 +59,7 @@ fn validate_allows_missing_dockerignore() {
     )
     .unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
     )
     .unwrap();
@@ -82,7 +82,7 @@ fn validate_fails_for_invalid_manifest() {
     )
     .unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         "dockerfile = \"Dockerfile\"\nunknown_field = true\n\n[claude]\nplugins = []\n",
     )
     .unwrap();
@@ -102,13 +102,13 @@ fn validate_passes_when_manifest_uses_dockerfile_in_subdirectory() {
     let temp = tempdir().unwrap();
     std::fs::create_dir_all(temp.path().join("docker")).unwrap();
     std::fs::write(
-        temp.path().join("docker/agent.Dockerfile"),
+        temp.path().join("docker/role.Dockerfile"),
         "FROM projectjackin/construct:trixie\nRUN echo hello\n",
     )
     .unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
-        "dockerfile = \"docker/agent.Dockerfile\"\n\n[claude]\nplugins = []\n",
+        temp.path().join("jackin.role.toml"),
+        "dockerfile = \"docker/role.Dockerfile\"\n\n[claude]\nplugins = []\n",
     )
     .unwrap();
 
@@ -129,7 +129,7 @@ fn validate_fails_for_invalid_pre_launch_hook() {
     )
     .unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         "dockerfile = \"Dockerfile\"\n\n[hooks]\npre_launch = \"hooks/pre-launch.sh\"\n\n[claude]\nplugins = []\n",
     )
     .unwrap();

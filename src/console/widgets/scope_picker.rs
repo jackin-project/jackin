@@ -1,4 +1,4 @@
-//! Workspace-vs-specific-agent choice for the Secrets-tab Add flow.
+//! Workspace-vs-specific-role choice for the Secrets-tab Add flow.
 
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -106,9 +106,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ScopePickerState) {
     };
 
     let button_line = Line::from(vec![
-        Span::styled("  All agents  ", all_style),
+        Span::styled("  All roles  ", all_style),
         Span::raw("    "),
-        Span::styled("  Specific agent  ", specific_style),
+        Span::styled("  Specific role  ", specific_style),
     ]);
     frame.render_widget(
         Paragraph::new(button_line).alignment(Alignment::Center),

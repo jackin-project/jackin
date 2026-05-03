@@ -32,7 +32,7 @@ pub fn detect_workspace_edit_drift(
     runner: &mut impl crate::docker::CommandRunner,
 ) -> anyhow::Result<DriftDetection> {
     let records = list_records_for_workspace(&paths.data_dir, workspace_name)?;
-    let running = crate::runtime::list_agent_names(runner, false).unwrap_or_default();
+    let running = crate::runtime::list_role_names(runner, false).unwrap_or_default();
 
     let mut affected_running = Vec::new();
     let mut affected_stopped = Vec::new();
@@ -155,22 +155,22 @@ impl AppConfig {
 
         for selector in edit.allowed_agents_to_add {
             if !workspace
-                .allowed_agents
+                .allowed_roles
                 .iter()
                 .any(|existing| existing == &selector)
             {
-                workspace.allowed_agents.push(selector);
+                workspace.allowed_roles.push(selector);
             }
         }
 
         for selector in edit.allowed_agents_to_remove {
             workspace
-                .allowed_agents
+                .allowed_roles
                 .retain(|existing| existing != &selector);
         }
 
-        if let Some(default_agent) = edit.default_agent {
-            workspace.default_agent = default_agent;
+        if let Some(default_role) = edit.default_role {
+            workspace.default_role = default_role;
         }
 
         if let Some(harness) = edit.harness {
@@ -259,12 +259,12 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec!["agent-smith".to_string()],
-            default_agent: Some("agent-smith".to_string()),
+            allowed_roles: vec!["agent-smith".to_string()],
+            default_role: Some("agent-smith".to_string()),
             harness: None,
-            last_agent: None,
+            last_role: None,
             env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
         };
         config
@@ -441,8 +441,8 @@ mod tests {
                         readonly: true,
                         isolation: crate::isolation::MountIsolation::Shared,
                     }],
-                    allowed_agents: vec!["agent-smith".to_string()],
-                    default_agent: Some("agent-smith".to_string()),
+                    allowed_roles: vec!["agent-smith".to_string()],
+                    default_role: Some("agent-smith".to_string()),
                     ..Default::default()
                 },
             )

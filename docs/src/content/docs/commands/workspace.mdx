@@ -11,7 +11,7 @@ jackin workspace <SUBCOMMAND>
 
 Create, list, modify, and delete saved workspace definitions.
 
-A workspace describes project access, not agent tooling. It answers: which host paths should be mounted into the container, and which agent classes are allowed to use that layout?
+A workspace describes project access, not agent tooling. It answers: which host paths should be mounted into the container, and which roles are allowed to use that layout?
 
 ## Subcommands
 
@@ -28,8 +28,8 @@ Create a new workspace definition.
 | `--workdir <PATH>` | Working directory (auto-mounted at the same path by default) |
 | `--mount <SPEC>` | Additional bind-mount spec (repeatable) |
 | `--no-workdir-mount` | Don't auto-mount the workdir |
-| `--allowed-agent <NAME>` | Restrict to these agent classes (repeatable) |
-| `--default-agent <NAME>` | Agent class to auto-select |
+| `--allowed-role <NAME>` | Restrict to these roles (repeatable) |
+| `--default-role <NAME>` | Role to auto-select |
 | `--harness <claude\|codex>` | Default harness for this workspace |
 | `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared` or `worktree`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
 | `--keep-awake` | macOS only: opt this workspace into the keep-awake reconciler. While any agent in the workspace is running, jackin keeps a single detached `caffeinate -imsu` alive so the host stays awake. No-op on Linux/Windows. See [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake). |
@@ -39,7 +39,7 @@ jackin workspace create my-app --workdir ~/Projects/my-app
 jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
 jackin workspace create codex-app --workdir ~/Projects/codex-app --harness codex
 jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
-jackin workspace create restricted --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith
+jackin workspace create restricted --workdir ~/app --allowed-role agent-smith --default-role agent-smith
 jackin workspace create remote --workdir ~/Projects/remote --keep-awake
 
 # Isolated source mount + shared cache child
@@ -82,10 +82,10 @@ Modify an existing workspace.
 | `--workdir <PATH>` | Update the working directory |
 | `--mount <SPEC>` | Add a mount (repeatable) |
 | `--remove-destination <PATH>` | Remove a mount by container path (repeatable) |
-| `--allowed-agent <NAME>` | Grant agent class access (repeatable) |
-| `--remove-allowed-agent <NAME>` | Revoke agent class access (repeatable) |
-| `--default-agent <NAME>` | Set default agent |
-| `--clear-default-agent` | Clear the default agent |
+| `--allowed-role <NAME>` | Grant role access (repeatable) |
+| `--remove-allowed-role <NAME>` | Revoke role access (repeatable) |
+| `--default-role <NAME>` | Set default agent |
+| `--clear-default-role` | Clear the default agent |
 | `--harness <claude\|codex>` | Set default harness |
 | `--clear-harness` | Clear the explicit harness and fall back to Claude |
 | `--mount-isolation <DST>=<TYPE>` | Set isolation for a mount destination (repeatable). Can target an existing mount or a mount being upserted in the same command. |
@@ -97,9 +97,9 @@ Modify an existing workspace.
 jackin workspace edit my-app --workdir ~/new-dir
 jackin workspace edit my-app --mount ~/cache:/cache:ro
 jackin workspace edit my-app --remove-destination /old-mount
-jackin workspace edit my-app --allowed-agent chainargos/backend-engineer
-jackin workspace edit my-app --default-agent agent-smith
-jackin workspace edit my-app --clear-default-agent
+jackin workspace edit my-app --allowed-role chainargos/backend-engineer
+jackin workspace edit my-app --default-role agent-smith
+jackin workspace edit my-app --clear-default-role
 jackin workspace edit my-app --harness codex
 jackin workspace edit my-app --clear-harness
 jackin workspace edit my-app --keep-awake

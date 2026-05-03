@@ -26,15 +26,15 @@ An **agent** is an AI coding runtime (like Claude Code) running inside an isolat
 - Has Docker-in-Docker (DinD) enabled, so it can build and run Docker containers inside its own container
 - Persists its state between sessions (Claude history, settings, GitHub CLI auth/config, plugins)
 
-### Agent classes
+### Roles
 
-An agent **class** is a reusable tool profile for creating agent containers. It's defined by a GitHub repository that contains a Dockerfile and a manifest file (`jackin.agent.toml`). For example:
+An agent **class** is a reusable tool profile for creating agent containers. It's defined by a GitHub repository that contains a Dockerfile and a manifest file (`jackin.role.toml`). For example:
 
-- `agent-smith` — the default agent class
+- `agent-smith` — the default role
 - `the-architect` — an agent with the full Rust toolchain (used for jackin' development)
 - `chainargos/backend-engineer` — a namespaced agent for backend work in the chainargos organization
 
-The name `agent-smith` is just a project-specific example. In practice, agent class names can reflect the job they are designed for:
+The name `agent-smith` is just a project-specific example. In practice, role names can reflect the job they are designed for:
 
 - `frontend-engineer`
 - `backend-engineer`
@@ -44,18 +44,18 @@ The name `agent-smith` is just a project-specific example. In practice, agent cl
 
 When you run `jackin load agent-smith`, jackin' clones the `jackin-agent-smith` repository, builds a Docker image from it, and launches a container.
 
-Think of an agent class as answering: "What kind of agent is this?"
+Think of an role as answering: "What kind of agent is this?"
 
 - Which language toolchains are installed?
 - Which shell setup or helper scripts are present?
 - Which Claude plugins are installed?
 - Which defaults should this agent start with?
 
-One project may intentionally use several agent classes. That is not redundancy. It is how you keep the agent's world focused. A frontend-oriented class can carry UI tooling and plugins, while a backend-oriented class can carry server tooling and database clients, even if both point at the same workspace. The smaller and more relevant that environment is, the less out-of-scope context the agent has to inspect.
+One project may intentionally use several roles. That is not redundancy. It is how you keep the agent's world focused. A frontend-oriented class can carry UI tooling and plugins, while a backend-oriented class can carry server tooling and database clients, even if both point at the same workspace. The smaller and more relevant that environment is, the less out-of-scope context the agent has to inspect.
 
 ### Agent instances
 
-A single agent class can have multiple running **instances**. Each instance is a separate container with its own state. This lets you run the same agent type against different workspaces simultaneously.
+A single role can have multiple running **instances**. Each instance is a separate container with its own state. This lets you run the same agent type against different workspaces simultaneously.
 
 ## The construct
 
@@ -78,7 +78,7 @@ The construct provides:
 | **zsh + Oh My Zsh** | Shell environment with autosuggestions |
 | **Starship prompt** | Informative terminal prompt |
 
-Agent repos extend the construct with their own tools. For example, an agent for Rust development would add the Rust toolchain on top of the construct.
+Role repos extend the construct with their own tools. For example, an agent for Rust development would add the Rust toolchain on top of the construct.
 
 ## Docker-in-Docker (DinD)
 
@@ -99,19 +99,19 @@ A **workspace** defines how your project directories are mounted into an agent c
 
 - **workdir** — the working directory inside the container
 - **mounts** — which host directories to mount, where, and with what permissions
-- **allowed agents** — optionally restrict which agent classes can use this workspace
-- **default agent** — which agent class to auto-select when loading this workspace
+- **allowed agents** — optionally restrict which roles can use this workspace
+- **default agent** — which role to auto-select when loading this workspace
 
 Think of a workspace as answering: "Which project files can this agent see, and where do they appear in the container?"
 
-This is why agent classes and workspaces are separate instead of being one concept.
+This is why roles and workspaces are separate instead of being one concept.
 
-- agent class = the environment
+- role = the environment
 - workspace = the accessible files
 
 That separation gives you two kinds of control. You can keep the same project boundary while changing the agent's tool profile, or keep the same tool profile while changing the project boundary.
 
-Example: one monorepo workspace can be shared by two different agent classes.
+Example: one monorepo workspace can be shared by two different roles.
 
 - `chainargos/frontend-engineer` sees the monorepo files and has Node, Playwright, and UI plugins
 - `chainargos/backend-engineer` sees the same monorepo files but has Rust, Postgres tools, and backend-specific plugins
@@ -152,11 +152,11 @@ When you stop and restart an agent, it picks up where it left off. Use `jackin p
 Here's what happens when you run `jackin load agent-smith ~/Projects/my-app`:
 
 ```
-1. Resolve agent class "agent-smith"
+1. Resolve role "agent-smith"
    └─ Clone/update github.com/jackin-project/jackin-agent-smith
 
-2. Validate agent repo contract
-   └─ Check jackin.agent.toml and Dockerfile
+2. Validate role repo contract
+   └─ Check jackin.role.toml and Dockerfile
 
 3. Generate derived Dockerfile
    └─ Construct base → Agent layer → Claude install → Entrypoint

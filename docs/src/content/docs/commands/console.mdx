@@ -50,9 +50,9 @@ If your current directory falls under a saved workspace's host `workdir` or one 
 
 Pressing `Enter` on a workspace row routes by eligible-agent count:
 
-- **`default_agent` set** on the workspace → launch immediately with that
+- **`default_role` set** on the workspace → launch immediately with that
   agent. No picker.
-- **Exactly one eligible agent** (after the workspace's `allowed_agents`
+- **Exactly one eligible agent** (after the workspace's `allowed_roles`
   filter) → launch immediately with it. No picker.
 - **Multiple eligible agents and no default** → an inline `Select Agent`
   picker overlays the manager list. Type to filter, `↑`/`↓` to navigate,
@@ -96,7 +96,7 @@ which one (if any) is the default.
 
 - **Allow / disallow** — `Space` on an agent row toggles whether the
   agent is allowed in this workspace. The `[x]` / `[ ]` glyph reflects
-  the *effective* allow-state: an empty `allowed_agents` list is the
+  the *effective* allow-state: an empty `allowed_roles` list is the
   shorthand for "all agents allowed", and every row reads `[x]` in that
   mode.
 - **Default agent** — `*` on an allowed agent row pins it as the
@@ -112,7 +112,7 @@ which one (if any) is the default.
 | `Space` on agent row | Toggle allow / disallow |
 | `*` on allowed agent | Set as default (or clear if already default) |
 
-The default-agent assignment used to live as a read-only row on the
+The default-role assignment used to live as a read-only row on the
 General tab; it is now editable here. The General tab now shows only
 `Name` and `Working dir`.
 

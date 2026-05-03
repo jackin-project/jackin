@@ -679,8 +679,8 @@ Use this shape (adapt `AppConfig::default()` / workspace construction to match e
                         dst: "/a".into(),
                         readonly: false,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
+                    allowed_roles: vec![],
+                    default_role: None,
                     last_agent: None,
                 },
             )
@@ -718,8 +718,8 @@ Use this shape (adapt `AppConfig::default()` / workspace construction to match e
                         dst: "/a/b".into(),
                         readonly: true,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
+                    allowed_roles: vec![],
+                    default_role: None,
                     last_agent: None,
                 },
             )
@@ -760,8 +760,8 @@ Use this shape (adapt `AppConfig::default()` / workspace construction to match e
                         MountConfig { src: "/a/b".into(), dst: "/a/b".into(), readonly: false },
                         MountConfig { src: "/a/c".into(), dst: "/a/c".into(), readonly: false },
                     ],
-                    allowed_agents: vec![],
-                    default_agent: None,
+                    allowed_roles: vec![],
+                    default_role: None,
                     last_agent: None,
                 },
             )
@@ -805,8 +805,8 @@ Use this shape (adapt `AppConfig::default()` / workspace construction to match e
                     MountConfig { src: "/a".into(), dst: "/a".into(), readonly: false },
                     MountConfig { src: "/a/b".into(), dst: "/a/b".into(), readonly: false },
                 ],
-                allowed_agents: vec![],
-                default_agent: None,
+                allowed_roles: vec![],
+                default_role: None,
                 last_agent: None,
             },
         );
@@ -940,8 +940,8 @@ Append to the config tests module:
                         MountConfig { src: "/a".into(), dst: "/a".into(), readonly: false },
                         MountConfig { src: "/a/b".into(), dst: "/a/b".into(), readonly: false },
                     ],
-                    allowed_agents: vec![],
-                    default_agent: None,
+                    allowed_roles: vec![],
+                    default_role: None,
                     last_agent: None,
                 },
             )
@@ -964,8 +964,8 @@ Append to the config tests module:
                         MountConfig { src: "/a".into(), dst: "/a".into(), readonly: false },
                         MountConfig { src: "/a/b".into(), dst: "/a/b".into(), readonly: true },
                     ],
-                    allowed_agents: vec![],
-                    default_agent: None,
+                    allowed_roles: vec![],
+                    default_role: None,
                     last_agent: None,
                 },
             )
@@ -989,8 +989,8 @@ Append to the config tests module:
                         dst: "/a".into(),
                         readonly: false,
                     }],
-                    allowed_agents: vec![],
-                    default_agent: None,
+                    allowed_roles: vec![],
+                    default_role: None,
                     last_agent: None,
                 },
             )
@@ -1112,8 +1112,8 @@ Open `src/lib.rs` at the `WorkspaceCommand::Create` handler (line 610). Replace 
                     WorkspaceConfig {
                         workdir: expanded_workdir,
                         mounts: final_mounts,
-                        allowed_agents,
-                        default_agent,
+                        allowed_roles,
+                        default_role,
                         last_agent: None,
                     },
                 )?;
@@ -1259,9 +1259,9 @@ Open `src/lib.rs` at the `WorkspaceCommand::Edit { ... }` match arm (starts arou
                 mounts,
                 remove_destinations,
                 no_workdir_mount,
-                allowed_agents,
+                allowed_roles,
                 remove_allowed_agents,
-                default_agent,
+                default_role,
                 clear_default_agent,
                 assume_yes,
                 prune,
@@ -1485,7 +1485,7 @@ Replace the handler body with:
                 if no_workdir_mount {
                     changes.push("removed workdir auto-mount".to_string());
                 }
-                for agent in &allowed_agents {
+                for agent in &allowed_roles {
                     changes.push(format!("allowed agent {agent}"));
                 }
                 for agent in &remove_allowed_agents {
@@ -1493,7 +1493,7 @@ Replace the handler body with:
                 }
                 if clear_default_agent {
                     changes.push("cleared default agent".to_string());
-                } else if let Some(ref agent) = default_agent {
+                } else if let Some(ref agent) = default_role {
                     changes.push(format!("default agent → {agent}"));
                 }
 
@@ -1504,12 +1504,12 @@ Replace the handler body with:
                         upsert_mounts,
                         remove_destinations: effective_removes,
                         no_workdir_mount,
-                        allowed_agents_to_add: allowed_agents,
+                        allowed_agents_to_add: allowed_roles,
                         allowed_agents_to_remove: remove_allowed_agents,
-                        default_agent: if clear_default_agent {
+                        default_role: if clear_default_agent {
                             Some(None)
                         } else {
-                            default_agent.map(Some)
+                            default_role.map(Some)
                         },
                     },
                 )?;
@@ -2051,7 +2051,7 @@ readonly = false
     jackin(&env)
         .args([
             "workspace", "edit", "test",
-            "--allowed-agent", "some-agent",
+            "--allowed-role", "some-agent",
         ])
         .assert()
         .failure()
@@ -2090,7 +2090,7 @@ readonly = false
     jackin(&env)
         .args([
             "workspace", "edit", "test",
-            "--allowed-agent", "some-agent",
+            "--allowed-role", "some-agent",
             "--prune",
             "--yes",
         ])

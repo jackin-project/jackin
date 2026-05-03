@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use std::io::ErrorKind;
 use std::path::Path;
 
-use crate::cli::agent::{ConsoleArgs, HardlineArgs, LoadArgs};
 use crate::cli::cleanup::{EjectArgs, PurgeArgs};
+use crate::cli::role::{ConsoleArgs, HardlineArgs, LoadArgs};
 use crate::cli::{self, Cli, Command, WorkspaceCommand};
 use crate::config::{self, AppConfig};
 use crate::console;
@@ -13,7 +13,7 @@ use crate::docker::ShellRunner;
 use crate::instance;
 use crate::paths::JackinPaths;
 use crate::runtime;
-use crate::selector::{ClassSelector, Selector};
+use crate::selector::{RoleSelector, Selector};
 use crate::tui;
 use crate::workspace::{
     self, LoadWorkspaceInput, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved,
@@ -66,7 +66,7 @@ pub fn run(cli: Cli) -> Result<()> {
             let cwd = std::env::current_dir()?;
 
             let (class, workspace_input) = if let Some(sel) = selector {
-                let class = ClassSelector::parse(&sel)?;
+                let class = RoleSelector::parse(&sel)?;
                 let input = match target {
                     None => LoadWorkspaceInput::CurrentDir,
                     Some(t) => match classify_target(&t) {
@@ -76,7 +76,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 };
                 (class, input)
             } else {
-                // No selector — resolve agent from workspace context
+                // No selector — resolve role from workspace context
                 resolve_agent_from_context(&config, &cwd)?
             };
 
@@ -108,12 +108,12 @@ pub fn run(cli: Cli) -> Result<()> {
             let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
             opts.force = force;
             opts.harness = harness;
-            // Pre-launch reconcile: if a previous agent in a keep_awake
+            // Pre-launch reconcile: if a previous role in a keep_awake
             // workspace already runs, ensure caffeinate is up before we
             // build/launch (so a long Docker build doesn't see the host
-            // sleep). Post-launch reconcile below catches the new agent.
+            // sleep). Post-launch reconcile below catches the new role.
             runtime::reconcile_keep_awake(&paths, &mut runner);
-            let result = runtime::load_agent(
+            let result = runtime::load_role(
                 &paths,
                 &mut config,
                 &class,
@@ -151,7 +151,7 @@ pub fn run(cli: Cli) -> Result<()> {
             let opts = runtime::LoadOptions::for_launch(debug);
             runtime::reconcile_keep_awake(&paths, &mut runner);
             let result =
-                runtime::load_agent(&paths, &mut config, &class, &workspace, &mut runner, &opts);
+                runtime::load_role(&paths, &mut config, &class, &workspace, &mut runner, &opts);
             remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
             runtime::reconcile_keep_awake(&paths, &mut runner);
             result
@@ -160,7 +160,7 @@ pub fn run(cli: Cli) -> Result<()> {
             let container = if let Some(sel) = selector {
                 match Selector::parse(&sel)? {
                     Selector::Container(name) => name,
-                    Selector::Class(class) => instance::primary_container_name(&class),
+                    Selector::Role(class) => instance::primary_container_name(&class),
                 }
             } else {
                 let cwd = std::env::current_dir()?;
@@ -178,11 +178,11 @@ pub fn run(cli: Cli) -> Result<()> {
         }) => {
             let containers = match Selector::parse(&selector)? {
                 Selector::Container(container) => vec![container],
-                Selector::Class(class) => {
+                Selector::Role(class) => {
                     if all {
                         runtime::matching_family(
                             &class,
-                            &runtime::list_managed_agent_names(&mut runner)?,
+                            &runtime::list_managed_role_names(&mut runner)?,
                         )
                     } else {
                         vec![instance::primary_container_name(&class)]
@@ -195,10 +195,10 @@ pub fn run(cli: Cli) -> Result<()> {
             // earlier containers were already removed.
             let result: anyhow::Result<()> = (|| {
                 if containers.is_empty() {
-                    println!("No matching agents found.");
+                    println!("No matching roles found.");
                 } else {
                     for container in &containers {
-                        runtime::eject_agent(container, &mut runner)
+                        runtime::eject_role(container, &mut runner)
                             .with_context(|| format!("ejecting {container}"))?;
                         if purge {
                             crate::isolation::cleanup::purge_isolated_for_container(
@@ -220,13 +220,13 @@ pub fn run(cli: Cli) -> Result<()> {
             result
         }
         Command::Exile => {
-            let names = runtime::list_managed_agent_names(&mut runner)?;
+            let names = runtime::list_managed_role_names(&mut runner)?;
             let result: anyhow::Result<()> = (|| {
                 if names.is_empty() {
-                    println!("No agents running.");
+                    println!("No roles running.");
                 } else {
                     for name in &names {
-                        runtime::eject_agent(name, &mut runner)
+                        runtime::eject_role(name, &mut runner)
                             .with_context(|| format!("ejecting {name}"))?;
                         println!("Ejected {name}.");
                     }
@@ -314,14 +314,14 @@ pub fn run(cli: Cli) -> Result<()> {
             },
             cli::ConfigCommand::Trust(trust_cmd) => match trust_cmd {
                 cli::TrustCommand::Grant { selector } => {
-                    let class = ClassSelector::parse(&selector)?;
-                    config.resolve_agent_source(&class)?;
-                    let was_trusted = config.agents.get(&class.key()).is_some_and(|a| a.trusted);
+                    let class = RoleSelector::parse(&selector)?;
+                    config.resolve_role_source(&class)?;
+                    let was_trusted = config.roles.get(&class.key()).is_some_and(|a| a.trusted);
                     if was_trusted {
                         println!("{} is already trusted.", class.key());
                     } else {
                         let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                        if let Some(source) = config.agents.get(&class.key()) {
+                        if let Some(source) = config.roles.get(&class.key()) {
                             editor.upsert_agent_source(&class.key(), source);
                         }
                         editor.set_agent_trust(&class.key(), true);
@@ -331,11 +331,11 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
                 cli::TrustCommand::Revoke { selector } => {
-                    let class = ClassSelector::parse(&selector)?;
+                    let class = RoleSelector::parse(&selector)?;
                     if AppConfig::is_builtin_agent(&class.key()) {
-                        anyhow::bail!("{} is a built-in agent and is always trusted.", class.key());
+                        anyhow::bail!("{} is a built-in role and is always trusted.", class.key());
                     }
-                    let was_trusted = config.agents.get(&class.key()).is_some_and(|a| a.trusted);
+                    let was_trusted = config.roles.get(&class.key()).is_some_and(|a| a.trusted);
                     if was_trusted {
                         let mut editor = crate::config::ConfigEditor::open(&paths)?;
                         editor.set_agent_trust(&class.key(), false);
@@ -347,16 +347,16 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
                 cli::TrustCommand::List => {
-                    let agents: Vec<_> = config
-                        .agents
+                    let roles: Vec<_> = config
+                        .roles
                         .iter()
                         .filter(|(_, source)| source.trusted)
                         .map(|(key, _)| key.clone())
                         .collect();
-                    if agents.is_empty() {
-                        println!("No trusted agents.");
+                    if roles.is_empty() {
+                        println!("No trusted roles.");
                     } else {
-                        for key in agents {
+                        for key in roles {
                             println!("{key}");
                         }
                     }
@@ -364,18 +364,18 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
             },
             cli::ConfigCommand::Auth(auth_cmd) => match auth_cmd {
-                cli::AuthCommand::Set { mode, agent } => {
+                cli::AuthCommand::Set { mode, role } => {
                     let (parsed_mode, was_deprecated) = parse_auth_forward_mode_from_cli(&mode)?;
                     if was_deprecated {
                         tui::deprecation_warning(
                             "auth_forward \"copy\" is deprecated; saving as \"sync\"",
                         );
                     }
-                    if let Some(agent_selector) = agent {
-                        let class = ClassSelector::parse(&agent_selector)?;
-                        config.resolve_agent_source(&class)?;
+                    if let Some(role_selector) = role {
+                        let class = RoleSelector::parse(&role_selector)?;
+                        config.resolve_role_source(&class)?;
                         let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                        if let Some(source) = config.agents.get(&class.key()) {
+                        if let Some(source) = config.roles.get(&class.key()) {
                             editor.upsert_agent_source(&class.key(), source);
                         }
                         editor.set_agent_auth_forward(&class.key(), parsed_mode);
@@ -389,9 +389,9 @@ pub fn run(cli: Cli) -> Result<()> {
                     }
                     Ok(())
                 }
-                cli::AuthCommand::Show { agent } => {
-                    if let Some(agent_selector) = agent {
-                        let class = ClassSelector::parse(&agent_selector)?;
+                cli::AuthCommand::Show { role } => {
+                    if let Some(role_selector) = role {
+                        let class = RoleSelector::parse(&role_selector)?;
                         let effective = config.resolve_auth_forward_mode(&class.key());
                         println!("{effective}");
                     } else {
@@ -404,7 +404,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 cli::EnvCommand::Set {
                     key,
                     value,
-                    agent,
+                    role,
                     comment,
                 } => {
                     if key.is_empty() {
@@ -415,17 +415,17 @@ pub fn run(cli: Cli) -> Result<()> {
                             "env name {key:?} is reserved by the jackin runtime and cannot be set"
                         );
                     }
-                    if let Some(ref agent_key) = agent
-                        && !config.agents.contains_key(agent_key)
+                    if let Some(ref agent_key) = role
+                        && !config.roles.contains_key(agent_key)
                     {
                         anyhow::bail!(
-                            "agent {agent_key:?} is not registered; register it with \
-                             `jackin agent register` (or run a command that resolves it) \
-                             before setting agent-scoped env vars"
+                            "role {agent_key:?} is not registered; register it with \
+                             `jackin role register` (or run a command that resolves it) \
+                             before setting role-scoped env vars"
                         );
                     }
                     let env_value = resolve_env_value_for_cli(&value)?;
-                    let scope = agent.map_or(config::EnvScope::Global, config::EnvScope::Agent);
+                    let scope = role.map_or(config::EnvScope::Global, config::EnvScope::Role);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.set_env_var(&scope, &key, env_value)?;
                     if let Some(ref c) = comment {
@@ -435,11 +435,11 @@ pub fn run(cli: Cli) -> Result<()> {
                     println!("Set {key}.");
                     Ok(())
                 }
-                cli::EnvCommand::Unset { key, agent } => {
+                cli::EnvCommand::Unset { key, role } => {
                     if key.is_empty() {
                         anyhow::bail!("env var key cannot be empty");
                     }
-                    let scope = agent.map_or(config::EnvScope::Global, config::EnvScope::Agent);
+                    let scope = role.map_or(config::EnvScope::Global, config::EnvScope::Role);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     if editor.remove_env_var(&scope, &key) {
                         editor.save()?;
@@ -450,8 +450,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     }
                     Ok(())
                 }
-                cli::EnvCommand::List { agent } => {
-                    let vars: Vec<(String, String)> = agent.as_ref().map_or_else(
+                cli::EnvCommand::List { role } => {
+                    let vars: Vec<(String, String)> = role.as_ref().map_or_else(
                         || {
                             config
                                 .env
@@ -460,7 +460,7 @@ pub fn run(cli: Cli) -> Result<()> {
                                 .collect()
                         },
                         |a| {
-                            config.agents.get(a).map_or_else(Vec::new, |src| {
+                            config.roles.get(a).map_or_else(Vec::new, |src| {
                                 src.env
                                     .iter()
                                     .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
@@ -479,8 +479,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 workdir,
                 mounts,
                 no_workdir_mount,
-                allowed_agents,
-                default_agent,
+                allowed_roles,
+                default_role,
                 harness,
                 mount_isolation,
                 keep_awake,
@@ -518,12 +518,12 @@ pub fn run(cli: Cli) -> Result<()> {
                 let ws = WorkspaceConfig {
                     workdir: expanded_workdir,
                     mounts: plan.final_mounts,
-                    allowed_agents,
-                    default_agent,
+                    allowed_roles,
+                    default_role,
                     harness,
-                    last_agent: None,
+                    last_role: None,
                     env: std::collections::BTreeMap::new(),
-                    agents: std::collections::BTreeMap::new(),
+                    roles: std::collections::BTreeMap::new(),
                     keep_awake: crate::workspace::KeepAwakeConfig {
                         enabled: keep_awake,
                     },
@@ -557,10 +557,10 @@ pub fn run(cli: Cli) -> Result<()> {
                         workdir: String,
                         #[tabled(rename = "Mounts")]
                         mounts: usize,
-                        #[tabled(rename = "Allowed Agents")]
+                        #[tabled(rename = "Allowed Roles")]
                         allowed: String,
-                        #[tabled(rename = "Default Agent")]
-                        default_agent: String,
+                        #[tabled(rename = "Default Role")]
+                        default_role: String,
                         #[tabled(rename = "Harness")]
                         harness: String,
                     }
@@ -570,16 +570,12 @@ pub fn run(cli: Cli) -> Result<()> {
                             name: (*name).to_string(),
                             workdir: tui::shorten_home(&ws.workdir),
                             mounts: ws.mounts.len(),
-                            allowed: if ws.allowed_agents.is_empty() {
-                                "any agent".to_string()
+                            allowed: if ws.allowed_roles.is_empty() {
+                                "any role".to_string()
                             } else {
-                                ws.allowed_agents.join(", ")
+                                ws.allowed_roles.join(", ")
                             },
-                            default_agent: ws
-                                .default_agent
-                                .as_deref()
-                                .unwrap_or("none")
-                                .to_string(),
+                            default_role: ws.default_role.as_deref().unwrap_or("none").to_string(),
                             harness: ws.resolved_harness().slug().to_string(),
                         })
                         .collect();
@@ -602,9 +598,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 mounts,
                 remove_destinations,
                 no_workdir_mount,
-                allowed_agents,
+                allowed_roles,
                 remove_allowed_agents,
-                default_agent,
+                default_role,
                 clear_default_agent,
                 harness,
                 clear_harness,
@@ -734,16 +730,16 @@ pub fn run(cli: Cli) -> Result<()> {
                 if no_workdir_mount {
                     changes.push("removed workdir auto-mount".to_string());
                 }
-                for agent in &allowed_agents {
-                    changes.push(format!("allowed agent {agent}"));
+                for role in &allowed_roles {
+                    changes.push(format!("allowed role {role}"));
                 }
-                for agent in &remove_allowed_agents {
-                    changes.push(format!("removed agent {agent}"));
+                for role in &remove_allowed_agents {
+                    changes.push(format!("removed role {role}"));
                 }
                 if clear_default_agent {
-                    changes.push("cleared default agent".to_string());
-                } else if let Some(ref agent) = default_agent {
-                    changes.push(format!("default agent → {agent}"));
+                    changes.push("cleared default role".to_string());
+                } else if let Some(ref role) = default_role {
+                    changes.push(format!("default role → {role}"));
                 }
                 if clear_harness {
                     changes.push("cleared harness".to_string());
@@ -823,12 +819,12 @@ pub fn run(cli: Cli) -> Result<()> {
                         upsert_mounts,
                         remove_destinations: plan.effective_removals,
                         no_workdir_mount,
-                        allowed_agents_to_add: allowed_agents,
+                        allowed_agents_to_add: allowed_roles,
                         allowed_agents_to_remove: remove_allowed_agents,
-                        default_agent: if clear_default_agent {
+                        default_role: if clear_default_agent {
                             Some(None)
                         } else {
-                            default_agent.map(Some)
+                            default_role.map(Some)
                         },
                         harness: if clear_harness {
                             Some(None)
@@ -909,7 +905,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     workspace,
                     key,
                     value,
-                    agent,
+                    role,
                     comment,
                 } => {
                     if key.is_empty() {
@@ -921,17 +917,17 @@ pub fn run(cli: Cli) -> Result<()> {
                         );
                     }
                     config.require_workspace(&workspace)?;
-                    if let Some(ref agent_key) = agent
-                        && !config.agents.contains_key(agent_key)
+                    if let Some(ref agent_key) = role
+                        && !config.roles.contains_key(agent_key)
                     {
                         anyhow::bail!(
-                            "agent {agent_key:?} is not registered; register it with \
-                             `jackin agent register` (or run a command that resolves it) \
-                             before setting agent-scoped env vars"
+                            "role {agent_key:?} is not registered; register it with \
+                             `jackin role register` (or run a command that resolves it) \
+                             before setting role-scoped env vars"
                         );
                     }
                     let env_value = resolve_env_value_for_cli(&value)?;
-                    let scope = workspace_env_scope(workspace, agent);
+                    let scope = workspace_env_scope(workspace, role);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.set_env_var(&scope, &key, env_value)?;
                     if let Some(ref c) = comment {
@@ -944,13 +940,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 cli::WorkspaceEnvCommand::Unset {
                     workspace,
                     key,
-                    agent,
+                    role,
                 } => {
                     if key.is_empty() {
                         anyhow::bail!("env var key cannot be empty");
                     }
                     config.require_workspace(&workspace)?;
-                    let scope = workspace_env_scope(workspace, agent);
+                    let scope = workspace_env_scope(workspace, role);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     if editor.remove_env_var(&scope, &key) {
                         editor.save()?;
@@ -961,9 +957,9 @@ pub fn run(cli: Cli) -> Result<()> {
                     }
                     Ok(())
                 }
-                cli::WorkspaceEnvCommand::List { workspace, agent } => {
+                cli::WorkspaceEnvCommand::List { workspace, role } => {
                     let ws = config.require_workspace(&workspace)?;
-                    let vars: Vec<(String, String)> = agent.as_ref().map_or_else(
+                    let vars: Vec<(String, String)> = role.as_ref().map_or_else(
                         || {
                             ws.env
                                 .iter()
@@ -971,7 +967,7 @@ pub fn run(cli: Cli) -> Result<()> {
                                 .collect()
                         },
                         |a| {
-                            ws.agents.get(a).map_or_else(Vec::new, |ov| {
+                            ws.roles.get(a).map_or_else(Vec::new, |ov| {
                                 ov.env
                                     .iter()
                                     .map(|(k, v)| (k.clone(), v.as_display_str().to_string()))
@@ -987,7 +983,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Command::Purge(PurgeArgs { selector, all }) => match Selector::parse(&selector)? {
             Selector::Container(container) => {
                 let short_name = container.trim_start_matches("jackin-");
-                runtime::ensure_agent_not_running(&mut runner, short_name)?;
+                runtime::ensure_role_not_running(&mut runner, short_name)?;
                 crate::isolation::cleanup::purge_isolated_for_container(
                     &paths.data_dir.join(&container),
                     &mut runner,
@@ -996,14 +992,14 @@ pub fn run(cli: Cli) -> Result<()> {
                 println!("Purged state for {container}.");
                 Ok(())
             }
-            Selector::Class(class) => {
+            Selector::Role(class) => {
                 if all {
                     runtime::purge_class_data(&paths, &class)?;
                     println!("Purged all state for {}.", class.key());
                 } else {
                     let container = instance::primary_container_name(&class);
                     let short_name = container.trim_start_matches("jackin-");
-                    runtime::ensure_agent_not_running(&mut runner, short_name)?;
+                    runtime::ensure_role_not_running(&mut runner, short_name)?;
                     crate::isolation::cleanup::purge_isolated_for_container(
                         &paths.data_dir.join(&container),
                         &mut runner,
@@ -1048,12 +1044,9 @@ fn resolve_env_value_for_cli(value: &str) -> anyhow::Result<crate::operator_env:
     Ok(crate::operator_env::EnvValue::OpRef(op_ref))
 }
 
-fn workspace_env_scope(workspace: String, agent: Option<String>) -> config::EnvScope {
-    match agent {
-        Some(a) => config::EnvScope::WorkspaceAgent {
-            workspace,
-            agent: a,
-        },
+fn workspace_env_scope(workspace: String, role: Option<String>) -> config::EnvScope {
+    match role {
+        Some(a) => config::EnvScope::WorkspaceRole { workspace, role: a },
         None => config::EnvScope::Workspace(workspace),
     }
 }
@@ -1094,7 +1087,7 @@ fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
 }
 
 /// Render the `workspace show <name>` output as a string. Includes the info
-/// table (name/workdir/allowed/default-agent), and, when there are mounts, a
+/// table (name/workdir/allowed/default-role), and, when there are mounts, a
 /// trailing mounts table with one row per mount. The mounts table renders the
 /// canonical lowercase isolation name (`shared`/`worktree`) so the output
 /// matches TOML/CLI input verbatim.
@@ -1115,20 +1108,20 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
         isolation: String,
     }
 
-    let allowed = if workspace.allowed_agents.is_empty() {
-        "any agent".to_string()
+    let allowed = if workspace.allowed_roles.is_empty() {
+        "any role".to_string()
     } else {
-        workspace.allowed_agents.join(", ")
+        workspace.allowed_roles.join(", ")
     };
-    let default_agent = workspace.default_agent.as_deref().unwrap_or("none");
+    let default_role = workspace.default_role.as_deref().unwrap_or("none");
     let harness = workspace.resolved_harness().slug();
 
     let short_workdir = tui::shorten_home(&workspace.workdir);
     let mut info: Vec<(&str, &str)> = vec![
         ("Name", name),
         ("Workdir", short_workdir.as_str()),
-        ("Allowed Agents", allowed.as_str()),
-        ("Default Agent", default_agent),
+        ("Allowed Roles", allowed.as_str()),
+        ("Default Role", default_role),
         ("Harness", harness),
     ];
     // Only surface keep_awake when opted in — disabled is the default and
@@ -1213,12 +1206,12 @@ mod auth_set_tests {
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
-            allowed_agents: vec![],
-            default_agent: None,
+            allowed_roles: vec![],
+            default_role: None,
             harness: None,
-            last_agent: None,
+            last_role: None,
             env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
         };
         let out = render_workspace_show("jackin", &ws);

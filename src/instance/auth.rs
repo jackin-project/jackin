@@ -1,8 +1,8 @@
-use super::{AgentState, AuthProvisionOutcome};
+use super::{AuthProvisionOutcome, RoleState};
 use crate::config::AuthForwardMode;
 use std::path::Path;
 
-impl AgentState {
+impl RoleState {
     /// Provision Codex's host-side config.toml. Mounted RW into the
     /// container at `/home/agent/.codex/config.toml`.
     ///
@@ -12,7 +12,7 @@ impl AgentState {
     /// sandbox/approval would add friction without isolation gain.
     pub(super) fn provision_codex_auth(
         config_toml: &std::path::Path,
-        manifest: &crate::manifest::AgentManifest,
+        manifest: &crate::manifest::RoleManifest,
     ) -> anyhow::Result<()> {
         use std::fmt::Write;
 
@@ -33,7 +33,7 @@ impl AgentState {
     }
 }
 
-impl AgentState {
+impl RoleState {
     /// Provision both `.claude.json` (preferences/metadata) and
     /// `.claude/.credentials.json` (OAuth tokens) according to the chosen
     /// auth forwarding strategy.
@@ -155,11 +155,11 @@ fn read_host_credentials(host_home: &Path) -> Option<String> {
     None
 }
 
-/// Reject symlinks at `path` to prevent a compromised agent from
+/// Reject symlinks at `path` to prevent a compromised role from
 /// redirecting host-side writes to arbitrary files.
 ///
-/// The agent's `.claude/` directory is mounted read-write into the
-/// container, so an agent could replace `.credentials.json` with a
+/// The role's `.claude/` directory is mounted read-write into the
+/// container, so an role could replace `.credentials.json` with a
 /// symlink.  Without this check, the next `write_private_file` or
 /// `repair_permissions` call would follow the symlink and overwrite
 /// or chmod the target on the host.
@@ -169,7 +169,7 @@ fn reject_symlink(path: &Path) -> anyhow::Result<()> {
         anyhow::ensure!(
             !meta.file_type().is_symlink(),
             "refusing to write through symlink at {}; \
-             this may indicate a compromised agent state — \
+             this may indicate a compromised role state — \
              remove the symlink and retry",
             path.display()
         );
@@ -180,7 +180,7 @@ fn reject_symlink(path: &Path) -> anyhow::Result<()> {
 /// Write a file with restricted permissions (`0o600` on Unix) since it
 /// may contain authentication credentials.
 ///
-/// Rejects symlinks to prevent a compromised agent from redirecting
+/// Rejects symlinks to prevent a compromised role from redirecting
 /// writes to arbitrary host paths.  Uses `tempfile::NamedTempFile` to
 /// create an unpredictable temp file (opened with `O_EXCL`, so a
 /// pre-planted symlink at the temp path is impossible), then renames
@@ -242,7 +242,7 @@ fn repair_permissions(path: &Path) {
 #[cfg(test)]
 mod tests {
     use crate::config::AuthForwardMode;
-    use crate::instance::{AgentState, AuthProvisionOutcome};
+    use crate::instance::{AuthProvisionOutcome, RoleState};
     use crate::paths::JackinPaths;
     use tempfile::tempdir;
 
@@ -261,9 +261,9 @@ mod tests {
         std::fs::write(creds_dir.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
     }
 
-    fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::AgentManifest {
+    fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::RoleManifest {
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -276,7 +276,7 @@ plugins = []
             "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
-        crate::manifest::AgentManifest::load(temp.path()).unwrap()
+        crate::manifest::RoleManifest::load(temp.path()).unwrap()
     }
 
     // ── Auth forwarding tests ───────────────────────────────────────────
@@ -290,7 +290,7 @@ plugins = []
         seed_host_auth(&temp);
         let manifest = simple_manifest(&temp);
 
-        let (state, outcome) = AgentState::prepare(
+        let (state, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -312,7 +312,7 @@ plugins = []
         seed_host_auth(&temp);
         let manifest = simple_manifest(&temp);
 
-        let (state, outcome) = AgentState::prepare(
+        let (state, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -341,7 +341,7 @@ plugins = []
         // No host auth seeded
         let manifest = simple_manifest(&temp);
 
-        let (state, outcome) = AgentState::prepare(
+        let (state, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -364,7 +364,7 @@ plugins = []
 
         // First run with host auth
         seed_host_auth(&temp);
-        let (state, outcome1) = AgentState::prepare(
+        let (state, outcome1) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -383,7 +383,7 @@ plugins = []
         std::fs::write(temp.path().join(".claude/.credentials.json"), updated_creds).unwrap();
 
         // Second run: should overwrite with host content
-        let (state2, outcome2) = AgentState::prepare(
+        let (state2, outcome2) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -410,7 +410,7 @@ plugins = []
         let manifest = simple_manifest(&temp);
 
         // First run: sync mode writes credentials
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -422,7 +422,7 @@ plugins = []
         assert!(state.claude_dir.join(".credentials.json").exists());
 
         // Operator switches to ignore — credentials must be wiped
-        let (state2, _) = AgentState::prepare(
+        let (state2, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -443,7 +443,7 @@ plugins = []
         seed_host_auth(&temp);
         let manifest = simple_manifest(&temp);
 
-        let (state, outcome) = AgentState::prepare(
+        let (state, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -469,7 +469,7 @@ plugins = []
         let manifest = simple_manifest(&temp);
 
         // First run: sync mode writes credentials
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -483,7 +483,7 @@ plugins = []
         // Operator switches to token — credentials must be wiped and
         // .claude.json reset to {} so Claude Code inside the container
         // authenticates exclusively via CLAUDE_CODE_OAUTH_TOKEN.
-        let (state2, outcome) = AgentState::prepare(
+        let (state2, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -505,7 +505,7 @@ plugins = []
         let manifest = simple_manifest(&temp);
 
         // First run: token mode leaves an empty state
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -517,7 +517,7 @@ plugins = []
         assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
 
         // Operator switches to sync — host auth must now be forwarded
-        let (state2, outcome) = AgentState::prepare(
+        let (state2, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -546,7 +546,7 @@ plugins = []
         let manifest = simple_manifest(&temp);
 
         // Token mode seeds an empty state
-        let (_, _) = AgentState::prepare(
+        let (_, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -557,7 +557,7 @@ plugins = []
         .unwrap();
 
         // Switching to ignore must keep the empty shape (no .credentials.json)
-        let (state2, outcome) = AgentState::prepare(
+        let (state2, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -579,7 +579,7 @@ plugins = []
 
         // First run: host has auth, sync copies it
         seed_host_auth(&temp);
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -598,7 +598,7 @@ plugins = []
         std::fs::write(&state.claude_json, container_auth).unwrap();
 
         // Second run: host auth missing — container auth must be preserved
-        let (state2, outcome) = AgentState::prepare(
+        let (state2, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -624,7 +624,7 @@ plugins = []
         seed_host_auth(&temp);
         let manifest = simple_manifest(&temp);
 
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -660,7 +660,7 @@ plugins = []
         let manifest = simple_manifest(&temp);
 
         // First run: create the file with ignore mode (gets 0600)
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -678,7 +678,7 @@ plugins = []
 
         // Sync with host auth — must tighten permissions
         seed_host_auth(&temp);
-        let (state2, _) = AgentState::prepare(
+        let (state2, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -709,7 +709,7 @@ plugins = []
 
         // First run: sync with host auth to seed both files
         seed_host_auth(&temp);
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -730,7 +730,7 @@ plugins = []
         std::fs::remove_file(temp.path().join(".claude/.credentials.json")).unwrap();
 
         // Second run: host auth missing — files preserved but permissions repaired
-        let (state2, outcome) = AgentState::prepare(
+        let (state2, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -770,7 +770,7 @@ plugins = []
         let manifest = simple_manifest(&temp);
 
         // First run: create the state directory
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -787,7 +787,7 @@ plugins = []
         std::os::unix::fs::symlink(&decoy, &state.claude_json).unwrap();
 
         // Sync should refuse to write through the symlink
-        let err = AgentState::prepare(
+        let err = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -814,7 +814,7 @@ plugins = []
         let manifest = simple_manifest(&temp);
 
         // First run: create the state directory with credentials
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -832,7 +832,7 @@ plugins = []
         std::os::unix::fs::symlink(&decoy, &creds_path).unwrap();
 
         // Sync should refuse to write through the symlink
-        let err = AgentState::prepare(
+        let err = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -853,17 +853,17 @@ plugins = []
 
 #[cfg(test)]
 mod codex_auth_tests {
-    use crate::instance::AgentState;
-    use crate::manifest::AgentManifest;
+    use crate::instance::RoleState;
+    use crate::manifest::RoleManifest;
     use tempfile::tempdir;
 
-    fn manifest_with_codex_model(temp: &tempfile::TempDir, model: Option<&str>) -> AgentManifest {
+    fn manifest_with_codex_model(temp: &tempfile::TempDir, model: Option<&str>) -> RoleManifest {
         let codex_section = model.map_or_else(
             || "[codex]\n".to_string(),
             |m| format!("[codex]\nmodel = \"{m}\"\n"),
         );
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             format!(
                 r#"dockerfile = "Dockerfile"
 
@@ -879,7 +879,7 @@ supported = ["codex"]
             "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
-        AgentManifest::load(temp.path()).unwrap()
+        RoleManifest::load(temp.path()).unwrap()
     }
 
     #[test]
@@ -888,7 +888,7 @@ supported = ["codex"]
         let manifest = manifest_with_codex_model(&temp, None);
         let path = temp.path().join("config.toml");
 
-        AgentState::provision_codex_auth(&path, &manifest).unwrap();
+        RoleState::provision_codex_auth(&path, &manifest).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("approval_policy = \"never\""));
@@ -902,7 +902,7 @@ supported = ["codex"]
         let manifest = manifest_with_codex_model(&temp, Some("gpt-5"));
         let path = temp.path().join("config.toml");
 
-        AgentState::provision_codex_auth(&path, &manifest).unwrap();
+        RoleState::provision_codex_auth(&path, &manifest).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("model = \"gpt-5\""));

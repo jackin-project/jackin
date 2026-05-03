@@ -1,8 +1,8 @@
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
 
-use agent::{ConsoleArgs, HardlineArgs, LaunchArgs, LoadArgs};
 use cleanup::{EjectArgs, PurgeArgs};
+use role::{ConsoleArgs, HardlineArgs, LaunchArgs, LoadArgs};
 
 pub(super) const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::BrightGreen.on_default().effects(Effects::BOLD))
@@ -29,17 +29,17 @@ pub(super) const BANNER: &str = concat!(
     "\x1b[0m",
 );
 
-pub mod agent;
 pub mod cleanup;
 pub mod config;
 pub mod dispatch;
 pub mod help;
+pub mod role;
 pub mod workspace;
 
 pub use config::{AuthCommand, ConfigCommand, EnvCommand, MountCommand, TrustCommand};
 pub use workspace::{WorkspaceCommand, WorkspaceEnvCommand};
 
-/// Operator's CLI for orchestrating AI coding agents in isolated containers
+/// Operator's CLI for orchestrating AI coding roles in isolated containers
 ///
 /// Running `jackin` with no subcommand opens the operator console when
 /// stdout is attached to a reasonably-sized interactive terminal, and
@@ -67,7 +67,7 @@ pub struct Cli {
 /// Top-level `jackin` subcommand dispatch.
 ///
 /// Variants that wrap an `#[derive(Args)]` struct carry their help text on
-/// the struct itself — see e.g. `cli::agent::LoadArgs`. Variants that wrap
+/// the struct itself — see e.g. `cli::role::LoadArgs`. Variants that wrap
 /// a `#[derive(Subcommand)]` enum (`Workspace`, `Config`) keep their
 /// parent-command help on the outer variant: Clap's subcommand-enum
 /// attribute propagation targets nested variants, not the parent help
@@ -81,7 +81,7 @@ pub enum Command {
     Load(LoadArgs),
     Hardline(HardlineArgs),
     Eject(EjectArgs),
-    /// Pull every running agent out at once
+    /// Pull every running role out at once
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
     Purge(PurgeArgs),
@@ -161,7 +161,7 @@ mod tests {
         let help = help_text(&["jackin", "--help"]);
         assert!(
             help.contains(
-                "Operator's CLI for orchestrating AI coding agents in isolated containers"
+                "Operator's CLI for orchestrating AI coding roles in isolated containers"
             )
         );
         for cmd in [

@@ -20,7 +20,7 @@ impl JackinPaths {
 
         Ok(Self {
             config_file: config_dir.join("config.toml"),
-            agents_dir: home_dir.join(".jackin/agents"),
+            agents_dir: home_dir.join(".jackin/roles"),
             data_dir: home_dir.join(".jackin/data"),
             cache_dir: home_dir.join(".jackin/cache"),
             home_dir,
@@ -33,7 +33,7 @@ impl JackinPaths {
         let config_dir = root.join("config");
         Self {
             config_file: config_dir.join("config.toml"),
-            agents_dir: home_dir.join(".jackin/agents"),
+            agents_dir: home_dir.join(".jackin/roles"),
             data_dir: home_dir.join(".jackin/data"),
             cache_dir: home_dir.join(".jackin/cache"),
             home_dir,

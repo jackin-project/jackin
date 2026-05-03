@@ -3,8 +3,8 @@ use jackin::docker::{CommandRunner, RunOptions};
 use jackin::harness::Harness;
 use jackin::isolation::MountIsolation;
 use jackin::paths::JackinPaths;
-use jackin::runtime::{LoadOptions, load_agent};
-use jackin::selector::ClassSelector;
+use jackin::runtime::{LoadOptions, load_role};
+use jackin::selector::RoleSelector;
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
 use std::collections::VecDeque;
 use std::path::Path;
@@ -63,7 +63,7 @@ fn codex_launch_invokes_docker_run_with_codex_harness() {
         r#"[env]
 OPENAI_API_KEY = "test-openai-key"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -78,7 +78,7 @@ trusted = true
     )
     .unwrap();
     std::fs::write(
-        repo_dir.join("jackin.agent.toml"),
+        repo_dir.join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -92,14 +92,14 @@ model = "gpt-5"
 "#,
     )
     .unwrap();
-    let validated = jackin::repo::validate_agent_repo(&repo_dir).unwrap();
+    let validated = jackin::repo::validate_role_repo(&repo_dir).unwrap();
     let build = jackin::derived_image::create_derived_build_context(&repo_dir, &validated).unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
     assert!(dockerfile.contains("claude.ai/install.sh"));
     assert!(dockerfile.contains("openai/codex/releases"));
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-    let selector = ClassSelector::new(None, "agent-smith");
+    let selector = RoleSelector::new(None, "agent-smith");
     let workspace = ResolvedWorkspace {
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_string(),
@@ -114,7 +114,7 @@ model = "gpt-5"
     };
     let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-    load_agent(
+    load_role(
         &paths,
         &mut config,
         &selector,
@@ -135,7 +135,7 @@ model = "gpt-5"
         .recorded
         .iter()
         .find(|call| call.contains("docker run -d -it"))
-        .expect("agent docker run should run");
+        .expect("role docker run should run");
     assert!(run_cmd.contains("-e JACKIN_HARNESS=codex"), "{run_cmd}");
     assert!(
         run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"),
@@ -169,7 +169,7 @@ fn codex_launch_cli_harness_override_wins_over_workspace() {
         r#"[env]
 OPENAI_API_KEY = "test-openai-key"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#,
@@ -184,7 +184,7 @@ trusted = true
     )
     .unwrap();
     std::fs::write(
-        repo_dir.join("jackin.agent.toml"),
+        repo_dir.join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -199,7 +199,7 @@ plugins = []
     .unwrap();
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-    let selector = ClassSelector::new(None, "agent-smith");
+    let selector = RoleSelector::new(None, "agent-smith");
     let workspace = ResolvedWorkspace {
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_string(),
@@ -218,7 +218,7 @@ plugins = []
         ..LoadOptions::default()
     };
 
-    load_agent(
+    load_role(
         &paths,
         &mut config,
         &selector,
@@ -232,6 +232,6 @@ plugins = []
         .recorded
         .iter()
         .find(|call| call.contains("docker run -d -it"))
-        .expect("agent docker run should run");
+        .expect("role docker run should run");
     assert!(run_cmd.contains("-e JACKIN_HARNESS=codex"), "{run_cmd}");
 }

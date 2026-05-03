@@ -27,14 +27,14 @@ pub enum MountKind {
 }
 
 const CLAUDE_INSTALL_BLOCK: &str = "\
-USER agent
+USER role
 ARG JACKIN_CACHE_BUST=0
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN claude --version
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
-USER agent
+USER role
 ARG JACKIN_CACHE_BUST=0
 ARG TARGETARCH
 RUN set -eux; \\

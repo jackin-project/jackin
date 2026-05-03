@@ -2,20 +2,20 @@ use crate::derived_image::create_derived_build_context;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::paths::JackinPaths;
 use crate::repo::CachedRepo;
-use crate::selector::ClassSelector;
+use crate::selector::RoleSelector;
 use crate::version_check;
 use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
 use super::naming::image_name;
 
-/// Build the Docker image for the agent. Returns the image name.
+/// Build the Docker image for the role. Returns the image name.
 #[allow(clippy::similar_names, clippy::too_many_arguments)]
 pub(super) fn build_agent_image(
     paths: &JackinPaths,
-    selector: &ClassSelector,
+    selector: &RoleSelector,
     cached_repo: &CachedRepo,
-    validated_repo: &crate::repo::ValidatedAgentRepo,
+    validated_repo: &crate::repo::ValidatedRoleRepo,
     host: &HostIdentity,
     harness: crate::harness::Harness,
     rebuild: bool,

@@ -3,17 +3,17 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Selector {
-    Class(ClassSelector),
+    Role(RoleSelector),
     Container(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClassSelector {
+pub struct RoleSelector {
     pub namespace: Option<String>,
     pub name: String,
 }
 
-impl fmt::Display for ClassSelector {
+impl fmt::Display for RoleSelector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(namespace) = &self.namespace {
             write!(f, "{namespace}/{}", self.name)
@@ -32,7 +32,7 @@ pub enum SelectorError {
     Invalid(String),
 }
 
-impl ClassSelector {
+impl RoleSelector {
     pub fn new(namespace: Option<&str>, name: &str) -> Self {
         Self {
             namespace: namespace.map(ToString::to_string),
@@ -46,15 +46,15 @@ impl ClassSelector {
         }
 
         if !input.contains('/') {
-            return (is_valid_class_segment(input) && !is_reserved_builtin_class_name(input))
+            return (is_valid_role_segment(input) && !is_reserved_builtin_role_name(input))
                 .then(|| Self::new(None, input))
                 .ok_or_else(|| SelectorError::Invalid(input.to_string()));
         }
 
         let mut parts = input.split('/');
         if let (Some(namespace), Some(name), None) = (parts.next(), parts.next(), parts.next())
-            && is_valid_class_segment(namespace)
-            && is_valid_class_segment(name)
+            && is_valid_role_segment(namespace)
+            && is_valid_role_segment(name)
         {
             return Ok(Self::new(Some(namespace), name));
         }
@@ -67,10 +67,10 @@ impl ClassSelector {
     }
 }
 
-impl TryFrom<&str> for ClassSelector {
+impl TryFrom<&str> for RoleSelector {
     type Error = SelectorError;
 
-    /// Idiomatic wrapper around [`ClassSelector::parse`]. Exists so callers
+    /// Idiomatic wrapper around [`RoleSelector::parse`]. Exists so callers
     /// that rely on `TryFrom` conversion traits (including generic code and
     /// `try_into()` call sites) can convert a `&str` without having to
     /// reach for the inherent `parse` method.
@@ -91,13 +91,13 @@ impl Selector {
 
         if !input.contains('/')
             && let Some((base, suffix)) = input.rsplit_once("-clone-")
-            && is_valid_class_segment(base)
+            && is_valid_role_segment(base)
             && suffix.chars().all(|ch| ch.is_ascii_digit())
         {
             return Ok(Self::Container(format!("jackin-{input}")));
         }
 
-        Ok(Self::Class(ClassSelector::parse(input)?))
+        Ok(Self::Role(RoleSelector::parse(input)?))
     }
 }
 
@@ -105,13 +105,13 @@ impl TryFrom<&str> for Selector {
     type Error = SelectorError;
 
     /// Idiomatic wrapper around [`Selector::parse`]. See the analogous impl
-    /// on [`ClassSelector`] for rationale.
+    /// on [`RoleSelector`] for rationale.
     fn try_from(input: &str) -> Result<Self, Self::Error> {
         Self::parse(input)
     }
 }
 
-fn is_valid_class_segment(value: &str) -> bool {
+fn is_valid_role_segment(value: &str) -> bool {
     !value.is_empty()
         && value
             .chars()
@@ -127,10 +127,10 @@ fn is_valid_container_name(value: &str) -> bool {
     })
 }
 
-fn is_reserved_builtin_class_name(value: &str) -> bool {
+fn is_reserved_builtin_role_name(value: &str) -> bool {
     value.starts_with("jackin-")
         || value.rsplit_once("-clone-").is_some_and(|(base, suffix)| {
-            is_valid_class_segment(base) && suffix.chars().all(|ch| ch.is_ascii_digit())
+            is_valid_role_segment(base) && suffix.chars().all(|ch| ch.is_ascii_digit())
         })
 }
 
@@ -143,18 +143,18 @@ mod tests {
         let selector = Selector::parse("agent-smith").unwrap();
         assert_eq!(
             selector,
-            Selector::Class(ClassSelector::new(None, "agent-smith"))
+            Selector::Role(RoleSelector::new(None, "agent-smith"))
         );
     }
 
     #[test]
     fn class_parser_rejects_reserved_builtin_names() {
         assert!(matches!(
-            ClassSelector::parse("jackin-agent-smith"),
+            RoleSelector::parse("jackin-agent-smith"),
             Err(SelectorError::Invalid(_))
         ));
         assert!(matches!(
-            ClassSelector::parse("agent-smith-clone-1"),
+            RoleSelector::parse("agent-smith-clone-1"),
             Err(SelectorError::Invalid(_))
         ));
     }
@@ -164,7 +164,7 @@ mod tests {
         let selector = Selector::parse("chainargos/the-architect").unwrap();
         assert_eq!(
             selector,
-            Selector::Class(ClassSelector::new(Some("chainargos"), "the-architect"))
+            Selector::Role(RoleSelector::new(Some("chainargos"), "the-architect"))
         );
     }
 

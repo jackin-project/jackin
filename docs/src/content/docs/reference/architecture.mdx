@@ -24,7 +24,7 @@ So jackin' gets host-side cache reuse for building agent images, while still kee
 jackin's architecture is shaped by a few explicit decisions:
 
 1. **Local development first.** The first target is a developer machine that already knows how to run Docker.
-2. **Environment as source code.** Agent classes should be normal git repos reviewed like normal software.
+2. **Environment as source code.** Roles should be normal git repos reviewed like normal software.
 3. **Workspace boundary separate from tool profile.** File visibility and installed tooling are different control planes on purpose.
 4. **Operator-owned infrastructure, not black-box runtime.** The implementation should stay inspectable and patchable.
 5. **Container isolation is acceptable for the first target.** jackin' does not claim a microVM boundary today.
@@ -33,16 +33,16 @@ jackin's architecture is shaped by a few explicit decisions:
 
 <ImageLayers />
 
-The agent repo owns the environment layer. jackin' owns the derived harness layer.
+The role repo owns the environment layer. jackin' owns the derived harness layer.
 
-That means an agent class defines the tools and conventions, while jackin' injects the harness-specific pieces such as Claude or Codex installation, the entrypoint, and UID/GID remapping.
+That means an role defines the tools and conventions, while jackin' injects the harness-specific pieces such as Claude or Codex installation, the entrypoint, and UID/GID remapping.
 
 ## Container lifecycle
 
 ### Loading an agent
 
-1. **Resolve agent class** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
-2. **Validate the repo contract** — require `jackin.agent.toml` and a valid Dockerfile path, validate manifest strictly
+1. **Resolve role** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
+2. **Validate the repo contract** — require `jackin.role.toml` and a valid Dockerfile path, validate manifest strictly
 3. **Resolve environment variables** — prompt the user for interactive env vars declared in the manifest
 4. **Generate a derived build context** — copy the repo, inject harness assets (entrypoint + pre-launch hook), and render a derived Dockerfile
 5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
@@ -155,7 +155,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 
 ```
 ~/.jackin/
-├── agents/                        # Cached agent repos
+├── agents/                        # Cached role repos
 │   └── github.com/
 │       └── jackin-project/
 │           └── jackin-agent-smith/
@@ -184,9 +184,9 @@ This is what does **not** persist:
 - ad-hoc root filesystem changes outside mounted paths
 - DinD images, containers, and cache
 
-That means jackin' is biased toward **reproducible agent classes** rather than **mutable long-lived sandboxes**.
+That means jackin' is biased toward **reproducible roles** rather than **mutable long-lived sandboxes**.
 
-If a tool should always exist, put it in the agent repo Dockerfile instead of installing it ad hoc during a session.
+If a tool should always exist, put it in the role repo Dockerfile instead of installing it ad hoc during a session.
 
 ## Why Docker instead of microVMs?
 
@@ -197,7 +197,7 @@ Using plain Docker lets jackin':
 - reuse a toolchain developers already have
 - keep the implementation smaller and easier to inspect
 - build agent images with normal Docker workflows
-- share host-side build cache across agent classes
+- share host-side build cache across roles
 - stay local-first without introducing a separate VM product layer
 
 The cost of that choice is straightforward:
@@ -213,8 +213,8 @@ If the main thing you need is the strongest local boundary for autonomous agents
 
 - **DinD transport uses auto-generated TLS certificates.** The certificates are generated per-session and not pinned to a CA chain you control.
 - **Claude installation is not fully pinned.** The derived image installs Claude Code from the upstream installer.
-- **Derived build context rejects symlinks.** Agent repos with symlink-heavy layouts are not supported yet.
-- **Cached agent repos must stay clean.** jackin' refuses to build from a dirty or origin-mismatched cache.
+- **Derived build context rejects symlinks.** Role repos with symlink-heavy layouts are not supported yet.
+- **Cached role repos must stay clean.** jackin' refuses to build from a dirty or origin-mismatched cache.
 - **Container mutability is intentionally thin.** That keeps sessions cleaner, but makes ad-hoc package installs non-persistent.
 
 ## Technology stack

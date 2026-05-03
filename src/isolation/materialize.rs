@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 pub struct MaterializedWorkspace {
     pub workdir: String,
     pub mounts: Vec<MaterializedMount>,
-    /// Threaded through from `ResolvedWorkspace` so `launch_agent_runtime`
+    /// Threaded through from `ResolvedWorkspace` so `launch_role_runtime`
     /// can stamp the `jackin.keep_awake=true` label on the container
     /// without a config re-lookup. Read by the keep-awake reconciler.
     pub keep_awake_enabled: bool,
@@ -40,7 +40,7 @@ pub struct MaterializedMount {
 /// worktree is at `worktrees/<container>/` natively (part of the same
 /// mount). The two override files are file-level overlays inside that
 /// directory mount: one shadowing the worktree's `.git` text file (so
-/// the agent's gitdir resolves to a container path), one shadowing the
+/// the role's gitdir resolves to a container path), one shadowing the
 /// admin's `gitdir` back-pointer (so git's integrity check passes
 /// where `<dst>/.git` differs from the host worktree path). All
 /// sources are either jackin-owned (override files under the container
@@ -586,7 +586,7 @@ fn materialize_one(
     // Branch name = `jackin/scratch/<container>` (Model B). Container
     // name is the disambiguator because it's globally unique by jackin
     // construction; selector alone wouldn't disambiguate parallel
-    // containers of the same agent class (which would collide on the
+    // containers of the same role class (which would collide on the
     // shared host repo's `<host>/.git/refs/heads/` namespace).
     let scratch_branch = branch_name(container_name, None);
     debug_log!(

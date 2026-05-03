@@ -10,7 +10,7 @@ pub(super) struct PluginState<'a> {
 #[cfg(test)]
 mod tests {
     use crate::config::AuthForwardMode;
-    use crate::instance::AgentState;
+    use crate::instance::RoleState;
     use crate::paths::JackinPaths;
     use serde_json::json;
     use tempfile::tempdir;
@@ -21,7 +21,7 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
 
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -35,8 +35,8 @@ plugins = ["code-review@claude-plugins-official", "feature-dev@claude-plugins-of
         )
         .unwrap();
 
-        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
-        let (state, _) = AgentState::prepare(
+        let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
@@ -65,7 +65,7 @@ plugins = ["code-review@claude-plugins-official", "feature-dev@claude-plugins-of
         let paths = JackinPaths::for_tests(temp.path());
 
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -83,8 +83,8 @@ sparse = ["plugins", ".claude-plugin"]
         )
         .unwrap();
 
-        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
-        let (state, _) = AgentState::prepare(
+        let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,

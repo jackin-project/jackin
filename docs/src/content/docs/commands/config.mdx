@@ -128,7 +128,7 @@ Manage operator env vars at global and per-agent scope.
 
 Values are stored verbatim — whatever you type is what goes into the TOML. No editor-side validation of key names or value shape. jackin' resolves values at launch time through the operator-env layer, so `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work.
 
-Without `--agent`, writes and reads target the global `[env]` table. With `--agent <SELECTOR>`, they target `[agents.<SELECTOR>.env]`. The agent selector is not pre-validated — the table path is written even if the agent is not registered, matching how `config auth set --agent` behaves.
+Without `--agent`, writes and reads target the global `[env]` table. With `--agent <SELECTOR>`, they target `[roles.<SELECTOR>.env]`. The agent selector is not pre-validated — the table path is written even if the agent is not registered, matching how `config auth set --agent` behaves.
 
 ### `config env set`
 
@@ -140,7 +140,7 @@ Set or overwrite an env var at the chosen scope.
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | Apply to `[agents.<SELECTOR>.env]` instead of the global `[env]` |
+| `--agent <SELECTOR>` | Apply to `[roles.<SELECTOR>.env]` instead of the global `[env]` |
 | `--comment <TEXT>` | Write a TOML line comment directly above the key |
 
 ```bash
@@ -164,7 +164,7 @@ Remove an env var from the chosen scope. Idempotent: if the key is not present, 
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | Unset from `[agents.<SELECTOR>.env]` instead of the global `[env]` |
+| `--agent <SELECTOR>` | Unset from `[roles.<SELECTOR>.env]` instead of the global `[env]` |
 
 ```bash
 jackin config env unset API_TOKEN
@@ -181,7 +181,7 @@ Show the env vars registered at the chosen scope as a table with `Key` and `Valu
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | List vars from `[agents.<SELECTOR>.env]` instead of the global `[env]` |
+| `--agent <SELECTOR>` | List vars from `[roles.<SELECTOR>.env]` instead of the global `[env]` |
 
 ```bash
 jackin config env list

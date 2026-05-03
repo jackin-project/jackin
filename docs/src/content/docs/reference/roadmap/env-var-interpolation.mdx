@@ -18,7 +18,7 @@ When an agent manifest declares interactive environment variables with `depends_
 
 ## Implementation
 
-`${env.VAR_NAME}` syntax is now supported in `prompt` and `default` fields of `[env.*]` entries in `jackin.agent.toml`. The `env.` prefix is consistent with the `depends_on` syntax and creates a clear namespace for future expansion (e.g., `${host.VAR}`, `${secret.VAR}`).
+`${env.VAR_NAME}` syntax is now supported in `prompt` and `default` fields of `[env.*]` entries in `jackin.role.toml`. The `env.` prefix is consistent with the `depends_on` syntax and creates a clear namespace for future expansion (e.g., `${host.VAR}`, `${secret.VAR}`).
 
 ```toml
 [env.PROJECT_TO_CLONE]
@@ -67,7 +67,7 @@ Env vars declared in the agent manifest need to be overridable at multiple level
    JACKIN_CLAUDE_ENV = "docker-staging"
    CONTEXT7_API_KEY = "sk-..."              # literal value
    ```
-3. **Agent manifest default** (`jackin.agent.toml`):
+3. **Agent manifest default** (`jackin.role.toml`):
    ```toml
    [env.JACKIN_CLAUDE_ENV]
    default = "docker"

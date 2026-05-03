@@ -3,12 +3,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub use crate::workspace::MountConfig;
-pub use crate::workspace::WorkspaceAgentOverride;
+pub use crate::workspace::WorkspaceRoleOverride;
 
-mod agents;
 pub mod editor;
 mod mounts;
 mod persist;
+mod roles;
 mod workspaces;
 
 pub use editor::{ConfigEditor, EnvScope};
@@ -22,7 +22,7 @@ const fn is_false(v: &bool) -> bool {
     !*v
 }
 
-/// Controls how the host's `~/.claude.json` is forwarded into agent containers.
+/// Controls how the host's `~/.claude.json` is forwarded into role containers.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthForwardMode {
@@ -33,7 +33,7 @@ pub enum AuthForwardMode {
     #[default]
     Sync,
     /// Use a long-lived OAuth token from the operator-resolved env
-    /// (`CLAUDE_CODE_OAUTH_TOKEN`). The agent state directory is
+    /// (`CLAUDE_CODE_OAUTH_TOKEN`). The role state directory is
     /// provisioned empty (same shape as `Ignore`); Claude Code inside
     /// the container picks up the token from its process environment.
     Token,
@@ -91,22 +91,22 @@ pub struct ClaudeConfig {
     pub auth_forward: AuthForwardMode,
 }
 
-/// Per-agent Claude Code configuration override.
+/// Per-role Claude Code configuration override.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ClaudeAgentConfig {
+pub struct ClaudeRoleConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_forward: Option<AuthForwardMode>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct AgentSource {
+pub struct RoleSource {
     pub git: String,
     #[serde(default, skip_serializing_if = "is_false")]
     pub trusted: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub claude: Option<ClaudeAgentConfig>,
-    /// Agent-layer operator env map. Merged on top of the global
-    /// `[env]` map when the agent is launched. Values use the
+    pub claude: Option<ClaudeRoleConfig>,
+    /// Role-layer operator env map. Merged on top of the global
+    /// `[env]` map when the role is launched. Values use the
     /// `operator_env` dispatch syntax.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, crate::operator_env::EnvValue>,
@@ -123,11 +123,11 @@ pub struct AppConfig {
     #[serde(default)]
     pub claude: ClaudeConfig,
     /// Global operator env map — the bottom layer. Merged under
-    /// per-agent, per-workspace, and per-(workspace × agent) layers.
+    /// per-role, per-workspace, and per-(workspace × role) layers.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, crate::operator_env::EnvValue>,
     #[serde(default)]
-    pub agents: BTreeMap<String, AgentSource>,
+    pub roles: BTreeMap<String, RoleSource>,
     #[serde(default)]
     pub docker: DockerConfig,
     #[serde(default)]
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn deserializes_scoped_docker_mounts() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [docker.mounts."chainargos/*"]
@@ -175,13 +175,13 @@ brown-config = { src = "~/.chainargos/brown", dst = "/config" }
     #[test]
     fn deserializes_saved_workspaces() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [workspaces.big-monorepo]
 workdir = "/Users/donbeave/Projects/chainargos/big-monorepo"
-default_agent = "agent-smith"
-allowed_agents = ["agent-smith", "chainargos/the-architect"]
+default_role = "agent-smith"
+allowed_roles = ["agent-smith", "chainargos/the-architect"]
 
 [[workspaces.big-monorepo.mounts]]
 src = "/Users/donbeave/Projects/chainargos/big-monorepo"
@@ -201,8 +201,8 @@ readonly = true
             "/Users/donbeave/Projects/chainargos/big-monorepo"
         );
         assert_eq!(workspace.mounts.len(), 2);
-        assert_eq!(workspace.default_agent.as_deref(), Some("agent-smith"));
-        assert_eq!(workspace.allowed_agents.len(), 2);
+        assert_eq!(workspace.default_role.as_deref(), Some("agent-smith"));
+        assert_eq!(workspace.allowed_roles.len(), 2);
         assert!(workspace.mounts[1].readonly);
     }
 
@@ -279,7 +279,7 @@ readonly = true
         std::fs::write(
             &paths.config_file,
             r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [workspaces.big-monorepo]
@@ -308,7 +308,7 @@ dst = "/workspace/src"
 
         let toml_str = format!(
             r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [workspaces.broken]
@@ -331,7 +331,7 @@ dst = "/workspace/src"
     #[test]
     fn set_agent_auth_forward_creates_claude_section() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 "#;
         let mut config: AppConfig = toml::from_str(toml_str).unwrap();
@@ -345,7 +345,7 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
     #[test]
     fn existing_config_without_claude_section_deserializes_with_defaults() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#;
@@ -535,7 +535,7 @@ auth_forward = "token"
     #[test]
     fn edit_workspace_rejects_leaving_pre_existing_violation() {
         // A workspace already containing a rule-C violation. An unrelated edit
-        // (e.g., adding an allowed agent) should be blocked by the post-check.
+        // (e.g., adding an allowed role) should be blocked by the post-check.
         use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
         let mut config = AppConfig::default();
@@ -751,16 +751,16 @@ OPERATOR_HOST = "$HOME_VAR"
     #[test]
     fn deserializes_per_agent_env_map() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
-[agents.agent-smith.env]
+[roles.agent-smith.env]
 AGENT_TOKEN = "op://Shared/smith/token"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        let agent = config.agents.get("agent-smith").unwrap();
+        let role = config.roles.get("agent-smith").unwrap();
         assert_eq!(
-            agent.env.get("AGENT_TOKEN").unwrap().as_persisted_str(),
+            role.env.get("AGENT_TOKEN").unwrap().as_persisted_str(),
             "op://Shared/smith/token"
         );
     }
@@ -768,7 +768,7 @@ AGENT_TOKEN = "op://Shared/smith/token"
     #[test]
     fn deserializes_per_workspace_env_map() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [workspaces.big-monorepo]
@@ -792,7 +792,7 @@ WORKSPACE_VAR = "literal"
     #[test]
     fn deserializes_workspace_agent_override_env() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [workspaces.big-monorepo]
@@ -802,12 +802,12 @@ workdir = "/workspace/project"
 src = "/tmp/src"
 dst = "/workspace/project"
 
-[workspaces.big-monorepo.agents.agent-smith.env]
+[workspaces.big-monorepo.roles.agent-smith.env]
 PER_WORKSPACE_PER_AGENT = "specific"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         let ws = config.workspaces.get("big-monorepo").unwrap();
-        let override_ = ws.agents.get("agent-smith").unwrap();
+        let override_ = ws.roles.get("agent-smith").unwrap();
         assert_eq!(
             override_
                 .env
@@ -821,27 +821,27 @@ PER_WORKSPACE_PER_AGENT = "specific"
     #[test]
     fn env_maps_default_to_empty_when_omitted() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         assert!(config.env.is_empty());
-        assert!(config.agents.get("agent-smith").unwrap().env.is_empty());
+        assert!(config.roles.get("agent-smith").unwrap().env.is_empty());
     }
 
     #[test]
     fn deserializes_agent_with_slash_in_name_using_quoted_keys() {
-        // The spec calls out `[agents."chainargos/agent-jones".env]`
-        // and `[workspaces.<ws>.agents."chainargos/agent-jones".env]`
-        // as the TOML shape for third-party agent selectors that
+        // The spec calls out `[roles."chainargos/agent-jones".env]`
+        // and `[workspaces.<ws>.roles."chainargos/agent-jones".env]`
+        // as the TOML shape for third-party role selectors that
         // include a `/`. Standard TOML quoted keys suffice — this
         // test locks in that shape so a future refactor does not
         // accidentally require un-quoted identifiers.
         let toml_str = r#"
-[agents."chainargos/agent-jones"]
+[roles."chainargos/agent-jones"]
 git = "https://github.com/chainargos/jackin-agent-jones.git"
 
-[agents."chainargos/agent-jones".env]
+[roles."chainargos/agent-jones".env]
 DATABASE_URL = "op://Work/agent-jones/db"
 
 [workspaces.big-monorepo]
@@ -851,17 +851,17 @@ workdir = "/workspace/project"
 src = "/tmp/src"
 dst = "/workspace/project"
 
-[workspaces.big-monorepo.agents."chainargos/agent-jones".env]
+[workspaces.big-monorepo.roles."chainargos/agent-jones".env]
 OPENAI_API_KEY = "op://Work/big-monorepo/OpenAI"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        let agent = config.agents.get("chainargos/agent-jones").unwrap();
+        let role = config.roles.get("chainargos/agent-jones").unwrap();
         assert_eq!(
-            agent.env.get("DATABASE_URL").unwrap().as_persisted_str(),
+            role.env.get("DATABASE_URL").unwrap().as_persisted_str(),
             "op://Work/agent-jones/db"
         );
         let ws = config.workspaces.get("big-monorepo").unwrap();
-        let override_ = ws.agents.get("chainargos/agent-jones").unwrap();
+        let override_ = ws.roles.get("chainargos/agent-jones").unwrap();
         assert_eq!(
             override_
                 .env

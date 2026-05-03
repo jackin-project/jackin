@@ -35,13 +35,13 @@ fn read_config(env: &Env) -> String {
     fs::read_to_string(config_path(env)).unwrap()
 }
 
-/// `[agents.<name>]` needs the required `git` field for serde to
+/// `[roles.<name>]` needs the required `git` field for serde to
 /// accept the table.
 fn seed_agent(env: &Env, name: &str) {
     let path = config_path(env);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     let existing = fs::read_to_string(&path).unwrap_or_default();
-    let entry = format!("\n[agents.{name}]\ngit = \"https://example.com/{name}.git\"\n");
+    let entry = format!("\n[roles.{name}]\ngit = \"https://example.com/{name}.git\"\n");
     fs::write(&path, format!("{existing}{entry}")).unwrap();
 }
 
@@ -83,7 +83,7 @@ fn config_env_set_with_agent() {
             "set",
             "LOG_LEVEL",
             "debug",
-            "--agent",
+            "--role",
             "agent-smith",
         ])
         .assert()
@@ -91,8 +91,8 @@ fn config_env_set_with_agent() {
         .stdout(predicate::str::contains("Set LOG_LEVEL."));
     let contents = read_config(&env);
     assert!(
-        contents.contains("[agents.agent-smith.env]"),
-        "missing [agents.agent-smith.env]:\n{contents}"
+        contents.contains("[roles.agent-smith.env]"),
+        "missing [roles.agent-smith.env]:\n{contents}"
     );
     assert!(
         contents.contains("LOG_LEVEL = \"debug\""),
@@ -230,15 +230,15 @@ fn workspace_env_set_workspace_agent_scope() {
             "prod",
             "OPENAI_KEY",
             "sk-literal-key",
-            "--agent",
+            "--role",
             "agent-smith",
         ])
         .assert()
         .success();
     let contents = read_config(&env);
     assert!(
-        contents.contains("[workspaces.prod.agents.agent-smith.env]"),
-        "missing [workspaces.prod.agents.agent-smith.env]:\n{contents}"
+        contents.contains("[workspaces.prod.roles.agent-smith.env]"),
+        "missing [workspaces.prod.roles.agent-smith.env]:\n{contents}"
     );
     assert!(
         contents.contains("OPENAI_KEY = \"sk-literal-key\""),
@@ -286,7 +286,7 @@ fn config_env_set_unknown_agent_rejected() {
             "set",
             "FOO",
             "bar",
-            "--agent",
+            "--role",
             "ghost-unknown",
         ])
         .assert()
@@ -297,8 +297,8 @@ fn config_env_set_unknown_agent_rejected() {
     if path.exists() {
         let contents = read_config(&env);
         assert!(
-            !contents.contains("[agents.ghost-unknown]"),
-            "rejected unknown-agent set must not have created a stub agent table; got:\n{contents}"
+            !contents.contains("[roles.ghost-unknown]"),
+            "rejected unknown-role set must not have created a stub role table; got:\n{contents}"
         );
     }
 }
@@ -328,7 +328,7 @@ fn workspace_env_set_reserved_name_rejected() {
     );
 }
 
-/// Same protection for `workspace env set --agent <unknown>`.
+/// Same protection for `workspace env set --role <unknown>`.
 #[test]
 fn workspace_env_set_unknown_agent_rejected() {
     let env = setup_env();
@@ -342,7 +342,7 @@ fn workspace_env_set_unknown_agent_rejected() {
             "prod",
             "FOO",
             "bar",
-            "--agent",
+            "--role",
             "ghost-unknown",
         ])
         .assert()
@@ -352,6 +352,6 @@ fn workspace_env_set_unknown_agent_rejected() {
     let contents = read_config(&env);
     assert!(
         !contents.contains("ghost-unknown"),
-        "rejected unknown-agent workspace-env set must not have leaked the agent name on disk; got:\n{contents}"
+        "rejected unknown-role workspace-env set must not have leaked the role name on disk; got:\n{contents}"
     );
 }

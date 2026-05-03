@@ -44,11 +44,11 @@ a domain group.
 
 | Module | Owns |
 |---|---|
-| `app/` | `run()` command dispatch (`mod.rs`) and context helpers (`context.rs`): target classification, workspace-for-cwd, agent-from-context, last-agent persistence |
-| `cli/` | Clap schema split by topic: `root.rs` (`Cli` + `Command` enum), `agent.rs` (Load/Hardline/Launch args, `--force`), `cleanup.rs` (Eject/Purge args), `workspace.rs` (`WorkspaceCommand`, `--mount-isolation`, `--delete-isolated-state`), `cd.rs` (`jackin cd <container> [dst]` — child shell into an isolated worktree), `config.rs` (`ConfigCommand` + sub-enums), `dispatch.rs` (bare-`jackin`/`console`/`launch` classification — `classify`, `is_tui_capable`, deprecation shims) |
+| `app/` | `run()` command dispatch (`mod.rs`) and context helpers (`context.rs`): target classification, workspace-for-cwd, role-from-context, last-role persistence |
+| `cli/` | Clap schema split by topic: `root.rs` (`Cli` + `Command` enum), `role.rs` (Load/Hardline/Launch args, `--force`), `cleanup.rs` (Eject/Purge args), `workspace.rs` (`WorkspaceCommand`, `--mount-isolation`, `--delete-isolated-state`), `cd.rs` (`jackin cd <container> [dst]` — child shell into an isolated worktree), `config.rs` (`ConfigCommand` + sub-enums), `dispatch.rs` (bare-`jackin`/`console`/`launch` classification — `classify`, `is_tui_capable`, deprecation shims) |
 | `workspace/` | Workspace model and planning. `mod.rs` (types, re-exports), `paths.rs` (expand_tilde, resolve_path), `mounts.rs` (parse/validate), `planner.rs` (`plan_create`, `plan_edit`, `plan_collapse`), `resolve.rs` (runtime resolution), `sensitive.rs` (sensitive-mount detection) |
-| `config/` | TOML config model and persistence. `mod.rs` (types, `require_workspace` helper), `persist.rs` (load/save), `agents.rs` (builtin sync, trust, auth-forward), `mounts.rs` (global mount registry), `workspaces.rs` (workspace CRUD) |
-| `manifest/` | Agent-manifest (`jackin.agent.toml`) schema + validator. `mod.rs` (schema structs, `load`, `display_name`), `validate.rs` (`validate`, `is_valid_env_var_name`) |
+| `config/` | TOML config model and persistence. `mod.rs` (types, `require_workspace` helper), `persist.rs` (load/save), `roles.rs` (builtin sync, trust, auth-forward), `mounts.rs` (global mount registry), `workspaces.rs` (workspace CRUD) |
+| `manifest/` | Role-manifest (`jackin.role.toml`) schema + validator. `mod.rs` (schema structs, `load`, `display_name`), `validate.rs` (`validate`, `is_valid_env_var_name`) |
 | `runtime/` | Container lifecycle. `mod.rs` (thin re-exports), `naming.rs` (labels, container/image naming, family matching), `identity.rs` (git/host identity), `repo_cache.rs` (repo lock + fetch), `image.rs` (docker build), `launch.rs` (`launch_agent_runtime`, `load_agent`, `load_agent_with`, runs the foreground finalizer after attach returns), `attach.rs` (attach + hardline + DinD readiness — calls the same finalizer post-attach), `discovery.rs` (list managed agents), `cleanup.rs` (eject, purge, orphan GC), `caffeinate.rs` (macOS keep-awake reconciler — `reconcile`, lock-file + PID-comm-verified state converger over `jackin.keep_awake=true` containers), `test_support.rs` (shared `FakeRunner`) |
 | `isolation/` | Per-mount isolation. `mod.rs` (`MountIsolation` enum), `branch.rs` (scratch-branch naming), `materialize.rs` (worktree creation + `MaterializedWorkspace`), `state.rs` (`isolation.json` IO), `finalize.rs` (post-attach foreground finalizer — Preserved / Cleaned / ReturnToAgent decision), `cleanup.rs` (force/safe cleanup helpers shared by `purge` and the finalizer) |
 | `console/` | Interactive operator-console TUI. `mod.rs` (`run_console` entrypoint), `state.rs` (`ConsoleState`, `WorkspaceChoice`), `input.rs` (event handling), `preview.rs` (workspace preview + detail lines), `render.rs` (all drawing functions), `manager/` (workspace-manager TUI subsystem — `state.rs`, `input.rs`, `render.rs`, `create.rs`, `mount_info.rs`), `widgets/` (reusable modal/widget components — `file_browser`, `text_input`, `confirm`, `confirm_save`, `error_popup`, `mount_dst_choice`, `workdir_pick`, `github_picker`, `save_discard`, `panel_rain`) |
@@ -61,10 +61,10 @@ a domain group.
 |---|---|
 | `env_model.rs` | Single source of truth for env policy — reserved-runtime-env list, `is_reserved`, `extract_interpolation_refs`, `topological_env_order` (cycle detection) |
 | `env_resolver.rs` | Runtime env resolution — `resolve_env`, interpolation, interactive prompts |
-| `selector.rs` | Agent selector parsing — `ClassSelector`, `Selector`, `TryFrom<&str>` impls |
-| `repo.rs` | Agent repo validation — required files, path traversal checks |
-| `repo_contract.rs` | Enforces agent `Dockerfile`s extend the `construct` base image |
-| `derived_image.rs` | Dockerfile generation for agent images from the base construct |
+| `selector.rs` | Role selector parsing — `RoleSelector`, `Selector`, `TryFrom<&str>` impls |
+| `repo.rs` | Role repo validation — required files, path traversal checks |
+| `repo_contract.rs` | Enforces role `Dockerfile`s extend the `construct` base image |
+| `derived_image.rs` | Dockerfile generation for role images from the base construct |
 | `docker.rs` | Docker command builder — `CommandRunner` trait and `ShellRunner` |
 | `terminal_prompter.rs` | Interactive env-var prompting for manifest resolution |
 | `version_check.rs` | Claude CLI version detection for image cache-bust |
@@ -92,7 +92,7 @@ Maps 1:1 with the published site sidebar:
 | | `getting-started/concepts.mdx` | Operators, agents, constructs, workspaces |
 | Guides | `guides/workspaces.mdx` | Workspace configuration |
 | | `guides/mounts.mdx` | Mount specs and scoping |
-| | `guides/agent-repos.mdx` | Agent repository structure |
+| | `guides/role-repos.mdx` | Agent repository structure |
 | | `guides/authentication.mdx` | Credential forwarding / in-container auth |
 | | `guides/security-model.mdx` | Isolation and permissions |
 | | `guides/comparison.mdx` | Comparison with alternatives |
@@ -106,9 +106,9 @@ Maps 1:1 with the published site sidebar:
 | | `commands/purge.mdx` | `jackin purge` |
 | | `commands/workspace.mdx` | `jackin workspace` |
 | | `commands/config.mdx` | `jackin config` |
-| Developing Agents | `developing/creating-agents.mdx` | How to build agent repos |
+| Developing Agents | `developing/creating-roles.mdx` | How to build role repos |
 | | `developing/construct-image.mdx` | Base Docker image contents |
-| | `developing/agent-manifest.mdx` | `jackin.agent.toml` reference |
+| | `developing/role-manifest.mdx` | `jackin.role.toml` reference |
 | Reference | `reference/configuration.mdx` | Config file format |
 | | `reference/architecture.mdx` | Container orchestration internals |
 | | `reference/roadmap.mdx` | Planned features |
@@ -159,11 +159,11 @@ When changing behavior, update both sides:
 | `src/runtime/**` (container lifecycle) | `docs/.../reference/architecture.mdx` |
 | `src/runtime/caffeinate.rs` (keep_awake reconciler) | `docs/.../guides/workspaces.mdx` (keep_awake section) |
 | `src/isolation/**` (per-mount isolation, materialization, finalizer) | `docs/.../guides/workspaces.mdx` (per-mount isolation section), `docs/.../guides/mounts.mdx` (isolation field), `docs/.../reference/configuration.mdx` (`MountConfig.isolation`), `docs/.../reference/architecture.mdx` (materialization + finalizer), `docs/.../commands/load.mdx` (`--force`), `docs/.../commands/workspace.mdx` (`--mount-isolation`, Isolation column), `docs/.../commands/cd.mdx`, `docs/.../commands/purge.mdx` (running-agent guard + isolated cleanup) |
-| `src/manifest/**` (`jackin.agent.toml` schema or validation) | `docs/.../developing/agent-manifest.mdx` |
+| `src/manifest/**` (`jackin.role.toml` schema or validation) | `docs/.../developing/role-manifest.mdx` |
 | `src/instance/auth.rs` (auth-forward, credential handling) | `docs/.../guides/authentication.mdx`, `docs/.../guides/security-model.mdx` |
-| `src/env_model.rs`, `src/env_resolver.rs` (env policy) | `docs/.../developing/agent-manifest.mdx` (env section) |
+| `src/env_model.rs`, `src/env_resolver.rs` (env policy) | `docs/.../developing/role-manifest.mdx` (env section) |
 | `src/derived_image.rs` (Dockerfile gen) | `docs/.../developing/construct-image.mdx` |
-| `src/repo.rs` / `src/repo_contract.rs` | `docs/.../guides/agent-repos.mdx` |
+| `src/repo.rs` / `src/repo_contract.rs` | `docs/.../guides/role-repos.mdx` |
 | `docker/construct/Dockerfile` | `docs/.../developing/construct-image.mdx` |
 
 ## Keeping this file fresh

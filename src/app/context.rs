@@ -6,7 +6,7 @@ use crate::docker;
 use crate::instance;
 use crate::paths::JackinPaths;
 use crate::runtime;
-use crate::selector::ClassSelector;
+use crate::selector::RoleSelector;
 use crate::tui;
 use crate::workspace::{LoadWorkspaceInput, WorkspaceConfig, expand_tilde};
 
@@ -138,70 +138,69 @@ pub(crate) fn find_saved_workspace_for_cwd<'a>(
         .map(|(name, ws, _)| (name.as_str(), ws))
 }
 
-/// Return the configured agents permitted by a workspace's `allowed_agents`.
+/// Return the configured roles permitted by a workspace's `allowed_roles`.
 ///
-/// An empty `allowed_agents` list means "any configured agent" — that is
+/// An empty `allowed_roles` list means "any configured role" — that is
 /// the historical TUI and CLI contract, pinned by Phase 0 characterization
-/// tests in `console/`. Agents named in `allowed_agents` but absent from
-/// `config.agents` are silently dropped (no fabricated selectors).
-pub(crate) fn eligible_agents_for_workspace(
+/// tests in `console/`. Roles named in `allowed_roles` but absent from
+/// `config.roles` are silently dropped (no fabricated selectors).
+pub(crate) fn eligible_roles_for_workspace(
     config: &AppConfig,
     workspace: &WorkspaceConfig,
-) -> Vec<ClassSelector> {
+) -> Vec<RoleSelector> {
     config
-        .agents
+        .roles
         .keys()
-        .filter_map(|key| ClassSelector::parse(key).ok())
-        .filter(|agent| {
-            workspace.allowed_agents.is_empty()
+        .filter_map(|key| RoleSelector::parse(key).ok())
+        .filter(|role| {
+            workspace.allowed_roles.is_empty()
                 || workspace
-                    .allowed_agents
+                    .allowed_roles
                     .iter()
-                    .any(|allowed| allowed == &agent.key())
+                    .any(|allowed| allowed == &role.key())
         })
         .collect()
 }
 
-/// Return the index of the preferred agent within `eligible`.
+/// Return the index of the preferred role within `eligible`.
 ///
-/// Priority: `last_agent` first, then `default_agent`. Returns `None` when
-/// neither is set or when the named agent is not in `eligible`. The TUI's
+/// Priority: `last_role` first, then `default_role`. Returns `None` when
+/// neither is set or when the named role is not in `eligible`. The TUI's
 /// preselection and the CLI's context resolver both go through this
 /// helper so the ordering cannot silently diverge.
 pub(crate) fn preferred_agent_index(
-    eligible: &[ClassSelector],
-    last_agent: Option<&str>,
-    default_agent: Option<&str>,
+    eligible: &[RoleSelector],
+    last_role: Option<&str>,
+    default_role: Option<&str>,
 ) -> Option<usize> {
-    last_agent
-        .and_then(|last| eligible.iter().position(|agent| agent.key() == last))
+    last_role
+        .and_then(|last| eligible.iter().position(|role| role.key() == last))
         .or_else(|| {
-            default_agent
-                .and_then(|default| eligible.iter().position(|agent| agent.key() == default))
+            default_role.and_then(|default| eligible.iter().position(|role| role.key() == default))
         })
 }
 
-/// Resolve the agent and workspace from the current directory context.
+/// Resolve the role and workspace from the current directory context.
 ///
 /// Finds the saved workspace whose host workdir or mounted host path best
-/// matches `cwd`, then picks the agent:
-/// 1. `last_agent` (most recently used)
-/// 2. `default_agent` (explicitly configured)
-/// 3. If multiple agents available — prompt
-/// 4. If exactly one agent — use it
+/// matches `cwd`, then picks the role:
+/// 1. `last_role` (most recently used)
+/// 2. `default_role` (explicitly configured)
+/// 3. If multiple roles available — prompt
+/// 4. If exactly one role — use it
 /// 5. No match — error with guidance
 pub(crate) fn resolve_agent_from_context(
     config: &AppConfig,
     cwd: &Path,
-) -> Result<(ClassSelector, LoadWorkspaceInput)> {
+) -> Result<(RoleSelector, LoadWorkspaceInput)> {
     if let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) {
-        let eligible = eligible_agents_for_workspace(config, ws);
+        let eligible = eligible_roles_for_workspace(config, ws);
 
-        // Preferred-agent shortcut: last_agent, then default_agent.
+        // Preferred-role shortcut: last_role, then default_role.
         if let Some(preferred_idx) = preferred_agent_index(
             &eligible,
-            ws.last_agent.as_deref(),
-            ws.default_agent.as_deref(),
+            ws.last_role.as_deref(),
+            ws.default_role.as_deref(),
         ) {
             return Ok((
                 eligible[preferred_idx].clone(),
@@ -210,13 +209,13 @@ pub(crate) fn resolve_agent_from_context(
         }
 
         let chosen = match eligible.as_slice() {
-            [] => anyhow::bail!("no agents configured; add one with jackin load <agent>"),
+            [] => anyhow::bail!("no roles configured; add one with jackin load <role>"),
             [only] => only.clone(),
             _ => {
-                let options: Vec<String> = eligible.iter().map(ClassSelector::key).collect();
+                let options: Vec<String> = eligible.iter().map(RoleSelector::key).collect();
                 let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
                 let choice = tui::prompt_choice(
-                    &format!("Workspace {name:?} has multiple agents. Select one:"),
+                    &format!("Workspace {name:?} has multiple roles. Select one:"),
                     &option_refs,
                 )?;
                 eligible[choice].clone()
@@ -227,17 +226,17 @@ pub(crate) fn resolve_agent_from_context(
 
     anyhow::bail!(
         "no saved workspace matches the current directory.\n\
-         Run `jackin load <agent>` to use the current directory, or\n\
+         Run `jackin load <role>` to use the current directory, or\n\
          run `jackin console` for the interactive operator console."
     );
 }
 
-/// Resolve a running agent container from the current directory context.
+/// Resolve a running role container from the current directory context.
 ///
 /// Finds the saved workspace whose host workdir or mounted host path best
 /// matches `cwd`, then picks a currently-running container whose class is
 /// permitted by the workspace:
-/// 1. If the workspace's `last_agent` has a running container — prefer it
+/// 1. If the workspace's `last_role` has a running container — prefer it
 /// 2. If exactly one running candidate — use it
 /// 3. If multiple — prompt
 /// 4. If zero — error with guidance to run `jackin load`
@@ -250,21 +249,21 @@ pub(crate) fn resolve_running_container_from_context(
     let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) else {
         anyhow::bail!(
             "no saved workspace matches the current directory.\n\
-             Run jackin hardline <agent> to target explicitly, or\n\
-             run jackin load <agent> to start a new session."
+             Run jackin hardline <role> to target explicitly, or\n\
+             run jackin load <role> to start a new session."
         );
     };
 
-    let allowed_classes: Vec<ClassSelector> = if ws.allowed_agents.is_empty() {
+    let allowed_classes: Vec<RoleSelector> = if ws.allowed_roles.is_empty() {
         config
-            .agents
+            .roles
             .keys()
-            .filter_map(|k| ClassSelector::parse(k).ok())
+            .filter_map(|k| RoleSelector::parse(k).ok())
             .collect()
     } else {
-        ws.allowed_agents
+        ws.allowed_roles
             .iter()
-            .filter_map(|k| ClassSelector::parse(k).ok())
+            .filter_map(|k| RoleSelector::parse(k).ok())
             .collect()
     };
 
@@ -276,8 +275,8 @@ pub(crate) fn resolve_running_container_from_context(
     candidates.sort();
     candidates.dedup();
 
-    if let Some(last) = ws.last_agent.as_deref()
-        && let Ok(last_class) = ClassSelector::parse(last)
+    if let Some(last) = ws.last_role.as_deref()
+        && let Ok(last_class) = RoleSelector::parse(last)
     {
         let primary = instance::primary_container_name(&last_class);
         if candidates.contains(&primary) {
@@ -287,14 +286,14 @@ pub(crate) fn resolve_running_container_from_context(
 
     match candidates.as_slice() {
         [] => anyhow::bail!(
-            "no running agents found for workspace {name:?}.\n\
-             Start one with jackin load, or run jackin hardline <agent> to target explicitly."
+            "no running roles found for workspace {name:?}.\n\
+             Start one with jackin load, or run jackin hardline <role> to target explicitly."
         ),
         [only] => Ok(only.clone()),
         _ => {
             let option_refs: Vec<&str> = candidates.iter().map(String::as_str).collect();
             let choice = tui::prompt_choice(
-                &format!("Workspace {name:?} has multiple running agents. Select one:"),
+                &format!("Workspace {name:?} has multiple running roles. Select one:"),
                 &option_refs,
             )?;
             Ok(candidates.swap_remove(choice))
@@ -306,7 +305,7 @@ pub(crate) fn remember_last_agent(
     paths: &JackinPaths,
     config: &mut AppConfig,
     workspace_name: Option<&str>,
-    class: &ClassSelector,
+    class: &RoleSelector,
     load_result: &Result<()>,
 ) {
     if load_result.is_err() {
@@ -327,14 +326,14 @@ pub(crate) fn remember_last_agent(
     let mut editor = match crate::config::ConfigEditor::open(paths) {
         Ok(editor) => editor,
         Err(error) => {
-            eprintln!("warning: failed to open config for last-used-agent save: {error}");
+            eprintln!("warning: failed to open config for last-used-role save: {error}");
             return;
         }
     };
     editor.set_last_agent(workspace_name, &class.key());
     match editor.save() {
         Ok(reloaded) => *config = reloaded,
-        Err(error) => eprintln!("warning: failed to save last-used agent: {error}"),
+        Err(error) => eprintln!("warning: failed to save last-used role: {error}"),
     }
 }
 
@@ -453,9 +452,9 @@ mod tests {
         std::fs::create_dir_all(&nested_dir).unwrap();
 
         let mut config = config::AppConfig::default();
-        config.agents.insert(
+        config.roles.insert(
             "agent-smith".to_string(),
-            config::AgentSource {
+            config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
@@ -472,12 +471,12 @@ mod tests {
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 }],
-                allowed_agents: vec!["agent-smith".to_string()],
-                default_agent: Some("agent-smith".to_string()),
+                allowed_roles: vec!["agent-smith".to_string()],
+                default_role: Some("agent-smith".to_string()),
                 harness: None,
-                last_agent: None,
+                last_role: None,
                 env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                roles: std::collections::BTreeMap::new(),
                 keep_awake: workspace::KeepAwakeConfig::default(),
             },
         );
@@ -497,9 +496,9 @@ mod tests {
         let workspace_root = workspace_root.canonicalize().unwrap();
 
         let mut config = config::AppConfig::default();
-        config.agents.insert(
+        config.roles.insert(
             "agent-smith".to_string(),
-            config::AgentSource {
+            config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
@@ -516,12 +515,12 @@ mod tests {
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 }],
-                allowed_agents: vec!["agent-smith".to_string()],
-                default_agent: Some("agent-smith".to_string()),
+                allowed_roles: vec!["agent-smith".to_string()],
+                default_role: Some("agent-smith".to_string()),
                 harness: None,
-                last_agent: None,
+                last_role: None,
                 env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                roles: std::collections::BTreeMap::new(),
                 keep_awake: workspace::KeepAwakeConfig::default(),
             },
         );
@@ -540,9 +539,9 @@ mod tests {
         std::fs::create_dir_all(&nested_dir).unwrap();
 
         let mut config = config::AppConfig::default();
-        config.agents.insert(
+        config.roles.insert(
             "agent-smith".to_string(),
-            config::AgentSource {
+            config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
@@ -559,12 +558,12 @@ mod tests {
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 }],
-                allowed_agents: vec!["agent-smith".to_string()],
-                default_agent: None,
+                allowed_roles: vec!["agent-smith".to_string()],
+                default_role: None,
                 harness: None,
-                last_agent: Some("ghost-agent".to_string()),
+                last_role: Some("ghost-role".to_string()),
                 env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                roles: std::collections::BTreeMap::new(),
                 keep_awake: workspace::KeepAwakeConfig::default(),
             },
         );
@@ -575,26 +574,26 @@ mod tests {
         assert_eq!(resolved.1, LoadWorkspaceInput::Saved("my-app".to_string()));
     }
 
-    /// Build an `AppConfig` pre-populated with an `agent-smith` agent and a
+    /// Build an `AppConfig` pre-populated with an `agent-smith` role and a
     /// single workspace rooted at `project_dir`.
     fn config_with_workspace(
         project_dir: &Path,
-        allowed_agents: Vec<String>,
-        last_agent: Option<String>,
+        allowed_roles: Vec<String>,
+        last_role: Option<String>,
     ) -> config::AppConfig {
         let mut config = config::AppConfig::default();
-        config.agents.insert(
+        config.roles.insert(
             "agent-smith".to_string(),
-            config::AgentSource {
+            config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );
-        config.agents.insert(
+        config.roles.insert(
             "the-architect".to_string(),
-            config::AgentSource {
+            config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-the-architect.git".to_string(),
                 trusted: true,
                 claude: None,
@@ -611,12 +610,12 @@ mod tests {
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 }],
-                allowed_agents,
-                default_agent: None,
+                allowed_roles,
+                default_role: None,
                 harness: None,
-                last_agent,
+                last_role,
                 env: std::collections::BTreeMap::new(),
-                agents: std::collections::BTreeMap::new(),
+                roles: std::collections::BTreeMap::new(),
                 keep_awake: workspace::KeepAwakeConfig::default(),
             },
         );
@@ -624,7 +623,7 @@ mod tests {
     }
 
     /// `list_running_agent_names` issues two docker captures (role filter +
-    /// legacy filter); supply running-agent output on the first, nothing on
+    /// legacy filter); supply running-role output on the first, nothing on
     /// the second.
     fn fake_runner_with_running_agents(names: &[&str]) -> runtime::FakeRunner {
         let mut runner = runtime::FakeRunner::default();
@@ -682,7 +681,7 @@ mod tests {
             .unwrap_err()
             .to_string();
 
-        assert!(err.contains("no running agents"), "got: {err}");
+        assert!(err.contains("no running roles"), "got: {err}");
         assert!(err.contains("my-app"), "got: {err}");
     }
 
@@ -700,7 +699,7 @@ mod tests {
             .unwrap_err()
             .to_string();
 
-        assert!(err.contains("no running agents"), "got: {err}");
+        assert!(err.contains("no running roles"), "got: {err}");
     }
 
     #[test]
@@ -759,7 +758,7 @@ mod tests {
             &paths,
             &mut config,
             Some("my-app"),
-            &ClassSelector::new(None, "agent-smith"),
+            &RoleSelector::new(None, "agent-smith"),
             &Ok(()),
         );
 
@@ -767,7 +766,7 @@ mod tests {
             config
                 .workspaces
                 .get("my-app")
-                .and_then(|workspace| workspace.last_agent.as_deref()),
+                .and_then(|workspace| workspace.last_role.as_deref()),
             Some("agent-smith")
         );
     }
@@ -782,7 +781,7 @@ mod tests {
             &paths,
             &mut config,
             Some("my-app"),
-            &ClassSelector::new(None, "agent-smith"),
+            &RoleSelector::new(None, "agent-smith"),
             &Err(anyhow::anyhow!("load failed")),
         );
 
@@ -790,7 +789,7 @@ mod tests {
             config
                 .workspaces
                 .get("my-app")
-                .and_then(|workspace| workspace.last_agent.as_deref()),
+                .and_then(|workspace| workspace.last_role.as_deref()),
             None
         );
     }
@@ -801,19 +800,19 @@ mod tests {
     fn broad_workdir_does_not_match_unrelated_subdirectory() {
         let temp = tempfile::tempdir().unwrap();
         let broad_workdir = temp.path().join("Projects");
-        let agent_repo = broad_workdir.join("agent-repo");
+        let agent_repo = broad_workdir.join("role-repo");
         let unrelated = broad_workdir.join("jackin4");
         std::fs::create_dir_all(&agent_repo).unwrap();
         std::fs::create_dir_all(&unrelated).unwrap();
 
         let mut config = config::AppConfig::default();
         config.workspaces.insert(
-            "jackin-agents".to_string(),
+            "jackin-roles".to_string(),
             workspace::WorkspaceConfig {
                 workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
                 mounts: vec![workspace::MountConfig {
                     src: agent_repo.canonicalize().unwrap().display().to_string(),
-                    dst: "/workspace/agent-repo".to_string(),
+                    dst: "/workspace/role-repo".to_string(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 }],
@@ -833,18 +832,18 @@ mod tests {
     fn workspace_matches_when_cwd_is_under_mount_src() {
         let temp = tempfile::tempdir().unwrap();
         let broad_workdir = temp.path().join("Projects");
-        let agent_repo = broad_workdir.join("agent-repo");
+        let agent_repo = broad_workdir.join("role-repo");
         let inside_repo = agent_repo.join("src");
         std::fs::create_dir_all(&inside_repo).unwrap();
 
         let mut config = config::AppConfig::default();
         config.workspaces.insert(
-            "jackin-agents".to_string(),
+            "jackin-roles".to_string(),
             workspace::WorkspaceConfig {
                 workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
                 mounts: vec![workspace::MountConfig {
                     src: agent_repo.canonicalize().unwrap().display().to_string(),
-                    dst: "/workspace/agent-repo".to_string(),
+                    dst: "/workspace/role-repo".to_string(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 }],
@@ -857,6 +856,6 @@ mod tests {
             result.is_some(),
             "cwd inside a mount source must still preselect the workspace"
         );
-        assert_eq!(result.unwrap().0, "jackin-agents");
+        assert_eq!(result.unwrap().0, "jackin-roles");
     }
 }

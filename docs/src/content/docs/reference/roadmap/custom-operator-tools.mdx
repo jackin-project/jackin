@@ -79,7 +79,7 @@ key = "l"
 name = "Run lint"
 exec = "cargo clippy"
 # Optional scope filter — only show this tool when the workspace is
-# loaded against a matching agent class. Same selector grammar as
+# loaded against a matching role. Same selector grammar as
 # [docker.mounts] scope.
 scope = "the-architect"
 
@@ -136,7 +136,7 @@ can `docker exec` from the tool command — explicit and intentional.
 
 - `[[tool]]` array at the operator-config level.
 - `type = "exec"` and `type = "prompt"` (default `exec`).
-- `scope` filter on agent class selector.
+- `scope` filter on role selector.
 - Substitution for `{instance}`, `{workspace}`, `{workdir}`,
   `{host_workdir}`, `{input}`, plus tag-protocol values once that
   ships.

@@ -61,16 +61,16 @@ pressure counter). When an agent gets OOM-killed, the operator sees it.
 
 ## Recommended Shape
 
-The right level for these fields is the **agent class manifest**, not the
+The right level for these fields is the **role manifest**, not the
 operator config or workspace config. Reasoning: limits scale with the
 toolchain (a Rust agent with `cargo build` needs more headroom than a Go
-agent), and the agent class is where toolchain choices live. Operator/
+agent), and the role is where toolchain choices live. Operator/
 workspace overrides come later if a use case surfaces.
 
 ### Config
 
 ```toml
-# jackin.agent.toml
+# jackin.role.toml
 dockerfile = "Dockerfile"
 
 [runtime.limits]
@@ -114,7 +114,7 @@ not a hard error. Operators see the gap; the agent still runs.
 
 ## Scope (V1)
 
-- `[runtime.limits]` block on `jackin.agent.toml` with the four fields
+- `[runtime.limits]` block on `jackin.role.toml` with the four fields
   above.
 - `--memory-max` / `--memory-high` / `--cpus` / `--nofile` flags on
   `jackin load` for one-shot overrides.
@@ -140,10 +140,10 @@ not a hard error. Operators see the gap; the agent still runs.
   for Docker. `"300%"` matches multicode but maps awkwardly to Docker
   (which doesn't accept the percent sign). Recommended default: *accept
   both at parse time, normalize to fractional core count internally*.
-- **Should manifest limits be inheritable across agent classes?** If `org/base`
+- **Should manifest limits be inheritable across roles?** If `org/base`
   declares `memory_max=16GiB` and `org/derived` extends it, does the
   derived class inherit? Recommended default: *yes, with override semantics*
-  — but agent class inheritance is a separate, larger design question and
+  — but role inheritance is a separate, larger design question and
   probably out of scope for V1.
 - **OOM preserve_state interaction with [worktree
   cleanup](/reference/roadmap/worktree-cleanup-assessment/).** An

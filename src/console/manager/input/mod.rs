@@ -32,12 +32,12 @@ pub enum InputOutcome {
     /// `current_dir_workspace(cwd)` via [`build_workspace_choice`], so
     /// there's no startup snapshot to grow stale.
     LaunchCurrentDir,
-    /// Operator just committed a choice in `Modal::AgentPicker`. The
+    /// Operator just committed a choice in `Modal::RolePicker`. The
     /// outer `run_console` loop rebuilds the workspace choice from the
     /// `LoadWorkspaceInput` pinned on `ConsoleState.pending_launch` (set
-    /// when the picker opened), resolves it against this agent, and
-    /// breaks with `Ok(Some((agent, ws)))`.
-    LaunchWithAgent(crate::selector::ClassSelector),
+    /// when the picker opened), resolves it against this role, and
+    /// breaks with `Ok(Some((role, ws)))`.
+    LaunchWithAgent(crate::selector::RoleSelector),
 }
 
 #[allow(clippy::too_many_lines)]
@@ -50,7 +50,7 @@ pub fn handle_key(
 ) -> anyhow::Result<InputOutcome> {
     // List-level modal precedence (e.g. GithubPicker opened from `o` on a
     // workspace row, or AgentPicker opened from Enter when the highlighted
-    // workspace has multiple eligible agents). Handled before stage-specific
+    // workspace has multiple eligible roles). Handled before stage-specific
     // modals so the dispatch stays uniform whatever stage the state thinks
     // it's in. Returns the modal's outcome directly — most arms produce
     // `Continue`, but `AgentPicker` commit produces `LaunchWithAgent`.

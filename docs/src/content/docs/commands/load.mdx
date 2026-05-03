@@ -13,13 +13,13 @@ jackin load [SELECTOR] [TARGET] [OPTIONS]
 
 Load an agent into an isolated Docker container. This is the primary command for starting an agent session.
 
-`SELECTOR` chooses the **agent class** (tool profile). `TARGET` chooses the **workspace or path** (file access boundary).
+`SELECTOR` chooses the **role** (tool profile). `TARGET` chooses the **workspace or path** (file access boundary).
 
 ## Arguments
 
 | Argument | Required | Description |
 |---|---|---|
-| `SELECTOR` | No | Agent class selector (e.g., `agent-smith`, `chainargos/backend-engineer`). When omitted, uses the last-used or default agent for the workspace. |
+| `SELECTOR` | No | Role selector (e.g., `agent-smith`, `chainargos/backend-engineer`). When omitted, uses the last-used or default agent for the workspace. |
 | `TARGET` | No | Path, `path:container-dest`, or saved workspace name. Defaults to the current directory. |
 
 ## Options
@@ -62,8 +62,8 @@ jackin load agent-smith ~/app --mount ~/cache:/cache:ro
 
 ## What happens
 
-1. Resolves the agent class and clones/updates its repository
-2. Validates the agent repo contract (`jackin.agent.toml` + Dockerfile) with strict manifest parsing
+1. Resolves the role and clones/updates its repository
+2. Validates the role repo contract (`jackin.role.toml` + Dockerfile) with strict manifest parsing
 3. **If the agent source has never been trusted**, prompts the operator to review and confirm before proceeding (see [Agent source trust](/guides/security-model#4-agent-source-trust))
 4. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
 5. Prompts for interactive environment variables declared in the manifest
@@ -80,7 +80,7 @@ If the agent manifest declares interactive environment variables, `jackin load` 
 Third-party agents (namespaced selectors like `org/agent-name`) require trust confirmation on first use. jackin' will show the agent name and git URL and ask you to confirm before building. You can pre-trust with `jackin config trust grant org/agent-name` or revoke with `jackin config trust revoke org/agent-name`. See [Agent source trust](/guides/security-model#4-agent-source-trust) for details.
 </Aside>
 <Aside type="note">
-If the cached agent repo has been locally modified, contains extra files, or its git `origin` no longer matches the configured source, `jackin load` stops with an error instead of trusting that cache.
+If the cached role repo has been locally modified, contains extra files, or its git `origin` no longer matches the configured source, `jackin load` stops with an error instead of trusting that cache.
 </Aside>
 <Aside type="caution">
 If two resolved mounts target the same container destination, `jackin load` fails with a conflict error. It does not silently override one mount with another.
