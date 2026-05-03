@@ -42,6 +42,7 @@ plugins = ["code-review@claude-plugins-official", "feature-dev@claude-plugins-of
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
+            crate::harness::Harness::Claude,
         )
         .unwrap();
 
@@ -89,6 +90,7 @@ sparse = ["plugins", ".claude-plugin"]
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
+            crate::harness::Harness::Claude,
         )
         .unwrap();
 

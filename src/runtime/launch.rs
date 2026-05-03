@@ -943,6 +943,7 @@ fn load_agent_with(
             &validated_repo.manifest,
             auth_mode,
             &paths.home_dir,
+            crate::harness::Harness::Claude,
         )?;
 
         // Diagnostic line: surface the active auth mode and, for token

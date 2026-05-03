@@ -35,6 +35,9 @@ pub struct AgentState {
     pub jackin_dir: PathBuf,
     pub plugins_json: PathBuf,
     pub gh_config_dir: PathBuf,
+    /// Set only when harness == Codex; the path to the host-side
+    /// config.toml that gets mounted at /home/agent/.codex/config.toml.
+    pub codex_config_toml: Option<PathBuf>,
 }
 
 impl AgentState {
@@ -44,6 +47,7 @@ impl AgentState {
         manifest: &AgentManifest,
         auth_forward: AuthForwardMode,
         host_home: &Path,
+        harness: crate::harness::Harness,
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
         let claude_dir = root.join(".claude");
@@ -51,29 +55,42 @@ impl AgentState {
         let jackin_dir = root.join(".jackin");
         let plugins_json = jackin_dir.join("plugins.json");
         let gh_config_dir = root.join(".config/gh");
+        let codex_config_toml = root.join("config.toml");
 
         std::fs::create_dir_all(&claude_dir)?;
         std::fs::create_dir_all(&jackin_dir)?;
         std::fs::create_dir_all(&gh_config_dir)?;
 
-        let outcome =
-            Self::provision_claude_auth(&claude_json, &claude_dir, auth_forward, host_home)?;
+        let outcome = match harness {
+            crate::harness::Harness::Claude => {
+                let outcome = Self::provision_claude_auth(
+                    &claude_json,
+                    &claude_dir,
+                    auth_forward,
+                    host_home,
+                )?;
 
-        let empty_marketplaces: Vec<crate::manifest::ClaudeMarketplaceConfig> = Vec::new();
-        let empty_plugins: Vec<String> = Vec::new();
-        let (marketplaces, plugins) = manifest
-            .claude
-            .as_ref()
-            .map_or((&empty_marketplaces[..], &empty_plugins[..]), |c| {
-                (c.marketplaces.as_slice(), c.plugins.as_slice())
-            });
-        std::fs::write(
-            &plugins_json,
-            serde_json::to_string_pretty(&PluginState {
-                marketplaces,
-                plugins,
-            })?,
-        )?;
+                if let Some(claude_cfg) = manifest.claude.as_ref() {
+                    std::fs::write(
+                        &plugins_json,
+                        serde_json::to_string_pretty(&PluginState {
+                            marketplaces: &claude_cfg.marketplaces,
+                            plugins: &claude_cfg.plugins,
+                        })?,
+                    )?;
+                }
+                outcome
+            }
+            crate::harness::Harness::Codex => {
+                Self::provision_codex_auth(&codex_config_toml, manifest)?;
+                AuthProvisionOutcome::Skipped
+            }
+        };
+
+        let codex_config_toml_field = match harness {
+            crate::harness::Harness::Codex => Some(codex_config_toml),
+            crate::harness::Harness::Claude => None,
+        };
 
         Ok((
             Self {
@@ -83,6 +100,7 @@ impl AgentState {
                 jackin_dir,
                 plugins_json,
                 gh_config_dir,
+                codex_config_toml: codex_config_toml_field,
             },
             outcome,
         ))
@@ -125,10 +143,53 @@ plugins = []
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
+            crate::harness::Harness::Claude,
         )
         .unwrap();
 
         assert!(state.claude_dir.is_dir());
         assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
+        assert!(state.codex_config_toml.is_none());
+    }
+
+    #[test]
+    fn prepares_codex_state_writes_config_toml_and_skips_plugins_json() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[harness]
+supported = ["codex"]
+
+[codex]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+
+        let manifest = AgentManifest::load(temp.path()).unwrap();
+
+        let (state, outcome) = AgentState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::Ignore,
+            temp.path(),
+            crate::harness::Harness::Codex,
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+        assert!(state.codex_config_toml.is_some());
+        assert!(state.codex_config_toml.as_ref().unwrap().is_file());
+        // plugins.json is NOT written for codex.
+        assert!(!state.plugins_json.exists());
     }
 }
