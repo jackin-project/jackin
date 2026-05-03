@@ -141,7 +141,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn loads_manifest_with_harness_table() {
+    fn loads_manifest_with_agent_table() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
@@ -167,7 +167,7 @@ plugins = []
     }
 
     #[test]
-    fn legacy_manifest_without_harness_table_defaults_to_claude_only() {
+    fn legacy_manifest_without_agent_table_defaults_to_claude_only() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
@@ -205,7 +205,7 @@ model = "gpt-5"
     }
 
     #[test]
-    fn rejects_unknown_harness_name() {
+    fn rejects_unknown_agent_name() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),

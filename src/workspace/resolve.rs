@@ -207,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn saved_workspace_resolution_preserves_harness() {
+    fn saved_workspace_resolution_preserves_agent() {
         let temp = tempdir().unwrap();
         let workspace_root = temp.path().join("project");
         std::fs::create_dir_all(&workspace_root).unwrap();

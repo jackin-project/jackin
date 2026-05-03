@@ -352,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn edit_workspace_sets_and_clears_harness() {
+    fn edit_workspace_sets_and_clears_agent() {
         let temp = tempdir().unwrap();
         let mut config = AppConfig::default();
         config

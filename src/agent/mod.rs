@@ -63,7 +63,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_harness() {
+    fn rejects_unknown_agent() {
         let err = Agent::from_str("amp").unwrap_err();
         assert!(err.to_string().contains("amp"));
         assert!(err.to_string().contains("claude"));

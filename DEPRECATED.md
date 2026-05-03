@@ -106,7 +106,7 @@ Each entry includes:
 ### `/home/claude/...` mount destinations
 
 - **Type:** config / behavior
-- **Deprecated since:** 2026-05-01 (multi-harness slice)
+- **Deprecated since:** 2026-05-01 (multi-agent slice)
 - **Replacement:** `/home/agent/...` for workspace and global mount
   destinations, plus any agent Dockerfile paths that reference the
   runtime user home.
@@ -121,7 +121,7 @@ Each entry includes:
     `/home/agent` state directories.
   - `src/derived_image.rs` — rewrites generated Dockerfile paths to
     `/home/agent`.
-  - `src/runtime/launch.rs` — mounts harness state under
+  - `src/runtime/launch.rs` — mounts agent state under
     `/home/agent`.
   - `src/cli/config.rs` and docs examples — current examples use
     `/home/agent`.

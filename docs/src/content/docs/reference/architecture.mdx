@@ -33,9 +33,9 @@ jackin's architecture is shaped by a few explicit decisions:
 
 <ImageLayers />
 
-The role repo owns the environment layer. jackin' owns the derived harness layer.
+The role repo owns the environment layer. jackin' owns the derived agent layer.
 
-That means an role defines the tools and conventions, while jackin' injects the harness-specific pieces such as Claude or Codex installation, the entrypoint, and UID/GID remapping.
+That means an role defines the tools and conventions, while jackin' injects the agent-specific pieces such as Claude or Codex installation, the entrypoint, and UID/GID remapping.
 
 ## Container lifecycle
 
@@ -44,12 +44,12 @@ That means an role defines the tools and conventions, while jackin' injects the 
 1. **Resolve role** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
 2. **Validate the repo contract** — require `jackin.role.toml` and a valid Dockerfile path, validate manifest strictly
 3. **Resolve environment variables** — prompt the user for interactive env vars declared in the manifest
-4. **Generate a derived build context** — copy the repo, inject harness assets (entrypoint + pre-launch hook), and render a derived Dockerfile
+4. **Generate a derived build context** — copy the repo, inject agent assets (entrypoint + pre-launch hook), and render a derived Dockerfile
 5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
 6. **Create a per-agent Docker network**
 7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume
 8. **Start the agent container detached** with a persistent TTY (`docker run -d -it`) — mounts, resolved env vars, TLS client certs, labels, and `DOCKER_HOST` all point at the sidecar
-9. **Attach the foreground session** with `docker attach --detach-keys= --sig-proxy=false`, then **run the selected harness with full permissions inside that boundary**
+9. **Attach the foreground session** with `docker attach --detach-keys= --sig-proxy=false`, then **run the selected agent with full permissions inside that boundary**
 
 The detached-start + attach split decouples the container's lifetime from the foreground session: closing the terminal tab drops the attach, but the container keeps running with its own TTY. `--sig-proxy=false` stops SIGHUP (terminal close) from being forwarded to the container. Cleanup distinguishes three post-attach states:
 
@@ -122,7 +122,7 @@ Materialized isolated mounts are recorded at:
 <data_dir>/jackin-<container>/.jackin/isolation.json
 ```
 
-The file lives next to the per-container harness state and `.jackin/` metadata and is the source of truth for `purge` after the operator has changed (or removed) the workspace config. Each record contains at least:
+The file lives next to the per-container agent state and `.jackin/` metadata and is the source of truth for `purge` after the operator has changed (or removed) the workspace config. Each record contains at least:
 
 | Field | Purpose |
 |---|---|

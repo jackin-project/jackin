@@ -130,12 +130,12 @@ The published tags are:
 When you load an agent, jackin' doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
 
 1. **User remapping** — adjusts the `agent` user's UID/GID to match your host user
-2. **Harness installation** — installs every harness declared in the agent manifest
-3. **Runtime entrypoint** — the script that configures git, wires up GitHub if `gh` is already authenticated (it does not perform `gh auth login` — an unauthenticated `gh` is left alone with a notice), dispatches harness setup, and launches the selected harness
-4. **Plugin installation** — any Claude plugins declared in the agent manifest when launching the Claude harness
+2. **Agent installation** — installs every agent declared in the role manifest
+3. **Runtime entrypoint** — the script that configures git, wires up GitHub if `gh` is already authenticated (it does not perform `gh auth login` — an unauthenticated `gh` is left alone with a notice), dispatches agent setup, and launches the selected agent
+4. **Plugin installation** — any Claude plugins declared in the role manifest when launching the Claude agent
 
 <Aside type="note">
-Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Passing `--rebuild` additionally invalidates harness installation layers so the build picks up newer harness CLI downloads.
+Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Passing `--rebuild` additionally invalidates agent installation layers so the build picks up newer agent CLI downloads.
 </Aside>
 ## Extending the construct
 
@@ -143,7 +143,7 @@ Role repos add their tools on top of the construct. The construct provides the f
 
 ```
 ┌─────────────────────────────────┐
-│  Derived Layer (jackin-managed) │  Harness CLIs, entrypoint, user mapping
+│  Derived Layer (jackin-managed) │  Agent CLIs, entrypoint, user mapping
 ├─────────────────────────────────┤
 │  Agent Layer (your Dockerfile)  │  Rust, Node, Python, custom tools
 ├─────────────────────────────────┤

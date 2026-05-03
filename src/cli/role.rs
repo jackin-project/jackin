@@ -65,11 +65,11 @@ pub struct LoadArgs {
     /// Agent to launch under (claude or codex). Overrides the
     /// workspace's `agent` field for this launch only. When neither
     /// is set, defaults to claude.
-    #[arg(long, value_parser = parse_harness)]
+    #[arg(long, value_parser = parse_agent)]
     pub agent: Option<crate::agent::Agent>,
 }
 
-fn parse_harness(s: &str) -> Result<crate::agent::Agent, String> {
+fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
     s.parse()
         .map_err(|e: crate::agent::ParseAgentError| e.to_string())
 }
@@ -152,7 +152,7 @@ mod tests {
     }
 
     #[test]
-    fn load_args_parses_harness_flag() {
+    fn load_args_parses_agent_flag() {
         let cli =
             Cli::try_parse_from(["jackin", "load", "agent-smith", "--agent", "codex"]).unwrap();
         assert!(matches!(
@@ -165,13 +165,13 @@ mod tests {
     }
 
     #[test]
-    fn load_args_rejects_unknown_harness() {
+    fn load_args_rejects_unknown_agent() {
         let res = Cli::try_parse_from(["jackin", "load", "agent-smith", "--agent", "amp"]);
         assert!(res.is_err());
     }
 
     #[test]
-    fn load_args_harness_optional() {
+    fn load_args_agent_optional() {
         let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
         assert!(matches!(
             cli.command,

@@ -97,10 +97,10 @@ impl Default for LoadOptions {
 /// to the workspace's `agent` field; otherwise defaults to Claude.
 fn resolve_agent(
     cli_override: Option<crate::agent::Agent>,
-    workspace_harness: Option<crate::agent::Agent>,
+    workspace_agent: Option<crate::agent::Agent>,
 ) -> crate::agent::Agent {
     cli_override
-        .or(workspace_harness)
+        .or(workspace_agent)
         .unwrap_or(crate::agent::Agent::Claude)
 }
 
@@ -1508,7 +1508,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn harness_mounts_for_claude_includes_claude_state() {
+    fn agent_mounts_for_claude_includes_claude_state() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -1560,7 +1560,7 @@ plugins = []
     }
 
     #[test]
-    fn harness_mounts_for_codex_only_has_config_toml() {
+    fn agent_mounts_for_codex_only_has_config_toml() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -1829,7 +1829,7 @@ supported = ["codex"]
     }
 
     #[test]
-    fn resolve_harness_cli_override_wins() {
+    fn resolve_agent_cli_override_wins() {
         assert_eq!(
             resolve_agent(
                 Some(crate::agent::Agent::Codex),
@@ -1840,7 +1840,7 @@ supported = ["codex"]
     }
 
     #[test]
-    fn resolve_harness_uses_workspace_when_cli_absent() {
+    fn resolve_agent_uses_workspace_when_cli_absent() {
         assert_eq!(
             resolve_agent(None, Some(crate::agent::Agent::Codex)),
             crate::agent::Agent::Codex
@@ -1848,12 +1848,12 @@ supported = ["codex"]
     }
 
     #[test]
-    fn resolve_harness_defaults_to_claude() {
+    fn resolve_agent_defaults_to_claude() {
         assert_eq!(resolve_agent(None, None), crate::agent::Agent::Claude);
     }
 
     #[test]
-    fn validate_harness_supported_rejects_unsupported_choice() {
+    fn validate_agent_supported_rejects_unsupported_choice() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
@@ -1876,14 +1876,14 @@ plugins = []
     }
 
     #[test]
-    fn verify_required_harness_env_rejects_missing_codex_key() {
+    fn verify_required_agent_env_rejects_missing_codex_key() {
         let env = crate::env_resolver::ResolvedEnv { vars: vec![] };
         let err = verify_required_agent_env(crate::agent::Agent::Codex, &env).unwrap_err();
         assert!(err.to_string().contains("OPENAI_API_KEY"));
     }
 
     #[test]
-    fn verify_required_harness_env_accepts_codex_key() {
+    fn verify_required_agent_env_accepts_codex_key() {
         let env = crate::env_resolver::ResolvedEnv {
             vars: vec![("OPENAI_API_KEY".to_string(), "test-key".to_string())],
         };
@@ -2219,7 +2219,7 @@ plugins = ["code-review@claude-plugins-official"]
     }
 
     #[test]
-    fn load_agent_launches_codex_from_workspace_harness() {
+    fn load_agent_launches_codex_from_workspace_agent() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();

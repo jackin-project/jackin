@@ -15,7 +15,7 @@ For full details — including what's installed, how it is built, the image laye
 | `install-claude-plugins.sh` | Runtime script that installs Claude plugins from `~/.jackin/plugins.json` |
 | `versions.env` | Pinned versions for security tools (tirith, shellfirm) used as Docker build-args |
 
-The runtime entrypoint that launches the selected harness is at [`docker/runtime/entrypoint.sh`](../runtime/entrypoint.sh) — it configures git identity, authenticates with GitHub, runs harness-specific setup, and starts Claude or Codex.
+The runtime entrypoint that launches the selected agent is at [`docker/runtime/entrypoint.sh`](../runtime/entrypoint.sh) — it configures git identity, authenticates with GitHub, runs agent-specific setup, and starts Claude or Codex.
 
 ## Image Layer Architecture
 

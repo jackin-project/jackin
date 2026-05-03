@@ -15,7 +15,7 @@ fn parse_mount_isolation(s: &str) -> anyhow::Result<(String, MountIsolation)> {
     Ok((dst.into(), mode))
 }
 
-fn parse_harness(s: &str) -> Result<crate::agent::Agent, String> {
+fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
     s.parse()
         .map_err(|e: crate::agent::ParseAgentError| e.to_string())
 }
@@ -57,7 +57,7 @@ Examples:
         #[arg(long = "default-role")]
         default_role: Option<String>,
         /// Default agent for this workspace (claude or codex)
-        #[arg(long, value_parser = parse_harness)]
+        #[arg(long, value_parser = parse_agent)]
         agent: Option<crate::agent::Agent>,
         /// Set isolation mode for a mount destination. Repeatable.
         /// Format: `<container-dst>=<shared|worktree>`.
@@ -140,7 +140,7 @@ Examples:
         )]
         clear_default_agent: bool,
         /// Set the default agent for this workspace
-        #[arg(long, value_parser = parse_harness)]
+        #[arg(long, value_parser = parse_agent)]
         agent: Option<crate::agent::Agent>,
         /// Clear the explicit agent so the workspace falls back to claude
         #[arg(
@@ -446,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_workspace_create_with_harness() {
+    fn parses_workspace_create_with_agent() {
         let cli = Cli::try_parse_from([
             "jackin",
             "workspace",
@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_workspace_edit_with_harness() {
+    fn parses_workspace_edit_with_agent() {
         let cli =
             Cli::try_parse_from(["jackin", "workspace", "edit", "my-app", "--agent", "codex"])
                 .unwrap();
@@ -545,7 +545,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_conflicting_workspace_edit_harness_flags() {
+    fn rejects_conflicting_workspace_edit_agent_flags() {
         let err = Cli::try_parse_from([
             "jackin",
             "workspace",

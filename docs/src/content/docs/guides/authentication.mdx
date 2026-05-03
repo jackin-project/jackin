@@ -1,6 +1,6 @@
 ---
 title: Authentication Forwarding
-description: Forward or provide harness credentials for agent containers
+description: Forward or provide agent credentials for agent containers
 ---
 import { Aside } from '@astrojs/starlight/components'
 
@@ -160,7 +160,7 @@ or:
 OPENAI_API_KEY = "op://vault/openai/api-key"
 ```
 
-When a workspace or launch selects the `codex` harness, jackin requires `OPENAI_API_KEY` to be present in the resolved launch env before it builds or starts the container. There is no Codex equivalent of Claude's `sync` or `token` auth-forward modes in this slice.
+When a workspace or launch selects the `codex` agent, jackin requires `OPENAI_API_KEY` to be present in the resolved launch env before it builds or starts the container. There is no Codex equivalent of Claude's `sync` or `token` auth-forward modes in this slice.
 
 ## What gets forwarded
 

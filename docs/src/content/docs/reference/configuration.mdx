@@ -74,7 +74,7 @@ See [Environment Variables](/guides/environment-variables) for the full guide.
 workdir = "/home/user/Projects/my-app"
 allowed_roles = ["agent-smith", "the-architect"]
 default_role = "agent-smith"
-harness = "codex"
+agent = "codex"
 last_agent = "the-architect"
 
 [[workspaces.my-app.mounts]]
@@ -102,7 +102,7 @@ enabled = true
 | `mounts[].isolation` | Per-mount isolation mode: `shared` (default) or `worktree`. Omitting the field deserializes to `shared`, but every save writes the field explicitly so old configs migrate to the new shape on first save. Global mounts (under `[docker.mounts]` or `[[mounts]]`) reject this field at parse time. A `clone` mode is on the [V1.1 roadmap](/reference/roadmap/per-mount-isolation/) but is not part of the V1 enum vocabulary. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation). |
 | `allowed_roles` | List of allowed agent selectors |
 | `default_role` | Default agent selector |
-| `harness` | Optional workspace default harness (`"claude"` or `"codex"`). Omit to default to Claude. |
+| `agent` | Optional workspace default agent (`"claude"` or `"codex"`). Omit to default to Claude. |
 | `last_agent` | Most recently used agent selector for this workspace |
 | `keep_awake.enabled` | macOS-only: keep the host awake while any agent in this workspace is running (see [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake)). On Linux/Windows the flag is silently accepted but has no effect — useful when sharing a `config.toml` across machines, but the host will still sleep. |
 

@@ -153,14 +153,14 @@ name = "My Agent"
 
 jackin adds each declared marketplace at container startup, then installs each plugin ID exactly as written.
 
-## Supporting multiple harnesses
+## Supporting multiple agents
 
-An role can support more than one harness while keeping one shared Dockerfile:
+An role can support more than one agent while keeping one shared Dockerfile:
 
 ```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["claude", "codex"]
 
 [claude]
@@ -173,16 +173,16 @@ model = "gpt-5"
 name = "My Agent"
 ```
 
-The workspace chooses the default harness:
+The workspace chooses the default agent:
 
 ```bash
-jackin workspace create my-app --workdir ~/Projects/my-app --harness codex
+jackin workspace create my-app --workdir ~/Projects/my-app --agent codex
 ```
 
 You can override it for one launch:
 
 ```bash
-jackin load my-agent my-app --harness claude
+jackin load my-agent my-app --agent claude
 ```
 
 ## Testing your agent
@@ -193,7 +193,7 @@ The fastest way to test is to load it:
 jackin load your-agent-name --rebuild
 ```
 
-The `--rebuild` flag forces a fresh image build, picking up Dockerfile changes and newer harness CLI downloads.
+The `--rebuild` flag forces a fresh image build, picking up Dockerfile changes and newer agent CLI downloads.
 
 Use `--debug` to see raw Docker output if something goes wrong:
 

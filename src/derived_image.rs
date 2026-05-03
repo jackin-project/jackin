@@ -292,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_dockerfile_does_not_set_jackin_harness_env() {
+    fn renders_dockerfile_does_not_set_jackin_agent_env() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
@@ -308,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_dispatches_on_jackin_harness() {
+    fn entrypoint_dispatches_on_jackin_agent() {
         assert!(ENTRYPOINT_SH.contains("case \"${JACKIN_AGENT:?"));
         assert!(ENTRYPOINT_SH.contains("  claude)"));
         assert!(ENTRYPOINT_SH.contains("  codex)"));

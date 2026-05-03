@@ -54,7 +54,7 @@ impl CommandRunner for FakeRunner {
 }
 
 #[test]
-fn codex_launch_invokes_docker_run_with_codex_harness() {
+fn codex_launch_invokes_docker_run_with_codex_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -161,7 +161,7 @@ model = "gpt-5"
 }
 
 #[test]
-fn codex_launch_cli_harness_override_wins_over_workspace() {
+fn codex_launch_cli_agent_override_wins_over_workspace() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();

@@ -36,7 +36,7 @@ else
     echo "[entrypoint] GitHub CLI not installed — skipping auth"
 fi
 
-# ── harness-specific setup ─────────────────────────────────────────
+# ── agent-specific setup ───────────────────────────────────────────
 case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
   claude)
     run_maybe_quiet /home/agent/install-claude-plugins.sh
@@ -71,7 +71,7 @@ if [ -x /home/agent/.jackin-runtime/pre-launch.sh ]; then
     /home/agent/.jackin-runtime/pre-launch.sh
 fi
 
-# In debug mode, pause so the operator can review logs before the harness clears the screen
+# In debug mode, pause so the operator can review logs before the agent clears the screen
 if [ "${JACKIN_DEBUG:-0}" = "1" ]; then
     set +x
     echo ""

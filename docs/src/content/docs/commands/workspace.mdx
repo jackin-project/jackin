@@ -30,14 +30,14 @@ Create a new workspace definition.
 | `--no-workdir-mount` | Don't auto-mount the workdir |
 | `--allowed-role <NAME>` | Restrict to these roles (repeatable) |
 | `--default-role <NAME>` | Role to auto-select |
-| `--harness <claude\|codex>` | Default harness for this workspace |
+| `--agent <claude\|codex>` | Default agent for this workspace |
 | `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared` or `worktree`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
 | `--keep-awake` | macOS only: opt this workspace into the keep-awake reconciler. While any agent in the workspace is running, jackin keeps a single detached `caffeinate -imsu` alive so the host stays awake. No-op on Linux/Windows. See [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake). |
 
 ```bash
 jackin workspace create my-app --workdir ~/Projects/my-app
 jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
-jackin workspace create codex-app --workdir ~/Projects/codex-app --harness codex
+jackin workspace create codex-app --workdir ~/Projects/codex-app --agent codex
 jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
 jackin workspace create restricted --workdir ~/app --allowed-role agent-smith --default-role agent-smith
 jackin workspace create remote --workdir ~/Projects/remote --keep-awake
@@ -86,8 +86,8 @@ Modify an existing workspace.
 | `--remove-allowed-role <NAME>` | Revoke role access (repeatable) |
 | `--default-role <NAME>` | Set default agent |
 | `--clear-default-role` | Clear the default agent |
-| `--harness <claude\|codex>` | Set default harness |
-| `--clear-harness` | Clear the explicit harness and fall back to Claude |
+| `--agent <claude\|codex>` | Set default agent |
+| `--clear-agent` | Clear the explicit agent and fall back to Claude |
 | `--mount-isolation <DST>=<TYPE>` | Set isolation for a mount destination (repeatable). Can target an existing mount or a mount being upserted in the same command. |
 | `--delete-isolated-state` | Acknowledge deleting preserved isolated state when an edit changes the `src` of a materialized isolated mount. Required for non-interactive source-drift edits; ignored when no preserved state exists. |
 | `--keep-awake` | macOS only: enable the keep-awake reconciler on this workspace. Mutually exclusive with `--no-keep-awake`. |
@@ -100,8 +100,8 @@ jackin workspace edit my-app --remove-destination /old-mount
 jackin workspace edit my-app --allowed-role chainargos/backend-engineer
 jackin workspace edit my-app --default-role agent-smith
 jackin workspace edit my-app --clear-default-role
-jackin workspace edit my-app --harness codex
-jackin workspace edit my-app --clear-harness
+jackin workspace edit my-app --agent codex
+jackin workspace edit my-app --clear-agent
 jackin workspace edit my-app --keep-awake
 jackin workspace edit my-app --no-keep-awake
 

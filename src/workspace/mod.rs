@@ -43,7 +43,7 @@ pub struct WorkspaceConfig {
     #[serde(default)]
     pub default_role: Option<String>,
     /// Workspace-level default agent (claude or codex). When unset,
-    /// `resolved_harness()` falls back to Claude. The field is omitted
+    /// `resolved_agent()` falls back to Claude. The field is omitted
     /// from serialized output when `None` so legacy config files stay
     /// byte-for-byte stable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -93,7 +93,7 @@ impl KeepAwakeConfig {
 impl WorkspaceConfig {
     /// Returns the workspace's selected agent, defaulting to Claude
     /// when no agent field is set (legacy workspace).
-    pub fn resolved_harness(&self) -> crate::agent::Agent {
+    pub fn resolved_agent(&self) -> crate::agent::Agent {
         self.agent.unwrap_or(crate::agent::Agent::Claude)
     }
 }
@@ -271,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_serializes_harness_when_set() {
+    fn workspace_serializes_agent_when_set() {
         let ws = WorkspaceConfig {
             workdir: "/tmp/x".to_string(),
             agent: Some(crate::agent::Agent::Codex),
@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_omits_harness_field_when_unset() {
+    fn workspace_omits_agent_field_when_unset() {
         let ws = WorkspaceConfig {
             workdir: "/tmp/x".to_string(),
             ..Default::default()
@@ -299,7 +299,7 @@ mod tests {
             workdir: "/tmp/x".to_string(),
             ..Default::default()
         };
-        assert_eq!(ws.resolved_harness(), crate::agent::Agent::Claude);
+        assert_eq!(ws.resolved_agent(), crate::agent::Agent::Claude);
     }
 
     #[test]
@@ -309,7 +309,7 @@ mod tests {
             agent: Some(crate::agent::Agent::Codex),
             ..Default::default()
         };
-        assert_eq!(ws.resolved_harness(), crate::agent::Agent::Codex);
+        assert_eq!(ws.resolved_agent(), crate::agent::Agent::Codex);
     }
 
     #[test]

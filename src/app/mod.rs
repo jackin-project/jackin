@@ -576,7 +576,7 @@ pub fn run(cli: Cli) -> Result<()> {
                                 ws.allowed_roles.join(", ")
                             },
                             default_role: ws.default_role.as_deref().unwrap_or("none").to_string(),
-                            agent: ws.resolved_harness().slug().to_string(),
+                            agent: ws.resolved_agent().slug().to_string(),
                         })
                         .collect();
                     let mut table = Table::new(rows);
@@ -1114,7 +1114,7 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
         workspace.allowed_roles.join(", ")
     };
     let default_role = workspace.default_role.as_deref().unwrap_or("none");
-    let agent = workspace.resolved_harness().slug();
+    let agent = workspace.resolved_agent().slug();
 
     let short_workdir = tui::shorten_home(&workspace.workdir);
     let mut info: Vec<(&str, &str)> = vec![
