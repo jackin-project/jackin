@@ -360,7 +360,7 @@ plugins = []
     }
 
     #[test]
-    fn display_name_falls_back_to_class_name() {
+    fn display_name_falls_back_to_role_name() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),

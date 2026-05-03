@@ -34,6 +34,7 @@ pub enum AuthProvisionOutcome {
 /// runtime invariant "Some iff agent == Codex" enforced by `expect()`
 /// across two functions) is now a compile-checked match.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum AgentRuntimeState {
     Claude {
         /// Host path mounted at `/home/agent/.claude` (session state).
@@ -223,6 +224,26 @@ plugins = []
             "{}"
         );
         assert!(state.codex_config_toml().is_none());
+
+        // Pin the host-side grouped layout: a regression to the legacy
+        // flat shape (.claude/, .claude.json, .jackin/plugins.json at
+        // the data-dir root) would still satisfy the accessor checks
+        // above, since they only look up paths through the enum. These
+        // assertions verify the actual host paths under
+        // `<container>/claude/`.
+        let container_root = paths.data_dir.join("jackin-agent-smith");
+        assert_eq!(
+            state.claude_state_dir().unwrap(),
+            container_root.join("claude").join("state"),
+        );
+        assert_eq!(
+            state.claude_account_json().unwrap(),
+            container_root.join("claude").join("account.json"),
+        );
+        assert_eq!(
+            state.claude_plugins_json().unwrap(),
+            container_root.join("claude").join("plugins.json"),
+        );
     }
 
     #[test]
