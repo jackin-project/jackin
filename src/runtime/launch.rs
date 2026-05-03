@@ -220,25 +220,34 @@ const STANDARD_TERMS: &[&str] = &[
 /// export failed (in which case `term_value` is the safe fallback).
 /// Returns the per-agent mount strings in jackin's "src:dst" /
 /// "src:dst:ro" idiom, ready to be passed to `docker run -v`.
-fn agent_mounts(agent: crate::agent::Agent, state: &crate::instance::RoleState) -> Vec<String> {
-    use crate::agent::Agent;
+///
+/// The agent variant is read directly off `state.agent_runtime` rather
+/// than passed in — the prior shape took a separate `agent` parameter
+/// plus an `Option<PathBuf>` field on the state, with a runtime
+/// `expect()` enforcing "Some iff agent == Codex" across two
+/// functions. The enum variant on `RoleState` makes that invariant
+/// compile-checked: an exhaustive match here cannot construct a
+/// codex-mounts arm without a `config_toml` path in scope.
+fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
+    use crate::instance::AgentRuntimeState;
 
-    match agent {
-        Agent::Claude => vec![
-            format!("{}:/home/agent/.claude", state.claude_dir.display()),
-            format!("{}:/home/agent/.claude.json", state.claude_json.display()),
+    match &state.agent_runtime {
+        AgentRuntimeState::Claude {
+            dir,
+            json,
+            plugins_json,
+        } => vec![
+            format!("{}:/home/agent/.claude", dir.display()),
+            format!("{}:/home/agent/.claude.json", json.display()),
             format!(
                 "{}:/home/agent/.jackin/plugins.json:ro",
-                state.plugins_json.display()
+                plugins_json.display()
             ),
         ],
-        Agent::Codex => {
-            let path = state
-                .codex_config_toml
-                .as_ref()
-                .expect("codex_config_toml set when agent == Codex");
-            vec![format!("{}:/home/agent/.codex/config.toml", path.display())]
-        }
+        AgentRuntimeState::Codex { config_toml } => vec![format!(
+            "{}:/home/agent/.codex/config.toml",
+            config_toml.display()
+        )],
     }
 }
 
@@ -544,7 +553,7 @@ fn launch_role_runtime(
     let dind_hostname = format!("{}={dind}", crate::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME);
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
-    let agent_specific_mounts = agent_mounts(*agent, state);
+    let agent_specific_mounts = agent_mounts(state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
     let jackin_agent_env = format!(
@@ -1532,7 +1541,7 @@ plugins = []
         )
         .unwrap();
 
-        let mounts = agent_mounts(Agent::Claude, &state);
+        let mounts = agent_mounts(&state);
         assert!(
             mounts
                 .iter()
@@ -1586,7 +1595,7 @@ supported = ["codex"]
         )
         .unwrap();
 
-        let mounts = agent_mounts(Agent::Codex, &state);
+        let mounts = agent_mounts(&state);
         assert_eq!(mounts.len(), 1);
         assert!(mounts[0].contains("/home/agent/.codex/config.toml"));
         assert!(!mounts[0].ends_with(":ro"));

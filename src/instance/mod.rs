@@ -27,17 +27,71 @@ pub enum AuthProvisionOutcome {
     TokenMode,
 }
 
+/// Agent-specific paths that belong to one variant. Encoded as an
+/// enum so the agent-state and the actual paths can never disagree —
+/// the previous shape (`Option<PathBuf>` plus a runtime invariant
+/// "Some iff agent == Codex" enforced by `expect()` across two
+/// functions) is now a compile-checked match.
+#[derive(Debug, Clone)]
+pub enum AgentRuntimeState {
+    Claude {
+        dir: PathBuf,
+        json: PathBuf,
+        plugins_json: PathBuf,
+    },
+    Codex {
+        config_toml: PathBuf,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct RoleState {
     pub root: PathBuf,
-    pub claude_dir: PathBuf,
-    pub claude_json: PathBuf,
     pub jackin_dir: PathBuf,
-    pub plugins_json: PathBuf,
     pub gh_config_dir: PathBuf,
-    /// Set only when agent == Codex; the path to the host-side
-    /// config.toml that gets mounted at /home/agent/.codex/config.toml.
-    pub codex_config_toml: Option<PathBuf>,
+    pub agent_runtime: AgentRuntimeState,
+}
+
+impl RoleState {
+    /// Path to the agent's `.claude/` directory, or `None` if this state
+    /// was not prepared for `Agent::Claude`.
+    #[must_use]
+    pub fn claude_dir(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Claude { dir, .. } => Some(dir),
+            AgentRuntimeState::Codex { .. } => None,
+        }
+    }
+
+    /// Path to the agent's `.claude.json`, or `None` if this state was
+    /// not prepared for `Agent::Claude`.
+    #[must_use]
+    pub fn claude_json(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Claude { json, .. } => Some(json),
+            AgentRuntimeState::Codex { .. } => None,
+        }
+    }
+
+    /// Path to the agent's `plugins.json`, or `None` if this state was
+    /// not prepared for `Agent::Claude`.
+    #[must_use]
+    pub fn plugins_json(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Claude { plugins_json, .. } => Some(plugins_json),
+            AgentRuntimeState::Codex { .. } => None,
+        }
+    }
+
+    /// Path to the agent's `config.toml`, or `None` if this state was
+    /// not prepared for `Agent::Codex`.
+    #[must_use]
+    pub fn codex_config_toml(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Codex { config_toml } => Some(config_toml),
+            AgentRuntimeState::Claude { .. } => None,
+        }
+    }
 }
 
 impl RoleState {
@@ -50,25 +104,21 @@ impl RoleState {
         agent: crate::agent::Agent,
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
-        let claude_dir = root.join(".claude");
-        let claude_json = root.join(".claude.json");
         let jackin_dir = root.join(".jackin");
-        let plugins_json = jackin_dir.join("plugins.json");
         let gh_config_dir = root.join(".config/gh");
-        let codex_config_toml = root.join("config.toml");
 
-        std::fs::create_dir_all(&claude_dir)?;
         std::fs::create_dir_all(&jackin_dir)?;
         std::fs::create_dir_all(&gh_config_dir)?;
 
-        let outcome = match agent {
+        let (agent_runtime, outcome) = match agent {
             crate::agent::Agent::Claude => {
-                let outcome = Self::provision_claude_auth(
-                    &claude_json,
-                    &claude_dir,
-                    auth_forward,
-                    host_home,
-                )?;
+                let dir = root.join(".claude");
+                let json = root.join(".claude.json");
+                let plugins_json = jackin_dir.join("plugins.json");
+
+                std::fs::create_dir_all(&dir)?;
+
+                let outcome = Self::provision_claude_auth(&json, &dir, auth_forward, host_home)?;
 
                 if let Some(claude_cfg) = manifest.claude.as_ref() {
                     std::fs::write(
@@ -79,28 +129,31 @@ impl RoleState {
                         })?,
                     )?;
                 }
-                outcome
+                (
+                    AgentRuntimeState::Claude {
+                        dir,
+                        json,
+                        plugins_json,
+                    },
+                    outcome,
+                )
             }
             crate::agent::Agent::Codex => {
-                Self::provision_codex_auth(&codex_config_toml, manifest)?;
-                AuthProvisionOutcome::Skipped
+                let config_toml = root.join("config.toml");
+                Self::provision_codex_auth(&config_toml, manifest)?;
+                (
+                    AgentRuntimeState::Codex { config_toml },
+                    AuthProvisionOutcome::Skipped,
+                )
             }
-        };
-
-        let codex_config_toml_field = match agent {
-            crate::agent::Agent::Codex => Some(codex_config_toml),
-            crate::agent::Agent::Claude => None,
         };
 
         Ok((
             Self {
                 root,
-                claude_dir,
-                claude_json,
                 jackin_dir,
-                plugins_json,
                 gh_config_dir,
-                codex_config_toml: codex_config_toml_field,
+                agent_runtime,
             },
             outcome,
         ))
@@ -147,9 +200,12 @@ plugins = []
         )
         .unwrap();
 
-        assert!(state.claude_dir.is_dir());
-        assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
-        assert!(state.codex_config_toml.is_none());
+        assert!(state.claude_dir().unwrap().is_dir());
+        assert_eq!(
+            std::fs::read_to_string(state.claude_json().unwrap()).unwrap(),
+            "{}"
+        );
+        assert!(state.codex_config_toml().is_none());
     }
 
     #[test]
@@ -187,9 +243,12 @@ supported = ["codex"]
         .unwrap();
 
         assert_eq!(outcome, AuthProvisionOutcome::Skipped);
-        assert!(state.codex_config_toml.is_some());
-        assert!(state.codex_config_toml.as_ref().unwrap().is_file());
-        // plugins.json is NOT written for codex.
-        assert!(!state.plugins_json.exists());
+        assert!(state.codex_config_toml().is_some());
+        assert!(state.codex_config_toml().unwrap().is_file());
+        // Codex state carries no claude/plugins paths — the typed enum
+        // makes the absence structural rather than a runtime nil.
+        assert!(state.claude_dir().is_none());
+        assert!(state.claude_json().is_none());
+        assert!(state.plugins_json().is_none());
     }
 }

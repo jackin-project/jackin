@@ -48,7 +48,8 @@ plugins = ["code-review@claude-plugins-official", "feature-dev@claude-plugins-of
 
         assert!(state.jackin_dir.is_dir());
         let value: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&state.plugins_json).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(state.plugins_json().unwrap()).unwrap())
+                .unwrap();
         assert_eq!(value["marketplaces"], json!([]));
         assert_eq!(
             value["plugins"],
@@ -95,7 +96,8 @@ sparse = ["plugins", ".claude-plugin"]
         .unwrap();
 
         let value: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&state.plugins_json).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(state.plugins_json().unwrap()).unwrap())
+                .unwrap();
         assert_eq!(
             value["marketplaces"],
             json!([
