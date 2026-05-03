@@ -70,6 +70,7 @@ pub(super) fn build_agent_image(
 
     let mut build_args: Vec<&str> = vec![
         "build",
+        "--pull",
         "--build-arg",
         &build_arg_uid,
         "--build-arg",
