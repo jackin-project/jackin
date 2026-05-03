@@ -62,6 +62,16 @@ pub struct LoadArgs {
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
+    /// Harness to launch under (claude or codex). Overrides the
+    /// workspace's `harness` field for this launch only. When neither
+    /// is set, defaults to claude.
+    #[arg(long, value_parser = parse_harness)]
+    pub harness: Option<crate::harness::Harness>,
+}
+
+fn parse_harness(s: &str) -> Result<crate::harness::Harness, String> {
+    s.parse()
+        .map_err(|e: crate::harness::ParseHarnessError| e.to_string())
 }
 
 /// Reattach to a running agent's session
@@ -139,6 +149,34 @@ mod tests {
     fn help_text(args: &[&str]) -> String {
         let err = Cli::try_parse_from(args).unwrap_err();
         strip_ansi(&err.to_string())
+    }
+
+    #[test]
+    fn load_args_parses_harness_flag() {
+        let cli =
+            Cli::try_parse_from(["jackin", "load", "agent-smith", "--harness", "codex"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Load(super::LoadArgs {
+                harness: Some(crate::harness::Harness::Codex),
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn load_args_rejects_unknown_harness() {
+        let res = Cli::try_parse_from(["jackin", "load", "agent-smith", "--harness", "amp"]);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn load_args_harness_optional() {
+        let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Load(super::LoadArgs { harness: None, .. }))
+        ));
     }
 
     #[test]

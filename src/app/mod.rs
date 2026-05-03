@@ -59,7 +59,10 @@ pub fn run(cli: Cli) -> Result<()> {
             no_intro,
             debug,
             force,
+            harness,
         }) => {
+            // Harness resolution wires up in Task 16; accept-and-ignore for now.
+            let _ = harness;
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
