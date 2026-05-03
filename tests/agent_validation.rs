@@ -2,7 +2,7 @@ use jackin::manifest::{RoleManifest, validate::validate_agent_consistency};
 use tempfile::tempdir;
 
 #[test]
-fn rejects_supported_harness_without_corresponding_table() {
+fn rejects_supported_agent_without_corresponding_table() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
@@ -22,8 +22,10 @@ plugins = []
     )
     .unwrap();
 
-    let manifest = RoleManifest::load(temp.path()).unwrap();
-    let err = validate_agent_consistency(&manifest).unwrap_err();
+    // Now that load() runs validate_agent_consistency, the load itself
+    // fails — operator no longer has to remember to call validate
+    // separately.
+    let err = RoleManifest::load(temp.path()).unwrap_err();
     assert!(err.to_string().contains("[codex]"));
 }
 

@@ -73,10 +73,14 @@ Source: <RepoFile path="docker/construct/Dockerfile" />
 Source: <RepoFile path="docker/runtime/entrypoint.sh" />
 
 - Git identity from env, `gh auth setup-git`
-- Runs `install-claude-plugins.sh` against `~/.jackin/plugins.json`
-- Registers `tirith` and `shellfirm` MCP servers in Claude
-- Optional `/home/agent/.jackin-runtime/pre-launch.sh` hook
-- `exec claude --dangerously-skip-permissions --verbose`
+- Dispatches on `JACKIN_AGENT` (`claude` or `codex`):
+  - Claude branch: runs `install-claude-plugins.sh` against
+    `~/.jackin/plugins.json`, registers `tirith` and `shellfirm` MCP
+    servers, then `exec claude --dangerously-skip-permissions --verbose`
+  - Codex branch: `exec codex` (config.toml is mounted RW from host;
+    no in-container generation)
+- Optional `/home/agent/.jackin-runtime/pre-launch.sh` hook runs
+  before the per-agent `exec`
 
 ### jackin agent layer (e.g. `jackin-agent-smith`, `jackin-the-architect`)
 

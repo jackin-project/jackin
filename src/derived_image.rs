@@ -24,17 +24,21 @@ pub fn render_derived_dockerfile(
 USER root
 COPY {hook_path} /home/agent/.jackin-runtime/pre-launch.sh
 RUN chmod +x /home/agent/.jackin-runtime/pre-launch.sh
-USER role
+USER agent
 "
         )
     });
 
-    // Concatenate per-agent install blocks. Claude, when present,
-    // MUST come first so its ARG JACKIN_CACHE_BUST invalidates the
-    // layer chain downstream into Codex's RUN. The slice's V1
-    // invariant is "every role class supports Claude"; if that ever
-    // changes, Codex's profile install_block will need its own
-    // ARG JACKIN_CACHE_BUST line.
+    // Concatenate per-agent install blocks in a stable order (Claude
+    // first when present, Codex second). The order itself is no longer
+    // load-bearing for cache invalidation — both Claude's and Codex's
+    // install blocks now declare their own `ARG JACKIN_CACHE_BUST=0`
+    // (see `agent/profile.rs::CLAUDE_INSTALL_BLOCK` /
+    // `CODEX_INSTALL_BLOCK`), so each layer's cache key advances
+    // independently when `--build-arg JACKIN_CACHE_BUST=<ts>` is
+    // passed. The stable ordering is kept purely for deterministic
+    // Dockerfile output (helps `docker build` cache reuse and makes
+    // diffs reviewable).
     let mut install_blocks = String::new();
     let mut sorted: Vec<crate::agent::Agent> = supported.to_vec();
     sorted.sort_by_key(|h| match h {
@@ -51,20 +55,20 @@ USER role
 USER root
 ARG JACKIN_HOST_UID=1000
 ARG JACKIN_HOST_GID=1000
-RUN current_gid=\"$(id -g role)\" \
-    && current_uid=\"$(id -u role)\" \
+RUN current_gid=\"$(id -g agent)\" \
+    && current_uid=\"$(id -u agent)\" \
     && if [ \"$current_gid\" != \"$JACKIN_HOST_GID\" ]; then \
-         groupmod -o -g \"$JACKIN_HOST_GID\" role \
-         && usermod -g \"$JACKIN_HOST_GID\" role; \
+         groupmod -o -g \"$JACKIN_HOST_GID\" agent \
+         && usermod -g \"$JACKIN_HOST_GID\" agent; \
        fi \
     && if [ \"$current_uid\" != \"$JACKIN_HOST_UID\" ]; then \
-         usermod -o -u \"$JACKIN_HOST_UID\" role; \
+         usermod -o -u \"$JACKIN_HOST_UID\" agent; \
        fi \
-    && chown -R role:role /home/agent
+    && chown -R agent:agent /home/agent
 {install_blocks}{hook_section}USER root
 COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh
 RUN chmod +x /home/agent/entrypoint.sh
-USER role
+USER agent
 ENTRYPOINT [\"/home/agent/entrypoint.sh\"]
 "
     )
@@ -195,7 +199,7 @@ mod tests {
             &[Agent::Claude],
         );
 
-        assert!(dockerfile.contains("USER role\n"));
+        assert!(dockerfile.contains("USER agent\n"));
         assert!(dockerfile.contains("ARG JACKIN_CACHE_BUST=0"));
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(dockerfile.contains("RUN claude --version"));
@@ -214,9 +218,9 @@ mod tests {
 
         assert!(dockerfile.contains("ARG JACKIN_HOST_UID=1000"));
         assert!(dockerfile.contains("ARG JACKIN_HOST_GID=1000"));
-        assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" role"));
-        assert!(dockerfile.contains("usermod -g \"$JACKIN_HOST_GID\" role"));
-        assert!(dockerfile.contains("usermod -o -u \"$JACKIN_HOST_UID\" role"));
+        assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
+        assert!(dockerfile.contains("usermod -g \"$JACKIN_HOST_GID\" agent"));
+        assert!(dockerfile.contains("usermod -o -u \"$JACKIN_HOST_UID\" agent"));
     }
 
     #[test]
@@ -282,7 +286,7 @@ mod tests {
         );
 
         assert!(dockerfile.contains("/home/agent"));
-        assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" role"));
+        assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
         assert!(dockerfile.contains("ENTRYPOINT [\"/home/agent/entrypoint.sh\"]"));
         assert!(!dockerfile.contains("/home/claude"));
     }

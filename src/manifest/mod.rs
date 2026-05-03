@@ -90,11 +90,33 @@ pub struct ManifestWarning {
     pub message: String,
 }
 
+impl ManifestWarning {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
 impl RoleManifest {
+    /// Parse `jackin.role.toml` and enforce the [agent]/[<agent>] table
+    /// consistency rules.
+    ///
+    /// `validate_agent_consistency` runs here (not just inside the
+    /// fuller `validate()`) so any caller that loads a manifest gets
+    /// a structurally + semantically valid value: consumers like
+    /// `instance/mod.rs::prepare` can dereference `manifest.codex` /
+    /// `manifest.claude` without re-checking. Env-var validation,
+    /// interpolation cycle detection, and the rest of `validate()`
+    /// still need to be called explicitly because they produce
+    /// warnings the load path can't surface — but the invariants
+    /// other code unconditionally relies on are pinned at load time.
     pub fn load(repo_dir: &Path) -> anyhow::Result<Self> {
         let manifest_path = repo_dir.join("jackin.role.toml");
         let contents = std::fs::read_to_string(&manifest_path)?;
-        Ok(toml::from_str(&contents)?)
+        let manifest: Self = toml::from_str(&contents)?;
+        let _warnings = crate::manifest::validate::validate_agent_consistency(&manifest)?;
+        Ok(manifest)
     }
 
     pub fn display_name(&self, fallback: &str) -> String {

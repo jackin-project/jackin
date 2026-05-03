@@ -7,9 +7,14 @@ impl RoleState {
     /// container at `/home/agent/.codex/config.toml`.
     ///
     /// The generated file sets `approval_policy = "never"` and
-    /// `sandbox_mode = "danger-full-access"` because jackin's container
-    /// is already the operator's trust boundary; Codex's internal
-    /// sandbox/approval would add friction without isolation gain.
+    /// `sandbox_mode = "danger-full-access"` to match the operator
+    /// contract jackin already accepts for Claude
+    /// (`--dangerously-skip-permissions`): once the operator has
+    /// chosen to drop the agent into the container, jackin treats
+    /// the container as the scope of untrusted-AI execution.
+    /// Codex's internal approval prompt would add per-action friction
+    /// without changing what the agent can reach (workspace mounts,
+    /// the network namespace, the DinD sidecar).
     pub(super) fn provision_codex_auth(
         config_toml: &std::path::Path,
         manifest: &crate::manifest::RoleManifest,

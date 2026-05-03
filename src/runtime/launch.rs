@@ -212,12 +212,6 @@ const STANDARD_TERMS: &[&str] = &[
     "xterm-color",
 ];
 
-/// Resolve the TERM value and an optional terminfo bind-mount for the
-/// container.
-///
-/// Returns `(term_value, Some(mount_string))` when the host's terminfo
-/// was exported, or `(term_value, None)` when the TERM is standard or
-/// export failed (in which case `term_value` is the safe fallback).
 /// Returns the per-agent mount strings in jackin's "src:dst" /
 /// "src:dst:ro" idiom, ready to be passed to `docker run -v`.
 ///
@@ -295,6 +289,12 @@ fn build_workspace_mount_strings(
     out
 }
 
+/// Resolve the TERM value and an optional terminfo bind-mount for the
+/// container.
+///
+/// Returns `(term_value, Some(mount_string))` when the host's terminfo
+/// was exported, or `(term_value, None)` when the TERM is standard or
+/// export failed (in which case `term_value` is the safe fallback).
 fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String>) {
     let host_term = std::env::var("TERM").unwrap_or_default();
 

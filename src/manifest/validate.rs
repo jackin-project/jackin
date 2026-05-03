@@ -11,14 +11,24 @@ pub(super) fn is_valid_env_var_name(name: &str) -> bool {
 
 /// Validate the [agent] / [<agent>] table consistency.
 ///
-/// Rules enforced:
+/// Rules enforced (hard errors):
 /// - If [agent] is present, supported must be non-empty.
 /// - For every agent H in supported, the corresponding [H] table
-///   must exist (even if empty), so a single grep tells you whether
-///   a manifest knows about a given agent.
-/// - Without a [agent] table, the manifest must declare [claude]
-///   (legacy default).
-pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<()> {
+///   must exist (even if empty), so consumers like
+///   `instance/mod.rs::prepare` can rely on the table being non-`None`
+///   when launching that agent without a runtime check.
+/// - Without an [agent] table, the manifest must declare [claude]
+///   (legacy default; `supported_agents()` returns `[Claude]`).
+///
+/// Also surfaces an orphan-table warning (non-fatal): if a `[claude]`
+/// or `[codex]` table is populated but the corresponding agent isn't
+/// listed in `[agent].supported`, the table is dead config — every
+/// runtime path skips it. Authors editing manifests by hand routinely
+/// add `[codex] model = "..."` first and forget the `[agent]
+/// supported = [...]` declaration; without this signal they'd have
+/// to debug "agent does not support codex" at load time and figure
+/// out the connection themselves.
+pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec<ManifestWarning>> {
     use crate::agent::Agent;
 
     let supported = manifest.supported_agents();
@@ -44,13 +54,32 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<()>
         }
     }
 
-    Ok(())
+    let mut warnings = Vec::new();
+
+    // Only meaningful when [agent] is explicit — legacy manifests
+    // (no [agent] block) implicitly default to claude-only and have
+    // their own coverage rule above.
+    if manifest.agent.is_some() {
+        if manifest.codex.is_some() && !supported.contains(&Agent::Codex) {
+            warnings.push(ManifestWarning::new(
+                "[codex] table is present but [agent].supported does not include codex; \
+                 the table is ignored — add codex to [agent].supported to enable it.",
+            ));
+        }
+        if manifest.claude.is_some() && !supported.contains(&Agent::Claude) {
+            warnings.push(ManifestWarning::new(
+                "[claude] table is present but [agent].supported does not include claude; \
+                 the table is ignored — add claude to [agent].supported to enable it.",
+            ));
+        }
+    }
+
+    Ok(warnings)
 }
 
 impl RoleManifest {
     pub fn validate(&self) -> anyhow::Result<Vec<ManifestWarning>> {
-        validate_agent_consistency(self)?;
-        let mut warnings = Vec::new();
+        let mut warnings = validate_agent_consistency(self)?;
 
         for (name, decl) in &self.env {
             // Env var names must be valid identifiers: [A-Za-z_][A-Za-z0-9_]*
@@ -221,8 +250,7 @@ plugins = []
         )
         .unwrap();
 
-        let m = RoleManifest::load(temp.path()).unwrap();
-        let err = validate_agent_consistency(&m).unwrap_err();
+        let err = RoleManifest::load(temp.path()).unwrap_err();
         assert!(err.to_string().contains("must not be empty"));
     }
 
@@ -242,8 +270,7 @@ plugins = []
         )
         .unwrap();
 
-        let m = RoleManifest::load(temp.path()).unwrap();
-        let err = validate_agent_consistency(&m).unwrap_err();
+        let err = RoleManifest::load(temp.path()).unwrap_err();
         assert!(err.to_string().contains("[codex]"));
     }
 
@@ -260,8 +287,63 @@ plugins = []
         )
         .unwrap();
 
-        let m = RoleManifest::load(temp.path()).unwrap();
-        validate_agent_consistency(&m).unwrap();
+        let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+        assert!(warnings.is_empty());
+    }
+
+    /// Pin the orphan-codex-table warning: a manifest with `[codex]`
+    /// populated but codex absent from `[agent].supported` is dead
+    /// config, and the operator gets a warning that points at the
+    /// fix instead of having to debug "agent does not support codex"
+    /// at load time.
+    #[test]
+    fn warns_when_codex_table_present_without_codex_in_supported() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[agent]
+supported = ["claude"]
+
+[claude]
+plugins = []
+
+[codex]
+model = "gpt-5"
+"#,
+        )
+        .unwrap();
+
+        let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].message.contains("[codex]"));
+        assert!(warnings[0].message.contains("ignored"));
+    }
+
+    /// Symmetric warning for the rare reverse case: `[claude]` populated
+    /// but claude absent from `[agent].supported`.
+    #[test]
+    fn warns_when_claude_table_present_without_claude_in_supported() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[agent]
+supported = ["codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+        )
+        .unwrap();
+
+        let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].message.contains("[claude]"));
     }
 
     #[test]

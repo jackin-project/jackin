@@ -1,40 +1,36 @@
 use crate::agent::Agent;
 
-/// Per-agent data returned by `profile(agent)`.
+/// Per-agent compile-time data returned by [`profile`].
 ///
-/// Owned types (not `&'static`) so the profile can grow runtime
-/// parameterization later without churning consumers. `required_env`
-/// keeps `&'static str` because env-var names are inherent literals.
+/// Two fields, two consumers — kept deliberately narrow:
+///
+/// * `install_block` — concatenated into the derived Dockerfile by
+///   [`crate::derived_image::render_derived_dockerfile`].
+/// * `required_env` — checked at launch by
+///   [`crate::runtime::launch::verify_required_agent_env`].
+///
+/// Earlier revisions also carried `launch_argv`, `installs_plugins`,
+/// and `container_state_paths` here, but those were only ever read by
+/// this file's own unit tests — `entrypoint.sh` is the actual launch
+/// dispatcher and `runtime/launch.rs::agent_mounts` is the actual
+/// mount-string source. Keeping decorative-but-unconsumed fields was
+/// a maintenance trap (silent drift between profile data and runtime
+/// behaviour); they have been removed.
 #[derive(Debug, Clone)]
 pub struct AgentProfile {
     pub install_block: String,
-    pub launch_argv: Vec<String>,
     pub required_env: Vec<&'static str>,
-    pub installs_plugins: bool,
-    pub container_state_paths: ContainerStatePaths,
-}
-
-#[derive(Debug, Clone)]
-pub struct ContainerStatePaths {
-    /// Pairs of (path-relative-to-/home/agent, kind).
-    pub home_subpaths: Vec<(String, MountKind)>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MountKind {
-    File,
-    Dir,
 }
 
 const CLAUDE_INSTALL_BLOCK: &str = "\
-USER role
+USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN claude --version
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
-USER role
+USER agent
 ARG JACKIN_CACHE_BUST=0
 ARG TARGETARCH
 RUN set -eux; \\
@@ -47,6 +43,14 @@ RUN set -eux; \\
     TAG=$(curl -sfIL -o /dev/null -w '%{url_effective}' \\
             https://github.com/openai/codex/releases/latest \\
           | sed 's|.*/tag/||'); \\
+    if [ -z \"${TAG}\" ]; then \\
+      echo \"failed to resolve codex release tag — GitHub redirect format may have changed\"; \\
+      exit 1; \\
+    fi; \\
+    case \"${TAG}\" in \\
+      v[0-9]*|rust-v[0-9]*) ;; \\
+      *) echo \"unexpected codex release tag format: ${TAG}\"; exit 1 ;; \\
+    esac; \\
     curl -fsSL \"https://github.com/openai/codex/releases/download/${TAG}/codex-${ARCH}.tar.gz\" \\
       | tar -xz -C /usr/local/bin; \\
     chmod +x /usr/local/bin/codex; \\
@@ -57,29 +61,11 @@ pub fn profile(h: Agent) -> AgentProfile {
     match h {
         Agent::Claude => AgentProfile {
             install_block: CLAUDE_INSTALL_BLOCK.to_string(),
-            launch_argv: vec![
-                "claude".to_string(),
-                "--dangerously-skip-permissions".to_string(),
-                "--verbose".to_string(),
-            ],
             required_env: vec![],
-            installs_plugins: true,
-            container_state_paths: ContainerStatePaths {
-                home_subpaths: vec![
-                    (".claude".to_string(), MountKind::Dir),
-                    (".claude.json".to_string(), MountKind::File),
-                    (".jackin/plugins.json".to_string(), MountKind::File),
-                ],
-            },
         },
         Agent::Codex => AgentProfile {
             install_block: CODEX_INSTALL_BLOCK.to_string(),
-            launch_argv: vec!["codex".to_string()],
             required_env: vec!["OPENAI_API_KEY"],
-            installs_plugins: false,
-            container_state_paths: ContainerStatePaths {
-                home_subpaths: vec![(".codex/config.toml".to_string(), MountKind::File)],
-            },
         },
     }
 }
@@ -89,44 +75,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_profile_installs_plugins() {
+    fn claude_profile_has_install_block_and_no_required_env() {
         let p = profile(Agent::Claude);
-        assert!(p.installs_plugins);
         assert!(p.required_env.is_empty());
         assert!(p.install_block.contains("claude.ai/install.sh"));
-        assert!(p.launch_argv[0] == "claude");
     }
 
     #[test]
-    fn codex_profile_requires_openai_key_and_skips_plugins() {
+    fn codex_profile_requires_openai_key() {
         let p = profile(Agent::Codex);
-        assert!(!p.installs_plugins);
         assert_eq!(p.required_env, vec!["OPENAI_API_KEY"]);
         assert!(p.install_block.contains("openai/codex/releases"));
         assert!(p.install_block.contains("TARGETARCH"));
-        assert_eq!(p.launch_argv, vec!["codex"]);
-    }
-
-    #[test]
-    fn claude_state_paths_match_existing_layout() {
-        let p = profile(Agent::Claude);
-        let names: Vec<&str> = p
-            .container_state_paths
-            .home_subpaths
-            .iter()
-            .map(|(n, _)| n.as_str())
-            .collect();
-        assert!(names.contains(&".claude"));
-        assert!(names.contains(&".claude.json"));
-        assert!(names.contains(&".jackin/plugins.json"));
-    }
-
-    #[test]
-    fn codex_state_paths_only_have_config_toml() {
-        let p = profile(Agent::Codex);
-        assert_eq!(p.container_state_paths.home_subpaths.len(), 1);
-        let (path, kind) = &p.container_state_paths.home_subpaths[0];
-        assert_eq!(path, ".codex/config.toml");
-        assert_eq!(*kind, MountKind::File);
     }
 }
