@@ -582,7 +582,7 @@ mod tests {
                 home_dir: data.into(),
                 config_dir: data.into(),
                 config_file: data.join("config.toml"),
-                agents_dir: data.into(),
+                roles_dir: data.into(),
                 data_dir: data.into(),
                 cache_dir: data.into(),
             }

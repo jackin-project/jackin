@@ -13,7 +13,7 @@ jackin' enforces **strict parsing** — unknown fields are rejected with an erro
 
 ## Full schema
 
-```toml [jackin.role.toml]
+```toml title="jackin.role.toml"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
@@ -69,7 +69,7 @@ The Dockerfile path must:
 
 Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex"]` needs both `[claude]` and `[codex]`.
 
-```toml [jackin.role.toml]
+```toml title="jackin.role.toml"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
@@ -89,7 +89,7 @@ model = "gpt-5"
 
 Example values:
 
-```toml [jackin.role.toml]
+```toml title="jackin.role.toml"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -118,7 +118,7 @@ The `[codex]` table is required when `"codex"` appears in `agents`.
 |---|---|---|
 | `model` | No | Optional Codex model written into jackin's generated `config.toml` |
 
-```toml [jackin.role.toml]
+```toml title="jackin.role.toml"
 dockerfile = "Dockerfile"
 agents = ["codex"]
 
@@ -137,7 +137,7 @@ Each marketplace block declares one Claude marketplace source to register before
 
 Example:
 
-```toml [jackin.role.toml]
+```toml title="jackin.role.toml"
 [claude]
 plugins = [
   "code-review@claude-plugins-official",
@@ -179,12 +179,12 @@ The script path must:
 
 Example:
 
-```toml [jackin.role.toml]
+```toml title="jackin.role.toml"
 [hooks]
 pre_launch = "hooks/pre-launch.sh"
 ```
 
-```bash [hooks/pre-launch.sh]
+```bash title="hooks/pre-launch.sh"
 #!/bin/bash
 set -euo pipefail
 
@@ -319,7 +319,7 @@ Interactive prompts happen before the Docker image build, so you won't wait thro
 
 The smallest valid manifest:
 
-```toml [jackin.role.toml]
+```toml title="jackin.role.toml"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -328,7 +328,7 @@ plugins = []
 
 ## Complete example
 
-```toml [jackin.role.toml]
+```toml title="jackin.role.toml"
 dockerfile = "docker/Dockerfile.agent"
 
 [identity]

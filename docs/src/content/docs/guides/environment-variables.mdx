@@ -19,9 +19,9 @@ Agent manifests (`jackin.role.toml`) declare the env *shape* — what keys an ag
 Four layers are merged with later-wins semantics:
 
 1. **Global** — `[env]` at the top of `~/.config/jackin/config.toml`.
-2. **Agent** — `[roles.<selector>.env]`.
+2. **Role** — `[roles.<selector>.env]`.
 3. **Workspace** — `[workspaces.<name>.env]`.
-4. **Workspace × Agent** — `[workspaces.<name>.agents.<selector>.env]`.
+4. **Workspace × Role** — `[workspaces.<name>.roles.<selector>.env]`.
 
 Keys present in multiple layers take the value from the highest-priority layer (layer 4 > layer 3 > layer 2 > layer 1). Keys unique to any layer are preserved.
 
@@ -44,7 +44,7 @@ Each value in an env map is one of:
 [env]
 OPERATOR_ORG = "acme-corp"
 
-# Agent layer — only when loading agent-smith
+# Role layer — only when loading agent-smith
 [roles.agent-smith.env]
 API_TOKEN = "op://Personal/acme-api/token"
 
@@ -52,8 +52,8 @@ API_TOKEN = "op://Personal/acme-api/token"
 [workspaces.big-monorepo.env]
 ARTIFACT_REGISTRY = "${COMPANY_REGISTRY_URL}"
 
-# Workspace × Agent — most specific, wins on conflict
-[workspaces.big-monorepo.agents.agent-smith.env]
+# Workspace × Role — most specific, wins on conflict
+[workspaces.big-monorepo.roles.agent-smith.env]
 API_TOKEN = "op://Work/shared-smith/token"
 ```
 

@@ -13,8 +13,8 @@ pub struct CachedRepo {
 impl CachedRepo {
     pub fn new(paths: &JackinPaths, selector: &RoleSelector) -> Self {
         let repo_dir = selector.namespace.as_ref().map_or_else(
-            || paths.agents_dir.join(&selector.name),
-            |namespace| paths.agents_dir.join(namespace).join(&selector.name),
+            || paths.roles_dir.join(&selector.name),
+            |namespace| paths.roles_dir.join(namespace).join(&selector.name),
         );
 
         Self {
@@ -127,7 +127,7 @@ mod tests {
 
         assert_eq!(
             repo.repo_dir,
-            paths.agents_dir.join("chainargos").join("the-architect")
+            paths.roles_dir.join("chainargos").join("the-architect")
         );
     }
 

@@ -252,7 +252,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -292,7 +292,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -362,7 +362,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -405,7 +405,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -443,7 +443,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -504,7 +504,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),

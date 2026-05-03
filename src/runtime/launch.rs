@@ -1938,7 +1938,7 @@ plugins = []
         let selector = RoleSelector::new(Some("chainargos"), "the-architect");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.agents_dir.join("chainargos").join("the-architect");
+        let repo_dir = paths.roles_dir.join("chainargos").join("the-architect");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2026,7 +2026,7 @@ plugins = ["code-review@claude-plugins-official"]
         let selector = RoleSelector::new(Some("evil-org"), "backdoor");
         let mut runner = FakeRunner::for_load_agent([String::new(), String::new()]);
 
-        let repo_dir = paths.agents_dir.join("evil-org").join("backdoor");
+        let repo_dir = paths.roles_dir.join("evil-org").join("backdoor");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2077,7 +2077,7 @@ plugins = []
         let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.agents_dir.join("chainargos").join("agent-brown");
+        let repo_dir = paths.roles_dir.join("chainargos").join("agent-brown");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2152,7 +2152,7 @@ trusted = true
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2236,7 +2236,7 @@ trusted = true
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2312,7 +2312,7 @@ trusted = true
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2364,7 +2364,7 @@ agents = ["codex"]
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2434,7 +2434,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2510,7 +2510,7 @@ plugins = []
             ..Default::default()
         };
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2583,7 +2583,7 @@ plugins = ["code-review@claude-plugins-official"]
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2652,7 +2652,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2747,7 +2747,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2800,7 +2800,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2859,7 +2859,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2917,7 +2917,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2969,7 +2969,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3072,7 +3072,7 @@ trusted = true
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3151,7 +3151,7 @@ trusted = true
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3230,7 +3230,7 @@ trusted = true
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3326,7 +3326,7 @@ trusted = true
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.agents_dir.join("agent-smith");
+        let repo_dir = paths.roles_dir.join("agent-smith");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),

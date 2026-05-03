@@ -70,7 +70,7 @@ trusted = true
     )
     .unwrap();
 
-    let repo_dir = paths.agents_dir.join("agent-smith");
+    let repo_dir = paths.roles_dir.join("agent-smith");
     std::fs::create_dir_all(&repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
@@ -175,7 +175,7 @@ trusted = true
     )
     .unwrap();
 
-    let repo_dir = paths.agents_dir.join("agent-smith");
+    let repo_dir = paths.roles_dir.join("agent-smith");
     std::fs::create_dir_all(&repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
