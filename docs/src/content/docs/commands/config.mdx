@@ -32,16 +32,16 @@ If a global mount resolves to the same container destination as a workspace moun
 | `--src <PATH>` | Path on the host machine |
 | `--dst <PATH>` | Path inside the container |
 | `--readonly` | Make this mount read-only |
-| `--scope <PATTERN>` | Only apply to matching agents (glob pattern) |
+| `--scope <PATTERN>` | Only apply to matching roles (glob pattern) |
 
 ```bash
-# Mount Gradle cache for all agents
+# Mount Gradle cache for all roles
 jackin config mount add gradle-cache \
   --src ~/.gradle/caches \
   --dst /home/agent/.gradle/caches \
   --readonly
 
-# Mount secrets only for chainargos agents
+# Mount secrets only for chainargos roles
 jackin config mount add secrets \
   --src ~/.chainargos/secrets \
   --dst /secrets \

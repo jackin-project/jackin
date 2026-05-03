@@ -63,8 +63,8 @@ pub struct LoadArgs {
     #[arg(long)]
     pub force: bool,
     /// Agent to launch under (claude or codex). Overrides the
-    /// workspace's `agent` field for this launch only. When neither
-    /// is set, defaults to claude.
+    /// workspace's `default_agent` field for this launch only. When
+    /// neither is set, defaults to claude.
     #[arg(long, value_parser = parse_agent)]
     pub agent: Option<crate::agent::Agent>,
 }

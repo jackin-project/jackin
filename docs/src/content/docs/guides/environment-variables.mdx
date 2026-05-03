@@ -8,11 +8,11 @@ jackin' lets operators declare environment variables in four config layers that 
 
 ## Why operator env
 
-Agent manifests (`jackin.role.toml`) declare the env *shape* — what keys an agent expects, what's interactive, what has a default. Operator env layers declare the *values* for a specific operator on a specific workspace with a specific agent. Keeping shape and values in different places means:
+Role manifests (`jackin.role.toml`) declare the env *shape* — what keys a role expects, what's interactive, what has a default. Operator env layers declare the *values* for a specific operator on a specific workspace with a specific role. Keeping shape and values in different places means:
 
-- Third-party agents never see your secrets in their git history.
-- The same agent can run with different credentials in different workspaces (personal laptop vs company monorepo).
-- You can override a manifest default from `config.toml` without forking the agent.
+- Third-party roles never see your secrets in their git history.
+- The same role can run with different credentials in different workspaces (personal laptop vs company monorepo).
+- You can override a manifest default from `config.toml` without forking the role.
 
 ## Layers
 
@@ -60,7 +60,7 @@ API_TOKEN = "op://Work/shared-smith/token"
 When `jackin load agent-smith` is invoked in `big-monorepo`:
 
 - `OPERATOR_ORG = "acme-corp"` (literal; from global)
-- `API_TOKEN = <resolved via op read "op://Work/shared-smith/token">` (workspace × agent wins over agent layer)
+- `API_TOKEN = <resolved via op read "op://Work/shared-smith/token">` (workspace × role wins over role layer)
 - `ARTIFACT_REGISTRY = <value of $COMPANY_REGISTRY_URL on host>` (from workspace layer)
 
 ## Reserved names
@@ -97,7 +97,7 @@ In `--debug` mode the diagnostic expands to per-key reference strings and layer 
 
 ```
 [jackin] operator env:
-  API_TOKEN      op://Work/shared-smith/token  (workspace "big-monorepo" → agent "agent-smith" [env])
+  API_TOKEN      op://Work/shared-smith/token  (workspace "big-monorepo" → role "agent-smith" [env])
   OPERATOR_ORG   literal                        (global [env])
   REGISTRY       ${COMPANY_REGISTRY_URL}        (workspace "big-monorepo" [env])
 ```

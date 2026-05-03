@@ -31,10 +31,10 @@ export const vocabularyEntries: VocabularyEntry[] = [
     cmd: 'projectjackin/construct:trixie', cmdLabel: 'image',
   },
   {
-    id: '03', term: 'Agent class', pos: 'noun',
+    id: '03', term: 'Role', pos: 'noun',
     def: [
       { t: 'A reusable tool profile built on top of the Construct.', b: true },
-      { t: ' A git repo with a Dockerfile that extends the base image, plus a small manifest \u2014 adds the toolchains, Claude plugins, shell setup, and conventions layered on top. Answers \u201cwhat kind of agent is this?\u201d' },
+      { t: ' A git repo with a Dockerfile that extends the base image, plus a small manifest \u2014 adds the toolchains, Claude plugins, shell setup, and conventions layered on top. Answers \u201cwhat kind of role is this?\u201d' },
     ],
     cmd: 'chainargos/backend-engineer', cmdLabel: 'identifier',
   },

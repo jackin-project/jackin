@@ -1,22 +1,22 @@
 ---
-title: Agent Repos
-description: How agent repositories work and how they're discovered
+title: Role Repos
+description: How role repositories work and how they're discovered
 ---
 import { Aside } from '@astrojs/starlight/components'
 
 
-## What is an role repo?
+## What is a role repo?
 
-An role repo is a GitHub repository that defines a specific role. It contains:
+A role repo is a GitHub repository that defines a specific role. It contains:
 
-1. A **Dockerfile** — the agent's environment definition (tools, languages, SDKs)
-2. A **manifest file** (`jackin.role.toml`) — metadata about the agent
+1. A **Dockerfile** — the role's environment definition (tools, languages, SDKs)
+2. A **manifest file** (`jackin.role.toml`) — metadata about the role
 
 When you run `jackin load agent-smith`, jackin' looks for a GitHub repo named `jackin-agent-smith` and builds a container from it.
 
-An role repo is where you decide what kind of worker you are creating. In most teams, that means creating role-specific environments rather than one universal image. A frontend-oriented role repo can install browser tooling and UI-focused plugins, while a backend-oriented repo can install server toolchains and database clients.
+A role repo is where you decide what kind of worker you are creating. In most teams, that means creating role-specific environments rather than one universal image. A frontend-oriented role repo can install browser tooling and UI-focused plugins, while a backend-oriented repo can install server toolchains and database clients.
 
-An role is best thought of as a reusable tool profile. It is where you decide things like:
+A role is best thought of as a reusable tool profile. It is where you decide things like:
 
 - which language toolchains are installed
 - which helper scripts and shell defaults are present
@@ -25,19 +25,19 @@ An role is best thought of as a reusable tool profile. It is where you decide th
 
 ## Naming convention
 
-Role repos follow the `jackin-{class-name}` naming pattern:
+Role repos follow the `jackin-{role-name}` naming pattern:
 
-| Class name | GitHub repo | Load command |
+| Role name | GitHub repo | Load command |
 |---|---|---|
 | `agent-smith` | `jackin-agent-smith` | `jackin load agent-smith` |
 | `neo` | `jackin-neo` | `jackin load neo` |
 | `the-architect` | `jackin-the-architect` | `jackin load the-architect` |
 
-### Namespaced agents
+### Namespaced roles
 
-Organizations can create agents under their namespace:
+Organizations can publish roles under their namespace:
 
-| Class name | GitHub repo | Load command |
+| Role name | GitHub repo | Load command |
 |---|---|---|
 | `chainargos/frontend-engineer` | `chainargos/jackin-frontend-engineer` | `jackin load chainargos/frontend-engineer` |
 | `chainargos/backend-engineer` | `chainargos/jackin-backend-engineer` | `jackin load chainargos/backend-engineer` |
@@ -59,16 +59,16 @@ Common reasons include:
 
 The goal is not to create lots of arbitrary images. The goal is to avoid one kitchen-sink image that exposes every tool and plugin to every task.
 
-## Agent identity
+## Role identity
 
-Agents can declare a display name in their manifest:
+Roles can declare a display name in their manifest:
 
 ```toml title="jackin.role.toml"
 [identity]
 name = "Agent Smith"
 ```
 
-This name appears in jackin's TUI and output. When omitted, the class selector name is used instead (e.g., `agent-smith`).
+This name appears in jackin's TUI and output. When omitted, the role selector name is used instead (e.g., `agent-smith`).
 
 ## Caching
 

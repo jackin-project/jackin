@@ -46,15 +46,15 @@ The manager list shows two kinds of rows:
 
 If your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace is preselected.
 
-## Agent disambiguation
+## Role disambiguation
 
-Pressing `Enter` on a workspace row routes by eligible-agent count:
+Pressing `Enter` on a workspace row routes by eligible-role count:
 
 - **`default_role` set** on the workspace → launch immediately with that
-  agent. No picker.
-- **Exactly one eligible agent** (after the workspace's `allowed_roles`
+  role. No picker.
+- **Exactly one eligible role** (after the workspace's `allowed_roles`
   filter) → launch immediately with it. No picker.
-- **Multiple eligible agents and no default** → an inline `Select Agent`
+- **Multiple eligible roles and no default** → an inline `Select Role`
   picker overlays the manager list. Type to filter, `↑`/`↓` to navigate,
   `Enter` to commit, `Esc` to cancel.
 
@@ -139,12 +139,12 @@ jackin' resolves them at launch via `operator_env`.
 | `M` | Toggle value masking (masked by default; resets on tab exit) |
 | `P` on key row | Open 1Password picker; commits `op://...` directly to the key |
 | `P` on `+ Add` row | Open 1Password picker; on commit, prompt for key name |
-| `→` or `Enter` on section header | Expand an agent override section |
-| `←` on section header | Collapse an agent override section |
+| `→` or `Enter` on section header | Expand a role override section |
+| `←` on section header | Collapse a role override section |
 
 ### Adding a new environment variable
 
-Pressing `Enter` on a `+ Add` row (workspace or per-agent) walks you
+Pressing `Enter` on a `+ Add` row (workspace or per-role) walks you
 through the entry in two steps. First, a modal asks for the key name.
 After you commit the name, a small source picker opens with two
 buttons: **Plain text** and **1Password**. Pick Plain text to type
@@ -158,20 +158,20 @@ CLI isn't on `PATH` at console startup; install `op` and restart
 no key is added.
 
 If you type a name that's already used in the same scope (workspace
-env, or an agent's overrides), the modal flags it inline and won't
+env, or a role's overrides), the modal flags it inline and won't
 accept Enter until you change it.
 
-### Adding per-agent overrides
+### Adding per-role overrides
 
-The `+ Add per-agent override for ...` sentinel at the bottom of the
-Environments tab opens an agent picker showing allowed agents that
-don't yet have overrides. Picking an agent drops you straight into the
-normal add flow (key name → source → value). The agent's override
+The `+ Add per-role override for ...` sentinel at the bottom of the
+Environments tab opens a role picker showing allowed roles that
+don't yet have overrides. Picking a role drops you straight into the
+normal add flow (key name → source → value). The role's override
 section appears once the first key/value commits — no empty
 placeholders. Cancelling at any modal step leaves the workspace
 unchanged.
 
-The sentinel hides itself when every workspace-allowed agent already
+The sentinel hides itself when every workspace-allowed role already
 has an override section — there's no action left to take.
 
 ### 1Password picker

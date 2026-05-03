@@ -27,14 +27,14 @@ auth_forward = "sync"  # "sync" (default), "ignore", or "token"
 |---|---|---|
 | `auth_forward` | How the host's Claude Code credentials are made available to agent containers. See [Authentication Forwarding](/guides/authentication). | `sync` |
 
-Per-agent overrides are set under the agent's `[claude]` section:
+Per-role overrides are set under the role's `[claude]` section:
 
 ```toml
 [roles.agent-smith.claude]
 auth_forward = "ignore"
 ```
 
-Resolution order: per-agent override > global `[claude]` > `sync`.
+Resolution order: per-role override > global `[claude]` > `sync`.
 
 ### Operator env layers
 
@@ -80,7 +80,7 @@ workdir = "/home/user/Projects/my-app"
 allowed_roles = ["agent-smith", "the-architect"]
 default_role = "agent-smith"
 default_agent = "codex"
-last_agent = "the-architect"
+last_role = "the-architect"
 
 [[workspaces.my-app.mounts]]
 src = "/home/user/Projects/my-app"
@@ -105,10 +105,10 @@ enabled = true
 | `mounts[].dst` | Container path |
 | `mounts[].readonly` | Read-only flag |
 | `mounts[].isolation` | Per-mount isolation mode: `shared` (default) or `worktree`. Omitting the field deserializes to `shared`, but every save writes the field explicitly so old configs migrate to the new shape on first save. Global mounts (under `[docker.mounts]` or `[[mounts]]`) reject this field at parse time. A `clone` mode is on the [V1.1 roadmap](/reference/roadmap/per-mount-isolation/) but is not part of the V1 enum vocabulary. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation). |
-| `allowed_roles` | List of allowed agent selectors |
-| `default_role` | Default agent selector |
+| `allowed_roles` | List of allowed role selectors |
+| `default_role` | Default role selector |
 | `default_agent` | Optional workspace default agent (`"claude"` or `"codex"`). Omit to default to Claude. |
-| `last_agent` | Most recently used agent selector for this workspace |
+| `last_role` | Most recently used role selector for this workspace |
 | `keep_awake.enabled` | macOS-only: keep the host awake while any agent in this workspace is running (see [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake)). On Linux/Windows the flag is silently accepted but has no effect — useful when sharing a `config.toml` across machines, but the host will still sleep. |
 
 When you use `jackin workspace create`, the common case is to make `workdir` and the first mount destination the same absolute path. If you need a different container layout, use `--no-workdir-mount` and define mounts explicitly.
@@ -127,16 +127,18 @@ Global mounts are stored by name. Unscoped mounts live directly under `[docker.m
 
 ## Persisted state
 
-Each agent instance stores state at `~/.jackin/data/<container-name>/`:
+Each running role stores state at `~/.jackin/data/<container-name>/`:
 
 | File/Directory | Purpose |
 |---|---|
-| `.claude/` | Claude Code session history, conversation context |
-| `.claude/.credentials.json` | Claude Code OAuth credentials (forwarded from host or obtained via in-container login) |
-| `.claude.json` | Claude Code account metadata and preferences |
-| `.config/gh/` | GitHub CLI authentication and settings |
-| `.jackin/plugins.json` | Installed Claude plugins list |
+| `claude/state/` | Claude Code session history, conversation context (mounted at `/home/agent/.claude` in the container) |
+| `claude/state/.credentials.json` | Claude Code OAuth credentials (forwarded from host or obtained via in-container login) |
+| `claude/account.json` | Claude Code account metadata and preferences (mounted at `/home/agent/.claude.json`) |
+| `claude/plugins.json` | Installed Claude plugins list (mounted at `/home/agent/.jackin/plugins.json:ro`) |
+| `codex/config.toml` | Codex config generated at launch (mounted at `/home/agent/.codex/config.toml`) |
+| `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |
+| `.jackin/` | jackin runtime metadata (agent-neutral) |
 
-This state is mounted back into the container on subsequent loads, so the agent resumes where it left off.
+This state is mounted back into the container on subsequent loads, so the role resumes where it left off.
 
-Delete with `jackin purge <agent>` to start fresh.
+Delete with `jackin purge <role>` to start fresh.

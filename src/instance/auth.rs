@@ -49,11 +49,14 @@ impl RoleState {
 }
 
 impl RoleState {
-    /// Provision both `.claude.json` (preferences/metadata) and
-    /// `.claude/.credentials.json` (OAuth tokens) according to the chosen
+    /// Provision both Claude's account-metadata file (`account_json`,
+    /// host-side; mounted at `/home/agent/.claude.json` in the container)
+    /// and the OAuth credential file inside the session-state directory
+    /// (`state_dir/.credentials.json`, host-side; mounted at
+    /// `/home/agent/.claude/.credentials.json`) according to the chosen
     /// auth forwarding strategy.
     ///
-    /// `.claude.json` must always exist after this call because Docker
+    /// `account_json` must always exist after this call because Docker
     /// bind-mounts require the source to be a file, not a missing path
     /// (otherwise Docker creates a directory, breaking Claude Code).
     ///
@@ -61,21 +64,21 @@ impl RoleState {
     /// ("Claude Code-credentials"), not in a file.  On Linux they are
     /// stored at `~/.claude/.credentials.json`.
     pub(super) fn provision_claude_auth(
-        claude_json: &Path,
-        claude_dir: &Path,
+        account_json: &Path,
+        state_dir: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<AuthProvisionOutcome> {
         let host_claude_json = host_home.join(".claude.json");
-        let credentials_json = claude_dir.join(".credentials.json");
+        let credentials_json = state_dir.join(".credentials.json");
 
         let outcome = match mode {
             AuthForwardMode::Ignore => {
                 // Always ensure a clean slate — if switching from sync/token
                 // to ignore, the previously forwarded credentials must be
                 // revoked.
-                if !claude_json.exists() || std::fs::read_to_string(claude_json)? != "{}" {
-                    write_private_file(claude_json, "{}")?;
+                if !account_json.exists() || std::fs::read_to_string(account_json)? != "{}" {
+                    write_private_file(account_json, "{}")?;
                 }
                 if credentials_json.exists() {
                     std::fs::remove_file(&credentials_json)?;
@@ -88,8 +91,8 @@ impl RoleState {
                 // CLAUDE_CODE_OAUTH_TOKEN from the resolved env, not via
                 // filesystem credentials. Switching from sync → token must
                 // still wipe any previously forwarded creds.
-                if !claude_json.exists() || std::fs::read_to_string(claude_json)? != "{}" {
-                    write_private_file(claude_json, "{}")?;
+                if !account_json.exists() || std::fs::read_to_string(account_json)? != "{}" {
+                    write_private_file(account_json, "{}")?;
                 }
                 if credentials_json.exists() {
                     std::fs::remove_file(&credentials_json)?;
@@ -98,7 +101,7 @@ impl RoleState {
             }
             AuthForwardMode::Sync => {
                 if let Some(creds) = read_host_credentials(host_home) {
-                    copy_host_claude_json(&host_claude_json, claude_json)?;
+                    copy_host_claude_json(&host_claude_json, account_json)?;
                     write_private_file(&credentials_json, &creds)?;
                     AuthProvisionOutcome::Synced
                 } else {
@@ -106,12 +109,12 @@ impl RoleState {
                     // files untouched (it may have credentials from a
                     // previous manual login). Only bootstrap an empty
                     // file if nothing exists yet.
-                    if !claude_json.exists() {
-                        write_private_file(claude_json, "{}")?;
+                    if !account_json.exists() {
+                        write_private_file(account_json, "{}")?;
                     }
                     // Repair permissions on pre-existing auth files that
                     // may have legacy permissive modes (e.g. 0644).
-                    repair_permissions(claude_json);
+                    repair_permissions(account_json);
                     repair_permissions(&credentials_json);
                     AuthProvisionOutcome::HostMissing
                 }

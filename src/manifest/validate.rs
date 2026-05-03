@@ -28,6 +28,12 @@ pub(super) fn is_valid_env_var_name(name: &str) -> bool {
 /// declaration; without this signal they'd have to debug "agent does
 /// not support codex" at load time and figure out the connection
 /// themselves.
+///
+/// Orphan warnings are skipped on legacy manifests (no `agents`
+/// field) since the implicit default is unambiguous: those manifests
+/// are claude-only by definition, so a populated `[claude]` table is
+/// expected and a populated `[codex]` would also have failed the
+/// per-agent table-required check above.
 pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec<ManifestWarning>> {
     use crate::agent::Agent;
 

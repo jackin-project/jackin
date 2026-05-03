@@ -94,7 +94,7 @@ impl Default for LoadOptions {
 }
 
 /// Resolve which agent to launch under. CLI flag wins; falls back
-/// to the workspace's `agent` field; otherwise defaults to Claude.
+/// to the workspace's `default_agent` field; otherwise defaults to Claude.
 fn resolve_agent(
     cli_override: Option<crate::agent::Agent>,
     workspace_agent: Option<crate::agent::Agent>,

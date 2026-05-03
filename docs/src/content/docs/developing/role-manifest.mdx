@@ -1,6 +1,6 @@
 ---
-title: Agent Manifest
-description: "The jackin.role.toml file that defines an agent"
+title: Role Manifest
+description: "The jackin.role.toml file that defines a role"
 ---
 import { Aside } from '@astrojs/starlight/components'
 
@@ -158,17 +158,17 @@ source = "jackin-project/jackin-marketplace"
 
 | Field | Required | Description |
 |---|---|---|
-| `name` | No | Human-readable display name for the agent |
+| `name` | No | Human-readable display name for the role |
 
-When omitted, jackin' uses the class selector name.
+When omitted, jackin' uses the role selector name.
 
 ## `[hooks]`
 
 | Field | Required | Description |
 |---|---|---|
-| `pre_launch` | No | Relative path to a bash script run before Claude starts |
+| `pre_launch` | No | Relative path to a bash script run before the agent (Claude or Codex) starts |
 
-The pre-launch hook runs inside the container after plugin installation but before Claude Code launches. It has access to all resolved environment variables.
+The pre-launch hook runs inside the container after plugin installation but before the agent (Claude Code or Codex) launches. It has access to all resolved environment variables.
 
 The script path must:
 
@@ -370,5 +370,5 @@ default = "feature/${env.PROJECT}"
 ```
 
 <Aside type="tip">
-Keep manifests focused. The Dockerfile installs tools, the manifest declares what configuration the agent needs at launch time.
+Keep manifests focused. The Dockerfile installs tools, the manifest declares what configuration the role needs at launch time.
 </Aside>
