@@ -150,6 +150,33 @@ const STANDARD_TERMS: &[&str] = &[
 /// Returns `(term_value, Some(mount_string))` when the host's terminfo
 /// was exported, or `(term_value, None)` when the TERM is standard or
 /// export failed (in which case `term_value` is the safe fallback).
+/// Returns the per-harness mount strings in jackin's "src:dst" /
+/// "src:dst:ro" idiom, ready to be passed to `docker run -v`.
+fn harness_mounts(
+    harness: crate::harness::Harness,
+    state: &crate::instance::AgentState,
+) -> Vec<String> {
+    use crate::harness::Harness;
+
+    match harness {
+        Harness::Claude => vec![
+            format!("{}:/home/agent/.claude", state.claude_dir.display()),
+            format!("{}:/home/agent/.claude.json", state.claude_json.display()),
+            format!(
+                "{}:/home/agent/.jackin/plugins.json:ro",
+                state.plugins_json.display()
+            ),
+        ],
+        Harness::Codex => {
+            let path = state
+                .codex_config_toml
+                .as_ref()
+                .expect("codex_config_toml set when harness == Codex");
+            vec![format!("{}:/home/agent/.codex/config.toml", path.display())]
+        }
+    }
+}
+
 /// Translate a [`MaterializedWorkspace`] into the `-v` argument values
 /// for `docker run`. Pulled out of `load_agent_with` so the mount-flag
 /// shape — including the `:ro` placement on worktree-mode override
@@ -209,7 +236,7 @@ fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String
     export_host_terminfo(&host_term, cache_dir).map_or_else(
         |_| ("xterm-256color".to_string(), None),
         |terminfo_dir| {
-            let mount = format!("{}:/home/claude/.terminfo:ro", terminfo_dir.display());
+            let mount = format!("{}:/home/agent/.terminfo:ro", terminfo_dir.display());
             (host_term, Some(mount))
         },
     )
@@ -336,6 +363,7 @@ struct LaunchContext<'a> {
     state: &'a AgentState,
     git: &'a GitIdentity,
     debug: bool,
+    harness: crate::harness::Harness,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
     cache_dir: &'a std::path::Path,
     /// Required so `launch_agent_runtime` can fire the `keep_awake`
@@ -366,6 +394,7 @@ fn launch_agent_runtime(
         state,
         git,
         debug,
+        harness,
         resolved_env,
         cache_dir,
         paths,
@@ -450,14 +479,10 @@ fn launch_agent_runtime(
     let dind_hostname = format!("{}={dind}", crate::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME);
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
-    let claude_dir_mount = format!("{}:/home/claude/.claude", state.claude_dir.display());
-    let claude_json_mount = format!("{}:/home/claude/.claude.json", state.claude_json.display());
-    let gh_config_mount = format!("{}:/home/claude/.config/gh", state.gh_config_dir.display());
-    let plugins_mount = format!(
-        "{}:/home/claude/.jackin/plugins.json:ro",
-        state.plugins_json.display()
-    );
+    let harness_specific_mounts = harness_mounts(*harness, state);
+    let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
+    let jackin_harness_env = format!("JACKIN_HARNESS={}", harness.slug());
 
     // Forward the host TERM so the container's terminal type matches what the
     // terminal emulator actually supports.  Docker defaults to TERM=xterm which
@@ -568,17 +593,17 @@ fn launch_agent_runtime(
         run_args.push(env_str);
     }
     run_args.extend_from_slice(&[
+        "-e",
+        &jackin_harness_env,
         "-v",
         &certs_agent_mount,
         "-v",
-        &claude_dir_mount,
-        "-v",
-        &claude_json_mount,
-        "-v",
         &gh_config_mount,
-        "-v",
-        &plugins_mount,
     ]);
+    for mount in &harness_specific_mounts {
+        run_args.push("-v");
+        run_args.push(mount);
+    }
 
     if let Some(ref ti_mount) = terminfo_mount {
         run_args.extend_from_slice(&["-v", ti_mount]);
@@ -1041,6 +1066,9 @@ fn load_agent_with(
             state: &state,
             git: &git,
             debug: opts.debug,
+            // Hardcoded to Claude during Task 15; Task 16 wires the
+            // resolved harness through from CLI/workspace config.
+            harness: crate::harness::Harness::Claude,
             resolved_env: &resolved_env,
             cache_dir: &paths.cache_dir,
             paths,
@@ -1367,6 +1395,96 @@ mod tests {
     use crate::selector::ClassSelector;
     use std::collections::VecDeque;
     use tempfile::tempdir;
+
+    #[test]
+    fn harness_mounts_for_claude_includes_claude_state() {
+        use crate::harness::Harness;
+        use crate::instance::AgentState;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest_temp = tempdir().unwrap();
+        std::fs::write(
+            manifest_temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            manifest_temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        let manifest = crate::manifest::AgentManifest::load(manifest_temp.path()).unwrap();
+
+        let (state, _) = AgentState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            crate::config::AuthForwardMode::Ignore,
+            temp.path(),
+            Harness::Claude,
+        )
+        .unwrap();
+
+        let mounts = harness_mounts(Harness::Claude, &state);
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains("/home/agent/.claude") && !m.contains("/.claude.json"))
+        );
+        assert!(mounts.iter().any(|m| m.contains("/home/agent/.claude.json")));
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains("/home/agent/.jackin/plugins.json:ro"))
+        );
+    }
+
+    #[test]
+    fn harness_mounts_for_codex_only_has_config_toml() {
+        use crate::harness::Harness;
+        use crate::instance::AgentState;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest_temp = tempdir().unwrap();
+        std::fs::write(
+            manifest_temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[harness]
+supported = ["codex"]
+
+[codex]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            manifest_temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        let manifest = crate::manifest::AgentManifest::load(manifest_temp.path()).unwrap();
+
+        let (state, _) = AgentState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            crate::config::AuthForwardMode::Ignore,
+            temp.path(),
+            Harness::Codex,
+        )
+        .unwrap();
+
+        let mounts = harness_mounts(Harness::Codex, &state);
+        assert_eq!(mounts.len(), 1);
+        assert!(mounts[0].contains("/home/agent/.codex/config.toml"));
+        assert!(!mounts[0].ends_with(":ro"));
+    }
 
     #[test]
     fn build_workspace_mount_strings_marks_overrides_readonly() {
@@ -1698,7 +1816,7 @@ plugins = ["code-review@claude-plugins-official"]
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("/home/claude/.jackin/plugins.json:ro"))
+                .any(|call| call.contains("/home/agent/.jackin/plugins.json:ro"))
         );
         assert!(
             !runner
@@ -1911,7 +2029,7 @@ plugins = ["code-review@claude-plugins-official"]
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("/home/claude/.jackin/plugins.json:ro"))
+                .any(|call| call.contains("/home/agent/.jackin/plugins.json:ro"))
         );
         assert!(
             !runner
