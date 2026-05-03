@@ -116,8 +116,8 @@ pub struct WorkspaceEdit {
     pub upsert_mounts: Vec<MountConfig>,
     pub remove_destinations: Vec<String>,
     pub no_workdir_mount: bool,
-    pub allowed_agents_to_add: Vec<String>,
-    pub allowed_agents_to_remove: Vec<String>,
+    pub allowed_roles_to_add: Vec<String>,
+    pub allowed_roles_to_remove: Vec<String>,
     pub default_role: Option<Option<String>>,
     /// Workspace default-agent change. `None` = no change,
     /// `Some(Some(h))` = set to `h`, `Some(None)` = clear the

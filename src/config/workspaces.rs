@@ -153,7 +153,7 @@ impl AppConfig {
             &edit.mount_isolation_overrides,
         )?;
 
-        for selector in edit.allowed_agents_to_add {
+        for selector in edit.allowed_roles_to_add {
             if !workspace
                 .allowed_roles
                 .iter()
@@ -163,7 +163,7 @@ impl AppConfig {
             }
         }
 
-        for selector in edit.allowed_agents_to_remove {
+        for selector in edit.allowed_roles_to_remove {
             workspace
                 .allowed_roles
                 .retain(|existing| existing != &selector);

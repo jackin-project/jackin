@@ -599,7 +599,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 remove_destinations,
                 no_workdir_mount,
                 allowed_roles,
-                remove_allowed_agents,
+                remove_allowed_roles,
                 default_role,
                 clear_default_role,
                 default_agent,
@@ -733,7 +733,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 for role in &allowed_roles {
                     changes.push(format!("allowed role {role}"));
                 }
-                for role in &remove_allowed_agents {
+                for role in &remove_allowed_roles {
                     changes.push(format!("removed role {role}"));
                 }
                 if clear_default_role {
@@ -819,8 +819,8 @@ pub fn run(cli: Cli) -> Result<()> {
                         upsert_mounts,
                         remove_destinations: plan.effective_removals,
                         no_workdir_mount,
-                        allowed_agents_to_add: allowed_roles,
-                        allowed_agents_to_remove: remove_allowed_agents,
+                        allowed_roles_to_add: allowed_roles,
+                        allowed_roles_to_remove: remove_allowed_roles,
                         default_role: if clear_default_role {
                             Some(None)
                         } else {

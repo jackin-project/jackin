@@ -857,12 +857,12 @@ pub(super) fn build_workspace_edit(
     }
     for a in &pending.allowed_roles {
         if !original.allowed_roles.contains(a) {
-            edit.allowed_agents_to_add.push(a.clone());
+            edit.allowed_roles_to_add.push(a.clone());
         }
     }
     for a in &original.allowed_roles {
         if !pending.allowed_roles.contains(a) {
-            edit.allowed_agents_to_remove.push(a.clone());
+            edit.allowed_roles_to_remove.push(a.clone());
         }
     }
     if pending.default_role != original.default_role {

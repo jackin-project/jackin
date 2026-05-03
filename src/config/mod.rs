@@ -565,7 +565,7 @@ auth_forward = "token"
             .edit_workspace(
                 "legacy",
                 WorkspaceEdit {
-                    allowed_agents_to_add: vec!["agent-x".into()],
+                    allowed_roles_to_add: vec!["agent-x".into()],
                     ..WorkspaceEdit::default()
                 },
             )

@@ -123,12 +123,12 @@ Examples:
         /// Remove the auto-mounted workdir (the mount where src = dst = workdir)
         #[arg(long, default_value_t = false)]
         no_workdir_mount: bool,
-        /// Grant an role access to this workspace (repeatable)
+        /// Grant a role access to this workspace (repeatable)
         #[arg(long = "allowed-role")]
         allowed_roles: Vec<String>,
-        /// Revoke an role's access to this workspace (repeatable)
+        /// Revoke a role's access to this workspace (repeatable)
         #[arg(long = "remove-allowed-role")]
-        remove_allowed_agents: Vec<String>,
+        remove_allowed_roles: Vec<String>,
         /// Set the default role for this workspace
         #[arg(long = "default-role")]
         default_role: Option<String>,
