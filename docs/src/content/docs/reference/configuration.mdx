@@ -2,6 +2,7 @@
 title: Configuration File
 description: "The config.toml schema and storage locations"
 ---
+import { Aside } from '@astrojs/starlight/components'
 
 ## Storage locations
 
@@ -44,7 +45,7 @@ Four layers contribute env vars to the agent container, merged with later-wins s
 [env]
 OPERATOR_ORG = "acme-corp"
 
-# Layer 2 — per agent
+# Layer 2 — per role
 [roles.agent-smith.env]
 API_TOKEN = "op://Personal/api/token"
 
@@ -52,8 +53,8 @@ API_TOKEN = "op://Personal/api/token"
 [workspaces.big-monorepo.env]
 REGISTRY = "${COMPANY_REGISTRY_URL}"
 
-# Layer 4 — per (workspace, agent)
-[workspaces.big-monorepo.agents.agent-smith.env]
+# Layer 4 — per (workspace, role)
+[workspaces.big-monorepo.roles.agent-smith.env]
 API_TOKEN = "op://Work/shared-smith/token"
 ```
 
@@ -62,6 +63,10 @@ Values can be:
 - `op://VAULT/ITEM/FIELD` — resolved via the 1Password CLI (`op read`)
 - `$NAME` or `${NAME}` — read from the host env
 - Anything else — literal
+
+<Aside type="caution" title="Reserved names cannot be overridden">
+A small set of names — `JACKIN`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH` — are owned by the jackin runtime and set internally on every launch. Declaring them at any of the four layers above is rejected at config load. There is no way to override these values. See [Reserved names](/guides/environment-variables/#reserved-names) for the full list.
+</Aside>
 
 Reserved runtime names (`JACKIN`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are rejected at config load.
 

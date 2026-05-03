@@ -2,6 +2,7 @@
 title: "Interactive Env Vars and Resolution"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
+import { Aside } from '@astrojs/starlight/components'
 
 
 **Status**: Resolved — `${env.VAR}` interpolation implemented; operator-side resolution and secret backends remain future work
@@ -64,14 +65,18 @@ Env vars declared in the agent manifest need to be overridable at multiple level
 2. **Operator global config** (`config.toml`):
    ```toml
    [env]
-   JACKIN = "docker-staging"
+   LOG_LEVEL = "debug"
    CONTEXT7_API_KEY = "sk-..."              # literal value
    ```
-3. **Agent manifest default** (`jackin.role.toml`):
+3. **Role manifest default** (`jackin.role.toml`):
    ```toml
-   [env.JACKIN]
-   default = "docker"
+   [env.LOG_LEVEL]
+   default = "info"
    ```
+
+<Aside type="caution" title="Reserved names cannot be overridden">
+A small set of names — `JACKIN`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH` — are owned by the jackin runtime and set internally on every launch. They cannot be declared at any layer (workspace, global, or role manifest); attempting to do so is rejected at config load. There is no way to override these values. See [Reserved names](/guides/environment-variables/#reserved-names) for the full list and rationale.
+</Aside>
 
 Host env passthrough syntax is TBD — could use `${host.VAR}` to stay consistent with the `${env.VAR}` namespace convention.
 
