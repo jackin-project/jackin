@@ -27,11 +27,12 @@ pub enum AuthProvisionOutcome {
     TokenMode,
 }
 
-/// Agent-specific paths that belong to one variant. Encoded as an
-/// enum so the agent-state and the actual paths can never disagree —
-/// the previous shape (`Option<PathBuf>` plus a runtime invariant
-/// "Some iff agent == Codex" enforced by `expect()` across two
-/// functions) is now a compile-checked match.
+/// Agent-specific paths that belong to one variant.
+///
+/// Encoded as an enum so the agent variant and the actual paths can
+/// never disagree — the previous shape (`Option<PathBuf>` plus a
+/// runtime invariant "Some iff agent == Codex" enforced by `expect()`
+/// across two functions) is now a compile-checked match.
 #[derive(Debug, Clone)]
 pub enum AgentRuntimeState {
     Claude {

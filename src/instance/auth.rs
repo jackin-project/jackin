@@ -14,7 +14,7 @@ impl RoleState {
     /// the container as the scope of untrusted-AI execution.
     /// Codex's internal approval prompt would add per-action friction
     /// without changing what the agent can reach (workspace mounts,
-    /// the network namespace, the DinD sidecar).
+    /// the network namespace, the `DinD` sidecar).
     pub(super) fn provision_codex_auth(
         config_toml: &std::path::Path,
         manifest: &crate::manifest::RoleManifest,
