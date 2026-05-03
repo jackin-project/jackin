@@ -1761,7 +1761,7 @@ mod tests {
             }],
             allowed_roles: vec![],
             default_role: None,
-            harness: None,
+            agent: None,
             last_role: None,
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),

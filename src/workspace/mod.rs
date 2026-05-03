@@ -42,12 +42,12 @@ pub struct WorkspaceConfig {
     pub allowed_roles: Vec<String>,
     #[serde(default)]
     pub default_role: Option<String>,
-    /// Workspace-level default harness (claude or codex). When unset,
+    /// Workspace-level default agent (claude or codex). When unset,
     /// `resolved_harness()` falls back to Claude. The field is omitted
     /// from serialized output when `None` so legacy config files stay
     /// byte-for-byte stable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub harness: Option<crate::harness::Harness>,
+    pub agent: Option<crate::agent::Agent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_role: Option<String>,
     /// Workspace-level operator env map. Keys are env var names;
@@ -91,10 +91,10 @@ impl KeepAwakeConfig {
 }
 
 impl WorkspaceConfig {
-    /// Returns the workspace's selected harness, defaulting to Claude
-    /// when no harness field is set (legacy workspace).
-    pub fn resolved_harness(&self) -> crate::harness::Harness {
-        self.harness.unwrap_or(crate::harness::Harness::Claude)
+    /// Returns the workspace's selected agent, defaulting to Claude
+    /// when no agent field is set (legacy workspace).
+    pub fn resolved_harness(&self) -> crate::agent::Agent {
+        self.agent.unwrap_or(crate::agent::Agent::Claude)
     }
 }
 
@@ -119,10 +119,10 @@ pub struct WorkspaceEdit {
     pub allowed_agents_to_add: Vec<String>,
     pub allowed_agents_to_remove: Vec<String>,
     pub default_role: Option<Option<String>>,
-    /// Workspace harness change. `None` = no change, `Some(Some(h))`
+    /// Workspace agent change. `None` = no change, `Some(Some(h))`
     /// = set to `h`, `Some(None)` = clear the explicit field so the
     /// workspace falls back to Claude.
-    pub harness: Option<Option<crate::harness::Harness>>,
+    pub agent: Option<Option<crate::agent::Agent>>,
     pub mount_isolation_overrides: Vec<(String, crate::isolation::MountIsolation)>,
     /// Toggle for the macOS keep-awake reconciler. `None` = no change,
     /// `Some(true)` = opt in, `Some(false)` = opt out. The CLI's paired
@@ -274,12 +274,12 @@ mod tests {
     fn workspace_serializes_harness_when_set() {
         let ws = WorkspaceConfig {
             workdir: "/tmp/x".to_string(),
-            harness: Some(crate::harness::Harness::Codex),
+            agent: Some(crate::agent::Agent::Codex),
             ..Default::default()
         };
 
         let toml_str = toml::to_string(&ws).unwrap();
-        assert!(toml_str.contains("harness = \"codex\""));
+        assert!(toml_str.contains("agent = \"codex\""));
     }
 
     #[test]
@@ -290,7 +290,7 @@ mod tests {
         };
 
         let toml_str = toml::to_string(&ws).unwrap();
-        assert!(!toml_str.contains("harness"));
+        assert!(!toml_str.contains("agent"));
     }
 
     #[test]
@@ -299,17 +299,17 @@ mod tests {
             workdir: "/tmp/x".to_string(),
             ..Default::default()
         };
-        assert_eq!(ws.resolved_harness(), crate::harness::Harness::Claude);
+        assert_eq!(ws.resolved_harness(), crate::agent::Agent::Claude);
     }
 
     #[test]
     fn workspace_resolves_to_codex_when_set() {
         let ws = WorkspaceConfig {
             workdir: "/tmp/x".to_string(),
-            harness: Some(crate::harness::Harness::Codex),
+            agent: Some(crate::agent::Agent::Codex),
             ..Default::default()
         };
-        assert_eq!(ws.resolved_harness(), crate::harness::Harness::Codex);
+        assert_eq!(ws.resolved_harness(), crate::agent::Agent::Codex);
     }
 
     #[test]
@@ -655,7 +655,7 @@ isolation = "worktree"
             ],
             allowed_roles: Vec::new(),
             default_role: None,
-            harness: None,
+            agent: None,
             last_role: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),

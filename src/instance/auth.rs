@@ -296,7 +296,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -318,7 +318,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -347,7 +347,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -370,7 +370,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
         assert_eq!(outcome1, AuthProvisionOutcome::Synced);
@@ -389,7 +389,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -416,7 +416,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
         assert!(state.claude_dir.join(".credentials.json").exists());
@@ -428,7 +428,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(&state2.claude_json).unwrap(), "{}");
@@ -449,7 +449,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Token,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -475,7 +475,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
         assert!(state.claude_dir.join(".credentials.json").exists());
@@ -489,7 +489,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Token,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(&state2.claude_json).unwrap(), "{}");
@@ -511,7 +511,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Token,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
@@ -523,7 +523,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
         assert!(
@@ -552,7 +552,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Token,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -563,7 +563,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(&state2.claude_json).unwrap(), "{}");
@@ -585,7 +585,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -604,7 +604,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
         assert_eq!(
@@ -630,7 +630,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -666,7 +666,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -684,7 +684,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -715,7 +715,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -736,7 +736,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
         assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
@@ -776,7 +776,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -793,7 +793,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap_err();
         assert!(
@@ -820,7 +820,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -838,7 +838,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Sync,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap_err();
         assert!(
@@ -867,7 +867,7 @@ mod codex_auth_tests {
             format!(
                 r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["codex"]
 
 {codex_section}"#

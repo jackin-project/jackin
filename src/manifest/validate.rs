@@ -9,36 +9,36 @@ pub(super) fn is_valid_env_var_name(name: &str) -> bool {
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-/// Validate the [harness] / [<harness>] table consistency.
+/// Validate the [agent] / [<agent>] table consistency.
 ///
 /// Rules enforced:
-/// - If [harness] is present, supported must be non-empty.
-/// - For every harness H in supported, the corresponding [H] table
+/// - If [agent] is present, supported must be non-empty.
+/// - For every agent H in supported, the corresponding [H] table
 ///   must exist (even if empty), so a single grep tells you whether
-///   a manifest knows about a given harness.
-/// - Without a [harness] table, the manifest must declare [claude]
+///   a manifest knows about a given agent.
+/// - Without a [agent] table, the manifest must declare [claude]
 ///   (legacy default).
-pub fn validate_harness_consistency(manifest: &RoleManifest) -> anyhow::Result<()> {
-    use crate::harness::Harness;
+pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<()> {
+    use crate::agent::Agent;
 
-    let supported = manifest.supported_harnesses();
+    let supported = manifest.supported_agents();
 
-    if let Some(h) = &manifest.harness
+    if let Some(h) = &manifest.agent
         && h.supported.is_empty()
     {
-        anyhow::bail!("[harness].supported must not be empty");
+        anyhow::bail!("[agent].supported must not be empty");
     }
 
     for h in &supported {
         match h {
-            Harness::Claude => {
+            Agent::Claude => {
                 if manifest.claude.is_none() {
-                    anyhow::bail!("[claude] table required when claude is in [harness].supported");
+                    anyhow::bail!("[claude] table required when claude is in [agent].supported");
                 }
             }
-            Harness::Codex => {
+            Agent::Codex => {
                 if manifest.codex.is_none() {
-                    anyhow::bail!("[codex] table required when codex is in [harness].supported");
+                    anyhow::bail!("[codex] table required when codex is in [agent].supported");
                 }
             }
         }
@@ -49,7 +49,7 @@ pub fn validate_harness_consistency(manifest: &RoleManifest) -> anyhow::Result<(
 
 impl RoleManifest {
     pub fn validate(&self) -> anyhow::Result<Vec<ManifestWarning>> {
-        validate_harness_consistency(self)?;
+        validate_agent_consistency(self)?;
         let mut warnings = Vec::new();
 
         for (name, decl) in &self.env {
@@ -212,7 +212,7 @@ mod tests {
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = []
 
 [claude]
@@ -222,7 +222,7 @@ plugins = []
         .unwrap();
 
         let m = RoleManifest::load(temp.path()).unwrap();
-        let err = validate_harness_consistency(&m).unwrap_err();
+        let err = validate_agent_consistency(&m).unwrap_err();
         assert!(err.to_string().contains("must not be empty"));
     }
 
@@ -233,7 +233,7 @@ plugins = []
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["claude", "codex"]
 
 [claude]
@@ -243,7 +243,7 @@ plugins = []
         .unwrap();
 
         let m = RoleManifest::load(temp.path()).unwrap();
-        let err = validate_harness_consistency(&m).unwrap_err();
+        let err = validate_agent_consistency(&m).unwrap_err();
         assert!(err.to_string().contains("[codex]"));
     }
 
@@ -261,7 +261,7 @@ plugins = []
         .unwrap();
 
         let m = RoleManifest::load(temp.path()).unwrap();
-        validate_harness_consistency(&m).unwrap();
+        validate_agent_consistency(&m).unwrap();
     }
 
     #[test]
@@ -462,7 +462,7 @@ default = "main"
 [claude]
 plugins = []
 
-[env.JACKIN_CLAUDE_ENV]
+[env.JACKIN]
 default = "docker"
 "#,
         )
@@ -472,12 +472,7 @@ default = "docker"
         let result = manifest.validate();
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("JACKIN_CLAUDE_ENV")
-        );
+        assert!(result.unwrap_err().to_string().contains("JACKIN"));
     }
 
     #[test]

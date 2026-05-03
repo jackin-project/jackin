@@ -59,7 +59,7 @@ pub fn run(cli: Cli) -> Result<()> {
             no_intro,
             debug,
             force,
-            harness,
+            agent,
         }) => {
             runner.debug = debug;
             tui::set_debug_mode(debug);
@@ -107,7 +107,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
             let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
             opts.force = force;
-            opts.harness = harness;
+            opts.agent = agent;
             // Pre-launch reconcile: if a previous role in a keep_awake
             // workspace already runs, ensure caffeinate is up before we
             // build/launch (so a long Docker build doesn't see the host
@@ -481,7 +481,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 no_workdir_mount,
                 allowed_roles,
                 default_role,
-                harness,
+                agent,
                 mount_isolation,
                 keep_awake,
             } => {
@@ -520,7 +520,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     mounts: plan.final_mounts,
                     allowed_roles,
                     default_role,
-                    harness,
+                    agent,
                     last_role: None,
                     env: std::collections::BTreeMap::new(),
                     roles: std::collections::BTreeMap::new(),
@@ -561,8 +561,8 @@ pub fn run(cli: Cli) -> Result<()> {
                         allowed: String,
                         #[tabled(rename = "Default Role")]
                         default_role: String,
-                        #[tabled(rename = "Harness")]
-                        harness: String,
+                        #[tabled(rename = "Agent")]
+                        agent: String,
                     }
                     let rows: Vec<Row> = workspaces
                         .iter()
@@ -576,7 +576,7 @@ pub fn run(cli: Cli) -> Result<()> {
                                 ws.allowed_roles.join(", ")
                             },
                             default_role: ws.default_role.as_deref().unwrap_or("none").to_string(),
-                            harness: ws.resolved_harness().slug().to_string(),
+                            agent: ws.resolved_harness().slug().to_string(),
                         })
                         .collect();
                     let mut table = Table::new(rows);
@@ -602,8 +602,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 remove_allowed_agents,
                 default_role,
                 clear_default_agent,
-                harness,
-                clear_harness,
+                agent,
+                clear_agent,
                 assume_yes,
                 prune,
                 mount_isolation,
@@ -741,10 +741,10 @@ pub fn run(cli: Cli) -> Result<()> {
                 } else if let Some(ref role) = default_role {
                     changes.push(format!("default role → {role}"));
                 }
-                if clear_harness {
-                    changes.push("cleared harness".to_string());
-                } else if let Some(harness) = harness {
-                    changes.push(format!("harness → {}", harness.slug()));
+                if clear_agent {
+                    changes.push("cleared agent".to_string());
+                } else if let Some(agent) = agent {
+                    changes.push(format!("agent → {}", agent.slug()));
                 }
                 if let Some(v) = keep_awake_change {
                     changes.push(format!(
@@ -826,10 +826,10 @@ pub fn run(cli: Cli) -> Result<()> {
                         } else {
                             default_role.map(Some)
                         },
-                        harness: if clear_harness {
+                        agent: if clear_agent {
                             Some(None)
                         } else {
-                            harness.map(Some)
+                            agent.map(Some)
                         },
                         mount_isolation_overrides: mount_isolation,
                         keep_awake_enabled: keep_awake_change,
@@ -1114,7 +1114,7 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
         workspace.allowed_roles.join(", ")
     };
     let default_role = workspace.default_role.as_deref().unwrap_or("none");
-    let harness = workspace.resolved_harness().slug();
+    let agent = workspace.resolved_harness().slug();
 
     let short_workdir = tui::shorten_home(&workspace.workdir);
     let mut info: Vec<(&str, &str)> = vec![
@@ -1122,7 +1122,7 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
         ("Workdir", short_workdir.as_str()),
         ("Allowed Roles", allowed.as_str()),
         ("Default Role", default_role),
-        ("Harness", harness),
+        ("Agent", agent),
     ];
     // Only surface keep_awake when opted in — disabled is the default and
     // shouldn't add noise. When enabled, the operator sees it here so a
@@ -1208,7 +1208,7 @@ mod auth_set_tests {
             ],
             allowed_roles: vec![],
             default_role: None,
-            harness: None,
+            agent: None,
             last_role: None,
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),

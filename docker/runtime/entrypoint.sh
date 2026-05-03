@@ -37,7 +37,7 @@ else
 fi
 
 # ── harness-specific setup ─────────────────────────────────────────
-case "${JACKIN_HARNESS:?JACKIN_HARNESS must be set}" in
+case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
   claude)
     run_maybe_quiet /home/agent/install-claude-plugins.sh
 
@@ -60,7 +60,7 @@ case "${JACKIN_HARNESS:?JACKIN_HARNESS must be set}" in
     LAUNCH=(codex)
     ;;
   *)
-    echo "[entrypoint] unknown JACKIN_HARNESS: $JACKIN_HARNESS" >&2
+    echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2
     exit 2
     ;;
 esac
@@ -75,7 +75,7 @@ fi
 if [ "${JACKIN_DEBUG:-0}" = "1" ]; then
     set +x
     echo ""
-    echo "[entrypoint] Setup complete. Press Enter to launch ${JACKIN_HARNESS}..."
+    echo "[entrypoint] Setup complete. Press Enter to launch ${JACKIN_AGENT}..."
     read -r
     set -x
 fi

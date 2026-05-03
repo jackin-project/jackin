@@ -1,4 +1,4 @@
-use jackin::manifest::{RoleManifest, validate::validate_harness_consistency};
+use jackin::manifest::{RoleManifest, validate::validate_agent_consistency};
 use tempfile::tempdir;
 
 #[test]
@@ -8,7 +8,7 @@ fn rejects_supported_harness_without_corresponding_table() {
         temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["claude", "codex"]
 
 [claude]
@@ -23,7 +23,7 @@ plugins = []
     .unwrap();
 
     let manifest = RoleManifest::load(temp.path()).unwrap();
-    let err = validate_harness_consistency(&manifest).unwrap_err();
+    let err = validate_agent_consistency(&manifest).unwrap_err();
     assert!(err.to_string().contains("[codex]"));
 }
 
@@ -46,7 +46,7 @@ plugins = []
     .unwrap();
 
     let manifest = RoleManifest::load(temp.path()).unwrap();
-    validate_harness_consistency(&manifest).unwrap();
+    validate_agent_consistency(&manifest).unwrap();
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn codex_only_manifest_with_codex_table_passes() {
         temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["codex"]
 
 [codex]
@@ -70,5 +70,5 @@ supported = ["codex"]
     .unwrap();
 
     let manifest = RoleManifest::load(temp.path()).unwrap();
-    validate_harness_consistency(&manifest).unwrap();
+    validate_agent_consistency(&manifest).unwrap();
 }

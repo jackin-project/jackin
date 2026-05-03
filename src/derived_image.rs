@@ -14,9 +14,9 @@ pub struct DerivedBuildContext {
 pub fn render_derived_dockerfile(
     base_dockerfile: &str,
     pre_launch_hook: Option<&str>,
-    supported: &[crate::harness::Harness],
+    supported: &[crate::agent::Agent],
 ) -> String {
-    use crate::harness::profile::profile;
+    use crate::agent::profile::profile;
 
     let hook_section = pre_launch_hook.map_or_else(String::new, |hook_path| {
         format!(
@@ -29,17 +29,17 @@ USER role
         )
     });
 
-    // Concatenate per-harness install blocks. Claude, when present,
+    // Concatenate per-agent install blocks. Claude, when present,
     // MUST come first so its ARG JACKIN_CACHE_BUST invalidates the
     // layer chain downstream into Codex's RUN. The slice's V1
     // invariant is "every role class supports Claude"; if that ever
     // changes, Codex's profile install_block will need its own
     // ARG JACKIN_CACHE_BUST line.
     let mut install_blocks = String::new();
-    let mut sorted: Vec<crate::harness::Harness> = supported.to_vec();
+    let mut sorted: Vec<crate::agent::Agent> = supported.to_vec();
     sorted.sort_by_key(|h| match h {
-        crate::harness::Harness::Claude => 0,
-        crate::harness::Harness::Codex => 1,
+        crate::agent::Agent::Claude => 0,
+        crate::agent::Agent::Codex => 1,
     });
     for h in sorted {
         install_blocks.push_str(&profile(h).install_block);
@@ -88,7 +88,7 @@ pub fn create_derived_build_context(
         .as_ref()
         .and_then(|h| h.pre_launch.as_deref());
 
-    let supported = validated.manifest.supported_harnesses();
+    let supported = validated.manifest.supported_agents();
     let dockerfile_path = context_dir.join(".jackin-runtime/DerivedDockerfile");
     std::fs::write(
         &dockerfile_path,
@@ -166,7 +166,7 @@ fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::harness::Harness;
+    use crate::agent::Agent;
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
     use tempfile::tempdir;
@@ -176,7 +176,7 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
-            &[Harness::Claude],
+            &[Agent::Claude],
         );
 
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
@@ -192,7 +192,7 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
-            &[Harness::Claude],
+            &[Agent::Claude],
         );
 
         assert!(dockerfile.contains("USER role\n"));
@@ -209,7 +209,7 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
-            &[Harness::Claude],
+            &[Agent::Claude],
         );
 
         assert!(dockerfile.contains("ARG JACKIN_HOST_UID=1000"));
@@ -224,7 +224,7 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             Some("hooks/pre-launch.sh"),
-            &[Harness::Claude],
+            &[Agent::Claude],
         );
 
         assert!(
@@ -239,7 +239,7 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
-            &[Harness::Claude],
+            &[Agent::Claude],
         );
 
         assert!(!dockerfile.contains("pre-launch.sh"));
@@ -250,7 +250,7 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
-            &[Harness::Claude, Harness::Codex],
+            &[Agent::Claude, Agent::Codex],
         );
 
         assert!(dockerfile.contains("https://claude.ai/install.sh"));
@@ -266,7 +266,7 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
-            &[Harness::Codex],
+            &[Agent::Codex],
         );
 
         assert!(!dockerfile.contains("https://claude.ai/install.sh"));
@@ -278,7 +278,7 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
-            &[Harness::Claude],
+            &[Agent::Claude],
         );
 
         assert!(dockerfile.contains("/home/agent"));
@@ -292,20 +292,20 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
-            &[Harness::Claude, Harness::Codex],
+            &[Agent::Claude, Agent::Codex],
         );
 
-        assert!(!dockerfile.contains("ENV JACKIN_HARNESS"));
+        assert!(!dockerfile.contains("ENV JACKIN_AGENT"));
     }
 
     #[test]
     fn entrypoint_does_not_override_claude_env() {
-        assert!(!ENTRYPOINT_SH.contains("JACKIN_CLAUDE_ENV="));
+        assert!(!ENTRYPOINT_SH.contains("JACKIN="));
     }
 
     #[test]
     fn entrypoint_dispatches_on_jackin_harness() {
-        assert!(ENTRYPOINT_SH.contains("case \"${JACKIN_HARNESS:?"));
+        assert!(ENTRYPOINT_SH.contains("case \"${JACKIN_AGENT:?"));
         assert!(ENTRYPOINT_SH.contains("  claude)"));
         assert!(ENTRYPOINT_SH.contains("  codex)"));
     }

@@ -231,7 +231,7 @@ Declare environment variables that the agent needs at runtime. Each variable is 
 - `depends_on` entries must use the `env.` prefix (e.g., `"env.PROJECT"`)
 - `depends_on` must reference variables declared in the same manifest
 - `${env.*}` references in `prompt` and `default` must point to declared variables that are listed in `depends_on`
-- `JACKIN_CLAUDE_ENV` is reserved for jackin and cannot be declared in `[env]`
+- `JACKIN` is reserved for jackin and cannot be declared in `[env]`
 - `JACKIN_DIND_HOSTNAME` is reserved for jackin and cannot be declared in `[env]`
 - Circular dependencies are rejected
 
@@ -239,7 +239,7 @@ Declare environment variables that the agent needs at runtime. Each variable is 
 
 jackin sets these variables automatically inside the container. Do not declare either of them in `[env]`.
 
-- `JACKIN_CLAUDE_ENV=jackin` marks that the process is running inside a jackin-managed runtime.
+- `JACKIN=jackin` marks that the process is running inside a jackin-managed runtime.
 - `JACKIN_DIND_HOSTNAME` is the hostname agents should use to reach published services started via the Docker-in-Docker daemon.
 
 ### Interactive text input

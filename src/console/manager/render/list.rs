@@ -995,7 +995,7 @@ mod subpanel_padding_tests {
             mounts: vec![],
             allowed_roles: names.iter().map(|s| (*s).into()).collect(),
             default_role: default.map(String::from),
-            harness: None,
+            agent: None,
             last_role: None,
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),

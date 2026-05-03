@@ -243,14 +243,14 @@ mod tests {
     #[test]
     fn resolves_static_vars_without_prompting() {
         let mut decls = BTreeMap::new();
-        decls.insert("JACKIN_CLAUDE_ENV".to_string(), static_var("docker"));
+        decls.insert("JACKIN".to_string(), static_var("docker"));
         let prompter = MockPrompter::new(vec![]);
 
         let resolved = resolve_env(&decls, &prompter).unwrap();
 
         assert_eq!(
             resolved.vars,
-            vec![("JACKIN_CLAUDE_ENV".to_string(), "docker".to_string())]
+            vec![("JACKIN".to_string(), "docker".to_string())]
         );
     }
 

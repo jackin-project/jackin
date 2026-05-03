@@ -676,7 +676,7 @@ orb -m jackin-{name} docker run -it --name agent \
   -e DOCKER_HOST=unix:///var/run/docker.sock \
   -e GIT_AUTHOR_NAME="{git_user_name}" \
   -e GIT_AUTHOR_EMAIL="{git_user_email}" \
-  -e JACKIN_CLAUDE_ENV=jackin \
+  -e JACKIN=jackin \
   -v /Users/{user}/Projects/myapp:/Users/{user}/Projects/myapp \
   -v /Users/{user}/.jackin/data/jackin-{name}/.claude:/home/claude/.claude \
   -v /Users/{user}/.jackin/data/jackin-{name}/.claude.json:/home/claude/.claude.json \

@@ -1822,15 +1822,13 @@ mod tests {
             claude: None,
             env: std::collections::BTreeMap::new(),
         };
-        role.env.insert(
-            "JACKIN_CLAUDE_ENV".to_string(),
-            "whatever".to_string().into(),
-        );
+        role.env
+            .insert("JACKIN".to_string(), "whatever".to_string().into());
         cfg.roles.insert("agent-smith".to_string(), role);
 
         let err = validate_reserved_names(&cfg).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("JACKIN_CLAUDE_ENV"), "{msg}");
+        assert!(msg.contains("JACKIN"), "{msg}");
         assert!(msg.contains("role \"agent-smith\""), "{msg}");
     }
 

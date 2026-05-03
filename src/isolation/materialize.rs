@@ -1017,7 +1017,7 @@ mod tests {
                 readonly: false,
                 isolation: MountIsolation::Worktree,
             }],
-            harness: None,
+            agent: None,
             keep_awake_enabled: false,
         }
     }
@@ -1103,7 +1103,7 @@ mod tests {
                 readonly: false,
                 isolation: MountIsolation::Shared,
             }],
-            harness: None,
+            agent: None,
             keep_awake_enabled: false,
         };
         let mut runner = FakeRunner::default();

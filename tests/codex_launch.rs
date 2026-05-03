@@ -1,6 +1,6 @@
+use jackin::agent::Agent;
 use jackin::config::AppConfig;
 use jackin::docker::{CommandRunner, RunOptions};
-use jackin::harness::Harness;
 use jackin::isolation::MountIsolation;
 use jackin::paths::JackinPaths;
 use jackin::runtime::{LoadOptions, load_role};
@@ -81,7 +81,7 @@ trusted = true
         repo_dir.join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["claude", "codex"]
 
 [claude]
@@ -109,7 +109,7 @@ model = "gpt-5"
             readonly: false,
             isolation: MountIsolation::Shared,
         }],
-        harness: Some(Harness::Codex),
+        agent: Some(Agent::Codex),
         keep_awake_enabled: false,
     };
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -136,7 +136,8 @@ model = "gpt-5"
         .iter()
         .find(|call| call.contains("docker run -d -it"))
         .expect("role docker run should run");
-    assert!(run_cmd.contains("-e JACKIN_HARNESS=codex"), "{run_cmd}");
+    assert!(run_cmd.contains("-e JACKIN_AGENT=codex"), "{run_cmd}");
+    assert!(run_cmd.contains("-e JACKIN_ROLE=agent-smith"), "{run_cmd}");
     assert!(
         run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"),
         "{run_cmd}"
@@ -187,7 +188,7 @@ trusted = true
         repo_dir.join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["claude", "codex"]
 
 [claude]
@@ -209,12 +210,12 @@ plugins = []
             readonly: false,
             isolation: MountIsolation::Shared,
         }],
-        harness: Some(Harness::Claude),
+        agent: Some(Agent::Claude),
         keep_awake_enabled: false,
     };
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     let opts = LoadOptions {
-        harness: Some(Harness::Codex),
+        agent: Some(Agent::Codex),
         ..LoadOptions::default()
     };
 
@@ -233,5 +234,5 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker run -d -it"))
         .expect("role docker run should run");
-    assert!(run_cmd.contains("-e JACKIN_HARNESS=codex"), "{run_cmd}");
+    assert!(run_cmd.contains("-e JACKIN_AGENT=codex"), "{run_cmd}");
 }

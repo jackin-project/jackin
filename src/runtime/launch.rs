@@ -45,9 +45,9 @@ pub struct LoadOptions {
     /// references are resolved by looking up `name` in `map`.
     pub host_env: Option<std::collections::BTreeMap<String, String>>,
 
-    /// CLI override for the harness. `None` means "use the workspace's
-    /// `harness` field, falling back to `Harness::Claude` when unset".
-    pub harness: Option<crate::harness::Harness>,
+    /// CLI override for the agent. `None` means "use the workspace's
+    /// `agent` field, falling back to `Agent::Claude` when unset".
+    pub agent: Option<crate::agent::Agent>,
 }
 
 impl LoadOptions {
@@ -60,7 +60,7 @@ impl LoadOptions {
             force: false,
             op_runner: None,
             host_env: None,
-            harness: None,
+            agent: None,
         }
     }
 
@@ -74,7 +74,7 @@ impl LoadOptions {
             force: false,
             op_runner: None,
             host_env: None,
-            harness: None,
+            agent: None,
         }
     }
 }
@@ -88,29 +88,29 @@ impl Default for LoadOptions {
             force: false,
             op_runner: None,
             host_env: None,
-            harness: None,
+            agent: None,
         }
     }
 }
 
-/// Resolve which harness to launch under. CLI flag wins; falls back
-/// to the workspace's `harness` field; otherwise defaults to Claude.
-fn resolve_harness(
-    cli_override: Option<crate::harness::Harness>,
-    workspace_harness: Option<crate::harness::Harness>,
-) -> crate::harness::Harness {
+/// Resolve which agent to launch under. CLI flag wins; falls back
+/// to the workspace's `agent` field; otherwise defaults to Claude.
+fn resolve_agent(
+    cli_override: Option<crate::agent::Agent>,
+    workspace_harness: Option<crate::agent::Agent>,
+) -> crate::agent::Agent {
     cli_override
         .or(workspace_harness)
-        .unwrap_or(crate::harness::Harness::Claude)
+        .unwrap_or(crate::agent::Agent::Claude)
 }
 
-fn validate_harness_supported(
+fn validate_agent_supported(
     selector: &RoleSelector,
     manifest: &crate::manifest::RoleManifest,
-    harness: crate::harness::Harness,
+    agent: crate::agent::Agent,
 ) -> anyhow::Result<()> {
-    let supported = manifest.supported_harnesses();
-    if supported.contains(&harness) {
+    let supported = manifest.supported_agents();
+    if supported.contains(&agent) {
         return Ok(());
     }
 
@@ -120,18 +120,18 @@ fn validate_harness_supported(
         .collect::<Vec<_>>()
         .join(", ");
     anyhow::bail!(
-        "role \"{}\" does not support harness \"{}\"; supported: [{}]",
+        "role \"{}\" does not support agent \"{}\"; supported: [{}]",
         selector.key(),
-        harness.slug(),
+        agent.slug(),
         supported_list
     );
 }
 
-fn verify_required_harness_env(
-    harness: crate::harness::Harness,
+fn verify_required_agent_env(
+    agent: crate::agent::Agent,
     resolved_env: &crate::env_resolver::ResolvedEnv,
 ) -> anyhow::Result<()> {
-    let profile = crate::harness::profile::profile(harness);
+    let profile = crate::agent::profile::profile(agent);
     let missing = profile
         .required_env
         .into_iter()
@@ -148,8 +148,8 @@ fn verify_required_harness_env(
     }
 
     anyhow::bail!(
-        "harness \"{}\" requires {} in the resolved launch env; declare it in workspace/global env or role manifest env",
-        harness.slug(),
+        "agent \"{}\" requires {} in the resolved launch env; declare it in workspace/global env or role manifest env",
+        agent.slug(),
         missing.join(", ")
     );
 }
@@ -218,16 +218,13 @@ const STANDARD_TERMS: &[&str] = &[
 /// Returns `(term_value, Some(mount_string))` when the host's terminfo
 /// was exported, or `(term_value, None)` when the TERM is standard or
 /// export failed (in which case `term_value` is the safe fallback).
-/// Returns the per-harness mount strings in jackin's "src:dst" /
+/// Returns the per-agent mount strings in jackin's "src:dst" /
 /// "src:dst:ro" idiom, ready to be passed to `docker run -v`.
-fn harness_mounts(
-    harness: crate::harness::Harness,
-    state: &crate::instance::RoleState,
-) -> Vec<String> {
-    use crate::harness::Harness;
+fn agent_mounts(agent: crate::agent::Agent, state: &crate::instance::RoleState) -> Vec<String> {
+    use crate::agent::Agent;
 
-    match harness {
-        Harness::Claude => vec![
+    match agent {
+        Agent::Claude => vec![
             format!("{}:/home/agent/.claude", state.claude_dir.display()),
             format!("{}:/home/agent/.claude.json", state.claude_json.display()),
             format!(
@@ -235,11 +232,11 @@ fn harness_mounts(
                 state.plugins_json.display()
             ),
         ],
-        Harness::Codex => {
+        Agent::Codex => {
             let path = state
                 .codex_config_toml
                 .as_ref()
-                .expect("codex_config_toml set when harness == Codex");
+                .expect("codex_config_toml set when agent == Codex");
             vec![format!("{}:/home/agent/.codex/config.toml", path.display())]
         }
     }
@@ -431,7 +428,7 @@ struct LaunchContext<'a> {
     state: &'a RoleState,
     git: &'a GitIdentity,
     debug: bool,
-    harness: crate::harness::Harness,
+    agent: crate::agent::Agent,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
     cache_dir: &'a std::path::Path,
     /// Required so `launch_role_runtime` can fire the `keep_awake`
@@ -462,7 +459,7 @@ fn launch_role_runtime(
         state,
         git,
         debug,
-        harness,
+        agent,
         resolved_env,
         cache_dir,
         paths,
@@ -547,10 +544,19 @@ fn launch_role_runtime(
     let dind_hostname = format!("{}={dind}", crate::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME);
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
-    let harness_specific_mounts = harness_mounts(*harness, state);
+    let agent_specific_mounts = agent_mounts(*agent, state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
-    let jackin_harness_env = format!("JACKIN_HARNESS={}", harness.slug());
+    let jackin_agent_env = format!(
+        "{}={}",
+        crate::env_model::JACKIN_AGENT_ENV_NAME,
+        agent.slug()
+    );
+    let jackin_role_env = format!(
+        "{}={}",
+        crate::env_model::JACKIN_ROLE_ENV_NAME,
+        selector.key()
+    );
 
     // Forward the host TERM so the container's terminal type matches what the
     // terminal emulator actually supports.  Docker defaults to TERM=xterm which
@@ -662,13 +668,15 @@ fn launch_role_runtime(
     }
     run_args.extend_from_slice(&[
         "-e",
-        &jackin_harness_env,
+        &jackin_agent_env,
+        "-e",
+        &jackin_role_env,
         "-v",
         &certs_agent_mount,
         "-v",
         &gh_config_mount,
     ]);
-    for mount in &harness_specific_mounts {
+    for mount in &agent_specific_mounts {
         run_args.push("-v");
         run_args.push(mount);
     }
@@ -879,8 +887,8 @@ fn load_role_with(
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
 
-    let harness = resolve_harness(opts.harness, workspace.harness);
-    validate_harness_supported(selector, &validated_repo.manifest, harness)?;
+    let agent = resolve_agent(opts.agent, workspace.agent);
+    validate_agent_supported(selector, &validated_repo.manifest, agent)?;
 
     // Logo (if present in role repo)
     tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
@@ -976,7 +984,7 @@ fn load_role_with(
         }
     }
     let resolved_env = crate::env_resolver::ResolvedEnv { vars: merged_vars };
-    verify_required_harness_env(harness, &resolved_env)?;
+    verify_required_agent_env(agent, &resolved_env)?;
 
     // Launch-time diagnostic: emit a single compact line summarising
     // the operator env that will be injected. In normal mode we show
@@ -997,7 +1005,7 @@ fn load_role_with(
         // Step 2: Build Docker image
         let rebuild = opts.rebuild || {
             let img = image_name(selector);
-            let needs_update = harness == crate::harness::Harness::Claude
+            let needs_update = agent == crate::agent::Agent::Claude
                 && version_check::needs_claude_update(paths, &img, runner);
             if needs_update {
                 eprintln!("        Claude update available — rebuilding image");
@@ -1011,7 +1019,7 @@ fn load_role_with(
             &cached_repo,
             &validated_repo,
             &host,
-            harness,
+            agent,
             rebuild,
             opts.debug,
             runner,
@@ -1032,7 +1040,7 @@ fn load_role_with(
         // operator env; fail fast with an actionable error if it is
         // missing so the operator sees the problem before we spend time
         // starting the network and DinD sidecar.
-        if harness == crate::harness::Harness::Claude
+        if agent == crate::agent::Agent::Claude
             && matches!(auth_mode, crate::config::AuthForwardMode::Token)
         {
             verify_token_env_present(&operator_env)?;
@@ -1044,7 +1052,7 @@ fn load_role_with(
             &validated_repo.manifest,
             auth_mode,
             &paths.home_dir,
-            harness,
+            agent,
         )?;
 
         // Diagnostic line: surface the active auth mode and, for token
@@ -1052,7 +1060,7 @@ fn load_role_with(
         // from the operator env config's raw declaration (the op://
         // reference or $NAME ref as written). Resolved values are never
         // printed.
-        if harness == crate::harness::Harness::Claude {
+        if agent == crate::agent::Agent::Claude {
             match auth_mode {
                 crate::config::AuthForwardMode::Token => {
                     let raw = lookup_operator_env_raw(
@@ -1145,7 +1153,7 @@ fn load_role_with(
             state: &state,
             git: &git,
             debug: opts.debug,
-            harness,
+            agent,
             resolved_env: &resolved_env,
             cache_dir: &paths.cache_dir,
             paths,
@@ -1475,7 +1483,7 @@ mod tests {
 
     #[test]
     fn harness_mounts_for_claude_includes_claude_state() {
-        use crate::harness::Harness;
+        use crate::agent::Agent;
         use crate::instance::RoleState;
 
         let temp = tempdir().unwrap();
@@ -1503,11 +1511,11 @@ plugins = []
             &manifest,
             crate::config::AuthForwardMode::Ignore,
             temp.path(),
-            Harness::Claude,
+            Agent::Claude,
         )
         .unwrap();
 
-        let mounts = harness_mounts(Harness::Claude, &state);
+        let mounts = agent_mounts(Agent::Claude, &state);
         assert!(
             mounts
                 .iter()
@@ -1527,7 +1535,7 @@ plugins = []
 
     #[test]
     fn harness_mounts_for_codex_only_has_config_toml() {
-        use crate::harness::Harness;
+        use crate::agent::Agent;
         use crate::instance::RoleState;
 
         let temp = tempdir().unwrap();
@@ -1537,7 +1545,7 @@ plugins = []
             manifest_temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["codex"]
 
 [codex]
@@ -1557,11 +1565,11 @@ supported = ["codex"]
             &manifest,
             crate::config::AuthForwardMode::Ignore,
             temp.path(),
-            Harness::Codex,
+            Agent::Codex,
         )
         .unwrap();
 
-        let mounts = harness_mounts(Harness::Codex, &state);
+        let mounts = agent_mounts(Agent::Codex, &state);
         assert_eq!(mounts.len(), 1);
         assert!(mounts[0].contains("/home/agent/.codex/config.toml"));
         assert!(!mounts[0].ends_with(":ro"));
@@ -1789,7 +1797,7 @@ supported = ["codex"]
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            harness: None,
+            agent: None,
             keep_awake_enabled: false,
         }
     }
@@ -1797,25 +1805,25 @@ supported = ["codex"]
     #[test]
     fn resolve_harness_cli_override_wins() {
         assert_eq!(
-            resolve_harness(
-                Some(crate::harness::Harness::Codex),
-                Some(crate::harness::Harness::Claude),
+            resolve_agent(
+                Some(crate::agent::Agent::Codex),
+                Some(crate::agent::Agent::Claude),
             ),
-            crate::harness::Harness::Codex
+            crate::agent::Agent::Codex
         );
     }
 
     #[test]
     fn resolve_harness_uses_workspace_when_cli_absent() {
         assert_eq!(
-            resolve_harness(None, Some(crate::harness::Harness::Codex)),
-            crate::harness::Harness::Codex
+            resolve_agent(None, Some(crate::agent::Agent::Codex)),
+            crate::agent::Agent::Codex
         );
     }
 
     #[test]
     fn resolve_harness_defaults_to_claude() {
-        assert_eq!(resolve_harness(None, None), crate::harness::Harness::Claude);
+        assert_eq!(resolve_agent(None, None), crate::agent::Agent::Claude);
     }
 
     #[test]
@@ -1833,18 +1841,18 @@ plugins = []
         let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
 
-        let err = validate_harness_supported(&selector, &manifest, crate::harness::Harness::Codex)
-            .unwrap_err();
+        let err =
+            validate_agent_supported(&selector, &manifest, crate::agent::Agent::Codex).unwrap_err();
         let message = err.to_string();
         assert!(message.contains("role \"agent-smith\""));
-        assert!(message.contains("harness \"codex\""));
+        assert!(message.contains("agent \"codex\""));
         assert!(message.contains("supported: [claude]"));
     }
 
     #[test]
     fn verify_required_harness_env_rejects_missing_codex_key() {
         let env = crate::env_resolver::ResolvedEnv { vars: vec![] };
-        let err = verify_required_harness_env(crate::harness::Harness::Codex, &env).unwrap_err();
+        let err = verify_required_agent_env(crate::agent::Agent::Codex, &env).unwrap_err();
         assert!(err.to_string().contains("OPENAI_API_KEY"));
     }
 
@@ -1853,7 +1861,7 @@ plugins = []
         let env = crate::env_resolver::ResolvedEnv {
             vars: vec![("OPENAI_API_KEY".to_string(), "test-key".to_string())],
         };
-        verify_required_harness_env(crate::harness::Harness::Codex, &env).unwrap();
+        verify_required_agent_env(crate::agent::Agent::Codex, &env).unwrap();
     }
 
     #[test]
@@ -2090,7 +2098,7 @@ trusted = true
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
-            harness: None,
+            agent: None,
             keep_awake_enabled: false,
         };
 
@@ -2215,7 +2223,7 @@ trusted = true
             repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["claude", "codex"]
 
 [claude]
@@ -2228,7 +2236,7 @@ model = "gpt-5"
         .unwrap();
 
         let mut workspace = repo_workspace(&repo_dir);
-        workspace.harness = Some(crate::harness::Harness::Codex);
+        workspace.agent = Some(crate::agent::Agent::Codex);
         load_role(
             &paths,
             &mut config,
@@ -2251,7 +2259,7 @@ model = "gpt-5"
             .iter()
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
-        assert!(run_cmd.contains("-e JACKIN_HARNESS=codex"));
+        assert!(run_cmd.contains("-e JACKIN_AGENT=codex"));
         assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
         assert!(run_cmd.contains("/home/agent/.codex/config.toml"));
         assert!(!run_cmd.contains("/home/agent/.claude"));
@@ -2293,7 +2301,7 @@ trusted = true
             repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["codex"]
 
 [codex]
@@ -2302,7 +2310,7 @@ supported = ["codex"]
         .unwrap();
 
         let mut workspace = repo_workspace(&repo_dir);
-        workspace.harness = Some(crate::harness::Harness::Codex);
+        workspace.agent = Some(crate::agent::Agent::Codex);
         let err = load_role(
             &paths,
             &mut config,
@@ -2364,7 +2372,7 @@ plugins = []
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            harness: None,
+            agent: None,
             keep_awake_enabled: false,
         };
 
@@ -2434,7 +2442,7 @@ plugins = []
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            harness: None,
+            agent: None,
             keep_awake_enabled: false,
         };
 
@@ -2922,7 +2930,7 @@ plugins = []
             .iter()
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
-        assert!(run_cmd.contains("-e JACKIN_CLAUDE_ENV=jackin"));
+        assert!(run_cmd.contains("-e JACKIN=1"));
         assert!(run_cmd.contains("-e JACKIN_DIND_HOSTNAME=jackin-agent-smith-dind"));
         assert!(!run_cmd.contains("JACKIN_DEBUG"));
     }

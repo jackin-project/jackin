@@ -1403,14 +1403,14 @@ Append to the `#[cfg(test)] mod tests` block in `src/operator_env.rs`:
             env: std::collections::BTreeMap::new(),
         };
         agent.env.insert(
-            "JACKIN_CLAUDE_ENV".to_string(),
+            "JACKIN".to_string(),
             "whatever".to_string(),
         );
         cfg.agents.insert("agent-smith".to_string(), agent);
 
         let err = validate_reserved_names(&cfg).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("JACKIN_CLAUDE_ENV"), "{msg}");
+        assert!(msg.contains("JACKIN"), "{msg}");
         assert!(msg.contains("agent \"agent-smith\""), "{msg}");
     }
 
@@ -1508,7 +1508,7 @@ Append to `src/operator_env.rs`, below `merge_layers`:
 
 ```rust
 /// Reject operator env maps that declare any name reserved by the
-/// runtime (`JACKIN_CLAUDE_ENV`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`,
+/// runtime (`JACKIN`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`,
 /// `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`). Conflicts are collected
 /// across every layer and reported as a single aggregated error so
 /// operators see all problems at once.
@@ -1661,7 +1661,7 @@ Add validate_reserved_names — called from AppConfig::load_or_init right
 after sync_builtin_agents and before validate_workspaces. Walks all four
 env layers (global, per-agent, per-workspace, per-(workspace × agent))
 and collects every conflict with env_model::RESERVED_RUNTIME_ENV_VARS
-(JACKIN_CLAUDE_ENV, JACKIN_DIND_HOSTNAME, DOCKER_HOST, DOCKER_TLS_VERIFY,
+(JACKIN, JACKIN_DIND_HOSTNAME, DOCKER_HOST, DOCKER_TLS_VERIFY,
 DOCKER_CERT_PATH) into a single aggregated error. The error message
 names each offending (layer, key) pair so operators can fix the whole
 config in one pass rather than relauch-diagnose-repeat.
@@ -3147,7 +3147,7 @@ When `jackin load agent-smith` is invoked in `big-monorepo`:
 
 Five runtime-owned names are reserved and rejected at config load. Declaring them at any layer is a hard error:
 
-- `JACKIN_CLAUDE_ENV`
+- `JACKIN`
 - `JACKIN_DIND_HOSTNAME`
 - `DOCKER_HOST`
 - `DOCKER_TLS_VERIFY`
@@ -3234,7 +3234,7 @@ Values can be:
 - `$NAME` or `${NAME}` — read from the host env
 - Anything else — literal
 
-Reserved runtime names (`JACKIN_CLAUDE_ENV`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are rejected at config load.
+Reserved runtime names (`JACKIN`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are rejected at config load.
 
 See [Environment Variables](/guides/environment-variables) for the full guide.
 ```
@@ -3328,7 +3328,7 @@ Append after the `## [Unreleased]` header:
 ```markdown
 ### Added
 
-- Operator-controlled environment variables in `config.toml`. Four layers are merged with later-wins semantics at launch: global `[env]`, per-agent `[roles.<selector>.env]`, per-workspace `[workspaces.<name>.env]`, and per-(workspace × agent) `[workspaces.<name>.agents.<selector>.env]`. Values are either literal strings, host env references (`$NAME` / `${NAME}`), or 1Password references (`op://VAULT/ITEM/FIELD`) resolved via the `op` CLI. Reserved runtime names (`JACKIN_CLAUDE_ENV`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are rejected at config load. Resolved values are injected via `docker run -e` on top of manifest-declared env (operator wins on conflicts). See the new [Environment Variables](guides/environment-variables) guide. [#<pr-number>]
+- Operator-controlled environment variables in `config.toml`. Four layers are merged with later-wins semantics at launch: global `[env]`, per-agent `[roles.<selector>.env]`, per-workspace `[workspaces.<name>.env]`, and per-(workspace × agent) `[workspaces.<name>.agents.<selector>.env]`. Values are either literal strings, host env references (`$NAME` / `${NAME}`), or 1Password references (`op://VAULT/ITEM/FIELD`) resolved via the `op` CLI. Reserved runtime names (`JACKIN`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are rejected at config load. Resolved values are injected via `docker run -e` on top of manifest-declared env (operator wins on conflicts). See the new [Environment Variables](guides/environment-variables) guide. [#<pr-number>]
 ```
 
 Leave `<pr-number>` as a literal placeholder; it will be filled in after the PR is opened.

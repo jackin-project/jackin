@@ -19,7 +19,7 @@ use super::{BANNER, HELP_STYLES};
     after_long_help = "\
 Examples:
   jackin load                                          # use workspace + last role for cwd
-  jackin load --rebuild                                # same, with fresh harness install
+  jackin load --rebuild                                # same, with fresh agent install
   jackin load agent-smith
   jackin load agent-smith ~/Projects/my-app
   jackin load agent-smith ~/Projects/my-app:/app
@@ -37,7 +37,7 @@ pub struct LoadArgs {
     /// Additional bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)
     #[arg(long = "mount")]
     pub mounts: Vec<String>,
-    /// Force rebuild the Docker image and refresh harness CLI install layers
+    /// Force rebuild the Docker image and refresh agent CLI install layers
     #[arg(long, default_value_t = false)]
     pub rebuild: bool,
     /// Skip the animated intro sequence
@@ -62,16 +62,16 @@ pub struct LoadArgs {
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
-    /// Harness to launch under (claude or codex). Overrides the
-    /// workspace's `harness` field for this launch only. When neither
+    /// Agent to launch under (claude or codex). Overrides the
+    /// workspace's `agent` field for this launch only. When neither
     /// is set, defaults to claude.
     #[arg(long, value_parser = parse_harness)]
-    pub harness: Option<crate::harness::Harness>,
+    pub agent: Option<crate::agent::Agent>,
 }
 
-fn parse_harness(s: &str) -> Result<crate::harness::Harness, String> {
+fn parse_harness(s: &str) -> Result<crate::agent::Agent, String> {
     s.parse()
-        .map_err(|e: crate::harness::ParseHarnessError| e.to_string())
+        .map_err(|e: crate::agent::ParseAgentError| e.to_string())
 }
 
 /// Reattach to a running role's session
@@ -154,11 +154,11 @@ mod tests {
     #[test]
     fn load_args_parses_harness_flag() {
         let cli =
-            Cli::try_parse_from(["jackin", "load", "agent-smith", "--harness", "codex"]).unwrap();
+            Cli::try_parse_from(["jackin", "load", "agent-smith", "--agent", "codex"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(Command::Load(super::LoadArgs {
-                harness: Some(crate::harness::Harness::Codex),
+                agent: Some(crate::agent::Agent::Codex),
                 ..
             }))
         ));
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn load_args_rejects_unknown_harness() {
-        let res = Cli::try_parse_from(["jackin", "load", "agent-smith", "--harness", "amp"]);
+        let res = Cli::try_parse_from(["jackin", "load", "agent-smith", "--agent", "amp"]);
         assert!(res.is_err());
     }
 
@@ -175,7 +175,7 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "load", "agent-smith"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Load(super::LoadArgs { harness: None, .. }))
+            Some(Command::Load(super::LoadArgs { agent: None, .. }))
         ));
     }
 

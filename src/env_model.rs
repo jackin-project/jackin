@@ -18,12 +18,15 @@
 
 /// Env var injected by jackin into every role container so that child
 /// processes can detect they are running inside a jackin-managed runtime.
-pub const JACKIN_RUNTIME_ENV_NAME: &str = "JACKIN_CLAUDE_ENV";
+///
+/// Matches the `CI=true` / `DEBUG=1` convention: a single-purpose
+/// boolean-shaped flag scripts can test with `if [ "$JACKIN" = "1" ]`.
+pub const JACKIN_RUNTIME_ENV_NAME: &str = "JACKIN";
 
 /// Value set for [`JACKIN_RUNTIME_ENV_NAME`].  Manifests that try to declare
-/// `JACKIN_CLAUDE_ENV` are rejected at validation time because the value is
-/// fixed by jackin.
-pub const JACKIN_RUNTIME_ENV_VALUE: &str = "jackin";
+/// `JACKIN` are rejected at validation time because the value is fixed by
+/// jackin.
+pub const JACKIN_RUNTIME_ENV_VALUE: &str = "1";
 
 /// Env var that carries the `DinD` hostname into the role container.
 ///
@@ -32,11 +35,22 @@ pub const JACKIN_RUNTIME_ENV_VALUE: &str = "jackin";
 /// name) and manifests may not override it.
 pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
 
+/// Env var that carries the AI agent slug (`claude` / `codex` / ...) into
+/// the role container so the entrypoint and in-container tooling can
+/// dispatch on which agent is running.
+pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
+
+/// Env var that carries the role's selector key (e.g. `agent-smith` or
+/// `chainargos/agent-brown`) into the role container so in-container
+/// scripts can identify which role they are running as.
+pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
+
 /// Environment variables reserved by the jackin runtime.
 ///
 /// Each entry is `(name, default)`.  `Some(value)` indicates a fixed value
 /// assigned by jackin (currently only [`JACKIN_RUNTIME_ENV_NAME`]); `None`
-/// indicates a runtime-generated value (hostname, Docker TLS paths, ...).
+/// indicates a runtime-generated value (hostname, Docker TLS paths, agent
+/// slug, role selector, ...).
 ///
 /// Manifests that declare any of these names fail validation, and the
 /// runtime filter in `runtime::launch` skips them via [`is_reserved`] so
@@ -44,6 +58,8 @@ pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
 pub(crate) const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_RUNTIME_ENV_NAME, Some(JACKIN_RUNTIME_ENV_VALUE)),
     (JACKIN_DIND_HOSTNAME_ENV_NAME, None),
+    (JACKIN_AGENT_ENV_NAME, None),
+    (JACKIN_ROLE_ENV_NAME, None),
     // Docker TLS vars injected by jackin — must not be overridden by manifests.
     ("DOCKER_HOST", None),
     ("DOCKER_TLS_VERIFY", None),
@@ -167,8 +183,10 @@ mod tests {
         // AND in runtime's old RUNTIME_OWNED_ENV_VARS must be present.
         let names: Vec<&str> = RESERVED_RUNTIME_ENV_VARS.iter().map(|(n, _)| *n).collect();
         for sentinel in &[
-            "JACKIN_CLAUDE_ENV",    // was manifest JACKIN_RUNTIME_ENV_NAME value
+            "JACKIN",               // in-container sentinel (was JACKIN)
             "JACKIN_DIND_HOSTNAME", // was manifest JACKIN_DIND_HOSTNAME_ENV_NAME value
+            "JACKIN_AGENT",         // injected by runtime — agent slug (claude/codex)
+            "JACKIN_ROLE",          // injected by runtime — role selector key
             "DOCKER_HOST",
             "DOCKER_TLS_VERIFY",
             "DOCKER_CERT_PATH",
@@ -183,8 +201,10 @@ mod tests {
     #[test]
     fn is_reserved_accepts_all_sentinel_names() {
         for sentinel in &[
-            "JACKIN_CLAUDE_ENV",
+            "JACKIN",
             "JACKIN_DIND_HOSTNAME",
+            "JACKIN_AGENT",
+            "JACKIN_ROLE",
             "DOCKER_HOST",
             "DOCKER_TLS_VERIFY",
             "DOCKER_CERT_PATH",

@@ -40,10 +40,19 @@ impl RoleSelector {
         }
     }
 
+    /// Parse a role selector. Input is lowercased before validation so
+    /// `ChainArgos/Agent-Brown` and `chainargos/agent-brown` both produce
+    /// the same `RoleSelector`. This matches GitHub's case-insensitive
+    /// org/user routing and the Docker constraint that container/image
+    /// names must be lowercase. Display names live in the manifest's
+    /// `[identity].name` field, so case preservation has its own slot.
     pub fn parse(input: &str) -> Result<Self, SelectorError> {
         if input.is_empty() {
             return Err(SelectorError::Empty);
         }
+
+        let normalized = input.to_ascii_lowercase();
+        let input = normalized.as_str();
 
         if !input.contains('/') {
             return (is_valid_role_segment(input) && !is_reserved_builtin_role_name(input))
@@ -205,9 +214,21 @@ mod tests {
             Selector::parse("foo/../bar"),
             Err(SelectorError::Invalid(_))
         ));
-        assert!(matches!(
-            Selector::parse("Foo/bar"),
-            Err(SelectorError::Invalid(_))
-        ));
+    }
+
+    #[test]
+    fn parse_normalizes_uppercase_to_lowercase() {
+        // Bare role names: uppercase tolerated, lowercased on parse.
+        assert_eq!(
+            Selector::parse("Agent-Smith").unwrap(),
+            Selector::Role(RoleSelector::new(None, "agent-smith"))
+        );
+
+        // Namespaced (GitHub-style): both segments lowercased so
+        // `ChainArgos/Agent-Brown` and `chainargos/agent-brown` dedupe.
+        assert_eq!(
+            Selector::parse("ChainArgos/Agent-Brown").unwrap(),
+            Selector::Role(RoleSelector::new(Some("chainargos"), "agent-brown"))
+        );
     }
 }

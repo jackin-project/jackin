@@ -173,8 +173,8 @@ impl AppConfig {
             workspace.default_role = default_role;
         }
 
-        if let Some(harness) = edit.harness {
-            workspace.harness = harness;
+        if let Some(agent) = edit.agent {
+            workspace.agent = agent;
         }
 
         if let Some(enabled) = edit.keep_awake_enabled {
@@ -261,7 +261,7 @@ mod tests {
             }],
             allowed_roles: vec!["agent-smith".to_string()],
             default_role: Some("agent-smith".to_string()),
-            harness: None,
+            agent: None,
             last_role: None,
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
@@ -375,14 +375,14 @@ mod tests {
             .edit_workspace(
                 "my-app",
                 WorkspaceEdit {
-                    harness: Some(Some(crate::harness::Harness::Codex)),
+                    agent: Some(Some(crate::agent::Agent::Codex)),
                     ..WorkspaceEdit::default()
                 },
             )
             .unwrap();
         assert_eq!(
-            config.workspaces.get("my-app").unwrap().harness,
-            Some(crate::harness::Harness::Codex)
+            config.workspaces.get("my-app").unwrap().agent,
+            Some(crate::agent::Agent::Codex)
         );
 
         config
@@ -395,21 +395,21 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            config.workspaces.get("my-app").unwrap().harness,
-            Some(crate::harness::Harness::Codex),
-            "unrelated edits must not clear harness"
+            config.workspaces.get("my-app").unwrap().agent,
+            Some(crate::agent::Agent::Codex),
+            "unrelated edits must not clear agent"
         );
 
         config
             .edit_workspace(
                 "my-app",
                 WorkspaceEdit {
-                    harness: Some(None),
+                    agent: Some(None),
                     ..WorkspaceEdit::default()
                 },
             )
             .unwrap();
-        assert_eq!(config.workspaces.get("my-app").unwrap().harness, None);
+        assert_eq!(config.workspaces.get("my-app").unwrap().agent, None);
     }
 
     #[test]

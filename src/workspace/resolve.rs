@@ -37,10 +37,10 @@ pub struct ResolvedWorkspace {
     /// be tagged with `jackin.keep_awake=true` without a config
     /// re-lookup.
     pub keep_awake_enabled: bool,
-    /// Workspace-level harness preference (None for ad-hoc / current-dir
+    /// Workspace-level agent preference (None for ad-hoc / current-dir
     /// workspaces). The launch flow combines this with any CLI override
-    /// in `runtime::launch::resolve_harness`.
-    pub harness: Option<crate::harness::Harness>,
+    /// in `runtime::launch::resolve_agent`.
+    pub agent: Option<crate::agent::Agent>,
 }
 
 fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
@@ -184,7 +184,7 @@ pub fn resolve_load_workspace(
         workdir: workspace.workdir,
         mounts,
         keep_awake_enabled: workspace.keep_awake.enabled,
-        harness: workspace.harness,
+        agent: workspace.agent,
     })
 }
 
@@ -224,7 +224,7 @@ mod tests {
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 }],
-                harness: Some(crate::harness::Harness::Codex),
+                agent: Some(crate::agent::Agent::Codex),
                 ..Default::default()
             },
         );
@@ -238,7 +238,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(resolved.harness, Some(crate::harness::Harness::Codex));
+        assert_eq!(resolved.agent, Some(crate::agent::Agent::Codex));
     }
 
     #[test]

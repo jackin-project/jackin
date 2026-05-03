@@ -15,9 +15,9 @@ fn parse_mount_isolation(s: &str) -> anyhow::Result<(String, MountIsolation)> {
     Ok((dst.into(), mode))
 }
 
-fn parse_harness(s: &str) -> Result<crate::harness::Harness, String> {
+fn parse_harness(s: &str) -> Result<crate::agent::Agent, String> {
     s.parse()
-        .map_err(|e: crate::harness::ParseHarnessError| e.to_string())
+        .map_err(|e: crate::agent::ParseAgentError| e.to_string())
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -34,7 +34,7 @@ pub enum WorkspaceCommand {
 Examples:
   jackin workspace create my-app --workdir ~/Projects/my-app
   jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
-  jackin workspace create my-app --workdir ~/Projects/my-app --harness codex
+  jackin workspace create my-app --workdir ~/Projects/my-app --agent codex
   jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
   jackin workspace create restricted --workdir ~/app --allowed-role agent-smith --default-role agent-smith"
     )]
@@ -56,9 +56,9 @@ Examples:
         /// Role to select by default when loading this workspace
         #[arg(long = "default-role")]
         default_role: Option<String>,
-        /// Default harness for this workspace (claude or codex)
+        /// Default agent for this workspace (claude or codex)
         #[arg(long, value_parser = parse_harness)]
-        harness: Option<crate::harness::Harness>,
+        agent: Option<crate::agent::Agent>,
         /// Set isolation mode for a mount destination. Repeatable.
         /// Format: `<container-dst>=<shared|worktree>`.
         #[arg(
@@ -103,8 +103,8 @@ Examples:
   jackin workspace edit my-app --allowed-role chainargos/the-architect
   jackin workspace edit my-app --default-role agent-smith
   jackin workspace edit my-app --clear-default-role
-  jackin workspace edit my-app --harness codex
-  jackin workspace edit my-app --clear-harness
+  jackin workspace edit my-app --agent codex
+  jackin workspace edit my-app --clear-agent
   jackin workspace edit my-app --mount ~/Projects/my-app --yes
   jackin workspace edit my-app --prune"
     )]
@@ -139,16 +139,16 @@ Examples:
             default_value_t = false
         )]
         clear_default_agent: bool,
-        /// Set the default harness for this workspace
+        /// Set the default agent for this workspace
         #[arg(long, value_parser = parse_harness)]
-        harness: Option<crate::harness::Harness>,
-        /// Clear the explicit harness so the workspace falls back to claude
+        agent: Option<crate::agent::Agent>,
+        /// Clear the explicit agent so the workspace falls back to claude
         #[arg(
-            long = "clear-harness",
-            conflicts_with = "harness",
+            long = "clear-agent",
+            conflicts_with = "agent",
             default_value_t = false
         )]
-        clear_harness: bool,
+        clear_agent: bool,
         /// Skip confirmation prompts for mount collapses
         #[arg(long = "yes", short = 'y', default_value_t = false)]
         assume_yes: bool,
@@ -454,13 +454,13 @@ mod tests {
             "my-app",
             "--workdir",
             "/tmp/my-app",
-            "--harness",
+            "--agent",
             "codex",
         ])
         .unwrap();
         match cli.command {
-            Some(Command::Workspace(WorkspaceCommand::Create { harness, .. })) => {
-                assert_eq!(harness, Some(crate::harness::Harness::Codex));
+            Some(Command::Workspace(WorkspaceCommand::Create { agent, .. })) => {
+                assert_eq!(agent, Some(crate::agent::Agent::Codex));
             }
             other => panic!("unexpected command {other:?}"),
         }
@@ -521,30 +521,24 @@ mod tests {
 
     #[test]
     fn parses_workspace_edit_with_harness() {
-        let cli = Cli::try_parse_from([
-            "jackin",
-            "workspace",
-            "edit",
-            "my-app",
-            "--harness",
-            "codex",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["jackin", "workspace", "edit", "my-app", "--agent", "codex"])
+                .unwrap();
         match cli.command {
-            Some(Command::Workspace(WorkspaceCommand::Edit { harness, .. })) => {
-                assert_eq!(harness, Some(crate::harness::Harness::Codex));
+            Some(Command::Workspace(WorkspaceCommand::Edit { agent, .. })) => {
+                assert_eq!(agent, Some(crate::agent::Agent::Codex));
             }
             other => panic!("unexpected command {other:?}"),
         }
     }
 
     #[test]
-    fn parses_workspace_edit_with_clear_harness() {
-        let cli = Cli::try_parse_from(["jackin", "workspace", "edit", "my-app", "--clear-harness"])
+    fn parses_workspace_edit_with_clear_agent() {
+        let cli = Cli::try_parse_from(["jackin", "workspace", "edit", "my-app", "--clear-agent"])
             .unwrap();
         match cli.command {
-            Some(Command::Workspace(WorkspaceCommand::Edit { clear_harness, .. })) => {
-                assert!(clear_harness);
+            Some(Command::Workspace(WorkspaceCommand::Edit { clear_agent, .. })) => {
+                assert!(clear_agent);
             }
             other => panic!("unexpected command {other:?}"),
         }
@@ -557,9 +551,9 @@ mod tests {
             "workspace",
             "edit",
             "my-app",
-            "--harness",
+            "--agent",
             "codex",
-            "--clear-harness",
+            "--clear-agent",
         ])
         .unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);

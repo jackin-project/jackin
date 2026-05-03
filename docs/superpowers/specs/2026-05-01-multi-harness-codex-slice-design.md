@@ -39,7 +39,7 @@ After this slice merges, Amp and the deferred items become smaller, well-scoped 
 - Codex auto-update / version probe. `--rebuild` is the V1 update path for Codex.
 - `jackin sync` for Codex. Sync is Claude-OAuth-shaped; for Codex it returns a clear "Claude-only in V1" error.
 - A rich `[codex]` manifest section. V1 supports at most a `model` field; sandbox/approval policy lives in jackin-generated `config.toml` only.
-- Generalizing the legacy `JACKIN_CLAUDE_ENV` env name. That cleanup gets its own small spec.
+- Generalizing the legacy `JACKIN` env name. That cleanup gets its own small spec.
 - Designing a third-party harness plugin system.
 - Re-cutting the construct image's tag (e.g. `:trixie-2`). Tag stays `:trixie`, rebuilt in place, with `--pull` added to derived builds to ensure operators pick up the new digest.
 
@@ -283,7 +283,7 @@ exec "${LAUNCH[@]}"
 
 The exact codex argv (interactive default vs subcommand) is finalized during implementation by reading the current Codex CLI release notes; the `LAUNCH=(codex)` placeholder above represents the expected interactive default.
 
-**`JACKIN_HARNESS` vs `JACKIN_CLAUDE_ENV` (coexist deliberately).** The legacy constant `JACKIN_RUNTIME_ENV_NAME` in `src/env_model.rs:21` resolves to the env-var name `JACKIN_CLAUDE_ENV` with value `"jackin"`. That variable identifies that the process is running *inside* a jackin container — it is not a harness selector. The new `JACKIN_HARNESS` env var introduced by this slice is the harness selector (`claude` or `codex`). The two solve different problems and live alongside each other in V1. Generalizing/renaming the legacy `JACKIN_CLAUDE_ENV` is explicitly out of scope (see Non-Goals).
+**`JACKIN_HARNESS` vs `JACKIN` (coexist deliberately).** The legacy constant `JACKIN_RUNTIME_ENV_NAME` in `src/env_model.rs:21` resolves to the env-var name `JACKIN` with value `"jackin"`. That variable identifies that the process is running *inside* a jackin container — it is not a harness selector. The new `JACKIN_HARNESS` env var introduced by this slice is the harness selector (`claude` or `codex`). The two solve different problems and live alongside each other in V1. Generalizing/renaming the legacy `JACKIN` is explicitly out of scope (see Non-Goals).
 
 ### State and auth
 

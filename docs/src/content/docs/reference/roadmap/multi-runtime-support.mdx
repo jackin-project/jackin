@@ -339,7 +339,7 @@ If a later pass proves that Amp skills or Codex-specific config deserve first-cl
 - Should the instance name encode runtime visibly (`jackin-agent-smith-codex`) or store it only in labels while keeping the display name cleaner?
 - Is Amp V1 better served by `dangerouslyAllowAll = true`, or by generating a jackin-managed allowlist that covers known safe shell commands?
 - Should Codex use `danger-full-access` inside the container by default, or keep its own internal sandbox enabled even though jackin already provides a container boundary?
-- Which existing Claude-only env names should be generalized immediately, especially `JACKIN_CLAUDE_ENV`?
+- Which existing Claude-only env names should be generalized immediately, especially `JACKIN`?
 - Does `jackin hardline` need any runtime-specific reconnect logic for Codex or Amp, or is the current attach model sufficient once the entrypoint is runtime-driven?
 
 ## Related Files

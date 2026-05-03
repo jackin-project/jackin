@@ -1,12 +1,12 @@
-use crate::harness::Harness;
+use crate::agent::Agent;
 
-/// Per-harness data returned by `profile(harness)`.
+/// Per-agent data returned by `profile(agent)`.
 ///
 /// Owned types (not `&'static`) so the profile can grow runtime
 /// parameterization later without churning consumers. `required_env`
 /// keeps `&'static str` because env-var names are inherent literals.
 #[derive(Debug, Clone)]
-pub struct HarnessProfile {
+pub struct AgentProfile {
     pub install_block: String,
     pub launch_argv: Vec<String>,
     pub required_env: Vec<&'static str>,
@@ -53,9 +53,9 @@ RUN set -eux; \\
     mkdir -p /etc/jackin && codex --version > /etc/jackin/codex.version
 ";
 
-pub fn profile(h: Harness) -> HarnessProfile {
+pub fn profile(h: Agent) -> AgentProfile {
     match h {
-        Harness::Claude => HarnessProfile {
+        Agent::Claude => AgentProfile {
             install_block: CLAUDE_INSTALL_BLOCK.to_string(),
             launch_argv: vec![
                 "claude".to_string(),
@@ -72,7 +72,7 @@ pub fn profile(h: Harness) -> HarnessProfile {
                 ],
             },
         },
-        Harness::Codex => HarnessProfile {
+        Agent::Codex => AgentProfile {
             install_block: CODEX_INSTALL_BLOCK.to_string(),
             launch_argv: vec!["codex".to_string()],
             required_env: vec!["OPENAI_API_KEY"],
@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn claude_profile_installs_plugins() {
-        let p = profile(Harness::Claude);
+        let p = profile(Agent::Claude);
         assert!(p.installs_plugins);
         assert!(p.required_env.is_empty());
         assert!(p.install_block.contains("claude.ai/install.sh"));
@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn codex_profile_requires_openai_key_and_skips_plugins() {
-        let p = profile(Harness::Codex);
+        let p = profile(Agent::Codex);
         assert!(!p.installs_plugins);
         assert_eq!(p.required_env, vec!["OPENAI_API_KEY"]);
         assert!(p.install_block.contains("openai/codex/releases"));
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn claude_state_paths_match_existing_layout() {
-        let p = profile(Harness::Claude);
+        let p = profile(Agent::Claude);
         let names: Vec<&str> = p
             .container_state_paths
             .home_subpaths
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn codex_state_paths_only_have_config_toml() {
-        let p = profile(Harness::Codex);
+        let p = profile(Agent::Codex);
         assert_eq!(p.container_state_paths.home_subpaths.len(), 1);
         let (path, kind) = &p.container_state_paths.home_subpaths[0];
         assert_eq!(path, ".codex/config.toml");

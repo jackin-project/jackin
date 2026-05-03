@@ -14,7 +14,7 @@ pub struct RoleManifest {
     #[serde(default)]
     pub identity: Option<IdentityConfig>,
     #[serde(default)]
-    pub harness: Option<HarnessConfig>,
+    pub agent: Option<AgentConfig>,
     #[serde(default)]
     pub claude: Option<ClaudeConfig>,
     #[serde(default)]
@@ -27,8 +27,8 @@ pub struct RoleManifest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HarnessConfig {
-    pub supported: Vec<crate::harness::Harness>,
+pub struct AgentConfig {
+    pub supported: Vec<crate::agent::Agent>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -103,11 +103,11 @@ impl RoleManifest {
             .map_or_else(|| fallback.to_string(), |id| id.name.clone())
     }
 
-    /// Returns the harnesses this manifest supports. Legacy manifests
-    /// without a `[harness]` table default to claude-only.
-    pub fn supported_harnesses(&self) -> Vec<crate::harness::Harness> {
-        self.harness.as_ref().map_or_else(
-            || vec![crate::harness::Harness::Claude],
+    /// Returns the agents this manifest supports. Legacy manifests
+    /// without a `[agent]` table default to claude-only.
+    pub fn supported_agents(&self) -> Vec<crate::agent::Agent> {
+        self.agent.as_ref().map_or_else(
+            || vec![crate::agent::Agent::Claude],
             |h| h.supported.clone(),
         )
     }
@@ -125,7 +125,7 @@ mod tests {
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["claude", "codex"]
 
 [claude]
@@ -138,11 +138,8 @@ plugins = []
 
         let m = RoleManifest::load(temp.path()).unwrap();
         assert_eq!(
-            m.supported_harnesses(),
-            vec![
-                crate::harness::Harness::Claude,
-                crate::harness::Harness::Codex
-            ]
+            m.supported_agents(),
+            vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
         );
         assert!(m.codex.is_some());
     }
@@ -161,10 +158,7 @@ plugins = []
         .unwrap();
 
         let m = RoleManifest::load(temp.path()).unwrap();
-        assert_eq!(
-            m.supported_harnesses(),
-            vec![crate::harness::Harness::Claude]
-        );
+        assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Claude]);
     }
 
     #[test]
@@ -174,7 +168,7 @@ plugins = []
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["codex"]
 
 [codex]
@@ -184,10 +178,7 @@ model = "gpt-5"
         .unwrap();
 
         let m = RoleManifest::load(temp.path()).unwrap();
-        assert_eq!(
-            m.supported_harnesses(),
-            vec![crate::harness::Harness::Codex]
-        );
+        assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Codex]);
         assert_eq!(m.codex.as_ref().unwrap().model.as_deref(), Some("gpt-5"));
     }
 
@@ -198,7 +189,7 @@ model = "gpt-5"
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["claude", "amp"]
 
 [claude]

@@ -35,7 +35,7 @@ pub struct RoleState {
     pub jackin_dir: PathBuf,
     pub plugins_json: PathBuf,
     pub gh_config_dir: PathBuf,
-    /// Set only when harness == Codex; the path to the host-side
+    /// Set only when agent == Codex; the path to the host-side
     /// config.toml that gets mounted at /home/agent/.codex/config.toml.
     pub codex_config_toml: Option<PathBuf>,
 }
@@ -47,7 +47,7 @@ impl RoleState {
         manifest: &RoleManifest,
         auth_forward: AuthForwardMode,
         host_home: &Path,
-        harness: crate::harness::Harness,
+        agent: crate::agent::Agent,
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
         let claude_dir = root.join(".claude");
@@ -61,8 +61,8 @@ impl RoleState {
         std::fs::create_dir_all(&jackin_dir)?;
         std::fs::create_dir_all(&gh_config_dir)?;
 
-        let outcome = match harness {
-            crate::harness::Harness::Claude => {
+        let outcome = match agent {
+            crate::agent::Agent::Claude => {
                 let outcome = Self::provision_claude_auth(
                     &claude_json,
                     &claude_dir,
@@ -81,15 +81,15 @@ impl RoleState {
                 }
                 outcome
             }
-            crate::harness::Harness::Codex => {
+            crate::agent::Agent::Codex => {
                 Self::provision_codex_auth(&codex_config_toml, manifest)?;
                 AuthProvisionOutcome::Skipped
             }
         };
 
-        let codex_config_toml_field = match harness {
-            crate::harness::Harness::Codex => Some(codex_config_toml),
-            crate::harness::Harness::Claude => None,
+        let codex_config_toml_field = match agent {
+            crate::agent::Agent::Codex => Some(codex_config_toml),
+            crate::agent::Agent::Claude => None,
         };
 
         Ok((
@@ -143,7 +143,7 @@ plugins = []
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
-            crate::harness::Harness::Claude,
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
@@ -161,7 +161,7 @@ plugins = []
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
-[harness]
+[agent]
 supported = ["codex"]
 
 [codex]
@@ -182,7 +182,7 @@ supported = ["codex"]
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
-            crate::harness::Harness::Codex,
+            crate::agent::Agent::Codex,
         )
         .unwrap();
 
