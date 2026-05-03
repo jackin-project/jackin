@@ -173,6 +173,10 @@ impl AppConfig {
             workspace.default_agent = default_agent;
         }
 
+        if let Some(harness) = edit.harness {
+            workspace.harness = harness;
+        }
+
         if let Some(enabled) = edit.keep_awake_enabled {
             workspace.keep_awake.enabled = enabled;
         }
@@ -345,6 +349,67 @@ mod tests {
             )
             .unwrap();
         assert!(!config.workspaces.get("my-app").unwrap().keep_awake.enabled);
+    }
+
+    #[test]
+    fn edit_workspace_sets_and_clears_harness() {
+        let temp = tempdir().unwrap();
+        let mut config = AppConfig::default();
+        config
+            .create_workspace(
+                "my-app",
+                WorkspaceConfig {
+                    workdir: "/workspace/proj".to_string(),
+                    mounts: vec![MountConfig {
+                        src: temp.path().display().to_string(),
+                        dst: "/workspace/proj".to_string(),
+                        readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
+                    }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        config
+            .edit_workspace(
+                "my-app",
+                WorkspaceEdit {
+                    harness: Some(Some(crate::harness::Harness::Codex)),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            config.workspaces.get("my-app").unwrap().harness,
+            Some(crate::harness::Harness::Codex)
+        );
+
+        config
+            .edit_workspace(
+                "my-app",
+                WorkspaceEdit {
+                    workdir: Some("/workspace/proj".to_string()),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            config.workspaces.get("my-app").unwrap().harness,
+            Some(crate::harness::Harness::Codex),
+            "unrelated edits must not clear harness"
+        );
+
+        config
+            .edit_workspace(
+                "my-app",
+                WorkspaceEdit {
+                    harness: Some(None),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(config.workspaces.get("my-app").unwrap().harness, None);
     }
 
     #[test]

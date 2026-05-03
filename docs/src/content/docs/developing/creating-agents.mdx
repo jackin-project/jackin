@@ -101,14 +101,14 @@ RUN mise install node@22 python@3.12 go@1.23 && \
     mise use --global node@22 python@3.12 go@1.23
 ```
 
-### Install packages as the claude user
+### Install packages as the agent user
 
-The construct switches to the `claude` user. Your Dockerfile commands run as that user. If you need root access:
+The construct switches to the `agent` user. Your Dockerfile commands run as that user. If you need root access:
 
 ```dockerfile
 USER root
 RUN apt-get update && apt-get install -y some-package
-USER claude
+USER agent
 ```
 
 ## Claude plugins
@@ -153,6 +153,38 @@ name = "My Agent"
 
 jackin adds each declared marketplace at container startup, then installs each plugin ID exactly as written.
 
+## Supporting multiple harnesses
+
+An agent class can support more than one harness while keeping one shared Dockerfile:
+
+```toml [jackin.agent.toml]
+dockerfile = "Dockerfile"
+
+[harness]
+supported = ["claude", "codex"]
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+
+[codex]
+model = "gpt-5"
+
+[identity]
+name = "My Agent"
+```
+
+The workspace chooses the default harness:
+
+```bash
+jackin workspace create my-app --workdir ~/Projects/my-app --harness codex
+```
+
+You can override it for one launch:
+
+```bash
+jackin load my-agent my-app --harness claude
+```
+
 ## Testing your agent
 
 The fastest way to test is to load it:
@@ -161,7 +193,7 @@ The fastest way to test is to load it:
 jackin load your-agent-name --rebuild
 ```
 
-The `--rebuild` flag forces a fresh image build, picking up any Dockerfile changes.
+The `--rebuild` flag forces a fresh image build, picking up Dockerfile changes and newer harness CLI downloads.
 
 Use `--debug` to see raw Docker output if something goes wrong:
 

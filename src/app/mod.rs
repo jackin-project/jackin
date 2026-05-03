@@ -61,8 +61,6 @@ pub fn run(cli: Cli) -> Result<()> {
             force,
             harness,
         }) => {
-            // Harness resolution wires up in Task 16; accept-and-ignore for now.
-            let _ = harness;
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
@@ -109,6 +107,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
             let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
             opts.force = force;
+            opts.harness = harness;
             // Pre-launch reconcile: if a previous agent in a keep_awake
             // workspace already runs, ensure caffeinate is up before we
             // build/launch (so a long Docker build doesn't see the host
@@ -482,6 +481,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 no_workdir_mount,
                 allowed_agents,
                 default_agent,
+                harness,
                 mount_isolation,
                 keep_awake,
             } => {
@@ -520,7 +520,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     mounts: plan.final_mounts,
                     allowed_agents,
                     default_agent,
-                    harness: None,
+                    harness,
                     last_agent: None,
                     env: std::collections::BTreeMap::new(),
                     agents: std::collections::BTreeMap::new(),
@@ -561,6 +561,8 @@ pub fn run(cli: Cli) -> Result<()> {
                         allowed: String,
                         #[tabled(rename = "Default Agent")]
                         default_agent: String,
+                        #[tabled(rename = "Harness")]
+                        harness: String,
                     }
                     let rows: Vec<Row> = workspaces
                         .iter()
@@ -578,6 +580,7 @@ pub fn run(cli: Cli) -> Result<()> {
                                 .as_deref()
                                 .unwrap_or("none")
                                 .to_string(),
+                            harness: ws.resolved_harness().slug().to_string(),
                         })
                         .collect();
                     let mut table = Table::new(rows);
@@ -603,6 +606,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 remove_allowed_agents,
                 default_agent,
                 clear_default_agent,
+                harness,
+                clear_harness,
                 assume_yes,
                 prune,
                 mount_isolation,
@@ -740,6 +745,11 @@ pub fn run(cli: Cli) -> Result<()> {
                 } else if let Some(ref agent) = default_agent {
                     changes.push(format!("default agent → {agent}"));
                 }
+                if clear_harness {
+                    changes.push("cleared harness".to_string());
+                } else if let Some(harness) = harness {
+                    changes.push(format!("harness → {}", harness.slug()));
+                }
                 if let Some(v) = keep_awake_change {
                     changes.push(format!(
                         "keep_awake → {}",
@@ -819,6 +829,11 @@ pub fn run(cli: Cli) -> Result<()> {
                             Some(None)
                         } else {
                             default_agent.map(Some)
+                        },
+                        harness: if clear_harness {
+                            Some(None)
+                        } else {
+                            harness.map(Some)
                         },
                         mount_isolation_overrides: mount_isolation,
                         keep_awake_enabled: keep_awake_change,
@@ -1106,6 +1121,7 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
         workspace.allowed_agents.join(", ")
     };
     let default_agent = workspace.default_agent.as_deref().unwrap_or("none");
+    let harness = workspace.resolved_harness().slug();
 
     let short_workdir = tui::shorten_home(&workspace.workdir);
     let mut info: Vec<(&str, &str)> = vec![
@@ -1113,6 +1129,7 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
         ("Workdir", short_workdir.as_str()),
         ("Allowed Agents", allowed.as_str()),
         ("Default Agent", default_agent),
+        ("Harness", harness),
     ];
     // Only surface keep_awake when opted in — disabled is the default and
     // shouldn't add noise. When enabled, the operator sees it here so a

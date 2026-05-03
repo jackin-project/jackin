@@ -35,8 +35,10 @@ RUN claude --version
 
 const CODEX_INSTALL_BLOCK: &str = "\
 USER agent
+ARG JACKIN_CACHE_BUST=0
 ARG TARGETARCH
 RUN set -eux; \\
+    : \"${JACKIN_CACHE_BUST}\"; \\
     case \"${TARGETARCH:-amd64}\" in \\
       amd64) ARCH=x86_64-unknown-linux-musl ;; \\
       arm64) ARCH=aarch64-unknown-linux-musl ;; \\

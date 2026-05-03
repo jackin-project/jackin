@@ -1,6 +1,6 @@
 ---
 title: Authentication Forwarding
-description: Forward Claude Code authentication from your host machine into agent containers
+description: Forward or provide harness credentials for agent containers
 ---
 import { Aside } from '@astrojs/starlight/components'
 
@@ -143,6 +143,25 @@ Resolution order: **per-agent override > global default > `sync`**.
 <Aside type="note">
 Auth forwarding is an operator-level setting. Agent manifests (`jackin.agent.toml`) cannot set or override this — it is always the operator's decision.
 </Aside>
+
+## Codex authentication
+
+Codex uses environment-only authentication in jackin V1. Set `OPENAI_API_KEY` through the same operator env system used for other secrets:
+
+```toml
+[env]
+OPENAI_API_KEY = "$OPENAI_API_KEY"
+```
+
+or:
+
+```toml
+[env]
+OPENAI_API_KEY = "op://vault/openai/api-key"
+```
+
+When a workspace or launch selects the `codex` harness, jackin requires `OPENAI_API_KEY` to be present in the resolved launch env before it builds or starts the container. There is no Codex equivalent of Claude's `sync` or `token` auth-forward modes in this slice.
+
 ## What gets forwarded
 
 Two pieces of data are forwarded from the host:

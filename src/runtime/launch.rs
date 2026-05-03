@@ -44,6 +44,10 @@ pub struct LoadOptions {
     /// `std::env::var`. When `Some(map)`, `$NAME` / `${NAME}`
     /// references are resolved by looking up `name` in `map`.
     pub host_env: Option<std::collections::BTreeMap<String, String>>,
+
+    /// CLI override for the harness. `None` means "use the workspace's
+    /// `harness` field, falling back to `Harness::Claude` when unset".
+    pub harness: Option<crate::harness::Harness>,
 }
 
 impl LoadOptions {
@@ -56,6 +60,7 @@ impl LoadOptions {
             force: false,
             op_runner: None,
             host_env: None,
+            harness: None,
         }
     }
 
@@ -69,6 +74,7 @@ impl LoadOptions {
             force: false,
             op_runner: None,
             host_env: None,
+            harness: None,
         }
     }
 }
@@ -82,8 +88,70 @@ impl Default for LoadOptions {
             force: false,
             op_runner: None,
             host_env: None,
+            harness: None,
         }
     }
+}
+
+/// Resolve which harness to launch under. CLI flag wins; falls back
+/// to the workspace's `harness` field; otherwise defaults to Claude.
+fn resolve_harness(
+    cli_override: Option<crate::harness::Harness>,
+    workspace_harness: Option<crate::harness::Harness>,
+) -> crate::harness::Harness {
+    cli_override
+        .or(workspace_harness)
+        .unwrap_or(crate::harness::Harness::Claude)
+}
+
+fn validate_harness_supported(
+    selector: &ClassSelector,
+    manifest: &crate::manifest::AgentManifest,
+    harness: crate::harness::Harness,
+) -> anyhow::Result<()> {
+    let supported = manifest.supported_harnesses();
+    if supported.contains(&harness) {
+        return Ok(());
+    }
+
+    let supported_list = supported
+        .iter()
+        .map(|h| h.slug())
+        .collect::<Vec<_>>()
+        .join(", ");
+    anyhow::bail!(
+        "agent \"{}\" does not support harness \"{}\"; supported: [{}]",
+        selector.key(),
+        harness.slug(),
+        supported_list
+    );
+}
+
+fn verify_required_harness_env(
+    harness: crate::harness::Harness,
+    resolved_env: &crate::env_resolver::ResolvedEnv,
+) -> anyhow::Result<()> {
+    let profile = crate::harness::profile::profile(harness);
+    let missing = profile
+        .required_env
+        .into_iter()
+        .filter(|required| {
+            !resolved_env
+                .vars
+                .iter()
+                .any(|(key, value)| key == required && !value.is_empty())
+        })
+        .collect::<Vec<_>>();
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "harness \"{}\" requires {} in the resolved launch env; declare it in workspace/global env or agent manifest env",
+        harness.slug(),
+        missing.join(", ")
+    );
 }
 
 struct StepCounter {
@@ -811,6 +879,9 @@ fn load_agent_with(
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.agent_name.clone_from(&agent_display_name);
 
+    let harness = resolve_harness(opts.harness, workspace.harness);
+    validate_harness_supported(selector, &validated_repo.manifest, harness)?;
+
     // Logo (if present in agent repo)
     tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
 
@@ -905,6 +976,7 @@ fn load_agent_with(
         }
     }
     let resolved_env = crate::env_resolver::ResolvedEnv { vars: merged_vars };
+    verify_required_harness_env(harness, &resolved_env)?;
 
     // Launch-time diagnostic: emit a single compact line summarising
     // the operator env that will be injected. In normal mode we show
@@ -925,7 +997,8 @@ fn load_agent_with(
         // Step 2: Build Docker image
         let rebuild = opts.rebuild || {
             let img = image_name(selector);
-            let needs_update = version_check::needs_claude_update(paths, &img, runner);
+            let needs_update = harness == crate::harness::Harness::Claude
+                && version_check::needs_claude_update(paths, &img, runner);
             if needs_update {
                 eprintln!("        Claude update available — rebuilding image");
             }
@@ -938,6 +1011,7 @@ fn load_agent_with(
             &cached_repo,
             &validated_repo,
             &host,
+            harness,
             rebuild,
             opts.debug,
             runner,
@@ -958,7 +1032,9 @@ fn load_agent_with(
         // operator env; fail fast with an actionable error if it is
         // missing so the operator sees the problem before we spend time
         // starting the network and DinD sidecar.
-        if matches!(auth_mode, crate::config::AuthForwardMode::Token) {
+        if harness == crate::harness::Harness::Claude
+            && matches!(auth_mode, crate::config::AuthForwardMode::Token)
+        {
             verify_token_env_present(&operator_env)?;
         }
 
@@ -968,7 +1044,7 @@ fn load_agent_with(
             &validated_repo.manifest,
             auth_mode,
             &paths.home_dir,
-            crate::harness::Harness::Claude,
+            harness,
         )?;
 
         // Diagnostic line: surface the active auth mode and, for token
@@ -976,49 +1052,52 @@ fn load_agent_with(
         // from the operator env config's raw declaration (the op://
         // reference or $NAME ref as written). Resolved values are never
         // printed.
-        match auth_mode {
-            crate::config::AuthForwardMode::Token => {
-                let raw = lookup_operator_env_raw(
-                    config,
-                    Some(&selector.key()),
-                    workspace_name.as_deref(),
-                    "CLAUDE_CODE_OAUTH_TOKEN",
-                );
-                let source_ref = auth_token_source_reference(raw.as_deref());
-                tui::auth_mode_notice("token", Some(&source_ref));
-            }
-            crate::config::AuthForwardMode::Sync => {
-                tui::auth_mode_notice("sync", None);
-            }
-            crate::config::AuthForwardMode::Ignore => {
-                tui::auth_mode_notice("ignore", None);
-            }
-        }
-
-        // Verbose outcome notices kept for operator context.
-        match auth_outcome {
-            crate::instance::AuthProvisionOutcome::Synced => {
-                eprintln!(
-                    "[jackin] Synced host Claude Code authentication into agent state \
-                     (auth_forward=sync)."
-                );
-            }
-            crate::instance::AuthProvisionOutcome::TokenMode => {
-                eprintln!(
-                    "[jackin] auth_forward=token — agent will use CLAUDE_CODE_OAUTH_TOKEN \
-                     from the resolved env."
-                );
-            }
-            crate::instance::AuthProvisionOutcome::HostMissing => match auth_mode {
+        if harness == crate::harness::Harness::Claude {
+            match auth_mode {
+                crate::config::AuthForwardMode::Token => {
+                    let raw = lookup_operator_env_raw(
+                        config,
+                        Some(&selector.key()),
+                        workspace_name.as_deref(),
+                        "CLAUDE_CODE_OAUTH_TOKEN",
+                    );
+                    let source_ref = auth_token_source_reference(raw.as_deref());
+                    tui::auth_mode_notice("token", Some(&source_ref));
+                }
                 crate::config::AuthForwardMode::Sync => {
+                    tui::auth_mode_notice("sync", None);
+                }
+                crate::config::AuthForwardMode::Ignore => {
+                    tui::auth_mode_notice("ignore", None);
+                }
+            }
+
+            // Verbose outcome notices kept for operator context.
+            match auth_outcome {
+                crate::instance::AuthProvisionOutcome::Synced => {
                     eprintln!(
-                        "[jackin] auth_forward=sync but no host credentials found; \
-                             preserving existing container auth if present."
+                        "[jackin] Synced host Claude Code authentication into agent state \
+                         (auth_forward=sync)."
                     );
                 }
-                crate::config::AuthForwardMode::Ignore | crate::config::AuthForwardMode::Token => {}
-            },
-            crate::instance::AuthProvisionOutcome::Skipped => {}
+                crate::instance::AuthProvisionOutcome::TokenMode => {
+                    eprintln!(
+                        "[jackin] auth_forward=token — agent will use CLAUDE_CODE_OAUTH_TOKEN \
+                         from the resolved env."
+                    );
+                }
+                crate::instance::AuthProvisionOutcome::HostMissing => match auth_mode {
+                    crate::config::AuthForwardMode::Sync => {
+                        eprintln!(
+                            "[jackin] auth_forward=sync but no host credentials found; \
+                                 preserving existing container auth if present."
+                        );
+                    }
+                    crate::config::AuthForwardMode::Ignore
+                    | crate::config::AuthForwardMode::Token => {}
+                },
+                crate::instance::AuthProvisionOutcome::Skipped => {}
+            }
         }
 
         // Materialize workspace mounts: shared mounts pass through;
@@ -1066,9 +1145,7 @@ fn load_agent_with(
             state: &state,
             git: &git,
             debug: opts.debug,
-            // Hardcoded to Claude during Task 15; Task 16 wires the
-            // resolved harness through from CLI/workspace config.
-            harness: crate::harness::Harness::Claude,
+            harness,
             resolved_env: &resolved_env,
             cache_dir: &paths.cache_dir,
             paths,
@@ -1436,7 +1513,11 @@ plugins = []
                 .iter()
                 .any(|m| m.contains("/home/agent/.claude") && !m.contains("/.claude.json"))
         );
-        assert!(mounts.iter().any(|m| m.contains("/home/agent/.claude.json")));
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains("/home/agent/.claude.json"))
+        );
         assert!(
             mounts
                 .iter()
@@ -1708,8 +1789,71 @@ supported = ["codex"]
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
+            harness: None,
             keep_awake_enabled: false,
         }
+    }
+
+    #[test]
+    fn resolve_harness_cli_override_wins() {
+        assert_eq!(
+            resolve_harness(
+                Some(crate::harness::Harness::Codex),
+                Some(crate::harness::Harness::Claude),
+            ),
+            crate::harness::Harness::Codex
+        );
+    }
+
+    #[test]
+    fn resolve_harness_uses_workspace_when_cli_absent() {
+        assert_eq!(
+            resolve_harness(None, Some(crate::harness::Harness::Codex)),
+            crate::harness::Harness::Codex
+        );
+    }
+
+    #[test]
+    fn resolve_harness_defaults_to_claude() {
+        assert_eq!(resolve_harness(None, None), crate::harness::Harness::Claude);
+    }
+
+    #[test]
+    fn validate_harness_supported_rejects_unsupported_choice() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+
+        let err = validate_harness_supported(&selector, &manifest, crate::harness::Harness::Codex)
+            .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("agent \"agent-smith\""));
+        assert!(message.contains("harness \"codex\""));
+        assert!(message.contains("supported: [claude]"));
+    }
+
+    #[test]
+    fn verify_required_harness_env_rejects_missing_codex_key() {
+        let env = crate::env_resolver::ResolvedEnv { vars: vec![] };
+        let err = verify_required_harness_env(crate::harness::Harness::Codex, &env).unwrap_err();
+        assert!(err.to_string().contains("OPENAI_API_KEY"));
+    }
+
+    #[test]
+    fn verify_required_harness_env_accepts_codex_key() {
+        let env = crate::env_resolver::ResolvedEnv {
+            vars: vec![("OPENAI_API_KEY".to_string(), "test-key".to_string())],
+        };
+        verify_required_harness_env(crate::harness::Harness::Codex, &env).unwrap();
     }
 
     #[test]
@@ -1946,6 +2090,7 @@ trusted = true
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
+            harness: None,
             keep_awake_enabled: false,
         };
 
@@ -2040,6 +2185,144 @@ plugins = ["code-review@claude-plugins-official"]
     }
 
     #[test]
+    fn load_agent_launches_codex_from_workspace_harness() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+OPENAI_API_KEY = "test-openai-key"
+
+[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[harness]
+supported = ["claude", "codex"]
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+
+[codex]
+model = "gpt-5"
+"#,
+        )
+        .unwrap();
+
+        let mut workspace = repo_workspace(&repo_dir);
+        workspace.harness = Some(crate::harness::Harness::Codex);
+        load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let build_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker build "))
+            .unwrap();
+        assert!(build_cmd.contains("--pull"));
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(run_cmd.contains("-e JACKIN_HARNESS=codex"));
+        assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
+        assert!(run_cmd.contains("/home/agent/.codex/config.toml"));
+        assert!(!run_cmd.contains("/home/agent/.claude"));
+        assert!(!run_cmd.contains("/home/agent/.jackin/plugins.json"));
+        assert!(
+            paths
+                .data_dir
+                .join("jackin-agent-smith")
+                .join("config.toml")
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn load_agent_rejects_codex_when_openai_key_missing() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[agents.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+        )
+        .unwrap();
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = ClassSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = paths.agents_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[harness]
+supported = ["codex"]
+
+[codex]
+"#,
+        )
+        .unwrap();
+
+        let mut workspace = repo_workspace(&repo_dir);
+        workspace.harness = Some(crate::harness::Harness::Codex);
+        let err = load_agent(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("OPENAI_API_KEY"));
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker build") || call.contains("docker run"))
+        );
+    }
+
+    #[test]
     fn load_agent_uses_resolved_workspace_mounts_and_workdir() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
@@ -2081,6 +2364,7 @@ plugins = []
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
+            harness: None,
             keep_awake_enabled: false,
         };
 
@@ -2150,6 +2434,7 @@ plugins = []
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
+            harness: None,
             keep_awake_enabled: false,
         };
 

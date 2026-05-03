@@ -33,16 +33,12 @@ pub fn validate_harness_consistency(manifest: &AgentManifest) -> anyhow::Result<
         match h {
             Harness::Claude => {
                 if manifest.claude.is_none() {
-                    anyhow::bail!(
-                        "[claude] table required when claude is in [harness].supported"
-                    );
+                    anyhow::bail!("[claude] table required when claude is in [harness].supported");
                 }
             }
             Harness::Codex => {
                 if manifest.codex.is_none() {
-                    anyhow::bail!(
-                        "[codex] table required when codex is in [harness].supported"
-                    );
+                    anyhow::bail!("[codex] table required when codex is in [harness].supported");
                 }
             }
         }

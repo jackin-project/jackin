@@ -207,15 +207,15 @@ mod tests {
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [docker.mounts]
-gradle-cache = { src = "~/.gradle/caches", dst = "/home/claude/.gradle/caches" }
-gradle-wrapper = { src = "~/.gradle/wrapper", dst = "/home/claude/.gradle/wrapper", readonly = true }
+gradle-cache = { src = "~/.gradle/caches", dst = "/home/agent/.gradle/caches" }
+gradle-wrapper = { src = "~/.gradle/wrapper", dst = "/home/agent/.gradle/wrapper", readonly = true }
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         let mounts = &config.docker.mounts;
         match mounts.get("gradle-cache").unwrap() {
             MountEntry::Mount(m) => {
                 assert_eq!(m.src, "~/.gradle/caches");
-                assert_eq!(m.dst, "/home/claude/.gradle/caches");
+                assert_eq!(m.dst, "/home/agent/.gradle/caches");
                 assert!(!m.readonly);
             }
             MountEntry::Scoped(_) => panic!("expected MountEntry::Mount"),
@@ -233,7 +233,7 @@ gradle-wrapper = { src = "~/.gradle/wrapper", dst = "/home/claude/.gradle/wrappe
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [docker.mounts]
-gradle-cache = { src = "/tmp/gradle-caches", dst = "/home/claude/.gradle/caches" }
+gradle-cache = { src = "/tmp/gradle-caches", dst = "/home/agent/.gradle/caches" }
 
 [docker.mounts."chainargos/*"]
 chainargos-secrets = { src = "/tmp/chainargos-secrets", dst = "/secrets", readonly = true }
@@ -251,7 +251,7 @@ other-data = { src = "/tmp/other", dst = "/other" }
         assert!(
             resolved
                 .iter()
-                .any(|(_, m)| m.dst == "/home/claude/.gradle/caches")
+                .any(|(_, m)| m.dst == "/home/agent/.gradle/caches")
         );
         assert!(
             resolved

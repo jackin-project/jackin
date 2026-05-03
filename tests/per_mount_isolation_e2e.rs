@@ -77,6 +77,7 @@ fn materialize_then_clean_exit_removes_record_and_branch() {
             readonly: false,
             isolation: MountIsolation::Worktree,
         }],
+        harness: None,
         keep_awake_enabled: false,
     };
 

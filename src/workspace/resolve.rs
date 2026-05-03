@@ -37,6 +37,10 @@ pub struct ResolvedWorkspace {
     /// be tagged with `jackin.keep_awake=true` without a config
     /// re-lookup.
     pub keep_awake_enabled: bool,
+    /// Workspace-level harness preference (None for ad-hoc / current-dir
+    /// workspaces). The launch flow combines this with any CLI override
+    /// in `runtime::launch::resolve_harness`.
+    pub harness: Option<crate::harness::Harness>,
 }
 
 fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
@@ -183,6 +187,7 @@ pub fn resolve_load_workspace(
         workdir: workspace.workdir,
         mounts,
         keep_awake_enabled: workspace.keep_awake.enabled,
+        harness: workspace.harness,
     })
 }
 
@@ -202,6 +207,41 @@ mod tests {
         );
         assert_eq!(workspace.mounts.len(), 1);
         assert_eq!(workspace.mounts[0].src, workspace.mounts[0].dst);
+    }
+
+    #[test]
+    fn saved_workspace_resolution_preserves_harness() {
+        let temp = tempdir().unwrap();
+        let workspace_root = temp.path().join("project");
+        std::fs::create_dir_all(&workspace_root).unwrap();
+        let canonical = workspace_root.canonicalize().unwrap();
+
+        let mut config = crate::config::AppConfig::default();
+        config.workspaces.insert(
+            "codex-workspace".to_string(),
+            WorkspaceConfig {
+                workdir: "/workspace/project".to_string(),
+                mounts: vec![MountConfig {
+                    src: canonical.display().to_string(),
+                    dst: "/workspace/project".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                }],
+                harness: Some(crate::harness::Harness::Codex),
+                ..Default::default()
+            },
+        );
+
+        let resolved = resolve_load_workspace(
+            &config,
+            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            &canonical,
+            LoadWorkspaceInput::Saved("codex-workspace".to_string()),
+            &[],
+        )
+        .unwrap();
+
+        assert_eq!(resolved.harness, Some(crate::harness::Harness::Codex));
     }
 
     #[test]
@@ -461,7 +501,7 @@ mod tests {
             "home",
             MountConfig {
                 src: "~".to_string(),
-                dst: "/home/claude/home".to_string(),
+                dst: "/home/agent/home".to_string(),
                 readonly: true,
                 isolation: crate::isolation::MountIsolation::Shared,
             },
@@ -481,7 +521,7 @@ mod tests {
             resolved
                 .mounts
                 .iter()
-                .any(|mount| mount.dst == "/home/claude/home"
+                .any(|mount| mount.dst == "/home/agent/home"
                     && mount.src == home
                     && mount.readonly)
         );

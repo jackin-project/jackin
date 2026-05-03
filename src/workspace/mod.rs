@@ -119,6 +119,10 @@ pub struct WorkspaceEdit {
     pub allowed_agents_to_add: Vec<String>,
     pub allowed_agents_to_remove: Vec<String>,
     pub default_agent: Option<Option<String>>,
+    /// Workspace harness change. `None` = no change, `Some(Some(h))`
+    /// = set to `h`, `Some(None)` = clear the explicit field so the
+    /// workspace falls back to Claude.
+    pub harness: Option<Option<crate::harness::Harness>>,
     pub mount_isolation_overrides: Vec<(String, crate::isolation::MountIsolation)>,
     /// Toggle for the macOS keep-awake reconciler. `None` = no change,
     /// `Some(true)` = opt in, `Some(false)` = opt out. The CLI's paired

@@ -38,7 +38,7 @@ If a global mount resolves to the same container destination as a workspace moun
 # Mount Gradle cache for all agents
 jackin config mount add gradle-cache \
   --src ~/.gradle/caches \
-  --dst /home/claude/.gradle/caches \
+  --dst /home/agent/.gradle/caches \
   --readonly
 
 # Mount secrets only for chainargos agents

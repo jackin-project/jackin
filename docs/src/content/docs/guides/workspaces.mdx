@@ -42,6 +42,7 @@ They let you:
 - reuse the same project boundary with different specialized agent classes
 - let the operator console (`jackin console`) auto-detect and preselect the project
 - set a default agent or restrict which agent classes may use the workspace
+- set a default harness such as `claude` or `codex`
 
 If you regularly work on the same project, a saved workspace turns your mount layout into durable operator configuration instead of something you rebuild from memory each time.
 
@@ -201,6 +202,7 @@ jackin workspace create secure-api \
 
 - `--allowed-agent` — only these agents can load this workspace (repeatable)
 - `--default-agent` — auto-selected agent class when you open this workspace in the operator console
+- `--harness` — default harness used by `jackin load` unless `--harness` is passed for that launch
 
 This is especially useful when one workspace should only be used with a very specific tool profile, such as a production-infra agent or a security-review agent.
 
@@ -218,6 +220,12 @@ jackin workspace edit secure-api --default-agent neo
 
 # Clear the default agent
 jackin workspace edit secure-api --clear-default-agent
+
+# Change default harness
+jackin workspace edit secure-api --harness codex
+
+# Clear default harness back to Claude fallback
+jackin workspace edit secure-api --clear-harness
 ```
 
 ## Keeping the host awake

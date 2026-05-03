@@ -82,7 +82,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN groupadd -g "$GID" agent && \
     useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
     echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
-    install -d -o agent -g agent /home/agent/.claude /home/agent/.jackin
+    install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
 # including `docker exec` sessions that bypass jackin's runtime entrypoint.

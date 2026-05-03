@@ -17,6 +17,7 @@ pub(super) fn build_agent_image(
     cached_repo: &CachedRepo,
     validated_repo: &crate::repo::ValidatedAgentRepo,
     host: &HostIdentity,
+    harness: crate::harness::Harness,
     rebuild: bool,
     debug: bool,
     runner: &mut impl CommandRunner,
@@ -89,12 +90,15 @@ pub(super) fn build_agent_image(
         },
     )?;
 
-    // Extract and store the Claude version from the built image
-    if let Ok(version) = runner.capture(
-        "docker",
-        &["run", "--rm", "--entrypoint", "claude", &image, "--version"],
-        None,
-    ) {
+    // Extract and store the Claude version from the built image when launching
+    // Claude. Codex's V1 update path is explicit `--rebuild`.
+    if harness == crate::harness::Harness::Claude
+        && let Ok(version) = runner.capture(
+            "docker",
+            &["run", "--rm", "--entrypoint", "claude", &image, "--version"],
+            None,
+        )
+    {
         let version = version.trim();
         if !version.is_empty() {
             if debug {

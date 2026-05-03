@@ -181,7 +181,9 @@ mod tests {
 
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(!dockerfile.contains("WORKDIR"));
-        assert!(dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh"));
+        assert!(
+            dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh")
+        );
         assert!(dockerfile.contains("ENTRYPOINT [\"/home/agent/entrypoint.sh\"]"));
     }
 
@@ -197,7 +199,9 @@ mod tests {
         assert!(dockerfile.contains("ARG JACKIN_CACHE_BUST=0"));
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(dockerfile.contains("RUN claude --version"));
-        assert!(dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh"));
+        assert!(
+            dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh")
+        );
     }
 
     #[test]
@@ -224,7 +228,8 @@ mod tests {
         );
 
         assert!(
-            dockerfile.contains("COPY hooks/pre-launch.sh /home/agent/.jackin-runtime/pre-launch.sh")
+            dockerfile
+                .contains("COPY hooks/pre-launch.sh /home/agent/.jackin-runtime/pre-launch.sh")
         );
         assert!(dockerfile.contains("RUN chmod +x /home/agent/.jackin-runtime/pre-launch.sh"));
     }

@@ -103,6 +103,29 @@ Each entry includes:
     — plain rows (including legacy bare `op://...`) render without
     `[op]` marker, signalling the need to re-pick.
 
+### `/home/claude/...` mount destinations
+
+- **Type:** config / behavior
+- **Deprecated since:** 2026-05-01 (multi-harness slice)
+- **Replacement:** `/home/agent/...` for workspace and global mount
+  destinations, plus any agent Dockerfile paths that reference the
+  runtime user home.
+- **Behavior today:** jackin now runs containers as the `agent` user
+  with home directory `/home/agent`. Existing `/home/claude/...`
+  mount destinations point at a path that is no longer created by the
+  construct image.
+- **Remove when:** after one release cycle without operator reports
+  that legacy `/home/claude` paths are still required.
+- **Where:**
+  - `docker/construct/Dockerfile` — creates the `agent` user and
+    `/home/agent` state directories.
+  - `src/derived_image.rs` — rewrites generated Dockerfile paths to
+    `/home/agent`.
+  - `src/runtime/launch.rs` — mounts harness state under
+    `/home/agent`.
+  - `src/cli/config.rs` and docs examples — current examples use
+    `/home/agent`.
+
 ## How to add an entry
 
 When you deprecate something, append a new section to **Active

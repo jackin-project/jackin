@@ -19,6 +19,9 @@ dockerfile = "Dockerfile"
 [identity]
 name = "The Architect"
 
+[harness]
+supported = ["claude", "codex"]
+
 [claude]
 plugins = [
   "code-review@claude-plugins-official",
@@ -33,6 +36,9 @@ sparse = ["plugins", ".claude-plugin"]
 
 [[claude.marketplaces]]
 source = "jackin-project/jackin-marketplace"
+
+[codex]
+model = "gpt-5"
 
 [hooks]
 pre_launch = "hooks/pre-launch.sh"
@@ -61,6 +67,29 @@ The Dockerfile path must:
 - Stay inside the repository (no `../` escapes)
 - Point to a valid Dockerfile
 - Have a final stage that starts with `FROM projectjackin/construct:trixie`
+
+## `[harness]`
+
+The optional `[harness]` table declares which AI harnesses this agent class can run. When omitted, jackin treats the manifest as Claude-only.
+
+| Field | Required | Description |
+|---|---|---|
+| `supported` | Yes | Non-empty list of harness slugs: `"claude"` or `"codex"` |
+
+Every harness listed in `supported` must have a matching table, even when that table is empty. A manifest with `supported = ["claude", "codex"]` needs both `[claude]` and `[codex]`.
+
+```toml [jackin.agent.toml]
+dockerfile = "Dockerfile"
+
+[harness]
+supported = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+model = "gpt-5"
+```
 
 ## `[claude]`
 
@@ -91,6 +120,24 @@ source = "jackin-project/jackin-marketplace"
 ```
 
 Each `[[claude.marketplaces]]` block maps to `claude plugin marketplace add <source>`. If `sparse` is set, jackin passes those paths as `claude plugin marketplace add <source> --sparse path1 path2`.
+
+## `[codex]`
+
+The `[codex]` table is required when `"codex"` appears in `[harness].supported`.
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Optional Codex model written into jackin's generated `config.toml` |
+
+```toml [jackin.agent.toml]
+dockerfile = "Dockerfile"
+
+[harness]
+supported = ["codex"]
+
+[codex]
+model = "gpt-5"
+```
 
 ### `[[claude.marketplaces]]`
 

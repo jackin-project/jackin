@@ -27,7 +27,7 @@ Load an agent into an isolated Docker container. This is the primary command for
 | Option | Description |
 |---|---|
 | `--mount <SPEC>` | Additional bind-mount spec. Repeatable. Format: `path[:ro]` or `src:dst[:ro]` |
-| `--rebuild` | Force rebuild the Docker image (updates Claude to latest version) |
+| `--rebuild` | Force rebuild the Docker image and refresh harness CLI install layers |
 | `--force` | Acknowledge a dirty host working tree when materializing an isolated mount in non-interactive mode. Required only when (a) the workspace has at least one `worktree`-isolated mount and (b) the host repo's tree has staged, unstaged-tracked, or untracked files. Ignored otherwise. |
 | `--no-intro` | Skip the animated intro sequence |
 | `--debug` | Print raw container output for troubleshooting |
@@ -38,7 +38,7 @@ Load an agent into an isolated Docker container. This is the primary command for
 # Use workspace + last agent for current directory
 jackin load
 
-# Force fresh Claude install
+# Force fresh harness CLI install layers
 jackin load --rebuild
 
 # Load a specific agent into current directory

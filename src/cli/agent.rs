@@ -19,7 +19,7 @@ use super::{BANNER, HELP_STYLES};
     after_long_help = "\
 Examples:
   jackin load                                          # use workspace + last agent for cwd
-  jackin load --rebuild                                # same, with fresh Claude install
+  jackin load --rebuild                                # same, with fresh harness install
   jackin load agent-smith
   jackin load agent-smith ~/Projects/my-app
   jackin load agent-smith ~/Projects/my-app:/app
@@ -37,7 +37,7 @@ pub struct LoadArgs {
     /// Additional bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)
     #[arg(long = "mount")]
     pub mounts: Vec<String>,
-    /// Force rebuild the Docker image (updates Claude to latest version)
+    /// Force rebuild the Docker image and refresh harness CLI install layers
     #[arg(long, default_value_t = false)]
     pub rebuild: bool,
     /// Skip the animated intro sequence

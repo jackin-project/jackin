@@ -136,7 +136,7 @@ pub enum MountCommand {
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
-  jackin config mount add gradle-cache --src ~/.gradle/caches --dst /home/claude/.gradle/caches --readonly
+  jackin config mount add gradle-cache --src ~/.gradle/caches --dst /home/agent/.gradle/caches --readonly
   jackin config mount add secrets --src ~/.chainargos/secrets --dst /secrets --readonly --scope \"chainargos/*\""
     )]
     Add {
@@ -254,7 +254,7 @@ mod tests {
             "--src",
             "~/.gradle/caches",
             "--dst",
-            "/home/claude/.gradle/caches",
+            "/home/agent/.gradle/caches",
             "--readonly",
             "--scope",
             "chainargos/*",
