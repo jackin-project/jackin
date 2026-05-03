@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-mod validate;
+pub mod validate;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

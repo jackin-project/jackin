@@ -9,8 +9,51 @@ pub(super) fn is_valid_env_var_name(name: &str) -> bool {
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
+/// Validate the [harness] / [<harness>] table consistency.
+///
+/// Rules enforced:
+/// - If [harness] is present, supported must be non-empty.
+/// - For every harness H in supported, the corresponding [H] table
+///   must exist (even if empty), so a single grep tells you whether
+///   a manifest knows about a given harness.
+/// - Without a [harness] table, the manifest must declare [claude]
+///   (legacy default).
+pub fn validate_harness_consistency(manifest: &AgentManifest) -> anyhow::Result<()> {
+    use crate::harness::Harness;
+
+    let supported = manifest.supported_harnesses();
+
+    if let Some(h) = &manifest.harness
+        && h.supported.is_empty()
+    {
+        anyhow::bail!("[harness].supported must not be empty");
+    }
+
+    for h in &supported {
+        match h {
+            Harness::Claude => {
+                if manifest.claude.is_none() {
+                    anyhow::bail!(
+                        "[claude] table required when claude is in [harness].supported"
+                    );
+                }
+            }
+            Harness::Codex => {
+                if manifest.codex.is_none() {
+                    anyhow::bail!(
+                        "[codex] table required when codex is in [harness].supported"
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 impl AgentManifest {
     pub fn validate(&self) -> anyhow::Result<Vec<ManifestWarning>> {
+        validate_harness_consistency(self)?;
         let mut warnings = Vec::new();
 
         for (name, decl) in &self.env {
@@ -164,6 +207,65 @@ mod tests {
         assert!(!is_valid_env_var_name("MY.VAR"));
         assert!(!is_valid_env_var_name("MY$VAR"));
         assert!(!is_valid_env_var_name("A}B"));
+    }
+
+    #[test]
+    fn rejects_empty_supported_list() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[harness]
+supported = []
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let m = AgentManifest::load(temp.path()).unwrap();
+        let err = validate_harness_consistency(&m).unwrap_err();
+        assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn rejects_codex_supported_without_codex_table() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[harness]
+supported = ["claude", "codex"]
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let m = AgentManifest::load(temp.path()).unwrap();
+        let err = validate_harness_consistency(&m).unwrap_err();
+        assert!(err.to_string().contains("[codex]"));
+    }
+
+    #[test]
+    fn legacy_manifest_with_claude_passes() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let m = AgentManifest::load(temp.path()).unwrap();
+        validate_harness_consistency(&m).unwrap();
     }
 
     #[test]
