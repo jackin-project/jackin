@@ -59,11 +59,19 @@ impl AgentState {
         let outcome =
             Self::provision_claude_auth(&claude_json, &claude_dir, auth_forward, host_home)?;
 
+        let empty_marketplaces: Vec<crate::manifest::ClaudeMarketplaceConfig> = Vec::new();
+        let empty_plugins: Vec<String> = Vec::new();
+        let (marketplaces, plugins) = manifest
+            .claude
+            .as_ref()
+            .map_or((&empty_marketplaces[..], &empty_plugins[..]), |c| {
+                (c.marketplaces.as_slice(), c.plugins.as_slice())
+            });
         std::fs::write(
             &plugins_json,
             serde_json::to_string_pretty(&PluginState {
-                marketplaces: &manifest.claude.marketplaces,
-                plugins: &manifest.claude.plugins,
+                marketplaces,
+                plugins,
             })?,
         )?;
 

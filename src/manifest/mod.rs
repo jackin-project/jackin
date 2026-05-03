@@ -13,11 +13,31 @@ pub struct AgentManifest {
     pub dockerfile: String,
     #[serde(default)]
     pub identity: Option<IdentityConfig>,
-    pub claude: ClaudeConfig,
+    #[serde(default)]
+    pub harness: Option<HarnessConfig>,
+    #[serde(default)]
+    pub claude: Option<ClaudeConfig>,
+    #[serde(default)]
+    pub codex: Option<CodexConfig>,
     #[serde(default)]
     pub hooks: Option<HooksConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, EnvVarDecl>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HarnessConfig {
+    pub supported: Vec<crate::harness::Harness>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CodexConfig {
+    /// Optional model override; passed into the generated config.toml
+    /// when present, otherwise Codex's own default is used.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -82,12 +102,114 @@ impl AgentManifest {
             .as_ref()
             .map_or_else(|| fallback.to_string(), |id| id.name.clone())
     }
+
+    /// Returns the harnesses this manifest supports. Legacy manifests
+    /// without a `[harness]` table default to claude-only.
+    pub fn supported_harnesses(&self) -> Vec<crate::harness::Harness> {
+        self.harness.as_ref().map_or_else(
+            || vec![crate::harness::Harness::Claude],
+            |h| h.supported.clone(),
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn loads_manifest_with_harness_table() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[harness]
+supported = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+        )
+        .unwrap();
+
+        let m = AgentManifest::load(temp.path()).unwrap();
+        assert_eq!(
+            m.supported_harnesses(),
+            vec![
+                crate::harness::Harness::Claude,
+                crate::harness::Harness::Codex
+            ]
+        );
+        assert!(m.codex.is_some());
+    }
+
+    #[test]
+    fn legacy_manifest_without_harness_table_defaults_to_claude_only() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let m = AgentManifest::load(temp.path()).unwrap();
+        assert_eq!(
+            m.supported_harnesses(),
+            vec![crate::harness::Harness::Claude]
+        );
+    }
+
+    #[test]
+    fn loads_codex_only_manifest() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[harness]
+supported = ["codex"]
+
+[codex]
+model = "gpt-5"
+"#,
+        )
+        .unwrap();
+
+        let m = AgentManifest::load(temp.path()).unwrap();
+        assert_eq!(
+            m.supported_harnesses(),
+            vec![crate::harness::Harness::Codex]
+        );
+        assert_eq!(m.codex.as_ref().unwrap().model.as_deref(), Some("gpt-5"));
+    }
+
+    #[test]
+    fn rejects_unknown_harness_name() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.agent.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[harness]
+supported = ["claude", "amp"]
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let err = AgentManifest::load(temp.path()).unwrap_err();
+        assert!(err.to_string().contains("amp") || err.to_string().contains("unknown"));
+    }
 
     #[test]
     fn loads_manifest_with_plugins() {
@@ -105,8 +227,8 @@ plugins = ["code-review@claude-plugins-official"]
         let manifest = AgentManifest::load(temp.path()).unwrap();
 
         assert_eq!(manifest.dockerfile, "Dockerfile");
-        assert!(manifest.claude.marketplaces.is_empty());
-        assert_eq!(manifest.claude.plugins.len(), 1);
+        assert!(manifest.claude.as_ref().unwrap().marketplaces.is_empty());
+        assert_eq!(manifest.claude.as_ref().unwrap().plugins.len(), 1);
         assert!(manifest.identity.is_none());
     }
 
@@ -130,12 +252,12 @@ sparse = ["plugins", ".claude-plugin"]
         let manifest = AgentManifest::load(temp.path()).unwrap();
 
         assert_eq!(
-            manifest.claude.plugins,
+            manifest.claude.as_ref().unwrap().plugins,
             vec!["superpowers@superpowers-marketplace"]
         );
-        assert_eq!(manifest.claude.marketplaces.len(), 1);
+        assert_eq!(manifest.claude.as_ref().unwrap().marketplaces.len(), 1);
         assert_eq!(
-            manifest.claude.marketplaces[0],
+            manifest.claude.as_ref().unwrap().marketplaces[0],
             ClaudeMarketplaceConfig {
                 source: "obra/superpowers-marketplace".to_string(),
                 sparse: vec!["plugins".to_string(), ".claude-plugin".to_string()],
@@ -161,15 +283,15 @@ source = "jackin-project/jackin-marketplace"
 
         let manifest = AgentManifest::load(temp.path()).unwrap();
 
-        assert_eq!(manifest.claude.marketplaces.len(), 1);
+        assert_eq!(manifest.claude.as_ref().unwrap().marketplaces.len(), 1);
         assert_eq!(
-            manifest.claude.marketplaces[0],
+            manifest.claude.as_ref().unwrap().marketplaces[0],
             ClaudeMarketplaceConfig {
                 source: "jackin-project/jackin-marketplace".to_string(),
                 sparse: vec![],
             }
         );
-        assert!(manifest.claude.plugins.is_empty());
+        assert!(manifest.claude.as_ref().unwrap().plugins.is_empty());
     }
 
     #[test]
@@ -189,8 +311,8 @@ source = "obra/superpowers-marketplace"
 
         let manifest = AgentManifest::load(temp.path()).unwrap();
 
-        assert!(manifest.claude.plugins.is_empty());
-        assert_eq!(manifest.claude.marketplaces.len(), 1);
+        assert!(manifest.claude.as_ref().unwrap().plugins.is_empty());
+        assert_eq!(manifest.claude.as_ref().unwrap().marketplaces.len(), 1);
     }
 
     #[test]
