@@ -1106,6 +1106,23 @@ fn load_role_with(
                 },
                 crate::instance::AuthProvisionOutcome::Skipped => {}
             }
+        } else if !matches!(auth_mode, crate::config::AuthForwardMode::Ignore) {
+            // auth_forward is a Claude-only setting today (it gates
+            // CLAUDE_CODE_OAUTH_TOKEN forwarding and .credentials.json
+            // syncing). Surface a one-line notice when the operator has
+            // configured something other than the default and the active
+            // agent isn't Claude — otherwise the setting silently no-ops
+            // and the operator never finds out their config is dead.
+            let mode_label = match auth_mode {
+                crate::config::AuthForwardMode::Token => "token",
+                crate::config::AuthForwardMode::Sync => "sync",
+                crate::config::AuthForwardMode::Ignore => unreachable!(),
+            };
+            eprintln!(
+                "[jackin] auth_forward={mode_label} is a Claude-only setting and is ignored \
+                 under agent={}.",
+                agent.slug()
+            );
         }
 
         // Materialize workspace mounts: shared mounts pass through;

@@ -28,8 +28,18 @@ impl RoleState {
             writeln!(content, "model = \"{model}\"").expect("string formatting cannot fail");
         }
 
-        std::fs::write(config_toml, content)?;
-        Ok(())
+        // Skip the write when content matches what's already on disk so
+        // operator-edited files aren't churned on every launch (they will
+        // still be regenerated when manifest content changes — e.g. a new
+        // [codex].model — which is the intended behaviour for a "do not
+        // edit" file).
+        if let Ok(existing) = std::fs::read_to_string(config_toml)
+            && existing == content
+        {
+            return Ok(());
+        }
+
+        write_private_file(config_toml, &content)
     }
 }
 
@@ -906,5 +916,89 @@ supported = ["codex"]
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("model = \"gpt-5\""));
+    }
+
+    // Pin the symlink-rejection invariant for codex config.toml. The host
+    // file is bind-mounted RW into the container, so a compromised agent
+    // could replace it with a symlink between launches; without this
+    // check the next provisioning call would follow the symlink and
+    // overwrite the target on the host.
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_at_codex_config_toml() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let path = temp.path().join("config.toml");
+
+        let decoy = temp.path().join("decoy.txt");
+        std::fs::write(&decoy, "secret").unwrap();
+        std::os::unix::fs::symlink(&decoy, &path).unwrap();
+
+        let err = RoleState::provision_codex_auth(&path, &manifest).unwrap_err();
+        assert!(
+            err.to_string().contains("symlink"),
+            "expected symlink error, got: {err}"
+        );
+
+        // Decoy file must be untouched.
+        assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "secret");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_config_toml_has_restricted_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let path = temp.path().join("config.toml");
+
+        RoleState::provision_codex_auth(&path, &manifest).unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "codex config.toml must be 0o600, got {mode:o}");
+    }
+
+    // Pin the no-churn contract: when the manifest hasn't changed, a
+    // second `provision_codex_auth` call must not modify the file. This
+    // guards against silent operator-edit clobbering on every launch
+    // (and lets future "preserve operator edits" logic be added without
+    // breaking the simple case).
+    #[test]
+    fn skips_write_when_existing_content_matches() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, Some("gpt-5"));
+        let path = temp.path().join("config.toml");
+
+        RoleState::provision_codex_auth(&path, &manifest).unwrap();
+        let mtime_first = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+        // Sleep just enough to make a second mtime distinguishable on
+        // filesystems with second-resolution timestamps.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        RoleState::provision_codex_auth(&path, &manifest).unwrap();
+        let mtime_second = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+        assert_eq!(
+            mtime_first, mtime_second,
+            "no-op provisioning must not touch the file"
+        );
+    }
+
+    #[test]
+    fn rewrites_when_manifest_model_changes() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("config.toml");
+
+        let manifest_a = manifest_with_codex_model(&temp, Some("gpt-5"));
+        RoleState::provision_codex_auth(&path, &manifest_a).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().contains("gpt-5"));
+
+        // Re-write the manifest with a different model.
+        let manifest_b = manifest_with_codex_model(&temp, Some("o3"));
+        RoleState::provision_codex_auth(&path, &manifest_b).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("o3"));
+        assert!(!content.contains("gpt-5"));
     }
 }
