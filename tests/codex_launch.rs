@@ -153,6 +153,7 @@ model = "gpt-5"
         paths
             .data_dir
             .join("jackin-agent-smith")
+            .join("codex")
             .join("config.toml")
             .is_file()
     );
