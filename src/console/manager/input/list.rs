@@ -241,7 +241,7 @@ mod tests {
         path
     }
 
-    /// Helper: seed an AppConfig + ManagerState with `ws` as a saved workspace,
+    /// Helper: seed an `AppConfig` + `ManagerState` with `ws` as a saved workspace,
     /// cwd far away so selection lands on row 1 (the saved workspace).
     fn list_state_selecting_ws(
         ws: WorkspaceConfig,
@@ -258,7 +258,7 @@ mod tests {
 
     /// Current-directory row (index 0) must reject the `e` edit shortcut and
     /// the `d` delete shortcut with a toast, without entering the Editor or
-    /// ConfirmDelete stages. Paired with the render-side assertion that row 0
+    /// `ConfirmDelete` stages. Paired with the render-side assertion that row 0
     /// is labelled "Current directory".
     #[test]
     fn current_directory_row_rejects_edit_and_delete() {

@@ -222,7 +222,7 @@ fn secrets_tab_shows_existing_env() -> Result<()> {
     Ok(())
 }
 
-/// Edit an existing env value via the TextInput modal, save, and verify
+/// Edit an existing env value via the `TextInput` modal, save, and verify
 /// the on-disk TOML reflects the new value. The cursor opens directly on
 /// the key row (the Secrets tab no longer renders a preamble label —
 /// row 0 is the first navigable row).
@@ -267,7 +267,7 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("new-value"),
         "pending.env must reflect the edit"
     );
@@ -288,7 +288,9 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
         .get("big-monorepo")
         .expect("workspace must still exist");
     assert_eq!(
-        ws.env.get("DB_URL").map(|v| v.as_persisted_str()),
+        ws.env
+            .get("DB_URL")
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("new-value"),
         "on-disk env must reflect the edit"
     );
@@ -519,9 +521,9 @@ fn secrets_dirty_detection_and_change_count() -> Result<()> {
     Ok(())
 }
 
-/// Three-step Add flow: `A` opens the EnvKey modal, typing + Enter
-/// stashes the key and opens the SourcePicker; Enter on the (default)
-/// Plain choice opens the EnvValue modal; typing + Enter commits the
+/// Three-step Add flow: `A` opens the `EnvKey` modal, typing + Enter
+/// stashes the key and opens the `SourcePicker`; Enter on the (default)
+/// Plain choice opens the `EnvValue` modal; typing + Enter commits the
 /// value into `pending.env`.
 #[test]
 fn secrets_add_new_key_flow() -> Result<()> {
@@ -567,7 +569,7 @@ fn secrets_add_new_key_flow() -> Result<()> {
             .pending
             .env
             .get("API_KEY")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("s3cret"),
         "pending.env must contain the new key after the three-step add"
     );
@@ -619,7 +621,7 @@ fn op_picker_opens_on_p_from_secrets_key_row() -> Result<()> {
 
 /// Esc on the `OpPicker` (vault pane / fatal state / loading) closes
 /// the modal entirely — the picker is no longer a sub-mode of the
-/// EnvValue text modal, so cancel returns the operator to the editor
+/// `EnvValue` text modal, so cancel returns the operator to the editor
 /// list view with `pending.env` unchanged.
 #[test]
 fn op_picker_cancel_closes_modal() -> Result<()> {
@@ -662,7 +664,7 @@ fn op_picker_cancel_closes_modal() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("untouched"),
         "Esc-cancel must not mutate pending.env"
     );
@@ -746,7 +748,7 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("op://v1/i1/password"),
         "picker commit must write the UUID-form op:// reference straight into pending.env[key]"
     );
@@ -850,7 +852,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
         editor(&state)
             .pending_picker_value
             .as_ref()
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("op://v1/i1/credential"),
         "picker commit must stash the UUID-form op:// reference for the EnvKey commit"
     );
@@ -867,7 +869,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
             .pending
             .env
             .get("API_KEY")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("op://v1/i1/credential"),
         "EnvKey commit must write the stashed UUID-form OpRef into pending.env"
     );
@@ -885,8 +887,8 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
 
 // ── SourcePicker integration tests ────────────────────────────────
 
-/// Drives Enter-on-sentinel → ScopePicker(All agents) → EnvKey
-/// commit, leaving SourcePicker open. Default `op_available = false`.
+/// Drives Enter-on-sentinel → ScopePicker(All agents) → `EnvKey`
+/// commit, leaving `SourcePicker` open. Default `op_available = false`.
 fn drive_to_source_picker<'a>(
     config: &mut AppConfig,
     paths: &JackinPaths,
@@ -910,8 +912,8 @@ fn drive_to_source_picker<'a>(
     Ok(state)
 }
 
-/// `Enter` on `+ Add` walks: EnvKey → SourcePicker → EnvValue → commit.
-/// The SourcePicker is the new step between the existing two text
+/// `Enter` on `+ Add` walks: `EnvKey` → `SourcePicker` → `EnvValue` → commit.
+/// The `SourcePicker` is the new step between the existing two text
 /// modals. Verifies the `Plain` branch lands the typed value in
 /// `pending.env`.
 #[test]
@@ -952,14 +954,14 @@ fn enter_on_sentinel_opens_envkey_then_sourcepicker_then_value_modal() -> Result
             .pending
             .env
             .get("API_KEY")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("s3cret"),
         "Plain-text source path must land the typed value in pending.env"
     );
     Ok(())
 }
 
-/// POSIX `VAR=""` differs from `unset VAR`, so EnvValue must commit
+/// POSIX `VAR=""` differs from `unset VAR`, so `EnvValue` must commit
 /// the empty string into `pending.env`.
 #[test]
 fn env_value_modal_allows_empty_commit() -> Result<()> {
@@ -999,7 +1001,7 @@ fn env_value_modal_allows_empty_commit() -> Result<()> {
             .pending
             .env
             .get("EMPTY_OK")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some(""),
         "EnvValue modal must allow committing an empty string \
          (POSIX VAR=\"\" semantics)"
@@ -1012,8 +1014,8 @@ fn env_value_modal_allows_empty_commit() -> Result<()> {
     Ok(())
 }
 
-/// SourcePicker → 1Password branch: when op is available and the
-/// operator picks the Op choice, the OpPicker modal opens with
+/// `SourcePicker` → 1Password branch: when op is available and the
+/// operator picks the Op choice, the `OpPicker` modal opens with
 /// `pending_picker_target = (scope, Some(key))` so its commit handler
 /// can write the `op://...` reference straight into the named key.
 #[test]
@@ -1071,7 +1073,7 @@ fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
     Ok(())
 }
 
-/// When `op_available = false`, the Op button on the SourcePicker is
+/// When `op_available = false`, the Op button on the `SourcePicker` is
 /// disabled: `→`/`Tab` cycling skips it, focus stays on Plain, and the
 /// `O` direct hotkey is inert. The picker commits Plain regardless of
 /// key flailing.
@@ -1287,7 +1289,7 @@ fn op_picker_multi_account_flow() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("op://v1/i1/password"),
         "multi-account picker commit must produce a UUID-form op:// reference"
     );
@@ -1575,7 +1577,7 @@ fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {
             .pending
             .env
             .get("EXISTING")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("kept-value"),
         "the pre-existing value must remain untouched"
     );
@@ -1676,7 +1678,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
         agent_entry
             .env
             .get("LOG_LEVEL")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("debug"),
         "pre-existing agent value must remain untouched"
     );
@@ -1794,8 +1796,8 @@ fn sentinel_enter_opens_scope_picker() -> Result<()> {
     Ok(())
 }
 
-/// ScopePicker → AllAgents path: pick the default-focused choice and
-/// confirm the EnvKey modal opens with `Workspace` scope.
+/// `ScopePicker` → `AllAgents` path: pick the default-focused choice and
+/// confirm the `EnvKey` modal opens with `Workspace` scope.
 #[test]
 fn scope_picker_all_path_to_workspace_envkey() -> Result<()> {
     use jackin::console::manager::state::SecretsScopeTag;
@@ -1825,9 +1827,9 @@ fn scope_picker_all_path_to_workspace_envkey() -> Result<()> {
     Ok(())
 }
 
-/// ScopePicker → SpecificAgent → AgentPicker → EnvKey path. Verifies
-/// each transition: ScopePicker right-arrow → SpecificAgent focus,
-/// Enter → AgentOverridePicker; picker Enter → EnvKey with `Agent`
+/// `ScopePicker` → `SpecificAgent` → `AgentPicker` → `EnvKey` path. Verifies
+/// each transition: `ScopePicker` right-arrow → `SpecificAgent` focus,
+/// Enter → `AgentOverridePicker`; picker Enter → `EnvKey` with `Agent`
 /// scope. `pending.agents` is NOT mutated — the section materialises
 /// organically once the first key/value commits.
 #[test]
@@ -1903,7 +1905,11 @@ fn agent_picker_lists_all_allowed_agents_not_filtered_by_existing_overrides() ->
 
     match &editor(&state).modal {
         Some(Modal::AgentOverridePicker { state: picker }) => {
-            let mut keys: Vec<String> = picker.agents.iter().map(|a| a.key()).collect();
+            let mut keys: Vec<String> = picker
+                .agents
+                .iter()
+                .map(jackin::selector::ClassSelector::key)
+                .collect();
             keys.sort();
             assert_eq!(
                 keys,
@@ -1916,7 +1922,7 @@ fn agent_picker_lists_all_allowed_agents_not_filtered_by_existing_overrides() ->
     Ok(())
 }
 
-/// Esc on the ScopePicker closes the modal and leaves
+/// Esc on the `ScopePicker` closes the modal and leaves
 /// `pending.agents` and `pending.env` untouched — backing out is a
 /// pure no-op.
 #[test]
@@ -1950,7 +1956,7 @@ fn cancel_from_scope_picker_returns_to_secrets_tab() -> Result<()> {
     Ok(())
 }
 
-/// Esc on the EnvKey modal that opens after the picker commit must
+/// Esc on the `EnvKey` modal that opens after the picker commit must
 /// leave `pending.agents` untouched — no orphan empty section.
 #[test]
 fn cancel_from_envkey_after_agent_pick_does_not_create_section() -> Result<()> {
@@ -1993,8 +1999,8 @@ fn cancel_from_envkey_after_agent_pick_does_not_create_section() -> Result<()> {
     Ok(())
 }
 
-/// Esc on the SourcePicker modal that opens after a valid EnvKey commit
-/// must also leave `pending.agents` untouched. Mirrors the EnvKey
+/// Esc on the `SourcePicker` modal that opens after a valid `EnvKey` commit
+/// must also leave `pending.agents` untouched. Mirrors the `EnvKey`
 /// cancel test one step deeper in the chain.
 #[test]
 fn cancel_from_sourcepicker_after_agent_pick_does_not_create_section() -> Result<()> {
@@ -2042,7 +2048,7 @@ fn cancel_from_sourcepicker_after_agent_pick_does_not_create_section() -> Result
 }
 
 /// Drive the full chain — workspace sentinel → ScopePicker(Specific) →
-/// AgentPicker → EnvKey → SourcePicker(Plain) → EnvValue → commit. The
+/// `AgentPicker` → `EnvKey` → SourcePicker(Plain) → `EnvValue` → commit. The
 /// override section materialises only on this final commit, with the
 /// key/value present and the section expanded.
 #[test]
@@ -2103,7 +2109,7 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
             .unwrap()
             .env
             .get("API_TOKEN")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("secret"),
         "the committed key/value must land in the agent's env map"
     );
@@ -2121,8 +2127,8 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
     Ok(())
 }
 
-/// Esc on the override picker (reachable through the ScopePicker's
-/// SpecificAgent path) closes the modal and leaves `pending.agents`
+/// Esc on the override picker (reachable through the `ScopePicker`'s
+/// `SpecificAgent` path) closes the modal and leaves `pending.agents`
 /// untouched — symmetric with the ScopePicker-cancel test, one step
 /// deeper.
 #[test]
@@ -2163,7 +2169,7 @@ fn cancel_from_agent_override_picker_after_scope_pick_does_not_create_section() 
 
 /// Once a key has landed in an agent's section, the in-section
 /// `+ Add <agent> environment variable` sentinel must remain a direct
-/// fast-path to the EnvKey modal — the ScopePicker only intercedes at
+/// fast-path to the `EnvKey` modal — the `ScopePicker` only intercedes at
 /// the workspace-level sentinel.
 #[test]
 fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
@@ -2527,8 +2533,10 @@ fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
     // save flow drives via WorkspaceEdit { default_agent: Some(_), .. }).
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        let mut edit = jackin::workspace::WorkspaceEdit::default();
-        edit.default_agent = Some(Some("chainargos/agent-smith".to_string()));
+        let edit = jackin::workspace::WorkspaceEdit {
+            default_agent: Some(Some("chainargos/agent-smith".to_string())),
+            ..jackin::workspace::WorkspaceEdit::default()
+        };
         ce.edit_workspace("multi-agent-ws", edit)?;
         config = ce.save()?;
     }

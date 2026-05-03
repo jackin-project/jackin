@@ -235,9 +235,9 @@ plugins = []
         std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
         std::fs::write(
             temp.path().join("hooks/pre-launch.sh"),
-            r#"#!/bin/bash
+            r"#!/bin/bash
 echo hello
-"#,
+",
         )
         .unwrap();
         std::fs::write(

@@ -717,7 +717,7 @@ mod tests {
         assert!(err.contains("no saved workspace matches"), "got: {err}");
     }
 
-    /// Test helper: construct a minimal workspace-containing AppConfig,
+    /// Test helper: construct a minimal workspace-containing `AppConfig`,
     /// persist it to disk at the expected config path, and return the
     /// live in-memory copy. Matches the production invariant that
     /// `remember_last_agent` observes: the config is already on disk.

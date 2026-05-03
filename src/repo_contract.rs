@@ -64,12 +64,12 @@ mod tests {
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            r#"FROM rust:1.95.0 AS builder
+            r"FROM rust:1.95.0 AS builder
 RUN cargo build
 
 FROM projectjackin/construct:trixie AS runtime
 COPY --from=builder /app /workspace/app
-"#,
+",
         )
         .unwrap();
 
@@ -96,9 +96,9 @@ COPY --from=builder /app /workspace/app
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            r#"ARG BASE=projectjackin/construct:trixie
+            r"ARG BASE=projectjackin/construct:trixie
 FROM ${BASE}
-"#,
+",
         )
         .unwrap();
 

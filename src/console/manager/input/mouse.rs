@@ -351,7 +351,7 @@ mod mouse_drag_tests {
             mouse(MouseEventKind::Down(MouseButton::Left), 80),
             term(100),
         );
-        assert!(state.drag_state.is_none(), "right-pane click must not drag",);
+        assert!(state.drag_state.is_none(), "right-pane click must not drag");
     }
 
     #[test]
@@ -441,7 +441,7 @@ mod mouse_drag_tests {
     // row must be consumed by the open-URL path (best-effort; silent on
     // failure) — observable side-effect: the drag-anchor never latches.
 
-    /// Term of 120x40 ⇒ FileBrowser modal at (18, 9, 84, 22); URL row at
+    /// Term of 120x40 ⇒ `FileBrowser` modal at (18, 9, 84, 22); URL row at
     /// y = 17, column range ≈ 19..=100. Mirrors the reference geometry
     /// used in `file_browser::tests::manufactured_modal_area`.
     fn term_120x40() -> Rect {

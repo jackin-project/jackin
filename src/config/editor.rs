@@ -997,8 +997,8 @@ API_TOKEN = "op://Personal/api/token"
         let editor = ConfigEditor::open(&paths).unwrap();
         editor.save().unwrap();
 
-        let tmp = paths.config_file.with_extension("tmp");
-        assert!(!tmp.exists(), "expected .tmp to be renamed away");
+        let tmp_path = paths.config_file.with_extension("tmp");
+        assert!(!tmp_path.exists(), "expected .tmp to be renamed away");
     }
 
     /// `save()` must reject before rename so an invalid mutation
@@ -1036,11 +1036,11 @@ API_TOKEN = "op://Personal/api/token"
         );
 
         // No leftover .tmp file.
-        let tmp = paths.config_file.with_extension("tmp");
+        let tmp_path = paths.config_file.with_extension("tmp");
         assert!(
-            !tmp.exists(),
+            !tmp_path.exists(),
             "rejected save must clean up its temp file at {}",
-            tmp.display()
+            tmp_path.display()
         );
     }
 

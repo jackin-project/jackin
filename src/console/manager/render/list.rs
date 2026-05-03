@@ -1803,7 +1803,7 @@ mod subpanel_padding_tests {
     }
 
     /// Op:// references in the workspace env get a leading `[op]` marker.
-    /// The bare reference itself (e.g. "op://Vault/Item/field") must
+    /// The bare reference itself (e.g. "<op://Vault/Item/field>") must
     /// never appear — only the marker tag.
     #[test]
     fn preview_environments_marks_op_references_with_op_marker() {

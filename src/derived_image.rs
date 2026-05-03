@@ -161,12 +161,12 @@ mod tests {
     #[test]
     fn renders_derived_dockerfile_installs_claude_as_claude_user() {
         let dockerfile = render_derived_dockerfile("FROM projectjackin/construct:trixie\n", None);
-        let install = r#"USER claude
+        let install = r"USER claude
 ARG JACKIN_CACHE_BUST=0
 RUN curl -fsSL https://claude.ai/install.sh | bash
-RUN claude --version"#;
-        let copy = r#"USER root
-COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh"#;
+RUN claude --version";
+        let copy = r"USER root
+COPY .jackin-runtime/entrypoint.sh /home/claude/entrypoint.sh";
 
         assert!(dockerfile.contains(install));
         assert!(dockerfile.contains(copy));
@@ -262,9 +262,9 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo.path().join(".dockerignore"),
-            r#".*
+            r".*
 .jackin-runtime
-"#,
+",
         )
         .unwrap();
         std::fs::write(
@@ -314,8 +314,7 @@ plugins = []
 
         let validated = crate::repo::validate_agent_repo(repo.path()).unwrap();
         let error = create_derived_build_context(repo.path(), &validated)
-            .err()
-            .expect("symlinks should be rejected");
+            .expect_err("symlinks should be rejected");
 
         assert!(error.to_string().contains("symlink"));
         assert!(error.to_string().contains("linked.txt"));

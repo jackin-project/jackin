@@ -288,7 +288,7 @@ enabled = true
 
         // Default (disabled) variant must round-trip back to "no section emitted"
         // so existing configs don't grow noise after a load/save cycle.
-        let mut default_ws = ws.clone();
+        let mut default_ws = ws;
         default_ws.keep_awake.enabled = false;
         let serialized_default = toml::to_string(&default_ws).unwrap();
         assert!(
@@ -598,7 +598,7 @@ isolation = "worktree"
             last_agent: None,
             env: BTreeMap::new(),
             agents: BTreeMap::new(),
-            keep_awake: Default::default(),
+            keep_awake: KeepAwakeConfig::default(),
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();

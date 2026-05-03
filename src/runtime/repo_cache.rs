@@ -319,7 +319,7 @@ plugins = []
 
         // Simulate what `git clone` would produce on disk: recreate the repo
         // files when the clone command is captured by FakeRunner.
-        let repo_dir_clone = repo_dir.clone();
+        let repo_dir_clone = repo_dir;
         runner.side_effects.push((
             "clone".to_string(),
             Box::new(move || {
@@ -462,7 +462,7 @@ plugins = []
 
         let mut runner =
             FakeRunner::with_capture_queue(["git@github.com:evil/agent-smith.git".to_string()]);
-        let repo_dir_clone = repo_dir.clone();
+        let repo_dir_clone = repo_dir;
         runner.side_effects.push((
             "clone".to_string(),
             Box::new(move || {

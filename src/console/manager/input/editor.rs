@@ -1373,9 +1373,9 @@ mod tests {
     }
 
     /// Build an editor sitting on the Mounts tab with an empty mount list,
-    /// and simulate the commit of a FileBrowser at `/host/path`. The bridge
+    /// and simulate the commit of a `FileBrowser` at `/host/path`. The bridge
     /// function is `apply_file_browser_to_editor`, which opens the new
-    /// `MountDstChoice` modal instead of the old "push + TextInput" chain.
+    /// `MountDstChoice` modal instead of the old "push + `TextInput`" chain.
     fn editor_with_browser_committed(src: &str) -> EditorState<'static> {
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.active_tab = EditorTab::Mounts;
@@ -1413,7 +1413,7 @@ mod tests {
         // rename TextInput modal pre-filled with the current pending_name
         // — the same flow Edit mode uses. This is the operator's escape
         // hatch from a prelude-captured name they mistyped.
-        let (_tmp, paths, mut config) = {
+        let (tmp, paths, mut config) = {
             let tmp = tempfile::tempdir().unwrap();
             let paths = JackinPaths::for_tests(tmp.path());
             paths.ensure_base_dirs().unwrap();
@@ -1423,7 +1423,7 @@ mod tests {
             let loaded = AppConfig::load_or_init(&paths).unwrap();
             (tmp, paths, loaded)
         };
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_create();
         editor.pending_name = Some("typo-name".into());
@@ -2064,7 +2064,7 @@ mod tests {
 
     // ── Caps-Lock parity: SHIFT-modified letter shortcuts ──────────────
 
-    /// Enter on an op:// key row must NOT open the EnvValue text-edit
+    /// Enter on an op:// key row must NOT open the `EnvValue` text-edit
     /// modal. The breadcrumb is a path, not a credential, and hand-
     /// editing the path is error-prone — the operator deletes via D
     /// and re-adds via the source picker (`P`).

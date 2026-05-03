@@ -264,7 +264,7 @@ pub(super) mod test_support {
     use crate::workspace::MountConfig;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-    pub(crate) fn key(code: KeyCode) -> KeyEvent {
+    pub fn key(code: KeyCode) -> KeyEvent {
         KeyEvent {
             code,
             modifiers: KeyModifiers::NONE,
@@ -273,7 +273,7 @@ pub(super) mod test_support {
         }
     }
 
-    pub(crate) fn mount(src: &str, dst: &str) -> MountConfig {
+    pub fn mount(src: &str, dst: &str) -> MountConfig {
         MountConfig {
             src: src.into(),
             dst: dst.into(),
@@ -307,7 +307,7 @@ mod tests {
     /// test that doesn't fit cleanly inside either submodule.
     #[test]
     fn create_mode_save_uses_updated_pending_name() {
-        let (_tmp, paths, mut config) = {
+        let (tmp, paths, mut config) = {
             let tmp = tempfile::tempdir().unwrap();
             let paths = JackinPaths::for_tests(tmp.path());
             paths.ensure_base_dirs().unwrap();
@@ -317,7 +317,7 @@ mod tests {
             let loaded = AppConfig::load_or_init(&paths).unwrap();
             (tmp, paths, loaded)
         };
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_create();
         editor.pending_name = Some("original".into());

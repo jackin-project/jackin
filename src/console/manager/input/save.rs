@@ -966,7 +966,7 @@ mod tests {
         };
         let pending_off = WorkspaceConfig {
             keep_awake: KeepAwakeConfig { enabled: false },
-            ..original.clone()
+            ..original
         };
         let edit = super::build_workspace_edit(&original_on, &pending_off);
         assert_eq!(edit.keep_awake_enabled, Some(false));
@@ -1770,7 +1770,7 @@ mod tests {
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
-            keep_awake: Default::default(),
+            keep_awake: KeepAwakeConfig::default(),
         };
         let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
 
@@ -2008,8 +2008,7 @@ mod tests {
         let joined: String = lines
             .iter()
             .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
-            .collect::<Vec<_>>()
-            .join("");
+            .collect::<String>();
 
         assert!(
             joined.contains("Private/Claude/auth"),

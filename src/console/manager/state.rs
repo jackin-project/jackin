@@ -699,7 +699,7 @@ impl CreatePreludeState<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::{MountConfig, WorkspaceConfig};
+    use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
 
     fn empty_ws(workdir: &str) -> WorkspaceConfig {
         WorkspaceConfig {
@@ -863,7 +863,7 @@ mod tests {
     /// Regression: cycling isolation on an existing mount (same `dst`,
     /// same `src`) is one logical change. Pre-fix it counted as 2
     /// because the structural-equality classifier treated the new
-    /// MountConfig as added and the old one as removed.
+    /// `MountConfig` as added and the old one as removed.
     #[test]
     fn isolation_only_change_counts_as_one() {
         let mut ws = empty_ws("/workspace/jackin");
@@ -953,7 +953,7 @@ mod tests {
     }
 
     /// Adding and removing per-agent env override keys each contribute +1
-    /// via the same env_change_count helper as workspace-level env.
+    /// via the same `env_change_count` helper as workspace-level env.
     #[test]
     fn change_count_agent_env_delta() {
         use crate::workspace::WorkspaceAgentOverride;
@@ -990,7 +990,7 @@ mod tests {
 
     /// Any env mutation (workspace-level or per-agent) flips `is_dirty()`
     /// to true because `pending != original` in the underlying
-    /// `WorkspaceConfig` PartialEq.
+    /// `WorkspaceConfig` `PartialEq`.
     #[test]
     fn is_dirty_from_env_mutation() {
         use crate::workspace::WorkspaceAgentOverride;
@@ -1155,7 +1155,7 @@ mod tests {
             last_agent: None,
             env: BTreeMap::default(),
             agents: BTreeMap::default(),
-            keep_awake: Default::default(),
+            keep_awake: KeepAwakeConfig::default(),
         };
         let mut e = EditorState::new_edit("ws".into(), ws);
         e.active_tab = EditorTab::Mounts;

@@ -1375,7 +1375,7 @@ mod secrets_tab_render_tests {
         //  6  AgentAddSentinel("agent-a")
         //  7  SectionSpacer
         //  8  AgentHeader { agent: "agent-b", expanded: false }
-        assert_eq!(rows.len(), 9, "unexpected row count: {:?}", rows);
+        assert_eq!(rows.len(), 9, "unexpected row count: {rows:?}");
         assert!(matches!(&rows[0], super::SecretsRow::WorkspaceKeyRow(k) if k == "ALPHA"));
         assert!(matches!(&rows[1], super::SecretsRow::WorkspaceKeyRow(k) if k == "BETA"));
         assert!(matches!(&rows[2], super::SecretsRow::WorkspaceAddSentinel));
@@ -1733,7 +1733,7 @@ mod secrets_tab_render_tests {
         out
     }
 
-    /// OpRef whose `path` contains the `[subtitle]` disambiguation form.
+    /// `OpRef` whose `path` contains the `[subtitle]` disambiguation form.
     /// The subtitle must appear in the rendered output between the item
     /// name and the next " / " separator.
     #[test]
@@ -1782,7 +1782,7 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// OpRef whose `path` carries an `?attribute=otp` query suffix. The
+    /// `OpRef` whose `path` carries an `?attribute=otp` query suffix. The
     /// query must appear in the rendered output after the field name.
     #[test]
     fn renderer_op_ref_with_attribute_query_renders_text() {
@@ -1821,7 +1821,7 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// OpRef with BOTH a subtitle disambiguation AND an `?attribute=otp`
+    /// `OpRef` with BOTH a subtitle disambiguation AND an `?attribute=otp`
     /// query suffix. Asserts that all six visible pieces appear in the
     /// expected left-to-right order: vault → item → subtitle → section →
     /// field → query.
@@ -1896,8 +1896,8 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Single env var → label_width equals key length. Without the explicit
-    /// two-space span, the screenshot bug (CLAUDE_CODE_OAUTH_TOKENPrivate / ...)
+    /// Single env var → `label_width` equals key length. Without the explicit
+    /// two-space span, the screenshot bug (`CLAUDE_CODE_OAUTH_TOKENPrivate` / ...)
     /// recurs.
     #[test]
     fn renderer_key_value_separator_always_at_least_two_spaces() {

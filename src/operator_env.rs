@@ -1339,10 +1339,10 @@ mod tests {
     impl OpRunner for TestOpRunner {
         fn read(&self, reference: &str) -> anyhow::Result<String> {
             *self.last_ref.borrow_mut() = Some(reference.to_string());
-            match self.response.borrow_mut().take() {
-                Some(r) => r,
-                None => panic!("op CLI should not have been invoked"),
-            }
+            let Some(r) = self.response.borrow_mut().take() else {
+                panic!("op CLI should not have been invoked");
+            };
+            r
         }
     }
 
@@ -1587,8 +1587,7 @@ mod tests {
         );
         assert!(
             err.to_string().contains("timeout") || err.to_string().contains("timed out"),
-            "expected timeout in error: {}",
-            err
+            "expected timeout in error: {err}"
         );
     }
 
@@ -1719,8 +1718,14 @@ mod tests {
     #[test]
     fn merge_global_only() {
         let merged = merge_layers(&m(&[("A", "1"), ("B", "2")]), &m(&[]), &m(&[]), &m(&[]));
-        assert_eq!(merged.get("A").map(|v| v.as_persisted_str()), Some("1"));
-        assert_eq!(merged.get("B").map(|v| v.as_persisted_str()), Some("2"));
+        assert_eq!(
+            merged.get("A").map(super::EnvValue::as_persisted_str),
+            Some("1")
+        );
+        assert_eq!(
+            merged.get("B").map(super::EnvValue::as_persisted_str),
+            Some("2")
+        );
     }
 
     #[test]
@@ -1732,10 +1737,13 @@ mod tests {
             &m(&[]),
         );
         assert_eq!(
-            merged.get("A").map(|v| v.as_persisted_str()),
+            merged.get("A").map(super::EnvValue::as_persisted_str),
             Some("global")
         );
-        assert_eq!(merged.get("B").map(|v| v.as_persisted_str()), Some("agent"));
+        assert_eq!(
+            merged.get("B").map(super::EnvValue::as_persisted_str),
+            Some("agent")
+        );
     }
 
     #[test]
@@ -1747,7 +1755,7 @@ mod tests {
             &m(&[]),
         );
         assert_eq!(
-            merged.get("A").map(|v| v.as_persisted_str()),
+            merged.get("A").map(super::EnvValue::as_persisted_str),
             Some("workspace")
         );
     }
@@ -1761,7 +1769,7 @@ mod tests {
             &m(&[("A", "ws-agent")]),
         );
         assert_eq!(
-            merged.get("A").map(|v| v.as_persisted_str()),
+            merged.get("A").map(super::EnvValue::as_persisted_str),
             Some("ws-agent")
         );
     }
@@ -1774,10 +1782,22 @@ mod tests {
             &m(&[("W", "w")]),
             &m(&[("X", "x")]),
         );
-        assert_eq!(merged.get("G").map(|v| v.as_persisted_str()), Some("g"));
-        assert_eq!(merged.get("A").map(|v| v.as_persisted_str()), Some("a"));
-        assert_eq!(merged.get("W").map(|v| v.as_persisted_str()), Some("w"));
-        assert_eq!(merged.get("X").map(|v| v.as_persisted_str()), Some("x"));
+        assert_eq!(
+            merged.get("G").map(super::EnvValue::as_persisted_str),
+            Some("g")
+        );
+        assert_eq!(
+            merged.get("A").map(super::EnvValue::as_persisted_str),
+            Some("a")
+        );
+        assert_eq!(
+            merged.get("W").map(super::EnvValue::as_persisted_str),
+            Some("w")
+        );
+        assert_eq!(
+            merged.get("X").map(super::EnvValue::as_persisted_str),
+            Some("x")
+        );
     }
 
     #[test]
@@ -1911,7 +1931,10 @@ mod tests {
                 Err(std::env::VarError::NotPresent)
             })
             .unwrap();
-        assert_eq!(resolved.get("FOO").map(|v| v.as_str()), Some("bar"));
+        assert_eq!(
+            resolved.get("FOO").map(std::string::String::as_str),
+            Some("bar")
+        );
     }
 
     #[test]
@@ -1957,7 +1980,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(resolved.get("X").map(|v| v.as_str()), Some("ws-agent"));
+        assert_eq!(
+            resolved.get("X").map(std::string::String::as_str),
+            Some("ws-agent")
+        );
     }
 
     #[test]
@@ -2139,7 +2165,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            resolved.get("API_KEY").map(|v| v.as_str()),
+            resolved.get("API_KEY").map(std::string::String::as_str),
             Some("host-secret")
         );
     }
@@ -2534,6 +2560,12 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
 
     #[test]
     fn op_ref_rejects_unknown_fields_in_inline_table() {
+        #[derive(serde::Deserialize)]
+        struct Wrap {
+            #[allow(dead_code)] // exercised via deserialization, never read in this negative test
+            env: std::collections::BTreeMap<String, EnvValue>,
+        }
+
         // Typo'd inline table: "paht" instead of "path". Should fail
         // with a clear "unknown field" error, not silently produce an
         // OpRef with empty path.
@@ -2541,11 +2573,6 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
 [env]
 TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
 "#;
-        #[derive(serde::Deserialize)]
-        struct Wrap {
-            #[allow(dead_code)] // exercised via deserialization, never read in this negative test
-            env: std::collections::BTreeMap<String, EnvValue>,
-        }
         let result: Result<Wrap, _> = toml::from_str(toml_in);
         let err = result
             .err()
@@ -2569,9 +2596,9 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
     /// and covers only the synchronous path used by the CLI resolver.
     struct StubOpStructRunner {
         vaults: Vec<OpVault>,
-        /// (vault_id → items)
+        /// (`vault_id` → items)
         items: std::collections::HashMap<String, Vec<OpItem>>,
-        /// (item_id → fields)
+        /// (`item_id` → fields)
         fields: std::collections::HashMap<String, Vec<OpField>>,
     }
 

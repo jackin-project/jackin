@@ -378,8 +378,8 @@ mod tests {
     #[test]
     fn exile_all_ejects_all_managed_agents() {
         let mut runner = FakeRunner::with_capture_queue([
-            r#"jackin-agent-smith
-jackin-agent-smith-clone-1"#
+            r"jackin-agent-smith
+jackin-agent-smith-clone-1"
                 .to_string(),
             String::new(),
         ]);
@@ -418,8 +418,8 @@ jackin-agent-smith-clone-1"#
                 ),
             ],
             capture_queue: VecDeque::from(vec![
-                r#"jackin-agent-smith
-jackin-agent-smith-clone-1"#
+                r"jackin-agent-smith
+jackin-agent-smith-clone-1"
                     .to_string(),
                 String::new(),
             ]),

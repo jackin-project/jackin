@@ -1197,7 +1197,7 @@ mod auth_set_tests {
             last_agent: None,
             env: std::collections::BTreeMap::new(),
             agents: std::collections::BTreeMap::new(),
-            keep_awake: Default::default(),
+            keep_awake: crate::workspace::KeepAwakeConfig::default(),
         };
         let out = render_workspace_show("jackin", &ws);
         assert!(out.contains("Isolation"));

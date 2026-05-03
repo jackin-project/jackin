@@ -304,9 +304,8 @@ mod tests {
         decls.insert("BRANCH".to_string(), interactive_text("Branch:"));
         let prompter = MockPrompter::new(vec![PromptResult::Skipped]);
 
-        let error = match resolve_env(&decls, &prompter) {
-            Ok(_) => panic!("required skipped var should fail"),
-            Err(error) => error,
+        let Err(error) = resolve_env(&decls, &prompter) else {
+            panic!("required skipped var should fail");
         };
 
         assert!(error.to_string().contains("BRANCH"));
@@ -318,9 +317,8 @@ mod tests {
         let mut decls = BTreeMap::new();
         decls.insert("BRANCH".to_string(), interactive_text("Branch:"));
 
-        let error = match resolve_env(&decls, &ErrorPrompter) {
-            Ok(_) => panic!("prompt I/O failures should bubble up"),
-            Err(error) => error,
+        let Err(error) = resolve_env(&decls, &ErrorPrompter) else {
+            panic!("prompt I/O failures should bubble up");
         };
 
         assert!(error.to_string().contains("prompt I/O failed"));

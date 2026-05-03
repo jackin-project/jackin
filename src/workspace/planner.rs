@@ -796,9 +796,7 @@ mod tests {
                 if i != j {
                     assert!(
                         !covers(a, b),
-                        "invariant violated: {:?} covers {:?} in kept set",
-                        a,
-                        b,
+                        "invariant violated: {a:?} covers {b:?} in kept set",
                     );
                 }
             }

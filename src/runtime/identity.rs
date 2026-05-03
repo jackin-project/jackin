@@ -176,7 +176,6 @@ mod tests {
             &mut crate::docker::ShellRunner::default(),
         );
 
-        let labels: Vec<&str> = rows.iter().map(|(l, _)| l.as_str()).collect();
-        assert!(!labels.contains(&"dind"));
+        assert!(!rows.iter().any(|(l, _)| l == "dind"));
     }
 }

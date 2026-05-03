@@ -1539,16 +1539,16 @@ mod tests {
         );
 
         // Each mount's 4 bind specs reference its own dst tree.
-        let mount_a_count = strings
+        let first_mount_count = strings
             .iter()
             .filter(|s| s.contains("/workspace/a") || s.contains("/jackin/host/workspace/a/"))
             .count();
-        let mount_b_count = strings
+        let second_mount_count = strings
             .iter()
             .filter(|s| s.contains("/workspace/b") || s.contains("/jackin/host/workspace/b/"))
             .count();
-        assert_eq!(mount_a_count, 4, "mount A should have 4 bind specs");
-        assert_eq!(mount_b_count, 4, "mount B should have 4 bind specs");
+        assert_eq!(first_mount_count, 4, "mount A should have 4 bind specs");
+        assert_eq!(second_mount_count, 4, "mount B should have 4 bind specs");
 
         // Both override files for both mounts must remain :ro.
         let ro_count = strings.iter().filter(|s| s.ends_with(":ro")).count();
@@ -1621,6 +1621,11 @@ mod tests {
     }
 
     /// Helper: trust callback that always accepts.
+    ///
+    /// Signature matches `deny_trust` so both can be passed as the same
+    /// function-pointer type to the trust prompt; the `Ok(())` is therefore
+    /// load-bearing even though clippy flags it.
+    #[allow(clippy::unnecessary_wraps)]
     fn auto_trust(_: &ClassSelector, _: &crate::config::AgentSource) -> anyhow::Result<()> {
         Ok(())
     }
@@ -2943,7 +2948,7 @@ plugins = []
 
     // ── claim_container_name tests ────────────────────────────────────────────
 
-    /// NotFound → claim the primary slot directly (no docker rm issued).
+    /// `NotFound` → claim the primary slot directly (no docker rm issued).
     #[test]
     fn claim_container_name_not_found_claims_primary() {
         let temp = tempdir().unwrap();
@@ -3100,8 +3105,8 @@ plugins = []
         assert_eq!(outcome, AttachOutcome::still_running());
     }
 
-    /// Helper for inspect_attach_outcome status tests — returns a
-    /// FakeRunner whose `docker inspect` capture returns the given
+    /// Helper for `inspect_attach_outcome` status tests — returns a
+    /// `FakeRunner` whose `docker inspect` capture returns the given
     /// `status|exit_code|oom` line. Other docker calls also queue the
     /// same response (we make only one inspect call per test).
     fn inspect_runner(
@@ -3117,7 +3122,7 @@ plugins = []
         }
     }
 
-    /// `exited` with exit_code=0 → stopped(0) → enters finalize_clean_exit
+    /// `exited` with `exit_code=0` → stopped(0) → enters `finalize_clean_exit`
     /// which is the documented happy path for clean container exits.
     #[test]
     fn inspect_attach_outcome_exited_zero_returns_stopped() {
@@ -3127,7 +3132,7 @@ plugins = []
         assert_eq!(outcome, AttachOutcome::stopped(0));
     }
 
-    /// `exited` with non-zero exit_code → preserved by finalize.
+    /// `exited` with non-zero `exit_code` → preserved by finalize.
     #[test]
     fn inspect_attach_outcome_exited_nonzero_returns_stopped_with_code() {
         use crate::isolation::finalize::AttachOutcome;
@@ -3136,7 +3141,7 @@ plugins = []
         assert_eq!(outcome, AttachOutcome::stopped(137));
     }
 
-    /// `exited` with OOMKilled=true → oom_killed.
+    /// `exited` with OOMKilled=true → `oom_killed`.
     #[test]
     fn inspect_attach_outcome_exited_oom_returns_oom_killed() {
         use crate::isolation::finalize::AttachOutcome;
@@ -3145,7 +3150,7 @@ plugins = []
         assert_eq!(outcome, AttachOutcome::oom_killed());
     }
 
-    /// `running` → still_running. The basic happy detach case.
+    /// `running` → `still_running`. The basic happy detach case.
     #[test]
     fn inspect_attach_outcome_running_returns_still_running() {
         use crate::isolation::finalize::AttachOutcome;
@@ -3154,8 +3159,8 @@ plugins = []
         assert_eq!(outcome, AttachOutcome::still_running());
     }
 
-    /// `paused` → still_running. The container hasn't exited; treating
-    /// it as stopped(0) would let finalize_clean_exit auto-delete its
+    /// `paused` → `still_running`. The container hasn't exited; treating
+    /// it as stopped(0) would let `finalize_clean_exit` auto-delete its
     /// worktrees while the container is paused but recoverable.
     #[test]
     fn inspect_attach_outcome_paused_returns_still_running() {
@@ -3169,7 +3174,7 @@ plugins = []
         );
     }
 
-    /// `restarting`, `removing`, `created` → still_running for the same
+    /// `restarting`, `removing`, `created` → `still_running` for the same
     /// reason as `paused`: not exited, no real exit code to act on.
     #[test]
     fn inspect_attach_outcome_transient_states_return_still_running() {
@@ -3185,7 +3190,7 @@ plugins = []
         }
     }
 
-    /// `dead` → still_running (conservative: daemon failed to
+    /// `dead` → `still_running` (conservative: daemon failed to
     /// deinitialize; records preserved for inspection).
     #[test]
     fn inspect_attach_outcome_dead_returns_still_running() {
@@ -3196,7 +3201,7 @@ plugins = []
     }
 
     /// Unknown status (future Docker versions, exotic runtimes) →
-    /// still_running with debug_log. Conservative direction so a new
+    /// `still_running` with `debug_log`. Conservative direction so a new
     /// status string never accidentally triggers data deletion.
     #[test]
     fn inspect_attach_outcome_unknown_status_returns_still_running() {

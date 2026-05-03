@@ -56,10 +56,10 @@ pub(crate) fn cycle_select(list_state: &mut tui_widget_list::ListState, count: u
 mod consistency_tests {
     //! Cross-widget visual-consistency pins.
     //!
-    //! Every modal renders with the same chrome: PHOSPHOR_DARK border
+    //! Every modal renders with the same chrome: `PHOSPHOR_DARK` border
     //! (RGB 0/80/18), a title wrapped in leading + trailing spaces so
     //! `┌ Title ─...` renders with breathing room, and a hint footer
-    //! whose separator glyphs use PHOSPHOR_DARK. These tests pin that
+    //! whose separator glyphs use `PHOSPHOR_DARK`. These tests pin that
     //! contract so a future drift doesn't silently degrade the look.
     use ratatui::{
         Terminal,
@@ -72,7 +72,7 @@ mod consistency_tests {
     const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
     const WHITE: Color = Color::Rgb(255, 255, 255);
 
-    /// Render a closure into a fresh TestBackend and return the resulting
+    /// Render a closure into a fresh `TestBackend` and return the resulting
     /// buffer. Size is chosen to comfortably fit every modal under test.
     fn draw<F: FnOnce(&mut ratatui::Frame)>(width: u16, height: u16, render: F) -> Buffer {
         let backend = TestBackend::new(width, height);
@@ -109,7 +109,7 @@ mod consistency_tests {
     }
 
     /// Assert every cell on the top and bottom border rows uses
-    /// PHOSPHOR_DARK as its foreground colour (title cells are exempt —
+    /// `PHOSPHOR_DARK` as its foreground colour (title cells are exempt —
     /// they're WHITE+BOLD).
     fn assert_border_is_phosphor_dark(buf: &Buffer, area: Rect, widget: &str) {
         // Top border, skipping the title span.
@@ -150,7 +150,7 @@ mod consistency_tests {
     ///
     /// We can't easily inspect the whole hint line's styles without knowing
     /// each widget's exact hint text; instead we look for at least one
-    /// WHITE+BOLD cell followed by a PHOSPHOR_GREEN label cell on the hint
+    /// WHITE+BOLD cell followed by a `PHOSPHOR_GREEN` label cell on the hint
     /// row. That matches every canonical hint (`Enter commit`, `Enter
     /// confirm`, `↑↓ navigate`, etc.) and rejects any widget that forgets
     /// the hint entirely.
@@ -176,17 +176,16 @@ mod consistency_tests {
             if saw_key && saw_label {
                 return; // canonical hint found
             }
-            if saw_key || saw_label {
-                panic!(
-                    "{widget}: hint row at y={y} has key={saw_key}/label={saw_label}; \
-                     expected both WHITE+BOLD key and PHOSPHOR_GREEN label cells"
-                );
-            }
+            assert!(
+                !(saw_key || saw_label),
+                "{widget}: hint row at y={y} has key={saw_key}/label={saw_label}; \
+                 expected both WHITE+BOLD key and PHOSPHOR_GREEN label cells"
+            );
         }
         panic!("{widget}: no hint row found inside {area:?}");
     }
 
-    /// Build and render the SaveDiscardCancel modal into a full-area
+    /// Build and render the `SaveDiscardCancel` modal into a full-area
     /// buffer. Returns (buffer, area).
     fn render_save_discard() -> (Buffer, Rect) {
         use super::save_discard::{SaveDiscardState, render};
@@ -298,7 +297,7 @@ mod consistency_tests {
         }
     }
 
-    /// Every modal's top and bottom border runs in PHOSPHOR_DARK.
+    /// Every modal's top and bottom border runs in `PHOSPHOR_DARK`.
     #[test]
     fn all_modal_borders_are_phosphor_dark() {
         for (name, (buf, area)) in [
@@ -316,7 +315,7 @@ mod consistency_tests {
     }
 
     /// Every modal renders a canonical hint row with WHITE+BOLD keys and
-    /// PHOSPHOR_GREEN labels.
+    /// `PHOSPHOR_GREEN` labels.
     #[test]
     fn all_modal_hint_rows_use_canonical_styles() {
         for (name, (buf, area)) in [

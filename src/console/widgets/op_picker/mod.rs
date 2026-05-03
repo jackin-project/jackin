@@ -1560,12 +1560,17 @@ mod tests {
     }
 
     impl OpStructRunner for BlockingRunner {
+        // Test fixture: intentionally blocks on a condvar until the test
+        // releases the gate. The lock is held across the wait loop and
+        // dropped via explicit `drop` once we exit, which is the shape
+        // clippy's `significant_drop_tightening` lint actually wants.
         fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
             let (lock, cv) = &*self.gate;
             let mut released = lock.lock().unwrap();
             while !*released {
                 released = cv.wait(released).unwrap();
             }
+            drop(released);
             Ok(Vec::new())
         }
         fn vault_list(&self, _: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
@@ -1988,7 +1993,7 @@ mod tests {
 
     /// When a field has an empty reference but sibling fields in the same
     /// item carry non-empty references, the picker still commits a valid
-    /// 3-segment OpRef (the debug log fires but must not panic).
+    /// 3-segment `OpRef` (the debug log fires but must not panic).
     #[test]
     fn picker_commit_3seg_fallback_preserved_when_sibling_has_reference() {
         let sectioned_field = crate::operator_env::OpField {
@@ -2118,7 +2123,7 @@ mod tests {
         }
     }
 
-    /// Fix 1D parity: unique item, 3-segment field → identical OpRef.
+    /// Fix 1D parity: unique item, 3-segment field → identical `OpRef`.
     #[test]
     fn parity_unique_item_3seg_field_cli_matches_picker() {
         let field = crate::operator_env::OpField {
@@ -2214,7 +2219,7 @@ mod tests {
         assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
     }
 
-    /// Fix 1D parity: sectioned field → both produce 4-segment OpRef.
+    /// Fix 1D parity: sectioned field → both produce 4-segment `OpRef`.
     #[test]
     fn parity_sectioned_field_cli_matches_picker() {
         let field = crate::operator_env::OpField {

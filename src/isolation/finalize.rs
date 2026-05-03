@@ -1038,7 +1038,7 @@ mod tests {
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
         std::fs::create_dir_all(&r1.original_src).unwrap();
-        write_records(dir.path(), &[r1.clone(), r2.clone()]).unwrap();
+        write_records(dir.path(), &[r1, r2]).unwrap();
         // Both records assess to PreservedDirty (status returns dirty for each).
         let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
         // Operator chooses option 2 (force delete) for both.
@@ -1079,7 +1079,7 @@ mod tests {
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
         std::fs::create_dir_all(&r1.original_src).unwrap();
-        write_records(dir.path(), &[r1.clone(), r2.clone()]).unwrap();
+        write_records(dir.path(), &[r1, r2]).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
         // First record force-deleted, second preserved.
         let mut p = ScriptedPrompt(VecDeque::from([2, 1]));
@@ -1118,7 +1118,7 @@ mod tests {
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
         let r3 = rec_at(dir.path(), "/workspace/c", "jackin/scratch/x-c");
         std::fs::create_dir_all(&r1.original_src).unwrap();
-        write_records(dir.path(), &[r1.clone(), r2.clone(), r3.clone()]).unwrap();
+        write_records(dir.path(), &[r1, r2, r3]).unwrap();
         // All three records assess to PreservedDirty.
         let mut runner = fake_with_outputs(&[" M f1\n", " M f2\n", " M f3\n"]);
         // Operator: force-delete first, then return-to-agent on second.
@@ -1164,7 +1164,7 @@ mod tests {
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
         std::fs::create_dir_all(&r1.original_src).unwrap();
-        write_records(dir.path(), &[r1.clone(), r2.clone()]).unwrap();
+        write_records(dir.path(), &[r1, r2]).unwrap();
         // Both records assess to PreservedDirty (status returns dirty
         // for each), then force_cleanup_isolated runs git commands.
         // We simulate the first mount's `git branch -D` failing AND
@@ -1221,7 +1221,7 @@ mod tests {
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
         std::fs::create_dir_all(&r1.original_src).unwrap();
-        write_records(dir.path(), &[r1.clone(), r2.clone()]).unwrap();
+        write_records(dir.path(), &[r1, r2]).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
         let mut p = NoPrompt;
         let dec = finalize_foreground_session(
@@ -1276,10 +1276,10 @@ mod tests {
     // worktree-cleanup-assessment.mdx.
     // ---------------------------------------------------------------
 
-    /// Renamed-branch happy path. Scratch branch parked at base_commit;
+    /// Renamed-branch happy path. Scratch branch parked at `base_commit`;
     /// agent's renamed `feature/x` branch is ahead of base with a
     /// reachable upstream and rev-list returns empty (all commits
-    /// pushed). Pre-fix this returned PreservedUnpushed because the
+    /// pushed). Pre-fix this returned `PreservedUnpushed` because the
     /// upstream check was hardcoded against the abandoned scratch
     /// branch (which has no upstream by construction).
     #[test]
@@ -1321,7 +1321,7 @@ mod tests {
     /// branch was deleted after the PR merge and pruned locally. The
     /// `[gone]` heuristic must mark this Safe; pre-fix the rev-list
     /// would have errored on the missing upstream and the Err arm
-    /// would have routed to PreservedUnpushed.
+    /// would have routed to `PreservedUnpushed`.
     #[test]
     fn squash_merged_pruned_branch_is_safe_to_delete() {
         let dir = TempDir::new().unwrap();
@@ -1357,7 +1357,7 @@ mod tests {
     }
 
     /// Renamed branch ahead of base with no upstream — genuine local
-    /// work; preserve. Pre-fix this also returned PreservedUnpushed
+    /// work; preserve. Pre-fix this also returned `PreservedUnpushed`
     /// (correct outcome) but only by accident of the wrong-branch check.
     #[test]
     fn renamed_branch_no_upstream_preserves_unpushed() {
@@ -1493,7 +1493,7 @@ mod tests {
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
 
-    /// Prompt-wording variant: a PreservedUnpushed assessment must
+    /// Prompt-wording variant: a `PreservedUnpushed` assessment must
     /// reach the prompt with reason=Unpushed (not Dirty). Pre-fix,
     /// `ask_unsafe_cleanup` had no reason argument so the wording was
     /// hardcoded to "uncommitted changes" for both paths.
