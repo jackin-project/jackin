@@ -42,15 +42,15 @@ export const vocabularyEntries: VocabularyEntry[] = [
     id: '04', term: 'Workspace', pos: 'noun',
     def: [
       { t: 'A named list of mounts and access rules.', b: true },
-      { t: ' Each workspace pairs a name with: the host directories that mount into the container, where they land inside, per-mount permission (read-only or read-write), the agent\u2019s starting directory (workdir), and which agent classes are allowed to load it. Answers \u201cwhat can this agent see, and where?\u201d' },
+      { t: ' Each workspace pairs a name with: the host directories that mount into the container, where they land inside, per-mount permission (read-only or read-write), the role\u2019s starting directory (workdir), and which roles are allowed to load it. Answers \u201cwhat can this agent see, and where?\u201d' },
     ],
-    cmd: '{ name, workdir, mounts[], allowed-agents[] }', cmdLabel: 'declares',
+    cmd: '{ name, workdir, mounts[], allowed-roles[] }', cmdLabel: 'declares',
   },
   {
     id: '05', term: 'Jacking in', pos: 'verb',
     def: [
       { t: 'Loading an agent into a workspace.', b: true },
-      { t: ' Clones the agent-class repo, builds the derived image, applies the workspace\u2019s mounts, drops you into Claude Code running inside.' },
+      { t: ' Clones the role repo, builds the derived image, applies the workspace\u2019s mounts, drops you into Claude Code running inside.' },
     ],
     cmd: 'jackin load agent-smith [my-project-workspace]', cmdLabel: 'cli',
   },

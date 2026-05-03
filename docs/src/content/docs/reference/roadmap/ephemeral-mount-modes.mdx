@@ -157,7 +157,7 @@ isolation = "tmpfs"
 size = "1GiB"
 ```
 
-These are agent-class-level defaults that workspaces inherit unless
+These are role-level defaults that workspaces inherit unless
 overridden by a workspace mount on the same `dst`. Useful so a Java
 role can declare its Gradle hygiene once and every workspace
 gets the right behavior.
@@ -223,7 +223,7 @@ gets the right behavior.
 - <RepoFile path="src/runtime/cleanup.rs" /> — volume cleanup on
   `purge`
 - <RepoFile path="src/manifest/mod.rs" /> — `[[runtime.mounts]]`
-  agent-class defaults
+  role-level defaults
 - <RepoFile path="src/cli/workspace.rs" /> — `--mount-isolation tmpfs`
   / `ephemeral` in workspace edit/create
 
