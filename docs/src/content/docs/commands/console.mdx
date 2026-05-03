@@ -89,28 +89,28 @@ emits a warning. It delegates to the same console handler as
 `jackin console`.
 </Aside>
 
-## Workspace editor — Agents tab
+## Workspace editor — Roles tab
 
-The Agents tab controls which agents may launch in this workspace and
+The Roles tab controls which roles may launch in this workspace and
 which one (if any) is the default.
 
-- **Allow / disallow** — `Space` on an agent row toggles whether the
-  agent is allowed in this workspace. The `[x]` / `[ ]` glyph reflects
+- **Allow / disallow** — `Space` on a role row toggles whether the
+  role is allowed in this workspace. The `[x]` / `[ ]` glyph reflects
   the *effective* allow-state: an empty `allowed_roles` list is the
-  shorthand for "all agents allowed", and every row reads `[x]` in that
+  shorthand for "all roles allowed", and every row reads `[x]` in that
   mode.
-- **Default agent** — `*` on an allowed agent row pins it as the
+- **Default role** — `*` on an allowed role row pins it as the
   workspace default; pressing `*` again on the same row clears the
-  default. The default agent carries a `★` marker in the rendered list.
+  default. The default role carries a `★` marker in the rendered list.
 - **Disallowing the current default** clears the default automatically
-  — defaults are only meaningful on allowed agents.
-- `*` on an unallowed agent is a no-op; press `Space` to allow the
-  agent first.
+  — defaults are only meaningful on allowed roles.
+- `*` on an unallowed role is a no-op; press `Space` to allow the
+  role first.
 
 | Key | Action |
 |---|---|
-| `Space` on agent row | Toggle allow / disallow |
-| `*` on allowed agent | Set as default (or clear if already default) |
+| `Space` on role row | Toggle allow / disallow |
+| `*` on allowed role | Set as default (or clear if already default) |
 
 The default-role assignment used to live as a read-only row on the
 General tab; it is now editable here. The General tab now shows only

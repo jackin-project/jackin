@@ -58,7 +58,7 @@ Setup:
 
    ```toml
    [env]
-   CLAUDE_CODE_OAUTH_TOKEN = "op://vault/claude/token"
+   CLAUDE_CODE_OAUTH_TOKEN = "op://Personal/Claude/token"
    ```
 
    or forward from the host shell:
@@ -77,7 +77,7 @@ Setup:
 On launch, jackin' prints a one-line diagnostic confirming the active mode and where the token came from:
 
 ```
-claude auth: OAuth token (CLAUDE_CODE_OAUTH_TOKEN ← op://vault/claude/token)
+claude auth: OAuth token (CLAUDE_CODE_OAUTH_TOKEN ← op://Personal/Claude/token)
 ```
 
 If `CLAUDE_CODE_OAUTH_TOKEN` is not present in the resolved env when `token` mode is active, jackin' aborts with an actionable error listing both remediation paths above.
@@ -157,7 +157,7 @@ or:
 
 ```toml
 [env]
-OPENAI_API_KEY = "op://vault/openai/api-key"
+OPENAI_API_KEY = "op://Work/OpenAI/key"
 ```
 
 When a workspace or launch selects the `codex` agent, jackin requires `OPENAI_API_KEY` to be present in the resolved launch env before it builds or starts the container. There is no Codex equivalent of Claude's `sync` or `token` auth-forward modes in this slice.

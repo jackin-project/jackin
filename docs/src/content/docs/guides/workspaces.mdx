@@ -41,7 +41,7 @@ They let you:
 - keep extra mounts consistent across sessions
 - reuse the same project boundary with different specialized roles
 - let the operator console (`jackin console`) auto-detect and preselect the project
-- set a default agent or restrict which roles may use the workspace
+- set a default role or restrict which roles may use the workspace
 - set a default agent such as `claude` or `codex`
 
 If you regularly work on the same project, a saved workspace turns your mount layout into durable operator configuration instead of something you rebuild from memory each time.
@@ -215,10 +215,10 @@ jackin workspace edit secure-api --allowed-role the-architect
 # Revoke access
 jackin workspace edit secure-api --remove-allowed-role the-architect
 
-# Change default agent
+# Change default role
 jackin workspace edit secure-api --default-role neo
 
-# Clear the default agent
+# Clear the default role
 jackin workspace edit secure-api --clear-default-role
 
 # Change default agent
