@@ -46,7 +46,7 @@ pub struct LoadOptions {
     pub host_env: Option<std::collections::BTreeMap<String, String>>,
 
     /// CLI override for the agent. `None` means "use the workspace's
-    /// `agent` field, falling back to `Agent::Claude` when unset".
+    /// `default_agent` field, falling back to `Agent::Claude` when unset".
     pub agent: Option<crate::agent::Agent>,
 }
 
@@ -896,7 +896,7 @@ fn load_role_with(
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
 
-    let agent = resolve_agent(opts.agent, workspace.agent);
+    let agent = resolve_agent(opts.agent, workspace.default_agent);
     validate_agent_supported(selector, &validated_repo.manifest, agent)?;
 
     // Logo (if present in role repo)
@@ -1821,7 +1821,7 @@ agents = ["codex"]
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            agent: None,
+            default_agent: None,
             keep_awake_enabled: false,
         }
     }
@@ -2122,7 +2122,7 @@ trusted = true
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
             ],
-            agent: None,
+            default_agent: None,
             keep_awake_enabled: false,
         };
 
@@ -2258,7 +2258,7 @@ model = "gpt-5"
         .unwrap();
 
         let mut workspace = repo_workspace(&repo_dir);
-        workspace.agent = Some(crate::agent::Agent::Codex);
+        workspace.default_agent = Some(crate::agent::Agent::Codex);
         load_role(
             &paths,
             &mut config,
@@ -2330,7 +2330,7 @@ agents = ["codex"]
         .unwrap();
 
         let mut workspace = repo_workspace(&repo_dir);
-        workspace.agent = Some(crate::agent::Agent::Codex);
+        workspace.default_agent = Some(crate::agent::Agent::Codex);
         let err = load_role(
             &paths,
             &mut config,
@@ -2392,7 +2392,7 @@ plugins = []
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            agent: None,
+            default_agent: None,
             keep_awake_enabled: false,
         };
 
@@ -2462,7 +2462,7 @@ plugins = []
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            agent: None,
+            default_agent: None,
             keep_awake_enabled: false,
         };
 

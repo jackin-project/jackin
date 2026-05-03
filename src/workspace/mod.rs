@@ -47,7 +47,7 @@ pub struct WorkspaceConfig {
     /// from serialized output when `None` so legacy config files stay
     /// byte-for-byte stable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent: Option<crate::agent::Agent>,
+    pub default_agent: Option<crate::agent::Agent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_role: Option<String>,
     /// Workspace-level operator env map. Keys are env var names;
@@ -92,9 +92,9 @@ impl KeepAwakeConfig {
 
 impl WorkspaceConfig {
     /// Returns the workspace's selected agent, defaulting to Claude
-    /// when no agent field is set (legacy workspace).
+    /// when no `default_agent` field is set (legacy workspace).
     pub fn resolved_agent(&self) -> crate::agent::Agent {
-        self.agent.unwrap_or(crate::agent::Agent::Claude)
+        self.default_agent.unwrap_or(crate::agent::Agent::Claude)
     }
 }
 
@@ -119,10 +119,10 @@ pub struct WorkspaceEdit {
     pub allowed_agents_to_add: Vec<String>,
     pub allowed_agents_to_remove: Vec<String>,
     pub default_role: Option<Option<String>>,
-    /// Workspace agent change. `None` = no change, `Some(Some(h))`
-    /// = set to `h`, `Some(None)` = clear the explicit field so the
-    /// workspace falls back to Claude.
-    pub agent: Option<Option<crate::agent::Agent>>,
+    /// Workspace default-agent change. `None` = no change,
+    /// `Some(Some(h))` = set to `h`, `Some(None)` = clear the
+    /// explicit field so the workspace falls back to Claude.
+    pub default_agent: Option<Option<crate::agent::Agent>>,
     pub mount_isolation_overrides: Vec<(String, crate::isolation::MountIsolation)>,
     /// Toggle for the macOS keep-awake reconciler. `None` = no change,
     /// `Some(true)` = opt in, `Some(false)` = opt out. The CLI's paired
@@ -271,26 +271,26 @@ mod tests {
     }
 
     #[test]
-    fn workspace_serializes_agent_when_set() {
+    fn workspace_serializes_default_agent_when_set() {
         let ws = WorkspaceConfig {
             workdir: "/tmp/x".to_string(),
-            agent: Some(crate::agent::Agent::Codex),
+            default_agent: Some(crate::agent::Agent::Codex),
             ..Default::default()
         };
 
         let toml_str = toml::to_string(&ws).unwrap();
-        assert!(toml_str.contains("agent = \"codex\""));
+        assert!(toml_str.contains("default_agent = \"codex\""));
     }
 
     #[test]
-    fn workspace_omits_agent_field_when_unset() {
+    fn workspace_omits_default_agent_field_when_unset() {
         let ws = WorkspaceConfig {
             workdir: "/tmp/x".to_string(),
             ..Default::default()
         };
 
         let toml_str = toml::to_string(&ws).unwrap();
-        assert!(!toml_str.contains("agent"));
+        assert!(!toml_str.contains("default_agent"));
     }
 
     #[test]
@@ -306,7 +306,7 @@ mod tests {
     fn workspace_resolves_to_codex_when_set() {
         let ws = WorkspaceConfig {
             workdir: "/tmp/x".to_string(),
-            agent: Some(crate::agent::Agent::Codex),
+            default_agent: Some(crate::agent::Agent::Codex),
             ..Default::default()
         };
         assert_eq!(ws.resolved_agent(), crate::agent::Agent::Codex);
@@ -655,7 +655,7 @@ isolation = "worktree"
             ],
             allowed_roles: Vec::new(),
             default_role: None,
-            agent: None,
+            default_agent: None,
             last_role: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),

@@ -173,8 +173,8 @@ impl AppConfig {
             workspace.default_role = default_role;
         }
 
-        if let Some(agent) = edit.agent {
-            workspace.agent = agent;
+        if let Some(default_agent) = edit.default_agent {
+            workspace.default_agent = default_agent;
         }
 
         if let Some(enabled) = edit.keep_awake_enabled {
@@ -261,7 +261,7 @@ mod tests {
             }],
             allowed_roles: vec!["agent-smith".to_string()],
             default_role: Some("agent-smith".to_string()),
-            agent: None,
+            default_agent: None,
             last_role: None,
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
@@ -375,13 +375,13 @@ mod tests {
             .edit_workspace(
                 "my-app",
                 WorkspaceEdit {
-                    agent: Some(Some(crate::agent::Agent::Codex)),
+                    default_agent: Some(Some(crate::agent::Agent::Codex)),
                     ..WorkspaceEdit::default()
                 },
             )
             .unwrap();
         assert_eq!(
-            config.workspaces.get("my-app").unwrap().agent,
+            config.workspaces.get("my-app").unwrap().default_agent,
             Some(crate::agent::Agent::Codex)
         );
 
@@ -395,21 +395,21 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            config.workspaces.get("my-app").unwrap().agent,
+            config.workspaces.get("my-app").unwrap().default_agent,
             Some(crate::agent::Agent::Codex),
-            "unrelated edits must not clear agent"
+            "unrelated edits must not clear default_agent"
         );
 
         config
             .edit_workspace(
                 "my-app",
                 WorkspaceEdit {
-                    agent: Some(None),
+                    default_agent: Some(None),
                     ..WorkspaceEdit::default()
                 },
             )
             .unwrap();
-        assert_eq!(config.workspaces.get("my-app").unwrap().agent, None);
+        assert_eq!(config.workspaces.get("my-app").unwrap().default_agent, None);
     }
 
     #[test]

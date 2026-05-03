@@ -21,7 +21,7 @@ trusted = true
 # Production workspace — the big one
 [workspaces.prod]
 workdir = "/workspace/prod"
-agent = "codex"
+default_agent = "codex"
 
 [workspaces.prod.env]
 # Rotate quarterly (last: 2026-Q1)

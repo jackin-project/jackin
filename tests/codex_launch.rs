@@ -107,7 +107,7 @@ model = "gpt-5"
             readonly: false,
             isolation: MountIsolation::Shared,
         }],
-        agent: Some(Agent::Codex),
+        default_agent: Some(Agent::Codex),
         keep_awake_enabled: false,
     };
     let mut runner = FakeRunner::for_load_agent([String::new()]);
@@ -206,7 +206,7 @@ plugins = []
             readonly: false,
             isolation: MountIsolation::Shared,
         }],
-        agent: Some(Agent::Claude),
+        default_agent: Some(Agent::Claude),
         keep_awake_enabled: false,
     };
     let mut runner = FakeRunner::for_load_agent([String::new()]);

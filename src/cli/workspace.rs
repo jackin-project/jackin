@@ -34,7 +34,7 @@ pub enum WorkspaceCommand {
 Examples:
   jackin workspace create my-app --workdir ~/Projects/my-app
   jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
-  jackin workspace create my-app --workdir ~/Projects/my-app --agent codex
+  jackin workspace create my-app --workdir ~/Projects/my-app --default-agent codex
   jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
   jackin workspace create restricted --workdir ~/app --allowed-role agent-smith --default-role agent-smith"
     )]
@@ -58,7 +58,7 @@ Examples:
         default_role: Option<String>,
         /// Default agent for this workspace (claude or codex)
         #[arg(long, value_parser = parse_agent)]
-        agent: Option<crate::agent::Agent>,
+        default_agent: Option<crate::agent::Agent>,
         /// Set isolation mode for a mount destination. Repeatable.
         /// Format: `<container-dst>=<shared|worktree>`.
         #[arg(
@@ -103,8 +103,8 @@ Examples:
   jackin workspace edit my-app --allowed-role chainargos/the-architect
   jackin workspace edit my-app --default-role agent-smith
   jackin workspace edit my-app --clear-default-role
-  jackin workspace edit my-app --agent codex
-  jackin workspace edit my-app --clear-agent
+  jackin workspace edit my-app --default-agent codex
+  jackin workspace edit my-app --clear-default-agent
   jackin workspace edit my-app --mount ~/Projects/my-app --yes
   jackin workspace edit my-app --prune"
     )]
@@ -138,17 +138,13 @@ Examples:
             conflicts_with = "default_role",
             default_value_t = false
         )]
-        clear_default_agent: bool,
+        clear_default_role: bool,
         /// Set the default agent for this workspace
         #[arg(long, value_parser = parse_agent)]
-        agent: Option<crate::agent::Agent>,
-        /// Clear the explicit agent so the workspace falls back to claude
-        #[arg(
-            long = "clear-agent",
-            conflicts_with = "agent",
-            default_value_t = false
-        )]
-        clear_agent: bool,
+        default_agent: Option<crate::agent::Agent>,
+        /// Clear the explicit default agent so the workspace falls back to claude
+        #[arg(long, conflicts_with = "default_agent", default_value_t = false)]
+        clear_default_agent: bool,
         /// Skip confirmation prompts for mount collapses
         #[arg(long = "yes", short = 'y', default_value_t = false)]
         assume_yes: bool,
@@ -446,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_workspace_create_with_agent() {
+    fn parses_workspace_create_with_default_agent() {
         let cli = Cli::try_parse_from([
             "jackin",
             "workspace",
@@ -454,13 +450,13 @@ mod tests {
             "my-app",
             "--workdir",
             "/tmp/my-app",
-            "--agent",
+            "--default-agent",
             "codex",
         ])
         .unwrap();
         match cli.command {
-            Some(Command::Workspace(WorkspaceCommand::Create { agent, .. })) => {
-                assert_eq!(agent, Some(crate::agent::Agent::Codex));
+            Some(Command::Workspace(WorkspaceCommand::Create { default_agent, .. })) => {
+                assert_eq!(default_agent, Some(crate::agent::Agent::Codex));
             }
             other => panic!("unexpected command {other:?}"),
         }
@@ -520,40 +516,55 @@ mod tests {
     }
 
     #[test]
-    fn parses_workspace_edit_with_agent() {
-        let cli =
-            Cli::try_parse_from(["jackin", "workspace", "edit", "my-app", "--agent", "codex"])
-                .unwrap();
+    fn parses_workspace_edit_with_default_agent() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "edit",
+            "my-app",
+            "--default-agent",
+            "codex",
+        ])
+        .unwrap();
         match cli.command {
-            Some(Command::Workspace(WorkspaceCommand::Edit { agent, .. })) => {
-                assert_eq!(agent, Some(crate::agent::Agent::Codex));
+            Some(Command::Workspace(WorkspaceCommand::Edit { default_agent, .. })) => {
+                assert_eq!(default_agent, Some(crate::agent::Agent::Codex));
             }
             other => panic!("unexpected command {other:?}"),
         }
     }
 
     #[test]
-    fn parses_workspace_edit_with_clear_agent() {
-        let cli = Cli::try_parse_from(["jackin", "workspace", "edit", "my-app", "--clear-agent"])
-            .unwrap();
+    fn parses_workspace_edit_with_clear_default_agent() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "workspace",
+            "edit",
+            "my-app",
+            "--clear-default-agent",
+        ])
+        .unwrap();
         match cli.command {
-            Some(Command::Workspace(WorkspaceCommand::Edit { clear_agent, .. })) => {
-                assert!(clear_agent);
+            Some(Command::Workspace(WorkspaceCommand::Edit {
+                clear_default_agent,
+                ..
+            })) => {
+                assert!(clear_default_agent);
             }
             other => panic!("unexpected command {other:?}"),
         }
     }
 
     #[test]
-    fn rejects_conflicting_workspace_edit_agent_flags() {
+    fn rejects_conflicting_workspace_edit_default_agent_flags() {
         let err = Cli::try_parse_from([
             "jackin",
             "workspace",
             "edit",
             "my-app",
-            "--agent",
+            "--default-agent",
             "codex",
-            "--clear-agent",
+            "--clear-default-agent",
         ])
         .unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
@@ -577,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_conflicting_workspace_edit_default_agent_flags() {
+    fn rejects_conflicting_workspace_edit_default_role_flags() {
         let err = Cli::try_parse_from([
             "jackin",
             "workspace",

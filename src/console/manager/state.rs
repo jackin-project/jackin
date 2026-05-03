@@ -1150,7 +1150,7 @@ mod tests {
             }],
             allowed_roles: vec![],
             default_role: None,
-            agent: None,
+            default_agent: None,
             last_role: None,
             env: BTreeMap::default(),
             roles: BTreeMap::default(),

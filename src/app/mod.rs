@@ -481,7 +481,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 no_workdir_mount,
                 allowed_roles,
                 default_role,
-                agent,
+                default_agent,
                 mount_isolation,
                 keep_awake,
             } => {
@@ -520,7 +520,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     mounts: plan.final_mounts,
                     allowed_roles,
                     default_role,
-                    agent,
+                    default_agent,
                     last_role: None,
                     env: std::collections::BTreeMap::new(),
                     roles: std::collections::BTreeMap::new(),
@@ -601,9 +601,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 allowed_roles,
                 remove_allowed_agents,
                 default_role,
+                clear_default_role,
+                default_agent,
                 clear_default_agent,
-                agent,
-                clear_agent,
                 assume_yes,
                 prune,
                 mount_isolation,
@@ -736,15 +736,15 @@ pub fn run(cli: Cli) -> Result<()> {
                 for role in &remove_allowed_agents {
                     changes.push(format!("removed role {role}"));
                 }
-                if clear_default_agent {
+                if clear_default_role {
                     changes.push("cleared default role".to_string());
                 } else if let Some(ref role) = default_role {
                     changes.push(format!("default role → {role}"));
                 }
-                if clear_agent {
-                    changes.push("cleared agent".to_string());
-                } else if let Some(agent) = agent {
-                    changes.push(format!("agent → {}", agent.slug()));
+                if clear_default_agent {
+                    changes.push("cleared default agent".to_string());
+                } else if let Some(agent) = default_agent {
+                    changes.push(format!("default agent → {}", agent.slug()));
                 }
                 if let Some(v) = keep_awake_change {
                     changes.push(format!(
@@ -821,15 +821,15 @@ pub fn run(cli: Cli) -> Result<()> {
                         no_workdir_mount,
                         allowed_agents_to_add: allowed_roles,
                         allowed_agents_to_remove: remove_allowed_agents,
-                        default_role: if clear_default_agent {
+                        default_role: if clear_default_role {
                             Some(None)
                         } else {
                             default_role.map(Some)
                         },
-                        agent: if clear_agent {
+                        default_agent: if clear_default_agent {
                             Some(None)
                         } else {
-                            agent.map(Some)
+                            default_agent.map(Some)
                         },
                         mount_isolation_overrides: mount_isolation,
                         keep_awake_enabled: keep_awake_change,
@@ -1208,7 +1208,7 @@ mod auth_set_tests {
             ],
             allowed_roles: vec![],
             default_role: None,
-            agent: None,
+            default_agent: None,
             last_role: None,
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),

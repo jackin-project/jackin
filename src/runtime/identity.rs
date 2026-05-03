@@ -99,7 +99,7 @@ mod tests {
             label: cwd.display().to_string(),
             workdir: cwd.display().to_string(),
             mounts: vec![],
-            agent: None,
+            default_agent: None,
             keep_awake_enabled: false,
         };
         let git = GitIdentity {
@@ -129,7 +129,7 @@ mod tests {
             label: "big-monorepo".to_string(),
             workdir: "/workspace/project".to_string(),
             mounts: vec![],
-            agent: None,
+            default_agent: None,
             keep_awake_enabled: false,
         };
         let git = GitIdentity {
@@ -162,7 +162,7 @@ mod tests {
             label: "test".to_string(),
             workdir: "/workspace".to_string(),
             mounts: vec![],
-            agent: None,
+            default_agent: None,
             keep_awake_enabled: false,
         };
         let git = GitIdentity {
