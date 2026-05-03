@@ -349,8 +349,7 @@ mod tests {
         std::fs::create_dir_all(sub.join("Library")).unwrap();
 
         let state = state_rooted_at(tmp.path().to_path_buf(), sub);
-        let names: Vec<&str> = state.entries.iter().map(|e| e.name.as_str()).collect();
-        assert!(names.contains(&"Library"));
+        assert!(state.entries.iter().any(|e| e.name == "Library"));
     }
 
     #[test]

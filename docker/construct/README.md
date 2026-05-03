@@ -2,7 +2,7 @@
 
 This directory contains the source for `projectjackin/construct:trixie` — the shared base Docker image that every [jackin](https://github.com/jackin-project/jackin) agent starts from.
 
-The construct is the foundation layer providing system tools, shell environment, and container infrastructure that all agents inherit — one shared base image so every agent class starts from the same baseline.
+The construct is the foundation layer providing system tools, shell environment, and container infrastructure that all roles inherit — one shared base image so every role starts from the same baseline.
 
 For full details — including what's installed, how it is built, the image layer architecture, and how to extend it — see the [Construct Image](https://jackin.tailrocks.com/developing/construct-image/) documentation.
 
@@ -12,10 +12,10 @@ For full details — including what's installed, how it is built, the image laye
 |---|---|
 | `Dockerfile` | Builds the construct image on Debian Trixie with core tools (git, Docker CLI, mise, ripgrep, fd, fzf, GitHub CLI, zsh, starship) and security tools (tirith, shellfirm) |
 | `zshrc` | Shell configuration — sets up mise shims, starship prompt, and security tool shell hooks |
-| `install-plugins.sh` | Runtime script that installs Claude plugins from `~/.jackin/plugins.json` |
+| `install-claude-plugins.sh` | Runtime script that installs Claude plugins from `~/.jackin/plugins.json` |
 | `versions.env` | Pinned versions for security tools (tirith, shellfirm) used as Docker build-args |
 
-The runtime entrypoint that launches Claude Code is at [`docker/runtime/entrypoint.sh`](../runtime/entrypoint.sh) — it configures git identity, authenticates with GitHub, installs plugins, and starts Claude.
+The runtime entrypoint that launches the selected agent is at [`docker/runtime/entrypoint.sh`](../runtime/entrypoint.sh) — it configures git identity, authenticates with GitHub, runs agent-specific setup, and starts Claude or Codex.
 
 ## Image Layer Architecture
 

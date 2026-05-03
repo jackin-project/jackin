@@ -1,14 +1,12 @@
 use crate::docker::CommandRunner;
 use crate::paths::JackinPaths;
-use crate::selector::ClassSelector;
+use crate::selector::RoleSelector;
 use owo_colors::OwoColorize;
 
-use super::discovery::{
-    capture_managed_container_rows, list_agent_names, list_managed_agent_names,
-};
-use super::naming::{FILTER_MANAGED, FILTER_ROLE_DIND, dind_certs_volume};
+use super::discovery::{capture_managed_container_rows, list_managed_role_names, list_role_names};
+use super::naming::{FILTER_KIND_DIND, FILTER_MANAGED, dind_certs_volume};
 
-pub fn purge_class_data(paths: &JackinPaths, selector: &ClassSelector) -> anyhow::Result<()> {
+pub fn purge_class_data(paths: &JackinPaths, selector: &RoleSelector) -> anyhow::Result<()> {
     if !paths.data_dir.exists() {
         return Ok(());
     }
@@ -24,7 +22,7 @@ pub fn purge_class_data(paths: &JackinPaths, selector: &ClassSelector) -> anyhow
     Ok(())
 }
 
-pub fn eject_agent(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
+pub fn eject_role(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     let dind = format!("{container_name}-dind");
     let certs_volume = dind_certs_volume(container_name);
     let network = format!("{container_name}-net");
@@ -60,7 +58,7 @@ fn is_missing_cleanup_error(error: &anyhow::Error) -> bool {
 /// Parsed row from `docker ps` for a `DinD` sidecar.
 struct DindInfo {
     name: String,
-    agent: String,
+    role: String,
 }
 
 fn collect_labeled_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<DindInfo>> {
@@ -70,9 +68,9 @@ fn collect_labeled_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<D
             "ps",
             "-a",
             "--filter",
-            FILTER_ROLE_DIND,
+            FILTER_KIND_DIND,
             "--format",
-            "{{.Names}}\t{{.Label \"jackin.agent\"}}",
+            "{{.Names}}\t{{.Label \"jackin.role\"}}",
         ],
         None,
     )?;
@@ -81,13 +79,13 @@ fn collect_labeled_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<D
         .lines()
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
-            let (name, agent) = line.split_once('\t')?;
-            if agent.is_empty() {
+            let (name, role) = line.split_once('\t')?;
+            if role.is_empty() {
                 return None;
             }
             Some(DindInfo {
                 name: name.to_string(),
-                agent: agent.to_string(),
+                role: role.to_string(),
             })
         })
         .collect())
@@ -97,7 +95,7 @@ fn collect_legacy_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<Di
     let output = capture_managed_container_rows(
         runner,
         true,
-        "{{.Names}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.role\"}}",
+        "{{.Names}}\t{{.Label \"jackin.role\"}}\t{{.Label \"jackin.kind\"}}",
     )?;
 
     Ok(output
@@ -106,20 +104,20 @@ fn collect_legacy_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<Di
         .filter_map(|line| {
             let mut parts = line.splitn(3, '\t');
             let name = parts.next()?;
-            let agent = parts.next().unwrap_or("");
             let role = parts.next().unwrap_or("");
-            if name.is_empty() || agent.is_empty() || !role.is_empty() {
+            let kind = parts.next().unwrap_or("");
+            if name.is_empty() || role.is_empty() || !kind.is_empty() {
                 return None;
             }
             Some(DindInfo {
                 name: name.to_string(),
-                agent: agent.to_string(),
+                role: role.to_string(),
             })
         })
         .collect())
 }
 
-/// Return `DinD` sidecar containers whose corresponding agent container is no
+/// Return `DinD` sidecar containers whose corresponding role container is no
 /// longer running.  These are leftovers from hard kills, terminal closures,
 /// or startup failures.
 fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<DindInfo>> {
@@ -130,16 +128,16 @@ fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<
         return Ok(vec![]);
     }
 
-    // Running agent containers (label filter excludes DinD sidecars).
-    let running = list_agent_names(runner, false)?;
+    // Running role containers (label filter excludes DinD sidecars).
+    let running = list_role_names(runner, false)?;
 
     Ok(sidecars
         .into_iter()
-        .filter(|info| !running.contains(&info.agent))
+        .filter(|info| !running.contains(&info.role))
         .collect())
 }
 
-/// Remove orphaned `DinD` containers, their associated agent containers, cert
+/// Remove orphaned `DinD` containers, their associated role containers, cert
 /// volumes, and networks.  Errors are logged but do not abort the launch — GC
 /// is best-effort.
 pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
@@ -148,11 +146,11 @@ pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
     };
 
     for info in &orphaned {
-        let certs_volume = dind_certs_volume(&info.agent);
-        let network = format!("{}-net", info.agent);
+        let certs_volume = dind_certs_volume(&info.role);
+        let network = format!("{}-net", info.role);
 
-        // Remove stopped agent container, DinD sidecar, cert volume, and network.
-        let _ = run_cleanup_command(runner, &["rm", "-f", &info.agent]);
+        // Remove stopped role container, DinD sidecar, cert volume, and network.
+        let _ = run_cleanup_command(runner, &["rm", "-f", &info.role]);
         let _ = run_cleanup_command(runner, &["rm", "-f", &info.name]);
         let _ = run_cleanup_command(runner, &["volume", "rm", &certs_volume]);
         let _ = run_cleanup_command(runner, &["network", "rm", &network]);
@@ -160,7 +158,7 @@ pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
         eprintln!(
             "        {} orphaned resources for {}",
             "cleaned up".dimmed(),
-            info.agent
+            info.role
         );
     }
 
@@ -169,7 +167,7 @@ pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
     gc_orphaned_networks(runner);
 }
 
-/// Remove jackin-managed Docker networks whose owning agent container no
+/// Remove jackin-managed Docker networks whose owning role container no
 /// longer exists.
 fn gc_orphaned_networks(runner: &mut impl CommandRunner) {
     let Ok(net_output) = runner.capture(
@@ -180,7 +178,7 @@ fn gc_orphaned_networks(runner: &mut impl CommandRunner) {
             "--filter",
             FILTER_MANAGED,
             "--format",
-            "{{.Name}}\t{{.Label \"jackin.agent\"}}",
+            "{{.Name}}\t{{.Label \"jackin.role\"}}",
         ],
         None,
     ) else {
@@ -191,19 +189,19 @@ fn gc_orphaned_networks(runner: &mut impl CommandRunner) {
         .lines()
         .filter(|l| !l.is_empty())
         .filter_map(|l| l.split_once('\t'))
-        .filter(|(_, agent)| !agent.is_empty())
+        .filter(|(_, role)| !role.is_empty())
         .collect();
 
     if networks.is_empty() {
         return;
     }
 
-    let Ok(running) = list_agent_names(runner, false) else {
+    let Ok(running) = list_role_names(runner, false) else {
         return;
     };
 
-    for (net_name, agent) in networks {
-        if running.iter().any(|r| r == agent) {
+    for (net_name, role) in networks {
+        if running.iter().any(|r| r == role) {
             continue;
         }
         let _ = run_cleanup_command(runner, &["network", "rm", net_name]);
@@ -211,24 +209,24 @@ fn gc_orphaned_networks(runner: &mut impl CommandRunner) {
 }
 
 pub fn exile_all(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
-    let names = list_managed_agent_names(runner)?;
+    let names = list_managed_role_names(runner)?;
     for name in names {
-        eject_agent(&name, runner)?;
+        eject_role(&name, runner)?;
     }
     Ok(())
 }
 
-/// Refuse to proceed if the named agent's container is currently running.
+/// Refuse to proceed if the named role's container is currently running.
 /// Used by purge to close a pre-existing gap (also relevant to shared mode).
-pub fn ensure_agent_not_running(
+pub fn ensure_role_not_running(
     runner: &mut impl CommandRunner,
     short_name: &str,
 ) -> anyhow::Result<()> {
-    let running = list_agent_names(runner, false)?;
+    let running = list_role_names(runner, false)?;
     let container = format!("jackin-{short_name}");
     if running.iter().any(|n| n == &container || n == short_name) {
         anyhow::bail!(
-            "agent `{short_name}` is currently running; run `jackin eject {short_name}` first \
+            "role `{short_name}` is currently running; run `jackin eject {short_name}` first \
              (or `jackin eject {short_name} --purge` to combine eject and purge)"
         );
     }
@@ -243,14 +241,14 @@ mod purge_guard_tests {
     #[test]
     fn purge_refuses_when_container_running() {
         let mut runner = FakeRunner::default();
-        // list_agent_names performs two `docker ps` queries (role-labeled
+        // list_role_names performs two `docker ps` queries (agent-labeled
         // first, then a legacy fallback).  The first response includes the
         // running container; the second can stay empty.
         runner
             .capture_queue
             .push_back("jackin-the-architect\n".into());
         runner.capture_queue.push_back(String::new());
-        let err = ensure_agent_not_running(&mut runner, "the-architect").unwrap_err();
+        let err = ensure_role_not_running(&mut runner, "the-architect").unwrap_err();
         assert!(
             err.to_string().contains("running"),
             "error did not mention 'running': {err}"
@@ -266,7 +264,7 @@ mod purge_guard_tests {
         let mut runner = FakeRunner::default();
         runner.capture_queue.push_back(String::new());
         runner.capture_queue.push_back(String::new());
-        ensure_agent_not_running(&mut runner, "the-architect").unwrap();
+        ensure_role_not_running(&mut runner, "the-architect").unwrap();
     }
 }
 
@@ -276,13 +274,13 @@ mod tests {
     use super::super::test_support::FakeRunner;
     use super::*;
     use crate::paths::JackinPaths;
-    use crate::selector::ClassSelector;
+    use crate::selector::RoleSelector;
     use std::collections::VecDeque;
     use tempfile::tempdir;
 
     #[test]
     fn eject_all_targets_only_requested_class_family() {
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let names = vec![
             "jackin-agent-smith".to_string(),
             "jackin-agent-smith-clone-1".to_string(),
@@ -304,7 +302,7 @@ mod tests {
         std::fs::create_dir_all(paths.data_dir.join("jackin-agent-smith")).unwrap();
         std::fs::create_dir_all(paths.data_dir.join("jackin-agent-smith-clone-1")).unwrap();
         std::fs::create_dir_all(paths.data_dir.join("jackin-chainargos-the-architect")).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
 
         purge_class_data(&paths, &selector).unwrap();
 
@@ -322,7 +320,7 @@ mod tests {
     fn eject_agent_removes_container_dind_and_network() {
         let mut runner = FakeRunner::default();
 
-        eject_agent("jackin-agent-smith", &mut runner).unwrap();
+        eject_role("jackin-agent-smith", &mut runner).unwrap();
 
         assert_eq!(
             runner.recorded,
@@ -362,7 +360,7 @@ mod tests {
             ..Default::default()
         };
 
-        eject_agent("jackin-agent-smith", &mut runner).unwrap();
+        eject_role("jackin-agent-smith", &mut runner).unwrap();
 
         assert_eq!(
             runner.recorded,
@@ -378,8 +376,8 @@ mod tests {
     #[test]
     fn exile_all_ejects_all_managed_agents() {
         let mut runner = FakeRunner::with_capture_queue([
-            r#"jackin-agent-smith
-jackin-agent-smith-clone-1"#
+            r"jackin-agent-smith
+jackin-agent-smith-clone-1"
                 .to_string(),
             String::new(),
         ]);
@@ -389,8 +387,8 @@ jackin-agent-smith-clone-1"#
         assert_eq!(
             runner.recorded,
             vec![
-                "docker ps -a --filter label=jackin.role=agent --format {{.Names}}",
-                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.role\"}}",
+                "docker ps -a --filter label=jackin.kind=role --format {{.Names}}",
+                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.role\"}}\t{{.Label \"jackin.kind\"}}",
                 "docker rm -f jackin-agent-smith",
                 "docker rm -f jackin-agent-smith-dind",
                 "docker volume rm jackin-agent-smith-dind-certs",
@@ -418,8 +416,8 @@ jackin-agent-smith-clone-1"#
                 ),
             ],
             capture_queue: VecDeque::from(vec![
-                r#"jackin-agent-smith
-jackin-agent-smith-clone-1"#
+                r"jackin-agent-smith
+jackin-agent-smith-clone-1"
                     .to_string(),
                 String::new(),
             ]),
@@ -431,8 +429,8 @@ jackin-agent-smith-clone-1"#
         assert_eq!(
             runner.recorded,
             vec![
-                "docker ps -a --filter label=jackin.role=agent --format {{.Names}}",
-                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.role\"}}",
+                "docker ps -a --filter label=jackin.kind=role --format {{.Names}}",
+                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.role\"}}\t{{.Label \"jackin.kind\"}}",
                 "docker rm -f jackin-agent-smith",
                 "docker rm -f jackin-agent-smith-dind",
                 "docker volume rm jackin-agent-smith-dind-certs",
@@ -465,9 +463,9 @@ jackin-agent-smith-clone-1"#
     #[test]
     fn gc_removes_orphaned_dind_and_network() {
         let mut runner = FakeRunner::with_capture_queue([
-            // collect_orphaned_dind: docker ps -a --filter label=jackin.role=dind
+            // collect_orphaned_dind: docker ps -a --filter label=jackin.kind=dind
             "jackin-agent-smith-dind\tjackin-agent-smith".to_string(),
-            // collect_orphaned_dind: list_agent_names (running)
+            // collect_orphaned_dind: list_role_names (running)
             String::new(),
             // gc_orphaned_networks: docker network ls
             String::new(),
@@ -504,13 +502,13 @@ jackin-agent-smith-clone-1"#
     #[test]
     fn gc_skips_dind_when_agent_is_running() {
         let mut runner = FakeRunner::with_capture_queue([
-            // collect_orphaned_dind: docker ps -a --filter label=jackin.role=dind
+            // collect_orphaned_dind: docker ps -a --filter label=jackin.kind=dind
             "jackin-agent-smith-dind\tjackin-agent-smith".to_string(),
             // collect_orphaned_dind: legacy managed sidecars without role labels
             String::new(),
-            // collect_orphaned_dind: running role-labeled agents — agent IS running
+            // collect_orphaned_dind: running agent-labeled roles — role IS running
             "jackin-agent-smith".to_string(),
-            // collect_orphaned_dind: running legacy agents without role labels
+            // collect_orphaned_dind: running legacy roles without role labels
             String::new(),
             // gc_orphaned_networks: docker network ls
             String::new(),
@@ -547,7 +545,7 @@ jackin-agent-smith-clone-1"#
             String::new(),
             // gc_orphaned_networks: docker network ls — has a network
             "jackin-agent-smith-net\tjackin-agent-smith".to_string(),
-            // gc_orphaned_networks: list_agent_names (running) — agent not running
+            // gc_orphaned_networks: list_role_names (running) — role not running
             String::new(),
         ]);
 
@@ -566,7 +564,7 @@ jackin-agent-smith-clone-1"#
         let mut runner = FakeRunner::with_capture_queue([
             // collect_orphaned_dind: two orphaned DinD sidecars
             "jackin-agent-smith-dind\tjackin-agent-smith\njackin-neo-dind\tjackin-neo".to_string(),
-            // collect_orphaned_dind: list_agent_names (running)
+            // collect_orphaned_dind: list_role_names (running)
             String::new(),
             // gc_orphaned_networks: no additional networks
             String::new(),
@@ -609,13 +607,13 @@ jackin-agent-smith-clone-1"#
     #[test]
     fn gc_removes_legacy_orphaned_dind_without_role_label() {
         let mut runner = FakeRunner::with_capture_queue([
-            // collect_orphaned_dind: role-labeled DinD sidecars
+            // collect_orphaned_dind: agent-labeled DinD sidecars
             String::new(),
             // collect_orphaned_dind: legacy managed sidecars without role labels
             "jackin-agent-smith-dind\tjackin-agent-smith\t".to_string(),
-            // collect_orphaned_dind: running role-labeled agents
+            // collect_orphaned_dind: running agent-labeled roles
             String::new(),
-            // collect_orphaned_dind: running legacy agents without role labels
+            // collect_orphaned_dind: running legacy roles without role labels
             String::new(),
             // gc_orphaned_networks: no additional networks
             String::new(),

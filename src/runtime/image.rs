@@ -2,21 +2,22 @@ use crate::derived_image::create_derived_build_context;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::paths::JackinPaths;
 use crate::repo::CachedRepo;
-use crate::selector::ClassSelector;
+use crate::selector::RoleSelector;
 use crate::version_check;
 use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
 use super::naming::image_name;
 
-/// Build the Docker image for the agent. Returns the image name.
+/// Build the Docker image for the role. Returns the image name.
 #[allow(clippy::similar_names, clippy::too_many_arguments)]
 pub(super) fn build_agent_image(
     paths: &JackinPaths,
-    selector: &ClassSelector,
+    selector: &RoleSelector,
     cached_repo: &CachedRepo,
-    validated_repo: &crate::repo::ValidatedAgentRepo,
+    validated_repo: &crate::repo::ValidatedRoleRepo,
     host: &HostIdentity,
+    agent: crate::agent::Agent,
     rebuild: bool,
     debug: bool,
     runner: &mut impl CommandRunner,
@@ -70,6 +71,7 @@ pub(super) fn build_agent_image(
 
     let mut build_args: Vec<&str> = vec![
         "build",
+        "--pull",
         "--build-arg",
         &build_arg_uid,
         "--build-arg",
@@ -88,12 +90,15 @@ pub(super) fn build_agent_image(
         },
     )?;
 
-    // Extract and store the Claude version from the built image
-    if let Ok(version) = runner.capture(
-        "docker",
-        &["run", "--rm", "--entrypoint", "claude", &image, "--version"],
-        None,
-    ) {
+    // Extract and store the Claude version from the built image when launching
+    // Claude. Codex's V1 update path is explicit `--rebuild`.
+    if agent == crate::agent::Agent::Claude
+        && let Ok(version) = runner.capture(
+            "docker",
+            &["run", "--rm", "--entrypoint", "claude", &image, "--version"],
+            None,
+        )
+    {
         let version = version.trim();
         if !version.is_empty() {
             if debug {

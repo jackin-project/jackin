@@ -1,4 +1,4 @@
-// `ConsoleStage` collapsed to a single variant in PR #171's Modal::AgentPicker
+// `ConsoleStage` collapsed to a single variant in PR #171's Modal::RolePicker
 // cleanup. The module is kept as-is (with `if let ConsoleStage::Manager(_)`
 // patterns) so a future stage can be added without rewriting every match
 // site. The irrefutable-pattern lint is allowed at the module level rather
@@ -19,42 +19,42 @@ pub use state::build_workspace_choice;
 
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
-use crate::selector::ClassSelector;
+use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
 impl ConsoleState {
-    /// Default agent → launch; one eligible → launch; multiple →
-    /// open `Modal::AgentPicker`. `WorkspaceChoice` is built fresh
+    /// Default role → launch; one eligible → launch; multiple →
+    /// open `Modal::RolePicker`. `WorkspaceChoice` is built fresh
     /// each call so manager edits take effect immediately.
     pub fn dispatch_launch_for_workspace(
         &mut self,
         config: &AppConfig,
         cwd: &std::path::Path,
         input: LoadWorkspaceInput,
-    ) -> anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>> {
+    ) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace)>> {
         let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
             // Workspace was deleted between keypress and dispatch.
             return Ok(None);
         };
-        let mut agents = choice.allowed_agents.clone();
-        let default_agent = choice.default_agent.clone();
+        let mut roles = choice.allowed_roles.clone();
+        let default_role = choice.default_role.clone();
 
-        if let Some(default_key) = default_agent.as_deref()
-            && let Some(agent) = agents.iter().find(|a| a.key() == default_key).cloned()
+        if let Some(default_key) = default_role.as_deref()
+            && let Some(role) = roles.iter().find(|a| a.key() == default_key).cloned()
         {
-            let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &agent)?;
+            let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
             self.pending_launch = None;
-            return Ok(Some((agent, workspace)));
+            return Ok(Some((role, workspace)));
         }
 
-        match agents.len() {
+        match roles.len() {
             0 => {
-                // Toast + stay so the operator can fix `allowed_agents`
+                // Toast + stay so the operator can fix `allowed_roles`
                 // — a single Enter shouldn't terminate the TUI.
                 let name = choice.name;
                 if let ConsoleStage::Manager(ms) = &mut self.stage {
                     ms.toast = Some(crate::console::manager::state::Toast {
-                        message: format!("no eligible agents for workspace \"{name}\""),
+                        message: format!("no eligible roles for workspace \"{name}\""),
                         kind: crate::console::manager::state::ToastKind::Error,
                         shown_at: std::time::Instant::now(),
                     });
@@ -63,19 +63,19 @@ impl ConsoleState {
                 Ok(None)
             }
             1 => {
-                let agent = agents.swap_remove(0);
-                let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &agent)?;
+                let role = roles.swap_remove(0);
+                let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
                 self.pending_launch = None;
-                Ok(Some((agent, workspace)))
+                Ok(Some((role, workspace)))
             }
             _ => {
                 // Multiple eligible: pin `pending_launch` so the
                 // `LaunchWithAgent` arm rebuilds the choice on commit.
                 self.pending_launch = Some(input);
                 if let ConsoleStage::Manager(ms) = &mut self.stage {
-                    ms.list_modal = Some(crate::console::manager::state::Modal::AgentPicker {
-                        state: crate::console::widgets::agent_picker::AgentPickerState::with_confirm_label(
-                            agents, "launch",
+                    ms.list_modal = Some(crate::console::manager::state::Modal::RolePicker {
+                        state: crate::console::widgets::role_picker::RolePickerState::with_confirm_label(
+                            roles, "launch",
                         ),
                     });
                 }
@@ -121,7 +121,7 @@ const fn consumes_letter_input(state: &ConsoleState) -> bool {
     let ConsoleStage::Manager(ms) = &state.stage;
 
     if let Some(modal) = &ms.list_modal
-        && matches!(modal, Modal::AgentPicker { .. } | Modal::OpPicker { .. })
+        && matches!(modal, Modal::RolePicker { .. } | Modal::OpPicker { .. })
     {
         return true;
     }
@@ -132,8 +132,8 @@ const fn consumes_letter_input(state: &ConsoleState) -> bool {
             modal,
             Modal::TextInput { .. }
                 | Modal::OpPicker { .. }
-                | Modal::AgentPicker { .. }
-                | Modal::AgentOverridePicker { .. }
+                | Modal::RolePicker { .. }
+                | Modal::RoleOverridePicker { .. }
         )
     {
         return true;
@@ -154,7 +154,7 @@ pub fn run_console(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
-) -> anyhow::Result<Option<(ClassSelector, ResolvedWorkspace)>> {
+) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace)>> {
     use std::time::Duration;
 
     use crossterm::ExecutableCommand;
@@ -274,7 +274,7 @@ pub fn run_console(
                                 Err(e) => break Err(e),
                             }
                         }
-                        manager::InputOutcome::LaunchWithAgent(agent) => {
+                        manager::InputOutcome::LaunchWithAgent(role) => {
                             // Rebuild the choice now so edits between
                             // open and commit take effect. `take()`
                             // clears the pin even on concurrent delete.
@@ -282,9 +282,9 @@ pub fn run_console(
                                 && let Some(choice) = build_workspace_choice(&config, cwd, &input)?
                             {
                                 match preview::resolve_selected_workspace(
-                                    &config, cwd, &choice, &agent,
+                                    &config, cwd, &choice, &role,
                                 ) {
-                                    Ok(workspace) => break Ok(Some((agent, workspace))),
+                                    Ok(workspace) => break Ok(Some((role, workspace))),
                                     Err(e) => break Err(e),
                                 }
                             }

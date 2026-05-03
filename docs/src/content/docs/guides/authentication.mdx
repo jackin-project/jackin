@@ -1,6 +1,6 @@
 ---
 title: Authentication Forwarding
-description: Forward Claude Code authentication from your host machine into agent containers
+description: Forward or provide agent credentials for agent containers
 ---
 import { Aside } from '@astrojs/starlight/components'
 
@@ -58,7 +58,7 @@ Setup:
 
    ```toml
    [env]
-   CLAUDE_CODE_OAUTH_TOKEN = "op://vault/claude/token"
+   CLAUDE_CODE_OAUTH_TOKEN = "op://Personal/Claude/token"
    ```
 
    or forward from the host shell:
@@ -77,7 +77,7 @@ Setup:
 On launch, jackin' prints a one-line diagnostic confirming the active mode and where the token came from:
 
 ```
-claude auth: OAuth token (CLAUDE_CODE_OAUTH_TOKEN ← op://vault/claude/token)
+claude auth: OAuth token (CLAUDE_CODE_OAUTH_TOKEN ← op://Personal/Claude/token)
 ```
 
 If `CLAUDE_CODE_OAUTH_TOKEN` is not present in the resolved env when `token` mode is active, jackin' aborts with an actionable error listing both remediation paths above.
@@ -105,11 +105,11 @@ jackin config auth set sync     # default — overwrite from host on each launch
 jackin config auth set ignore   # never forward
 ```
 
-### Override per agent
+### Override per role
 
 ```bash
-jackin config auth set ignore --agent agent-smith
-jackin config auth set sync --agent chainargos/the-architect
+jackin config auth set ignore --role agent-smith
+jackin config auth set sync --role chainargos/the-architect
 ```
 
 ### Show the current mode
@@ -118,8 +118,8 @@ jackin config auth set sync --agent chainargos/the-architect
 # Global default
 jackin config auth show
 
-# Effective mode for a specific agent (includes per-agent override)
-jackin config auth show --agent agent-smith
+# Effective mode for a specific role (includes per-role override)
+jackin config auth show --role agent-smith
 ```
 
 ### config.toml format
@@ -129,20 +129,39 @@ jackin config auth show --agent agent-smith
 [claude]
 auth_forward = "sync"
 
-# Per-agent override
-[agents.agent-smith]
+# Per-role override
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "token"
 ```
 
 Resolution order: **per-agent override > global default > `sync`**.
 
 <Aside type="note">
-Auth forwarding is an operator-level setting. Agent manifests (`jackin.agent.toml`) cannot set or override this — it is always the operator's decision.
+Auth forwarding is an operator-level setting. Agent manifests (`jackin.role.toml`) cannot set or override this — it is always the operator's decision.
 </Aside>
+
+## Codex authentication
+
+Codex uses environment-only authentication in jackin V1. Set `OPENAI_API_KEY` through the same operator env system used for other secrets:
+
+```toml
+[env]
+OPENAI_API_KEY = "$OPENAI_API_KEY"
+```
+
+or:
+
+```toml
+[env]
+OPENAI_API_KEY = "op://Work/OpenAI/key"
+```
+
+When a workspace or launch selects the `codex` agent, jackin requires `OPENAI_API_KEY` to be present in the resolved launch env before it builds or starts the container. There is no Codex equivalent of Claude's `sync` or `token` auth-forward modes in this slice.
+
 ## What gets forwarded
 
 Two pieces of data are forwarded from the host:
@@ -179,8 +198,8 @@ If the agent shows "Not logged in" or falls back to a different model tier (e.g.
 To stop forwarding and clear existing credentials:
 
 ```bash
-jackin config auth set ignore --agent <agent>
-jackin load <agent>  # next launch will reset to {}
+jackin config auth set ignore --role <role>
+jackin load <role>  # next launch will reset to {}
 ```
 
 Or purge all state:

@@ -9,14 +9,14 @@ import { Aside } from '@astrojs/starlight/components'
 
 A workspace is a saved configuration that tells jackin' how to mount your project directories into an agent container. Instead of typing long mount paths every time, you save a project boundary once and reference it by name.
 
-A workspace is **not** the same thing as an agent class:
+A workspace is **not** the same thing as an role:
 
 - **workspace** = which project files are available
-- **agent class** = which tools, plugins, and defaults are installed
+- **role** = which tools, plugins, and defaults are installed
 
-That means one workspace can be reused with multiple agent classes when the file access should stay the same but the runtime profile should differ.
+That means one workspace can be reused with multiple roles when the file access should stay the same but the runtime profile should differ.
 
-In practice, that is one of the main reasons workspaces exist. They let you preserve the same file boundary while swapping in the agent class that best matches the work.
+In practice, that is one of the main reasons workspaces exist. They let you preserve the same file boundary while swapping in the role that best matches the work.
 
 ## The current directory workspace
 
@@ -39,9 +39,10 @@ They let you:
 
 - name a project boundary once and launch it from anywhere
 - keep extra mounts consistent across sessions
-- reuse the same project boundary with different specialized agent classes
+- reuse the same project boundary with different specialized roles
 - let the operator console (`jackin console`) auto-detect and preselect the project
-- set a default agent or restrict which agent classes may use the workspace
+- set a default role or restrict which roles may use the workspace
+- set a default agent such as `claude` or `codex`
 
 If you regularly work on the same project, a saved workspace turns your mount layout into durable operator configuration instead of something you rebuild from memory each time.
 
@@ -59,13 +60,13 @@ Now you can load agents into it from anywhere:
 jackin load agent-smith my-app
 ```
 
-Or load a different agent class into the same workspace:
+Or load a different role into the same workspace:
 
 ```bash
 jackin load the-architect my-app
 ```
 
-This is the key pattern to keep in mind: the workspace stays the same because the project boundary stays the same, but the agent class changes because the job changes. You might use `chainargos/frontend-engineer` for UI work in the morning and `chainargos/backend-engineer` for API work in the afternoon, both against the same saved workspace.
+This is the key pattern to keep in mind: the workspace stays the same because the project boundary stays the same, but the role changes because the job changes. You might use `chainargos/frontend-engineer` for UI work in the morning and `chainargos/backend-engineer` for API work in the afternoon, both against the same saved workspace.
 
 ### What `--workdir` does
 
@@ -195,12 +196,13 @@ You can limit which agents are allowed to use a workspace:
 ```bash
 jackin workspace create secure-api \
   --workdir ~/Projects/secure-api \
-  --allowed-agent agent-smith \
-  --default-agent agent-smith
+  --allowed-role agent-smith \
+  --default-role agent-smith
 ```
 
-- `--allowed-agent` — only these agents can load this workspace (repeatable)
-- `--default-agent` — auto-selected agent class when you open this workspace in the operator console
+- `--allowed-role` — only these agents can load this workspace (repeatable)
+- `--default-role` — auto-selected role when you open this workspace in the operator console
+- `--default-agent` — default agent used by `jackin load` unless `--agent` is passed for that launch
 
 This is especially useful when one workspace should only be used with a very specific tool profile, such as a production-infra agent or a security-review agent.
 
@@ -208,15 +210,21 @@ This is especially useful when one workspace should only be used with a very spe
 
 ```bash
 # Grant access to another agent
-jackin workspace edit secure-api --allowed-agent the-architect
+jackin workspace edit secure-api --allowed-role the-architect
 
 # Revoke access
-jackin workspace edit secure-api --remove-allowed-agent the-architect
+jackin workspace edit secure-api --remove-allowed-role the-architect
+
+# Change default role
+jackin workspace edit secure-api --default-role neo
+
+# Clear the default role
+jackin workspace edit secure-api --clear-default-role
 
 # Change default agent
-jackin workspace edit secure-api --default-agent neo
+jackin workspace edit secure-api --default-agent codex
 
-# Clear the default agent
+# Clear default agent back to Claude fallback
 jackin workspace edit secure-api --clear-default-agent
 ```
 
@@ -266,4 +274,4 @@ When you open the operator console (`jackin console`), it checks whether your cu
 
 ## Storage
 
-Workspace definitions are stored in `~/.config/jackin/config.toml`. They're local operator configuration — not part of any project or agent repo.
+Workspace definitions are stored in `~/.config/jackin/config.toml`. They're local operator configuration — not part of any project or role repo.

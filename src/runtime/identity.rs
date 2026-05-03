@@ -99,6 +99,7 @@ mod tests {
             label: cwd.display().to_string(),
             workdir: cwd.display().to_string(),
             mounts: vec![],
+            default_agent: None,
             keep_awake_enabled: false,
         };
         let git = GitIdentity {
@@ -107,8 +108,8 @@ mod tests {
         };
 
         let rows = build_config_rows(
-            "Agent",
-            "jackin-agent",
+            "Role",
+            "jackin-role",
             &workspace,
             &git,
             "img",
@@ -128,6 +129,7 @@ mod tests {
             label: "big-monorepo".to_string(),
             workdir: "/workspace/project".to_string(),
             mounts: vec![],
+            default_agent: None,
             keep_awake_enabled: false,
         };
         let git = GitIdentity {
@@ -136,8 +138,8 @@ mod tests {
         };
 
         let rows = build_config_rows(
-            "Agent",
-            "jackin-agent",
+            "Role",
+            "jackin-role",
             &workspace,
             &git,
             "img",
@@ -160,6 +162,7 @@ mod tests {
             label: "test".to_string(),
             workdir: "/workspace".to_string(),
             mounts: vec![],
+            default_agent: None,
             keep_awake_enabled: false,
         };
         let git = GitIdentity {
@@ -168,15 +171,14 @@ mod tests {
         };
 
         let rows = build_config_rows(
-            "Agent",
-            "jackin-agent",
+            "Role",
+            "jackin-role",
             &workspace,
             &git,
             "img",
             &mut crate::docker::ShellRunner::default(),
         );
 
-        let labels: Vec<&str> = rows.iter().map(|(l, _)| l.as_str()).collect();
-        assert!(!labels.contains(&"dind"));
+        assert!(!rows.iter().any(|(l, _)| l == "dind"));
     }
 }

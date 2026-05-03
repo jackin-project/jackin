@@ -24,7 +24,7 @@ recycle the container.
   Without cleanup, those warm containers accumulate state every cycle.
 - It's a small feature with disproportionate impact for long-running
   fleets — exactly the workflow the program targets.
-- It generalizes naturally to anything an agent class wants done while
+- It generalizes naturally to anything an role wants done while
   idle (commit checkpoint snapshots, push WIP branches, evict caches).
 
 ## Inspiration in multicode
@@ -52,14 +52,14 @@ fires when status has been `Idle` for the configured delay.
 
 ## Recommended Shape
 
-Generalize the concept: agent classes declare what to run when idle, the
+Generalize the concept: roles declare what to run when idle, the
 operator decides whether to enable it, jackin's runtime supervisor fires
 the hook based on observed status.
 
-### Agent class config
+### Role config
 
 ```toml
-# jackin.agent.toml
+# jackin.role.toml
 
 [runtime.idle]
 commands = [
@@ -72,14 +72,14 @@ restart_after_cleanup = false
 ```
 
 `commands` is a list — each runs in sequence inside the agent container
-via `docker exec`. They're the agent class's recommendation; the
+via `docker exec`. They're the role's recommendation; the
 *operator* chooses whether to enable.
 
 ### Operator opt-in
 
 ```toml
 # operator config
-[agents."the-architect"]
+[roles."the-architect"]
 enable_idle_hooks = true   # default false
 ```
 
@@ -114,8 +114,8 @@ last-cleanup time.
 
 ## Scope (V1)
 
-- `[runtime.idle]` block on `jackin.agent.toml`.
-- Operator opt-in via `enable_idle_hooks` per agent class.
+- `[runtime.idle]` block on `jackin.role.toml`.
+- Operator opt-in via `enable_idle_hooks` per role.
 - Idle detection from the status bus.
 - Sequential command execution via `docker exec` with per-command
   timeout.
@@ -129,14 +129,14 @@ last-cleanup time.
   in addition to time-based. Defer.
 - Hooks for other states (busy, question). Idle-only in V1.
 - Per-workspace override of idle config. Agent-class-level only in V1.
-- Operator-defined ad-hoc cleanup commands (not in agent class). Defer;
+- Operator-defined ad-hoc cleanup commands (not in role). Defer;
   use `jackin exec` instead if needed.
 - Notification on cleanup failure beyond a console toast. Defer.
 
 ## Open Questions
 
 - **Default delay/interval values.** multicode uses 300s/900s. Are
-  those sensible jackin defaults, or should agent classes be more
+  those sensible jackin defaults, or should roles be more
   conservative? Recommended: *match multicode for V1*; tune from
   feedback.
 - **Cleanup during foreground operator attach.** If the operator is

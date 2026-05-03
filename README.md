@@ -38,7 +38,7 @@ See the [Quick Start guide](https://jackin.tailrocks.com/getting-started/quickst
 
 - **Isolates each agent** in its own Docker container with Docker-in-Docker enabled
 - **Gives agents full autonomy** inside the container boundary (`--dangerously-skip-permissions`)
-- **Separates tooling from file access** — agent classes define the environment, workspaces define which files are visible
+- **Separates tooling from file access** — roles define the environment, workspaces define which files are visible
 - **Supports multiple agents simultaneously** — different tool profiles against the same or different projects
 - **Persists agent state** between sessions (Claude history, GitHub CLI auth, plugins)
 
@@ -60,7 +60,7 @@ The full documentation lives at **<https://jackin.tailrocks.com/>** and covers:
 - [Installation](https://jackin.tailrocks.com/getting-started/installation/) — all install methods and prerequisites
 - [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) — operators, agents, constructs, and workspaces
 - [Commands](https://jackin.tailrocks.com/commands/load/) — complete CLI reference
-- [Creating Agents](https://jackin.tailrocks.com/developing/creating-agents/) — build your own agent repos
+- [Creating Agents](https://jackin.tailrocks.com/developing/creating-agents/) — build your own role repos
 - [The Construct Image](https://jackin.tailrocks.com/developing/construct-image/) — what's inside the shared base image and how it is built
 - [Architecture](https://jackin.tailrocks.com/reference/architecture/) — how jackin' orchestrates containers and networks
 

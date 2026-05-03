@@ -311,7 +311,7 @@ mod tests {
         std::fs::create_dir_all(&wt2).unwrap();
         r2.worktree_path = wt2.to_string_lossy().into();
         r2.scratch_branch = "jackin/scratch/x-2".into();
-        let records = vec![r1.clone(), r2.clone()];
+        let records = vec![r1, r2];
         write_records(container_dir.path(), &records).unwrap();
 
         let mut runner = FakeRunner::default();
@@ -426,7 +426,7 @@ mod tests {
         std::fs::create_dir_all(&wt2).unwrap();
         r2.worktree_path = wt2.to_string_lossy().into();
         r2.scratch_branch = "jackin/scratch/x-2".into();
-        write_records(container_dir.path(), &[r1.clone(), r2.clone()]).unwrap();
+        write_records(container_dir.path(), &[r1, r2]).unwrap();
 
         // r1's branch -D fails AND verify says it's still present →
         // force_cleanup_isolated bails for r1. r2's branch -D succeeds

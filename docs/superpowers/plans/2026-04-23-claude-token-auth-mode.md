@@ -1199,11 +1199,11 @@ Replace the `config.toml` example at line 80–92 with:
 auth_forward = "sync"
 
 # Per-agent override
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "token"
 ```
 

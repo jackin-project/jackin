@@ -1,5 +1,5 @@
 //! Editor-stage rendering: full-screen editor with header, tab bar,
-//! per-tab body renderers (General / Mounts / Agents / Secrets), and the
+//! per-tab body renderers (General / Mounts / Roles / Secrets), and the
 //! contextual footer composition that varies with the active tab + cursor.
 
 use ratatui::{
@@ -51,7 +51,7 @@ pub fn render_editor(
     match state.active_tab {
         EditorTab::General => render_general_tab(frame, chunks[2], state),
         EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state),
-        EditorTab::Agents => render_agents_tab(frame, chunks[2], state, config),
+        EditorTab::Roles => render_roles_tab(frame, chunks[2], state, config),
         EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config),
     }
 
@@ -172,7 +172,7 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
                 vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")]
             }
         }
-        EditorTab::Agents => vec![
+        EditorTab::Roles => vec![
             FooterItem::Key("Space"),
             FooterItem::Text("allow/disallow"),
             FooterItem::Sep,
@@ -192,16 +192,16 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
                     .env
                     .get(key)
                     .is_some_and(|v| matches!(v, EnvValue::OpRef(_))),
-                Some(SecretsRow::AgentKeyRow { agent, key }) => state
+                Some(SecretsRow::RoleKeyRow { role, key }) => state
                     .pending
-                    .agents
-                    .get(agent)
+                    .roles
+                    .get(role)
                     .and_then(|ov| ov.env.get(key))
                     .is_some_and(|v| matches!(v, EnvValue::OpRef(_))),
                 _ => false,
             };
             match rows.get(cursor) {
-                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::AgentKeyRow { .. })
+                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. })
                     if focused_value_is_op_ref =>
                 {
                     // Op:// rows: only D delete · A add · Q exit.
@@ -219,7 +219,7 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
                         FooterItem::Text("exit"),
                     ]
                 }
-                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::AgentKeyRow { .. }) => {
+                Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. }) => {
                     let mut items = vec![
                         FooterItem::Key("Enter"),
                         FooterItem::Text("edit"),
@@ -242,7 +242,7 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
                     }
                     items
                 }
-                Some(SecretsRow::AgentHeader { .. }) => vec![
+                Some(SecretsRow::RoleHeader { .. }) => vec![
                     FooterItem::Key("Enter"),
                     FooterItem::Text("expand"),
                     FooterItem::Sep,
@@ -252,7 +252,7 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
                     FooterItem::Key("A"),
                     FooterItem::Text("add"),
                 ],
-                Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::AgentAddSentinel(_)) => {
+                Some(SecretsRow::WorkspaceAddSentinel | SecretsRow::RoleAddSentinel(_)) => {
                     let mut items = vec![FooterItem::Key("Enter"), FooterItem::Text("add")];
                     if op_available {
                         items.extend([
@@ -276,7 +276,7 @@ fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
     let labels = [
         (EditorTab::General, "General"),
         (EditorTab::Mounts, "Mounts"),
-        (EditorTab::Agents, "Agents"),
+        (EditorTab::Roles, "Roles"),
         (EditorTab::Secrets, "Environments"),
     ];
     let mut spans = Vec::new();
@@ -312,11 +312,11 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     //   1 = Working dir (editable; Enter opens workdir picker)
     //   2 = Keep awake  (toggle; Space flips pending.keep_awake.enabled)
     //
-    // The former `Default agent` (ro) and `Last used` (ro) rows were
-    // removed from the General tab. `Default agent` is now editable on the
-    // Agents tab (see `*` keybinding); `Last used` was informational
+    // The former `Default role` (ro) and `Last used` (ro) rows were
+    // removed from the General tab. `Default role` is now editable on the
+    // Roles tab (see `*` keybinding); `Last used` was informational
     // clutter and has no place here. The underlying schema fields
-    // (`default_agent`, `last_agent`) still live on `WorkspaceConfig` —
+    // (`default_role`, `last_role`) still live on `WorkspaceConfig` —
     // we just don't surface them on the General tab anymore.
     //
     // Per-row dirty markers were removed for consistency with the other
@@ -437,16 +437,16 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
+fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
 
-    // Status line: "Allowed agents:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
+    // Status line: "Allowed roles:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
     let is_all = super::super::agent_allow::allows_all_agents(&state.pending);
-    let total = config.agents.len();
-    let allowed_count = state.pending.allowed_agents.len();
+    let total = config.roles.len();
+    let allowed_count = state.pending.allowed_roles.len();
 
     let badge_text = if is_all { "  all  " } else { "  custom  " };
     let badge_bg = if is_all { PHOSPHOR_GREEN } else { WHITE };
@@ -457,7 +457,7 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
 
     let mut status_spans = vec![
         Span::styled(
-            "  Allowed agents:  ",
+            "  Allowed roles:  ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ),
         Span::styled(badge_text, badge_style),
@@ -472,28 +472,28 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     }
     let status_line = Line::from(status_spans);
 
-    // Blank spacer between the status line and the agent rows. The old
-    // `allowed?  ·  agent` column header got dropped — the `[x]` / `[ ]`
+    // Blank spacer between the status line and the role rows. The old
+    // `allowed?  ·  role` column header got dropped — the `[x]` / `[ ]`
     // prefix on each row already signals the toggle semantics, so a
     // dedicated header added noise without clarity.
     let mut lines = vec![status_line, Line::from("")];
 
-    // Agent rows. Cursor is 0-based into config.agents (no header offset).
+    // Role rows. Cursor is 0-based into config.roles (no header offset).
     //
     // `[x]` reflects the *effectively allowed* state, not literal list
-    // membership. An empty `allowed_agents` list is the shorthand for
-    // "all agents allowed" (matches the `all` badge above) — in that
-    // mode every row renders `[x]`. Otherwise only agents named in the
+    // membership. An empty `allowed_roles` list is the shorthand for
+    // "all roles allowed" (matches the `all` badge above) — in that
+    // mode every row renders `[x]`. Otherwise only roles named in the
     // list render `[x]`.
-    for (i, (agent_name, _)) in config.agents.iter().enumerate() {
+    for (i, (role_name, _)) in config.roles.iter().enumerate() {
         let selected = i == cursor;
         let effectively_allowed =
-            super::super::agent_allow::agent_is_effectively_allowed(&state.pending, agent_name);
-        let is_default = state.pending.default_agent.as_deref() == Some(agent_name.as_str());
+            super::super::agent_allow::agent_is_effectively_allowed(&state.pending, role_name);
+        let is_default = state.pending.default_role.as_deref() == Some(role_name.as_str());
         let check = if effectively_allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };
         let prefix = if selected { "▸ " } else { "  " };
-        let text = format!("{prefix}{check}  {star} {agent_name}");
+        let text = format!("{prefix}{check}  {star} {role_name}");
         let style = if selected {
             Style::default()
                 .fg(PHOSPHOR_GREEN)
@@ -511,15 +511,15 @@ fn render_agents_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
 pub(in crate::console::manager) enum SecretsRow {
     WorkspaceKeyRow(String),
     WorkspaceAddSentinel,
-    AgentHeader {
-        agent: String,
+    RoleHeader {
+        role: String,
         expanded: bool,
     },
-    AgentKeyRow {
-        agent: String,
+    RoleKeyRow {
+        role: String,
         key: String,
     },
-    AgentAddSentinel(String),
+    RoleAddSentinel(String),
     /// Non-focusable; cursor `↑`/`↓` skip over it.
     SectionSpacer,
 }
@@ -530,40 +530,40 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
         rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
     }
     rows.push(SecretsRow::WorkspaceAddSentinel);
-    for agent in editor.pending.agents.keys() {
+    for role in editor.pending.roles.keys() {
         rows.push(SecretsRow::SectionSpacer);
-        let expanded = editor.secrets_expanded.contains(agent);
-        rows.push(SecretsRow::AgentHeader {
-            agent: agent.clone(),
+        let expanded = editor.secrets_expanded.contains(role);
+        rows.push(SecretsRow::RoleHeader {
+            role: role.clone(),
             expanded,
         });
         if expanded {
-            if let Some(ov) = editor.pending.agents.get(agent) {
+            if let Some(ov) = editor.pending.roles.get(role) {
                 for key in ov.env.keys() {
-                    rows.push(SecretsRow::AgentKeyRow {
-                        agent: agent.clone(),
+                    rows.push(SecretsRow::RoleKeyRow {
+                        role: role.clone(),
                         key: key.clone(),
                     });
                 }
             }
-            rows.push(SecretsRow::AgentAddSentinel(agent.clone()));
+            rows.push(SecretsRow::RoleAddSentinel(role.clone()));
         }
     }
     rows
 }
 
 /// Mirrors launch-time semantics from
-/// [`crate::app::context::eligible_agents_for_workspace`]. Agents
+/// [`crate::app::context::eligible_roles_for_workspace`]. Roles
 /// already carrying an override are NOT filtered — operators may add
 /// more keys to an existing override.
 pub(in crate::console::manager) fn eligible_agents_for_override(
     editor: &EditorState<'_>,
     config: &AppConfig,
 ) -> Vec<String> {
-    if editor.pending.allowed_agents.is_empty() {
-        config.agents.keys().cloned().collect()
+    if editor.pending.allowed_roles.is_empty() {
+        config.roles.keys().cloned().collect()
     } else {
-        editor.pending.allowed_agents.clone()
+        editor.pending.allowed_roles.clone()
     }
 }
 
@@ -614,12 +614,12 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                     style,
                 )));
             }
-            SecretsRow::AgentHeader { agent, expanded } => {
+            SecretsRow::RoleHeader { role, expanded } => {
                 let arrow = if *expanded { "▼" } else { "▶" };
-                let in_registry = config.agents.contains_key(agent);
-                let count = state.pending.agents.get(agent).map_or(0, |o| o.env.len());
+                let in_registry = config.roles.contains_key(role);
+                let count = state.pending.roles.get(role).map_or(0, |o| o.env.len());
                 let mut spans = vec![Span::styled(
-                    format!("{cursor_col}     {arrow} Agent: {agent}  ({count} vars)"),
+                    format!("{cursor_col}     {arrow} Role: {role}  ({count} vars)"),
                     Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
                 )];
                 if !in_registry {
@@ -632,15 +632,15 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 }
                 lines.push(Line::from(spans));
             }
-            SecretsRow::AgentKeyRow { agent, key } => {
+            SecretsRow::RoleKeyRow { role, key } => {
                 let empty =
                     std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
-                let pend_env = state.pending.agents.get(agent).map_or(&empty, |o| &o.env);
+                let pend_env = state.pending.roles.get(role).map_or(&empty, |o| &o.env);
                 let default_value = EnvValue::Plain(String::new());
                 let value = pend_env.get(key).unwrap_or(&default_value);
                 let masked = !state
                     .unmasked_rows
-                    .contains(&(SecretsScopeTag::Agent(agent.clone()), key.clone()));
+                    .contains(&(SecretsScopeTag::Role(role.clone()), key.clone()));
                 lines.push(render_secrets_key_line(
                     selected,
                     cursor_col,
@@ -651,14 +651,14 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                     label_width,
                 ));
             }
-            SecretsRow::AgentAddSentinel(agent) => {
+            SecretsRow::RoleAddSentinel(role) => {
                 let style = if selected {
                     Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(WHITE)
                 };
                 lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}     + Add {agent} environment variable"),
+                    format!("{cursor_col}     + Add {role} environment variable"),
                     style,
                 )));
             }
@@ -998,7 +998,7 @@ mod contextual_row_items_tests {
     /// Tab, Esc, arrows, `*`) pass through unchanged.
     #[test]
     fn footer_hotkeys_are_uppercase() {
-        // A representative spread: Mounts (data row + sentinel) + Agents.
+        // A representative spread: Mounts (data row + sentinel) + Roles.
         // General row 0 Edit + Create uses only `Enter`, which is multi-char.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
@@ -1013,11 +1013,11 @@ mod contextual_row_items_tests {
         let sentinel_row = contextual_row_items(&sentinel_editor, true);
         assert_hint_hotkeys_uppercase(&sentinel_row, "Mounts sentinel");
 
-        // Agents tab uses Space + `*` — both multi-char / non-alpha.
-        let mut agents_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        agents_editor.active_tab = EditorTab::Agents;
-        let agents_row = contextual_row_items(&agents_editor, true);
-        assert_hint_hotkeys_uppercase(&agents_row, "Agents");
+        // Roles tab uses Space + `*` — both multi-char / non-alpha.
+        let mut roles_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
+        roles_editor.active_tab = EditorTab::Roles;
+        let roles_row = contextual_row_items(&roles_editor, true);
+        assert_hint_hotkeys_uppercase(&roles_row, "Roles");
     }
 
     /// Scan a footer-hint list and assert every single-character `Key`
@@ -1044,9 +1044,9 @@ mod contextual_row_items_tests {
 #[cfg(test)]
 mod agents_tab_render_tests {
     //! Pins `[x]`/`[ ]` to the *effectively allowed* state — empty
-    //! `allowed_agents` is the "all allowed" shorthand.
-    use super::render_agents_tab;
-    use crate::config::{AgentSource, AppConfig};
+    //! `allowed_roles` is the "all allowed" shorthand.
+    use super::render_roles_tab;
+    use crate::config::{AppConfig, RoleSource};
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
@@ -1055,7 +1055,7 @@ mod agents_tab_render_tests {
 
     fn ws_with_allowed(names: &[&str]) -> WorkspaceConfig {
         WorkspaceConfig {
-            allowed_agents: names.iter().map(|s| (*s).into()).collect(),
+            allowed_roles: names.iter().map(|s| (*s).into()).collect(),
             ..WorkspaceConfig::default()
         }
     }
@@ -1063,19 +1063,19 @@ mod agents_tab_render_tests {
     fn config_with_agents(names: &[&str]) -> AppConfig {
         let mut config = AppConfig::default();
         for name in names {
-            config.agents.insert((*name).into(), AgentSource::default());
+            config.roles.insert((*name).into(), RoleSource::default());
         }
         config
     }
 
     fn render_to_dump(ws: WorkspaceConfig, config: &AppConfig) -> String {
         let mut editor = EditorState::new_edit("ws".into(), ws);
-        editor.active_tab = EditorTab::Agents;
+        editor.active_tab = EditorTab::Roles;
         editor.active_field = FieldFocus::Row(0);
         let backend = TestBackend::new(60, 10);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_agents_tab(f, Rect::new(0, 0, 60, 10), &editor, config);
+            render_roles_tab(f, Rect::new(0, 0, 60, 10), &editor, config);
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -1093,36 +1093,36 @@ mod agents_tab_render_tests {
 
     #[test]
     fn in_all_mode_all_rows_render_as_checked() {
-        // Empty `allowed_agents` ⇒ "all" mode ⇒ every row is `[x]`.
+        // Empty `allowed_roles` ⇒ "all" mode ⇒ every row is `[x]`.
         let cfg = config_with_agents(&["alpha", "beta", "gamma"]);
         let ws = ws_with_allowed(&[]);
         let dump = render_to_dump(ws, &cfg);
 
-        // Every agent name should appear on a line that also carries `[x]`.
+        // Every role name should appear on a line that also carries `[x]`.
         for name in ["alpha", "beta", "gamma"] {
             let line = dump
                 .lines()
                 .find(|l| l.contains(name))
-                .unwrap_or_else(|| panic!("agent `{name}` not rendered in:\n{dump}"));
+                .unwrap_or_else(|| panic!("role `{name}` not rendered in:\n{dump}"));
             assert!(
                 line.contains("[x]"),
-                "in 'all' mode agent `{name}` row must render `[x]`; got `{line}`"
+                "in 'all' mode role `{name}` row must render `[x]`; got `{line}`"
             );
             assert!(
                 !line.contains("[ ]"),
-                "in 'all' mode agent `{name}` must not render `[ ]`; got `{line}`"
+                "in 'all' mode role `{name}` must not render `[ ]`; got `{line}`"
             );
         }
     }
 
-    /// The default-agent row carries the `★` marker; non-default rows
+    /// The default-role row carries the `★` marker; non-default rows
     /// render a plain space in the marker column. Pins the glyph that
     /// the `*` keybinding produces in the rendered list.
     #[test]
     fn default_agent_row_carries_star_marker() {
         let cfg = config_with_agents(&["alpha", "beta", "gamma"]);
         let mut ws = ws_with_allowed(&[]);
-        ws.default_agent = Some("beta".into());
+        ws.default_role = Some("beta".into());
         let dump = render_to_dump(ws, &cfg);
 
         let beta_line = dump
@@ -1131,7 +1131,7 @@ mod agents_tab_render_tests {
             .expect("beta must render");
         assert!(
             beta_line.contains('\u{2605}'),
-            "default agent row must carry the `★` marker; got `{beta_line}`"
+            "default role row must carry the `★` marker; got `{beta_line}`"
         );
 
         let alpha_line = dump
@@ -1157,17 +1157,17 @@ mod agents_tab_render_tests {
             .expect("beta must render");
         assert!(
             beta_line.contains("[x]"),
-            "listed agent `beta` must render `[x]`; got `{beta_line}`"
+            "listed role `beta` must render `[x]`; got `{beta_line}`"
         );
 
         for name in ["alpha", "gamma"] {
             let line = dump
                 .lines()
                 .find(|l| l.contains(name))
-                .unwrap_or_else(|| panic!("agent `{name}` not rendered in:\n{dump}"));
+                .unwrap_or_else(|| panic!("role `{name}` not rendered in:\n{dump}"));
             assert!(
                 line.contains("[ ]"),
-                "unlisted agent `{name}` must render `[ ]` in 'custom' mode; got `{line}`"
+                "unlisted role `{name}` must render `[ ]` in 'custom' mode; got `{line}`"
             );
         }
     }
@@ -1177,11 +1177,11 @@ mod agents_tab_render_tests {
 mod secrets_tab_render_tests {
     //! Render-buffer tests for the Secrets tab. Verifies the masking
     //! default, the unmasked literal-value path, and that the flat-row
-    //! builder honours `secrets_expanded` for per-agent override sections.
+    //! builder honours `secrets_expanded` for per-role override sections.
     use super::render_secrets_tab;
     use crate::config::AppConfig;
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus, SecretsScopeTag};
-    use crate::workspace::{WorkspaceAgentOverride, WorkspaceConfig};
+    use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::layout::Rect;
@@ -1201,18 +1201,18 @@ mod secrets_tab_render_tests {
         editor
     }
 
-    /// Build an editor sitting on the Secrets tab with one agent override
+    /// Build an editor sitting on the Secrets tab with one role override
     /// carrying a single env key (`agent-smith`: `LOG_LEVEL = debug`).
     fn editor_with_agent_override() -> EditorState<'static> {
-        let mut agent_env = std::collections::BTreeMap::new();
-        agent_env.insert("LOG_LEVEL".into(), "debug".into());
-        let mut agents = std::collections::BTreeMap::new();
-        agents.insert(
+        let mut role_env = std::collections::BTreeMap::new();
+        role_env.insert("LOG_LEVEL".into(), "debug".into());
+        let mut roles = std::collections::BTreeMap::new();
+        roles.insert(
             "agent-smith".into(),
-            WorkspaceAgentOverride { env: agent_env },
+            WorkspaceRoleOverride { env: role_env },
         );
         let ws = WorkspaceConfig {
-            agents,
+            roles,
             ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -1282,18 +1282,18 @@ mod secrets_tab_render_tests {
     #[test]
     fn secrets_tab_collapsed_agent_omits_key_rows() {
         // `secrets_expanded` is empty by default (set by `new_edit`), so
-        // the agent section header renders but its `LOG_LEVEL` key row
+        // the role section header renders but its `LOG_LEVEL` key row
         // does not.
         let editor = editor_with_agent_override();
         assert!(editor.secrets_expanded.is_empty());
         let dump = render_to_dump(&editor);
         assert!(
             dump.contains("agent-smith"),
-            "agent header must render; got:\n{dump}"
+            "role header must render; got:\n{dump}"
         );
         assert!(
             !dump.contains("LOG_LEVEL"),
-            "collapsed agent section must omit key rows; got:\n{dump}"
+            "collapsed role section must omit key rows; got:\n{dump}"
         );
     }
 
@@ -1304,11 +1304,11 @@ mod secrets_tab_render_tests {
         let dump = render_to_dump(&editor);
         assert!(
             dump.contains("agent-smith"),
-            "agent header must still render when expanded; got:\n{dump}"
+            "role header must still render when expanded; got:\n{dump}"
         );
         assert!(
             dump.contains("LOG_LEVEL"),
-            "expanded agent section must show its key rows; got:\n{dump}"
+            "expanded role section must show its key rows; got:\n{dump}"
         );
     }
 
@@ -1332,32 +1332,32 @@ mod secrets_tab_render_tests {
     }
 
     /// Pins the exact flat-row sequence for a workspace with env vars,
-    /// one expanded agent (with keys), and one collapsed agent. Cursor
+    /// one expanded role (with keys), and one collapsed role. Cursor
     /// arithmetic in `input/editor.rs` is derived directly from this
     /// sequence, so a wrong order causes silent wrong-row selections.
     #[test]
     fn secrets_flat_rows_sequence_is_canonical() {
-        use crate::workspace::WorkspaceAgentOverride;
+        use crate::workspace::WorkspaceRoleOverride;
 
         let mut env = std::collections::BTreeMap::new();
         env.insert("ALPHA".into(), "1".into());
         env.insert("BETA".into(), "2".into());
 
-        let mut agent_env = std::collections::BTreeMap::new();
-        agent_env.insert("KEY".into(), "v".into());
+        let mut role_env = std::collections::BTreeMap::new();
+        role_env.insert("KEY".into(), "v".into());
 
-        let mut agents = std::collections::BTreeMap::new();
-        agents.insert("agent-a".into(), WorkspaceAgentOverride { env: agent_env });
-        agents.insert(
+        let mut roles = std::collections::BTreeMap::new();
+        roles.insert("agent-a".into(), WorkspaceRoleOverride { env: role_env });
+        roles.insert(
             "agent-b".into(),
-            WorkspaceAgentOverride {
+            WorkspaceRoleOverride {
                 env: std::collections::BTreeMap::new(),
             },
         );
 
         let ws = WorkspaceConfig {
             env,
-            agents,
+            roles,
             ..WorkspaceConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -1370,26 +1370,26 @@ mod secrets_tab_render_tests {
         //  1  WorkspaceKeyRow("BETA")
         //  2  WorkspaceAddSentinel
         //  3  SectionSpacer
-        //  4  AgentHeader { agent: "agent-a", expanded: true }
-        //  5  AgentKeyRow { agent: "agent-a", key: "KEY" }
+        //  4  AgentHeader { role: "agent-a", expanded: true }
+        //  5  AgentKeyRow { role: "agent-a", key: "KEY" }
         //  6  AgentAddSentinel("agent-a")
         //  7  SectionSpacer
-        //  8  AgentHeader { agent: "agent-b", expanded: false }
-        assert_eq!(rows.len(), 9, "unexpected row count: {:?}", rows);
+        //  8  AgentHeader { role: "agent-b", expanded: false }
+        assert_eq!(rows.len(), 9, "unexpected row count: {rows:?}");
         assert!(matches!(&rows[0], super::SecretsRow::WorkspaceKeyRow(k) if k == "ALPHA"));
         assert!(matches!(&rows[1], super::SecretsRow::WorkspaceKeyRow(k) if k == "BETA"));
         assert!(matches!(&rows[2], super::SecretsRow::WorkspaceAddSentinel));
         assert!(matches!(&rows[3], super::SecretsRow::SectionSpacer));
         assert!(
-            matches!(&rows[4], super::SecretsRow::AgentHeader { agent, expanded: true } if agent == "agent-a")
+            matches!(&rows[4], super::SecretsRow::RoleHeader { role, expanded: true } if role == "agent-a")
         );
         assert!(
-            matches!(&rows[5], super::SecretsRow::AgentKeyRow { agent, key } if agent == "agent-a" && key == "KEY")
+            matches!(&rows[5], super::SecretsRow::RoleKeyRow { role, key } if role == "agent-a" && key == "KEY")
         );
-        assert!(matches!(&rows[6], super::SecretsRow::AgentAddSentinel(a) if a == "agent-a"));
+        assert!(matches!(&rows[6], super::SecretsRow::RoleAddSentinel(a) if a == "agent-a"));
         assert!(matches!(&rows[7], super::SecretsRow::SectionSpacer));
         assert!(
-            matches!(&rows[8], super::SecretsRow::AgentHeader { agent, expanded: false } if agent == "agent-b")
+            matches!(&rows[8], super::SecretsRow::RoleHeader { role, expanded: false } if role == "agent-b")
         );
     }
 
@@ -1652,16 +1652,16 @@ mod secrets_tab_render_tests {
     fn section_spacer_appears_between_workspace_and_first_agent_section() {
         let mut env = std::collections::BTreeMap::new();
         env.insert("DB_URL".into(), "postgres://localhost/db".into());
-        let mut agent_env = std::collections::BTreeMap::new();
-        agent_env.insert("LOG_LEVEL".into(), "debug".into());
-        let mut agents = std::collections::BTreeMap::new();
-        agents.insert(
+        let mut role_env = std::collections::BTreeMap::new();
+        role_env.insert("LOG_LEVEL".into(), "debug".into());
+        let mut roles = std::collections::BTreeMap::new();
+        roles.insert(
             "agent-smith".into(),
-            WorkspaceAgentOverride { env: agent_env },
+            WorkspaceRoleOverride { env: role_env },
         );
         let ws = WorkspaceConfig {
             env,
-            agents,
+            roles,
             ..WorkspaceConfig::default()
         };
         let editor = EditorState::new_edit("ws".into(), ws);
@@ -1669,12 +1669,12 @@ mod secrets_tab_render_tests {
         assert!(
             matches!(rows.get(2), Some(super::SecretsRow::SectionSpacer)),
             "row 2 must be a SectionSpacer between workspace section \
-             and first agent header; got {:?}",
+             and first role header; got {:?}",
             rows.get(2)
         );
         assert!(
-            matches!(rows.get(3), Some(super::SecretsRow::AgentHeader { .. })),
-            "row 3 must be the agent header right after the spacer; \
+            matches!(rows.get(3), Some(super::SecretsRow::RoleHeader { .. })),
+            "row 3 must be the role header right after the spacer; \
              got {:?}",
             rows.get(3)
         );
@@ -1686,25 +1686,25 @@ mod secrets_tab_render_tests {
         a_env.insert("LEVEL_A".into(), "1".into());
         let mut b_env = std::collections::BTreeMap::new();
         b_env.insert("LEVEL_B".into(), "2".into());
-        let mut agents = std::collections::BTreeMap::new();
-        agents.insert(
+        let mut roles = std::collections::BTreeMap::new();
+        roles.insert(
             "agent-architect".into(),
-            WorkspaceAgentOverride { env: a_env },
+            WorkspaceRoleOverride { env: a_env },
         );
-        agents.insert("agent-smith".into(), WorkspaceAgentOverride { env: b_env });
+        roles.insert("agent-smith".into(), WorkspaceRoleOverride { env: b_env });
         let ws = WorkspaceConfig {
-            agents,
+            roles,
             ..WorkspaceConfig::default()
         };
         let editor = EditorState::new_edit("ws".into(), ws);
         let rows = super::secrets_flat_rows(&editor);
         assert!(
             matches!(rows.get(1), Some(super::SecretsRow::SectionSpacer)),
-            "spacer expected before the first agent header; rows={rows:?}"
+            "spacer expected before the first role header; rows={rows:?}"
         );
         assert!(
             matches!(rows.get(3), Some(super::SecretsRow::SectionSpacer)),
-            "spacer expected between consecutive agent sections; rows={rows:?}"
+            "spacer expected between consecutive role sections; rows={rows:?}"
         );
         assert!(
             !matches!(rows.last(), Some(super::SecretsRow::SectionSpacer)),
@@ -1733,7 +1733,7 @@ mod secrets_tab_render_tests {
         out
     }
 
-    /// OpRef whose `path` contains the `[subtitle]` disambiguation form.
+    /// `OpRef` whose `path` contains the `[subtitle]` disambiguation form.
     /// The subtitle must appear in the rendered output between the item
     /// name and the next " / " separator.
     #[test]
@@ -1782,7 +1782,7 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// OpRef whose `path` carries an `?attribute=otp` query suffix. The
+    /// `OpRef` whose `path` carries an `?attribute=otp` query suffix. The
     /// query must appear in the rendered output after the field name.
     #[test]
     fn renderer_op_ref_with_attribute_query_renders_text() {
@@ -1821,7 +1821,7 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// OpRef with BOTH a subtitle disambiguation AND an `?attribute=otp`
+    /// `OpRef` with BOTH a subtitle disambiguation AND an `?attribute=otp`
     /// query suffix. Asserts that all six visible pieces appear in the
     /// expected left-to-right order: vault → item → subtitle → section →
     /// field → query.
@@ -1896,8 +1896,8 @@ mod secrets_tab_render_tests {
         );
     }
 
-    /// Single env var → label_width equals key length. Without the explicit
-    /// two-space span, the screenshot bug (CLAUDE_CODE_OAUTH_TOKENPrivate / ...)
+    /// Single env var → `label_width` equals key length. Without the explicit
+    /// two-space span, the screenshot bug (`CLAUDE_CODE_OAUTH_TOKENPrivate` / ...)
     /// recurs.
     #[test]
     fn renderer_key_value_separator_always_at_least_two_spaces() {
@@ -1972,31 +1972,31 @@ mod secrets_tab_render_tests {
 
 #[cfg(test)]
 mod eligible_agents_for_override_tests {
-    //! Agents already carrying an override are NOT filtered — the
+    //! Roles already carrying an override are NOT filtered — the
     //! picker can add more keys to an existing override.
     use super::eligible_agents_for_override;
-    use crate::config::{AgentSource, AppConfig};
+    use crate::config::{AppConfig, RoleSource};
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
-    use crate::workspace::{WorkspaceAgentOverride, WorkspaceConfig};
+    use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 
     fn config_with_agents(names: &[&str]) -> AppConfig {
         let mut config = AppConfig::default();
         for name in names {
-            config.agents.insert((*name).into(), AgentSource::default());
+            config.roles.insert((*name).into(), RoleSource::default());
         }
         config
     }
 
     fn ws_with_overrides(allowed: &[&str], override_agents: &[&str]) -> WorkspaceConfig {
-        let mut agents = std::collections::BTreeMap::new();
+        let mut roles = std::collections::BTreeMap::new();
         for a in override_agents {
             let mut env = std::collections::BTreeMap::new();
             env.insert("LOG_LEVEL".into(), "debug".into());
-            agents.insert((*a).into(), WorkspaceAgentOverride { env });
+            roles.insert((*a).into(), WorkspaceRoleOverride { env });
         }
         WorkspaceConfig {
-            allowed_agents: allowed.iter().map(|s| (*s).into()).collect(),
-            agents,
+            allowed_roles: allowed.iter().map(|s| (*s).into()).collect(),
+            roles,
             ..WorkspaceConfig::default()
         }
     }
@@ -2010,7 +2010,7 @@ mod eligible_agents_for_override_tests {
 
     #[test]
     fn eligible_agents_returns_allowed_when_list_non_empty() {
-        // Non-empty `allowed_agents` is taken at face value — the
+        // Non-empty `allowed_roles` is taken at face value — the
         // result matches the workspace's allowed list verbatim.
         let cfg = config_with_agents(&["agent-smith", "agent-brown", "agent-architect"]);
         let editor = editor_for(ws_with_overrides(&["agent-smith"], &[]));
@@ -2020,8 +2020,8 @@ mod eligible_agents_for_override_tests {
 
     #[test]
     fn eligible_agents_returns_all_registered_when_allowed_empty() {
-        // Empty `allowed_agents` is the "all agents allowed" shorthand —
-        // every globally-registered agent is eligible.
+        // Empty `allowed_roles` is the "all roles allowed" shorthand —
+        // every globally-registered role is eligible.
         let cfg = config_with_agents(&["agent-smith", "agent-brown"]);
         let editor = editor_for(ws_with_overrides(&[], &[]));
         let mut eligible = eligible_agents_for_override(&editor, &cfg);
@@ -2034,9 +2034,9 @@ mod eligible_agents_for_override_tests {
 
     #[test]
     fn eligible_agents_does_not_filter_by_existing_overrides() {
-        // Operators may want to add additional keys to an agent that
+        // Operators may want to add additional keys to an role that
         // already carries some — the picker must therefore include
-        // every allowed agent regardless of whether `pending.agents`
+        // every allowed role regardless of whether `pending.roles`
         // already lists them.
         let cfg = config_with_agents(&["agent-smith", "agent-brown"]);
         let editor = editor_for(ws_with_overrides(
@@ -2054,7 +2054,7 @@ mod eligible_agents_for_override_tests {
 
     #[test]
     fn eligible_agents_returns_empty_when_no_allowed_and_no_registered() {
-        // Empty `allowed_agents` shorthand AND no registered agents:
+        // Empty `allowed_roles` shorthand AND no registered roles:
         // the picker would be empty, so the caller is expected to
         // short-circuit and not open the modal.
         let cfg = config_with_agents(&[]);

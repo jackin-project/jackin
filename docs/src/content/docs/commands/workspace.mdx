@@ -11,7 +11,7 @@ jackin workspace <SUBCOMMAND>
 
 Create, list, modify, and delete saved workspace definitions.
 
-A workspace describes project access, not agent tooling. It answers: which host paths should be mounted into the container, and which agent classes are allowed to use that layout?
+A workspace describes project access, not agent tooling. It answers: which host paths should be mounted into the container, and which roles are allowed to use that layout?
 
 ## Subcommands
 
@@ -28,16 +28,18 @@ Create a new workspace definition.
 | `--workdir <PATH>` | Working directory (auto-mounted at the same path by default) |
 | `--mount <SPEC>` | Additional bind-mount spec (repeatable) |
 | `--no-workdir-mount` | Don't auto-mount the workdir |
-| `--allowed-agent <NAME>` | Restrict to these agent classes (repeatable) |
-| `--default-agent <NAME>` | Agent class to auto-select |
+| `--allowed-role <NAME>` | Restrict to these roles (repeatable) |
+| `--default-role <NAME>` | Role to auto-select |
+| `--default-agent <claude\|codex>` | Default agent for this workspace |
 | `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared` or `worktree`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
 | `--keep-awake` | macOS only: opt this workspace into the keep-awake reconciler. While any agent in the workspace is running, jackin keeps a single detached `caffeinate -imsu` alive so the host stays awake. No-op on Linux/Windows. See [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake). |
 
 ```bash
 jackin workspace create my-app --workdir ~/Projects/my-app
 jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
+jackin workspace create codex-app --workdir ~/Projects/codex-app --default-agent codex
 jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
-jackin workspace create restricted --workdir ~/app --allowed-agent agent-smith --default-agent agent-smith
+jackin workspace create restricted --workdir ~/app --allowed-role agent-smith --default-role agent-smith
 jackin workspace create remote --workdir ~/Projects/remote --keep-awake
 
 # Isolated source mount + shared cache child
@@ -63,7 +65,7 @@ Show all saved workspaces.
 jackin workspace show <NAME>
 ```
 
-Display details of a specific workspace including workdir, mounts, and agent restrictions.
+Display details of a specific workspace including workdir, mounts, and role restrictions.
 
 The mount table includes an **Isolation** column showing each mount's effective isolation mode (`shared` or `worktree`). Mounts with no `isolation` field in TOML display as `shared`.
 
@@ -80,10 +82,12 @@ Modify an existing workspace.
 | `--workdir <PATH>` | Update the working directory |
 | `--mount <SPEC>` | Add a mount (repeatable) |
 | `--remove-destination <PATH>` | Remove a mount by container path (repeatable) |
-| `--allowed-agent <NAME>` | Grant agent class access (repeatable) |
-| `--remove-allowed-agent <NAME>` | Revoke agent class access (repeatable) |
-| `--default-agent <NAME>` | Set default agent |
-| `--clear-default-agent` | Clear the default agent |
+| `--allowed-role <NAME>` | Grant role access (repeatable) |
+| `--remove-allowed-role <NAME>` | Revoke role access (repeatable) |
+| `--default-role <NAME>` | Set default role |
+| `--clear-default-role` | Clear the default role |
+| `--default-agent <claude\|codex>` | Set default agent |
+| `--clear-default-agent` | Clear the explicit default agent and fall back to Claude |
 | `--mount-isolation <DST>=<TYPE>` | Set isolation for a mount destination (repeatable). Can target an existing mount or a mount being upserted in the same command. |
 | `--delete-isolated-state` | Acknowledge deleting preserved isolated state when an edit changes the `src` of a materialized isolated mount. Required for non-interactive source-drift edits; ignored when no preserved state exists. |
 | `--keep-awake` | macOS only: enable the keep-awake reconciler on this workspace. Mutually exclusive with `--no-keep-awake`. |
@@ -93,8 +97,10 @@ Modify an existing workspace.
 jackin workspace edit my-app --workdir ~/new-dir
 jackin workspace edit my-app --mount ~/cache:/cache:ro
 jackin workspace edit my-app --remove-destination /old-mount
-jackin workspace edit my-app --allowed-agent chainargos/backend-engineer
-jackin workspace edit my-app --default-agent agent-smith
+jackin workspace edit my-app --allowed-role chainargos/backend-engineer
+jackin workspace edit my-app --default-role agent-smith
+jackin workspace edit my-app --clear-default-role
+jackin workspace edit my-app --default-agent codex
 jackin workspace edit my-app --clear-default-agent
 jackin workspace edit my-app --keep-awake
 jackin workspace edit my-app --no-keep-awake
@@ -164,11 +170,11 @@ Under rule C, a mount is redundant when another mount in the same workspace stri
 
 ## `workspace env`
 
-Manage operator env vars at workspace and workspace-agent scope.
+Manage operator env vars at workspace and workspace-role scope.
 
 Values are stored verbatim — `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work. jackin' resolves values at launch time through the operator-env layer; there is no editor-side validation of key names or value shape.
 
-Without `--agent`, writes and reads target `[workspaces.<WORKSPACE>.env]`. With `--agent <SELECTOR>`, they target `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]`. The workspace must already exist — unknown workspaces fail fast with a non-zero exit. The agent selector is not pre-validated.
+Without `--role`, writes and reads target `[workspaces.<WORKSPACE>.env]`. With `--role <SELECTOR>`, they target `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]`. The workspace must already exist — unknown workspaces fail fast with a non-zero exit. The role selector is not pre-validated.
 
 ### `workspace env set`
 
@@ -180,15 +186,15 @@ Set or overwrite an env var at the chosen scope.
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | Apply to `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]` instead of the workspace-wide table |
+| `--role <SELECTOR>` | Apply to `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]` instead of the workspace-wide table |
 | `--comment <TEXT>` | Write a TOML line comment directly above the key |
 
 ```bash
 # Workspace scope
 jackin workspace env set prod DB_URL "op://Work/Prod/db-url"
 
-# Workspace-agent scope
-jackin workspace env set prod OPENAI_KEY "op://Work/OpenAI/key" --agent agent-smith
+# Workspace-role scope
+jackin workspace env set prod OPENAI_KEY "op://Work/OpenAI/key" --role agent-smith
 
 # Attach a comment
 jackin workspace env set prod DEBUG "1" --comment "temporary; remove after Q2"
@@ -204,11 +210,11 @@ Remove an env var from the chosen scope. Idempotent: if the key is not present, 
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | Unset from `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]` instead of the workspace-wide table |
+| `--role <SELECTOR>` | Unset from `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]` instead of the workspace-wide table |
 
 ```bash
 jackin workspace env unset prod DB_URL
-jackin workspace env unset prod OPENAI_KEY --agent agent-smith
+jackin workspace env unset prod OPENAI_KEY --role agent-smith
 ```
 
 ### `workspace env list`
@@ -221,9 +227,9 @@ Show the env vars registered at the chosen scope as a table with `Key` and `Valu
 
 | Option | Description |
 |---|---|
-| `--agent <SELECTOR>` | List vars from `[workspaces.<WORKSPACE>.agents.<SELECTOR>.env]` instead of the workspace-wide table |
+| `--role <SELECTOR>` | List vars from `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]` instead of the workspace-wide table |
 
 ```bash
 jackin workspace env list prod
-jackin workspace env list prod --agent agent-smith
+jackin workspace env list prod --role agent-smith
 ```

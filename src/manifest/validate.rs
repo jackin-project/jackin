@@ -1,4 +1,4 @@
-use super::{AgentManifest, EnvVarDecl, ManifestWarning};
+use super::{EnvVarDecl, ManifestWarning, RoleManifest};
 use crate::env_model::extract_interpolation_refs;
 
 /// Check that an env var name contains only `[A-Za-z0-9_]` and doesn't start with a digit.
@@ -9,9 +9,83 @@ pub(super) fn is_valid_env_var_name(name: &str) -> bool {
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-impl AgentManifest {
+/// Validate the `agents` / [<agent>] table consistency.
+///
+/// Rules enforced (hard errors):
+/// - If `agents` is present, it must be non-empty.
+/// - For every agent A in `agents`, the corresponding [A] table
+///   must exist (even if empty), so consumers like
+///   `instance/mod.rs::prepare` can rely on the table being non-`None`
+///   when launching that agent without a runtime check.
+/// - Without an `agents` field, the manifest must declare [claude]
+///   (legacy default; `supported_agents()` returns `[Claude]`).
+///
+/// Also surfaces an orphan-table warning (non-fatal): if a `[claude]`
+/// or `[codex]` table is populated but the corresponding agent isn't
+/// listed in `agents`, the table is dead config — every runtime path
+/// skips it. Authors editing manifests by hand routinely add
+/// `[codex] model = "..."` first and forget the `agents = [...]`
+/// declaration; without this signal they'd have to debug "agent does
+/// not support codex" at load time and figure out the connection
+/// themselves.
+///
+/// Orphan warnings are skipped on legacy manifests (no `agents`
+/// field) since the implicit default is unambiguous: those manifests
+/// are claude-only by definition, so a populated `[claude]` table is
+/// expected and a populated `[codex]` would also have failed the
+/// per-agent table-required check above.
+pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec<ManifestWarning>> {
+    use crate::agent::Agent;
+
+    let supported = manifest.supported_agents();
+
+    if let Some(list) = &manifest.agents
+        && list.is_empty()
+    {
+        anyhow::bail!("`agents` must not be empty");
+    }
+
+    for h in &supported {
+        match h {
+            Agent::Claude => {
+                if manifest.claude.is_none() {
+                    anyhow::bail!("[claude] table required when claude is in `agents`");
+                }
+            }
+            Agent::Codex => {
+                if manifest.codex.is_none() {
+                    anyhow::bail!("[codex] table required when codex is in `agents`");
+                }
+            }
+        }
+    }
+
+    let mut warnings = Vec::new();
+
+    // Only meaningful when `agents` is explicit — legacy manifests
+    // (no `agents` field) implicitly default to claude-only and have
+    // their own coverage rule above.
+    if manifest.agents.is_some() {
+        if manifest.codex.is_some() && !supported.contains(&Agent::Codex) {
+            warnings.push(ManifestWarning::new(
+                "[codex] table is present but `agents` does not include codex; \
+                 the table is ignored — add codex to `agents` to enable it.",
+            ));
+        }
+        if manifest.claude.is_some() && !supported.contains(&Agent::Claude) {
+            warnings.push(ManifestWarning::new(
+                "[claude] table is present but `agents` does not include claude; \
+                 the table is ignored — add claude to `agents` to enable it.",
+            ));
+        }
+    }
+
+    Ok(warnings)
+}
+
+impl RoleManifest {
     pub fn validate(&self) -> anyhow::Result<Vec<ManifestWarning>> {
-        let mut warnings = Vec::new();
+        let mut warnings = validate_agent_consistency(self)?;
 
         for (name, decl) in &self.env {
             // Env var names must be valid identifiers: [A-Za-z_][A-Za-z0-9_]*
@@ -167,10 +241,113 @@ mod tests {
     }
 
     #[test]
+    fn rejects_empty_supported_list() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = []
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn rejects_codex_supported_without_codex_table() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        assert!(err.to_string().contains("[codex]"));
+    }
+
+    #[test]
+    fn legacy_manifest_with_claude_passes() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+        assert!(warnings.is_empty());
+    }
+
+    /// Pin the orphan-codex-table warning: a manifest with `[codex]`
+    /// populated but codex absent from `agents` is dead config, and
+    /// the operator gets a warning that points at the fix instead of
+    /// having to debug "agent does not support codex" at load time.
+    #[test]
+    fn warns_when_codex_table_present_without_codex_in_supported() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["claude"]
+
+[claude]
+plugins = []
+
+[codex]
+model = "gpt-5"
+"#,
+        )
+        .unwrap();
+
+        let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].message.contains("[codex]"));
+        assert!(warnings[0].message.contains("ignored"));
+    }
+
+    /// Symmetric warning for the rare reverse case: `[claude]` populated
+    /// but claude absent from `agents`.
+    #[test]
+    fn warns_when_claude_table_present_without_claude_in_supported() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+        )
+        .unwrap();
+
+        let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].message.contains("[claude]"));
+    }
+
+    #[test]
     fn validate_rejects_non_interactive_without_default() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -181,7 +358,7 @@ plugins = []
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -192,7 +369,7 @@ plugins = []
     fn validate_rejects_options_without_interactive() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -205,7 +382,7 @@ options = ["a", "b"]
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -216,7 +393,7 @@ options = ["a", "b"]
     fn validate_rejects_dangling_depends_on() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -230,7 +407,7 @@ prompt = "Branch:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -241,7 +418,7 @@ prompt = "Branch:"
     fn validate_rejects_self_referencing_depends_on() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -255,7 +432,7 @@ prompt = "Value:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -266,7 +443,7 @@ prompt = "Value:"
     fn validate_rejects_dependency_cycle() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -285,7 +462,7 @@ prompt = "B:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -296,7 +473,7 @@ prompt = "B:"
     fn validate_rejects_depends_on_without_env_prefix() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -314,7 +491,7 @@ prompt = "Branch:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -325,7 +502,7 @@ prompt = "Branch:"
     fn validate_accepts_valid_manifest_with_env() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -348,7 +525,7 @@ default = "main"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let warnings = manifest.validate().unwrap();
 
         assert!(warnings.is_empty());
@@ -358,35 +535,30 @@ default = "main"
     fn validate_rejects_reserved_claude_env_name() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
 
-[env.JACKIN_CLAUDE_ENV]
+[env.JACKIN]
 default = "docker"
 "#,
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("JACKIN_CLAUDE_ENV")
-        );
+        assert!(result.unwrap_err().to_string().contains("JACKIN"));
     }
 
     #[test]
     fn validate_rejects_reserved_dind_hostname_env_name() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -398,7 +570,7 @@ default = "sidecar"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -415,7 +587,7 @@ default = "sidecar"
         for var in ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"] {
             let temp = tempdir().unwrap();
             std::fs::write(
-                temp.path().join("jackin.agent.toml"),
+                temp.path().join("jackin.role.toml"),
                 format!(
                     r#"dockerfile = "Dockerfile"
 
@@ -429,7 +601,7 @@ default = "override"
             )
             .unwrap();
 
-            let manifest = AgentManifest::load(temp.path()).unwrap();
+            let manifest = RoleManifest::load(temp.path()).unwrap();
             let result = manifest.validate();
 
             assert!(result.is_err(), "{var} should be rejected as reserved");
@@ -444,7 +616,7 @@ default = "override"
     fn validate_warns_on_prompt_without_interactive() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -457,7 +629,7 @@ prompt = "This is ignored"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let warnings = manifest.validate().unwrap();
 
         assert!(!warnings.is_empty());
@@ -468,7 +640,7 @@ prompt = "This is ignored"
     fn validate_warns_on_skippable_without_interactive() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -481,7 +653,7 @@ skippable = true
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let warnings = manifest.validate().unwrap();
 
         assert!(!warnings.is_empty());
@@ -492,7 +664,7 @@ skippable = true
     fn validate_accepts_interpolation_in_prompt_and_default() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -512,7 +684,7 @@ default = "feature/${env.PROJECT}"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let warnings = manifest.validate().unwrap();
 
         assert!(warnings.is_empty());
@@ -522,7 +694,7 @@ default = "feature/${env.PROJECT}"
     fn validate_rejects_interpolation_referencing_unknown_var() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -536,7 +708,7 @@ prompt = "Branch for ${env.NONEXISTENT}:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -547,7 +719,7 @@ prompt = "Branch for ${env.NONEXISTENT}:"
     fn validate_rejects_interpolation_not_in_depends_on() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -565,7 +737,7 @@ prompt = "Branch for ${env.PROJECT}:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -578,7 +750,7 @@ prompt = "Branch for ${env.PROJECT}:"
     fn validate_rejects_interpolation_in_default_referencing_unknown_var() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -593,7 +765,7 @@ prompt = "Branch:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -604,7 +776,7 @@ prompt = "Branch:"
     fn validate_rejects_invalid_env_var_name() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -616,7 +788,7 @@ default = "value"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -627,7 +799,7 @@ default = "value"
     fn validate_rejects_env_var_name_starting_with_digit() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -639,7 +811,7 @@ default = "value"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -650,7 +822,7 @@ default = "value"
     fn validate_accepts_valid_env_var_names() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -668,7 +840,7 @@ default = "c"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_ok());
@@ -678,7 +850,7 @@ default = "c"
     fn validate_rejects_interpolation_in_options() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -698,7 +870,7 @@ prompt = "Branch:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -714,7 +886,7 @@ prompt = "Branch:"
     fn validate_ignores_non_env_namespace_in_interpolation() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -727,7 +899,7 @@ prompt = "Value (use ${other.THING} for other):"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let warnings = manifest.validate().unwrap();
 
         // ${other.THING} is not an env. ref, so no error or warning
@@ -738,7 +910,7 @@ prompt = "Value (use ${other.THING} for other):"
     fn validate_rejects_interpolation_in_default_not_in_depends_on() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -757,7 +929,7 @@ default = "feature/${env.PROJECT}"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -770,7 +942,7 @@ default = "feature/${env.PROJECT}"
     fn validate_rejects_when_one_of_multiple_refs_is_invalid() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -789,7 +961,7 @@ prompt = "Label for ${env.PROJECT} in ${env.MISSING}:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -800,7 +972,7 @@ prompt = "Label for ${env.PROJECT} in ${env.MISSING}:"
     fn validate_rejects_empty_env_ref_in_prompt() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -813,7 +985,7 @@ prompt = "Value: ${env.}"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -824,7 +996,7 @@ prompt = "Value: ${env.}"
     fn validate_rejects_invalid_var_name_in_interpolation_ref() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -838,7 +1010,7 @@ prompt = "Value: ${env.MY-VAR}"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -854,7 +1026,7 @@ prompt = "Value: ${env.MY-VAR}"
     fn validate_rejects_empty_env_ref_in_default() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -868,7 +1040,7 @@ default = "prefix-${env.}"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -879,7 +1051,7 @@ default = "prefix-${env.}"
     fn validate_rejects_empty_depends_on_name() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -893,7 +1065,7 @@ prompt = "Value:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -904,7 +1076,7 @@ prompt = "Value:"
     fn validate_rejects_invalid_depends_on_name() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -918,7 +1090,7 @@ prompt = "Value:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());
@@ -934,7 +1106,7 @@ prompt = "Value:"
     fn validate_rejects_duplicate_depends_on() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -953,7 +1125,7 @@ prompt = "Branch:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
         let result = manifest.validate();
 
         assert!(result.is_err());

@@ -55,7 +55,7 @@ These assumptions are reasonable for `dind`, but they are not backend-neutral.
 Add a first-class sandbox mode abstraction with these operator-visible outcomes:
 
 1. The operator can choose `dind`, `microvm`, or `auto`.
-2. Existing agent repos remain usable without forcing every agent author to redesign their Dockerfile.
+2. Existing role repos remain usable without forcing every agent author to redesign their Dockerfile.
 3. Workspaces, mounts, last-used agent tracking, and persisted Claude/GitHub state continue to work in both modes.
 4. Unsupported hosts fail clearly or fall back intentionally rather than half-working.
 
@@ -168,7 +168,7 @@ Make `microvm` the user-facing mode and treat the actual provider as an internal
 
 Mostly yes for the agent images themselves.
 
-The current agent repo contract only requires that the final stage use the construct image. The existing agent Dockerfiles are standard OCI-style environment definitions and should remain valid inputs for both `dind` and `microvm` modes.
+The current role repo contract only requires that the final stage use the construct image. The existing agent Dockerfiles are standard OCI-style environment definitions and should remain valid inputs for both `dind` and `microvm` modes.
 
 The real compatibility issue is not the Dockerfiles. It is the runtime contract around them:
 
@@ -676,7 +676,7 @@ orb -m jackin-{name} docker run -it --name agent \
   -e DOCKER_HOST=unix:///var/run/docker.sock \
   -e GIT_AUTHOR_NAME="{git_user_name}" \
   -e GIT_AUTHOR_EMAIL="{git_user_email}" \
-  -e JACKIN_CLAUDE_ENV=jackin \
+  -e JACKIN=1 \
   -v /Users/{user}/Projects/myapp:/Users/{user}/Projects/myapp \
   -v /Users/{user}/.jackin/data/jackin-{name}/.claude:/home/claude/.claude \
   -v /Users/{user}/.jackin/data/jackin-{name}/.claude.json:/home/claude/.claude.json \

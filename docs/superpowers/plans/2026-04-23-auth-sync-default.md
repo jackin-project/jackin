@@ -277,7 +277,7 @@ Also update `src/config/mod.rs:310-323` test `existing_config_without_claude_sec
     #[test]
     fn existing_config_without_claude_section_deserializes_with_defaults() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#;
@@ -510,7 +510,7 @@ fn load_migrates_global_copy_to_sync_and_rewrites_config() {
         r#"[claude]
 auth_forward = "copy"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 "#,
     )
@@ -544,10 +544,10 @@ fn load_migrates_per_agent_copy_to_sync() {
 
     std::fs::write(
         &paths.config_file,
-        r#"[agents.agent-smith]
+        r#"[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "copy"
 "#,
     )
@@ -673,7 +673,7 @@ impl AppConfig {
 ```rust
 /// Detect the literal deprecated `auth_forward = "copy"` at either of the
 /// two known config paths: the global `[claude]` table or any
-/// `[agents.*.claude]` table. Returns `true` if any occurrence is found.
+/// `[roles.*.claude]` table. Returns `true` if any occurrence is found.
 ///
 /// Uses `toml::Value` (cheap — we parse the same string into `AppConfig`
 /// right after) instead of a regex, so quoted keys with odd whitespace
@@ -691,7 +691,7 @@ fn contains_deprecated_copy_auth_forward(raw: &str) -> anyhow::Result<bool> {
         return Ok(true);
     }
 
-    // Per-agent [agents.<name>.claude] auth_forward
+    // Per-agent [roles.<name>.claude] auth_forward
     if let Some(agents) = value.get("agents").and_then(|a| a.as_table()) {
         for agent in agents.values() {
             if let Some(s) = agent
@@ -735,7 +735,7 @@ git commit -s -m "$(cat <<'EOF'
 feat(config): migrate deprecated auth_forward "copy" to "sync" on load
 
 On every load, scan the raw TOML for auth_forward = "copy" at the two
-known paths (global [claude] and [agents.*.claude]). If found, normalize
+known paths (global [claude] and [roles.*.claude]). If found, normalize
 to sync in memory, rewrite the config to disk via the existing save path,
 and print a one-line deprecation warning naming the config file.
 
@@ -1047,11 +1047,11 @@ Update the config example at lines 82–92 to use `sync`:
 auth_forward = "sync"
 
 # Per-agent override
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "ignore"
 ```
 
@@ -1211,7 +1211,7 @@ gh pr create --title "feat(config)!: auth_forward sync-default, deprecate copy" 
 
 Flips the `auth_forward` default from `copy` to `sync`, removes the `AuthForwardMode::Copy` enum variant, and migrates existing configs in place with a one-line deprecation notice. Fixes the intermittent `API Error: 401` that operators see when multiple Claude Code sessions run concurrently across host and jackin containers.
 
-- On load: any `auth_forward = "copy"` at `[claude]` or `[agents.*.claude]` is normalized to `sync`, written back to disk, and a warning is printed.
+- On load: any `auth_forward = "copy"` at `[claude]` or `[roles.*.claude]` is normalized to `sync`, written back to disk, and a warning is printed.
 - CLI: `jackin config auth set copy` is accepted, prints a deprecation warning, and saves as `sync`.
 - Rust surface: `AuthForwardMode::Copy` is removed. External code that matched on it must update.
 - TOML/CLI surface: `"copy"` remains a deprecated alias.

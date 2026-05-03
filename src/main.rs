@@ -1,7 +1,7 @@
 use clap::{CommandFactory, Parser};
 use jackin::cli::Cli;
-use jackin::cli::agent::ConsoleArgs;
 use jackin::cli::dispatch::{self, Action};
+use jackin::cli::role::ConsoleArgs;
 
 fn main() {
     let cli = Cli::parse();

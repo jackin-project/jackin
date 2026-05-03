@@ -1,5 +1,5 @@
 use super::{AppConfig, MountConfig};
-use crate::selector::ClassSelector;
+use crate::selector::RoleSelector;
 use crate::workspace::expand_tilde;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -70,7 +70,7 @@ impl DockerMounts {
 }
 
 impl AppConfig {
-    pub fn resolve_mounts(&self, selector: &ClassSelector) -> Vec<(String, MountConfig)> {
+    pub fn resolve_mounts(&self, selector: &RoleSelector) -> Vec<(String, MountConfig)> {
         let mut by_name: BTreeMap<String, MountConfig> = BTreeMap::new();
 
         // Priority order: global < wildcard < exact (later inserts override earlier)
@@ -198,24 +198,24 @@ impl AppConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::selector::ClassSelector;
+    use crate::selector::RoleSelector;
 
     #[test]
     fn deserializes_global_docker_mounts() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [docker.mounts]
-gradle-cache = { src = "~/.gradle/caches", dst = "/home/claude/.gradle/caches" }
-gradle-wrapper = { src = "~/.gradle/wrapper", dst = "/home/claude/.gradle/wrapper", readonly = true }
+gradle-cache = { src = "~/.gradle/caches", dst = "/home/agent/.gradle/caches" }
+gradle-wrapper = { src = "~/.gradle/wrapper", dst = "/home/agent/.gradle/wrapper", readonly = true }
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         let mounts = &config.docker.mounts;
         match mounts.get("gradle-cache").unwrap() {
             MountEntry::Mount(m) => {
                 assert_eq!(m.src, "~/.gradle/caches");
-                assert_eq!(m.dst, "/home/claude/.gradle/caches");
+                assert_eq!(m.dst, "/home/agent/.gradle/caches");
                 assert!(!m.readonly);
             }
             MountEntry::Scoped(_) => panic!("expected MountEntry::Mount"),
@@ -229,11 +229,11 @@ gradle-wrapper = { src = "~/.gradle/wrapper", dst = "/home/claude/.gradle/wrappe
     #[test]
     fn resolve_mounts_collects_global_and_matching_scopes() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [docker.mounts]
-gradle-cache = { src = "/tmp/gradle-caches", dst = "/home/claude/.gradle/caches" }
+gradle-cache = { src = "/tmp/gradle-caches", dst = "/home/agent/.gradle/caches" }
 
 [docker.mounts."chainargos/*"]
 chainargos-secrets = { src = "/tmp/chainargos-secrets", dst = "/secrets", readonly = true }
@@ -245,13 +245,13 @@ brown-config = { src = "/tmp/chainargos-brown", dst = "/config" }
 other-data = { src = "/tmp/other", dst = "/other" }
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        let selector = ClassSelector::new(Some("chainargos"), "agent-brown");
+        let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
         let resolved = config.resolve_mounts(&selector);
         assert_eq!(resolved.len(), 3);
         assert!(
             resolved
                 .iter()
-                .any(|(_, m)| m.dst == "/home/claude/.gradle/caches")
+                .any(|(_, m)| m.dst == "/home/agent/.gradle/caches")
         );
         assert!(
             resolved
@@ -268,7 +268,7 @@ other-data = { src = "/tmp/other", dst = "/other" }
     #[test]
     fn resolve_mounts_exact_overrides_global_with_same_name() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [docker.mounts]
@@ -278,7 +278,7 @@ shared = { src = "/tmp/global", dst = "/data" }
 shared = { src = "/tmp/specific", dst = "/data" }
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        let selector = ClassSelector::new(Some("chainargos"), "agent-brown");
+        let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
         let resolved = config.resolve_mounts(&selector);
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].1.src, "/tmp/specific");
@@ -287,7 +287,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
     #[test]
     fn resolve_mounts_returns_empty_when_no_mounts_configured() {
         let config = AppConfig::default();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let resolved = config.resolve_mounts(&selector);
         assert!(resolved.is_empty());
     }
@@ -390,7 +390,7 @@ shared = { src = "/tmp/specific", dst = "/data" }
     #[test]
     fn resolve_mounts_matches_exact_scope_for_unscoped_selector() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 [docker.mounts]
@@ -400,7 +400,7 @@ global-data = { src = "/tmp/global", dst = "/global" }
 smith-data = { src = "/tmp/smith", dst = "/smith" }
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        let selector = ClassSelector::new(None, "agent-smith");
+        let selector = RoleSelector::new(None, "agent-smith");
         let resolved = config.resolve_mounts(&selector);
         assert_eq!(resolved.len(), 2);
         assert!(resolved.iter().any(|(_, m)| m.dst == "/global"));

@@ -25,7 +25,7 @@ directly:
   Docker volumes parameterized by `devcontainerId`
 
 jackin' already does things the upstream devcontainer can't — Docker-in-Docker,
-per-agent networks, workspace mounting, namespaced agent repos, DinD TLS,
+per-agent networks, workspace mounting, namespaced role repos, DinD TLS,
 plugin marketplaces, construct/derived-layer split — but several tactical
 pieces of the upstream setup are genuinely useful and map directly onto
 existing open items ([network policy controls](/reference/roadmap/) and
@@ -73,18 +73,22 @@ Source: <RepoFile path="docker/construct/Dockerfile" />
 Source: <RepoFile path="docker/runtime/entrypoint.sh" />
 
 - Git identity from env, `gh auth setup-git`
-- Runs `install-plugins.sh` against `~/.jackin/plugins.json`
-- Registers `tirith` and `shellfirm` MCP servers in Claude
-- Optional `/home/claude/.jackin-runtime/pre-launch.sh` hook
-- `exec claude --dangerously-skip-permissions --verbose`
+- Dispatches on `JACKIN_AGENT` (`claude` or `codex`):
+  - Claude branch: runs `install-claude-plugins.sh` against
+    `~/.jackin/plugins.json`, registers `tirith` and `shellfirm` MCP
+    servers, then `exec claude --dangerously-skip-permissions --verbose`
+  - Codex branch: `exec codex` (config.toml is mounted RW from host;
+    no in-container generation)
+- Optional `/home/agent/.jackin-runtime/pre-launch.sh` hook runs
+  before the per-agent `exec`
 
 ### jackin agent layer (e.g. `jackin-agent-smith`, `jackin-the-architect`)
 
 - Final stage must be `FROM projectjackin/construct:trixie` (validated contract)
 - Agents layer in their own toolchains via `mise` (Rust for the-architect,
   Node LTS for agent-smith, plus OpenTofu for the-architect)
-- Plugins declared in `jackin.agent.toml`, installed at runtime by
-  `install-plugins.sh`
+- Plugins declared in `jackin.role.toml`, installed at runtime by
+  `install-claude-plugins.sh`
 
 ### Upstream Claude Code devcontainer
 
@@ -132,7 +136,7 @@ Source: <RepoFile path="docker/runtime/entrypoint.sh" />
 | Shell history persistence | named volume per `devcontainerId` | not persisted (inside container layer) |
 | Claude config persistence | named volume `claude-code-config-*` | host bind mount `~/.jackin/data/{name}/.claude` |
 | GitHub auth persistence | not persisted explicitly | host bind mount `~/.jackin/data/{name}/.config/gh` |
-| Plugin marketplace | none | `jackin.agent.toml` + `install-plugins.sh` |
+| Plugin marketplace | none | `jackin.role.toml` + `install-claude-plugins.sh` |
 | Multi-agent | single environment | namespaced agents, per-workspace selection |
 
 ## Findings
@@ -157,7 +161,7 @@ update endpoints). Capabilities required: `--cap-add=NET_ADMIN`,
    flips the entrypoint to run it. Zero default behavior change; operators
    opt in per launch.
 2. **Make it a per-agent declaration.** Add a `[network]` section to
-   `jackin.agent.toml` where agent authors can declare the required egress
+   `jackin.role.toml` where agent authors can declare the required egress
    list. jackin merges the declared list with an operator-level allowlist in
    `config.toml`. Cost: schema + merge logic.
 3. **Make it a per-workspace declaration.** Same mechanism but keyed on
@@ -229,10 +233,10 @@ when the agent is recreated. Upstream mounts a named volume at
 
 **Options**:
 
-1. **Bind mount `~/.jackin/data/{name}/.zsh_history` to `/home/claude/.zsh_history`.**
+1. **Bind mount `~/.jackin/data/{name}/.zsh_history` to `/home/agent/.zsh_history`.**
    Consistent with how other state is persisted. Single line in
    <RepoFile path="src/runtime/launch.rs" />.
-2. **Set `HISTFILE` inside the container to a subdir of `/home/claude/.jackin`**
+2. **Set `HISTFILE` inside the container to a subdir of `/home/agent/.jackin`**
    (already bind-mounted) and let the existing persistence carry it.
 
 **Recommendation**: Option 2 is the cheapest. It is a ~5-line change in
@@ -277,7 +281,7 @@ extensions list becomes an obvious payload for it.
 ## Related Files
 
 - <RepoFile path="docker/construct/Dockerfile" /> — base image, user creation, shell setup
-- <RepoFile path="docker/construct/install-plugins.sh" /> — plugin bootstrap (touched by Finding 1 if egress list needs to reach plugin sources)
+- <RepoFile path="docker/construct/install-claude-plugins.sh" /> — plugin bootstrap (touched by Finding 1 if egress list needs to reach plugin sources)
 - <RepoFile path="docker/construct/zshrc" /> — shell hooks (touched by Finding 4)
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — runtime orchestration (touched by Finding 1)
 - <RepoFile path="src/runtime/launch.rs" /> — mount and capability wiring (touched by Findings 1 and 4)

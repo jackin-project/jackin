@@ -8,7 +8,7 @@ import { Aside } from '@astrojs/starlight/components'
 
 ## What is the construct?
 
-`projectjackin/construct:trixie` is the shared base Docker image for every agent — the foundation layer that every agent class extends. It provides system tools, shell environment, and container infrastructure, kept in one image so every agent inherits the same baseline.
+`projectjackin/construct:trixie` is the shared base Docker image for every agent — the foundation layer that every role extends. It provides system tools, shell environment, and container infrastructure, kept in one image so every agent inherits the same baseline.
 
 Every agent Dockerfile starts from the construct:
 
@@ -30,7 +30,7 @@ The construct is built on **Debian Trixie** and includes:
 | `curl` | HTTP client |
 | `jq` + `yq` | JSON and YAML processors |
 | `openssh-client` | SSH for git operations |
-| `sudo` | Privilege escalation (passwordless for claude user) |
+| `sudo` | Privilege escalation (passwordless for agent user) |
 | `tree` | Directory visualization |
 
 ### Search tools
@@ -52,8 +52,8 @@ The construct is built on **Debian Trixie** and includes:
 
 ### User environment
 
-The construct creates a `claude` user with:
-- Home directory at `/home/claude`
+The construct creates an `agent` user with:
+- Home directory at `/home/agent`
 - Zsh as the default shell
 - Passwordless sudo access
 - Oh My Zsh with autosuggestions plugin
@@ -129,21 +129,21 @@ The published tags are:
 
 When you load an agent, jackin' doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
 
-1. **User remapping** — adjusts the `claude` user's UID/GID to match your host user
-2. **Claude Code installation** — installs the Claude Code CLI
-3. **Runtime entrypoint** — the script that configures git, wires up GitHub if `gh` is already authenticated (it does not perform `gh auth login` — an unauthenticated `gh` is left alone with a notice), installs plugins, and launches Claude
-4. **Plugin installation** — any Claude plugins declared in the agent manifest
+1. **User remapping** — adjusts the `agent` user's UID/GID to match your host user
+2. **Agent installation** — installs every agent declared in the role manifest
+3. **Runtime entrypoint** — the script that configures git, wires up GitHub if `gh` is already authenticated (it does not perform `gh auth login` — an unauthenticated `gh` is left alone with a notice), dispatches agent setup, and launches the selected agent
+4. **Plugin installation** — any Claude plugins declared in the role manifest when launching the Claude agent
 
 <Aside type="note">
-Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Passing `--rebuild` additionally invalidates the Claude installation layer so the build picks up a newer Claude version.
+Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Passing `--rebuild` additionally invalidates agent installation layers so the build picks up newer agent CLI downloads.
 </Aside>
 ## Extending the construct
 
-Agent repos add their tools on top of the construct. The construct provides the foundation — agents provide the specialization:
+Role repos add their tools on top of the construct. The construct provides the foundation — agents provide the specialization:
 
 ```
 ┌─────────────────────────────────┐
-│  Derived Layer (jackin-managed) │  Claude Code, entrypoint, user mapping
+│  Derived Layer (jackin-managed) │  Agent CLIs, entrypoint, user mapping
 ├─────────────────────────────────┤
 │  Agent Layer (your Dockerfile)  │  Rust, Node, Python, custom tools
 ├─────────────────────────────────┤

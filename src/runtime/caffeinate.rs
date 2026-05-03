@@ -5,7 +5,7 @@
 //! running, jackin keeps a single detached `caffeinate -imsu` alive
 //! so the host stays awake; when the last such container stops, the
 //! assertion is released. The motivating use case is
-//! `/remote-control` sessions — agents working in the background that
+//! `/remote-control` sessions — roles working in the background that
 //! should remain reachable even when the operator steps away from
 //! the keyboard.
 //!
@@ -16,7 +16,7 @@
 //!
 //! 1. Acquire an exclusive lock on `<data_dir>/caffeinate.lock` so two
 //!    parallel jackin invocations don't both spawn / both kill.
-//! 2. Count agent containers labelled `jackin.keep_awake=true`.
+//! 2. Count role containers labelled `jackin.keep_awake=true`.
 //! 3. Read `<data_dir>/caffeinate.pid`; treat the recorded PID as
 //!    "running" only when `ps -p <pid> -o comm=` reports `caffeinate`.
 //!    Matching on the process basename (not just PID liveness via
@@ -49,7 +49,7 @@ const PID_FILENAME: &str = "caffeinate.pid";
 const LOCK_FILENAME: &str = "caffeinate.lock";
 
 /// Bring the caffeinate process in line with the running keep-awake
-/// agents.
+/// roles.
 ///
 /// Best-effort: any failure (lock contention, docker failure, fork
 /// failure) is swallowed with a one-line stderr notice so it never
@@ -171,8 +171,8 @@ fn remove_pid_file_if_present(path: &Path) -> anyhow::Result<()> {
     }
 }
 
-/// Count agent containers carrying the `jackin.keep_awake=true` label.
-/// Stopped containers are excluded — only an actually-running agent
+/// Count role containers carrying the `jackin.keep_awake=true` label.
+/// Stopped containers are excluded — only an actually-running role
 /// justifies holding the assertion.
 ///
 /// The `FILTER_MANAGED` co-filter scopes the count to containers
@@ -198,7 +198,7 @@ fn count_keep_awake_agents(runner: &mut impl CommandRunner) -> anyhow::Result<us
     )?;
     // `trim().is_empty()` (vs `is_empty()`) is defensive against stray
     // whitespace lines — a `\r` or space-prefixed entry would
-    // otherwise inflate the count and pin caffeinate when no agents
+    // otherwise inflate the count and pin caffeinate when no roles
     // are actually running.
     Ok(output.lines().filter(|l| !l.trim().is_empty()).count())
 }
@@ -364,7 +364,7 @@ fn spawn_caffeinate(runner: &mut impl CommandRunner) -> anyhow::Result<u32> {
 fn stop_caffeinate(runner: &mut impl CommandRunner, pid: u32) -> anyhow::Result<()> {
     // Routed through `CommandRunner` for the same reason as the spawn:
     // `--debug` must show the kill so operators can correlate the
-    // teardown with the agent exit. `capture` (vs `run`) folds the
+    // teardown with the role exit. `capture` (vs `run`) folds the
     // kill's stderr into the error message — preserving the prior
     // behaviour where `ESRCH`/`EPERM` text reached the breadcrumb.
     runner

@@ -22,7 +22,7 @@ This works but conflates two concerns: `DOCKER_HOST` is semantically about Docke
 
 - **Common pattern**: Any agent using docker-compose with port-mapped services (PostgreSQL, Redis, RabbitMQ) needs the DinD hostname to connect from the agent container
 - **Fragility**: Parsing `DOCKER_HOST` breaks if jackin changes transport (e.g., TLS with different port, socket mounting)
-- **Discoverability**: Agent authors must know `DOCKER_HOST` exists and understand its format. A `JACKIN_*` env var is self-documenting alongside `JACKIN_CLAUDE_ENV`
+- **Discoverability**: Agent authors must know `DOCKER_HOST` exists and understand its format. A `JACKIN_*` env var is self-documenting alongside `JACKIN`
 
 ## Proposal
 
@@ -58,4 +58,4 @@ export POSTGRESQL_DB_HOST="$JACKIN_DIND_HOSTNAME"
 
 - <RepoFile path="src/runtime/launch.rs" /> — where `DOCKER_HOST` is constructed and passed to the container
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — runtime setup (no changes needed)
-- <RepoFile path="src/env_model.rs" /> — reserved-runtime-env list including `JACKIN_CLAUDE_ENV` (and precedent for additional `JACKIN_*` reservations)
+- <RepoFile path="src/env_model.rs" /> — reserved-runtime-env list including `JACKIN` (and precedent for additional `JACKIN_*` reservations)
