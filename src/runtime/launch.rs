@@ -1570,9 +1570,7 @@ plugins = []
         std::fs::write(
             manifest_temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["codex"]
+agents = ["codex"]
 
 [codex]
 "#,
@@ -2248,9 +2246,7 @@ trusted = true
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["claude", "codex"]
+agents = ["claude", "codex"]
 
 [claude]
 plugins = ["code-review@claude-plugins-official"]
@@ -2326,9 +2322,7 @@ trusted = true
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["codex"]
+agents = ["codex"]
 
 [codex]
 "#,

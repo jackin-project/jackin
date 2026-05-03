@@ -217,9 +217,7 @@ plugins = []
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["codex"]
+agents = ["codex"]
 
 [codex]
 "#,

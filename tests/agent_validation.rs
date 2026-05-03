@@ -7,9 +7,7 @@ fn rejects_supported_agent_without_corresponding_table() {
     std::fs::write(
         temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["claude", "codex"]
+agents = ["claude", "codex"]
 
 [claude]
 plugins = []
@@ -57,9 +55,7 @@ fn codex_only_manifest_with_codex_table_passes() {
     std::fs::write(
         temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["codex"]
+agents = ["codex"]
 
 [codex]
 "#,

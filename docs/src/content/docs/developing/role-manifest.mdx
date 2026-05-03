@@ -15,12 +15,10 @@ jackin' enforces **strict parsing** — unknown fields are rejected with an erro
 
 ```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
 
 [identity]
 name = "The Architect"
-
-[agent]
-supported = ["claude", "codex"]
 
 [claude]
 plugins = [
@@ -60,6 +58,7 @@ default = "feature/${env.PROJECT}"
 | Field | Required | Description |
 |---|---|---|
 | `dockerfile` | Yes | Relative path to the Dockerfile within the repo |
+| `agents` | No | Non-empty list of agent slugs this role supports: `"claude"` or `"codex"`. When omitted, jackin treats the manifest as Claude-only. |
 
 The Dockerfile path must:
 
@@ -68,21 +67,11 @@ The Dockerfile path must:
 - Point to a valid Dockerfile
 - Have a final stage that starts with `FROM projectjackin/construct:trixie`
 
-## `[agent]`
-
-The optional `[agent]` table declares which AI agents this role can run. When omitted, jackin treats the manifest as Claude-only.
-
-| Field | Required | Description |
-|---|---|---|
-| `supported` | Yes | Non-empty list of agent slugs: `"claude"` or `"codex"` |
-
-Every agent listed in `supported` must have a matching table, even when that table is empty. A manifest with `supported = ["claude", "codex"]` needs both `[claude]` and `[codex]`.
+Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex"]` needs both `[claude]` and `[codex]`.
 
 ```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
-
-[agent]
-supported = ["claude", "codex"]
+agents = ["claude", "codex"]
 
 [claude]
 plugins = []
@@ -123,7 +112,7 @@ Each `[[claude.marketplaces]]` block maps to `claude plugin marketplace add <sou
 
 ## `[codex]`
 
-The `[codex]` table is required when `"codex"` appears in `[agent].supported`.
+The `[codex]` table is required when `"codex"` appears in `agents`.
 
 | Field | Required | Description |
 |---|---|---|
@@ -131,9 +120,7 @@ The `[codex]` table is required when `"codex"` appears in `[agent].supported`.
 
 ```toml [jackin.role.toml]
 dockerfile = "Dockerfile"
-
-[agent]
-supported = ["codex"]
+agents = ["codex"]
 
 [codex]
 model = "gpt-5"
@@ -239,7 +226,7 @@ Declare environment variables that the agent needs at runtime. Each variable is 
 
 jackin sets these variables automatically inside the container. Do not declare either of them in `[env]`.
 
-- `JACKIN=jackin` marks that the process is running inside a jackin-managed runtime.
+- `JACKIN=1` marks that the process is running inside a jackin-managed runtime.
 - `JACKIN_DIND_HOSTNAME` is the hostname agents should use to reach published services started via the Docker-in-Docker daemon.
 
 ### Interactive text input

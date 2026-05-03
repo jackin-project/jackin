@@ -13,8 +13,12 @@ pub struct RoleManifest {
     pub dockerfile: String,
     #[serde(default)]
     pub identity: Option<IdentityConfig>,
+    /// Top-level list of supported agents. `None` means the field
+    /// was omitted, which `supported_agents()` treats as the legacy
+    /// claude-only default. `Some(empty)` is rejected by validate
+    /// as a user error.
     #[serde(default)]
-    pub agent: Option<AgentConfig>,
+    pub agents: Option<Vec<crate::agent::Agent>>,
     #[serde(default)]
     pub claude: Option<ClaudeConfig>,
     #[serde(default)]
@@ -23,12 +27,6 @@ pub struct RoleManifest {
     pub hooks: Option<HooksConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, EnvVarDecl>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentConfig {
-    pub supported: Vec<crate::agent::Agent>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -99,7 +97,7 @@ impl ManifestWarning {
 }
 
 impl RoleManifest {
-    /// Parse `jackin.role.toml` and enforce the [agent]/[<agent>] table
+    /// Parse `jackin.role.toml` and enforce the `agents`/[<agent>] table
     /// consistency rules.
     ///
     /// `validate_agent_consistency` runs here (not just inside the
@@ -126,12 +124,11 @@ impl RoleManifest {
     }
 
     /// Returns the agents this manifest supports. Legacy manifests
-    /// without a `[agent]` table default to claude-only.
+    /// without an `agents` field default to claude-only.
     pub fn supported_agents(&self) -> Vec<crate::agent::Agent> {
-        self.agent.as_ref().map_or_else(
-            || vec![crate::agent::Agent::Claude],
-            |h| h.supported.clone(),
-        )
+        self.agents
+            .clone()
+            .unwrap_or_else(|| vec![crate::agent::Agent::Claude])
     }
 }
 
@@ -141,14 +138,12 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn loads_manifest_with_agent_table() {
+    fn loads_manifest_with_agents_field() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["claude", "codex"]
+agents = ["claude", "codex"]
 
 [claude]
 plugins = []
@@ -167,7 +162,7 @@ plugins = []
     }
 
     #[test]
-    fn legacy_manifest_without_agent_table_defaults_to_claude_only() {
+    fn legacy_manifest_without_agents_field_defaults_to_claude_only() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
@@ -189,9 +184,7 @@ plugins = []
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["codex"]
+agents = ["codex"]
 
 [codex]
 model = "gpt-5"
@@ -210,9 +203,7 @@ model = "gpt-5"
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["claude", "amp"]
+agents = ["claude", "amp"]
 
 [claude]
 plugins = []

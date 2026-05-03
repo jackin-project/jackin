@@ -960,9 +960,7 @@ mod codex_auth_tests {
             temp.path().join("jackin.role.toml"),
             format!(
                 r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["codex"]
+agents = ["codex"]
 
 {codex_section}"#
             ),

@@ -9,46 +9,46 @@ pub(super) fn is_valid_env_var_name(name: &str) -> bool {
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-/// Validate the [agent] / [<agent>] table consistency.
+/// Validate the `agents` / [<agent>] table consistency.
 ///
 /// Rules enforced (hard errors):
-/// - If [agent] is present, supported must be non-empty.
-/// - For every agent H in supported, the corresponding [H] table
+/// - If `agents` is present, it must be non-empty.
+/// - For every agent A in `agents`, the corresponding [A] table
 ///   must exist (even if empty), so consumers like
 ///   `instance/mod.rs::prepare` can rely on the table being non-`None`
 ///   when launching that agent without a runtime check.
-/// - Without an [agent] table, the manifest must declare [claude]
+/// - Without an `agents` field, the manifest must declare [claude]
 ///   (legacy default; `supported_agents()` returns `[Claude]`).
 ///
 /// Also surfaces an orphan-table warning (non-fatal): if a `[claude]`
 /// or `[codex]` table is populated but the corresponding agent isn't
-/// listed in `[agent].supported`, the table is dead config — every
-/// runtime path skips it. Authors editing manifests by hand routinely
-/// add `[codex] model = "..."` first and forget the `[agent]
-/// supported = [...]` declaration; without this signal they'd have
-/// to debug "agent does not support codex" at load time and figure
-/// out the connection themselves.
+/// listed in `agents`, the table is dead config — every runtime path
+/// skips it. Authors editing manifests by hand routinely add
+/// `[codex] model = "..."` first and forget the `agents = [...]`
+/// declaration; without this signal they'd have to debug "agent does
+/// not support codex" at load time and figure out the connection
+/// themselves.
 pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec<ManifestWarning>> {
     use crate::agent::Agent;
 
     let supported = manifest.supported_agents();
 
-    if let Some(h) = &manifest.agent
-        && h.supported.is_empty()
+    if let Some(list) = &manifest.agents
+        && list.is_empty()
     {
-        anyhow::bail!("[agent].supported must not be empty");
+        anyhow::bail!("`agents` must not be empty");
     }
 
     for h in &supported {
         match h {
             Agent::Claude => {
                 if manifest.claude.is_none() {
-                    anyhow::bail!("[claude] table required when claude is in [agent].supported");
+                    anyhow::bail!("[claude] table required when claude is in `agents`");
                 }
             }
             Agent::Codex => {
                 if manifest.codex.is_none() {
-                    anyhow::bail!("[codex] table required when codex is in [agent].supported");
+                    anyhow::bail!("[codex] table required when codex is in `agents`");
                 }
             }
         }
@@ -56,20 +56,20 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec
 
     let mut warnings = Vec::new();
 
-    // Only meaningful when [agent] is explicit — legacy manifests
-    // (no [agent] block) implicitly default to claude-only and have
+    // Only meaningful when `agents` is explicit — legacy manifests
+    // (no `agents` field) implicitly default to claude-only and have
     // their own coverage rule above.
-    if manifest.agent.is_some() {
+    if manifest.agents.is_some() {
         if manifest.codex.is_some() && !supported.contains(&Agent::Codex) {
             warnings.push(ManifestWarning::new(
-                "[codex] table is present but [agent].supported does not include codex; \
-                 the table is ignored — add codex to [agent].supported to enable it.",
+                "[codex] table is present but `agents` does not include codex; \
+                 the table is ignored — add codex to `agents` to enable it.",
             ));
         }
         if manifest.claude.is_some() && !supported.contains(&Agent::Claude) {
             warnings.push(ManifestWarning::new(
-                "[claude] table is present but [agent].supported does not include claude; \
-                 the table is ignored — add claude to [agent].supported to enable it.",
+                "[claude] table is present but `agents` does not include claude; \
+                 the table is ignored — add claude to `agents` to enable it.",
             ));
         }
     }
@@ -240,9 +240,7 @@ mod tests {
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = []
+agents = []
 
 [claude]
 plugins = []
@@ -260,9 +258,7 @@ plugins = []
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["claude", "codex"]
+agents = ["claude", "codex"]
 
 [claude]
 plugins = []
@@ -292,19 +288,16 @@ plugins = []
     }
 
     /// Pin the orphan-codex-table warning: a manifest with `[codex]`
-    /// populated but codex absent from `[agent].supported` is dead
-    /// config, and the operator gets a warning that points at the
-    /// fix instead of having to debug "agent does not support codex"
-    /// at load time.
+    /// populated but codex absent from `agents` is dead config, and
+    /// the operator gets a warning that points at the fix instead of
+    /// having to debug "agent does not support codex" at load time.
     #[test]
     fn warns_when_codex_table_present_without_codex_in_supported() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["claude"]
+agents = ["claude"]
 
 [claude]
 plugins = []
@@ -322,16 +315,14 @@ model = "gpt-5"
     }
 
     /// Symmetric warning for the rare reverse case: `[claude]` populated
-    /// but claude absent from `[agent].supported`.
+    /// but claude absent from `agents`.
     #[test]
     fn warns_when_claude_table_present_without_claude_in_supported() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-
-[agent]
-supported = ["codex"]
+agents = ["codex"]
 
 [claude]
 plugins = []
