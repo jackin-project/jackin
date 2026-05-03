@@ -1,23 +1,39 @@
-pub use crate::env_model::{
-    JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_RUNTIME_ENV_NAME, JACKIN_RUNTIME_ENV_VALUE,
-};
+pub use crate::env_model::{JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_ENV_NAME, JACKIN_ENV_VALUE};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-mod validate;
+pub mod validate;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct AgentManifest {
+pub struct RoleManifest {
     pub dockerfile: String,
     #[serde(default)]
     pub identity: Option<IdentityConfig>,
-    pub claude: ClaudeConfig,
+    /// Top-level list of supported agents. `None` means the field
+    /// was omitted, which `supported_agents()` treats as the legacy
+    /// claude-only default. `Some(empty)` is rejected by validate
+    /// as a user error.
+    #[serde(default)]
+    pub agents: Option<Vec<crate::agent::Agent>>,
+    #[serde(default)]
+    pub claude: Option<ClaudeConfig>,
+    #[serde(default)]
+    pub codex: Option<CodexConfig>,
     #[serde(default)]
     pub hooks: Option<HooksConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, EnvVarDecl>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CodexConfig {
+    /// Optional model override; passed into the generated config.toml
+    /// when present, otherwise Codex's own default is used.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -70,17 +86,47 @@ pub struct ManifestWarning {
     pub message: String,
 }
 
-impl AgentManifest {
+impl ManifestWarning {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl RoleManifest {
+    /// Parse `jackin.role.toml` and enforce the `agents`/[<agent>] table
+    /// consistency rules.
+    ///
+    /// `validate_agent_consistency` runs here (not just inside the
+    /// fuller `validate()`) so any caller that loads a manifest gets
+    /// a structurally + semantically valid value: consumers like
+    /// `instance/mod.rs::prepare` can dereference `manifest.codex` /
+    /// `manifest.claude` without re-checking. Env-var validation,
+    /// interpolation cycle detection, and the rest of `validate()`
+    /// still need to be called explicitly because they produce
+    /// warnings the load path can't surface — but the invariants
+    /// other code unconditionally relies on are pinned at load time.
     pub fn load(repo_dir: &Path) -> anyhow::Result<Self> {
-        let manifest_path = repo_dir.join("jackin.agent.toml");
+        let manifest_path = repo_dir.join("jackin.role.toml");
         let contents = std::fs::read_to_string(&manifest_path)?;
-        Ok(toml::from_str(&contents)?)
+        let manifest: Self = toml::from_str(&contents)?;
+        let _warnings = crate::manifest::validate::validate_agent_consistency(&manifest)?;
+        Ok(manifest)
     }
 
     pub fn display_name(&self, fallback: &str) -> String {
         self.identity
             .as_ref()
             .map_or_else(|| fallback.to_string(), |id| id.name.clone())
+    }
+
+    /// Returns the agents this manifest supports. Legacy manifests
+    /// without an `agents` field default to claude-only.
+    pub fn supported_agents(&self) -> Vec<crate::agent::Agent> {
+        self.agents
+            .clone()
+            .unwrap_or_else(|| vec![crate::agent::Agent::Claude])
     }
 }
 
@@ -90,10 +136,88 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn loads_manifest_with_agents_field() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+        )
+        .unwrap();
+
+        let m = RoleManifest::load(temp.path()).unwrap();
+        assert_eq!(
+            m.supported_agents(),
+            vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
+        );
+        assert!(m.codex.is_some());
+    }
+
+    #[test]
+    fn legacy_manifest_without_agents_field_defaults_to_claude_only() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let m = RoleManifest::load(temp.path()).unwrap();
+        assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Claude]);
+    }
+
+    #[test]
+    fn loads_codex_only_manifest() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+model = "gpt-5"
+"#,
+        )
+        .unwrap();
+
+        let m = RoleManifest::load(temp.path()).unwrap();
+        assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Codex]);
+        assert_eq!(m.codex.as_ref().unwrap().model.as_deref(), Some("gpt-5"));
+    }
+
+    #[test]
+    fn rejects_unknown_agent_name() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["claude", "amp"]
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        assert!(err.to_string().contains("amp") || err.to_string().contains("unknown"));
+    }
+
+    #[test]
     fn loads_manifest_with_plugins() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -102,11 +226,11 @@ plugins = ["code-review@claude-plugins-official"]
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         assert_eq!(manifest.dockerfile, "Dockerfile");
-        assert!(manifest.claude.marketplaces.is_empty());
-        assert_eq!(manifest.claude.plugins.len(), 1);
+        assert!(manifest.claude.as_ref().unwrap().marketplaces.is_empty());
+        assert_eq!(manifest.claude.as_ref().unwrap().plugins.len(), 1);
         assert!(manifest.identity.is_none());
     }
 
@@ -114,7 +238,7 @@ plugins = ["code-review@claude-plugins-official"]
     fn loads_manifest_with_marketplaces_and_plugins() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -127,15 +251,15 @@ sparse = ["plugins", ".claude-plugin"]
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         assert_eq!(
-            manifest.claude.plugins,
+            manifest.claude.as_ref().unwrap().plugins,
             vec!["superpowers@superpowers-marketplace"]
         );
-        assert_eq!(manifest.claude.marketplaces.len(), 1);
+        assert_eq!(manifest.claude.as_ref().unwrap().marketplaces.len(), 1);
         assert_eq!(
-            manifest.claude.marketplaces[0],
+            manifest.claude.as_ref().unwrap().marketplaces[0],
             ClaudeMarketplaceConfig {
                 source: "obra/superpowers-marketplace".to_string(),
                 sparse: vec!["plugins".to_string(), ".claude-plugin".to_string()],
@@ -147,7 +271,7 @@ sparse = ["plugins", ".claude-plugin"]
     fn loads_manifest_marketplace_without_sparse() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -159,24 +283,24 @@ source = "jackin-project/jackin-marketplace"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
-        assert_eq!(manifest.claude.marketplaces.len(), 1);
+        assert_eq!(manifest.claude.as_ref().unwrap().marketplaces.len(), 1);
         assert_eq!(
-            manifest.claude.marketplaces[0],
+            manifest.claude.as_ref().unwrap().marketplaces[0],
             ClaudeMarketplaceConfig {
                 source: "jackin-project/jackin-marketplace".to_string(),
                 sparse: vec![],
             }
         );
-        assert!(manifest.claude.plugins.is_empty());
+        assert!(manifest.claude.as_ref().unwrap().plugins.is_empty());
     }
 
     #[test]
     fn loads_manifest_without_plugins_defaults_to_empty() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -187,17 +311,17 @@ source = "obra/superpowers-marketplace"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
-        assert!(manifest.claude.plugins.is_empty());
-        assert_eq!(manifest.claude.marketplaces.len(), 1);
+        assert!(manifest.claude.as_ref().unwrap().plugins.is_empty());
+        assert_eq!(manifest.claude.as_ref().unwrap().marketplaces.len(), 1);
     }
 
     #[test]
     fn loads_manifest_with_identity() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [identity]
@@ -209,7 +333,7 @@ plugins = []
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         assert_eq!(manifest.identity.as_ref().unwrap().name, "Agent Smith");
     }
@@ -218,7 +342,7 @@ plugins = []
     fn display_name_uses_identity_when_present() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [identity]
@@ -230,16 +354,16 @@ plugins = []
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         assert_eq!(manifest.display_name("agent-smith"), "Agent Smith");
     }
 
     #[test]
-    fn display_name_falls_back_to_class_name() {
+    fn display_name_falls_back_to_role_name() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -248,7 +372,7 @@ plugins = []
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         assert_eq!(manifest.display_name("agent-smith"), "agent-smith");
     }
@@ -257,7 +381,7 @@ plugins = []
     fn rejects_unknown_top_level_field() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 unknown_field = true
 
@@ -267,7 +391,7 @@ plugins = []
         )
         .unwrap();
 
-        let error = AgentManifest::load(temp.path()).unwrap_err();
+        let error = RoleManifest::load(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("unknown field"));
     }
@@ -276,7 +400,7 @@ plugins = []
     fn rejects_unknown_claude_field() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -286,7 +410,7 @@ typo = "oops"
         )
         .unwrap();
 
-        let error = AgentManifest::load(temp.path()).unwrap_err();
+        let error = RoleManifest::load(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("unknown field"));
     }
@@ -295,7 +419,7 @@ typo = "oops"
     fn rejects_unknown_identity_field() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [identity]
@@ -308,7 +432,7 @@ plugins = []
         )
         .unwrap();
 
-        let error = AgentManifest::load(temp.path()).unwrap_err();
+        let error = RoleManifest::load(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("unknown field"));
     }
@@ -317,7 +441,7 @@ plugins = []
     fn loads_manifest_with_hooks() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -329,7 +453,7 @@ pre_launch = "hooks/pre-launch.sh"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         assert_eq!(
             manifest.hooks.as_ref().unwrap().pre_launch.as_deref(),
@@ -341,7 +465,7 @@ pre_launch = "hooks/pre-launch.sh"
     fn loads_manifest_without_hooks() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -350,7 +474,7 @@ plugins = []
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         assert!(manifest.hooks.is_none());
     }
@@ -359,7 +483,7 @@ plugins = []
     fn rejects_unknown_hooks_field() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -372,7 +496,7 @@ post_launch = "bad"
         )
         .unwrap();
 
-        let error = AgentManifest::load(temp.path()).unwrap_err();
+        let error = RoleManifest::load(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("unknown field"));
     }
@@ -381,7 +505,7 @@ post_launch = "bad"
     fn loads_manifest_with_static_env() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -393,7 +517,7 @@ default = "docker"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         assert_eq!(manifest.env.len(), 1);
         let var = &manifest.env["RUNTIME"];
@@ -405,7 +529,7 @@ default = "docker"
     fn loads_manifest_with_interactive_env() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -419,7 +543,7 @@ options = ["project1", "project2"]
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         let var = &manifest.env["PROJECT"];
         assert!(var.interactive);
@@ -431,7 +555,7 @@ options = ["project1", "project2"]
     fn loads_manifest_with_env_depends_on() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -450,7 +574,7 @@ prompt = "Branch:"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         let var = &manifest.env["BRANCH"];
         assert_eq!(var.depends_on, vec!["env.PROJECT"]);
@@ -460,7 +584,7 @@ prompt = "Branch:"
     fn loads_manifest_with_skippable_env() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -474,7 +598,7 @@ prompt = "API key (optional):"
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         let var = &manifest.env["API_KEY"];
         assert!(var.skippable);
@@ -484,7 +608,7 @@ prompt = "API key (optional):"
     fn loads_manifest_without_env() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -493,7 +617,7 @@ plugins = []
         )
         .unwrap();
 
-        let manifest = AgentManifest::load(temp.path()).unwrap();
+        let manifest = RoleManifest::load(temp.path()).unwrap();
 
         assert!(manifest.env.is_empty());
     }
@@ -502,7 +626,7 @@ plugins = []
     fn rejects_unknown_env_field() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -515,7 +639,7 @@ typo = true
         )
         .unwrap();
 
-        let error = AgentManifest::load(temp.path()).unwrap_err();
+        let error = RoleManifest::load(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("unknown field"));
     }

@@ -1,5 +1,5 @@
 use crate::config::AuthForwardMode;
-use crate::manifest::AgentManifest;
+use crate::manifest::RoleManifest;
 use crate::paths::JackinPaths;
 use std::path::{Path, PathBuf};
 
@@ -27,54 +27,151 @@ pub enum AuthProvisionOutcome {
     TokenMode,
 }
 
+/// Agent-specific paths that belong to one variant.
+///
+/// Encoded as an enum so the agent variant and the actual paths can
+/// never disagree — the previous shape (`Option<PathBuf>` plus a
+/// runtime invariant "Some iff agent == Codex" enforced by `expect()`
+/// across two functions) is now a compile-checked match.
 #[derive(Debug, Clone)]
-pub struct AgentState {
-    pub root: PathBuf,
-    pub claude_dir: PathBuf,
-    pub claude_json: PathBuf,
-    pub jackin_dir: PathBuf,
-    pub plugins_json: PathBuf,
-    pub gh_config_dir: PathBuf,
+#[non_exhaustive]
+pub enum AgentRuntimeState {
+    Claude {
+        /// Host path mounted at `/home/agent/.claude` (session state).
+        state_dir: PathBuf,
+        /// Host path mounted at `/home/agent/.claude.json` (account metadata).
+        account_json: PathBuf,
+        /// Host path mounted at `/home/agent/.jackin/plugins.json:ro`.
+        plugins_json: PathBuf,
+    },
+    Codex {
+        /// Host path mounted at `/home/agent/.codex/config.toml`.
+        config_toml: PathBuf,
+    },
 }
 
-impl AgentState {
+#[derive(Debug, Clone)]
+pub struct RoleState {
+    pub root: PathBuf,
+    pub jackin_dir: PathBuf,
+    pub gh_config_dir: PathBuf,
+    pub agent_runtime: AgentRuntimeState,
+}
+
+impl RoleState {
+    /// Host path to Claude's session-state directory (mounted at
+    /// `/home/agent/.claude` in the container). `None` if this state
+    /// was not prepared for `Agent::Claude`.
+    #[must_use]
+    pub fn claude_state_dir(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Claude { state_dir, .. } => Some(state_dir),
+            AgentRuntimeState::Codex { .. } => None,
+        }
+    }
+
+    /// Host path to Claude's account-metadata file (mounted at
+    /// `/home/agent/.claude.json` in the container). `None` if this
+    /// state was not prepared for `Agent::Claude`.
+    #[must_use]
+    pub fn claude_account_json(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Claude { account_json, .. } => Some(account_json),
+            AgentRuntimeState::Codex { .. } => None,
+        }
+    }
+
+    /// Host path to the Claude plugins manifest (mounted at
+    /// `/home/agent/.jackin/plugins.json` in the container). `None`
+    /// if this state was not prepared for `Agent::Claude`.
+    #[must_use]
+    pub fn claude_plugins_json(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Claude { plugins_json, .. } => Some(plugins_json),
+            AgentRuntimeState::Codex { .. } => None,
+        }
+    }
+
+    /// Host path to Codex's `config.toml` (mounted at
+    /// `/home/agent/.codex/config.toml` in the container). `None`
+    /// if this state was not prepared for `Agent::Codex`.
+    #[must_use]
+    pub fn codex_config_toml(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Codex { config_toml } => Some(config_toml),
+            AgentRuntimeState::Claude { .. } => None,
+        }
+    }
+}
+
+impl RoleState {
     pub fn prepare(
         paths: &JackinPaths,
         container_name: &str,
-        manifest: &AgentManifest,
+        manifest: &RoleManifest,
         auth_forward: AuthForwardMode,
         host_home: &Path,
+        agent: crate::agent::Agent,
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
-        let claude_dir = root.join(".claude");
-        let claude_json = root.join(".claude.json");
         let jackin_dir = root.join(".jackin");
-        let plugins_json = jackin_dir.join("plugins.json");
         let gh_config_dir = root.join(".config/gh");
 
-        std::fs::create_dir_all(&claude_dir)?;
         std::fs::create_dir_all(&jackin_dir)?;
         std::fs::create_dir_all(&gh_config_dir)?;
 
-        let outcome =
-            Self::provision_claude_auth(&claude_json, &claude_dir, auth_forward, host_home)?;
+        let (agent_runtime, outcome) = match agent {
+            crate::agent::Agent::Claude => {
+                let claude_dir = root.join("claude");
+                let state_dir = claude_dir.join("state");
+                let account_json = claude_dir.join("account.json");
+                let plugins_json = claude_dir.join("plugins.json");
 
-        std::fs::write(
-            &plugins_json,
-            serde_json::to_string_pretty(&PluginState {
-                marketplaces: &manifest.claude.marketplaces,
-                plugins: &manifest.claude.plugins,
-            })?,
-        )?;
+                std::fs::create_dir_all(&state_dir)?;
+
+                let outcome = Self::provision_claude_auth(
+                    &account_json,
+                    &state_dir,
+                    auth_forward,
+                    host_home,
+                )?;
+
+                if let Some(claude_cfg) = manifest.claude.as_ref() {
+                    std::fs::write(
+                        &plugins_json,
+                        serde_json::to_string_pretty(&PluginState {
+                            marketplaces: &claude_cfg.marketplaces,
+                            plugins: &claude_cfg.plugins,
+                        })?,
+                    )?;
+                }
+                (
+                    AgentRuntimeState::Claude {
+                        state_dir,
+                        account_json,
+                        plugins_json,
+                    },
+                    outcome,
+                )
+            }
+            crate::agent::Agent::Codex => {
+                let codex_dir = root.join("codex");
+                std::fs::create_dir_all(&codex_dir)?;
+                let config_toml = codex_dir.join("config.toml");
+                Self::provision_codex_auth(&config_toml, manifest)?;
+                (
+                    AgentRuntimeState::Codex { config_toml },
+                    AuthProvisionOutcome::Skipped,
+                )
+            }
+        };
 
         Ok((
             Self {
                 root,
-                claude_dir,
-                claude_json,
                 jackin_dir,
-                plugins_json,
                 gh_config_dir,
+                agent_runtime,
             },
             outcome,
         ))
@@ -87,9 +184,9 @@ mod tests {
     use crate::paths::JackinPaths;
     use tempfile::tempdir;
 
-    fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::AgentManifest {
+    fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::RoleManifest {
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -102,7 +199,7 @@ plugins = []
             "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
-        crate::manifest::AgentManifest::load(temp.path()).unwrap()
+        crate::manifest::RoleManifest::load(temp.path()).unwrap()
     }
 
     #[test]
@@ -111,16 +208,83 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
         let manifest = simple_manifest(&temp);
 
-        let (state, _) = AgentState::prepare(
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
-        assert!(state.claude_dir.is_dir());
-        assert_eq!(std::fs::read_to_string(&state.claude_json).unwrap(), "{}");
+        assert!(state.claude_state_dir().unwrap().is_dir());
+        assert_eq!(
+            std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
+            "{}"
+        );
+        assert!(state.codex_config_toml().is_none());
+
+        // Pin the host-side grouped layout: a regression to the legacy
+        // flat shape (.claude/, .claude.json, .jackin/plugins.json at
+        // the data-dir root) would still satisfy the accessor checks
+        // above, since they only look up paths through the enum. These
+        // assertions verify the actual host paths under
+        // `<container>/claude/`.
+        let container_root = paths.data_dir.join("jackin-agent-smith");
+        assert_eq!(
+            state.claude_state_dir().unwrap(),
+            container_root.join("claude").join("state"),
+        );
+        assert_eq!(
+            state.claude_account_json().unwrap(),
+            container_root.join("claude").join("account.json"),
+        );
+        assert_eq!(
+            state.claude_plugins_json().unwrap(),
+            container_root.join("claude").join("plugins.json"),
+        );
+    }
+
+    #[test]
+    fn prepares_codex_state_writes_config_toml_and_skips_plugins_json() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+
+        let manifest = RoleManifest::load(temp.path()).unwrap();
+
+        let (state, outcome) = RoleState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::Ignore,
+            temp.path(),
+            crate::agent::Agent::Codex,
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+        assert!(state.codex_config_toml().is_some());
+        assert!(state.codex_config_toml().unwrap().is_file());
+        // Codex state carries no claude/plugins paths — the typed enum
+        // makes the absence structural rather than a runtime nil.
+        assert!(state.claude_state_dir().is_none());
+        assert!(state.claude_account_json().is_none());
+        assert!(state.claude_plugins_json().is_none());
     }
 }

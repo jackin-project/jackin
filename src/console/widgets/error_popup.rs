@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn required_height_caps_at_15() {
-        let s = ErrorPopupState::new("Save failed", &"word ".repeat(500));
+        let s = ErrorPopupState::new("Save failed", "word ".repeat(500));
         assert!(required_height(&s, 30) <= 15);
     }
 

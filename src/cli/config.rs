@@ -7,32 +7,32 @@ pub enum ConfigCommand {
     /// Manage global mount configurations
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Mount(MountCommand),
-    /// Manage trust for third-party agent sources
+    /// Manage trust for third-party role sources
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Trust(TrustCommand),
     /// Manage Claude Code authentication forwarding from host
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Auth(AuthCommand),
-    /// Manage operator env vars at global and per-agent scope
+    /// Manage operator env vars at global and per-role scope
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(EnvCommand),
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum EnvCommand {
-    /// Set an env var at global or per-agent scope
+    /// Set an env var at global or per-role scope
     ///
-    /// Without `--agent`, writes to the global `[env]` table. With
-    /// `--agent <SELECTOR>`, writes to `[agents.<selector>.env]`. The agent
+    /// Without `--role`, writes to the global `[env]` table. With
+    /// `--role <SELECTOR>`, writes to `[roles.<selector>.env]`. The role
     /// selector is not pre-validated — the table path is written regardless
-    /// of whether that agent is registered, matching `config auth set`.
+    /// of whether that role is registered, matching `config auth set`.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
   jackin config env set API_TOKEN \"op://Personal/api/token\"
-  jackin config env set LOG_LEVEL debug --agent agent-smith
+  jackin config env set LOG_LEVEL debug --role agent-smith
   jackin config env set OPENAI_KEY \"op://Work/OpenAI/key\" --comment \"rotate quarterly\""
     )]
     Set {
@@ -40,14 +40,14 @@ Examples:
         key: String,
         /// Env var value (use `op://...`, `$VAR`, `${VAR}`, or literal)
         value: String,
-        /// Apply to a specific agent instead of globally
+        /// Apply to a specific role instead of globally
         #[arg(long)]
-        agent: Option<String>,
+        role: Option<String>,
         /// Write a TOML comment line above the key
         #[arg(long)]
         comment: Option<String>,
     },
-    /// Unset an env var at global or per-agent scope
+    /// Unset an env var at global or per-role scope
     ///
     /// Idempotent: if the key is not present, prints "KEY not set." and
     /// exits 0 without saving the config.
@@ -57,28 +57,28 @@ Examples:
         after_long_help = "\
 Examples:
   jackin config env unset API_TOKEN
-  jackin config env unset LOG_LEVEL --agent agent-smith"
+  jackin config env unset LOG_LEVEL --role agent-smith"
     )]
     Unset {
         /// Env var name to remove
         key: String,
-        /// Unset from a specific agent instead of globally
+        /// Unset from a specific role instead of globally
         #[arg(long)]
-        agent: Option<String>,
+        role: Option<String>,
     },
-    /// List env vars at global or per-agent scope
+    /// List env vars at global or per-role scope
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
   jackin config env list
-  jackin config env list --agent agent-smith"
+  jackin config env list --role agent-smith"
     )]
     List {
-        /// List vars for a specific agent instead of the global scope
+        /// List vars for a specific role instead of the global scope
         #[arg(long)]
-        agent: Option<String>,
+        role: Option<String>,
     },
 }
 
@@ -87,7 +87,7 @@ pub enum AuthCommand {
     /// Set the authentication forwarding mode
     ///
     /// Controls how the host's Claude Code authentication is made available
-    /// to agent containers.
+    /// to role containers.
     /// Modes: sync (default — overwrite container auth from host on each
     /// launch when host auth exists; preserve container auth when host auth
     /// is absent), ignore (revoke and never forward), token (use a long-lived
@@ -102,15 +102,15 @@ Examples:
   jackin config auth set sync
   jackin config auth set ignore
   jackin config auth set token
-  jackin config auth set sync --agent agent-smith
-  jackin config auth set token --agent chainargos/the-architect"
+  jackin config auth set sync --role agent-smith
+  jackin config auth set token --role chainargos/the-architect"
     )]
     Set {
         /// Authentication forwarding mode: sync, ignore, or token
         mode: String,
-        /// Apply to a specific agent instead of globally
+        /// Apply to a specific role instead of globally
         #[arg(long)]
-        agent: Option<String>,
+        role: Option<String>,
     },
     /// Show the current authentication forwarding mode
     #[command(
@@ -119,24 +119,24 @@ Examples:
         after_long_help = "\
 Examples:
   jackin config auth show
-  jackin config auth show --agent agent-smith"
+  jackin config auth show --role agent-smith"
     )]
     Show {
-        /// Show mode for a specific agent (including inheritance)
+        /// Show mode for a specific role (including inheritance)
         #[arg(long)]
-        agent: Option<String>,
+        role: Option<String>,
     },
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum MountCommand {
-    /// Register a new global mount applied to matching agents
+    /// Register a new global mount applied to matching roles
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
-  jackin config mount add gradle-cache --src ~/.gradle/caches --dst /home/claude/.gradle/caches --readonly
+  jackin config mount add gradle-cache --src ~/.gradle/caches --dst /home/agent/.gradle/caches --readonly
   jackin config mount add secrets --src ~/.chainargos/secrets --dst /secrets --readonly --scope \"chainargos/*\""
     )]
     Add {
@@ -151,7 +151,7 @@ Examples:
         /// Make this mount read-only inside the container
         #[arg(long, default_value_t = false)]
         readonly: bool,
-        /// Apply only to matching agents (e.g. `chainargos/*` or `chainargos/agent-brown`)
+        /// Apply only to matching roles (e.g. `chainargos/*` or `chainargos/agent-brown`)
         #[arg(long)]
         scope: Option<String>,
     },
@@ -178,10 +178,10 @@ Examples:
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum TrustCommand {
-    /// Mark a third-party agent source as trusted
+    /// Mark a third-party role source as trusted
     ///
-    /// Trust controls whether jackin' will build and run an agent without
-    /// prompting.  Untrusted agents require interactive confirmation on
+    /// Trust controls whether jackin' will build and run an role without
+    /// prompting.  Untrusted roles require interactive confirmation on
     /// every load.
     #[command(
         before_help = BANNER,
@@ -191,10 +191,10 @@ Examples:
   jackin config trust grant chainargos/the-architect"
     )]
     Grant {
-        /// Agent class selector (e.g. `chainargos/agent-brown`)
+        /// Role class selector (e.g. `chainargos/agent-brown`)
         selector: String,
     },
-    /// Revoke trust for a third-party agent source
+    /// Revoke trust for a third-party role source
     ///
     /// The next `jackin load` will prompt for confirmation again.
     #[command(
@@ -205,10 +205,10 @@ Examples:
   jackin config trust revoke chainargos/the-architect"
     )]
     Revoke {
-        /// Agent class selector (e.g. `chainargos/agent-brown`)
+        /// Role class selector (e.g. `chainargos/agent-brown`)
         selector: String,
     },
-    /// List all currently trusted agent sources
+    /// List all currently trusted role sources
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     List,
 }
@@ -254,7 +254,7 @@ mod tests {
             "--src",
             "~/.gradle/caches",
             "--dst",
-            "/home/claude/.gradle/caches",
+            "/home/agent/.gradle/caches",
             "--readonly",
             "--scope",
             "chainargos/*",
@@ -373,7 +373,7 @@ mod tests {
         assert!(help.contains("Examples:"));
         assert!(help.contains("jackin config auth set sync"));
         assert!(help.contains("jackin config auth set token"));
-        assert!(help.contains("--agent"));
+        assert!(help.contains("--role"));
     }
 
     #[test]
@@ -403,7 +403,7 @@ mod tests {
             cli.command,
             Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
-                        agent: None,
+                        role: None,
                     }))) if mode == "sync"
         ));
     }
@@ -415,7 +415,7 @@ mod tests {
             cli.command,
             Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
-                        agent: None,
+                        role: None,
                     }))) if mode == "token"
         ));
     }
@@ -428,7 +428,7 @@ mod tests {
             "auth",
             "set",
             "sync",
-            "--agent",
+            "--role",
             "agent-smith",
         ])
         .unwrap();
@@ -436,8 +436,8 @@ mod tests {
             cli.command,
             Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
-                        agent: Some(ref agent),
-                    }))) if mode == "sync" && agent == "agent-smith"
+                        role: Some(ref role),
+                    }))) if mode == "sync" && role == "agent-smith"
         ));
     }
 
@@ -447,7 +447,7 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(Command::Config(ConfigCommand::Auth(AuthCommand::Show {
-                agent: None
+                role: None
             })))
         ));
     }

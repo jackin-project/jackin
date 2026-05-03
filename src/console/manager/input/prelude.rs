@@ -288,8 +288,8 @@ fn reopen_mount_dst_choice(prelude: &mut super::super::state::CreatePreludeState
 #[cfg(test)]
 mod tests {
     //! Create-wizard tests: the prelude's multi-step modal sequence
-    //! (FileBrowserSrc → MountDstChoice → TextInputDst → WorkdirPick →
-    //! TextInputName) and its step-back / Esc semantics.
+    //! (`FileBrowserSrc` → `MountDstChoice` → `TextInputDst` → `WorkdirPick` →
+    //! `TextInputName`) and its step-back / Esc semantics.
     use super::super::super::state::{FileBrowserTarget, Modal};
     use super::super::test_support::key;
     use super::handle_prelude_modal;
@@ -298,7 +298,7 @@ mod tests {
     /// Seed a `CreatePreludeState` whose `MountDstChoice` modal is open
     /// for `src`. Mirrors the state the `FileBrowserSrc::Commit` branch of
     /// `handle_prelude_modal` leaves the prelude in, without needing to
-    /// synthesise a FileBrowser `Commit(path)` event (no public way to do
+    /// synthesise a `FileBrowser` `Commit(path)` event (no public way to do
     /// that cleanly from outside the widget).
     fn prelude_with_browser_committed(
         src: &str,
@@ -401,7 +401,7 @@ mod tests {
         prelude.modal = Some(Modal::MountDstChoice {
             target: FileBrowserTarget::CreateFirstMountSrc,
             state: crate::console::widgets::mount_dst_choice::MountDstChoiceState::new(
-                &home.display().to_string(),
+                home.display().to_string(),
             ),
         });
 

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add Codex as a second selectable harness alongside Claude in jackin, introducing the `harness` concept (workspace-scoped, with CLI override), the per-harness profile abstraction, and atomically renaming the in-container OS user `claude` → `agent` and `/home/claude` → `/home/agent`. After this slice ships, an operator can run `jackin load agent-smith --harness codex` against an agent class whose manifest declares `[harness] supported = ["claude", "codex"]` and have it launch Codex via `OPENAI_API_KEY`.
+**Goal:** Add Codex as a second selectable harness alongside Claude in jackin, introducing the `harness` concept (workspace-scoped, with CLI override), the per-harness profile abstraction, and atomically renaming the in-container OS user `claude` → `agent` and `/home/claude` → `/home/agent`. After this slice ships, an operator can run `jackin load agent-smith --harness codex` against an role whose manifest declares `[harness] supported = ["claude", "codex"]` and have it launch Codex via `OPENAI_API_KEY`.
 
-**Architecture:** Approach B from the spec — `enum Harness { Claude, Codex }` plus a `HarnessProfile` data struct returned by a single `profile(h)` match, plus small per-harness fns for behavior that can't be reduced to data (auth provisioning). One image per agent class with both harnesses installed; `JACKIN_HARNESS` is passed at `docker run` time so the same image serves either harness. Container/image names are unchanged from today; no host data-dir migration. The `agent` user rename is the only operator-visible breaking change and lands atomically with the rest of the slice.
+**Architecture:** Approach B from the spec — `enum Harness { Claude, Codex }` plus a `HarnessProfile` data struct returned by a single `profile(h)` match, plus small per-harness fns for behavior that can't be reduced to data (auth provisioning). One image per role with both harnesses installed; `JACKIN_HARNESS` is passed at `docker run` time so the same image serves either harness. Container/image names are unchanged from today; no host data-dir migration. The `agent` user rename is the only operator-visible breaking change and lands atomically with the rest of the slice.
 
 **Tech Stack:** Rust 1.95.0 (pinned via `rust-toolchain.toml`), `serde` + `toml` for manifest/config, `clap` 4.x for CLI, `cargo-nextest` + `tempfile` for tests, Docker BuildKit (`TARGETARCH` automatic ARG) for multi-arch Codex install, bash for `docker/runtime/entrypoint.sh`.
 
@@ -51,10 +51,10 @@
 | `tests/codex_launch.rs` *(NEW)* | Integration: full Codex launch with mock `CommandRunner`. |
 | `tests/harness_validation.rs` *(NEW)* | Manifest validation edge cases for `[harness]` table. |
 | `tests/*.rs` (existing) | Update `/home/claude` → `/home/agent` assertions. |
-| `docs/src/content/docs/developing/agent-manifest.mdx` | Document `[harness]` table. |
+| `docs/src/content/docs/developing/role-manifest.mdx` | Document `[harness]` table. |
 | `docs/src/content/docs/guides/authentication.mdx` | Codex env-only auth section. |
 | `docs/src/content/docs/reference/architecture.mdx` | Refresh terminology to "harness". |
-| `docs/src/content/docs/developing/creating-agents.mdx` | Multi-harness manifest example. |
+| `docs/src/content/docs/developing/creating-roles.mdx` | Multi-harness manifest example. |
 | `docs/src/content/docs/reference/roadmap/multi-runtime-support.mdx` | Annotate slice as shipped under "harness" terminology. |
 | `DEPRECATED.md` | `/home/claude` mount destinations entry. |
 
@@ -584,7 +584,7 @@ In the same file's `#[cfg(test)]` module:
 fn loads_manifest_with_harness_table() {
     let temp = tempdir().unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -613,7 +613,7 @@ plugins = []
 fn legacy_manifest_without_harness_table_defaults_to_claude_only() {
     let temp = tempdir().unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -633,7 +633,7 @@ plugins = []
 fn loads_codex_only_manifest() {
     let temp = tempdir().unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -657,7 +657,7 @@ model = "gpt-5"
 fn rejects_unknown_harness_name() {
     let temp = tempdir().unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -698,7 +698,7 @@ git add src/manifest/mod.rs
 git commit -s -m "$(cat <<'EOF'
 feat(manifest): add [harness] and [codex] tables
 
-[harness].supported declares which harnesses an agent class can run.
+[harness].supported declares which harnesses an role can run.
 Legacy manifests without [harness] default to claude-only via
 supported_harnesses(). The [claude] table becomes optional in the
 schema; validation (next commit) requires it when Claude is supported.
@@ -790,7 +790,7 @@ If the existing validate.rs has a single `validate(...)` entry point, append `va
 fn rejects_empty_supported_list() {
     let temp = tempdir().unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -811,7 +811,7 @@ plugins = []
 fn rejects_codex_supported_without_codex_table() {
     let temp = tempdir().unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -832,7 +832,7 @@ plugins = []
 fn legacy_manifest_with_claude_passes() {
     let temp = tempdir().unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -862,7 +862,7 @@ git commit -s -m "$(cat <<'EOF'
 feat(manifest): validate harness consistency
 
 Enforces non-empty [harness].supported and the presence of the
-matching [<harness>] table for every harness an agent class
+matching [<harness>] table for every harness an role
 declares as supported. Legacy manifests (no [harness] table) keep
 working as long as [claude] is present.
 
@@ -888,7 +888,7 @@ In `WorkspaceConfig` (around line 37 in the current file), add:
 pub harness: Option<crate::harness::Harness>,
 ```
 
-Place after `default_agent` for consistency with adjacent optional fields.
+Place after `default_role` for consistency with adjacent optional fields.
 
 - [ ] **Step 6.2: Add a helper for resolved harness**
 
@@ -1215,7 +1215,7 @@ itself is unchanged.
 The :trixie tag is rebuilt in place; jackin's derived build picks
 up the new digest via --pull (added in a later commit).
 
-BREAKING CHANGE: agent classes whose Dockerfiles or workspace
+BREAKING CHANGE: roles whose Dockerfiles or workspace
 mount config reference /home/claude/... must update to /home/agent.
 
 Co-authored-by: Claude <noreply@anthropic.com>
@@ -1257,7 +1257,7 @@ USER agent
     // Concatenate per-harness install blocks. Claude, when present,
     // MUST come first so its ARG JACKIN_CACHE_BUST invalidates the
     // layer chain downstream into Codex's RUN. The slice's V1
-    // invariant is "every agent class supports Claude"; if that ever
+    // invariant is "every role supports Claude"; if that ever
     // changes, Codex's profile install_block will need its own
     // ARG JACKIN_CACHE_BUST line.
     let mut install_blocks = String::new();
@@ -1767,7 +1767,7 @@ fn prepares_codex_state_writes_config_toml_and_skips_plugins_json() {
     let paths = JackinPaths::for_tests(temp.path());
 
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -1904,7 +1904,7 @@ mod codex_auth_tests {
             None => "[codex]\n".to_string(),
         };
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             format!(
                 r#"dockerfile = "Dockerfile"
 
@@ -2081,7 +2081,7 @@ fn harness_mounts_for_claude_includes_claude_state() {
     let paths = JackinPaths::for_tests(temp.path());
     let manifest_temp = tempfile::tempdir().unwrap();
     std::fs::write(
-        manifest_temp.path().join("jackin.agent.toml"),
+        manifest_temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2123,7 +2123,7 @@ fn harness_mounts_for_codex_only_has_config_toml() {
     let paths = JackinPaths::for_tests(temp.path());
     let manifest_temp = tempfile::tempdir().unwrap();
     std::fs::write(
-        manifest_temp.path().join("jackin.agent.toml"),
+        manifest_temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -2302,7 +2302,7 @@ feat(launch): resolve harness from CLI/workspace and validate
 
 Threads the resolved harness (CLI flag → workspace harness → claude
 fallback) through the launch flow. Validates the resolved harness is
-in the agent class manifest's [harness].supported list, and that
+in the role manifest's [harness].supported list, and that
 profile(harness).required_env keys are present in the resolved
 operator env (e.g. OPENAI_API_KEY for codex).
 
@@ -2496,7 +2496,7 @@ use tempfile::tempdir;
 fn rejects_supported_harness_without_corresponding_table() {
     let temp = tempdir().unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -2522,7 +2522,7 @@ plugins = []
 fn legacy_manifest_passes_validation() {
     let temp = tempdir().unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -2544,7 +2544,7 @@ plugins = []
 fn codex_only_manifest_with_codex_table_passes() {
     let temp = tempdir().unwrap();
     std::fs::write(
-        temp.path().join("jackin.agent.toml"),
+        temp.path().join("jackin.role.toml"),
         r#"dockerfile = "Dockerfile"
 
 [harness]
@@ -2635,14 +2635,14 @@ EOF
 
 ---
 
-## Task 22 — Docs: agent-manifest.mdx
+## Task 22 — Docs: role-manifest.mdx
 
 **Files:**
-- Modify: `docs/src/content/docs/developing/agent-manifest.mdx`
+- Modify: `docs/src/content/docs/developing/role-manifest.mdx`
 
 - [ ] **Step 22.1: Add a `[harness]` section**
 
-After the existing `[claude]` documentation (find with `grep -n "claude" docs/src/content/docs/developing/agent-manifest.mdx`), insert a section documenting:
+After the existing `[claude]` documentation (find with `grep -n "claude" docs/src/content/docs/developing/role-manifest.mdx`), insert a section documenting:
 
 - The `[harness]` table is optional; legacy manifests default to claude-only.
 - `supported` is a list of harness slugs (`"claude"`, `"codex"`).
@@ -2665,11 +2665,11 @@ Expected: clean build, no broken links.
 - [ ] **Step 22.3: Commit**
 
 ```bash
-git add docs/src/content/docs/developing/agent-manifest.mdx
+git add docs/src/content/docs/developing/role-manifest.mdx
 git commit -s -m "$(cat <<'EOF'
 docs: document [harness] manifest table
 
-New section in agent-manifest.mdx covering the optional [harness]
+New section in role-manifest.mdx covering the optional [harness]
 table, its supported list semantics, the matching [<harness>] table
 requirement, and an example multi-harness manifest.
 
@@ -2726,7 +2726,7 @@ Find every "runtime" that means "the AI CLI inside the container" and update to 
 
 - [ ] **Step 24.2: Add the harness layer to any architecture diagram or text**
 
-If the doc has a layered description (workspace → agent → runtime), make harness a peer of agent class.
+If the doc has a layered description (workspace → agent → runtime), make harness a peer of role.
 
 - [ ] **Step 24.3: Build, link-check, commit**
 
@@ -2750,15 +2750,15 @@ EOF
 
 ---
 
-## Task 25 — Docs: creating-agents.mdx and roadmap annotation
+## Task 25 — Docs: creating-roles.mdx and roadmap annotation
 
 **Files:**
-- Modify: `docs/src/content/docs/developing/creating-agents.mdx`
+- Modify: `docs/src/content/docs/developing/creating-roles.mdx`
 - Modify: `docs/src/content/docs/reference/roadmap/multi-runtime-support.mdx`
 
 - [ ] **Step 25.1: Add multi-harness example**
 
-In creating-agents.mdx, after the basic `jackin.agent.toml` example, add a section "Supporting multiple harnesses" with the example manifest from the spec.
+In creating-roles.mdx, after the basic `jackin.role.toml` example, add a section "Supporting multiple harnesses" with the example manifest from the spec.
 
 - [ ] **Step 25.2: Annotate the roadmap**
 
@@ -2784,7 +2784,7 @@ git add docs/src/content/docs/
 git commit -s -m "$(cat <<'EOF'
 docs: multi-harness example and roadmap annotation
 
-creating-agents.mdx gains a multi-harness example. The roadmap's
+creating-roles.mdx gains a multi-harness example. The roadmap's
 multi-runtime-support page is annotated noting the foundation slice
 has shipped under "harness" terminology while preserving the original
 roadmap wording.
@@ -2811,7 +2811,7 @@ Append:
 **Deprecated:** 2026-05-01 (multi-harness slice).
 **Removed:** when no operators report broken paths after one release cycle.
 **Migration:** flip mount destinations to `/home/agent/...` in workspace
-config (`jackin config mount add ...`) and any agent class Dockerfile that
+config (`jackin config mount add ...`) and any role Dockerfile that
 references the old path. The construct image's `:trixie` tag has been
 rebuilt in place; running `docker pull projectjackin/construct:trixie`
 once is sufficient to refresh local caches.
@@ -2884,7 +2884,7 @@ Implements the multi-harness foundation per the spec at
 - Adds `[harness]` and `[codex]` manifest tables (legacy claude-only manifests still work).
 - Adds workspace-level `harness` field with `--harness` CLI override.
 - Renames in-container OS user `claude` → `agent` and `/home/claude` → `/home/agent`.
-- Single image per agent class; `JACKIN_HARNESS` passed at `docker run` time.
+- Single image per role; `JACKIN_HARNESS` passed at `docker run` time.
 - Codex install via multi-arch `releases/latest` resolution.
 - `provision_codex_auth` writes the host-side `config.toml` mounted RW.
 
@@ -2925,7 +2925,7 @@ cd ~/jackin-agent-smith
 git checkout -b feat/harness-supported
 ```
 
-- [ ] **Step 28.2: Update `jackin.agent.toml`**
+- [ ] **Step 28.2: Update `jackin.role.toml`**
 
 Add the `[harness]` and `[codex]` tables:
 
@@ -2939,7 +2939,7 @@ supported = ["claude", "codex"]
 - [ ] **Step 28.3: Commit**
 
 ```bash
-git add jackin.agent.toml
+git add jackin.role.toml
 git commit -s -m "$(cat <<'EOF'
 feat(manifest): declare claude and codex harness support
 

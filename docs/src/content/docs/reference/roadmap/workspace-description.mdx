@@ -74,7 +74,7 @@ jackin workspace show my-ws  # renders description as a top-level field
 jackin workspace list        # renders a Description column (truncated)
 ```
 
-The `--clear-description` flag matches the existing `--clear-default-agent`
+The `--clear-description` flag matches the existing `--clear-default-role`
 shape in <RepoFile path="src/cli/workspace.rs" />.
 
 ### Console
@@ -102,8 +102,8 @@ line; Esc-to-collapse if it ever overflows).
 - Per-instance descriptions (the operator might want a different description
   on `agent-smith` vs `the-architect` even when both reference the same
   workspace). Out of scope; a workspace-level field covers the 95% case.
-- A separate description on agent class manifests
-  (`jackin.agent.toml [identity].description`). Useful and small; deserves
+- A separate description on role manifests
+  (`jackin.role.toml [identity].description`). Useful and small; deserves
   its own follow-up so it can be reviewed in isolation.
 
 ## Open Questions

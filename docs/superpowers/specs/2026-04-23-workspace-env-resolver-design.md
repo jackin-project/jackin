@@ -7,7 +7,7 @@
 
 ## Problem
 
-Operators today cannot declare environment variables in jackin config that apply per-workspace, per-agent, or per workspace×agent combination. The only existing env model is manifest-declared (from `jackin.agent.toml`) with the agent's own defaults; the operator cannot override it or inject new values without shell-level tricks. There is also no first-class way to resolve secrets at launch: the closest today is manually `export`ing a value before each `jackin launch`.
+Operators today cannot declare environment variables in jackin config that apply per-workspace, per-agent, or per workspace×agent combination. The only existing env model is manifest-declared (from `jackin.role.toml`) with the agent's own defaults; the operator cannot override it or inject new values without shell-level tricks. There is also no first-class way to resolve secrets at launch: the closest today is manually `export`ing a value before each `jackin launch`.
 
 This is acutely painful for secrets. Operators want to say:
 
@@ -51,11 +51,11 @@ CLAUDE_CODE_OAUTH_TOKEN = "op://Personal/Claude Code Token/credential"
 GITHUB_TOKEN = "$GITHUB_TOKEN"
 
 # Layer 2 — Per-agent-class: applies whenever this agent is launched, any workspace
-[agents.agent-smith.env]
+[roles.agent-smith.env]
 OPENAI_API_KEY = "op://Work/OpenAI/default"
 
 # Agent names with slashes use standard TOML quoted keys
-[agents."chainargos/agent-jones".env]
+[roles."chainargos/agent-jones".env]
 DATABASE_URL = "op://Work/agent-jones/db"
 
 # Layer 3 — Per-workspace: applies to every agent in this workspace
@@ -130,7 +130,7 @@ pub fn resolve_operator_env(
 Resolution order (later layer's key wins on conflict):
 
 1. `config.env`                                  (global)
-2. `config.agents[agent].env`                    (agent class)
+2. `config.agents[agent].env`                    (role)
 3. `config.workspaces[workspace].env`            (workspace)
 4. `config.workspaces[workspace].agents[agent].env` (workspace × agent)
 
@@ -142,7 +142,7 @@ Resolution pass: iterate the merged map and dispatch each value through the sche
 
 `src/env_model.rs` and `src/env_resolver.rs` already resolve the manifest-declared env for an agent. After that resolution completes, overlay the operator-env map on top:
 
-- If an operator env key matches a manifest key: **operator wins**. The agent manifest is sourced from the agent repo (potentially third-party); the operator's config is trusted.
+- If an operator env key matches a manifest key: **operator wins**. The agent manifest is sourced from the role repo (potentially third-party); the operator's config is trusted.
 - If an operator env key matches a reserved name (e.g. `JACKIN_RUNTIME`, `DOCKER_HOST`, anything in `src/env_model.rs`'s reserved list): **hard error at config load**, not at launch. Configuration is rejected with a message naming the offending key and layer. Reserved-name protection must remain airtight; this is the load-time failure class that keeps operators from accidentally breaking runtime contracts.
 
 Cycle detection: operator env values are strings with at most one scheme prefix. No interpolation, no variable expansion within values, no `${FOO}` substitution that references other operator keys. The resolver is strictly one-pass per value, so there is no cycle to detect. If we later add nested interpolation, the existing cycle-detection infrastructure in `src/env_model.rs` extends naturally.
@@ -233,7 +233,7 @@ Resolution failures prevent launch. jackin does not start a container with parti
 ## Documentation Changes
 
 - `docs/src/content/docs/guides/environment-variables.mdx` (new): canonical explanation of the four layers, the three sources, precedence, failure modes, and worked examples including the 1Password flow.
-- `docs/src/content/docs/reference/configuration.mdx`: add the new `[env]`, `[agents.*.env]`, `[workspaces.*.env]`, `[workspaces.*.agents.*.env]` sections to the schema reference.
+- `docs/src/content/docs/reference/configuration.mdx`: add the new `[env]`, `[roles.*.env]`, `[workspaces.*.env]`, `[workspaces.*.agents.*.env]` sections to the schema reference.
 - `docs/src/content/docs/guides/authentication.mdx`: cross-link to the env guide for the PR 3 token flow.
 - `docs/src/content/docs/reference/roadmap/onepassword-integration.mdx`: update status — option #2 (workspace-managed secret references) is delivered by this PR for env vars; files/mounts are still deferred.
 - `CHANGELOG.md`: `Added` entry under Unreleased.

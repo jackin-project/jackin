@@ -92,7 +92,7 @@ Docs rot silently. Every PR must include a one-pass verification that structure-
 ### When your PR touches CLI behavior
 
 - [ ] Did you add, rename, or remove a CLI flag, subcommand, or change default behavior? If yes, the matching `docs/src/content/docs/commands/<cmd>.mdx` needs updating in the same PR.
-- [ ] Did you change `jackin.agent.toml` schema or validation rules? If yes, update `docs/src/content/docs/developing/agent-manifest.mdx`.
+- [ ] Did you change `jackin.role.toml` schema or validation rules? If yes, update `docs/src/content/docs/developing/role-manifest.mdx`.
 - [ ] Did you change `config.toml` shape? If yes, update `docs/src/content/docs/reference/configuration.mdx`.
 - [ ] Did you change auth-forward, Keychain, symlink, or file-permission behavior in `src/instance/auth.rs`? If yes, update `docs/src/content/docs/guides/authentication.mdx` and `docs/src/content/docs/guides/security-model.mdx`.
 

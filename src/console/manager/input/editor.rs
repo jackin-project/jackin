@@ -89,9 +89,9 @@ pub(super) fn handle_editor_key(
             if key.code == KeyCode::Right && editor.active_tab == EditorTab::Secrets {
                 let FieldFocus::Row(n) = editor.active_field;
                 let rows = secrets_flat_rows(editor);
-                if let Some(SecretsRow::AgentHeader { agent, expanded }) = rows.get(n).cloned() {
+                if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
                     if !expanded {
-                        editor.secrets_expanded.insert(agent);
+                        editor.secrets_expanded.insert(role);
                     }
                     return Ok(InputOutcome::Continue);
                 }
@@ -99,8 +99,8 @@ pub(super) fn handle_editor_key(
             let was_secrets = editor.active_tab == EditorTab::Secrets;
             editor.active_tab = match editor.active_tab {
                 EditorTab::General => EditorTab::Mounts,
-                EditorTab::Mounts => EditorTab::Agents,
-                EditorTab::Agents => EditorTab::Secrets,
+                EditorTab::Mounts => EditorTab::Roles,
+                EditorTab::Roles => EditorTab::Secrets,
                 EditorTab::Secrets => EditorTab::General,
             };
             editor.active_field = FieldFocus::Row(0);
@@ -114,9 +114,9 @@ pub(super) fn handle_editor_key(
             if editor.active_tab == EditorTab::Secrets {
                 let FieldFocus::Row(n) = editor.active_field;
                 let rows = secrets_flat_rows(editor);
-                if let Some(SecretsRow::AgentHeader { agent, expanded }) = rows.get(n).cloned() {
+                if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
                     if expanded {
-                        editor.secrets_expanded.remove(&agent);
+                        editor.secrets_expanded.remove(&role);
                     }
                     return Ok(InputOutcome::Continue);
                 }
@@ -125,8 +125,8 @@ pub(super) fn handle_editor_key(
             editor.active_tab = match editor.active_tab {
                 EditorTab::General => EditorTab::Secrets,
                 EditorTab::Mounts => EditorTab::General,
-                EditorTab::Agents => EditorTab::Mounts,
-                EditorTab::Secrets => EditorTab::Agents,
+                EditorTab::Roles => EditorTab::Mounts,
+                EditorTab::Secrets => EditorTab::Roles,
             };
             editor.active_field = FieldFocus::Row(0);
             if was_secrets {
@@ -173,9 +173,9 @@ pub(super) fn handle_editor_key(
             EditorTab::Secrets => {
                 open_secrets_enter_modal(editor);
             }
-            EditorTab::Agents => {}
+            EditorTab::Roles => {}
         },
-        KeyCode::Char(' ') if editor.active_tab == EditorTab::Agents => {
+        KeyCode::Char(' ') if editor.active_tab == EditorTab::Roles => {
             toggle_agent_allowed_at_cursor(editor, config);
         }
         KeyCode::Char(' ') if editor.active_tab == EditorTab::General => {
@@ -186,7 +186,7 @@ pub(super) fn handle_editor_key(
                 editor.pending.keep_awake.enabled = !editor.pending.keep_awake.enabled;
             }
         }
-        KeyCode::Char('*') if editor.active_tab == EditorTab::Agents => {
+        KeyCode::Char('*') if editor.active_tab == EditorTab::Roles => {
             toggle_default_agent_at_cursor(editor, config);
         }
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
@@ -290,7 +290,7 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         // 0=Name, 1=Working dir, 2=Keep awake
         EditorTab::General => 2,
         EditorTab::Mounts => editor.pending.mounts.len(),
-        EditorTab::Agents => config.agents.len().saturating_sub(1),
+        EditorTab::Roles => config.roles.len().saturating_sub(1),
         // Secrets tab is handled inline in the Down key arm; never reached here.
         EditorTab::Secrets => 0,
     }
@@ -359,17 +359,17 @@ fn toggle_focused_row_mask(editor: &mut EditorState<'_>) {
             }
             (SecretsScopeTag::Workspace, key)
         }
-        SecretsRow::AgentKeyRow { agent, key } => {
+        SecretsRow::RoleKeyRow { role, key } => {
             if editor
                 .pending
-                .agents
-                .get(&agent)
+                .roles
+                .get(&role)
                 .and_then(|o| o.env.get(&key))
                 .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
             {
                 return;
             }
-            (SecretsScopeTag::Agent(agent), key)
+            (SecretsScopeTag::Role(role), key)
         }
         _ => return,
     };
@@ -440,22 +440,22 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
         }
         SecretsRow::WorkspaceAddSentinel => {
             // Workspace sentinel asks the scope question first; the
-            // per-agent sentinel fast-path stays direct.
+            // per-role sentinel fast-path stays direct.
             use crate::console::widgets::scope_picker::ScopePickerState;
             editor.modal = Some(Modal::ScopePicker {
                 state: ScopePickerState::new(),
             });
         }
-        SecretsRow::AgentHeader { agent, expanded } => {
+        SecretsRow::RoleHeader { role, expanded } => {
             if !expanded {
-                editor.secrets_expanded.insert(agent);
+                editor.secrets_expanded.insert(role);
             }
         }
-        SecretsRow::AgentKeyRow { agent, key } => {
+        SecretsRow::RoleKeyRow { role, key } => {
             if editor
                 .pending
-                .agents
-                .get(&agent)
+                .roles
+                .get(&role)
                 .and_then(|o| o.env.get(&key))
                 .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_)))
             {
@@ -463,25 +463,25 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
             }
             let current = editor
                 .pending
-                .agents
-                .get(&agent)
+                .roles
+                .get(&role)
                 .and_then(|o| o.env.get(&key))
                 .map(|v| v.as_persisted_str().to_string())
                 .unwrap_or_default();
             let label = format!("Edit {key}");
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvValue {
-                    scope: SecretsScopeTag::Agent(agent),
+                    scope: SecretsScopeTag::Role(role),
                     key,
                 },
                 state: TextInputState::new_allow_empty(label, current),
             });
         }
-        SecretsRow::AgentAddSentinel(agent) => {
-            // In-section fast-path — already viewing the agent, don't
+        SecretsRow::RoleAddSentinel(role) => {
+            // In-section fast-path — already viewing the role, don't
             // re-ask the scope question.
-            let label = format!("New {agent} environment key");
-            let scope = SecretsScopeTag::Agent(agent);
+            let label = format!("New {role} environment key");
+            let scope = SecretsScopeTag::Role(role);
             let state = env_key_input_state(editor, &scope, label, String::new());
             editor.modal = Some(Modal::TextInput {
                 target: TextInputTarget::EnvKey { scope },
@@ -494,22 +494,22 @@ fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
 }
 
 /// Listing rules: workspace-allowed list when non-empty, otherwise
-/// every agent in `config.agents`. Agents already carrying an
+/// every role in `config.roles`. Roles already carrying an
 /// override are NOT filtered out — operator may want to add more
 /// keys.
 fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
-    use super::super::super::widgets::agent_picker::AgentPickerState;
-    use crate::selector::ClassSelector;
-    let eligible: Vec<ClassSelector> =
+    use super::super::super::widgets::role_picker::RolePickerState;
+    use crate::selector::RoleSelector;
+    let eligible: Vec<RoleSelector> =
         super::super::render::editor::eligible_agents_for_override(editor, config)
             .into_iter()
-            .filter_map(|name| ClassSelector::parse(&name).ok())
+            .filter_map(|name| RoleSelector::parse(&name).ok())
             .collect();
     if eligible.is_empty() {
         return;
     }
-    editor.modal = Some(Modal::AgentOverridePicker {
-        state: AgentPickerState::with_confirm_label(eligible, "select"),
+    editor.modal = Some(Modal::RoleOverridePicker {
+        state: RolePickerState::with_confirm_label(eligible, "select"),
     });
 }
 
@@ -522,7 +522,7 @@ fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
     };
     let (scope, key) = match row {
         SecretsRow::WorkspaceKeyRow(key) => (SecretsScopeTag::Workspace, key),
-        SecretsRow::AgentKeyRow { agent, key } => (SecretsScopeTag::Agent(agent), key),
+        SecretsRow::RoleKeyRow { role, key } => (SecretsScopeTag::Role(role), key),
         _ => return,
     };
     let prompt = format!("Delete environment variable {key}?");
@@ -547,11 +547,11 @@ fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
             SecretsScopeTag::Workspace,
             "New workspace environment key".to_string(),
         ),
-        SecretsRow::AgentHeader { agent, .. }
-        | SecretsRow::AgentKeyRow { agent, .. }
-        | SecretsRow::AgentAddSentinel(agent) => (
-            SecretsScopeTag::Agent(agent.clone()),
-            format!("New {agent} environment key"),
+        SecretsRow::RoleHeader { role, .. }
+        | SecretsRow::RoleKeyRow { role, .. }
+        | SecretsRow::RoleAddSentinel(role) => (
+            SecretsScopeTag::Role(role.clone()),
+            format!("New {role} environment key"),
         ),
         // Cursor never lands on `SectionSpacer` (skipped on `↑`/`↓`),
         // but keep the match exhaustive — silently no-op on the
@@ -565,7 +565,7 @@ fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
     });
 }
 
-/// Space on an agent row toggles its **effective** allow-state.
+/// Space on an role row toggles its **effective** allow-state.
 ///
 /// The underlying data model uses an "empty list = all allowed" shorthand,
 /// so the checkbox on each row must reflect
@@ -573,48 +573,48 @@ fn open_secrets_add_modal(editor: &mut EditorState<'_>) {
 /// invariant in both directions:
 ///
 /// - **Effective-allowed + empty list** (in "all" mode): populate the list
-///   with every agent *except* this one. Status flips to
+///   with every role *except* this one. Status flips to
 ///   `custom (total-1 of total)`; the row flips to `[ ]`.
 /// - **Effective-allowed + non-empty list** (row is in the list): remove it.
 ///   An empty remainder is left empty (semantically = "all"); otherwise
 ///   stays `custom`. The row flips to `[ ]`.
 /// - **Effective-blocked** (row not in list): add the name. If the list now
-///   contains every agent in `config.agents`, clear it back to empty
+///   contains every role in `config.roles`, clear it back to empty
 ///   (= "all"). Otherwise stays `custom`. The row flips to `[x]`.
 fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    // n is 0-based into config.agents (no header offset).
-    let agent_names: Vec<String> = config.agents.keys().cloned().collect();
-    let Some(agent) = agent_names.get(n) else {
+    // n is 0-based into config.roles (no header offset).
+    let agent_names: Vec<String> = config.roles.keys().cloned().collect();
+    let Some(role) = agent_names.get(n) else {
         return;
     };
 
-    // Read "all" state before the mutable borrow on `allowed_agents`.
+    // Read "all" state before the mutable borrow on `allowed_roles`.
     let is_all_mode = super::super::agent_allow::allows_all_agents(&editor.pending);
-    let list = &mut editor.pending.allowed_agents;
-    let in_list = list.iter().position(|a| a == agent);
+    let list = &mut editor.pending.allowed_roles;
+    let in_list = list.iter().position(|a| a == role);
 
     if is_all_mode {
         // Demote "all" to "custom" without this row by enumerating
-        // the full roster minus the current agent.
+        // the full roster minus the current role.
         *list = agent_names
             .iter()
-            .filter(|a| a.as_str() != agent.as_str())
+            .filter(|a| a.as_str() != role.as_str())
             .cloned()
             .collect();
-        if editor.pending.default_agent.as_deref() == Some(agent.as_str()) {
-            editor.pending.default_agent = None;
+        if editor.pending.default_role.as_deref() == Some(role.as_str()) {
+            editor.pending.default_role = None;
         }
     } else if let Some(pos) = in_list {
         list.remove(pos);
-        if editor.pending.default_agent.as_deref() == Some(agent.as_str()) {
-            editor.pending.default_agent = None;
+        if editor.pending.default_role.as_deref() == Some(role.as_str()) {
+            editor.pending.default_role = None;
         }
     } else {
         // Filling in the full roster collapses back to the "all"
         // shorthand so the badge reads `all` rather than
         // `custom (N of N)`.
-        list.push(agent.clone());
+        list.push(role.clone());
         if list.len() == agent_names.len() && agent_names.iter().all(|a| list.contains(a)) {
             list.clear();
         }
@@ -625,21 +625,21 @@ fn toggle_agent_allowed_at_cursor(editor: &mut EditorState<'_>, config: &AppConf
 /// → no-op (operator must `Space` to allow first).
 fn toggle_default_agent_at_cursor(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    let agent_names: Vec<String> = config.agents.keys().cloned().collect();
-    let Some(agent) = agent_names.get(n) else {
+    let agent_names: Vec<String> = config.roles.keys().cloned().collect();
+    let Some(role) = agent_names.get(n) else {
         return;
     };
 
-    if editor.pending.default_agent.as_deref() == Some(agent.as_str()) {
-        editor.pending.default_agent = None;
+    if editor.pending.default_role.as_deref() == Some(role.as_str()) {
+        editor.pending.default_role = None;
         return;
     }
 
-    if !super::super::agent_allow::agent_is_effectively_allowed(&editor.pending, agent) {
+    if !super::super::agent_allow::agent_is_effectively_allowed(&editor.pending, role) {
         return;
     }
 
-    editor.pending.default_agent = Some(agent.clone());
+    editor.pending.default_role = Some(role.clone());
 }
 
 fn remove_mount_at_cursor(editor: &mut EditorState<'_>) {
@@ -774,19 +774,19 @@ pub(super) fn handle_editor_modal(
             }
         }
         // List-view modals; defensive cancel if one lands here.
-        Modal::GithubPicker { .. } | Modal::AgentPicker { .. } => {
+        Modal::GithubPicker { .. } | Modal::RolePicker { .. } => {
             editor.modal = None;
         }
-        Modal::AgentOverridePicker { state: picker } => {
+        Modal::RoleOverridePicker { state: picker } => {
             match picker.handle_key(key) {
-                ModalOutcome::Commit(agent) => {
+                ModalOutcome::Commit(role) => {
                     // The override section materializes organically on
                     // the first value commit; we don't touch
-                    // `pending.agents` here, so a cancel mid-flow leaves
+                    // `pending.roles` here, so a cancel mid-flow leaves
                     // no empty placeholder.
-                    let agent_name = agent.key();
-                    let scope = SecretsScopeTag::Agent(agent_name.clone());
-                    let label = format!("New {agent_name} environment key");
+                    let role_name = role.key();
+                    let scope = SecretsScopeTag::Role(role_name.clone());
+                    let label = format!("New {role_name} environment key");
                     let state = env_key_input_state(editor, &scope, label, "");
                     editor.modal = Some(Modal::TextInput {
                         target: TextInputTarget::EnvKey { scope },
@@ -862,7 +862,7 @@ pub(super) fn handle_editor_modal(
                     // Empty eligible set → `open_agent_override_picker`
                     // is a no-op; we close the modal then.
                     open_agent_override_picker(editor, config);
-                    if !matches!(editor.modal, Some(Modal::AgentOverridePicker { .. })) {
+                    if !matches!(editor.modal, Some(Modal::RoleOverridePicker { .. })) {
                         editor.modal = None;
                     }
                 }
@@ -973,10 +973,10 @@ fn open_secrets_picker_modal(
     };
     let target = match row {
         SecretsRow::WorkspaceKeyRow(key) => Some((SecretsScopeTag::Workspace, Some(key))),
-        SecretsRow::AgentKeyRow { agent, key } => Some((SecretsScopeTag::Agent(agent), Some(key))),
+        SecretsRow::RoleKeyRow { role, key } => Some((SecretsScopeTag::Role(role), Some(key))),
         SecretsRow::WorkspaceAddSentinel => Some((SecretsScopeTag::Workspace, None)),
-        SecretsRow::AgentAddSentinel(agent) => Some((SecretsScopeTag::Agent(agent), None)),
-        SecretsRow::AgentHeader { .. } | SecretsRow::SectionSpacer => None,
+        SecretsRow::RoleAddSentinel(role) => Some((SecretsScopeTag::Role(role), None)),
+        SecretsRow::RoleHeader { .. } | SecretsRow::SectionSpacer => None,
     };
     let Some(target) = target else {
         return;
@@ -990,7 +990,7 @@ fn open_secrets_picker_modal(
 const fn scope_label(scope: &SecretsScopeTag) -> &str {
     match scope {
         SecretsScopeTag::Workspace => "workspace",
-        SecretsScopeTag::Agent(agent) => agent.as_str(),
+        SecretsScopeTag::Role(role) => role.as_str(),
     }
 }
 
@@ -999,10 +999,10 @@ const fn scope_label(scope: &SecretsScopeTag) -> &str {
 fn forbidden_keys_for_scope(editor: &EditorState<'_>, scope: &SecretsScopeTag) -> Vec<String> {
     match scope {
         SecretsScopeTag::Workspace => editor.pending.env.keys().cloned().collect(),
-        SecretsScopeTag::Agent(agent) => editor
+        SecretsScopeTag::Role(role) => editor
             .pending
-            .agents
-            .get(agent)
+            .roles
+            .get(role)
             .map(|o| o.env.keys().cloned().collect())
             .unwrap_or_default(),
     }
@@ -1011,7 +1011,7 @@ fn forbidden_keys_for_scope(editor: &EditorState<'_>, scope: &SecretsScopeTag) -
 fn forbidden_label_for_scope(scope: &SecretsScopeTag) -> String {
     match scope {
         SecretsScopeTag::Workspace => "workspace env".to_string(),
-        SecretsScopeTag::Agent(agent) => format!("agent {agent}"),
+        SecretsScopeTag::Role(role) => format!("role {role}"),
     }
 }
 
@@ -1032,7 +1032,7 @@ fn env_key_input_state<'a>(
 }
 
 /// Single source of truth for setting one env entry on the pending
-/// draft. Agent scope auto-creates the override entry and
+/// draft. Role scope auto-creates the override entry and
 /// auto-expands the section so the operator sees the new value —
 /// same semantics as `ConfigEditor::set_env_var` on save.
 fn set_pending_env_value(
@@ -1048,13 +1048,13 @@ fn set_pending_env_value(
                 crate::operator_env::EnvValue::Plain(value.to_string()),
             );
         }
-        SecretsScopeTag::Agent(agent) => {
-            let entry = editor.pending.agents.entry(agent.clone()).or_default();
+        SecretsScopeTag::Role(role) => {
+            let entry = editor.pending.roles.entry(role.clone()).or_default();
             entry.env.insert(
                 key.to_string(),
                 crate::operator_env::EnvValue::Plain(value.to_string()),
             );
-            editor.secrets_expanded.insert(agent.clone());
+            editor.secrets_expanded.insert(role.clone());
         }
     }
 }
@@ -1073,13 +1073,13 @@ fn set_pending_env_op_ref(
                 crate::operator_env::EnvValue::OpRef(op_ref),
             );
         }
-        SecretsScopeTag::Agent(agent) => {
-            let entry = editor.pending.agents.entry(agent.clone()).or_default();
+        SecretsScopeTag::Role(role) => {
+            let entry = editor.pending.roles.entry(role.clone()).or_default();
             entry.env.insert(
                 key.to_string(),
                 crate::operator_env::EnvValue::OpRef(op_ref),
             );
-            editor.secrets_expanded.insert(agent.clone());
+            editor.secrets_expanded.insert(role.clone());
         }
     }
 }
@@ -1097,10 +1097,10 @@ fn set_pending_env_value_typed(
         SecretsScopeTag::Workspace => {
             editor.pending.env.insert(key.to_string(), value);
         }
-        SecretsScopeTag::Agent(agent) => {
-            let entry = editor.pending.agents.entry(agent.clone()).or_default();
+        SecretsScopeTag::Role(role) => {
+            let entry = editor.pending.roles.entry(role.clone()).or_default();
             entry.env.insert(key.to_string(), value);
-            editor.secrets_expanded.insert(agent.clone());
+            editor.secrets_expanded.insert(role.clone());
         }
     }
 }
@@ -1168,19 +1168,19 @@ fn apply_editor_confirm(editor: &mut EditorState<'_>, target: &ConfirmTarget) {
             SecretsScopeTag::Workspace => {
                 editor.pending.env.remove(key);
             }
-            SecretsScopeTag::Agent(agent) => {
+            SecretsScopeTag::Role(role) => {
                 let mut drop_agent = false;
-                if let Some(ov) = editor.pending.agents.get_mut(agent) {
+                if let Some(ov) = editor.pending.roles.get_mut(role) {
                     ov.env.remove(key);
                     // Drop empty override so change_count reports
-                    // clean when the agent's overrides are later
+                    // clean when the role's overrides are later
                     // re-added.
                     if ov.env.is_empty() {
                         drop_agent = true;
                     }
                 }
                 if drop_agent {
-                    editor.pending.agents.remove(agent);
+                    editor.pending.roles.remove(role);
                 }
             }
         },
@@ -1267,7 +1267,7 @@ pub(super) fn apply_file_browser_to_editor(
 #[cfg(test)]
 #[allow(clippy::too_many_lines)]
 mod tests {
-    //! Editor-stage tests: tab cycling, modal dispatch, agent allow/default
+    //! Editor-stage tests: tab cycling, modal dispatch, role allow/default
     //! bindings, and mount-row readonly toggle.
     use super::super::super::state::{
         EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal,
@@ -1311,9 +1311,9 @@ mod tests {
     fn config_with_agents(names: &[&str]) -> AppConfig {
         let mut config = AppConfig::default();
         for name in names {
-            config.agents.insert(
+            config.roles.insert(
                 (*name).into(),
-                crate::config::AgentSource {
+                crate::config::RoleSource {
                     git: format!("https://example.test/{name}.git"),
                     ..Default::default()
                 },
@@ -1326,7 +1326,7 @@ mod tests {
     fn editor_on_agents_tab<'a>(ws: WorkspaceConfig, row: usize) -> ManagerState<'a> {
         let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
         let mut editor = EditorState::new_edit("ws".into(), ws);
-        editor.active_tab = EditorTab::Agents;
+        editor.active_tab = EditorTab::Roles;
         editor.active_field = FieldFocus::Row(row);
         state.stage = ManagerStage::Editor(editor);
         state
@@ -1369,13 +1369,13 @@ mod tests {
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
-        e.pending.allowed_agents.clone()
+        e.pending.allowed_roles.clone()
     }
 
     /// Build an editor sitting on the Mounts tab with an empty mount list,
-    /// and simulate the commit of a FileBrowser at `/host/path`. The bridge
+    /// and simulate the commit of a `FileBrowser` at `/host/path`. The bridge
     /// function is `apply_file_browser_to_editor`, which opens the new
-    /// `MountDstChoice` modal instead of the old "push + TextInput" chain.
+    /// `MountDstChoice` modal instead of the old "push + `TextInput`" chain.
     fn editor_with_browser_committed(src: &str) -> EditorState<'static> {
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.active_tab = EditorTab::Mounts;
@@ -1413,7 +1413,7 @@ mod tests {
         // rename TextInput modal pre-filled with the current pending_name
         // — the same flow Edit mode uses. This is the operator's escape
         // hatch from a prelude-captured name they mistyped.
-        let (_tmp, paths, mut config) = {
+        let (tmp, paths, mut config) = {
             let tmp = tempfile::tempdir().unwrap();
             let paths = JackinPaths::for_tests(tmp.path());
             paths.ensure_base_dirs().unwrap();
@@ -1423,7 +1423,7 @@ mod tests {
             let loaded = AppConfig::load_or_init(&paths).unwrap();
             (tmp, paths, loaded)
         };
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_create();
         editor.pending_name = Some("typo-name".into());
@@ -1652,12 +1652,12 @@ mod tests {
         assert_eq!(e.active_tab, EditorTab::General);
     }
 
-    // ── Agents tab: `*` default-toggle binding ───────────────────────
+    // ── Roles tab: `*` default-toggle binding ───────────────────────
 
     #[test]
     fn agents_tab_star_sets_default_on_allowed_agent() {
-        // Cursor on row 1 (agent "beta"), no default set yet. Workspace
-        // starts in "all agents allowed" shorthand, so beta is
+        // Cursor on row 1 (role "beta"), no default set yet. Workspace
+        // starts in "all roles allowed" shorthand, so beta is
         // effectively allowed. Pressing `*` pins it as default while
         // preserving the shorthand (empty allow list).
         let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
@@ -1669,15 +1669,15 @@ mod tests {
             panic!("editor stage expected");
         };
         assert_eq!(
-            e.pending.default_agent.as_deref(),
+            e.pending.default_role.as_deref(),
             Some("beta"),
-            "`*` on row 1 should pin agent `beta` as default",
+            "`*` on row 1 should pin role `beta` as default",
         );
         assert!(
-            e.pending.allowed_agents.is_empty(),
-            "default-agent pick must preserve the all-agents shorthand; \
+            e.pending.allowed_roles.is_empty(),
+            "default-role pick must preserve the all-roles shorthand; \
              got {:?}",
-            e.pending.allowed_agents,
+            e.pending.allowed_roles,
         );
     }
 
@@ -1688,7 +1688,7 @@ mod tests {
         // symmetric with the Space allow/disallow toggle.
         let mut config = config_with_agents(&["alpha", "beta"]);
         let mut ws = empty_ws();
-        ws.default_agent = Some("alpha".into());
+        ws.default_role = Some("alpha".into());
         let mut state = editor_on_agents_tab(ws, 0);
 
         press(&mut state, &mut config, KeyCode::Char('*')).unwrap();
@@ -1697,9 +1697,9 @@ mod tests {
             panic!("editor stage expected");
         };
         assert!(
-            e.pending.default_agent.is_none(),
+            e.pending.default_role.is_none(),
             "`*` on the current default must clear it; got {:?}",
-            e.pending.default_agent,
+            e.pending.default_role,
         );
     }
 
@@ -1708,10 +1708,10 @@ mod tests {
         // Workspace in "custom" mode with only `alpha` allowed; cursor
         // on row 1 (`beta`, NOT in the allow list). `*` must not set
         // beta as default — defaults are meaningless on disallowed
-        // agents and the operator should `Space` to allow first.
+        // roles and the operator should `Space` to allow first.
         let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
         let mut ws = empty_ws();
-        ws.allowed_agents = vec!["alpha".into()];
+        ws.allowed_roles = vec!["alpha".into()];
         let mut state = editor_on_agents_tab(ws, 1);
 
         press(&mut state, &mut config, KeyCode::Char('*')).unwrap();
@@ -1720,15 +1720,15 @@ mod tests {
             panic!("editor stage expected");
         };
         assert!(
-            e.pending.default_agent.is_none(),
-            "`*` on a disallowed agent must be a no-op; got {:?}",
-            e.pending.default_agent,
+            e.pending.default_role.is_none(),
+            "`*` on a disallowed role must be a no-op; got {:?}",
+            e.pending.default_role,
         );
         assert_eq!(
-            e.pending.allowed_agents,
+            e.pending.allowed_roles,
             vec!["alpha".to_string()],
             "`*` must not silently extend the allow list; got {:?}",
-            e.pending.allowed_agents,
+            e.pending.allowed_roles,
         );
     }
 
@@ -1736,11 +1736,11 @@ mod tests {
     fn agents_tab_disallow_default_clears_default() {
         // With "alpha" pinned as default (custom allow list = [alpha]),
         // pressing Space on alpha to disallow it must also clear the
-        // default — defaults are only meaningful on allowed agents.
+        // default — defaults are only meaningful on allowed roles.
         let mut config = config_with_agents(&["alpha", "beta"]);
         let mut ws = empty_ws();
-        ws.allowed_agents = vec!["alpha".into()];
-        ws.default_agent = Some("alpha".into());
+        ws.allowed_roles = vec!["alpha".into()];
+        ws.default_role = Some("alpha".into());
         let mut state = editor_on_agents_tab(ws, 0);
 
         press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
@@ -1749,22 +1749,22 @@ mod tests {
             panic!("editor stage expected");
         };
         assert!(
-            !e.pending.allowed_agents.contains(&"alpha".to_string()),
-            "alpha must be removed from allowed_agents after Space; got {:?}",
-            e.pending.allowed_agents,
+            !e.pending.allowed_roles.contains(&"alpha".to_string()),
+            "alpha must be removed from allowed_roles after Space; got {:?}",
+            e.pending.allowed_roles,
         );
         assert!(
-            e.pending.default_agent.is_none(),
-            "disallowing the current default must clear default_agent; got {:?}",
-            e.pending.default_agent,
+            e.pending.default_role.is_none(),
+            "disallowing the current default must clear default_role; got {:?}",
+            e.pending.default_role,
         );
     }
 
     #[test]
     fn d_key_no_longer_sets_default_agent_on_agents_tab() {
         // Regression guard: the `D` binding was removed in favour of `*`.
-        // Pressing `D` on an agent row must now be a no-op (no other
-        // Agents-tab binding listens for `D`).
+        // Pressing `D` on an role row must now be a no-op (no other
+        // Roles-tab binding listens for `D`).
         let mut config = config_with_agents(&["alpha", "beta"]);
         let mut state = editor_on_agents_tab(empty_ws(), 1);
 
@@ -1774,18 +1774,18 @@ mod tests {
             panic!("editor stage expected");
         };
         assert!(
-            e.pending.default_agent.is_none(),
-            "`D` must no longer set the default agent on the Agents tab",
+            e.pending.default_role.is_none(),
+            "`D` must no longer set the default role on the Roles tab",
         );
     }
 
-    // ── Agents tab: Space toggle matches effective allow-state ────────
+    // ── Roles tab: Space toggle matches effective allow-state ────────
 
     #[test]
     fn toggle_in_all_mode_demotes_to_custom_without_this_agent() {
-        // Starting state: "all" mode (empty list), three agents. Pressing
+        // Starting state: "all" mode (empty list), three roles. Pressing
         // Space on row 1 (`beta`) must produce a custom list containing
-        // every other agent — i.e. `[alpha, gamma]` — so that `beta`
+        // every other role — i.e. `[alpha, gamma]` — so that `beta`
         // flips from `[x]` to `[ ]` and the status line reads
         // `custom (2 of 3 allowed)`.
         let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
@@ -1797,19 +1797,19 @@ mod tests {
         assert_eq!(
             list,
             vec!["alpha".to_string(), "gamma".to_string()],
-            "list must be populated with every other agent when demoting from 'all'"
+            "list must be populated with every other role when demoting from 'all'"
         );
     }
 
     #[test]
     fn toggle_custom_last_item_clears_to_empty() {
-        // Starting state: "custom" mode with a single allowed agent.
-        // Toggling that agent off must leave the list empty (reverting
+        // Starting state: "custom" mode with a single allowed role.
+        // Toggling that role off must leave the list empty (reverting
         // to the "all" shorthand) — NOT pinning it at a phantom
         // `custom (0 of N allowed)` state.
         let mut config = config_with_agents(&["alpha", "beta"]);
         let mut ws = empty_ws();
-        ws.allowed_agents = vec!["alpha".into()];
+        ws.allowed_roles = vec!["alpha".into()];
         let mut state = editor_on_agents_tab(ws, 0);
 
         press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
@@ -1826,10 +1826,10 @@ mod tests {
         // Starting state: "custom" mode with `[alpha]` (so `beta` reads
         // `[ ]`). Pressing Space on `beta` (row 1) must add it, producing
         // `[alpha, beta]` — and since that still doesn't cover every
-        // agent (`gamma` is missing), the list must stay non-empty.
+        // role (`gamma` is missing), the list must stay non-empty.
         let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
         let mut ws = empty_ws();
-        ws.allowed_agents = vec!["alpha".into()];
+        ws.allowed_roles = vec!["alpha".into()];
         let mut state = editor_on_agents_tab(ws, 1);
 
         press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
@@ -1845,15 +1845,15 @@ mod tests {
 
     #[test]
     fn toggle_refills_custom_to_all_when_last_agent_added_makes_it_complete() {
-        // Starting state: "custom" mode with all-but-one agent present.
+        // Starting state: "custom" mode with all-but-one role present.
         // Adding the missing one would yield `custom (N of N allowed)` —
         // semantically identical to "all allowed". The toggle must
         // collapse back to the empty-list shorthand so the status badge
         // reads `all`, not `custom (3 of 3 allowed)`.
         let mut config = config_with_agents(&["alpha", "beta", "gamma"]);
         let mut ws = empty_ws();
-        ws.allowed_agents = vec!["alpha".into(), "beta".into()];
-        // Cursor on row 2 (agent `gamma`, the missing one).
+        ws.allowed_roles = vec!["alpha".into(), "beta".into()];
+        // Cursor on row 2 (role `gamma`, the missing one).
         let mut state = editor_on_agents_tab(ws, 2);
 
         press(&mut state, &mut config, KeyCode::Char(' ')).unwrap();
@@ -2064,7 +2064,7 @@ mod tests {
 
     // ── Caps-Lock parity: SHIFT-modified letter shortcuts ──────────────
 
-    /// Enter on an op:// key row must NOT open the EnvValue text-edit
+    /// Enter on an op:// key row must NOT open the `EnvValue` text-edit
     /// modal. The breadcrumb is a path, not a credential, and hand-
     /// editing the path is error-prone — the operator deletes via D
     /// and re-adds via the source picker (`P`).
@@ -2108,8 +2108,8 @@ mod tests {
         );
     }
 
-    /// Same guard for an agent-override row: Enter on an op:// value in
-    /// an expanded agent section is also a no-op.
+    /// Same guard for an role-override row: Enter on an op:// value in
+    /// an expanded role section is also a no-op.
     #[test]
     fn enter_on_op_agent_key_row_is_noop() {
         let tmp = tempfile::tempdir().unwrap();
@@ -2125,9 +2125,9 @@ mod tests {
                 path: "Personal/api/token".into(),
             }),
         );
-        ws.agents.insert(
+        ws.roles.insert(
             "smith".into(),
-            crate::workspace::WorkspaceAgentOverride { env: ag_env },
+            crate::workspace::WorkspaceRoleOverride { env: ag_env },
         );
 
         let mut state = ManagerState::from_config(&config, tmp.path());
@@ -2153,7 +2153,7 @@ mod tests {
         };
         assert!(
             e.modal.is_none(),
-            "Enter on an agent op:// row must not open any modal; got {:?}",
+            "Enter on an role op:// row must not open any modal; got {:?}",
             e.modal
         );
     }
@@ -2360,7 +2360,7 @@ mod tests {
             key(KeyCode::Tab),
         )
         .unwrap();
-        // Tab around the wheel back to Secrets (General → Mounts → Agents
+        // Tab around the wheel back to Secrets (General → Mounts → Roles
         // → Secrets is 3 more presses).
         handle_key(
             &mut state,
@@ -2398,8 +2398,8 @@ mod tests {
         );
     }
 
-    /// Workspace and agent scopes have separate mask state. M on an
-    /// agent row unmasks only the agent row even when a workspace row
+    /// Workspace and role scopes have separate mask state. M on an
+    /// role row unmasks only the role row even when a workspace row
     /// shares the same key name.
     #[test]
     fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
@@ -2411,10 +2411,10 @@ mod tests {
         // Same key name in both scopes.
         ws.env.insert("API_TOKEN".into(), "ws-value".into());
         let mut ag_env = std::collections::BTreeMap::new();
-        ag_env.insert("API_TOKEN".into(), "agent-value".into());
-        ws.agents.insert(
+        ag_env.insert("API_TOKEN".into(), "role-value".into());
+        ws.roles.insert(
             "smith".into(),
-            crate::workspace::WorkspaceAgentOverride { env: ag_env },
+            crate::workspace::WorkspaceRoleOverride { env: ag_env },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -2422,7 +2422,7 @@ mod tests {
         editor.secrets_expanded.insert("smith".into());
         // Rows: WorkspaceKeyRow(0), WorkspaceAddSentinel(1),
         // SectionSpacer(2), AgentHeader(3), AgentKeyRow(4),
-        // AgentAddSentinel(5). Focus the agent key row.
+        // AgentAddSentinel(5). Focus the role key row.
         editor.active_field = FieldFocus::Row(4);
         state.stage = ManagerStage::Editor(editor);
 
@@ -2440,8 +2440,8 @@ mod tests {
         };
         assert!(
             e.unmasked_rows
-                .contains(&(SecretsScopeTag::Agent("smith".into()), "API_TOKEN".into())),
-            "agent-scope API_TOKEN must be unmasked"
+                .contains(&(SecretsScopeTag::Role("smith".into()), "API_TOKEN".into())),
+            "role-scope API_TOKEN must be unmasked"
         );
         assert!(
             !e.unmasked_rows
@@ -2452,7 +2452,7 @@ mod tests {
 
     /// Pressing `↓` from the workspace `+ Add` sentinel must skip past
     /// the `SectionSpacer` and land directly on the first focusable row
-    /// of the agent section (the `AgentHeader`). Same in reverse with
+    /// of the role section (the `AgentHeader`). Same in reverse with
     /// `↑`. Regression guard for the cursor-skip logic added with the
     /// blank-line-between-sections layout polish.
     #[test]
@@ -2466,15 +2466,15 @@ mod tests {
         let mut ws = empty_ws();
         let mut ag_env = std::collections::BTreeMap::new();
         ag_env.insert("LOG_LEVEL".into(), "debug".into());
-        ws.agents.insert(
+        ws.roles.insert(
             "agent-smith".into(),
-            crate::workspace::WorkspaceAgentOverride { env: ag_env },
+            crate::workspace::WorkspaceRoleOverride { env: ag_env },
         );
 
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
-        // Rows with no workspace env keys + one collapsed agent section:
+        // Rows with no workspace env keys + one collapsed role section:
         //   0 WorkspaceAddSentinel
         //   1 SectionSpacer
         //   2 AgentHeader
@@ -2490,7 +2490,7 @@ mod tests {
                 Some(SecretsRow::WorkspaceAddSentinel)
             ));
             assert!(matches!(rows.get(1), Some(SecretsRow::SectionSpacer)));
-            assert!(matches!(rows.get(2), Some(SecretsRow::AgentHeader { .. })));
+            assert!(matches!(rows.get(2), Some(SecretsRow::RoleHeader { .. })));
         }
 
         // ↓ from row 0 must land on row 2, skipping the spacer at row 1.

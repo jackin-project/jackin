@@ -51,7 +51,7 @@ pub enum AuthForwardMode {
 
 `Display` and `FromStr` gain the `"token"` case. No new config fields beyond the existing `auth_forward` key — token mode consumes the env resolver from PR 2, so there is nothing new to store here.
 
-Per-agent override (`[agents.<name>.claude.auth_forward = "token"]`) works for free via the existing resolution path in `src/config/agents.rs::resolve_auth_forward_mode`.
+Per-agent override (`[roles.<name>.claude.auth_forward = "token"]`) works for free via the existing resolution path in `src/config/agents.rs::resolve_auth_forward_mode`.
 
 ### Provisioning behavior
 
@@ -191,7 +191,7 @@ Token validity is Claude Code's responsibility. A 401 inside the container with 
 
 - End-to-end launch with a mocked-op-returning-a-fixed-string env var: container receives `CLAUDE_CODE_OAUTH_TOKEN` in its env and `.credentials.json` does not exist in agent state.
 - Switching from `sync` to `token` on an existing agent state directory removes the previously copied `.credentials.json`.
-- Per-agent override: `[agents.<name>.claude.auth_forward = "token"]` takes effect for that agent and not others.
+- Per-agent override: `[roles.<name>.claude.auth_forward = "token"]` takes effect for that agent and not others.
 
 ### Pre-commit
 

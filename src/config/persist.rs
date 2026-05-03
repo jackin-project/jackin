@@ -74,7 +74,7 @@ impl AppConfig {
             }
             let mut editor = crate::config::ConfigEditor::open(paths)?;
             if builtins_changed {
-                for &(name, git) in crate::config::agents::BUILTIN_AGENTS {
+                for &(name, git) in crate::config::roles::BUILTIN_ROLES {
                     editor.upsert_builtin_agent(name, git);
                 }
             }
@@ -82,7 +82,7 @@ impl AppConfig {
                 editor.normalize_deprecated_copy();
             }
             // editor.save() returns an AppConfig parsed from the on-disk file,
-            // which has [agents.X.env] preserved (upsert_builtin_agent doesn't
+            // which has [roles.X.env] preserved (upsert_builtin_agent doesn't
             // touch env). The in-memory `config` from sync_builtin_agents has
             // env cleared. Replace the in-memory config with the preserved one.
             config = editor.save()?;
@@ -100,7 +100,7 @@ impl AppConfig {
 
 /// Detect the literal deprecated `auth_forward = "copy"` at either of the
 /// two known config paths: the global `[claude]` table or any
-/// `[agents.*.claude]` table. Returns `true` if any occurrence is found.
+/// `[roles.*.claude]` table. Returns `true` if any occurrence is found.
 ///
 /// Uses `toml::Value` (cheap — we parse the same string into `AppConfig`
 /// right after) instead of a regex, so quoted keys with odd whitespace
@@ -118,10 +118,10 @@ fn contains_deprecated_copy_auth_forward(raw: &str) -> anyhow::Result<bool> {
         return Ok(true);
     }
 
-    // Per-agent [agents.<name>.claude] auth_forward
-    if let Some(agents) = value.get("agents").and_then(|a| a.as_table()) {
-        for agent in agents.values() {
-            if let Some(s) = agent
+    // Per-role [roles.<name>.claude] auth_forward
+    if let Some(roles) = value.get("roles").and_then(|a| a.as_table()) {
+        for role in roles.values() {
+            if let Some(s) = role
                 .get("claude")
                 .and_then(|c| c.get("auth_forward"))
                 .and_then(|v| v.as_str())
@@ -177,7 +177,7 @@ mod tests {
             r#"[claude]
 auth_forward = "copy"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 "#,
         )
@@ -211,10 +211,10 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
         std::fs::write(
             &paths.config_file,
-            r#"[agents.agent-smith]
+            r#"[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "copy"
 "#,
         )
@@ -245,12 +245,12 @@ auth_forward = "copy"
 [claude]
 auth_forward = "copy"
 
-# Builtin agent, operator-configured
-[agents.agent-smith]
+# Builtin role, operator-configured
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
 # Keep this comment too — it explains why we trust
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "copy"
 "#;
         std::fs::write(&paths.config_file, original).unwrap();
@@ -263,8 +263,8 @@ auth_forward = "copy"
             "top-of-file comment lost: {after}"
         );
         assert!(
-            after.contains("# Builtin agent, operator-configured"),
-            "agent-section comment lost: {after}"
+            after.contains("# Builtin role, operator-configured"),
+            "role-section comment lost: {after}"
         );
         assert!(
             after.contains("# Keep this comment too — it explains why we trust"),
@@ -284,7 +284,7 @@ auth_forward = "copy"
             r#"[env]
 DOCKER_HOST = "override-attempt"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 "#,
         )

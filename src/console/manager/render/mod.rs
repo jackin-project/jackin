@@ -407,7 +407,11 @@ mod header_branding_tests {
         .unwrap();
 
         let buf = term.backend().buffer();
-        let dump: String = buf.content().iter().map(|cell| cell.symbol()).collect();
+        let dump: String = buf
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect();
 
         assert!(
             dump.contains("jackin'"),

@@ -35,7 +35,7 @@ pub(super) fn handle_list_key(
         KeyCode::Enter => match state.selected_row() {
             ManagerListRow::CurrentDirectory => {
                 // Launch against cwd. Run-loop routes through the same
-                // agent-picker stage as LaunchNamed.
+                // role-picker stage as LaunchNamed.
                 Ok(InputOutcome::LaunchCurrentDir)
             }
             ManagerListRow::NewWorkspace => {
@@ -163,12 +163,12 @@ fn handle_list_open_in_github(state: &mut ManagerState<'_>, config: &AppConfig) 
 
 /// Dispatch a key into whatever modal currently sits on `state.list_modal`.
 /// Today the slot can hold either `Modal::GithubPicker` (opened by `o` on
-/// a workspace row) or `Modal::AgentPicker` (opened by Enter when the
-/// highlighted workspace has multiple eligible agents). Any other variant
+/// a workspace row) or `Modal::RolePicker` (opened by Enter when the
+/// highlighted workspace has multiple eligible roles). Any other variant
 /// that sneaks in is treated as cancel so the operator isn't stuck.
 ///
 /// Returns the resulting `InputOutcome` so the `AgentPicker` commit path
-/// can surface the chosen agent up to `run_console` for launch.
+/// can surface the chosen role up to `run_console` for launch.
 pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some(modal) = state.list_modal.as_mut() else {
         return InputOutcome::Continue;
@@ -192,10 +192,10 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
-        Modal::AgentPicker { state: picker } => match picker.handle_key(key) {
-            ModalOutcome::Commit(agent) => {
+        Modal::RolePicker { state: picker } => match picker.handle_key(key) {
+            ModalOutcome::Commit(role) => {
                 state.list_modal = None;
-                InputOutcome::LaunchWithAgent(agent)
+                InputOutcome::LaunchWithAgent(role)
             }
             ModalOutcome::Cancel => {
                 state.list_modal = None;
@@ -241,7 +241,7 @@ mod tests {
         path
     }
 
-    /// Helper: seed an AppConfig + ManagerState with `ws` as a saved workspace,
+    /// Helper: seed an `AppConfig` + `ManagerState` with `ws` as a saved workspace,
     /// cwd far away so selection lands on row 1 (the saved workspace).
     fn list_state_selecting_ws(
         ws: WorkspaceConfig,
@@ -258,7 +258,7 @@ mod tests {
 
     /// Current-directory row (index 0) must reject the `e` edit shortcut and
     /// the `d` delete shortcut with a toast, without entering the Editor or
-    /// ConfirmDelete stages. Paired with the render-side assertion that row 0
+    /// `ConfirmDelete` stages. Paired with the render-side assertion that row 0
     /// is labelled "Current directory".
     #[test]
     fn current_directory_row_rejects_edit_and_delete() {

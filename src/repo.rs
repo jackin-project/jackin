@@ -1,7 +1,7 @@
-use crate::manifest::AgentManifest;
+use crate::manifest::RoleManifest;
 use crate::paths::JackinPaths;
 use crate::repo_contract::{ValidatedDockerfile, validate_agent_dockerfile};
-use crate::selector::ClassSelector;
+use crate::selector::RoleSelector;
 use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -11,10 +11,10 @@ pub struct CachedRepo {
 }
 
 impl CachedRepo {
-    pub fn new(paths: &JackinPaths, selector: &ClassSelector) -> Self {
+    pub fn new(paths: &JackinPaths, selector: &RoleSelector) -> Self {
         let repo_dir = selector.namespace.as_ref().map_or_else(
-            || paths.agents_dir.join(&selector.name),
-            |namespace| paths.agents_dir.join(namespace).join(&selector.name),
+            || paths.roles_dir.join(&selector.name),
+            |namespace| paths.roles_dir.join(namespace).join(&selector.name),
         );
 
         Self {
@@ -25,19 +25,19 @@ impl CachedRepo {
 }
 
 #[derive(Debug, Clone)]
-pub struct ValidatedAgentRepo {
-    pub manifest: AgentManifest,
+pub struct ValidatedRoleRepo {
+    pub manifest: RoleManifest,
     pub dockerfile: ValidatedDockerfile,
 }
 
-pub fn validate_agent_repo(repo_dir: &Path) -> anyhow::Result<ValidatedAgentRepo> {
-    let manifest_path = repo_dir.join("jackin.agent.toml");
+pub fn validate_role_repo(repo_dir: &Path) -> anyhow::Result<ValidatedRoleRepo> {
+    let manifest_path = repo_dir.join("jackin.role.toml");
 
     if !manifest_path.is_file() {
-        anyhow::bail!("invalid agent repo: missing {}", manifest_path.display());
+        anyhow::bail!("invalid role repo: missing {}", manifest_path.display());
     }
 
-    let manifest = AgentManifest::load(repo_dir)?;
+    let manifest = RoleManifest::load(repo_dir)?;
     let dockerfile_path = resolve_manifest_dockerfile_path(repo_dir, &manifest)?;
     let dockerfile = validate_agent_dockerfile(&dockerfile_path)?;
 
@@ -49,7 +49,7 @@ pub fn validate_agent_repo(repo_dir: &Path) -> anyhow::Result<ValidatedAgentRepo
         let contents = std::fs::read_to_string(&hook_path)?;
         if contents.is_empty() {
             anyhow::bail!(
-                "invalid agent repo: pre_launch hook is empty: {}",
+                "invalid role repo: pre_launch hook is empty: {}",
                 hook_path.display()
             );
         }
@@ -61,7 +61,7 @@ pub fn validate_agent_repo(repo_dir: &Path) -> anyhow::Result<ValidatedAgentRepo
         eprintln!("warning: {}", warning.message);
     }
 
-    Ok(ValidatedAgentRepo {
+    Ok(ValidatedRoleRepo {
         manifest,
         dockerfile,
     })
@@ -71,7 +71,7 @@ fn validate_relative_path(repo_dir: &Path, path_str: &str, label: &str) -> anyho
     let path = Path::new(path_str);
 
     if path.is_absolute() {
-        anyhow::bail!("invalid agent repo: {label} path must be relative");
+        anyhow::bail!("invalid role repo: {label} path must be relative");
     }
 
     for component in path.components() {
@@ -79,25 +79,25 @@ fn validate_relative_path(repo_dir: &Path, path_str: &str, label: &str) -> anyho
             component,
             Component::ParentDir | Component::RootDir | Component::Prefix(_)
         ) {
-            anyhow::bail!("invalid agent repo: {label} path must stay inside the repo");
+            anyhow::bail!("invalid role repo: {label} path must stay inside the repo");
         }
     }
 
     let resolved = repo_dir.join(path);
     if !resolved.is_file() {
-        anyhow::bail!("invalid agent repo: missing {}", resolved.display());
+        anyhow::bail!("invalid role repo: missing {}", resolved.display());
     }
     if std::fs::symlink_metadata(&resolved)?
         .file_type()
         .is_symlink()
     {
-        anyhow::bail!("invalid agent repo: {label} path must not be a symlink");
+        anyhow::bail!("invalid role repo: {label} path must not be a symlink");
     }
 
     let canonical_repo = repo_dir.canonicalize()?;
     let canonical_resolved = resolved.canonicalize()?;
     if !canonical_resolved.starts_with(&canonical_repo) {
-        anyhow::bail!("invalid agent repo: {label} path escapes the repo boundary");
+        anyhow::bail!("invalid role repo: {label} path escapes the repo boundary");
     }
 
     Ok(canonical_resolved)
@@ -105,7 +105,7 @@ fn validate_relative_path(repo_dir: &Path, path_str: &str, label: &str) -> anyho
 
 fn resolve_manifest_dockerfile_path(
     repo_dir: &Path,
-    manifest: &AgentManifest,
+    manifest: &RoleManifest,
 ) -> anyhow::Result<PathBuf> {
     validate_relative_path(repo_dir, &manifest.dockerfile, "dockerfile")
 }
@@ -114,20 +114,20 @@ fn resolve_manifest_dockerfile_path(
 mod tests {
     use super::*;
     use crate::paths::JackinPaths;
-    use crate::selector::ClassSelector;
+    use crate::selector::RoleSelector;
     use tempfile::tempdir;
 
     #[test]
     fn computes_cached_repo_path_for_namespaced_selector() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+        let selector = RoleSelector::new(Some("chainargos"), "the-architect");
 
         let repo = CachedRepo::new(&paths, &selector);
 
         assert_eq!(
             repo.repo_dir,
-            paths.agents_dir.join("chainargos").join("the-architect")
+            paths.roles_dir.join("chainargos").join("the-architect")
         );
     }
 
@@ -136,17 +136,17 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::create_dir_all(temp.path()).unwrap();
 
-        let error = validate_agent_repo(temp.path()).unwrap_err();
+        let error = validate_role_repo(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("jackin.agent.toml"));
+        assert!(error.to_string().contains("jackin.role.toml"));
     }
 
     #[test]
     fn rejects_missing_manifest_dockerfile() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
-            r#"dockerfile = "docker/agent.Dockerfile"
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "docker/role.Dockerfile"
 
 [claude]
 plugins = []
@@ -154,16 +154,16 @@ plugins = []
         )
         .unwrap();
 
-        let error = validate_agent_repo(temp.path()).unwrap_err();
+        let error = validate_role_repo(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("docker/agent.Dockerfile"));
+        assert!(error.to_string().contains("docker/role.Dockerfile"));
     }
 
     #[test]
     fn rejects_manifest_dockerfile_outside_repo() {
         let temp = tempdir().unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "../Dockerfile"
 
 [claude]
@@ -172,7 +172,7 @@ plugins = []
         )
         .unwrap();
 
-        let error = validate_agent_repo(temp.path()).unwrap_err();
+        let error = validate_role_repo(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("must stay inside the repo"));
     }
@@ -185,7 +185,7 @@ plugins = []
         std::fs::write(outside.path().join("Dockerfile"), "FROM debian:trixie\n").unwrap();
         std::os::unix::fs::symlink(outside.path(), temp.path().join("escape")).unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "escape/Dockerfile"
 
 [claude]
@@ -194,7 +194,7 @@ plugins = []
         )
         .unwrap();
 
-        let error = validate_agent_repo(temp.path()).unwrap_err();
+        let error = validate_role_repo(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("escapes the repo boundary"));
     }
@@ -204,13 +204,13 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::create_dir_all(temp.path().join("docker")).unwrap();
         std::fs::write(
-            temp.path().join("docker/agent.Dockerfile"),
+            temp.path().join("docker/role.Dockerfile"),
             "FROM projectjackin/construct:trixie\n",
         )
         .unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
-            r#"dockerfile = "docker/agent.Dockerfile"
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "docker/role.Dockerfile"
 
 [claude]
 plugins = []
@@ -218,14 +218,14 @@ plugins = []
         )
         .unwrap();
 
-        let validated = validate_agent_repo(temp.path()).unwrap();
+        let validated = validate_role_repo(temp.path()).unwrap();
 
         assert_eq!(
             validated.dockerfile.dockerfile_path,
             temp.path()
                 .canonicalize()
                 .unwrap()
-                .join("docker/agent.Dockerfile")
+                .join("docker/role.Dockerfile")
         );
     }
 
@@ -235,9 +235,9 @@ plugins = []
         std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
         std::fs::write(
             temp.path().join("hooks/pre-launch.sh"),
-            r#"#!/bin/bash
+            r"#!/bin/bash
 echo hello
-"#,
+",
         )
         .unwrap();
         std::fs::write(
@@ -246,7 +246,7 @@ echo hello
         )
         .unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -258,7 +258,7 @@ pre_launch = "hooks/pre-launch.sh"
         )
         .unwrap();
 
-        let validated = validate_agent_repo(temp.path()).unwrap();
+        let validated = validate_role_repo(temp.path()).unwrap();
 
         assert!(
             validated
@@ -280,7 +280,7 @@ pre_launch = "hooks/pre-launch.sh"
         )
         .unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -292,7 +292,7 @@ pre_launch = "../escape.sh"
         )
         .unwrap();
 
-        let error = validate_agent_repo(temp.path()).unwrap_err();
+        let error = validate_role_repo(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("must stay inside the repo"));
     }
@@ -306,7 +306,7 @@ pre_launch = "../escape.sh"
         )
         .unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -318,7 +318,7 @@ pre_launch = "hooks/missing.sh"
         )
         .unwrap();
 
-        let error = validate_agent_repo(temp.path()).unwrap_err();
+        let error = validate_role_repo(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("missing"));
     }
@@ -332,7 +332,7 @@ pre_launch = "hooks/missing.sh"
         )
         .unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -344,7 +344,7 @@ pre_launch = "/etc/evil.sh"
         )
         .unwrap();
 
-        let error = validate_agent_repo(temp.path()).unwrap_err();
+        let error = validate_role_repo(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("must be relative"));
     }
@@ -360,7 +360,7 @@ pre_launch = "/etc/evil.sh"
         )
         .unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -372,7 +372,7 @@ pre_launch = "hooks/pre-launch.sh"
         )
         .unwrap();
 
-        let error = validate_agent_repo(temp.path()).unwrap_err();
+        let error = validate_role_repo(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("empty"));
     }
@@ -394,7 +394,7 @@ pre_launch = "hooks/pre-launch.sh"
         )
         .unwrap();
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -406,7 +406,7 @@ pre_launch = "hooks/pre-launch.sh"
         )
         .unwrap();
 
-        let error = validate_agent_repo(temp.path()).unwrap_err();
+        let error = validate_role_repo(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("symlink"));
         assert!(error.to_string().contains("pre_launch"));

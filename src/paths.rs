@@ -6,7 +6,7 @@ pub struct JackinPaths {
     pub home_dir: PathBuf,
     pub config_dir: PathBuf,
     pub config_file: PathBuf,
-    pub agents_dir: PathBuf,
+    pub roles_dir: PathBuf,
     pub data_dir: PathBuf,
     pub cache_dir: PathBuf,
 }
@@ -20,7 +20,7 @@ impl JackinPaths {
 
         Ok(Self {
             config_file: config_dir.join("config.toml"),
-            agents_dir: home_dir.join(".jackin/agents"),
+            roles_dir: home_dir.join(".jackin/roles"),
             data_dir: home_dir.join(".jackin/data"),
             cache_dir: home_dir.join(".jackin/cache"),
             home_dir,
@@ -33,7 +33,7 @@ impl JackinPaths {
         let config_dir = root.join("config");
         Self {
             config_file: config_dir.join("config.toml"),
-            agents_dir: home_dir.join(".jackin/agents"),
+            roles_dir: home_dir.join(".jackin/roles"),
             data_dir: home_dir.join(".jackin/data"),
             cache_dir: home_dir.join(".jackin/cache"),
             home_dir,
@@ -43,7 +43,7 @@ impl JackinPaths {
 
     pub fn ensure_base_dirs(&self) -> anyhow::Result<()> {
         std::fs::create_dir_all(&self.config_dir)?;
-        std::fs::create_dir_all(&self.agents_dir)?;
+        std::fs::create_dir_all(&self.roles_dir)?;
         std::fs::create_dir_all(&self.data_dir)?;
         std::fs::create_dir_all(&self.cache_dir)?;
         Ok(())

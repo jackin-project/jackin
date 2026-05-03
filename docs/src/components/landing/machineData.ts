@@ -12,20 +12,20 @@ export interface Workspace {
   allowed: string[] | null;
 }
 
-export interface AgentClass {
+export interface Role {
   repo: string;
   tools: string;
   plugins: string;
 }
 
 export interface Org {
-  classes: Record<string, AgentClass>;
+  roles: Record<string, Role>;
   workspaces: Record<string, Workspace>;
 }
 
 export const orgs: Record<string, Org> = {
   'jackin-project': {
-    classes: {
+    roles: {
       'agent-smith':   { repo: 'jackin-project/jackin-agent-smith',   tools: 'git, gh, mise, zsh',              plugins: 'default starter' },
       'the-architect': { repo: 'jackin-project/jackin-the-architect', tools: 'Rust 1.87, cargo, ripgrep, just', plugins: 'superpowers · rust' },
     },
@@ -43,7 +43,7 @@ export const orgs: Record<string, Org> = {
     },
   },
   'chainargos': {
-    classes: {
+    roles: {
       'chainargos/backend-engineer':  { repo: 'chainargos/jackin-backend-engineer',  tools: 'Go 1.23, Postgres, grpcurl', plugins: 'API · SQL' },
       'chainargos/frontend-engineer': { repo: 'chainargos/jackin-frontend-engineer', tools: 'Node 22, Playwright, pnpm',  plugins: 'UI · a11y' },
       'chainargos/docs-writer':       { repo: 'chainargos/jackin-docs-writer',       tools: 'MDX, Vale, prettier',        plugins: 'writing' },
@@ -62,7 +62,7 @@ export const orgs: Record<string, Org> = {
     },
   },
   'your-org': {
-    classes: {
+    roles: {
       'your-org/frontend-engineer': { repo: 'your-org/jackin-frontend-engineer', tools: 'Node 22, Playwright, pnpm',  plugins: 'UI · a11y' },
       'your-org/backend-engineer':  { repo: 'your-org/jackin-backend-engineer',  tools: 'Go 1.23, Postgres, grpcurl', plugins: 'API · SQL' },
     },

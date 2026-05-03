@@ -37,7 +37,7 @@ export function CastRoster() {
             <h3>Cast your own role.</h3>
             <p>Platform engineer, SRE, security reviewer, ML researcher — whatever your team needs. Write the Dockerfile, declare the manifest, push the repo.</p>
           </div>
-          <a className="landing-invite-cta" href="/developing/creating-agents/">Read the guide →</a>
+          <a className="landing-invite-cta" href="/developing/creating-roles/">Read the guide →</a>
         </div>
       </div>
     </section>

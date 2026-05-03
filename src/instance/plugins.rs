@@ -10,7 +10,7 @@ pub(super) struct PluginState<'a> {
 #[cfg(test)]
 mod tests {
     use crate::config::AuthForwardMode;
-    use crate::instance::AgentState;
+    use crate::instance::RoleState;
     use crate::paths::JackinPaths;
     use serde_json::json;
     use tempfile::tempdir;
@@ -21,7 +21,7 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
 
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -35,19 +35,22 @@ plugins = ["code-review@claude-plugins-official", "feature-dev@claude-plugins-of
         )
         .unwrap();
 
-        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
-        let (state, _) = AgentState::prepare(
+        let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
         assert!(state.jackin_dir.is_dir());
-        let value: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&state.plugins_json).unwrap()).unwrap();
+        let value: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(state.claude_plugins_json().unwrap()).unwrap(),
+        )
+        .unwrap();
         assert_eq!(value["marketplaces"], json!([]));
         assert_eq!(
             value["plugins"],
@@ -64,7 +67,7 @@ plugins = ["code-review@claude-plugins-official", "feature-dev@claude-plugins-of
         let paths = JackinPaths::for_tests(temp.path());
 
         std::fs::write(
-            temp.path().join("jackin.agent.toml"),
+            temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
 
 [claude]
@@ -82,18 +85,21 @@ sparse = ["plugins", ".claude-plugin"]
         )
         .unwrap();
 
-        let manifest = crate::manifest::AgentManifest::load(temp.path()).unwrap();
-        let (state, _) = AgentState::prepare(
+        let manifest = crate::manifest::RoleManifest::load(temp.path()).unwrap();
+        let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Ignore,
             temp.path(),
+            crate::agent::Agent::Claude,
         )
         .unwrap();
 
-        let value: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&state.plugins_json).unwrap()).unwrap();
+        let value: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(state.claude_plugins_json().unwrap()).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             value["marketplaces"],
             json!([

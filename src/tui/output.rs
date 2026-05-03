@@ -99,11 +99,11 @@ pub fn step_fail(msg: &str) {
 
 // ── Deploying message ────────────────────────────────────────────────────
 
-pub fn print_deploying(agent_name: &str) {
+pub fn print_deploying(role_name: &str) {
     eprintln!();
     eprintln!(
         "  {}",
-        format!("Deploying {agent_name} into an isolated container...")
+        format!("Deploying {role_name} into an isolated container...")
             .color(rgb(PHOSPHOR_GREEN))
             .bold()
     );

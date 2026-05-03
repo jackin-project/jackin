@@ -75,7 +75,7 @@ the dispatch loop itself.
 ```toml
 [workspaces.fix-bugs]
 workdir = "/workspace/example"
-default_agent = "the-architect"
+default_role = "the-architect"
 
 # A workspace can subscribe to one or more task sources.
 task_sources = ["fix-issues", "review-spec"]
@@ -235,7 +235,7 @@ jackin queue resume <workspace>        # resume
 - **First-prompt template safety.** Templating user-controlled task
   body into an agent prompt is a prompt-injection surface. Recommended:
   *document the risk*, render task body inside a clearly-fenced block,
-  trust the agent class's instructions to handle it. This is a known
+  trust the role's instructions to handle it. This is a known
   general AI-agent concern; jackin' shouldn't pretend to solve it.
 - **Container-name length.** Per-task instance names will be long
   (`jackin-fix-bugs-task-<hash>`). Docker accepts up to 253 chars but
@@ -253,7 +253,7 @@ jackin queue resume <workspace>        # resume
   invocation instead of CLI args only
 - <RepoFile path="src/instance/naming.rs" /> — per-task instance name
   generator extension
-- <RepoFile path="src/cli/agent.rs" /> — `jackin queue` subcommands
+- <RepoFile path="src/cli/role.rs" /> — `jackin queue` subcommands
 - The persistent-storage module — `tasks` table reads/writes
 
 ## See Also

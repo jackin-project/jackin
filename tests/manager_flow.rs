@@ -14,7 +14,7 @@ use jackin::{
         },
     },
     paths::JackinPaths,
-    workspace::{MountConfig, WorkspaceAgentOverride, WorkspaceConfig},
+    workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride},
 };
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -222,7 +222,7 @@ fn secrets_tab_shows_existing_env() -> Result<()> {
     Ok(())
 }
 
-/// Edit an existing env value via the TextInput modal, save, and verify
+/// Edit an existing env value via the `TextInput` modal, save, and verify
 /// the on-disk TOML reflects the new value. The cursor opens directly on
 /// the key row (the Secrets tab no longer renders a preamble label —
 /// row 0 is the first navigable row).
@@ -267,7 +267,7 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("new-value"),
         "pending.env must reflect the edit"
     );
@@ -288,7 +288,9 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
         .get("big-monorepo")
         .expect("workspace must still exist");
     assert_eq!(
-        ws.env.get("DB_URL").map(|v| v.as_persisted_str()),
+        ws.env
+            .get("DB_URL")
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("new-value"),
         "on-disk env must reflect the edit"
     );
@@ -393,8 +395,8 @@ fn secrets_masking_m_toggle() -> Result<()> {
     Ok(())
 }
 
-/// Agent-override section starts collapsed; `→` on the header expands it
-/// and the agent's env key becomes visible; `←` collapses it back and
+/// Role-override section starts collapsed; `→` on the header expands it
+/// and the role's env key becomes visible; `←` collapses it back and
 /// the key disappears from the buffer.
 #[test]
 fn secrets_agent_section_expand_collapse() -> Result<()> {
@@ -403,17 +405,17 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     paths.ensure_base_dirs()?;
     let host_path = temp.path().display().to_string();
 
-    // Seed a workspace with one agent override. Using `ConfigEditor`
+    // Seed a workspace with one role override. Using `ConfigEditor`
     // keeps the test aligned with the real save path.
-    let mut agent_env = std::collections::BTreeMap::new();
-    agent_env.insert(
+    let mut role_env = std::collections::BTreeMap::new();
+    role_env.insert(
         "LOG_LEVEL".into(),
         jackin::operator_env::EnvValue::Plain("debug".into()),
     );
-    let mut agents = std::collections::BTreeMap::new();
-    agents.insert(
+    let mut roles = std::collections::BTreeMap::new();
+    roles.insert(
         "agent-smith".into(),
-        WorkspaceAgentOverride { env: agent_env },
+        WorkspaceRoleOverride { env: role_env },
     );
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -423,7 +425,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             readonly: false,
             isolation: jackin::isolation::MountIsolation::Shared,
         }],
-        agents,
+        roles,
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(&paths)?;
@@ -435,21 +437,21 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     // Unmask so the key value (`debug`) would show up in the dump if
     // the section were expanded.
     editor_mut(&mut state).unmasked_rows.insert((
-        jackin::console::manager::state::SecretsScopeTag::Agent("agent-smith".into()),
+        jackin::console::manager::state::SecretsScopeTag::Role("agent-smith".into()),
         "LOG_LEVEL".into(),
     ));
 
     // Secrets flat rows on this fixture (no workspace-level keys, one
-    // collapsed agent section; no preamble rows are rendered):
+    // collapsed role section; no preamble rows are rendered):
     //   0 WorkspaceAddSentinel
     //   1 SectionSpacer
-    //   2 AgentHeader { agent: "agent-smith", expanded: false }
+    //   2 AgentHeader { role: "agent-smith", expanded: false }
     // Pressing `↓` once skips the SectionSpacer at row 1 and lands on
-    // the agent header at row 2.
+    // the role header at row 2.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     assert!(
         matches!(editor(&state).active_field, FieldFocus::Row(2)),
-        "cursor must skip SectionSpacer and land on the agent header row; \
+        "cursor must skip SectionSpacer and land on the role header row; \
          got {:?}",
         editor(&state).active_field
     );
@@ -458,10 +460,10 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     let dump_collapsed = render_to_dump(&mut state, &config, cwd);
     assert!(
         !dump_collapsed.contains("LOG_LEVEL"),
-        "collapsed section must not render agent keys; got:\n{dump_collapsed}"
+        "collapsed section must not render role keys; got:\n{dump_collapsed}"
     );
 
-    // `→` on a collapsed agent header expands the section, symmetric with
+    // `→` on a collapsed role header expands the section, symmetric with
     // `←` collapsing an expanded header (verified below). Enter on the
     // header also expands; Right is exercised here because it's the binding
     // most likely to be eaten by the tab-advance handler if the guard ever
@@ -474,7 +476,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     let dump_expanded = render_to_dump(&mut state, &config, cwd);
     assert!(
         dump_expanded.contains("LOG_LEVEL"),
-        "expanded section must render agent keys; got:\n{dump_expanded}"
+        "expanded section must render role keys; got:\n{dump_expanded}"
     );
 
     // Cursor is still on the AgentHeader row (expanded). `←` collapses.
@@ -486,7 +488,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     let dump_recollapsed = render_to_dump(&mut state, &config, cwd);
     assert!(
         !dump_recollapsed.contains("LOG_LEVEL"),
-        "recollapsed section must hide agent keys; got:\n{dump_recollapsed}"
+        "recollapsed section must hide role keys; got:\n{dump_recollapsed}"
     );
     Ok(())
 }
@@ -519,9 +521,9 @@ fn secrets_dirty_detection_and_change_count() -> Result<()> {
     Ok(())
 }
 
-/// Three-step Add flow: `A` opens the EnvKey modal, typing + Enter
-/// stashes the key and opens the SourcePicker; Enter on the (default)
-/// Plain choice opens the EnvValue modal; typing + Enter commits the
+/// Three-step Add flow: `A` opens the `EnvKey` modal, typing + Enter
+/// stashes the key and opens the `SourcePicker`; Enter on the (default)
+/// Plain choice opens the `EnvValue` modal; typing + Enter commits the
 /// value into `pending.env`.
 #[test]
 fn secrets_add_new_key_flow() -> Result<()> {
@@ -567,7 +569,7 @@ fn secrets_add_new_key_flow() -> Result<()> {
             .pending
             .env
             .get("API_KEY")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("s3cret"),
         "pending.env must contain the new key after the three-step add"
     );
@@ -619,7 +621,7 @@ fn op_picker_opens_on_p_from_secrets_key_row() -> Result<()> {
 
 /// Esc on the `OpPicker` (vault pane / fatal state / loading) closes
 /// the modal entirely — the picker is no longer a sub-mode of the
-/// EnvValue text modal, so cancel returns the operator to the editor
+/// `EnvValue` text modal, so cancel returns the operator to the editor
 /// list view with `pending.env` unchanged.
 #[test]
 fn op_picker_cancel_closes_modal() -> Result<()> {
@@ -662,7 +664,7 @@ fn op_picker_cancel_closes_modal() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("untouched"),
         "Esc-cancel must not mutate pending.env"
     );
@@ -746,7 +748,7 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("op://v1/i1/password"),
         "picker commit must write the UUID-form op:// reference straight into pending.env[key]"
     );
@@ -850,7 +852,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
         editor(&state)
             .pending_picker_value
             .as_ref()
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("op://v1/i1/credential"),
         "picker commit must stash the UUID-form op:// reference for the EnvKey commit"
     );
@@ -867,7 +869,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
             .pending
             .env
             .get("API_KEY")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("op://v1/i1/credential"),
         "EnvKey commit must write the stashed UUID-form OpRef into pending.env"
     );
@@ -885,8 +887,8 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
 
 // ── SourcePicker integration tests ────────────────────────────────
 
-/// Drives Enter-on-sentinel → ScopePicker(All agents) → EnvKey
-/// commit, leaving SourcePicker open. Default `op_available = false`.
+/// Drives Enter-on-sentinel → ScopePicker(All roles) → `EnvKey`
+/// commit, leaving `SourcePicker` open. Default `op_available = false`.
 fn drive_to_source_picker<'a>(
     config: &mut AppConfig,
     paths: &JackinPaths,
@@ -910,8 +912,8 @@ fn drive_to_source_picker<'a>(
     Ok(state)
 }
 
-/// `Enter` on `+ Add` walks: EnvKey → SourcePicker → EnvValue → commit.
-/// The SourcePicker is the new step between the existing two text
+/// `Enter` on `+ Add` walks: `EnvKey` → `SourcePicker` → `EnvValue` → commit.
+/// The `SourcePicker` is the new step between the existing two text
 /// modals. Verifies the `Plain` branch lands the typed value in
 /// `pending.env`.
 #[test]
@@ -952,14 +954,14 @@ fn enter_on_sentinel_opens_envkey_then_sourcepicker_then_value_modal() -> Result
             .pending
             .env
             .get("API_KEY")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("s3cret"),
         "Plain-text source path must land the typed value in pending.env"
     );
     Ok(())
 }
 
-/// POSIX `VAR=""` differs from `unset VAR`, so EnvValue must commit
+/// POSIX `VAR=""` differs from `unset VAR`, so `EnvValue` must commit
 /// the empty string into `pending.env`.
 #[test]
 fn env_value_modal_allows_empty_commit() -> Result<()> {
@@ -999,7 +1001,7 @@ fn env_value_modal_allows_empty_commit() -> Result<()> {
             .pending
             .env
             .get("EMPTY_OK")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some(""),
         "EnvValue modal must allow committing an empty string \
          (POSIX VAR=\"\" semantics)"
@@ -1012,8 +1014,8 @@ fn env_value_modal_allows_empty_commit() -> Result<()> {
     Ok(())
 }
 
-/// SourcePicker → 1Password branch: when op is available and the
-/// operator picks the Op choice, the OpPicker modal opens with
+/// `SourcePicker` → 1Password branch: when op is available and the
+/// operator picks the Op choice, the `OpPicker` modal opens with
 /// `pending_picker_target = (scope, Some(key))` so its commit handler
 /// can write the `op://...` reference straight into the named key.
 #[test]
@@ -1071,7 +1073,7 @@ fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
     Ok(())
 }
 
-/// When `op_available = false`, the Op button on the SourcePicker is
+/// When `op_available = false`, the Op button on the `SourcePicker` is
 /// disabled: `→`/`Tab` cycling skips it, focus stays on Plain, and the
 /// `O` direct hotkey is inert. The picker commits Plain regardless of
 /// key flailing.
@@ -1287,7 +1289,7 @@ fn op_picker_multi_account_flow() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("op://v1/i1/password"),
         "multi-account picker commit must produce a UUID-form op:// reference"
     );
@@ -1295,24 +1297,24 @@ fn op_picker_multi_account_flow() -> Result<()> {
     Ok(())
 }
 
-// ── Modal::AgentPicker dispatch tests ─────────────────────────────
+// ── Modal::RolePicker dispatch tests ─────────────────────────────
 
 /// Seed a config with a workspace that has `agent_keys.len()` allowed
-/// agents (each registered as `config.agents`), optionally a named
-/// `default_agent`. Returns the saved `AppConfig`.
+/// roles (each registered as `config.roles`), optionally a named
+/// `default_role`. Returns the saved `AppConfig`.
 fn seed_config_with_agents(
     paths: &JackinPaths,
     temp_dir: &std::path::Path,
     agent_keys: &[&str],
-    default_agent: Option<&str>,
+    default_role: Option<&str>,
 ) -> Result<AppConfig> {
     paths.ensure_base_dirs()?;
     let host_path = temp_dir.display().to_string();
     let mut config = AppConfig::default();
     for key in agent_keys {
-        config.agents.insert(
+        config.roles.insert(
             (*key).to_string(),
-            jackin::config::AgentSource {
+            jackin::config::RoleSource {
                 git: format!("https://example.invalid/jackin-{key}.git"),
                 trusted: true,
                 claude: None,
@@ -1331,17 +1333,17 @@ fn seed_config_with_agents(
             readonly: false,
             isolation: jackin::isolation::MountIsolation::Shared,
         }],
-        allowed_agents: agent_keys.iter().map(|s| (*s).to_string()).collect(),
-        default_agent: default_agent.map(String::from),
+        allowed_roles: agent_keys.iter().map(|s| (*s).to_string()).collect(),
+        default_role: default_role.map(String::from),
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(paths)?;
-    ce.create_workspace("multi-agent-ws", ws)?;
+    ce.create_workspace("multi-role-ws", ws)?;
     ce.save()
 }
 
-/// `Enter` on a workspace row with two eligible agents and no default
-/// must open `Modal::AgentPicker` overlaid on the manager list — not
+/// `Enter` on a workspace row with two eligible roles and no default
+/// must open `Modal::RolePicker` overlaid on the manager list — not
 /// short-circuit to a launch outcome.
 #[test]
 fn agent_picker_opens_when_multiple_agents_available() -> Result<()> {
@@ -1359,24 +1361,24 @@ fn agent_picker_opens_when_multiple_agents_available() -> Result<()> {
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
-        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
     assert!(
         outcome.is_none(),
-        "multi-agent dispatch must stay in the run-loop (Ok(None)); got {outcome:?}"
+        "multi-role dispatch must stay in the run-loop (Ok(None)); got {outcome:?}"
     );
     let ConsoleStage::Manager(ms) = &state.stage;
     match &ms.list_modal {
-        Some(Modal::AgentPicker { state: picker }) => {
-            assert_eq!(picker.agents.len(), 2);
+        Some(Modal::RolePicker { state: picker }) => {
+            assert_eq!(picker.roles.len(), 2);
             assert_eq!(picker.filtered.len(), 2);
         }
-        other => panic!("expected Modal::AgentPicker on list_modal; got {other:?}"),
+        other => panic!("expected Modal::RolePicker on list_modal; got {other:?}"),
     }
     Ok(())
 }
 
-/// `default_agent` set on the workspace must short-circuit the picker
+/// `default_role` set on the workspace must short-circuit the picker
 /// and produce an `Ok(Some(_))` direct launch outcome — no modal opens.
 #[test]
 fn agent_picker_skipped_when_default_agent_set() -> Result<()> {
@@ -1394,21 +1396,21 @@ fn agent_picker_skipped_when_default_agent_set() -> Result<()> {
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
-        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (agent, _ws) = outcome.expect("default_agent must short-circuit to a direct launch");
-    assert_eq!(agent.key(), "chainargos/agent-smith");
+    let (role, _ws) = outcome.expect("default_role must short-circuit to a direct launch");
+    assert_eq!(role.key(), "chainargos/agent-smith");
     let ConsoleStage::Manager(ms) = &state.stage;
     assert!(
         ms.list_modal.is_none(),
-        "default_agent dispatch must NOT open the picker; got {:?}",
+        "default_role dispatch must NOT open the picker; got {:?}",
         ms.list_modal
     );
     Ok(())
 }
 
-/// Exactly one eligible agent must short-circuit the picker — same
-/// direct-launch outcome as the default-agent path.
+/// Exactly one eligible role must short-circuit the picker — same
+/// direct-launch outcome as the default-role path.
 #[test]
 fn agent_picker_skipped_when_single_eligible_agent() -> Result<()> {
     let temp = tempdir()?;
@@ -1420,18 +1422,17 @@ fn agent_picker_skipped_when_single_eligible_agent() -> Result<()> {
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
-        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (agent, _ws) =
-        outcome.expect("single eligible agent must short-circuit to a direct launch");
-    assert_eq!(agent.key(), "chainargos/agent-smith");
+    let (role, _ws) = outcome.expect("single eligible role must short-circuit to a direct launch");
+    assert_eq!(role.key(), "chainargos/agent-smith");
     let ConsoleStage::Manager(ms) = &state.stage;
     assert!(ms.list_modal.is_none());
     Ok(())
 }
 
-/// `Enter` on the picker commits the selected agent — `manager::handle_key`
-/// returns `InputOutcome::LaunchWithAgent(agent)` so `run_console` can
+/// `Enter` on the picker commits the selected role — `manager::handle_key`
+/// returns `InputOutcome::LaunchWithAgent(role)` so `run_console` can
 /// resolve the workspace and break the event loop.
 #[test]
 fn agent_picker_enter_commits_launch() -> Result<()> {
@@ -1451,20 +1452,20 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
     state.dispatch_launch_for_workspace(
         &config,
         cwd,
-        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    assert!(matches!(ms.list_modal, Some(Modal::AgentPicker { .. })));
+    assert!(matches!(ms.list_modal, Some(Modal::RolePicker { .. })));
 
     // Enter on the picker — selection defaults to index 0
-    // (BTreeMap ordering of agent keys).
+    // (BTreeMap ordering of role keys).
     let outcome = handle_key(ms, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     match outcome {
-        InputOutcome::LaunchWithAgent(agent) => {
+        InputOutcome::LaunchWithAgent(role) => {
             assert!(
-                agent.key() == "chainargos/agent-brown" || agent.key() == "chainargos/agent-smith",
-                "picker commit must surface one of the two seeded agents; got {}",
-                agent.key()
+                role.key() == "chainargos/agent-brown" || role.key() == "chainargos/agent-smith",
+                "picker commit must surface one of the two seeded roles; got {}",
+                role.key()
             );
         }
         other => panic!("expected LaunchWithAgent outcome; got {other:?}"),
@@ -1496,10 +1497,10 @@ fn agent_picker_esc_closes_modal() -> Result<()> {
     state.dispatch_launch_for_workspace(
         &config,
         cwd,
-        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    assert!(matches!(ms.list_modal, Some(Modal::AgentPicker { .. })));
+    assert!(matches!(ms.list_modal, Some(Modal::RolePicker { .. })));
 
     let outcome = handle_key(ms, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
@@ -1575,14 +1576,14 @@ fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {
             .pending
             .env
             .get("EXISTING")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("kept-value"),
         "the pre-existing value must remain untouched"
     );
     Ok(())
 }
 
-/// Same guard, agent-override scope. Seed a workspace with one agent
+/// Same guard, role-override scope. Seed a workspace with one role
 /// override `LOG_LEVEL`, expand the section, navigate to its `+ Add`
 /// sentinel, and type the colliding key.
 #[test]
@@ -1592,15 +1593,15 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     paths.ensure_base_dirs()?;
     let host_path = temp.path().display().to_string();
 
-    let mut agent_env = std::collections::BTreeMap::new();
-    agent_env.insert(
+    let mut role_env = std::collections::BTreeMap::new();
+    role_env.insert(
         "LOG_LEVEL".into(),
         jackin::operator_env::EnvValue::Plain("debug".into()),
     );
-    let mut agents = std::collections::BTreeMap::new();
-    agents.insert(
+    let mut roles = std::collections::BTreeMap::new();
+    roles.insert(
         "agent-smith".into(),
-        WorkspaceAgentOverride { env: agent_env },
+        WorkspaceRoleOverride { env: role_env },
     );
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -1610,7 +1611,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             readonly: false,
             isolation: jackin::isolation::MountIsolation::Shared,
         }],
-        agents,
+        roles,
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(&paths)?;
@@ -1620,11 +1621,11 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
 
-    // Rows on this fixture (no workspace keys, one collapsed agent section):
+    // Rows on this fixture (no workspace keys, one collapsed role section):
     //   0 WorkspaceAddSentinel
     //   1 SectionSpacer  (skipped by ↑/↓)
-    //   2 AgentHeader { agent: "agent-smith", expanded: false }
-    // Expand the agent section so the AgentAddSentinel row exists.
+    //   2 AgentHeader { role: "agent-smith", expanded: false }
+    // Expand the role section so the AgentAddSentinel row exists.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
     assert!(editor(&state).secrets_expanded.contains("agent-smith"));
@@ -1633,13 +1634,13 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     //   0 WorkspaceAddSentinel
     //   1 SectionSpacer
     //   2 AgentHeader (expanded)
-    //   3 AgentKeyRow { agent: "agent-smith", key: "LOG_LEVEL" }
+    //   3 AgentKeyRow { role: "agent-smith", key: "LOG_LEVEL" }
     //   4 AgentAddSentinel("agent-smith")
     // Navigate to row 4.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
 
-    // Enter to open the EnvKey modal for the agent scope.
+    // Enter to open the EnvKey modal for the role scope.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(matches!(
         editor(&state).modal,
@@ -1654,7 +1655,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     }
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
-    // The modal must still be open, and the agent's env unchanged.
+    // The modal must still be open, and the role's env unchanged.
     assert!(
         matches!(
             editor(&state).modal,
@@ -1663,22 +1664,22 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
                 ..
             })
         ),
-        "Enter on a duplicate agent key must leave the EnvKey modal open; got {:?}",
+        "Enter on a duplicate role key must leave the EnvKey modal open; got {:?}",
         editor(&state).modal
     );
     let agent_entry = editor(&state)
         .pending
-        .agents
+        .roles
         .get("agent-smith")
-        .expect("agent override must survive");
+        .expect("role override must survive");
     assert_eq!(agent_entry.env.len(), 1);
     assert_eq!(
         agent_entry
             .env
             .get("LOG_LEVEL")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("debug"),
-        "pre-existing agent value must remain untouched"
+        "pre-existing role value must remain untouched"
     );
     Ok(())
 }
@@ -1719,9 +1720,9 @@ fn env_key_modal_allows_unique_name() -> Result<()> {
 // ── ScopePicker + AgentOverridePicker integration tests ──────────────
 
 /// Seed the on-disk config + workspace for the override-picker tests.
-/// Adds a workspace with the given `allowed_agents` (each also
-/// registered as an `AgentSource`), and pre-populates `pending` per-
-/// agent overrides for any names in `with_overrides`.
+/// Adds a workspace with the given `allowed_roles` (each also
+/// registered as an `RoleSource`), and pre-populates `pending` per-
+/// role overrides for any names in `with_overrides`.
 fn seed_override_picker_workspace(
     paths: &JackinPaths,
     temp_dir: &std::path::Path,
@@ -1732,9 +1733,9 @@ fn seed_override_picker_workspace(
     let host_path = temp_dir.display().to_string();
     let mut config = AppConfig::default();
     for name in allowed {
-        config.agents.insert(
+        config.roles.insert(
             (*name).to_string(),
-            jackin::config::AgentSource {
+            jackin::config::RoleSource {
                 git: format!("https://example.invalid/{name}.git"),
                 trusted: true,
                 claude: None,
@@ -1745,14 +1746,14 @@ fn seed_override_picker_workspace(
     let toml = toml::to_string(&config)?;
     std::fs::write(&paths.config_file, toml)?;
 
-    let mut agents_map = std::collections::BTreeMap::new();
+    let mut roles_map = std::collections::BTreeMap::new();
     for name in with_overrides {
         let mut env = std::collections::BTreeMap::new();
         env.insert(
             "LOG_LEVEL".into(),
             jackin::operator_env::EnvValue::Plain("debug".into()),
         );
-        agents_map.insert((*name).into(), WorkspaceAgentOverride { env });
+        roles_map.insert((*name).into(), WorkspaceRoleOverride { env });
     }
 
     let ws = WorkspaceConfig {
@@ -1763,8 +1764,8 @@ fn seed_override_picker_workspace(
             readonly: false,
             isolation: jackin::isolation::MountIsolation::Shared,
         }],
-        allowed_agents: allowed.iter().map(|s| (*s).to_string()).collect(),
-        agents: agents_map,
+        allowed_roles: allowed.iter().map(|s| (*s).to_string()).collect(),
+        roles: roles_map,
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(paths)?;
@@ -1774,7 +1775,7 @@ fn seed_override_picker_workspace(
 
 /// Press `Enter` on the workspace-level `+ Add environment variable`
 /// sentinel: the `Modal::ScopePicker` opens on the editor stage so the
-/// operator can pick "All agents" or "Specific agent" before falling
+/// operator can pick "All roles" or "Specific role" before falling
 /// into the rest of the add flow.
 #[test]
 fn sentinel_enter_opens_scope_picker() -> Result<()> {
@@ -1794,8 +1795,8 @@ fn sentinel_enter_opens_scope_picker() -> Result<()> {
     Ok(())
 }
 
-/// ScopePicker → AllAgents path: pick the default-focused choice and
-/// confirm the EnvKey modal opens with `Workspace` scope.
+/// `ScopePicker` → `AllAgents` path: pick the default-focused choice and
+/// confirm the `EnvKey` modal opens with `Workspace` scope.
 #[test]
 fn scope_picker_all_path_to_workspace_envkey() -> Result<()> {
     use jackin::console::manager::state::SecretsScopeTag;
@@ -1825,10 +1826,10 @@ fn scope_picker_all_path_to_workspace_envkey() -> Result<()> {
     Ok(())
 }
 
-/// ScopePicker → SpecificAgent → AgentPicker → EnvKey path. Verifies
-/// each transition: ScopePicker right-arrow → SpecificAgent focus,
-/// Enter → AgentOverridePicker; picker Enter → EnvKey with `Agent`
-/// scope. `pending.agents` is NOT mutated — the section materialises
+/// `ScopePicker` → `SpecificAgent` → `AgentPicker` → `EnvKey` path. Verifies
+/// each transition: `ScopePicker` right-arrow → `SpecificAgent` focus,
+/// Enter → `AgentOverridePicker`; picker Enter → `EnvKey` with `Role`
+/// scope. `pending.roles` is NOT mutated — the section materialises
 /// organically once the first key/value commits.
 #[test]
 fn scope_picker_specific_path_to_agent_picker_then_envkey() -> Result<()> {
@@ -1844,22 +1845,22 @@ fn scope_picker_specific_path_to_agent_picker_then_envkey() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
-    // The agent-override picker is now open with the eligible set.
+    // The role-override picker is now open with the eligible set.
     match &editor(&state).modal {
-        Some(Modal::AgentOverridePicker { state: picker }) => {
-            assert_eq!(picker.agents.len(), 1);
-            assert_eq!(picker.agents[0].key(), "agent-smith");
+        Some(Modal::RoleOverridePicker { state: picker }) => {
+            assert_eq!(picker.roles.len(), 1);
+            assert_eq!(picker.roles[0].key(), "agent-smith");
         }
-        other => panic!("expected Modal::AgentOverridePicker; got {other:?}"),
+        other => panic!("expected Modal::RoleOverridePicker; got {other:?}"),
     }
 
-    // Commit the only eligible agent — the EnvKey modal opens with
-    // `Agent(<name>)` scope and `pending.agents` stays empty.
+    // Commit the only eligible role — the EnvKey modal opens with
+    // `Role(<name>)` scope and `pending.roles` stays empty.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
-        editor(&state).pending.agents.is_empty(),
-        "picker commit must not create an override entry; got pending.agents keys={:?}",
-        editor(&state).pending.agents.keys().collect::<Vec<_>>()
+        editor(&state).pending.roles.is_empty(),
+        "picker commit must not create an override entry; got pending.roles keys={:?}",
+        editor(&state).pending.roles.keys().collect::<Vec<_>>()
     );
     assert!(
         editor(&state).secrets_expanded.is_empty(),
@@ -1870,8 +1871,8 @@ fn scope_picker_specific_path_to_agent_picker_then_envkey() -> Result<()> {
             TextInputTarget::EnvKey { scope } => {
                 assert_eq!(
                     scope,
-                    &SecretsScopeTag::Agent("agent-smith".into()),
-                    "EnvKey modal must scope to the picked agent"
+                    &SecretsScopeTag::Role("agent-smith".into()),
+                    "EnvKey modal must scope to the picked role"
                 );
             }
             other => panic!("expected TextInputTarget::EnvKey; got {other:?}"),
@@ -1881,7 +1882,7 @@ fn scope_picker_specific_path_to_agent_picker_then_envkey() -> Result<()> {
     Ok(())
 }
 
-/// Agents already carrying an override are not filtered out — the
+/// Roles already carrying an override are not filtered out — the
 /// operator may want to add more keys.
 #[test]
 fn agent_picker_lists_all_allowed_agents_not_filtered_by_existing_overrides() -> Result<()> {
@@ -1902,8 +1903,12 @@ fn agent_picker_lists_all_allowed_agents_not_filtered_by_existing_overrides() ->
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     match &editor(&state).modal {
-        Some(Modal::AgentOverridePicker { state: picker }) => {
-            let mut keys: Vec<String> = picker.agents.iter().map(|a| a.key()).collect();
+        Some(Modal::RoleOverridePicker { state: picker }) => {
+            let mut keys: Vec<String> = picker
+                .roles
+                .iter()
+                .map(jackin::selector::RoleSelector::key)
+                .collect();
             keys.sort();
             assert_eq!(
                 keys,
@@ -1911,13 +1916,13 @@ fn agent_picker_lists_all_allowed_agents_not_filtered_by_existing_overrides() ->
                 "agent-smith already has an override section but must still appear so the operator can add another key"
             );
         }
-        other => panic!("expected Modal::AgentOverridePicker; got {other:?}"),
+        other => panic!("expected Modal::RoleOverridePicker; got {other:?}"),
     }
     Ok(())
 }
 
-/// Esc on the ScopePicker closes the modal and leaves
-/// `pending.agents` and `pending.env` untouched — backing out is a
+/// Esc on the `ScopePicker` closes the modal and leaves
+/// `pending.roles` and `pending.env` untouched — backing out is a
 /// pure no-op.
 #[test]
 fn cancel_from_scope_picker_returns_to_secrets_tab() -> Result<()> {
@@ -1940,7 +1945,7 @@ fn cancel_from_scope_picker_returns_to_secrets_tab() -> Result<()> {
         editor(&state).modal
     );
     assert!(
-        editor(&state).pending.agents.is_empty(),
+        editor(&state).pending.roles.is_empty(),
         "Esc must not create an override entry"
     );
     assert!(
@@ -1950,8 +1955,8 @@ fn cancel_from_scope_picker_returns_to_secrets_tab() -> Result<()> {
     Ok(())
 }
 
-/// Esc on the EnvKey modal that opens after the picker commit must
-/// leave `pending.agents` untouched — no orphan empty section.
+/// Esc on the `EnvKey` modal that opens after the picker commit must
+/// leave `pending.roles` untouched — no orphan empty section.
 #[test]
 fn cancel_from_envkey_after_agent_pick_does_not_create_section() -> Result<()> {
     let temp = tempdir()?;
@@ -1982,9 +1987,9 @@ fn cancel_from_envkey_after_agent_pick_does_not_create_section() -> Result<()> {
         editor(&state).modal
     );
     assert!(
-        editor(&state).pending.agents.is_empty(),
+        editor(&state).pending.roles.is_empty(),
         "Esc on EnvKey must not have created an override entry; got keys={:?}",
-        editor(&state).pending.agents.keys().collect::<Vec<_>>()
+        editor(&state).pending.roles.keys().collect::<Vec<_>>()
     );
     assert!(
         editor(&state).secrets_expanded.is_empty(),
@@ -1993,8 +1998,8 @@ fn cancel_from_envkey_after_agent_pick_does_not_create_section() -> Result<()> {
     Ok(())
 }
 
-/// Esc on the SourcePicker modal that opens after a valid EnvKey commit
-/// must also leave `pending.agents` untouched. Mirrors the EnvKey
+/// Esc on the `SourcePicker` modal that opens after a valid `EnvKey` commit
+/// must also leave `pending.roles` untouched. Mirrors the `EnvKey`
 /// cancel test one step deeper in the chain.
 #[test]
 fn cancel_from_sourcepicker_after_agent_pick_does_not_create_section() -> Result<()> {
@@ -2030,9 +2035,9 @@ fn cancel_from_sourcepicker_after_agent_pick_does_not_create_section() -> Result
         editor(&state).modal
     );
     assert!(
-        editor(&state).pending.agents.is_empty(),
+        editor(&state).pending.roles.is_empty(),
         "Esc on SourcePicker must not have created an override entry; got keys={:?}",
-        editor(&state).pending.agents.keys().collect::<Vec<_>>()
+        editor(&state).pending.roles.keys().collect::<Vec<_>>()
     );
     assert!(
         editor(&state).secrets_expanded.is_empty(),
@@ -2042,7 +2047,7 @@ fn cancel_from_sourcepicker_after_agent_pick_does_not_create_section() -> Result
 }
 
 /// Drive the full chain — workspace sentinel → ScopePicker(Specific) →
-/// AgentPicker → EnvKey → SourcePicker(Plain) → EnvValue → commit. The
+/// `AgentPicker` → `EnvKey` → SourcePicker(Plain) → `EnvValue` → commit. The
 /// override section materialises only on this final commit, with the
 /// key/value present and the section expanded.
 #[test]
@@ -2091,26 +2096,26 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     // The override section now exists with the single key/value.
-    let agents = &editor(&state).pending.agents;
+    let roles = &editor(&state).pending.roles;
     assert!(
-        agents.contains_key("agent-smith"),
-        "pending.agents must contain the chosen agent; got keys={:?}",
-        agents.keys().collect::<Vec<_>>()
+        roles.contains_key("agent-smith"),
+        "pending.roles must contain the chosen role; got keys={:?}",
+        roles.keys().collect::<Vec<_>>()
     );
     assert_eq!(
-        agents
+        roles
             .get("agent-smith")
             .unwrap()
             .env
             .get("API_TOKEN")
-            .map(|v| v.as_persisted_str()),
+            .map(jackin::operator_env::EnvValue::as_persisted_str),
         Some("secret"),
-        "the committed key/value must land in the agent's env map"
+        "the committed key/value must land in the role's env map"
     );
     // The section must be auto-expanded.
     assert!(
         editor(&state).secrets_expanded.contains("agent-smith"),
-        "value commit must auto-expand the agent's section"
+        "value commit must auto-expand the role's section"
     );
     // All modals closed.
     assert!(
@@ -2121,8 +2126,8 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
     Ok(())
 }
 
-/// Esc on the override picker (reachable through the ScopePicker's
-/// SpecificAgent path) closes the modal and leaves `pending.agents`
+/// Esc on the override picker (reachable through the `ScopePicker`'s
+/// `SpecificAgent` path) closes the modal and leaves `pending.roles`
 /// untouched — symmetric with the ScopePicker-cancel test, one step
 /// deeper.
 #[test]
@@ -2139,10 +2144,10 @@ fn cancel_from_agent_override_picker_after_scope_pick_does_not_create_section() 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(matches!(
         editor(&state).modal,
-        Some(Modal::AgentOverridePicker { .. })
+        Some(Modal::RoleOverridePicker { .. })
     ));
 
-    // Esc — the modal closes and pending.agents stays empty.
+    // Esc — the modal closes and pending.roles stays empty.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
         editor(&state).modal.is_none(),
@@ -2150,9 +2155,9 @@ fn cancel_from_agent_override_picker_after_scope_pick_does_not_create_section() 
         editor(&state).modal
     );
     assert!(
-        editor(&state).pending.agents.is_empty(),
-        "Esc must not create an override entry; got pending.agents keys={:?}",
-        editor(&state).pending.agents.keys().collect::<Vec<_>>()
+        editor(&state).pending.roles.is_empty(),
+        "Esc must not create an override entry; got pending.roles keys={:?}",
+        editor(&state).pending.roles.keys().collect::<Vec<_>>()
     );
     assert!(
         editor(&state).secrets_expanded.is_empty(),
@@ -2161,9 +2166,9 @@ fn cancel_from_agent_override_picker_after_scope_pick_does_not_create_section() 
     Ok(())
 }
 
-/// Once a key has landed in an agent's section, the in-section
-/// `+ Add <agent> environment variable` sentinel must remain a direct
-/// fast-path to the EnvKey modal — the ScopePicker only intercedes at
+/// Once a key has landed in an role's section, the in-section
+/// `+ Add <role> environment variable` sentinel must remain a direct
+/// fast-path to the `EnvKey` modal — the `ScopePicker` only intercedes at
 /// the workspace-level sentinel.
 #[test]
 fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
@@ -2174,7 +2179,7 @@ fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
         seed_override_picker_workspace(&paths, temp.path(), &["agent-smith"], &["agent-smith"])?;
     let cwd = temp.path();
     let mut state = manager_on_secrets_tab(&config, cwd);
-    // Pre-expand the agent so its in-section sentinel is reachable.
+    // Pre-expand the role so its in-section sentinel is reachable.
     editor_mut(&mut state)
         .secrets_expanded
         .insert("agent-smith".into());
@@ -2189,7 +2194,7 @@ fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
 
-    // Enter — the EnvKey modal opens directly with `Agent` scope. No
+    // Enter — the EnvKey modal opens directly with `Role` scope. No
     // ScopePicker intercedes here.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     match &editor(&state).modal {
@@ -2197,8 +2202,8 @@ fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
             TextInputTarget::EnvKey { scope } => {
                 assert_eq!(
                     scope,
-                    &SecretsScopeTag::Agent("agent-smith".into()),
-                    "in-section sentinel must open EnvKey with the contextual Agent scope"
+                    &SecretsScopeTag::Role("agent-smith".into()),
+                    "in-section sentinel must open EnvKey with the contextual Role scope"
                 );
             }
             other => panic!("expected TextInputTarget::EnvKey; got {other:?}"),
@@ -2210,16 +2215,16 @@ fn in_section_agent_sentinel_skips_scope_picker() -> Result<()> {
     Ok(())
 }
 
-// ── Agent-section header absorbs ←/→ regardless of expanded state ──
+// ── Role-section header absorbs ←/→ regardless of expanded state ──
 //
 // Bug: pressing → on an *already-expanded* header (or ← on a *collapsed*
 // one) used to fall through to the tab-cycle handler — operators saw the
 // active editor tab change unexpectedly when arrowing on
-// `▼ Agent: <name>` / `▶ Agent: <name>`. The header now absorbs ←/→ in
+// `▼ Role: <name>` / `▶ Role: <name>`. The header now absorbs ←/→ in
 // both states; semantics codified in RULES.md
 // § "TUI Keybindings → Contextual key absorption".
 
-/// `→` on a collapsed agent header expands the section AND leaves the
+/// `→` on a collapsed role header expands the section AND leaves the
 /// active tab on Secrets. Already covered by
 /// `secrets_agent_section_expand_collapse`, but pinned here as a focused
 /// regression guard for the contextual-absorption rule.
@@ -2254,7 +2259,7 @@ fn right_on_collapsed_agent_header_expands_does_not_change_tab() -> Result<()> {
     Ok(())
 }
 
-/// `→` on an *already-expanded* agent header is a no-op — but it must
+/// `→` on an *already-expanded* role header is a no-op — but it must
 /// still be absorbed. The active tab must not change. This is the exact
 /// regression the operator reported.
 #[test]
@@ -2285,7 +2290,7 @@ fn right_on_expanded_agent_header_does_nothing_does_not_change_tab() -> Result<(
     Ok(())
 }
 
-/// `←` on an expanded agent header collapses the section. Active tab
+/// `←` on an expanded role header collapses the section. Active tab
 /// stays put.
 #[test]
 fn left_on_expanded_agent_header_collapses_does_not_change_tab() -> Result<()> {
@@ -2314,7 +2319,7 @@ fn left_on_expanded_agent_header_collapses_does_not_change_tab() -> Result<()> {
     Ok(())
 }
 
-/// `←` on an *already-collapsed* agent header is a no-op — but it must
+/// `←` on an *already-collapsed* role header is a no-op — but it must
 /// still be absorbed. The active tab must not change. Mirror of the
 /// `→`-on-expanded case.
 #[test]
@@ -2410,8 +2415,8 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
             readonly: false,
             isolation: jackin::isolation::MountIsolation::Shared,
         }],
-        allowed_agents: vec!["chainargos/agent-smith".to_string()],
-        default_agent: Some("chainargos/agent-smith".to_string()),
+        allowed_roles: vec!["chainargos/agent-smith".to_string()],
+        default_role: Some("chainargos/agent-smith".to_string()),
         ..Default::default()
     };
     {
@@ -2424,17 +2429,17 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
     // `ConsoleState.workspaces` would not contain "freshly-created" and
     // the dispatcher would return Ok(None). With the fix, the dispatcher
     // builds the choice from the current `config` and short-circuits on
-    // the single eligible agent.
+    // the single eligible role.
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("freshly-created".into()),
     )?;
-    let (agent, _ws) = outcome.expect(
+    let (role, _ws) = outcome.expect(
         "freshly-created workspace must resolve through the dispatcher; under the bug, \
          ConsoleState.workspaces was a startup snapshot and didn't include the new name",
     );
-    assert_eq!(agent.key(), "chainargos/agent-smith");
+    assert_eq!(role.key(), "chainargos/agent-smith");
     Ok(())
 }
 
@@ -2458,28 +2463,28 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
 
     let mut state = ConsoleState::new(&config, cwd)?;
 
-    // Rename "multi-agent-ws" → "renamed-ws" via ConfigEditor.
+    // Rename "multi-role-ws" → "renamed-ws" via ConfigEditor.
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.rename_workspace("multi-agent-ws", "renamed-ws")?;
+        ce.rename_workspace("multi-role-ws", "renamed-ws")?;
         config = ce.save()?;
     }
 
     // Dispatch against the new name — must resolve and short-circuit
-    // (single eligible agent + default_agent set).
+    // (single eligible role + default_role set).
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("renamed-ws".into()),
     )?;
-    let (agent, _ws) = outcome.expect("renamed workspace must resolve under the new name");
-    assert_eq!(agent.key(), "chainargos/agent-smith");
+    let (role, _ws) = outcome.expect("renamed workspace must resolve under the new name");
+    assert_eq!(role.key(), "chainargos/agent-smith");
 
     // OLD name must not resolve — under the snapshot bug it did.
     let stale_outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
-        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
     assert!(
         stale_outcome.is_none(),
@@ -2488,7 +2493,7 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
     Ok(())
 }
 
-/// Post-edit `default_agent` must short-circuit dispatch from picker
+/// Post-edit `default_role` must short-circuit dispatch from picker
 /// to direct launch.
 #[test]
 fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
@@ -2498,7 +2503,7 @@ fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
         &paths,
         temp.path(),
         &["chainargos/agent-smith", "chainargos/agent-brown"],
-        // No default_agent — two eligible agents → picker would open.
+        // No default_role — two eligible roles → picker would open.
         None,
     )?;
     let cwd = temp.path();
@@ -2510,11 +2515,11 @@ fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
     let baseline = state.dispatch_launch_for_workspace(
         &config,
         cwd,
-        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
     assert!(
         baseline.is_none(),
-        "baseline (no default_agent) must open the picker, not direct-launch"
+        "baseline (no default_role) must open the picker, not direct-launch"
     );
     {
         let ConsoleStage::Manager(ms) = &mut state.stage;
@@ -2523,28 +2528,30 @@ fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
     }
     state.pending_launch = None;
 
-    // Now set default_agent via ConfigEditor (same path the manager's
-    // save flow drives via WorkspaceEdit { default_agent: Some(_), .. }).
+    // Now set default_role via ConfigEditor (same path the manager's
+    // save flow drives via WorkspaceEdit { default_role: Some(_), .. }).
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        let mut edit = jackin::workspace::WorkspaceEdit::default();
-        edit.default_agent = Some(Some("chainargos/agent-smith".to_string()));
-        ce.edit_workspace("multi-agent-ws", edit)?;
+        let edit = jackin::workspace::WorkspaceEdit {
+            default_role: Some(Some("chainargos/agent-smith".to_string())),
+            ..jackin::workspace::WorkspaceEdit::default()
+        };
+        ce.edit_workspace("multi-role-ws", edit)?;
         config = ce.save()?;
     }
 
-    // Dispatch again — with the new default_agent in config, the
+    // Dispatch again — with the new default_role in config, the
     // dispatcher must short-circuit to a direct launch outcome.
     let after = state.dispatch_launch_for_workspace(
         &config,
         cwd,
-        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (agent, _ws) = after.expect(
-        "after default_agent is set, dispatch must short-circuit to a direct launch outcome; \
-         under the bug, the snapshot's default_agent: None forced the picker open",
+    let (role, _ws) = after.expect(
+        "after default_role is set, dispatch must short-circuit to a direct launch outcome; \
+         under the bug, the snapshot's default_role: None forced the picker open",
     );
-    assert_eq!(agent.key(), "chainargos/agent-smith");
+    assert_eq!(role.key(), "chainargos/agent-smith");
     let ConsoleStage::Manager(ms) = &state.stage;
     assert!(
         ms.list_modal.is_none(),
@@ -2575,8 +2582,8 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
             readonly: false,
             isolation: jackin::isolation::MountIsolation::Shared,
         }],
-        allowed_agents: vec!["chainargos/agent-smith".to_string()],
-        default_agent: Some("chainargos/agent-smith".to_string()),
+        allowed_roles: vec!["chainargos/agent-smith".to_string()],
+        default_role: Some("chainargos/agent-smith".to_string()),
         ..Default::default()
     };
     let mut config = {
@@ -2591,7 +2598,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     // Delete the first workspace via ConfigEditor.
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.remove_workspace("multi-agent-ws")?;
+        ce.remove_workspace("multi-role-ws")?;
         config = ce.save()?;
     }
 
@@ -2599,7 +2606,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
-        jackin::workspace::LoadWorkspaceInput::Saved("multi-agent-ws".into()),
+        jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
     assert!(
         outcome.is_none(),
@@ -2614,7 +2621,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("survivor-ws".into()),
     )?;
-    let (agent, _ws) = alive.expect("survivor-ws must still resolve");
-    assert_eq!(agent.key(), "chainargos/agent-smith");
+    let (role, _ws) = alive.expect("survivor-ws must still resolve");
+    assert_eq!(role.key(), "chainargos/agent-smith");
     Ok(())
 }

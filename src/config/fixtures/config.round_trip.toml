@@ -4,23 +4,24 @@
 [claude]
 auth_forward = "sync"
 
-# Our two builtin agents
-[agents.agent-smith]
+# Our two builtin roles
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
-[agents.the-architect]
+[roles.the-architect]
 git = "https://github.com/jackin-project/jackin-the-architect.git"
 trusted = true
 
-# An external agent we vetted in 2025-Q4
-[agents."chainargos/agent-brown"]
+# An external role we vetted in 2025-Q4
+[roles."chainargos/agent-brown"]
 git = "git@github.com:chainargos/jackin-agent-brown.git"
 trusted = true
 
 # Production workspace — the big one
 [workspaces.prod]
 workdir = "/workspace/prod"
+default_agent = "codex"
 
 [workspaces.prod.env]
 # Rotate quarterly (last: 2026-Q1)
@@ -29,7 +30,7 @@ API_TOKEN = "op://Personal/api/token"
 # Passes through from host
 GITHUB_TOKEN = "$GITHUB_TOKEN"
 
-[workspaces.prod.agents.agent-smith.env]
+[workspaces.prod.roles.agent-smith.env]
 OPENAI_API_KEY = "op://Work/OpenAI/default"
 
 # Playground workspace — disposable

@@ -40,7 +40,7 @@ The main difference is what that boundary is.
 | Question | jackin' | Docker Sandboxes |
 |---|---|---|
 | **Isolation boundary** | Docker container plus privileged DinD sidecar on your existing Docker engine | Lightweight microVM with its own kernel and private Docker daemon |
-| **Environment model** | Versioned agent repo with Dockerfile + `jackin.agent.toml` | Official agent templates, custom templates, snapshots |
+| **Environment model** | Versioned role repo with Dockerfile + `jackin.role.toml` | Official agent templates, custom templates, snapshots |
 | **Workspace model** | Named workspaces with reusable mount layouts, allowed agents, defaults | Named sandboxes with workspace mounts and read-only options |
 | **Credentials** | Credentials acquired inside the runtime live inside that runtime's trust boundary | Supported flows can proxy credentials so the raw key stays outside the sandbox |
 | **Network controls** | Per-agent Docker network isolation only | Outbound HTTP/HTTPS filtering, policies, and network logs |
@@ -55,7 +55,7 @@ jackin' intentionally accepts a weaker boundary so it can stay:
 
 - open source
 - easy to inspect and modify
-- centered on reusable agent classes as code
+- centered on reusable roles as code
 - lightweight enough for many parallel local agents
 
 That is not a bug in the positioning. It is the product choice.
@@ -100,9 +100,9 @@ jackin' is an Apache-2.0 Rust project. You can inspect how it works, patch it, f
 
 That matters more than usual when the tool is supposed to contain an autonomous system that can execute arbitrary code.
 
-### 2. Agent classes are first-class source artifacts
+### 2. Roles are first-class source artifacts
 
-An agent class is a normal git repo with a Dockerfile and manifest. That gives you:
+An role is a normal git repo with a Dockerfile and manifest. That gives you:
 
 - versioning
 - code review
@@ -118,8 +118,8 @@ jackin' treats the access boundary as its own object. A workspace can define:
 - a stable multi-mount layout
 - the working directory
 - read-only and read-write mounts
-- which agent classes are allowed
-- which agent class should be the default
+- which roles are allowed
+- which role should be the default
 
 That is closer to operator infrastructure than single-sandbox convenience.
 
@@ -132,7 +132,7 @@ jackin' is especially good when you want:
 - several agents against different branches
 - reattachable long-lived local sessions
 
-Docker Sandboxes can run multiple sandboxes, but jackin's agent-class and workspace model makes this style of work more explicit.
+Docker Sandboxes can run multiple sandboxes, but jackin's role and workspace model makes this style of work more explicit.
 
 ### 5. Host-side cache reuse for agent builds
 
@@ -205,7 +205,7 @@ The current `gh auth` flow is convenient, but it is weaker than host-side creden
 
 This is both a strength and a weakness.
 
-It is a strength because it pushes you toward agent repos as the real source of truth.
+It is a strength because it pushes you toward role repos as the real source of truth.
 
 It is a weakness because ad-hoc runtime setup work disappears when the container is removed.
 
@@ -258,7 +258,7 @@ Choose **Docker Sandboxes** when:
 Choose **jackin'** when:
 
 - you want an open-source tool you can shape yourself
-- you care about reusable agent classes as code
+- you care about reusable roles as code
 - you want first-class workspaces and a better local orchestration model
 - you regularly run several agents in parallel and care about footprint
 

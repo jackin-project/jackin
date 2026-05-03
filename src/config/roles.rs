@@ -1,7 +1,7 @@
-use super::{AgentSource, AppConfig, AuthForwardMode, ClaudeAgentConfig};
-use crate::selector::ClassSelector;
+use super::{AppConfig, AuthForwardMode, ClaudeRoleConfig, RoleSource};
+use crate::selector::RoleSelector;
 
-pub const BUILTIN_AGENTS: &[(&str, &str)] = &[
+pub const BUILTIN_ROLES: &[(&str, &str)] = &[
     (
         "agent-smith",
         "https://github.com/jackin-project/jackin-agent-smith.git",
@@ -13,16 +13,16 @@ pub const BUILTIN_AGENTS: &[(&str, &str)] = &[
 ];
 
 impl AppConfig {
-    /// Resolve an existing agent source or derive a new one from the selector.
+    /// Resolve an existing role source or derive a new one from the selector.
     ///
     /// Returns `(source, is_new)`. When `is_new` is `true` the source has been
     /// inserted into the in-memory config but **not** persisted — the caller
     /// should call [`save`] after validating that the repository is reachable.
-    pub fn resolve_agent_source(
+    pub fn resolve_role_source(
         &mut self,
-        selector: &ClassSelector,
-    ) -> anyhow::Result<(AgentSource, bool)> {
-        if let Some(source) = self.agents.get(&selector.key()) {
+        selector: &RoleSelector,
+    ) -> anyhow::Result<(RoleSource, bool)> {
+        if let Some(source) = self.roles.get(&selector.key()) {
             return Ok((source.clone(), false));
         }
 
@@ -31,7 +31,7 @@ impl AppConfig {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("unknown selector {}", selector.key()))?;
 
-        let source = AgentSource {
+        let source = RoleSource {
             git: format!(
                 "https://github.com/{namespace}/jackin-{}.git",
                 selector.name
@@ -40,36 +40,36 @@ impl AppConfig {
             claude: None,
             env: std::collections::BTreeMap::new(),
         };
-        self.agents.insert(selector.key(), source.clone());
+        self.roles.insert(selector.key(), source.clone());
         Ok((source, true))
     }
 
-    /// Resolve the effective `AuthForwardMode` for a given agent.
+    /// Resolve the effective `AuthForwardMode` for a given role.
     ///
-    /// Resolution order: per-agent override → global default → `Sync`.
+    /// Resolution order: per-role override → global default → `Sync`.
     pub fn resolve_auth_forward_mode(&self, agent_key: &str) -> AuthForwardMode {
-        self.agents
+        self.roles
             .get(agent_key)
             .and_then(|a| a.claude.as_ref())
             .and_then(|c| c.auth_forward)
             .unwrap_or(self.claude.auth_forward)
     }
 
-    /// Set the per-agent auth forward mode override.
+    /// Set the per-role auth forward mode override.
     // pub(crate): test-only affordance; production callers use ConfigEditor.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn set_agent_auth_forward(&mut self, key: &str, mode: AuthForwardMode) {
-        if let Some(source) = self.agents.get_mut(key) {
-            let claude = source.claude.get_or_insert_with(ClaudeAgentConfig::default);
+        if let Some(source) = self.roles.get_mut(key) {
+            let claude = source.claude.get_or_insert_with(ClaudeRoleConfig::default);
             claude.auth_forward = Some(mode);
         }
     }
 
-    /// Mark an agent source as trusted.  Returns `true` when the flag changed.
+    /// Mark an role source as trusted.  Returns `true` when the flag changed.
     // pub(crate): test-only affordance; production callers use ConfigEditor.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn trust_agent(&mut self, key: &str) -> bool {
-        if let Some(source) = self.agents.get_mut(key)
+        if let Some(source) = self.roles.get_mut(key)
             && !source.trusted
         {
             source.trusted = true;
@@ -78,13 +78,13 @@ impl AppConfig {
         false
     }
 
-    /// Revoke trust for an agent source.  Returns `true` when the flag changed.
+    /// Revoke trust for an role source.  Returns `true` when the flag changed.
     /// Note: does not prevent revoking builtins — the caller should check
     /// [`is_builtin_agent`] first.
     // pub(crate): test-only affordance; production callers use ConfigEditor.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn untrust_agent(&mut self, key: &str) -> bool {
-        if let Some(source) = self.agents.get_mut(key)
+        if let Some(source) = self.roles.get_mut(key)
             && source.trusted
         {
             source.trusted = false;
@@ -93,28 +93,28 @@ impl AppConfig {
         false
     }
 
-    /// Returns `true` when `key` matches a built-in agent shipped with the
-    /// binary.  Built-in agents are always trusted and cannot be revoked.
+    /// Returns `true` when `key` matches a built-in role shipped with the
+    /// binary.  Built-in roles are always trusted and cannot be revoked.
     pub fn is_builtin_agent(key: &str) -> bool {
-        BUILTIN_AGENTS.iter().any(|&(name, _)| name == key)
+        BUILTIN_ROLES.iter().any(|&(name, _)| name == key)
     }
 
-    /// Ensures all built-in agent entries match the current binary version.
+    /// Ensures all built-in role entries match the current binary version.
     /// Returns `true` if any entries were added or updated.
     pub(super) fn sync_builtin_agents(&mut self) -> bool {
         let mut changed = false;
-        for &(name, git) in BUILTIN_AGENTS {
-            let existing_claude = self.agents.get(name).and_then(|a| a.claude.clone());
-            let expected = AgentSource {
+        for &(name, git) in BUILTIN_ROLES {
+            let existing_claude = self.roles.get(name).and_then(|a| a.claude.clone());
+            let expected = RoleSource {
                 git: git.to_string(),
                 trusted: true,
                 claude: existing_claude,
                 env: std::collections::BTreeMap::new(),
             };
-            match self.agents.get(name) {
+            match self.roles.get(name) {
                 Some(existing) if existing.git == expected.git && existing.trusted => {}
                 _ => {
-                    self.agents.insert(name.to_string(), expected);
+                    self.roles.insert(name.to_string(), expected);
                     changed = true;
                 }
             }
@@ -127,7 +127,7 @@ impl AppConfig {
 mod tests {
     use super::*;
     use crate::paths::JackinPaths;
-    use crate::selector::ClassSelector;
+    use crate::selector::RoleSelector;
     use tempfile::tempdir;
 
     #[test]
@@ -138,11 +138,11 @@ mod tests {
         let config = AppConfig::load_or_init(&paths).unwrap();
 
         assert_eq!(
-            config.agents.get("agent-smith").unwrap().git,
+            config.roles.get("agent-smith").unwrap().git,
             "https://github.com/jackin-project/jackin-agent-smith.git"
         );
         assert_eq!(
-            config.agents.get("the-architect").unwrap().git,
+            config.roles.get("the-architect").unwrap().git,
             "https://github.com/jackin-project/jackin-the-architect.git"
         );
         assert!(paths.config_file.exists());
@@ -156,10 +156,10 @@ mod tests {
 
         std::fs::write(
             &paths.config_file,
-            r#"[agents.agent-smith]
+            r#"[roles.agent-smith]
 git = "git@github.com:old/wrong-url.git"
 
-[agents."chainargos/agent-brown"]
+[roles."chainargos/agent-brown"]
 git = "git@github.com:chainargos/jackin-agent-brown.git"
 "#,
         )
@@ -169,17 +169,17 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
 
         // Built-in entries are corrected
         assert_eq!(
-            config.agents.get("agent-smith").unwrap().git,
+            config.roles.get("agent-smith").unwrap().git,
             "https://github.com/jackin-project/jackin-agent-smith.git"
         );
         // Missing built-in entries are added
         assert_eq!(
-            config.agents.get("the-architect").unwrap().git,
+            config.roles.get("the-architect").unwrap().git,
             "https://github.com/jackin-project/jackin-the-architect.git"
         );
         // User-added entries are preserved
         assert_eq!(
-            config.agents.get("chainargos/agent-brown").unwrap().git,
+            config.roles.get("chainargos/agent-brown").unwrap().git,
             "git@github.com:chainargos/jackin-agent-brown.git"
         );
 
@@ -195,9 +195,9 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+        let selector = RoleSelector::new(Some("chainargos"), "the-architect");
 
-        let (source, is_new) = config.resolve_agent_source(&selector).unwrap();
+        let (source, is_new) = config.resolve_role_source(&selector).unwrap();
 
         assert_eq!(
             source.git,
@@ -212,7 +212,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         assert!(
             std::fs::read_to_string(&paths.config_file)
                 .unwrap()
-                .contains("[agents.\"chainargos/the-architect\"]")
+                .contains("[roles.\"chainargos/the-architect\"]")
         );
     }
 
@@ -225,8 +225,8 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
 
         let config = AppConfig::load_or_init(&paths).unwrap();
 
-        assert!(config.agents.get("agent-smith").unwrap().trusted);
-        assert!(config.agents.get("the-architect").unwrap().trusted);
+        assert!(config.roles.get("agent-smith").unwrap().trusted);
+        assert!(config.roles.get("the-architect").unwrap().trusted);
     }
 
     #[test]
@@ -234,9 +234,9 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+        let selector = RoleSelector::new(Some("chainargos"), "the-architect");
 
-        let (source, _) = config.resolve_agent_source(&selector).unwrap();
+        let (source, _) = config.resolve_role_source(&selector).unwrap();
 
         assert!(!source.trusted);
     }
@@ -246,12 +246,12 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+        let selector = RoleSelector::new(Some("chainargos"), "the-architect");
 
-        config.resolve_agent_source(&selector).unwrap();
+        config.resolve_role_source(&selector).unwrap();
         assert!(
             !config
-                .agents
+                .roles
                 .get("chainargos/the-architect")
                 .unwrap()
                 .trusted
@@ -261,7 +261,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         assert!(changed);
         assert!(
             config
-                .agents
+                .roles
                 .get("chainargos/the-architect")
                 .unwrap()
                 .trusted
@@ -277,13 +277,13 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+        let selector = RoleSelector::new(Some("chainargos"), "the-architect");
 
-        config.resolve_agent_source(&selector).unwrap();
+        config.resolve_role_source(&selector).unwrap();
         config.trust_agent("chainargos/the-architect");
         assert!(
             config
-                .agents
+                .roles
                 .get("chainargos/the-architect")
                 .unwrap()
                 .trusted
@@ -293,7 +293,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         assert!(changed);
         assert!(
             !config
-                .agents
+                .roles
                 .get("chainargos/the-architect")
                 .unwrap()
                 .trusted
@@ -309,9 +309,9 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        let selector = ClassSelector::new(Some("chainargos"), "the-architect");
+        let selector = RoleSelector::new(Some("chainargos"), "the-architect");
 
-        config.resolve_agent_source(&selector).unwrap();
+        config.resolve_role_source(&selector).unwrap();
         config.trust_agent("chainargos/the-architect");
         // AppConfig::save removed in Task 14 — write the bootstrap file directly.
         let contents = toml::to_string_pretty(&config).unwrap();
@@ -320,7 +320,7 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         let reloaded = AppConfig::load_or_init(&paths).unwrap();
         assert!(
             reloaded
-                .agents
+                .roles
                 .get("chainargos/the-architect")
                 .unwrap()
                 .trusted
@@ -336,10 +336,10 @@ git = "git@github.com:chainargos/jackin-agent-brown.git"
         // Simulate a config from a pre-trust version (no trusted field)
         std::fs::write(
             &paths.config_file,
-            r#"[agents.agent-smith]
+            r#"[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
-[agents.the-architect]
+[roles.the-architect]
 git = "https://github.com/jackin-project/jackin-the-architect.git"
 "#,
         )
@@ -348,8 +348,8 @@ git = "https://github.com/jackin-project/jackin-the-architect.git"
         let config = AppConfig::load_or_init(&paths).unwrap();
 
         // Builtins should be upgraded to trusted
-        assert!(config.agents.get("agent-smith").unwrap().trusted);
-        assert!(config.agents.get("the-architect").unwrap().trusted);
+        assert!(config.roles.get("agent-smith").unwrap().trusted);
+        assert!(config.roles.get("the-architect").unwrap().trusted);
     }
 
     // ── Auth forwarding config tests ────────────────────────────────────
@@ -366,7 +366,7 @@ git = "https://github.com/jackin-project/jackin-the-architect.git"
 [claude]
 auth_forward = "sync"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
@@ -376,16 +376,16 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
     #[test]
     fn deserializes_per_agent_claude_auth_forward() {
         let toml_str = r#"
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "ignore"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        let agent = config.agents.get("agent-smith").unwrap();
+        let role = config.roles.get("agent-smith").unwrap();
         assert_eq!(
-            agent.claude.as_ref().unwrap().auth_forward,
+            role.claude.as_ref().unwrap().auth_forward,
             Some(AuthForwardMode::Ignore)
         );
     }
@@ -405,7 +405,7 @@ auth_forward = "ignore"
 [claude]
 auth_forward = "sync"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
@@ -421,10 +421,10 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 [claude]
 auth_forward = "sync"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "ignore"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
@@ -440,10 +440,10 @@ auth_forward = "ignore"
 [claude]
 auth_forward = "sync"
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "ignore"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();

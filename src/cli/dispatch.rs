@@ -8,7 +8,7 @@
 
 use std::io::IsTerminal;
 
-use crate::cli::agent::ConsoleArgs;
+use crate::cli::role::ConsoleArgs;
 use crate::cli::{Cli, Command};
 
 /// Minimum columns for the operator console to render usefully.

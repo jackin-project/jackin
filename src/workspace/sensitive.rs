@@ -62,7 +62,7 @@ pub fn confirm_sensitive_mounts(sensitive: &[SensitiveMount]) -> anyhow::Result<
     }
     eprintln!(
         "   {}",
-        "These paths may expose credentials to the agent container.".dimmed()
+        "These paths may expose credentials to the role container.".dimmed()
     );
     eprintln!();
 

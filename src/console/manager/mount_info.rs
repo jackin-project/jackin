@@ -311,7 +311,7 @@ mod tests {
                 branch: GitBranch::Named(b),
                 ..
             } => assert_eq!(b, "main"),
-            other => panic!("expected Git {{ branch: Named }}, got {:?}", other),
+            other => panic!("expected Git {{ branch: Named }}, got {other:?}"),
         }
     }
 
@@ -333,7 +333,7 @@ mod tests {
             } => {
                 assert_eq!(short_sha, "abcdef1");
             }
-            other => panic!("expected Git {{ branch: Detached }}, got {:?}", other),
+            other => panic!("expected Git {{ branch: Detached }}, got {other:?}"),
         }
     }
 
@@ -360,10 +360,7 @@ mod tests {
                 assert_eq!(host, GitHost::Github);
                 assert_eq!(url, "https://github.com/owner/repo/tree/main");
             }
-            other => panic!(
-                "expected Git {{ host: Github, web_url: Some }}, got {:?}",
-                other
-            ),
+            other => panic!("expected Git {{ host: Github, web_url: Some }}, got {other:?}"),
         }
     }
 
@@ -389,7 +386,7 @@ mod tests {
                     "non-GitHub remote must not yield a web URL: {web_url:?}"
                 );
             }
-            other => panic!("expected Git {{ host: Other }}, got {:?}", other),
+            other => panic!("expected Git {{ host: Other }}, got {other:?}"),
         }
     }
 
@@ -406,7 +403,7 @@ mod tests {
                 assert_eq!(host, GitHost::Other);
                 assert!(web_url.is_none());
             }
-            other => panic!("expected Git {{ host: Other }}, got {:?}", other),
+            other => panic!("expected Git {{ host: Other }}, got {other:?}"),
         }
     }
 
@@ -431,7 +428,7 @@ mod tests {
                 branch: GitBranch::Named(b),
                 ..
             } => assert_eq!(b, "feature-x"),
-            other => panic!("expected submodule resolution, got {:?}", other),
+            other => panic!("expected submodule resolution, got {other:?}"),
         }
     }
 
@@ -489,8 +486,7 @@ mod tests {
                 assert_eq!(url, "https://github.com/owner/repo/tree/feature-x");
             }
             other => panic!(
-                "expected Git {{ host: Github, web_url: Some, branch: feature-x }}, got {:?}",
-                other
+                "expected Git {{ host: Github, web_url: Some, branch: feature-x }}, got {other:?}"
             ),
         }
     }
@@ -541,10 +537,9 @@ mod tests {
                 assert_eq!(b, "abs-branch");
                 assert_eq!(url, "https://github.com/owner/repo/tree/abs-branch");
             }
-            other => panic!(
-                "expected Github worktree resolution via absolute commondir, got {:?}",
-                other
-            ),
+            other => {
+                panic!("expected Github worktree resolution via absolute commondir, got {other:?}")
+            }
         }
     }
 
@@ -586,10 +581,7 @@ mod tests {
                 assert_eq!(b, "submain");
                 assert_eq!(url, "https://github.com/owner/submod/tree/submain");
             }
-            other => panic!(
-                "expected submodule to resolve with GitHost::Github, got {:?}",
-                other
-            ),
+            other => panic!("expected submodule to resolve with GitHost::Github, got {other:?}"),
         }
     }
 

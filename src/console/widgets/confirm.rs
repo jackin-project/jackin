@@ -50,109 +50,6 @@ impl ConfirmState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
-
-    fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent {
-            code,
-            modifiers: KeyModifiers::NONE,
-            kind: KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
-        }
-    }
-
-    #[test]
-    fn y_commits_true() {
-        let mut s = ConfirmState::new("Delete?");
-        assert!(matches!(
-            s.handle_key(key(KeyCode::Char('y'))),
-            ModalOutcome::Commit(true)
-        ));
-    }
-
-    #[test]
-    fn uppercase_y_commits_true() {
-        let mut s = ConfirmState::new("Delete?");
-        assert!(matches!(
-            s.handle_key(key(KeyCode::Char('Y'))),
-            ModalOutcome::Commit(true)
-        ));
-    }
-
-    #[test]
-    fn n_commits_false() {
-        let mut s = ConfirmState::new("Delete?");
-        assert!(matches!(
-            s.handle_key(key(KeyCode::Char('n'))),
-            ModalOutcome::Commit(false)
-        ));
-    }
-
-    #[test]
-    fn esc_cancels() {
-        let mut s = ConfirmState::new("Delete?");
-        assert!(matches!(
-            s.handle_key(key(KeyCode::Esc)),
-            ModalOutcome::Cancel
-        ));
-    }
-
-    #[test]
-    fn arrow_is_noop() {
-        let mut s = ConfirmState::new("Delete?");
-        assert!(matches!(
-            s.handle_key(key(KeyCode::Down)),
-            ModalOutcome::Continue
-        ));
-    }
-
-    #[test]
-    fn default_focus_is_no() {
-        let s = ConfirmState::new("Delete?");
-        assert_eq!(s.focus, ConfirmFocus::No);
-    }
-
-    #[test]
-    fn tab_cycles_focus() {
-        let mut s = ConfirmState::new("Delete?");
-        assert_eq!(s.focus, ConfirmFocus::No);
-        s.handle_key(key(KeyCode::Tab));
-        assert_eq!(s.focus, ConfirmFocus::Yes);
-        s.handle_key(key(KeyCode::Tab));
-        assert_eq!(s.focus, ConfirmFocus::No);
-    }
-
-    #[test]
-    fn enter_commits_focused_option() {
-        let mut s = ConfirmState::new("Delete?");
-        // Default focus is No, Enter commits No.
-        assert!(matches!(
-            s.handle_key(key(KeyCode::Enter)),
-            ModalOutcome::Commit(false)
-        ));
-
-        let mut s = ConfirmState::new("Delete?");
-        s.handle_key(key(KeyCode::Tab)); // focus Yes
-        assert!(matches!(
-            s.handle_key(key(KeyCode::Enter)),
-            ModalOutcome::Commit(true)
-        ));
-    }
-
-    #[test]
-    fn y_still_works_regardless_of_focus() {
-        let mut s = ConfirmState::new("Delete?");
-        // Focus is No by default; Y should still commit true directly.
-        assert!(matches!(
-            s.handle_key(key(KeyCode::Char('y'))),
-            ModalOutcome::Commit(true)
-        ));
-    }
-}
-
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -267,4 +164,107 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     ]))
     .alignment(Alignment::Center);
     frame.render_widget(hint, chunks[4]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn y_commits_true() {
+        let mut s = ConfirmState::new("Delete?");
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Char('y'))),
+            ModalOutcome::Commit(true)
+        ));
+    }
+
+    #[test]
+    fn uppercase_y_commits_true() {
+        let mut s = ConfirmState::new("Delete?");
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Char('Y'))),
+            ModalOutcome::Commit(true)
+        ));
+    }
+
+    #[test]
+    fn n_commits_false() {
+        let mut s = ConfirmState::new("Delete?");
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Char('n'))),
+            ModalOutcome::Commit(false)
+        ));
+    }
+
+    #[test]
+    fn esc_cancels() {
+        let mut s = ConfirmState::new("Delete?");
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Esc)),
+            ModalOutcome::Cancel
+        ));
+    }
+
+    #[test]
+    fn arrow_is_noop() {
+        let mut s = ConfirmState::new("Delete?");
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Down)),
+            ModalOutcome::Continue
+        ));
+    }
+
+    #[test]
+    fn default_focus_is_no() {
+        let s = ConfirmState::new("Delete?");
+        assert_eq!(s.focus, ConfirmFocus::No);
+    }
+
+    #[test]
+    fn tab_cycles_focus() {
+        let mut s = ConfirmState::new("Delete?");
+        assert_eq!(s.focus, ConfirmFocus::No);
+        s.handle_key(key(KeyCode::Tab));
+        assert_eq!(s.focus, ConfirmFocus::Yes);
+        s.handle_key(key(KeyCode::Tab));
+        assert_eq!(s.focus, ConfirmFocus::No);
+    }
+
+    #[test]
+    fn enter_commits_focused_option() {
+        let mut s = ConfirmState::new("Delete?");
+        // Default focus is No, Enter commits No.
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Commit(false)
+        ));
+
+        let mut s = ConfirmState::new("Delete?");
+        s.handle_key(key(KeyCode::Tab)); // focus Yes
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Enter)),
+            ModalOutcome::Commit(true)
+        ));
+    }
+
+    #[test]
+    fn y_still_works_regardless_of_focus() {
+        let mut s = ConfirmState::new("Delete?");
+        // Focus is No by default; Y should still commit true directly.
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Char('y'))),
+            ModalOutcome::Commit(true)
+        ));
+    }
 }

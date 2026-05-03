@@ -18,7 +18,7 @@ Operators who routinely want raw container output had to pass `--debug` on every
 
 ## Resolution
 
-Added `env = "JACKIN_DEBUG"` to the existing `--debug` `#[arg(...)]` attributes on `LoadArgs.debug` and `ConsoleArgs.debug` in <RepoFile path="src/cli/agent.rs" />. clap's `ArgAction::SetTrue` env semantics handle precedence and value parsing without bespoke code:
+Added `env = "JACKIN_DEBUG"` to the existing `--debug` `#[arg(...)]` attributes on `LoadArgs.debug` and `ConsoleArgs.debug` in <RepoFile path="src/cli/role.rs" />. clap's `ArgAction::SetTrue` env semantics handle precedence and value parsing without bespoke code:
 
 1. `--debug` on the command line → `true`
 2. CLI flag absent, env var set to a truthy value (`1`, `true`, `yes`, `on`, …) → `true`
@@ -58,7 +58,7 @@ clap's value-resolution semantics for `ArgAction::SetTrue` env vars (`FalseyValu
 
 ## Related files
 
-- <RepoFile path="src/cli/agent.rs" /> — `LoadArgs.debug` and `ConsoleArgs.debug` carry the new `env = "JACKIN_DEBUG"` attribute.
+- <RepoFile path="src/cli/role.rs" /> — `LoadArgs.debug` and `ConsoleArgs.debug` carry the new `env = "JACKIN_DEBUG"` attribute.
 - <RepoFile path="src/cli/mod.rs" /> — `Cli` flattens `ConsoleArgs`, propagating the env binding to the top-level form.
 - <RepoFile path="tests/cli_debug_env.rs" /> — subprocess integration tests.
 - <RepoFile path="Cargo.toml" /> — clap's `env` feature is enabled.

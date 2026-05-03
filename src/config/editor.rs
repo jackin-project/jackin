@@ -16,9 +16,9 @@ use crate::paths::JackinPaths;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvScope {
     Global,
-    Agent(String),
+    Role(String),
     Workspace(String),
-    WorkspaceAgent { workspace: String, agent: String },
+    WorkspaceRole { workspace: String, role: String },
 }
 
 pub struct ConfigEditor {
@@ -50,10 +50,10 @@ impl ConfigEditor {
     ///
     /// Validates the candidate before renaming over the real config —
     /// otherwise a setter that produced an unloadable shape (e.g.
-    /// stub agent missing `git`) would brick every subsequent CLI
+    /// stub role missing `git`) would brick every subsequent CLI
     /// command until the operator hand-edits TOML to recover.
     ///
-    /// Skips `load_or_init`'s builtin-agent sync — the invariant is
+    /// Skips `load_or_init`'s builtin-role sync — the invariant is
     /// that `load_or_init` ran once at `open` time, so builtins are
     /// already in place.
     pub fn save(self) -> anyhow::Result<AppConfig> {
@@ -227,15 +227,12 @@ impl ConfigEditor {
     }
 
     pub fn set_agent_trust(&mut self, agent_key: &str, trusted: bool) {
-        let table = table_path_mut(
-            &mut self.doc,
-            &["agents".to_string(), agent_key.to_string()],
-        );
+        let table = table_path_mut(&mut self.doc, &["roles".to_string(), agent_key.to_string()]);
         if trusted {
             table.insert("trusted", toml_edit::value(true));
         } else {
             // Canonical representation of false is absent (matches serde
-            // skip_serializing_if on AgentSource::trusted).
+            // skip_serializing_if on RoleSource::trusted).
             table.remove("trusted");
         }
     }
@@ -248,7 +245,7 @@ impl ConfigEditor {
         let claude_table = table_path_mut(
             &mut self.doc,
             &[
-                "agents".to_string(),
+                "roles".to_string(),
                 agent_key.to_string(),
                 "claude".to_string(),
             ],
@@ -262,30 +259,24 @@ impl ConfigEditor {
     }
 
     pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
-        // Touch only git + trusted. Leave [agents.X.claude] and
-        // [agents.X.env] alone — those are operator-owned.
-        let table = table_path_mut(
-            &mut self.doc,
-            &["agents".to_string(), agent_key.to_string()],
-        );
+        // Touch only git + trusted. Leave [roles.X.claude] and
+        // [roles.X.env] alone — those are operator-owned.
+        let table = table_path_mut(&mut self.doc, &["roles".to_string(), agent_key.to_string()]);
         table.insert("git", toml_edit::value(git_url));
         table.insert("trusted", toml_edit::value(true));
     }
 
-    /// Writes `git` and `trusted` from the given `AgentSource` into
-    /// `[agents.<agent_key>]`, and if the doc has no `[agents.<agent_key>.claude]`
+    /// Writes `git` and `trusted` from the given `RoleSource` into
+    /// `[roles.<agent_key>]`, and if the doc has no `[roles.<agent_key>.claude]`
     /// table yet but the source carries a `claude` override, writes that too.
-    /// Does NOT touch `[agents.<agent_key>.env]` — operator-owned.
+    /// Does NOT touch `[roles.<agent_key>.env]` — operator-owned.
     ///
-    /// Used by call sites that first invoke `resolve_agent_source` (which may
-    /// insert a new agent into the in-memory `AppConfig`) and need the editor
+    /// Used by call sites that first invoke `resolve_role_source` (which may
+    /// insert a new role into the in-memory `AppConfig`) and need the editor
     /// to persist that insert alongside whatever trust / `auth_forward` change
     /// they're about to make.
-    pub fn upsert_agent_source(&mut self, agent_key: &str, source: &crate::config::AgentSource) {
-        let table = table_path_mut(
-            &mut self.doc,
-            &["agents".to_string(), agent_key.to_string()],
-        );
+    pub fn upsert_agent_source(&mut self, agent_key: &str, source: &crate::config::RoleSource) {
+        let table = table_path_mut(&mut self.doc, &["roles".to_string(), agent_key.to_string()]);
         table.insert("git", toml_edit::value(source.git.clone()));
         if source.trusted {
             table.insert("trusted", toml_edit::value(true));
@@ -298,7 +289,7 @@ impl ConfigEditor {
         if let Some(claude) = &source.claude {
             let existing_claude = self
                 .doc
-                .get("agents")
+                .get("roles")
                 .and_then(|i| i.as_table())
                 .and_then(|t| t.get(agent_key))
                 .and_then(|i| i.as_table())
@@ -310,7 +301,7 @@ impl ConfigEditor {
                 let claude_table = table_path_mut(
                     &mut self.doc,
                     &[
-                        "agents".to_string(),
+                        "roles".to_string(),
                         agent_key.to_string(),
                         "claude".to_string(),
                     ],
@@ -325,7 +316,7 @@ impl ConfigEditor {
     /// Rewrite any `auth_forward = "copy"` to `"sync"` at the two paths
     /// `contains_deprecated_copy_auth_forward` checks:
     ///   [claude].`auth_forward`
-    ///   [agents.*.claude].`auth_forward`
+    ///   [roles.*.claude].`auth_forward`
     ///
     /// Does not touch any other structure. Used by `load_or_init` when the
     /// on-disk config still contains the deprecated literal.
@@ -336,9 +327,9 @@ impl ConfigEditor {
         {
             claude.insert("auth_forward", toml_edit::value("sync"));
         }
-        // Per-agent [agents.X.claude]
-        if let Some(agents) = self.doc.get_mut("agents").and_then(|i| i.as_table_mut()) {
-            for (_, agent_item) in agents.iter_mut() {
+        // Per-role [roles.X.claude]
+        if let Some(roles) = self.doc.get_mut("roles").and_then(|i| i.as_table_mut()) {
+            for (_, agent_item) in roles.iter_mut() {
                 let Some(agent_table) = agent_item.as_table_mut() else {
                     continue;
                 };
@@ -373,12 +364,12 @@ impl ConfigEditor {
             &mut self.doc,
             &["workspaces".to_string(), workspace.to_string()],
         );
-        table.insert("last_agent", toml_edit::value(agent_key));
+        table.insert("last_role", toml_edit::value(agent_key));
     }
 
     /// Rename a workspace key in the `[workspaces]` table.
     ///
-    /// Preserves all nested fields (mounts, env, agents overrides, etc.)
+    /// Preserves all nested fields (mounts, env, roles overrides, etc.)
     /// because `toml_edit` renames the key in place. Fails if:
     ///   - new name is empty
     ///   - old name does not exist
@@ -502,13 +493,13 @@ const fn auth_forward_str(mode: crate::config::AuthForwardMode) -> &'static str 
 fn env_scope_path(scope: &EnvScope) -> Vec<String> {
     match scope {
         EnvScope::Global => vec!["env".to_string()],
-        EnvScope::Agent(a) => vec!["agents".to_string(), a.clone(), "env".to_string()],
+        EnvScope::Role(a) => vec!["roles".to_string(), a.clone(), "env".to_string()],
         EnvScope::Workspace(w) => vec!["workspaces".to_string(), w.clone(), "env".to_string()],
-        EnvScope::WorkspaceAgent { workspace, agent } => vec![
+        EnvScope::WorkspaceRole { workspace, role } => vec![
             "workspaces".to_string(),
             workspace.clone(),
-            "agents".to_string(),
-            agent.clone(),
+            "roles".to_string(),
+            role.clone(),
             "env".to_string(),
         ],
     }
@@ -516,7 +507,7 @@ fn env_scope_path(scope: &EnvScope) -> Vec<String> {
 
 /// Subset of `load_or_init` validations the editor's typed setters
 /// could plausibly violate: serde-required fields (catches stub
-/// agent missing `git`) and `validate_reserved_names`. Skips
+/// role missing `git`) and `validate_reserved_names`. Skips
 /// `validate_workspaces` — only `create_workspace`/`edit_workspace`
 /// mutate that geometry and they already validate.
 fn validate_candidate(contents: &str) -> anyhow::Result<AppConfig> {
@@ -583,9 +574,9 @@ workdir = "/workspace/prod"
         let mut editor = ConfigEditor::open(&paths).unwrap();
         editor
             .set_env_var(
-                &EnvScope::WorkspaceAgent {
+                &EnvScope::WorkspaceRole {
                     workspace: "prod".to_string(),
-                    agent: "agent-smith".to_string(),
+                    role: "agent-smith".to_string(),
                 },
                 "OPENAI_API_KEY",
                 "op://Work/OpenAI/default".into(),
@@ -595,7 +586,7 @@ workdir = "/workspace/prod"
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(
-            out.contains("[workspaces.prod.agents.agent-smith.env]"),
+            out.contains("[workspaces.prod.roles.agent-smith.env]"),
             "missing nested table: {out}"
         );
         assert!(
@@ -673,13 +664,13 @@ OTHER = "y"
         paths.ensure_base_dirs().unwrap();
         std::fs::write(
             &paths.config_file,
-            r#"[agents.agent-smith]
+            r#"[roles.agent-smith]
 git = "https://example.com/a.git"
 "#,
         )
         .unwrap();
 
-        let scope = EnvScope::Agent("agent-smith".to_string());
+        let scope = EnvScope::Role("agent-smith".to_string());
         let mut editor = ConfigEditor::open(&paths).unwrap();
         editor
             .set_env_var(&scope, "LOG_LEVEL", "debug".into())
@@ -743,9 +734,9 @@ workdir = "/workspace/prod"
         )
         .unwrap();
 
-        let scope = EnvScope::WorkspaceAgent {
+        let scope = EnvScope::WorkspaceRole {
             workspace: "prod".to_string(),
-            agent: "agent-smith".to_string(),
+            role: "agent-smith".to_string(),
         };
         let mut editor = ConfigEditor::open(&paths).unwrap();
         editor
@@ -941,8 +932,8 @@ workdir = "/b"
 [claude]
 auth_forward = "sync"
 
-# Agents we trust
-[agents.agent-smith]
+# Roles we trust
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
@@ -997,8 +988,8 @@ API_TOKEN = "op://Personal/api/token"
         let editor = ConfigEditor::open(&paths).unwrap();
         editor.save().unwrap();
 
-        let tmp = paths.config_file.with_extension("tmp");
-        assert!(!tmp.exists(), "expected .tmp to be renamed away");
+        let tmp_path = paths.config_file.with_extension("tmp");
+        assert!(!tmp_path.exists(), "expected .tmp to be renamed away");
     }
 
     /// `save()` must reject before rename so an invalid mutation
@@ -1013,12 +1004,12 @@ API_TOKEN = "op://Personal/api/token"
         AppConfig::load_or_init(&paths).unwrap();
         let baseline = std::fs::read_to_string(&paths.config_file).unwrap();
 
-        // Inject `[agents.ghost.env]` without the required
-        // `[agents.ghost].git` — fails serde parsing.
+        // Inject `[roles.ghost.env]` without the required
+        // `[roles.ghost].git` — fails serde parsing.
         let mut editor = ConfigEditor::open(&paths).unwrap();
         let agents_table = table_path_mut(
             &mut editor.doc,
-            &["agents".to_string(), "ghost".to_string(), "env".to_string()],
+            &["roles".to_string(), "ghost".to_string(), "env".to_string()],
         );
         agents_table.insert("LOG_LEVEL", toml_edit::value("debug"));
 
@@ -1036,11 +1027,11 @@ API_TOKEN = "op://Personal/api/token"
         );
 
         // No leftover .tmp file.
-        let tmp = paths.config_file.with_extension("tmp");
+        let tmp_path = paths.config_file.with_extension("tmp");
         assert!(
-            !tmp.exists(),
+            !tmp_path.exists(),
             "rejected save must clean up its temp file at {}",
-            tmp.display()
+            tmp_path.display()
         );
     }
 
@@ -1229,14 +1220,14 @@ logs = { src = "/b", dst = "/b" }
         paths.ensure_base_dirs().unwrap();
         std::fs::write(
             &paths.config_file,
-            r#"[agents.my-agent]
+            r#"[roles.my-role]
 git = "https://example.com/a.git"
 "#,
         )
         .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_agent_trust("my-agent", true);
+        editor.set_agent_trust("my-role", true);
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -1246,13 +1237,13 @@ git = "https://example.com/a.git"
     #[test]
     fn set_agent_trust_false_removes_field() {
         // Canonical TOML representation of trusted=false is absent (serde
-        // skip_serializing_if on AgentSource::trusted).
+        // skip_serializing_if on RoleSource::trusted).
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
         std::fs::write(
             &paths.config_file,
-            r#"[agents.my-agent]
+            r#"[roles.my-role]
 git = "x"
 trusted = true
 "#,
@@ -1260,7 +1251,7 @@ trusted = true
         .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_agent_trust("my-agent", false);
+        editor.set_agent_trust("my-role", false);
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -1274,18 +1265,18 @@ trusted = true
         paths.ensure_base_dirs().unwrap();
         std::fs::write(
             &paths.config_file,
-            r#"[agents.my-agent]
+            r#"[roles.my-role]
 git = "x"
 "#,
         )
         .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_agent_auth_forward("my-agent", crate::config::AuthForwardMode::Token);
+        editor.set_agent_auth_forward("my-role", crate::config::AuthForwardMode::Token);
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[agents.my-agent.claude]"), "{out}");
+        assert!(out.contains("[roles.my-role.claude]"), "{out}");
         assert!(out.contains(r#"auth_forward = "token""#), "{out}");
     }
 
@@ -1320,7 +1311,7 @@ git = "x"
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[agents.agent-smith]"), "{out}");
+        assert!(out.contains("[roles.agent-smith]"), "{out}");
         assert!(out.contains("trusted = true"), "{out}");
     }
 
@@ -1331,11 +1322,11 @@ git = "x"
         paths.ensure_base_dirs().unwrap();
         std::fs::write(
             &paths.config_file,
-            r#"[agents.agent-smith]
+            r#"[roles.agent-smith]
 git = "OLD-URL"
 trusted = false
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "token"
 "#,
         )
@@ -1428,7 +1419,7 @@ auth_forward = "token"
         paths.ensure_base_dirs().unwrap();
         let original = r#"[workspaces.prod]
 workdir = "/workspace/prod"
-default_agent = "agent-smith"
+default_role = "agent-smith"
 "#;
         std::fs::write(&paths.config_file, original).unwrap();
 
@@ -1437,8 +1428,8 @@ default_agent = "agent-smith"
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains(r#"last_agent = "agent-smith""#), "{out}");
-        assert!(out.contains(r#"default_agent = "agent-smith""#), "{out}");
+        assert!(out.contains(r#"last_role = "agent-smith""#), "{out}");
+        assert!(out.contains(r#"default_role = "agent-smith""#), "{out}");
     }
 
     #[test]
@@ -1448,16 +1439,16 @@ default_agent = "agent-smith"
         paths.ensure_base_dirs().unwrap();
         std::fs::write(
             &paths.config_file,
-            r#"[agents.foo]
+            r#"[roles.foo]
 git = "OLD"
 
-[agents.foo.env]
+[roles.foo.env]
 MY_VAR = "preserved"
 "#,
         )
         .unwrap();
 
-        let source = crate::config::AgentSource {
+        let source = crate::config::RoleSource {
             git: "NEW".to_string(),
             trusted: true,
             claude: None,
@@ -1482,13 +1473,13 @@ MY_VAR = "preserved"
             r#"[claude]
 auth_forward = "copy"
 
-[agents.foo]
+[roles.foo]
 git = "x"
 
-[agents.foo.claude]
+[roles.foo.claude]
 auth_forward = "copy"
 
-[agents.bar]
+[roles.bar]
 git = "y"
 "#,
         )

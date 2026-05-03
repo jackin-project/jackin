@@ -85,7 +85,7 @@ record of what was reviewed and when.
     overwrites.
 
 11. **Workspace agent constraints can still persist unchecked
-    selectors.** `allowed_agents` and `default_agent` values are still
+    selectors.** `allowed_roles` and `default_role` values are still
     accepted and saved as raw strings without selector parsing or
     configured-agent validation. Typos or stale values then fail later
     as confusing launcher or context-resolution behavior instead of
@@ -137,7 +137,7 @@ record of what was reviewed and when.
     still negate operator runtime disable choices.
 
 20. **Reproducibility and provenance are still branch-moving by
-    default.** Agent repos still default to moving git branches rather
+    default.** Role repos still default to moving git branches rather
     than pinned commits, and the current operator experience does not
     expose strong provenance or update controls.
 

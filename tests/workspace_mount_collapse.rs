@@ -281,7 +281,7 @@ fn workspace_edit_rejects_pre_existing_violation_without_prune() {
     seed_legacy_config_with_violation(&env);
 
     jackin(&env)
-        .args(["workspace", "edit", "test", "--allowed-agent", "some-agent"])
+        .args(["workspace", "edit", "test", "--allowed-role", "some-role"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("redundant"))
@@ -298,8 +298,8 @@ fn workspace_edit_with_prune_cleans_pre_existing_violations() {
             "workspace",
             "edit",
             "test",
-            "--allowed-agent",
-            "some-agent",
+            "--allowed-role",
+            "some-role",
             "--prune",
             "--yes",
         ])

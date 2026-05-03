@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use jackin::repo::validate_agent_repo;
+use jackin::repo::validate_role_repo;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
-        eprintln!("Usage: jackin-validate <agent-repo-path>");
+        eprintln!("Usage: jackin-validate <role-repo-path>");
         return ExitCode::FAILURE;
     }
 
@@ -16,7 +16,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    match validate_agent_repo(&repo_dir) {
+    match validate_role_repo(&repo_dir) {
         Ok(_) => {
             println!("All checks passed");
             ExitCode::SUCCESS

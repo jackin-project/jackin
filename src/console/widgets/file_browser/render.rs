@@ -214,7 +214,7 @@ mod tests {
         let dump = buffer
             .content()
             .iter()
-            .map(|cell| cell.symbol())
+            .map(ratatui::buffer::Cell::symbol)
             .collect::<String>();
         assert!(dump.contains("repo/"), "repo row should render: {dump:?}");
         assert!(
@@ -269,7 +269,7 @@ mod tests {
     }
 
     /// Git-repo entries render the name in WHITE and the ` (git)` suffix
-    /// in PHOSPHOR_GREEN so the marker pops against the otherwise-white row.
+    /// in `PHOSPHOR_GREEN` so the marker pops against the otherwise-white row.
     #[test]
     fn git_entry_name_is_white_and_suffix_is_phosphor_green() {
         use ratatui::{Terminal, backend::TestBackend};

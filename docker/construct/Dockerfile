@@ -79,27 +79,27 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
            /tmp/*
 
 # Create runtime user
-RUN groupadd -g "$GID" claude && \
-    useradd -m -u "$UID" -g "$GID" -s /bin/zsh claude && \
-    echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude && \
-    install -d -o claude -g claude /home/claude/.claude /home/claude/.jackin
+RUN groupadd -g "$GID" agent && \
+    useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
+    echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
+    install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
 # including `docker exec` sessions that bypass jackin's runtime entrypoint.
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-USER claude
+USER agent
 
-ENV PATH="/home/claude/.local/share/mise/shims:/home/claude/.local/bin:${PATH}"
+ENV PATH="/home/agent/.local/share/mise/shims:/home/agent/.local/bin:${PATH}"
 
 # Install oh-my-zsh and plugins
 RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
-    git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-/home/claude/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
+    git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-/home/agent/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
 
 # Install starship prompt
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
-COPY --chown=claude:claude zshrc /home/claude/.zshrc
-COPY --chown=claude:claude install-plugins.sh /home/claude/install-plugins.sh
-RUN chmod +x /home/claude/install-plugins.sh
+COPY --chown=agent:agent zshrc /home/agent/.zshrc
+COPY --chown=agent:agent install-claude-plugins.sh /home/agent/install-claude-plugins.sh
+RUN chmod +x /home/agent/install-claude-plugins.sh

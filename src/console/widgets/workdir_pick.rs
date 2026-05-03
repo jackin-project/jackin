@@ -120,7 +120,7 @@ const WHITE: Color = Color::Rgb(255, 255, 255);
 
 pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
     // Block title styled WHITE + BOLD to match the main-screen block titles
-    // (General/Mounts/Agents) and the other modal widgets.
+    // (General/Mounts/Roles) and the other modal widgets.
     let title = Span::styled(
         " Working directory ",
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD),

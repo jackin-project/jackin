@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-plugins_file="${JACKIN_PLUGINS_FILE:-/home/claude/.jackin/plugins.json}"
+plugins_file="${JACKIN_PLUGINS_FILE:-/home/agent/.jackin/plugins.json}"
 
 run_maybe_quiet() {
     if [ "${JACKIN_DEBUG:-0}" = "1" ]; then

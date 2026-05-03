@@ -15,7 +15,7 @@ Delete persisted state (Claude history, settings, GitHub CLI state, plugins) for
 
 | Argument | Required | Description |
 |---|---|---|
-| `SELECTOR` | Yes | Agent class selector (e.g., `agent-smith`, `chainargos/backend-engineer`) |
+| `SELECTOR` | Yes | Role selector (e.g., `agent-smith`, `chainargos/backend-engineer`) |
 
 ## Options
 
@@ -55,7 +55,7 @@ There is no unpushed-commit guard, no `--delete-branches` flag, and no interacti
 
 If the host repo recorded in `isolation.json` has been deleted or moved between `load` and `purge`, jackin' tolerates the missing parent: it best-effort attempts `git worktree remove --force` and then `rm -rf` the per-container `git/` tree. Purge does not fail just because the host repo is gone.
 
-The Docker image and cached agent repo are **not** affected. Use `--rebuild` on the next `jackin load` to force a full image rebuild.
+The Docker image and cached role repo are **not** affected. Use `--rebuild` on the next `jackin load` to force a full image rebuild.
 
 ## Running-agent guard
 

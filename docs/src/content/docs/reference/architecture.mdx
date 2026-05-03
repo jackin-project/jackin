@@ -24,7 +24,7 @@ So jackin' gets host-side cache reuse for building agent images, while still kee
 jackin's architecture is shaped by a few explicit decisions:
 
 1. **Local development first.** The first target is a developer machine that already knows how to run Docker.
-2. **Environment as source code.** Agent classes should be normal git repos reviewed like normal software.
+2. **Environment as source code.** Roles should be normal git repos reviewed like normal software.
 3. **Workspace boundary separate from tool profile.** File visibility and installed tooling are different control planes on purpose.
 4. **Operator-owned infrastructure, not black-box runtime.** The implementation should stay inspectable and patchable.
 5. **Container isolation is acceptable for the first target.** jackin' does not claim a microVM boundary today.
@@ -33,23 +33,23 @@ jackin's architecture is shaped by a few explicit decisions:
 
 <ImageLayers />
 
-The agent repo owns the environment layer. jackin' owns the derived runtime layer.
+The role repo owns the environment layer. jackin' owns the derived agent layer.
 
-That means an agent class defines the tools and conventions, while jackin' injects the runtime-specific pieces such as Claude installation, the entrypoint, and UID/GID remapping.
+That means an role defines the tools and conventions, while jackin' injects the agent-specific pieces such as Claude or Codex installation, the entrypoint, and UID/GID remapping.
 
 ## Container lifecycle
 
 ### Loading an agent
 
-1. **Resolve agent class** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
-2. **Validate the repo contract** — require `jackin.agent.toml` and a valid Dockerfile path, validate manifest strictly
+1. **Resolve role** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
+2. **Validate the repo contract** — require `jackin.role.toml` and a valid Dockerfile path, validate manifest strictly
 3. **Resolve environment variables** — prompt the user for interactive env vars declared in the manifest
-4. **Generate a derived build context** — copy the repo, inject runtime assets (entrypoint + pre-launch hook), and render a derived Dockerfile
+4. **Generate a derived build context** — copy the repo, inject agent assets (entrypoint + pre-launch hook), and render a derived Dockerfile
 5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
 6. **Create a per-agent Docker network**
 7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume
 8. **Start the agent container detached** with a persistent TTY (`docker run -d -it`) — mounts, resolved env vars, TLS client certs, labels, and `DOCKER_HOST` all point at the sidecar
-9. **Attach the foreground session** with `docker attach --detach-keys= --sig-proxy=false`, then **run Claude Code with full permissions inside that boundary**
+9. **Attach the foreground session** with `docker attach --detach-keys= --sig-proxy=false`, then **run the selected agent with full permissions inside that boundary**
 
 The detached-start + attach split decouples the container's lifetime from the foreground session: closing the terminal tab drops the attach, but the container keeps running with its own TTY. `--sig-proxy=false` stops SIGHUP (terminal close) from being forwarded to the container. Cleanup distinguishes three post-attach states:
 
@@ -75,7 +75,7 @@ Persisted state remains unless you also purge it.
 
 Each agent gets an isolated Docker network:
 
-- network name is derived from the runtime container name
+- network name is derived from the agent container name
 - the agent container and DinD sidecar share that network
 - the agent reaches the daemon through `DOCKER_HOST=tcp://{dind}:2376` with TLS mutual authentication
 - the agent reaches published services launched via DinD through `JACKIN_DIND_HOSTNAME={dind}`
@@ -93,7 +93,7 @@ Modern terminals — Ghostty (`xterm-ghostty`), Kitty (`xterm-kitty`), WezTerm, 
 
 1. Exports the host's terminfo entry using `infocmp -x`
 2. Compiles it into a cache directory (`~/.jackin/cache/terminfo/`) using `tic -x`
-3. Mounts the compiled terminfo read-only at `/home/claude/.terminfo` inside the container
+3. Mounts the compiled terminfo read-only at `/home/agent/.terminfo` inside the container
 4. Forwards the original `$TERM` value
 
 This means terminal-specific features (such as Ghostty's Kitty keyboard protocol or extended color support) work inside the container without any manual setup. The compiled terminfo is cached and reused across agent launches.
@@ -110,7 +110,7 @@ Workspace mounts pass through three distinct shapes between operator intent and 
 | `ResolvedWorkspace` | `resolve_load_workspace` | Expanded host paths plus the merged composition of workspace, ad-hoc, and global mounts. Still independent of the actual container instance. |
 | `MaterializedWorkspace` | post-name-claim materializer | Final host paths Docker should bind-mount for *this* container. Worktrees have been created on disk; isolated `src` values point at the per-container worktree path. |
 
-Materialization happens **after** the runtime claims the final container name (e.g. resolves `-clone-N` collisions) and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: first load creates the scratch branch from host `HEAD` and records `base_commit`; later loads to the same container reuse the existing worktree as-is — no reset, no rebase, no fast-forward.
+Materialization happens **after** jackin claims the final container name (e.g. resolves `-clone-N` collisions) and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: first load creates the scratch branch from host `HEAD` and records `base_commit`; later loads to the same container reuse the existing worktree as-is — no reset, no rebase, no fast-forward.
 
 On first worktree creation for a host repo, jackin' enables `extensions.worktreeConfig` (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config writes via `git config --worktree` don't leak into the shared host `.git/config`.
 
@@ -122,7 +122,7 @@ Materialized isolated mounts are recorded at:
 <data_dir>/jackin-<container>/.jackin/isolation.json
 ```
 
-The file lives next to the existing `.claude/` and `.jackin/` per-container state and is the source of truth for `purge` after the operator has changed (or removed) the workspace config. Each record contains at least:
+The file lives next to the per-container agent state and `.jackin/` metadata and is the source of truth for `purge` after the operator has changed (or removed) the workspace config. Each record contains at least:
 
 | Field | Purpose |
 |---|---|
@@ -155,7 +155,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 
 ```
 ~/.jackin/
-├── agents/                        # Cached agent repos
+├── roles/                         # Cached role repos
 │   └── github.com/
 │       └── jackin-project/
 │           └── jackin-agent-smith/
@@ -163,29 +163,33 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │   └── terminfo/
 ├── data/                          # Persisted state per instance
 │   └── jackin-agent-smith/
-│       ├── .claude/               # Claude Code session history, context
-│       │   └── .credentials.json  # OAuth tokens (forwarded or container-local)
-│       ├── .claude.json           # Claude Code account metadata and preferences
-│       ├── .config/gh/            # GitHub CLI authentication
-│       └── .jackin/
-│           └── plugins.json       # Installed Claude plugins list
+│       ├── claude/                # Claude-only state (when launched under Claude)
+│       │   ├── state/             # Claude Code session history, context
+│       │   │   └── .credentials.json  # OAuth tokens (forwarded or container-local)
+│       │   ├── account.json       # Claude Code account metadata and preferences
+│       │   └── plugins.json       # Installed Claude plugins list
+│       ├── codex/                 # Codex-only state (when launched under Codex)
+│       │   └── config.toml        # Codex config generated at launch
+│       ├── .config/gh/            # GitHub CLI authentication (agent-neutral)
+│       └── .jackin/               # jackin runtime metadata (agent-neutral)
+│           └── isolation.json     # Per-mount isolation records (when applicable)
 ```
 
 This is what persists across sessions:
 
 - Claude history, settings, and authentication
 - jackin' plugin metadata
-- `gh` state acquired inside the runtime
+- `gh` state acquired inside the agent container
 
 This is what does **not** persist:
 
-- packages installed interactively into the runtime container
+- packages installed interactively into the agent container
 - ad-hoc root filesystem changes outside mounted paths
 - DinD images, containers, and cache
 
-That means jackin' is biased toward **reproducible agent classes** rather than **mutable long-lived sandboxes**.
+That means jackin' is biased toward **reproducible roles** rather than **mutable long-lived sandboxes**.
 
-If a tool should always exist, put it in the agent repo Dockerfile instead of installing it ad hoc during a session.
+If a tool should always exist, put it in the role repo Dockerfile instead of installing it ad hoc during a session.
 
 ## Why Docker instead of microVMs?
 
@@ -196,7 +200,7 @@ Using plain Docker lets jackin':
 - reuse a toolchain developers already have
 - keep the implementation smaller and easier to inspect
 - build agent images with normal Docker workflows
-- share host-side build cache across agent classes
+- share host-side build cache across roles
 - stay local-first without introducing a separate VM product layer
 
 The cost of that choice is straightforward:
@@ -212,9 +216,9 @@ If the main thing you need is the strongest local boundary for autonomous agents
 
 - **DinD transport uses auto-generated TLS certificates.** The certificates are generated per-session and not pinned to a CA chain you control.
 - **Claude installation is not fully pinned.** The derived image installs Claude Code from the upstream installer.
-- **Derived build context rejects symlinks.** Agent repos with symlink-heavy layouts are not supported yet.
-- **Cached agent repos must stay clean.** jackin' refuses to build from a dirty or origin-mismatched cache.
-- **Runtime mutability is intentionally thin.** That keeps sessions cleaner, but makes ad-hoc package installs non-persistent.
+- **Derived build context rejects symlinks.** Role repos with symlink-heavy layouts are not supported yet.
+- **Cached role repos must stay clean.** jackin' refuses to build from a dirty or origin-mismatched cache.
+- **Container mutability is intentionally thin.** That keeps sessions cleaner, but makes ad-hoc package installs non-persistent.
 
 ## Technology stack
 

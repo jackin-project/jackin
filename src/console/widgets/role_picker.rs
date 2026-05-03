@@ -1,37 +1,37 @@
-//! Modal picker for agent disambiguation.
+//! Modal picker for role disambiguation.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use tui_widget_list::ListState;
 
 use super::ModalOutcome;
-use crate::selector::ClassSelector;
+use crate::selector::RoleSelector;
 
 #[derive(Debug)]
-pub struct AgentPickerState {
-    pub agents: Vec<ClassSelector>,
+pub struct RolePickerState {
+    pub roles: Vec<RoleSelector>,
     pub list_state: ListState,
     pub filter: String,
-    pub filtered: Vec<ClassSelector>,
+    pub filtered: Vec<RoleSelector>,
     /// Verb after `Enter` in the footer (`launch` for launch
     /// disambiguation, `select` for editor override-scope picking).
     pub confirm_label: String,
 }
 
-impl AgentPickerState {
+impl RolePickerState {
     #[must_use]
-    pub fn new(agents: Vec<ClassSelector>) -> Self {
-        Self::with_confirm_label(agents, "select")
+    pub fn new(roles: Vec<RoleSelector>) -> Self {
+        Self::with_confirm_label(roles, "select")
     }
 
     #[must_use]
-    pub fn with_confirm_label(agents: Vec<ClassSelector>, confirm_label: &str) -> Self {
-        let filtered = agents.clone();
+    pub fn with_confirm_label(roles: Vec<RoleSelector>, confirm_label: &str) -> Self {
+        let filtered = roles.clone();
         let mut list_state = ListState::default();
         if !filtered.is_empty() {
             list_state.select(Some(0));
         }
         Self {
-            agents,
+            roles,
             list_state,
             filter: String::new(),
             filtered,
@@ -42,9 +42,9 @@ impl AgentPickerState {
     fn recompute_filtered(&mut self) {
         let needle = self.filter.to_ascii_lowercase();
         self.filtered = self
-            .agents
+            .roles
             .iter()
-            .filter(|agent| needle.is_empty() || agent.key().to_ascii_lowercase().contains(&needle))
+            .filter(|role| needle.is_empty() || role.key().to_ascii_lowercase().contains(&needle))
             .cloned()
             .collect();
         if self.filtered.is_empty() {
@@ -62,7 +62,7 @@ impl AgentPickerState {
         super::cycle_select(&mut self.list_state, self.filtered.len(), 1);
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<ClassSelector> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<RoleSelector> {
         match key.code {
             KeyCode::Up => {
                 self.move_up();
@@ -80,9 +80,9 @@ impl AgentPickerState {
             }
             KeyCode::Enter => {
                 if let Some(i) = self.list_state.selected
-                    && let Some(agent) = self.filtered.get(i)
+                    && let Some(role) = self.filtered.get(i)
                 {
-                    return ModalOutcome::Commit(agent.clone());
+                    return ModalOutcome::Commit(role.clone());
                 }
                 ModalOutcome::Continue
             }
@@ -112,11 +112,11 @@ const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 
-pub fn render(frame: &mut Frame, area: Rect, state: &AgentPickerState) {
+pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
     // Filter row stays out of the title — see RULES.md "TUI List
     // Modals" for the canonical layout.
     let title = Span::styled(
-        " Select Agent ",
+        " Select Role ",
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
     );
     let block = Block::default()
@@ -160,13 +160,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentPickerState) {
 
     // List body. When the filter narrows the visible set to nothing,
     // render no rows — the blank space below the filter row IS the
-    // empty state. No `(no agents match)` placeholder per the canonical
+    // empty state. No `(no roles match)` placeholder per the canonical
     // list-modal layout.
     let lines: Vec<Line> = state
         .filtered
         .iter()
         .enumerate()
-        .map(|(i, agent)| {
+        .map(|(i, role)| {
             let is_selected = Some(i) == state.list_state.selected;
             let prefix = if is_selected { "\u{25b8} " } else { "  " };
             let style = if is_selected {
@@ -176,10 +176,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentPickerState) {
             } else {
                 Style::default().fg(WHITE)
             };
-            Line::from(vec![Span::styled(
-                format!("{prefix}{}", agent.key()),
-                style,
-            )])
+            Line::from(vec![Span::styled(format!("{prefix}{}", role.key()), style)])
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), rows[2]);
@@ -219,31 +216,29 @@ mod tests {
         }
     }
 
-    fn agents(keys: &[&str]) -> Vec<ClassSelector> {
+    fn roles(keys: &[&str]) -> Vec<RoleSelector> {
         keys.iter()
-            .map(|k| ClassSelector::parse(k).expect("valid selector"))
+            .map(|k| RoleSelector::parse(k).expect("valid selector"))
             .collect()
     }
 
     #[test]
     fn new_selects_first_when_non_empty() {
-        let s = AgentPickerState::new(agents(&["chainargos/agent-smith", "agent-brown"]));
+        let s = RolePickerState::new(roles(&["chainargos/agent-smith", "agent-brown"]));
         assert_eq!(s.list_state.selected, Some(0));
         assert_eq!(s.filtered.len(), 2);
     }
 
     #[test]
     fn new_selects_nothing_when_empty() {
-        let s = AgentPickerState::new(vec![]);
+        let s = RolePickerState::new(vec![]);
         assert_eq!(s.list_state.selected, None);
     }
 
     #[test]
     fn enter_commits_selected_agent() {
-        let mut s = AgentPickerState::new(agents(&[
-            "chainargos/agent-smith",
-            "chainargos/agent-brown",
-        ]));
+        let mut s =
+            RolePickerState::new(roles(&["chainargos/agent-smith", "chainargos/agent-brown"]));
         let outcome = s.handle_key(key(KeyCode::Enter));
         assert!(matches!(outcome,
             ModalOutcome::Commit(a) if a.key() == "chainargos/agent-smith"));
@@ -251,7 +246,7 @@ mod tests {
 
     #[test]
     fn esc_cancels() {
-        let mut s = AgentPickerState::new(agents(&["agent-smith"]));
+        let mut s = RolePickerState::new(roles(&["agent-smith"]));
         assert!(matches!(
             s.handle_key(key(KeyCode::Esc)),
             ModalOutcome::Cancel
@@ -260,7 +255,7 @@ mod tests {
 
     #[test]
     fn filter_narrows_agent_list() {
-        let mut s = AgentPickerState::new(agents(&[
+        let mut s = RolePickerState::new(roles(&[
             "chainargos/agent-smith",
             "chainargos/agent-brown",
             "agent-architect",
@@ -276,7 +271,7 @@ mod tests {
 
     #[test]
     fn filter_empty_shows_all() {
-        let mut s = AgentPickerState::new(agents(&["agent-smith", "agent-brown"]));
+        let mut s = RolePickerState::new(roles(&["agent-smith", "agent-brown"]));
         s.handle_key(key(KeyCode::Char('s')));
         assert_eq!(s.filtered.len(), 1);
         s.handle_key(key(KeyCode::Backspace));
@@ -287,7 +282,7 @@ mod tests {
 
     #[test]
     fn enter_on_empty_filtered_list_is_noop() {
-        let mut s = AgentPickerState::new(agents(&["agent-smith"]));
+        let mut s = RolePickerState::new(roles(&["agent-smith"]));
         for ch in "zzzz".chars() {
             s.handle_key(key(KeyCode::Char(ch)));
         }
@@ -298,7 +293,7 @@ mod tests {
 
     #[test]
     fn down_wraps_at_end() {
-        let mut s = AgentPickerState::new(agents(&["agent-a", "agent-b"]));
+        let mut s = RolePickerState::new(roles(&["agent-a", "agent-b"]));
         s.handle_key(key(KeyCode::Down));
         s.handle_key(key(KeyCode::Down));
         assert_eq!(s.list_state.selected, Some(0));
@@ -306,16 +301,16 @@ mod tests {
 
     #[test]
     fn up_wraps_at_start() {
-        let mut s = AgentPickerState::new(agents(&["agent-a", "agent-b"]));
+        let mut s = RolePickerState::new(roles(&["agent-a", "agent-b"]));
         s.handle_key(key(KeyCode::Up));
         assert_eq!(s.list_state.selected, Some(1));
     }
 
-    /// `j`/`k` append to the filter (no vim-style nav) so agents with
+    /// `j`/`k` append to the filter (no vim-style nav) so roles with
     /// those letters in their key can be typed naturally.
     #[test]
     fn j_and_k_append_to_filter_not_navigate() {
-        let mut s = AgentPickerState::new(agents(&["agent-jenkins", "agent-kafka"]));
+        let mut s = RolePickerState::new(roles(&["agent-jenkins", "agent-kafka"]));
         s.handle_key(key(KeyCode::Char('j')));
         assert_eq!(s.filter, "j");
         assert_eq!(s.filtered.len(), 1);
@@ -324,7 +319,7 @@ mod tests {
 
     // ── Render-buffer smoke tests ─────────────────────────────────────
 
-    fn dump(state: &AgentPickerState, w: u16, h: u16) -> String {
+    fn dump(state: &RolePickerState, w: u16, h: u16) -> String {
         use ratatui::{Terminal, backend::TestBackend, layout::Rect};
         let backend = TestBackend::new(w, h);
         let mut term = Terminal::new(backend).unwrap();
@@ -346,7 +341,7 @@ mod tests {
 
     #[test]
     fn agent_picker_renders_filter_row_with_placeholder_dots_when_empty() {
-        let s = AgentPickerState::new(agents(&["chainargos/agent-smith"]));
+        let s = RolePickerState::new(roles(&["chainargos/agent-smith"]));
         let frame = dump(&s, 60, 12);
         assert!(
             frame.contains("Filter:"),
@@ -358,8 +353,8 @@ mod tests {
         );
         let top: String = frame.lines().next().unwrap().to_string();
         assert!(
-            top.contains("Select Agent"),
-            "title bar must read `Select Agent`; top row:\n{top}"
+            top.contains("Select Role"),
+            "title bar must read `Select Role`; top row:\n{top}"
         );
         assert!(
             !top.contains("filter:"),
@@ -369,10 +364,8 @@ mod tests {
 
     #[test]
     fn agent_picker_renders_filter_row_with_live_chars_when_typing() {
-        let mut s = AgentPickerState::new(agents(&[
-            "chainargos/agent-smith",
-            "chainargos/agent-brown",
-        ]));
+        let mut s =
+            RolePickerState::new(roles(&["chainargos/agent-smith", "chainargos/agent-brown"]));
         for ch in "smi".chars() {
             s.handle_key(key(KeyCode::Char(ch)));
         }
@@ -391,7 +384,7 @@ mod tests {
     #[test]
     fn agent_picker_footer_uses_configured_confirm_label() {
         let s_launch =
-            AgentPickerState::with_confirm_label(agents(&["chainargos/agent-smith"]), "launch");
+            RolePickerState::with_confirm_label(roles(&["chainargos/agent-smith"]), "launch");
         let frame = dump(&s_launch, 60, 12);
         assert!(
             frame.contains("Enter") && frame.contains("launch"),
@@ -403,7 +396,7 @@ mod tests {
         );
 
         let s_select =
-            AgentPickerState::with_confirm_label(agents(&["chainargos/agent-smith"]), "select");
+            RolePickerState::with_confirm_label(roles(&["chainargos/agent-smith"]), "select");
         let frame = dump(&s_select, 60, 12);
         assert!(
             frame.contains("Enter") && frame.contains("select"),
@@ -417,14 +410,14 @@ mod tests {
 
     #[test]
     fn agent_picker_renders_no_empty_state_placeholder_when_filter_excludes_all() {
-        let mut s = AgentPickerState::new(agents(&["agent-smith", "agent-brown"]));
+        let mut s = RolePickerState::new(roles(&["agent-smith", "agent-brown"]));
         for ch in "zzzz".chars() {
             s.handle_key(key(KeyCode::Char(ch)));
         }
         assert!(s.filtered.is_empty());
         let frame = dump(&s, 60, 12);
         assert!(
-            !frame.contains("(no agents match"),
+            !frame.contains("(no roles match"),
             "must not render an empty-state placeholder; frame:\n{frame}"
         );
         assert!(

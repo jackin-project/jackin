@@ -5,7 +5,7 @@ use jackin::workspace::{self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_r
 /// Bootstrap a fresh, empty config file for a ConfigEditor-based test.
 ///
 /// Returns a temp dir (kept alive for the test's duration) and the
-/// corresponding JackinPaths.
+/// corresponding `JackinPaths`.
 fn bootstrap_paths() -> (tempfile::TempDir, JackinPaths) {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -42,7 +42,7 @@ fn workspace_create_resolves_relative_workdir_and_mounts() {
             mounts: vec![
                 workspace::MountConfig {
                     src: expanded_workdir.clone(),
-                    dst: expanded_workdir.clone(),
+                    dst: expanded_workdir,
                     readonly: false,
                     isolation: jackin::isolation::MountIsolation::Shared,
                 },
@@ -89,7 +89,7 @@ fn workspace_create_resolves_dot_workdir_and_dotdot_mount() {
             mounts: vec![
                 workspace::MountConfig {
                     src: expanded_workdir.clone(),
-                    dst: expanded_workdir.clone(),
+                    dst: expanded_workdir,
                     readonly: false,
                     isolation: jackin::isolation::MountIsolation::Shared,
                 },
@@ -252,7 +252,7 @@ fn workspace_create_skips_auto_mount_when_workdir_already_mounted() {
         .create_workspace(
             "project",
             WorkspaceConfig {
-                workdir: expanded_workdir.clone(),
+                workdir: expanded_workdir,
                 mounts: all_mounts,
                 ..Default::default()
             },
@@ -288,7 +288,7 @@ fn workspace_edit_resolves_relative_mount() {
                 workdir: workdir_abs.clone(),
                 mounts: vec![workspace::MountConfig {
                     src: workdir_abs.clone(),
-                    dst: workdir_abs.clone(),
+                    dst: workdir_abs,
                     readonly: false,
                     isolation: jackin::isolation::MountIsolation::Shared,
                 }],
@@ -308,7 +308,7 @@ fn workspace_edit_resolves_relative_mount() {
     let result = editor2.edit_workspace(
         "jackin",
         WorkspaceEdit {
-            upsert_mounts: vec![mount.clone()],
+            upsert_mounts: vec![mount],
             ..WorkspaceEdit::default()
         },
     );
@@ -353,7 +353,7 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
                         isolation: jackin::isolation::MountIsolation::Shared,
                     },
                     workspace::MountConfig {
-                        src: extra_abs.clone(),
+                        src: extra_abs,
                         dst: workdir_abs.clone() + "/extra",
                         readonly: false,
                         isolation: jackin::isolation::MountIsolation::Shared,
@@ -384,7 +384,7 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
     let config = editor2.save().unwrap();
     let ws = config.workspaces.get("my-app").unwrap();
     assert_eq!(ws.mounts.len(), 1, "auto-mount should be removed");
-    assert_eq!(ws.mounts[0].dst, workdir_abs.clone() + "/extra");
+    assert_eq!(ws.mounts[0].dst, workdir_abs + "/extra");
 }
 
 /// `--no-workdir-mount` on edit should fail if there is no auto-mounted workdir.

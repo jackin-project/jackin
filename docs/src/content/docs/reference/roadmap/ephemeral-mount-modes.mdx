@@ -25,7 +25,7 @@ today:
 
 Today an operator can only achieve the first by writing a Docker volume
 into a `--mount` arg and managing its lifecycle by hand, and the second
-by passing `--tmpfs` ad-hoc. Neither lives in `jackin.agent.toml` or the
+by passing `--tmpfs` ad-hoc. Neither lives in `jackin.role.toml` or the
 workspace config.
 
 multicode confirms this is a real, frequently-used distinction. Their
@@ -42,7 +42,7 @@ each other's caches and to keeping host state clean.
   queue](/reference/roadmap/autonomous-task-queue/) in place, an agent
   fleet runs hundreds of builds a day. Each one should start with a
   clean per-instance scratch space; today, they don't.
-- **`/tmp` should default to tmpfs.** Many agent classes bake
+- **`/tmp` should default to tmpfs.** Many roles bake
   configuration assuming `/tmp` is fast and ephemeral. jackin's default
   `/tmp` is the container's own filesystem — fine for correctness, but
   larger and slower than necessary.
@@ -142,9 +142,9 @@ V1 enum vocabulary becomes: `shared | worktree | tmpfs | ephemeral`
 - **bwrap** (if it ever lands): `--tmpfs` for both modes; the
   ephemeral case is bwrap's natural shape.
 
-### Agent class declarations
+### Role declarations
 
-Agent classes can declare ephemeral defaults in `jackin.agent.toml`:
+Roles can declare ephemeral defaults in `jackin.role.toml`:
 
 ```toml
 [[runtime.mounts]]
@@ -157,9 +157,9 @@ isolation = "tmpfs"
 size = "1GiB"
 ```
 
-These are agent-class-level defaults that workspaces inherit unless
+These are role-level defaults that workspaces inherit unless
 overridden by a workspace mount on the same `dst`. Useful so a Java
-agent class can declare its Gradle hygiene once and every workspace
+role can declare its Gradle hygiene once and every workspace
 gets the right behavior.
 
 ## Scope (V1)
@@ -172,7 +172,7 @@ gets the right behavior.
 - Per-instance volume label scheme (`jackin.instance=<container>`,
   `jackin.dst=<slug>`) so cleanup can enumerate.
 - Agent-class-level mount defaults via `[[runtime.mounts]]` in
-  `jackin.agent.toml`; workspace mounts override on `dst`.
+  `jackin.role.toml`; workspace mounts override on `dst`.
 - `purge` cleans up Docker volumes labeled with the instance name.
 - Docs update for [per-mount isolation](/reference/roadmap/per-mount-isolation/)
   and the architecture reference.
@@ -198,7 +198,7 @@ gets the right behavior.
   `instance` (it's per-instance), `volume` (it's a Docker volume),
   `private` (it's not host-visible). Recommended: *`ephemeral`* —
   matches the operator's mental model ("this is gone when I purge").
-- **Default `tmpfs` for `/tmp`.** Should every agent class get
+- **Default `tmpfs` for `/tmp`.** Should every role get
   `/tmp` as tmpfs by default, or stay opt-in? Recommended: *opt-in*
   for V1 — defaults can change downstream after seeing real usage.
 - **Interaction with [worktree
@@ -223,7 +223,7 @@ gets the right behavior.
 - <RepoFile path="src/runtime/cleanup.rs" /> — volume cleanup on
   `purge`
 - <RepoFile path="src/manifest/mod.rs" /> — `[[runtime.mounts]]`
-  agent-class defaults
+  role-level defaults
 - <RepoFile path="src/cli/workspace.rs" /> — `--mount-isolation tmpfs`
   / `ephemeral` in workspace edit/create
 

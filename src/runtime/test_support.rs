@@ -1,6 +1,7 @@
 use crate::docker::{CommandRunner, RunOptions};
 use std::collections::VecDeque;
 
+#[derive(Default)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,
     pub run_recorded: Vec<String>,
@@ -14,19 +15,6 @@ pub struct FakeRunner {
     pub side_effects: Vec<(String, Box<dyn FnOnce()>)>,
 }
 
-impl Default for FakeRunner {
-    fn default() -> Self {
-        Self {
-            recorded: Vec::new(),
-            run_recorded: Vec::new(),
-            fail_on: Vec::new(),
-            fail_with: Vec::new(),
-            capture_queue: VecDeque::new(),
-            side_effects: Vec::new(),
-        }
-    }
-}
-
 impl FakeRunner {
     pub(super) fn with_capture_queue<const N: usize>(outputs: [String; N]) -> Self {
         Self {
@@ -35,14 +23,14 @@ impl FakeRunner {
         }
     }
 
-    /// Number of capture calls `load_agent` makes before reaching agent-
-    /// specific logic: 2 GC queries (orphaned DinD scan + orphaned network
+    /// Number of capture calls `load_role` makes before reaching role-
+    /// specific logic: 2 GC queries (orphaned `DinD` scan + orphaned network
     /// scan) + 4 identity lookups (`git config user.name`, `git config
     /// user.email`, `id -u`, `id -g`).
     const LOAD_PREAMBLE_CAPTURES: usize = 6;
 
-    /// Prefixes the capture queue with empty responses for the `load_agent`
-    /// preamble queries so tests can focus on the agent-specific output.
+    /// Prefixes the capture queue with empty responses for the `load_role`
+    /// preamble queries so tests can focus on the role-specific output.
     pub(super) fn for_load_agent<const N: usize>(outputs: [String; N]) -> Self {
         let mut queue = VecDeque::with_capacity(Self::LOAD_PREAMBLE_CAPTURES + N);
         for _ in 0..Self::LOAD_PREAMBLE_CAPTURES {

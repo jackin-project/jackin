@@ -53,7 +53,7 @@ export default defineConfig({
             { label: 'Mounts', slug: 'guides/mounts' },
             { label: 'Environment Variables', slug: 'guides/environment-variables' },
             { label: 'Authentication', slug: 'guides/authentication' },
-            { label: 'Agent Repos', slug: 'guides/agent-repos' },
+            { label: 'Role Repos', slug: 'guides/role-repos' },
             { label: 'Security Model', slug: 'guides/security-model' },
             { label: 'Comparison', slug: 'guides/comparison' },
           ],
@@ -73,11 +73,11 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Developing Agents',
+          label: 'Developing Roles',
           items: [
-            { label: 'Creating Agents', slug: 'developing/creating-agents' },
+            { label: 'Creating Roles', slug: 'developing/creating-roles' },
             { label: 'Construct Image', slug: 'developing/construct-image' },
-            { label: 'Agent Manifest', slug: 'developing/agent-manifest' },
+            { label: 'Role Manifest', slug: 'developing/role-manifest' },
           ],
         },
         {

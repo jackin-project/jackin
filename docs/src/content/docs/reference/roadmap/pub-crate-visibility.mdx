@@ -13,7 +13,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 - <RepoFile path="src/lib.rs" /> currently exports 21 top-level modules plus `app::run`
 - `RUSTFLAGS='-W unreachable_pub' cargo check` currently reports 10 warnings on `main`
-- the current warnings cluster in <RepoFile path="src/workspace/planner.rs" />, <RepoFile path="src/console/manager/agent_allow.rs" />, <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/config/agents.rs" />, and <RepoFile path="src/config/mounts.rs" />
+- the current warnings cluster in <RepoFile path="src/workspace/planner.rs" />, <RepoFile path="src/console/manager/agent_allow.rs" />, <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/config/roles.rs" />, and <RepoFile path="src/config/mounts.rs" />
 - 0 `unreachable_pub` enforcement exists in the normal lint configuration today
 
 ## Current low-hanging fruit
@@ -23,7 +23,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 | <RepoFile path="src/workspace/planner.rs" /> | 5 current warnings | Plan structs/helpers are only consumed inside the crate today |
 | <RepoFile path="src/console/manager/agent_allow.rs" /> | 2 current warnings | Manager helper fns can likely tighten to `pub(super)` |
 | <RepoFile path="src/runtime/launch.rs" /> | 1 current warning | `inspect_attach_outcome` appears narrower than `pub` |
-| <RepoFile path="src/config/agents.rs" /> | 1 current warning | `BUILTIN_AGENTS` likely does not need full `pub` |
+| <RepoFile path="src/config/roles.rs" /> | 1 current warning | `BUILTIN_AGENTS` likely does not need full `pub` |
 | <RepoFile path="src/config/mounts.rs" /> | 1 current warning | `MountEntry` may be wider than necessary |
 
 ## Steps

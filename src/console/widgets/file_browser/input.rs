@@ -182,7 +182,7 @@ mod tests {
         std::fs::create_dir_all(&child).unwrap();
 
         // root = tmp so that neither parent nor child trip the $HOME guard.
-        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent.clone());
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), parent);
         // Highlighted entry at index 0 is `..`; advance to `child`.
         state.handle_key(key(KeyCode::Down));
 
@@ -259,7 +259,7 @@ mod tests {
         let sub = tmp.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
 
-        let mut state = state_rooted_at(tmp.path().to_path_buf(), sub.clone());
+        let mut state = state_rooted_at(tmp.path().to_path_buf(), sub);
         let outcome = state.handle_key(key(KeyCode::Esc));
         assert!(matches!(outcome, ModalOutcome::Continue));
         assert_eq!(
