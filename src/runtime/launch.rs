@@ -227,12 +227,12 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
 
     match &state.agent_runtime {
         AgentRuntimeState::Claude {
-            dir,
-            json,
+            state_dir,
+            account_json,
             plugins_json,
         } => vec![
-            format!("{}:/home/agent/.claude", dir.display()),
-            format!("{}:/home/agent/.claude.json", json.display()),
+            format!("{}:/home/agent/.claude", state_dir.display()),
+            format!("{}:/home/agent/.claude.json", account_json.display()),
             format!(
                 "{}:/home/agent/.jackin/plugins.json:ro",
                 plugins_json.display()
@@ -2290,6 +2290,7 @@ model = "gpt-5"
             paths
                 .data_dir
                 .join("jackin-agent-smith")
+                .join("codex")
                 .join("config.toml")
                 .is_file()
         );

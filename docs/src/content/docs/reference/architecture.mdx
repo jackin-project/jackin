@@ -155,7 +155,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 
 ```
 ~/.jackin/
-├── agents/                        # Cached role repos
+├── roles/                         # Cached role repos
 │   └── github.com/
 │       └── jackin-project/
 │           └── jackin-agent-smith/
@@ -163,13 +163,16 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │   └── terminfo/
 ├── data/                          # Persisted state per instance
 │   └── jackin-agent-smith/
-│       ├── .claude/               # Claude Code session history, context
-│       │   └── .credentials.json  # OAuth tokens (forwarded or container-local)
-│       ├── .claude.json           # Claude Code account metadata and preferences
-│       ├── config.toml            # Codex config generated when launching Codex
-│       ├── .config/gh/            # GitHub CLI authentication
-│       └── .jackin/
-│           └── plugins.json       # Installed Claude plugins list
+│       ├── claude/                # Claude-only state (when launched under Claude)
+│       │   ├── state/             # Claude Code session history, context
+│       │   │   └── .credentials.json  # OAuth tokens (forwarded or container-local)
+│       │   ├── account.json       # Claude Code account metadata and preferences
+│       │   └── plugins.json       # Installed Claude plugins list
+│       ├── codex/                 # Codex-only state (when launched under Codex)
+│       │   └── config.toml        # Codex config generated at launch
+│       ├── .config/gh/            # GitHub CLI authentication (agent-neutral)
+│       └── .jackin/               # jackin runtime metadata (agent-neutral)
+│           └── isolation.json     # Per-mount isolation records (when applicable)
 ```
 
 This is what persists across sessions:

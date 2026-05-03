@@ -36,11 +36,15 @@ pub enum AuthProvisionOutcome {
 #[derive(Debug, Clone)]
 pub enum AgentRuntimeState {
     Claude {
-        dir: PathBuf,
-        json: PathBuf,
+        /// Host path mounted at `/home/agent/.claude` (session state).
+        state_dir: PathBuf,
+        /// Host path mounted at `/home/agent/.claude.json` (account metadata).
+        account_json: PathBuf,
+        /// Host path mounted at `/home/agent/.jackin/plugins.json:ro`.
         plugins_json: PathBuf,
     },
     Codex {
+        /// Host path mounted at `/home/agent/.codex/config.toml`.
         config_toml: PathBuf,
     },
 }
@@ -54,38 +58,42 @@ pub struct RoleState {
 }
 
 impl RoleState {
-    /// Path to the agent's `.claude/` directory, or `None` if this state
+    /// Host path to Claude's session-state directory (mounted at
+    /// `/home/agent/.claude` in the container). `None` if this state
     /// was not prepared for `Agent::Claude`.
     #[must_use]
-    pub fn claude_dir(&self) -> Option<&Path> {
+    pub fn claude_state_dir(&self) -> Option<&Path> {
         match &self.agent_runtime {
-            AgentRuntimeState::Claude { dir, .. } => Some(dir),
+            AgentRuntimeState::Claude { state_dir, .. } => Some(state_dir),
             AgentRuntimeState::Codex { .. } => None,
         }
     }
 
-    /// Path to the agent's `.claude.json`, or `None` if this state was
-    /// not prepared for `Agent::Claude`.
+    /// Host path to Claude's account-metadata file (mounted at
+    /// `/home/agent/.claude.json` in the container). `None` if this
+    /// state was not prepared for `Agent::Claude`.
     #[must_use]
-    pub fn claude_json(&self) -> Option<&Path> {
+    pub fn claude_account_json(&self) -> Option<&Path> {
         match &self.agent_runtime {
-            AgentRuntimeState::Claude { json, .. } => Some(json),
+            AgentRuntimeState::Claude { account_json, .. } => Some(account_json),
             AgentRuntimeState::Codex { .. } => None,
         }
     }
 
-    /// Path to the agent's `plugins.json`, or `None` if this state was
-    /// not prepared for `Agent::Claude`.
+    /// Host path to the Claude plugins manifest (mounted at
+    /// `/home/agent/.jackin/plugins.json` in the container). `None`
+    /// if this state was not prepared for `Agent::Claude`.
     #[must_use]
-    pub fn plugins_json(&self) -> Option<&Path> {
+    pub fn claude_plugins_json(&self) -> Option<&Path> {
         match &self.agent_runtime {
             AgentRuntimeState::Claude { plugins_json, .. } => Some(plugins_json),
             AgentRuntimeState::Codex { .. } => None,
         }
     }
 
-    /// Path to the agent's `config.toml`, or `None` if this state was
-    /// not prepared for `Agent::Codex`.
+    /// Host path to Codex's `config.toml` (mounted at
+    /// `/home/agent/.codex/config.toml` in the container). `None`
+    /// if this state was not prepared for `Agent::Codex`.
     #[must_use]
     pub fn codex_config_toml(&self) -> Option<&Path> {
         match &self.agent_runtime {
@@ -113,13 +121,19 @@ impl RoleState {
 
         let (agent_runtime, outcome) = match agent {
             crate::agent::Agent::Claude => {
-                let dir = root.join(".claude");
-                let json = root.join(".claude.json");
-                let plugins_json = jackin_dir.join("plugins.json");
+                let claude_dir = root.join("claude");
+                let state_dir = claude_dir.join("state");
+                let account_json = claude_dir.join("account.json");
+                let plugins_json = claude_dir.join("plugins.json");
 
-                std::fs::create_dir_all(&dir)?;
+                std::fs::create_dir_all(&state_dir)?;
 
-                let outcome = Self::provision_claude_auth(&json, &dir, auth_forward, host_home)?;
+                let outcome = Self::provision_claude_auth(
+                    &account_json,
+                    &state_dir,
+                    auth_forward,
+                    host_home,
+                )?;
 
                 if let Some(claude_cfg) = manifest.claude.as_ref() {
                     std::fs::write(
@@ -132,15 +146,17 @@ impl RoleState {
                 }
                 (
                     AgentRuntimeState::Claude {
-                        dir,
-                        json,
+                        state_dir,
+                        account_json,
                         plugins_json,
                     },
                     outcome,
                 )
             }
             crate::agent::Agent::Codex => {
-                let config_toml = root.join("config.toml");
+                let codex_dir = root.join("codex");
+                std::fs::create_dir_all(&codex_dir)?;
+                let config_toml = codex_dir.join("config.toml");
                 Self::provision_codex_auth(&config_toml, manifest)?;
                 (
                     AgentRuntimeState::Codex { config_toml },
@@ -201,9 +217,9 @@ plugins = []
         )
         .unwrap();
 
-        assert!(state.claude_dir().unwrap().is_dir());
+        assert!(state.claude_state_dir().unwrap().is_dir());
         assert_eq!(
-            std::fs::read_to_string(state.claude_json().unwrap()).unwrap(),
+            std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
             "{}"
         );
         assert!(state.codex_config_toml().is_none());
@@ -246,8 +262,8 @@ agents = ["codex"]
         assert!(state.codex_config_toml().unwrap().is_file());
         // Codex state carries no claude/plugins paths — the typed enum
         // makes the absence structural rather than a runtime nil.
-        assert!(state.claude_dir().is_none());
-        assert!(state.claude_json().is_none());
-        assert!(state.plugins_json().is_none());
+        assert!(state.claude_state_dir().is_none());
+        assert!(state.claude_account_json().is_none());
+        assert!(state.claude_plugins_json().is_none());
     }
 }

@@ -126,6 +126,33 @@ Each entry includes:
   - `src/cli/config.rs` and docs examples — current examples use
     `/home/agent`.
 
+### Top-level state files in `~/.jackin/data/<container>/`
+
+- **Type:** config / behavior
+- **Deprecated since:** 2026-05-03 (PR #210)
+- **Replacement:** state files now live under per-agent subdirectories.
+  Claude state is grouped under `<container>/claude/` and Codex state
+  under `<container>/codex/`.
+- **Behavior today:** jackin no longer reads or writes the legacy
+  flat layout. Existing per-container directories from before this
+  change retain their old files but jackin will not consult them —
+  any cached Claude session history at the old paths is invisible to
+  the new layout. Operators with active state can either eject and
+  re-launch (clean re-init) or move files manually:
+    `<container>/.claude/ → <container>/claude/state/`
+    `<container>/.claude.json → <container>/claude/account.json`
+    `<container>/.jackin/plugins.json → <container>/claude/plugins.json`
+    `<container>/config.toml → <container>/codex/config.toml`
+- **Remove when:** never — this is a hard break, not a transitional
+  deprecation. The entry exists so the rationale is recorded.
+- **Where:**
+  - `src/instance/mod.rs::prepare` — constructs the new per-agent
+    paths.
+  - `src/runtime/launch.rs::agent_mounts` — maps host paths to
+    container mount destinations (container paths unchanged).
+  - `docs/src/content/docs/reference/architecture.mdx` — layout
+    diagram reflects the new shape.
+
 ## How to add an entry
 
 When you deprecate something, append a new section to **Active
