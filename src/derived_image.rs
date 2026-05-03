@@ -299,15 +299,52 @@ mod tests {
     }
 
     #[test]
+    fn entrypoint_dispatches_on_jackin_harness() {
+        assert!(ENTRYPOINT_SH.contains("case \"${JACKIN_HARNESS:?"));
+        assert!(ENTRYPOINT_SH.contains("  claude)"));
+        assert!(ENTRYPOINT_SH.contains("  codex)"));
+    }
+
+    #[test]
+    fn entrypoint_claude_branch_invokes_install_claude_plugins() {
+        assert!(ENTRYPOINT_SH.contains("/home/agent/install-claude-plugins.sh"));
+    }
+
+    #[test]
+    fn entrypoint_codex_branch_does_not_invoke_install_claude_plugins() {
+        let codex_section = ENTRYPOINT_SH
+            .split("codex)")
+            .nth(1)
+            .unwrap()
+            .split(";;")
+            .next()
+            .unwrap();
+        assert!(!codex_section.contains("install-claude-plugins.sh"));
+    }
+
+    #[test]
     fn entrypoint_registers_security_tool_mcp_servers() {
-        assert!(ENTRYPOINT_SH.contains("claude mcp add tirith -- tirith mcp-server"));
-        assert!(ENTRYPOINT_SH.contains("claude mcp add shellfirm -- shellfirm mcp"));
+        let claude_section = ENTRYPOINT_SH
+            .split("claude)")
+            .nth(1)
+            .unwrap()
+            .split(";;")
+            .next()
+            .unwrap();
+        assert!(claude_section.contains("claude mcp add tirith -- tirith mcp-server"));
+        assert!(claude_section.contains("claude mcp add shellfirm -- shellfirm mcp"));
     }
 
     #[test]
     fn entrypoint_mcp_registration_respects_disable_guards() {
         assert!(ENTRYPOINT_SH.contains("JACKIN_DISABLE_TIRITH"));
         assert!(ENTRYPOINT_SH.contains("JACKIN_DISABLE_SHELLFIRM"));
+    }
+
+    #[test]
+    fn entrypoint_pre_launch_hook_path_uses_agent_home() {
+        assert!(ENTRYPOINT_SH.contains("/home/agent/.jackin-runtime/pre-launch.sh"));
+        assert!(!ENTRYPOINT_SH.contains("/home/claude"));
     }
 
     #[test]
