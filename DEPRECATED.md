@@ -103,6 +103,56 @@ Each entry includes:
     — plain rows (including legacy bare `op://...`) render without
     `[op]` marker, signalling the need to re-pick.
 
+### `/home/claude/...` mount destinations
+
+- **Type:** config / behavior
+- **Deprecated since:** 2026-05-01 (multi-agent slice)
+- **Replacement:** `/home/agent/...` for workspace and global mount
+  destinations, plus any agent Dockerfile paths that reference the
+  runtime user home.
+- **Behavior today:** jackin now runs containers as the `agent` user
+  with home directory `/home/agent`. Existing `/home/claude/...`
+  mount destinations point at a path that is no longer created by the
+  construct image.
+- **Remove when:** after one release cycle without operator reports
+  that legacy `/home/claude` paths are still required.
+- **Where:**
+  - `docker/construct/Dockerfile` — creates the `agent` user and
+    `/home/agent` state directories.
+  - `src/derived_image.rs` — rewrites generated Dockerfile paths to
+    `/home/agent`.
+  - `src/runtime/launch.rs` — mounts agent state under
+    `/home/agent`.
+  - `src/cli/config.rs` and docs examples — current examples use
+    `/home/agent`.
+
+### Top-level state files in `~/.jackin/data/<container>/`
+
+- **Type:** config / behavior
+- **Deprecated since:** 2026-05-03 (PR #210)
+- **Replacement:** state files now live under per-agent subdirectories.
+  Claude state is grouped under `<container>/claude/` and Codex state
+  under `<container>/codex/`.
+- **Behavior today:** jackin no longer reads or writes the legacy
+  flat layout. Existing per-container directories from before this
+  change retain their old files but jackin will not consult them —
+  any cached Claude session history at the old paths is invisible to
+  the new layout. Operators with active state can either eject and
+  re-launch (clean re-init) or move files manually:
+    `<container>/.claude/ → <container>/claude/state/`
+    `<container>/.claude.json → <container>/claude/account.json`
+    `<container>/.jackin/plugins.json → <container>/claude/plugins.json`
+    `<container>/config.toml → <container>/codex/config.toml`
+- **Remove when:** never — this is a hard break, not a transitional
+  deprecation. The entry exists so the rationale is recorded.
+- **Where:**
+  - `src/instance/mod.rs::prepare` — constructs the new per-agent
+    paths.
+  - `src/runtime/launch.rs::agent_mounts` — maps host paths to
+    container mount destinations (container paths unchanged).
+  - `docs/src/content/docs/reference/architecture.mdx` — layout
+    diagram reflects the new shape.
+
 ## How to add an entry
 
 When you deprecate something, append a new section to **Active

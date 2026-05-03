@@ -43,7 +43,7 @@ Instead of running on your host, each agent runs inside a Docker container with 
 </Steps>
 Think of it this way: you're not restricting the agent's *capabilities*. You're restricting its *blast radius*.
 
-jackin' also helps you restrict the agent's *context*. You are not forced to put every language toolchain, helper script, and Claude plugin into one universal environment. You can build smaller agent classes for specific kinds of work and point them at the same workspace when needed.
+jackin' also helps you restrict the agent's *context*. You are not forced to put every language toolchain, helper script, and Claude plugin into one universal environment. You can build smaller roles for specific kinds of work and point them at the same workspace when needed.
 
 ## What jackin' optimizes for
 
@@ -51,37 +51,37 @@ jackin' is opinionated about what matters most in day-to-day agent work:
 
 - **local development first** — your laptop is the first control plane
 - **open source over black box** — the tool itself should be inspectable and patchable
-- **environment as code** — agent classes should live in normal git repos with normal code review
+- **environment as code** — roles should live in normal git repos with normal code review
 - **workspace boundaries as first-class objects** — file access should be an explicit operator decision
 - **many parallel agents** — different projects, branches, or roles should coexist cleanly
 
 That means jackin' is not trying to win every dimension. It is not trying to be the hardest isolation boundary you can put on a laptop. It is trying to make isolated local agent development feel deliberate, reusable, and pleasant.
 
-## Why separate agent classes from workspaces?
+## Why separate roles from workspaces?
 
 This is the part new users usually need spelled out.
 
 A **workspace** controls file visibility. It says which project paths are mounted into the container.
 
-An **agent class** controls environment and behavior. It says which tools, shells, plugins, and defaults exist in that container image.
+An **role** controls environment and behavior. It says which tools, shells, plugins, and defaults exist in that container image.
 
 Those are different concerns, and separating them is useful for two reasons.
 
 First, it keeps the blast radius clear. The workspace decides which files the agent can reach.
 
-Second, it keeps the agent's working environment focused. The agent class decides which tools, conventions, helper scripts, and plugins are even present. That matters because a giant all-in-one image creates noise. The model can inspect too many tools, too many conventions, and too much irrelevant context before it decides what to do.
+Second, it keeps the agent's working environment focused. The role decides which tools, conventions, helper scripts, and plugins are even present. That matters because a giant all-in-one image creates noise. The model can inspect too many tools, too many conventions, and too much irrelevant context before it decides what to do.
 
 Imagine one company with a shared monorepo:
 
-- the frontend team uses a `chainargos/frontend-engineer` agent class with Node, Playwright, design-system utilities, and UI-oriented Claude plugins
-- the backend team uses a `chainargos/backend-engineer` agent class with Rust or Go toolchains, database clients, and API-oriented plugins
-- both teams can still point those agent classes at the same monorepo workspace when needed
+- the frontend team uses a `chainargos/frontend-engineer` role with Node, Playwright, design-system utilities, and UI-oriented Claude plugins
+- the backend team uses a `chainargos/backend-engineer` role with Rust or Go toolchains, database clients, and API-oriented plugins
+- both teams can still point those roles at the same monorepo workspace when needed
 
 That split keeps the visible project files and the installed toolchain independently controllable.
 
 In practice, this often produces better results than one kitchen-sink agent image. A narrower environment gives the agent fewer irrelevant cues and makes it more likely that the tools and plugins it discovers actually match the task.
 
-It also helps with Claude Code plugins. A tool like Superpowers can be extremely useful, but it brings hooks and behavior that you may not want in every task. The most reliable way to keep it out of scope is not to "mostly disable" it, but to use a different agent class where it simply is not installed.
+It also helps with Claude Code plugins. A tool like Superpowers can be extremely useful, but it brings hooks and behavior that you may not want in every task. The most reliable way to keep it out of scope is not to "mostly disable" it, but to use a different role where it simply is not installed.
 
 ## The cyberpunk analogy
 
@@ -112,7 +112,7 @@ jackin' exists because many operators also want:
 
 - agent environments they can define as normal source code
 - explicit workspace objects with reusable mount layouts and access rules
-- multiple role-specific agent classes against the same project
+- multiple role-specific roles against the same project
 - an open tool they can extend instead of only consume
 
 So the honest comparison is this:
@@ -137,7 +137,7 @@ That last point is deliberate. jackin' starts with local Docker because that is 
 
 **Individual developers** who want to run AI agents at full speed without risking their host machine. You can give Claude Code complete autonomy inside a container, knowing it can't accidentally delete your SSH keys or push to production. If you work on multiple projects or branches simultaneously, jackin' lets you run separate agents in parallel without resource pressure.
 
-**Teams** that want to standardize how AI agents are deployed. Define agent repos with the tools each project needs, save workspace configurations, and every developer gets the same isolated environment. Agent classes are git repos — version them, review them in PRs, share them across the organization.
+**Teams** that want to standardize how AI agents are deployed. Define role repos with the tools each project needs, save workspace configurations, and every developer gets the same isolated environment. Roles are git repos — version them, review them in PRs, share them across the organization.
 
 **Agent developers** who want to build custom agent configurations. Create a Dockerfile with your preferred toolchain, declare it in a manifest, and anyone can load your agent with `jackin load`.
 
@@ -158,6 +158,6 @@ jackin' is built in Rust for three reasons:
 <Aside type="note">
 jackin' is currently a proof of concept with Claude Code as its only supported agent runtime. Support for Codex and Amp Code is planned.
 </Aside>
-The core isolation model works, workspaces and mounts are configurable, the interactive operator console is functional, and the agent class system supports namespaced, team-shareable environments. It's licensed under Apache 2.0.
+The core isolation model works, workspaces and mounts are configurable, the interactive operator console is functional, and the role system supports namespaced, team-shareable environments. It's licensed under Apache 2.0.
 
 The vision is local-first development with excellent tooling and UX, eventually expanding to deployment ecosystems — Kubernetes support is planned for using jackin' as a debug container in production environments to safely explore issues with AI agent assistance.

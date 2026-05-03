@@ -275,7 +275,7 @@ mod tests {
 auth_forward = "sync"
 
 # Agents we trust
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
@@ -782,16 +782,16 @@ Create `src/config/fixtures/config.round_trip.toml`:
 auth_forward = "sync"
 
 # Our two builtin agents
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
-[agents.the-architect]
+[roles.the-architect]
 git = "https://github.com/jackin-project/jackin-the-architect.git"
 trusted = true
 
 # An external agent we vetted in 2025-Q4
-[agents."chainargos/agent-brown"]
+[roles."chainargos/agent-brown"]
 git = "git@github.com:chainargos/jackin-agent-brown.git"
 trusted = true
 
@@ -1159,7 +1159,7 @@ fn set_agent_trust_toggles_trusted_field() {
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
-        r#"[agents.my-agent]
+        r#"[roles.my-agent]
 git = "https://example.com/a.git"
 "#,
     )
@@ -1183,7 +1183,7 @@ fn set_agent_trust_false_removes_field() {
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
-        r#"[agents.my-agent]
+        r#"[roles.my-agent]
 git = "x"
 trusted = true
 "#,
@@ -1205,7 +1205,7 @@ fn set_agent_auth_forward_writes_claude_subtable() {
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
-        r#"[agents.my-agent]
+        r#"[roles.my-agent]
 git = "x"
 "#,
     )
@@ -1216,7 +1216,7 @@ git = "x"
     editor.save().unwrap();
 
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
-    assert!(out.contains("[agents.my-agent.claude]"), "{out}");
+    assert!(out.contains("[roles.my-agent.claude]"), "{out}");
     assert!(out.contains(r#"auth_forward = "token""#), "{out}");
 }
 
@@ -1251,7 +1251,7 @@ fn upsert_builtin_agent_creates_entry_when_missing() {
     editor.save().unwrap();
 
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
-    assert!(out.contains("[agents.agent-smith]"), "{out}");
+    assert!(out.contains("[roles.agent-smith]"), "{out}");
     assert!(out.contains("trusted = true"), "{out}");
 }
 
@@ -1262,11 +1262,11 @@ fn upsert_builtin_agent_preserves_existing_claude_override() {
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
-        r#"[agents.agent-smith]
+        r#"[roles.agent-smith]
 git = "OLD-URL"
 trusted = false
 
-[agents.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "token"
 "#,
     )
@@ -1322,8 +1322,8 @@ pub fn set_global_auth_forward(&mut self, mode: crate::config::AuthForwardMode) 
 }
 
 pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
-    // Touch only git + trusted. Leave [agents.X.claude] and
-    // [agents.X.env] alone — those are operator-owned.
+    // Touch only git + trusted. Leave [roles.X.claude] and
+    // [roles.X.env] alone — those are operator-owned.
     let table = table_path_mut(&mut self.doc, &["agents", agent_key]);
     table.insert("git", toml_edit::value(git_url));
     table.insert("trusted", toml_edit::value(true));
@@ -1355,7 +1355,7 @@ git commit -s -m "feat(config): ConfigEditor agent mutators
 
 Adds set_agent_trust, set_agent_auth_forward, set_global_auth_forward,
 upsert_builtin_agent. The builtin upsert touches only git + trusted so
-operator-owned [agents.X.claude] and [agents.X.env] overrides survive
+operator-owned [roles.X.claude] and [roles.X.env] overrides survive
 the sync that runs on every load_or_init.
 
 set_agent_trust(false) removes the trusted key entirely to match the
@@ -1403,8 +1403,8 @@ fn create_workspace_adds_table() {
             dst: "/workspace/new".to_string(),
             readonly: false,
         }],
-        allowed_agents: vec![],
-        default_agent: None,
+        allowed_roles: vec![],
+        default_role: None,
         last_agent: None,
         env: std::collections::BTreeMap::new(),
         agents: std::collections::BTreeMap::new(),
@@ -1426,7 +1426,7 @@ fn set_last_agent_preserves_other_fields() {
     paths.ensure_base_dirs().unwrap();
     let original = r#"[workspaces.prod]
 workdir = "/workspace/prod"
-default_agent = "agent-smith"
+default_role = "agent-smith"
 "#;
     std::fs::write(&paths.config_file, original).unwrap();
 
@@ -1436,7 +1436,7 @@ default_agent = "agent-smith"
 
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
     assert!(out.contains(r#"last_agent = "agent-smith""#), "{out}");
-    assert!(out.contains(r#"default_agent = "agent-smith""#), "{out}");
+    assert!(out.contains(r#"default_role = "agent-smith""#), "{out}");
 }
 
 #[test]
@@ -1530,7 +1530,7 @@ Note: `edit_workspace` is NOT added yet — it's coming in the same task as Step
 
 - [ ] **Step 4: Implement `edit_workspace` by delegating to AppConfig**
 
-`WorkspaceEdit` application is non-trivial (validation, mount upserts, allowed-agent list diffs). Rather than duplicate, delegate:
+`WorkspaceEdit` application is non-trivial (validation, mount upserts, allowed-role list diffs). Rather than duplicate, delegate:
 
 ```rust
 pub fn edit_workspace(
@@ -1588,12 +1588,12 @@ Adds create_workspace, edit_workspace, remove_workspace, set_last_agent.
 create_workspace collision-checks then splats a serialized
 WorkspaceConfig into [workspaces.<name>]. edit_workspace delegates to
 AppConfig::edit_workspace's validated logic (mount upserts,
-allowed_agents diffs, workdir validation) and then replaces the
+allowed_roles diffs, workdir validation) and then replaces the
 [workspaces.<name>] table — comments inside the edited workspace are
 consumed (that IS the change), but all other sections survive intact.
 
 set_last_agent is a targeted insert that preserves every other field
-on the workspace, including default_agent.
+on the workspace, including default_role.
 
 Co-authored-by: Claude <noreply@anthropic.com>"
 ```
@@ -1738,10 +1738,10 @@ fn upsert_agent_source_preserves_existing_env() {
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
-        r#"[agents.foo]
+        r#"[roles.foo]
 git = "OLD"
 
-[agents.foo.env]
+[roles.foo.env]
 MY_VAR = "preserved"
 "#,
     )
@@ -2058,7 +2058,7 @@ if builtins_changed || deprecated_copy_seen {
         // Rewrite every "copy" string we find to "sync" at the exact
         // paths contains_deprecated_copy_auth_forward checks:
         //   [claude].auth_forward
-        //   [agents.*.claude].auth_forward
+        //   [roles.*.claude].auth_forward
         editor.normalize_deprecated_copy();
     }
     // Discard the reloaded AppConfig — we already have `config` in the
@@ -2086,7 +2086,7 @@ In `impl ConfigEditor` in `src/config/editor.rs`:
 /// Rewrite any `auth_forward = "copy"` to `"sync"` at the two paths
 /// `contains_deprecated_copy_auth_forward` checks:
 ///   [claude].auth_forward
-///   [agents.*.claude].auth_forward
+///   [roles.*.claude].auth_forward
 ///
 /// Does not touch any other structure. Used by load_or_init when the
 /// on-disk config still contains the deprecated literal.
@@ -2097,7 +2097,7 @@ pub fn normalize_deprecated_copy(&mut self) {
             claude.insert("auth_forward", toml_edit::value("sync"));
         }
     }
-    // Per-agent [agents.X.claude]
+    // Per-agent [roles.X.claude]
     if let Some(agents) = self.doc.get_mut("agents").and_then(|i| i.as_table_mut()) {
         for (_, agent_item) in agents.iter_mut() {
             let Some(agent_table) = agent_item.as_table_mut() else { continue };
@@ -2126,13 +2126,13 @@ fn normalize_deprecated_copy_rewrites_global_and_agent_paths() {
         r#"[claude]
 auth_forward = "copy"
 
-[agents.foo]
+[roles.foo]
 git = "x"
 
-[agents.foo.claude]
+[roles.foo.claude]
 auth_forward = "copy"
 
-[agents.bar]
+[roles.bar]
 git = "y"
 "#,
     )
@@ -2284,7 +2284,7 @@ mkdir -p /tmp/jackin-smoke
 cat > /tmp/jackin-smoke/config.toml <<'EOF'
 # I wrote this comment by hand and expect it to survive.
 
-[agents.agent-smith]
+[roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 

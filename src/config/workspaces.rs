@@ -32,7 +32,7 @@ pub fn detect_workspace_edit_drift(
     runner: &mut impl crate::docker::CommandRunner,
 ) -> anyhow::Result<DriftDetection> {
     let records = list_records_for_workspace(&paths.data_dir, workspace_name)?;
-    let running = crate::runtime::list_agent_names(runner, false).unwrap_or_default();
+    let running = crate::runtime::list_role_names(runner, false).unwrap_or_default();
 
     let mut affected_running = Vec::new();
     let mut affected_stopped = Vec::new();
@@ -153,20 +153,24 @@ impl AppConfig {
             &edit.mount_isolation_overrides,
         )?;
 
-        for selector in edit.allowed_agents_to_add {
+        for selector in edit.allowed_roles_to_add {
             if !workspace
-                .allowed_agents
+                .allowed_roles
                 .iter()
                 .any(|existing| existing == &selector)
             {
-                workspace.allowed_agents.push(selector);
+                workspace.allowed_roles.push(selector);
             }
         }
 
-        for selector in edit.allowed_agents_to_remove {
+        for selector in edit.allowed_roles_to_remove {
             workspace
-                .allowed_agents
+                .allowed_roles
                 .retain(|existing| existing != &selector);
+        }
+
+        if let Some(default_role) = edit.default_role {
+            workspace.default_role = default_role;
         }
 
         if let Some(default_agent) = edit.default_agent {
@@ -255,11 +259,12 @@ mod tests {
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
-            allowed_agents: vec!["agent-smith".to_string()],
-            default_agent: Some("agent-smith".to_string()),
-            last_agent: None,
+            allowed_roles: vec!["agent-smith".to_string()],
+            default_role: Some("agent-smith".to_string()),
+            default_agent: None,
+            last_role: None,
             env: std::collections::BTreeMap::new(),
-            agents: std::collections::BTreeMap::new(),
+            roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
         };
         config
@@ -347,6 +352,67 @@ mod tests {
     }
 
     #[test]
+    fn edit_workspace_sets_and_clears_agent() {
+        let temp = tempdir().unwrap();
+        let mut config = AppConfig::default();
+        config
+            .create_workspace(
+                "my-app",
+                WorkspaceConfig {
+                    workdir: "/workspace/proj".to_string(),
+                    mounts: vec![MountConfig {
+                        src: temp.path().display().to_string(),
+                        dst: "/workspace/proj".to_string(),
+                        readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
+                    }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        config
+            .edit_workspace(
+                "my-app",
+                WorkspaceEdit {
+                    default_agent: Some(Some(crate::agent::Agent::Codex)),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            config.workspaces.get("my-app").unwrap().default_agent,
+            Some(crate::agent::Agent::Codex)
+        );
+
+        config
+            .edit_workspace(
+                "my-app",
+                WorkspaceEdit {
+                    workdir: Some("/workspace/proj".to_string()),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            config.workspaces.get("my-app").unwrap().default_agent,
+            Some(crate::agent::Agent::Codex),
+            "unrelated edits must not clear default_agent"
+        );
+
+        config
+            .edit_workspace(
+                "my-app",
+                WorkspaceEdit {
+                    default_agent: Some(None),
+                    ..WorkspaceEdit::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(config.workspaces.get("my-app").unwrap().default_agent, None);
+    }
+
+    #[test]
     fn create_workspace_rejects_duplicate_name_and_preserves_existing_value() {
         let temp = tempdir().unwrap();
         let mut config = AppConfig::default();
@@ -375,8 +441,8 @@ mod tests {
                         readonly: true,
                         isolation: crate::isolation::MountIsolation::Shared,
                     }],
-                    allowed_agents: vec!["agent-smith".to_string()],
-                    default_agent: Some("agent-smith".to_string()),
+                    allowed_roles: vec!["agent-smith".to_string()],
+                    default_role: Some("agent-smith".to_string()),
                     ..Default::default()
                 },
             )
@@ -516,7 +582,7 @@ mod tests {
                 home_dir: data.into(),
                 config_dir: data.into(),
                 config_file: data.join("config.toml"),
-                agents_dir: data.into(),
+                roles_dir: data.into(),
                 data_dir: data.into(),
                 cache_dir: data.into(),
             }

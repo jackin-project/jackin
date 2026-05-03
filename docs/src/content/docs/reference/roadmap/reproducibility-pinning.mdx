@@ -8,7 +8,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-The current agent repo flow tracks moving branches (typically `main`) by default. There is no mechanism to pin to a specific version, verify provenance, or control when updates are pulled.
+The current role repo flow tracks moving branches (typically `main`) by default. There is no mechanism to pin to a specific version, verify provenance, or control when updates are pulled.
 
 ## Why It Matters
 
@@ -35,7 +35,7 @@ The current agent repo flow tracks moving branches (typically `main`) by default
 
 ### Option 1: Git Tag Versioning
 
-Agent repos use git tags (e.g. `v1.0.0`, `v1.2.3`) as the release mechanism. jackin' resolves and pins to tags rather than branches.
+Role repos use git tags (e.g. `v1.0.0`, `v1.2.3`) as the release mechanism. jackin' resolves and pins to tags rather than branches.
 
 - First load: resolve the latest tag, record it in config
 - Subsequent loads: check out the pinned tag (no auto-update)
@@ -91,6 +91,6 @@ Cons:
 
 ## Related Files
 
-- <RepoFile path="src/config/agents.rs" /> — `resolve_agent_source()`; `AgentSource` (defined in <RepoFile path="src/config/mod.rs" />) would need version/commit fields
+- <RepoFile path="src/config/roles.rs" /> — `resolve_agent_source()`; `AgentSource` (defined in <RepoFile path="src/config/mod.rs" />) would need version/commit fields
 - <RepoFile path="src/runtime/repo_cache.rs" /> — `resolve_agent_repo`, repo checkout logic; calls into config layer to resolve source
 - <RepoFile path="src/manifest/mod.rs" /> — version/provenance metadata

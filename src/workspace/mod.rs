@@ -39,20 +39,26 @@ pub struct WorkspaceConfig {
     #[serde(default)]
     pub mounts: Vec<MountConfig>,
     #[serde(default)]
-    pub allowed_agents: Vec<String>,
+    pub allowed_roles: Vec<String>,
     #[serde(default)]
-    pub default_agent: Option<String>,
+    pub default_role: Option<String>,
+    /// Workspace-level default agent (claude or codex). When unset,
+    /// `resolved_agent()` falls back to Claude. The field is omitted
+    /// from serialized output when `None` so legacy config files stay
+    /// byte-for-byte stable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_agent: Option<String>,
+    pub default_agent: Option<crate::agent::Agent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_role: Option<String>,
     /// Workspace-level operator env map. Keys are env var names;
     /// values use the `operator_env` dispatch syntax
     /// (`op://...` | `$NAME` | `${NAME}` | literal).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub env: std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
-    /// Per-(workspace × agent) env overrides, keyed by the agent
+    /// Per-(workspace × role) env overrides, keyed by the role
     /// selector (e.g. `"agent-smith"` or `"chainargos/agent-brown"`).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub agents: std::collections::BTreeMap<String, WorkspaceAgentOverride>,
+    pub roles: std::collections::BTreeMap<String, WorkspaceRoleOverride>,
     #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
     pub keep_awake: KeepAwakeConfig,
 }
@@ -60,9 +66,9 @@ pub struct WorkspaceConfig {
 /// Per-workspace power-management opt-in.
 ///
 /// macOS-only today: when `enabled = true`, jackin spawns
-/// `caffeinate -imsu` while at least one agent is running in any
+/// `caffeinate -imsu` while at least one role is running in any
 /// workspace with this flag set, so the host stays awake while
-/// agents work in the background. The reconciler runs at every
+/// roles work in the background. The reconciler runs at every
 /// jackin command boundary; one caffeinate process covers all
 /// active keep-awake workspaces.
 ///
@@ -84,14 +90,22 @@ impl KeepAwakeConfig {
     }
 }
 
-/// Per-(workspace × agent) operator overrides.
+impl WorkspaceConfig {
+    /// Returns the workspace's selected agent, defaulting to Claude
+    /// when no `default_agent` field is set (legacy workspace).
+    pub fn resolved_agent(&self) -> crate::agent::Agent {
+        self.default_agent.unwrap_or(crate::agent::Agent::Claude)
+    }
+}
+
+/// Per-(workspace × role) operator overrides.
 ///
 /// Currently only `env` is supported; the struct exists as a named type
 /// so future overrides (e.g. `auth_forward`) can be added without a
 /// TOML schema break.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct WorkspaceAgentOverride {
+pub struct WorkspaceRoleOverride {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub env: std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
 }
@@ -102,9 +116,13 @@ pub struct WorkspaceEdit {
     pub upsert_mounts: Vec<MountConfig>,
     pub remove_destinations: Vec<String>,
     pub no_workdir_mount: bool,
-    pub allowed_agents_to_add: Vec<String>,
-    pub allowed_agents_to_remove: Vec<String>,
-    pub default_agent: Option<Option<String>>,
+    pub allowed_roles_to_add: Vec<String>,
+    pub allowed_roles_to_remove: Vec<String>,
+    pub default_role: Option<Option<String>>,
+    /// Workspace default-agent change. `None` = no change,
+    /// `Some(Some(h))` = set to `h`, `Some(None)` = clear the
+    /// explicit field so the workspace falls back to Claude.
+    pub default_agent: Option<Option<crate::agent::Agent>>,
     pub mount_isolation_overrides: Vec<(String, crate::isolation::MountIsolation)>,
     /// Toggle for the macOS keep-awake reconciler. `None` = no change,
     /// `Some(true)` = opt in, `Some(false)` = opt out. The CLI's paired
@@ -218,15 +236,15 @@ pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> any
         "workspace {name:?} workdir must be equal to, inside, or a parent of one of the workspace mount destinations"
     );
 
-    if let Some(default_agent) = &workspace.default_agent
-        && !workspace.allowed_agents.is_empty()
+    if let Some(default_role) = &workspace.default_role
+        && !workspace.allowed_roles.is_empty()
         && !workspace
-            .allowed_agents
+            .allowed_roles
             .iter()
-            .any(|agent| agent == default_agent)
+            .any(|role| role == default_role)
     {
         anyhow::bail!(
-            "workspace {name:?} default_agent must be a member of allowed_agents when allowed_agents is set"
+            "workspace {name:?} default_role must be a member of allowed_roles when allowed_roles is set"
         );
     }
 
@@ -250,6 +268,48 @@ mod tests {
             }],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn workspace_serializes_default_agent_when_set() {
+        let ws = WorkspaceConfig {
+            workdir: "/tmp/x".to_string(),
+            default_agent: Some(crate::agent::Agent::Codex),
+            ..Default::default()
+        };
+
+        let toml_str = toml::to_string(&ws).unwrap();
+        assert!(toml_str.contains("default_agent = \"codex\""));
+    }
+
+    #[test]
+    fn workspace_omits_default_agent_field_when_unset() {
+        let ws = WorkspaceConfig {
+            workdir: "/tmp/x".to_string(),
+            ..Default::default()
+        };
+
+        let toml_str = toml::to_string(&ws).unwrap();
+        assert!(!toml_str.contains("default_agent"));
+    }
+
+    #[test]
+    fn workspace_resolves_to_claude_when_unset() {
+        let ws = WorkspaceConfig {
+            workdir: "/tmp/x".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(ws.resolved_agent(), crate::agent::Agent::Claude);
+    }
+
+    #[test]
+    fn workspace_resolves_to_codex_when_set() {
+        let ws = WorkspaceConfig {
+            workdir: "/tmp/x".to_string(),
+            default_agent: Some(crate::agent::Agent::Codex),
+            ..Default::default()
+        };
+        assert_eq!(ws.resolved_agent(), crate::agent::Agent::Codex);
     }
 
     #[test]
@@ -288,7 +348,7 @@ enabled = true
 
         // Default (disabled) variant must round-trip back to "no section emitted"
         // so existing configs don't grow noise after a load/save cycle.
-        let mut default_ws = ws.clone();
+        let mut default_ws = ws;
         default_ws.keep_awake.enabled = false;
         let serialized_default = toml::to_string(&default_ws).unwrap();
         assert!(
@@ -558,7 +618,7 @@ isolation = "worktree"
 
     #[test]
     fn isolation_layout_allows_different_host_repos_in_one_workspace() {
-        // The common multi-mount case: agent works on two different
+        // The common multi-mount case: role works on two different
         // host repos, each isolated. Distinct `src` paths → no
         // collision in host's `.git/worktrees/` namespace.
         let mounts = vec![
@@ -593,12 +653,13 @@ isolation = "worktree"
                 worktree_mount("/tmp/a", "/workspace/proj"),
                 worktree_mount("/tmp/b", "/workspace/proj/sub"),
             ],
-            allowed_agents: Vec::new(),
+            allowed_roles: Vec::new(),
+            default_role: None,
             default_agent: None,
-            last_agent: None,
+            last_role: None,
             env: BTreeMap::new(),
-            agents: BTreeMap::new(),
-            keep_awake: Default::default(),
+            roles: BTreeMap::new(),
+            keep_awake: KeepAwakeConfig::default(),
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();

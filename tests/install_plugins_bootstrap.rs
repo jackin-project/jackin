@@ -102,7 +102,7 @@ printf '%s\n' "$*" >> '{}'
     write_jq_stub(&jq_path);
 
     let status = Command::new("bash")
-        .arg("docker/construct/install-plugins.sh")
+        .arg("docker/construct/install-claude-plugins.sh")
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .env("JACKIN_PLUGINS_FILE", &plugins_file)
         .env(
@@ -171,7 +171,7 @@ fi
     write_jq_stub(&jq_path);
 
     let output = Command::new("bash")
-        .arg("docker/construct/install-plugins.sh")
+        .arg("docker/construct/install-claude-plugins.sh")
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .env("JACKIN_PLUGINS_FILE", &plugins_file)
         .env(

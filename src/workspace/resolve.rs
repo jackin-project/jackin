@@ -33,10 +33,14 @@ pub struct ResolvedWorkspace {
     pub workdir: String,
     pub mounts: Vec<MountConfig>,
     /// Whether this workspace opted into the keep-awake reconciler.
-    /// Carried through to `launch_agent_runtime` so the container can
+    /// Carried through to `launch_role_runtime` so the container can
     /// be tagged with `jackin.keep_awake=true` without a config
     /// re-lookup.
     pub keep_awake_enabled: bool,
+    /// Workspace-level default agent (None for ad-hoc / current-dir
+    /// workspaces). The launch flow combines this with any CLI override
+    /// in `runtime::launch::resolve_agent`.
+    pub default_agent: Option<crate::agent::Agent>,
 }
 
 fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
@@ -78,7 +82,7 @@ pub fn saved_workspace_match_depth(workspace: &WorkspaceConfig, cwd: &Path) -> O
 
 pub fn resolve_load_workspace(
     config: &crate::config::AppConfig,
-    selector: &crate::selector::ClassSelector,
+    selector: &crate::selector::RoleSelector,
     cwd: &Path,
     input: LoadWorkspaceInput,
     ad_hoc_mounts: &[MountConfig],
@@ -130,16 +134,13 @@ pub fn resolve_load_workspace(
         }
         LoadWorkspaceInput::Saved(name) => {
             let workspace = config.require_workspace(&name)?.clone();
-            if !workspace.allowed_agents.is_empty()
+            if !workspace.allowed_roles.is_empty()
                 && !workspace
-                    .allowed_agents
+                    .allowed_roles
                     .iter()
-                    .any(|agent| agent == &selector.key())
+                    .any(|role| role == &selector.key())
             {
-                anyhow::bail!(
-                    "agent {} is not allowed by workspace {name}",
-                    selector.key()
-                );
+                anyhow::bail!("role {} is not allowed by workspace {name}", selector.key());
             }
             (workspace, name)
         }
@@ -183,6 +184,7 @@ pub fn resolve_load_workspace(
         workdir: workspace.workdir,
         mounts,
         keep_awake_enabled: workspace.keep_awake.enabled,
+        default_agent: workspace.default_agent,
     })
 }
 
@@ -202,6 +204,41 @@ mod tests {
         );
         assert_eq!(workspace.mounts.len(), 1);
         assert_eq!(workspace.mounts[0].src, workspace.mounts[0].dst);
+    }
+
+    #[test]
+    fn saved_workspace_resolution_preserves_agent() {
+        let temp = tempdir().unwrap();
+        let workspace_root = temp.path().join("project");
+        std::fs::create_dir_all(&workspace_root).unwrap();
+        let canonical = workspace_root.canonicalize().unwrap();
+
+        let mut config = crate::config::AppConfig::default();
+        config.workspaces.insert(
+            "codex-workspace".to_string(),
+            WorkspaceConfig {
+                workdir: "/workspace/project".to_string(),
+                mounts: vec![MountConfig {
+                    src: canonical.display().to_string(),
+                    dst: "/workspace/project".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                }],
+                default_agent: Some(crate::agent::Agent::Codex),
+                ..Default::default()
+            },
+        );
+
+        let resolved = resolve_load_workspace(
+            &config,
+            &crate::selector::RoleSelector::new(None, "agent-smith"),
+            &canonical,
+            LoadWorkspaceInput::Saved("codex-workspace".to_string()),
+            &[],
+        )
+        .unwrap();
+
+        assert_eq!(resolved.default_agent, Some(crate::agent::Agent::Codex));
     }
 
     #[test]
@@ -271,7 +308,7 @@ mod tests {
         // match rather than a silent canonicalize failure on a missing path.
         let temp = tempdir().unwrap();
         let broad_workdir = temp.path().join("Projects");
-        let agent_repo = broad_workdir.join("agent-repo");
+        let agent_repo = broad_workdir.join("role-repo");
         let unrelated_cwd = broad_workdir.join("jackin4");
         std::fs::create_dir_all(&agent_repo).unwrap();
         std::fs::create_dir_all(&unrelated_cwd).unwrap();
@@ -280,7 +317,7 @@ mod tests {
             workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
             mounts: vec![MountConfig {
                 src: agent_repo.canonicalize().unwrap().display().to_string(),
-                dst: "/workspace/agent-repo".to_string(),
+                dst: "/workspace/role-repo".to_string(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
@@ -321,7 +358,7 @@ mod tests {
     #[test]
     fn saved_workspace_match_depth_matches_nested_path_under_mount_src() {
         let temp = tempdir().unwrap();
-        let mount_src = temp.path().join("agent-repo");
+        let mount_src = temp.path().join("role-repo");
         let nested = mount_src.join("src");
         std::fs::create_dir_all(&nested).unwrap();
 
@@ -329,7 +366,7 @@ mod tests {
             workdir: "/Users/me/Projects".to_string(),
             mounts: vec![MountConfig {
                 src: mount_src.canonicalize().unwrap().display().to_string(),
-                dst: "/workspace/agent-repo".to_string(),
+                dst: "/workspace/role-repo".to_string(),
                 readonly: false,
                 isolation: crate::isolation::MountIsolation::Shared,
             }],
@@ -345,9 +382,9 @@ mod tests {
     #[test]
     fn resolves_saved_workspace_and_rejects_disallowed_agent() {
         let mut config = crate::config::AppConfig::default();
-        config.agents.insert(
+        config.roles.insert(
             "agent-smith".to_string(),
-            crate::config::AgentSource {
+            crate::config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
@@ -364,8 +401,8 @@ mod tests {
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 }],
-                allowed_agents: vec!["agent-smith".to_string()],
-                default_agent: Some("agent-smith".to_string()),
+                allowed_roles: vec!["agent-smith".to_string()],
+                default_role: Some("agent-smith".to_string()),
                 ..Default::default()
             },
         );
@@ -373,7 +410,7 @@ mod tests {
         let cwd = std::env::temp_dir();
         let error = resolve_load_workspace(
             &config,
-            &crate::selector::ClassSelector::new(None, "neo"),
+            &crate::selector::RoleSelector::new(None, "neo"),
             &cwd,
             LoadWorkspaceInput::Saved("big-monorepo".to_string()),
             &[],
@@ -390,9 +427,9 @@ mod tests {
         std::fs::create_dir_all(&mount_src).unwrap();
 
         let mut config = crate::config::AppConfig::default();
-        config.agents.insert(
+        config.roles.insert(
             "agent-smith".to_string(),
-            crate::config::AgentSource {
+            crate::config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
@@ -416,7 +453,7 @@ mod tests {
         let cwd = std::env::temp_dir();
         let resolved = resolve_load_workspace(
             &config,
-            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            &crate::selector::RoleSelector::new(None, "agent-smith"),
             &cwd,
             LoadWorkspaceInput::Saved("big-monorepo".to_string()),
             &[],
@@ -437,7 +474,7 @@ mod tests {
         // to mutate the global process CWD.
         let resolved = resolve_load_workspace(
             &crate::config::AppConfig::default(),
-            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            &crate::selector::RoleSelector::new(None, "agent-smith"),
             temp.path(),
             LoadWorkspaceInput::Path {
                 src: "./project".to_string(),
@@ -461,7 +498,7 @@ mod tests {
             "home",
             MountConfig {
                 src: "~".to_string(),
-                dst: "/home/claude/home".to_string(),
+                dst: "/home/agent/home".to_string(),
                 readonly: true,
                 isolation: crate::isolation::MountIsolation::Shared,
             },
@@ -470,7 +507,7 @@ mod tests {
 
         let resolved = resolve_load_workspace(
             &config,
-            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            &crate::selector::RoleSelector::new(None, "agent-smith"),
             cwd.path(),
             LoadWorkspaceInput::CurrentDir,
             &[],
@@ -481,7 +518,7 @@ mod tests {
             resolved
                 .mounts
                 .iter()
-                .any(|mount| mount.dst == "/home/claude/home"
+                .any(|mount| mount.dst == "/home/agent/home"
                     && mount.src == home
                     && mount.readonly)
         );
@@ -496,9 +533,9 @@ mod tests {
         std::fs::create_dir_all(&extra_src).unwrap();
 
         let mut config = crate::config::AppConfig::default();
-        config.agents.insert(
+        config.roles.insert(
             "agent-smith".to_string(),
-            crate::config::AgentSource {
+            crate::config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
                 claude: None,
@@ -522,7 +559,7 @@ mod tests {
         let cwd = std::env::temp_dir();
         let resolved = resolve_load_workspace(
             &config,
-            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            &crate::selector::RoleSelector::new(None, "agent-smith"),
             &cwd,
             LoadWorkspaceInput::Saved("my-ws".to_string()),
             &[MountConfig {
@@ -567,7 +604,7 @@ mod tests {
         let cwd = std::env::temp_dir();
         let error = resolve_load_workspace(
             &config,
-            &crate::selector::ClassSelector::new(None, "agent-smith"),
+            &crate::selector::RoleSelector::new(None, "agent-smith"),
             &cwd,
             LoadWorkspaceInput::Saved("my-ws".to_string()),
             &[MountConfig {

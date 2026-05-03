@@ -775,34 +775,34 @@ impl OpStructRunner for OpCli {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvLayer {
     Global,
-    Agent(String),
+    Role(String),
     Workspace(String),
-    WorkspaceAgent { workspace: String, agent: String },
+    WorkspaceRole { workspace: String, role: String },
 }
 
 impl std::fmt::Display for EnvLayer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Global => write!(f, "global [env]"),
-            Self::Agent(name) => write!(f, "agent {name:?} [env]"),
+            Self::Role(name) => write!(f, "role {name:?} [env]"),
             Self::Workspace(name) => write!(f, "workspace {name:?} [env]"),
-            Self::WorkspaceAgent { workspace, agent } => {
-                write!(f, "workspace {workspace:?} → agent {agent:?} [env]")
+            Self::WorkspaceRole { workspace, role } => {
+                write!(f, "workspace {workspace:?} → role {role:?} [env]")
             }
         }
     }
 }
 
 /// Later-wins merge. Order, low → high priority:
-/// global → agent → workspace → workspace-agent.
+/// global → role → workspace → workspace-role.
 pub fn merge_layers(
     global: &std::collections::BTreeMap<String, EnvValue>,
-    agent: &std::collections::BTreeMap<String, EnvValue>,
+    role: &std::collections::BTreeMap<String, EnvValue>,
     workspace: &std::collections::BTreeMap<String, EnvValue>,
-    workspace_agent: &std::collections::BTreeMap<String, EnvValue>,
+    workspace_role: &std::collections::BTreeMap<String, EnvValue>,
 ) -> std::collections::BTreeMap<String, EnvValue> {
     let mut merged = std::collections::BTreeMap::new();
-    for layer in [global, agent, workspace, workspace_agent] {
+    for layer in [global, role, workspace, workspace_role] {
         for (k, v) in layer {
             merged.insert(k.clone(), v.clone());
         }
@@ -826,16 +826,16 @@ pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Res
     };
 
     record(EnvLayer::Global, &config.env);
-    for (agent_name, agent_source) in &config.agents {
-        record(EnvLayer::Agent(agent_name.clone()), &agent_source.env);
+    for (role_name, role_source) in &config.roles {
+        record(EnvLayer::Role(role_name.clone()), &role_source.env);
     }
     for (ws_name, ws) in &config.workspaces {
         record(EnvLayer::Workspace(ws_name.clone()), &ws.env);
-        for (agent_name, override_) in &ws.agents {
+        for (role_name, override_) in &ws.roles {
             record(
-                EnvLayer::WorkspaceAgent {
+                EnvLayer::WorkspaceRole {
                     workspace: ws_name.clone(),
-                    agent: agent_name.clone(),
+                    role: role_name.clone(),
                 },
                 &override_.env,
             );
@@ -1038,12 +1038,12 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
 }
 
 /// (key → (layer, value)) precedence-merged across the four config
-/// layers — global, agent, workspace, workspace-agent — for the given
-/// `(agent, workspace)` selection. Later layers overwrite earlier ones,
+/// layers — global, role, workspace, workspace-role — for the given
+/// `(role, workspace)` selection. Later layers overwrite earlier ones,
 /// so the final layer attached to each key is the one that wins.
 fn build_attributed_layers(
     config: &crate::config::AppConfig,
-    agent_selector: Option<&str>,
+    role_selector: Option<&str>,
     workspace_name: Option<&str>,
 ) -> std::collections::BTreeMap<String, (EnvLayer, EnvValue)> {
     let mut attributed: std::collections::BTreeMap<String, (EnvLayer, EnvValue)> =
@@ -1056,22 +1056,22 @@ fn build_attributed_layers(
     };
 
     record(EnvLayer::Global, &config.env);
-    if let Some(agent_name) = agent_selector
-        && let Some(a) = config.agents.get(agent_name)
+    if let Some(role_name) = role_selector
+        && let Some(a) = config.roles.get(role_name)
     {
-        record(EnvLayer::Agent(agent_name.to_string()), &a.env);
+        record(EnvLayer::Role(role_name.to_string()), &a.env);
     }
     if let Some(ws_name) = workspace_name
         && let Some(ws) = config.workspaces.get(ws_name)
     {
         record(EnvLayer::Workspace(ws_name.to_string()), &ws.env);
-        if let Some(agent_name) = agent_selector
-            && let Some(ov) = ws.agents.get(agent_name)
+        if let Some(role_name) = role_selector
+            && let Some(ov) = ws.roles.get(role_name)
         {
             record(
-                EnvLayer::WorkspaceAgent {
+                EnvLayer::WorkspaceRole {
                     workspace: ws_name.to_string(),
-                    agent: agent_name.to_string(),
+                    role: role_name.to_string(),
                 },
                 &ov.env,
             );
@@ -1081,17 +1081,17 @@ fn build_attributed_layers(
     attributed
 }
 
-/// Walk the env layers for the given `(agent, workspace)` pair and
+/// Walk the env layers for the given `(role, workspace)` pair and
 /// resolve every value. Resolution failures across layers are
 /// aggregated into one error.
 pub fn resolve_operator_env(
     config: &crate::config::AppConfig,
-    agent_selector: Option<&str>,
+    role_selector: Option<&str>,
     workspace_name: Option<&str>,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
     resolve_operator_env_with(
         config,
-        agent_selector,
+        role_selector,
         workspace_name,
         &OpCli::new(),
         |name| std::env::var(name),
@@ -1102,7 +1102,7 @@ pub fn resolve_operator_env(
 /// `LoadOptions::op_runner` in `src/runtime/launch.rs`).
 pub fn resolve_operator_env_with<R, H>(
     config: &crate::config::AppConfig,
-    agent_selector: Option<&str>,
+    role_selector: Option<&str>,
     workspace_name: Option<&str>,
     op_runner: &R,
     mut host_env: H,
@@ -1111,7 +1111,7 @@ where
     R: OpRunner + ?Sized,
     H: FnMut(&str) -> Result<String, std::env::VarError>,
 {
-    let attributed = build_attributed_layers(config, agent_selector, workspace_name);
+    let attributed = build_attributed_layers(config, role_selector, workspace_name);
 
     let mut resolved = std::collections::BTreeMap::new();
     let mut errors: Vec<String> = Vec::new();
@@ -1151,7 +1151,7 @@ where
 /// `literal` placeholder; the layer that supplied each key is shown.
 pub fn print_launch_diagnostic(
     config: &crate::config::AppConfig,
-    agent_selector: Option<&str>,
+    role_selector: Option<&str>,
     workspace_name: Option<&str>,
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
@@ -1161,7 +1161,7 @@ pub fn print_launch_diagnostic(
     write_launch_diagnostic(
         &mut out,
         config,
-        agent_selector,
+        role_selector,
         workspace_name,
         resolved,
         debug,
@@ -1173,7 +1173,7 @@ pub fn print_launch_diagnostic(
 #[cfg(test)]
 fn format_launch_diagnostic_for_test(
     config: &crate::config::AppConfig,
-    agent_selector: Option<&str>,
+    role_selector: Option<&str>,
     workspace_name: Option<&str>,
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
@@ -1182,7 +1182,7 @@ fn format_launch_diagnostic_for_test(
     write_launch_diagnostic(
         &mut out,
         config,
-        agent_selector,
+        role_selector,
         workspace_name,
         resolved,
         debug,
@@ -1194,12 +1194,12 @@ fn format_launch_diagnostic_for_test(
 fn write_launch_diagnostic<W: std::io::Write>(
     w: &mut W,
     config: &crate::config::AppConfig,
-    agent_selector: Option<&str>,
+    role_selector: Option<&str>,
     workspace_name: Option<&str>,
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) -> std::io::Result<()> {
-    let mut attributed = build_attributed_layers(config, agent_selector, workspace_name);
+    let mut attributed = build_attributed_layers(config, role_selector, workspace_name);
     // Drop keys not in `resolved` — those failed to dispatch.
     attributed.retain(|k, _| resolved.contains_key(k));
 
@@ -1339,10 +1339,10 @@ mod tests {
     impl OpRunner for TestOpRunner {
         fn read(&self, reference: &str) -> anyhow::Result<String> {
             *self.last_ref.borrow_mut() = Some(reference.to_string());
-            match self.response.borrow_mut().take() {
-                Some(r) => r,
-                None => panic!("op CLI should not have been invoked"),
-            }
+            let Some(r) = self.response.borrow_mut().take() else {
+                panic!("op CLI should not have been invoked");
+            };
+            r
         }
     }
 
@@ -1587,8 +1587,7 @@ mod tests {
         );
         assert!(
             err.to_string().contains("timeout") || err.to_string().contains("timed out"),
-            "expected timeout in error: {}",
-            err
+            "expected timeout in error: {err}"
         );
     }
 
@@ -1719,35 +1718,44 @@ mod tests {
     #[test]
     fn merge_global_only() {
         let merged = merge_layers(&m(&[("A", "1"), ("B", "2")]), &m(&[]), &m(&[]), &m(&[]));
-        assert_eq!(merged.get("A").map(|v| v.as_persisted_str()), Some("1"));
-        assert_eq!(merged.get("B").map(|v| v.as_persisted_str()), Some("2"));
+        assert_eq!(
+            merged.get("A").map(super::EnvValue::as_persisted_str),
+            Some("1")
+        );
+        assert_eq!(
+            merged.get("B").map(super::EnvValue::as_persisted_str),
+            Some("2")
+        );
     }
 
     #[test]
     fn merge_agent_overrides_global() {
         let merged = merge_layers(
             &m(&[("A", "global"), ("B", "global")]),
-            &m(&[("B", "agent")]),
+            &m(&[("B", "role")]),
             &m(&[]),
             &m(&[]),
         );
         assert_eq!(
-            merged.get("A").map(|v| v.as_persisted_str()),
+            merged.get("A").map(super::EnvValue::as_persisted_str),
             Some("global")
         );
-        assert_eq!(merged.get("B").map(|v| v.as_persisted_str()), Some("agent"));
+        assert_eq!(
+            merged.get("B").map(super::EnvValue::as_persisted_str),
+            Some("role")
+        );
     }
 
     #[test]
     fn merge_workspace_overrides_agent() {
         let merged = merge_layers(
             &m(&[("A", "global")]),
-            &m(&[("A", "agent")]),
+            &m(&[("A", "role")]),
             &m(&[("A", "workspace")]),
             &m(&[]),
         );
         assert_eq!(
-            merged.get("A").map(|v| v.as_persisted_str()),
+            merged.get("A").map(super::EnvValue::as_persisted_str),
             Some("workspace")
         );
     }
@@ -1756,13 +1764,13 @@ mod tests {
     fn merge_workspace_agent_overrides_workspace() {
         let merged = merge_layers(
             &m(&[("A", "global")]),
-            &m(&[("A", "agent")]),
+            &m(&[("A", "role")]),
             &m(&[("A", "workspace")]),
-            &m(&[("A", "ws-agent")]),
+            &m(&[("A", "ws-role")]),
         );
         assert_eq!(
-            merged.get("A").map(|v| v.as_persisted_str()),
-            Some("ws-agent")
+            merged.get("A").map(super::EnvValue::as_persisted_str),
+            Some("ws-role")
         );
     }
 
@@ -1774,10 +1782,22 @@ mod tests {
             &m(&[("W", "w")]),
             &m(&[("X", "x")]),
         );
-        assert_eq!(merged.get("G").map(|v| v.as_persisted_str()), Some("g"));
-        assert_eq!(merged.get("A").map(|v| v.as_persisted_str()), Some("a"));
-        assert_eq!(merged.get("W").map(|v| v.as_persisted_str()), Some("w"));
-        assert_eq!(merged.get("X").map(|v| v.as_persisted_str()), Some("x"));
+        assert_eq!(
+            merged.get("G").map(super::EnvValue::as_persisted_str),
+            Some("g")
+        );
+        assert_eq!(
+            merged.get("A").map(super::EnvValue::as_persisted_str),
+            Some("a")
+        );
+        assert_eq!(
+            merged.get("W").map(super::EnvValue::as_persisted_str),
+            Some("w")
+        );
+        assert_eq!(
+            merged.get("X").map(super::EnvValue::as_persisted_str),
+            Some("x")
+        );
     }
 
     #[test]
@@ -1796,22 +1816,20 @@ mod tests {
     #[test]
     fn validate_reserved_names_rejects_per_agent_reserved() {
         let mut cfg = crate::config::AppConfig::default();
-        let mut agent = crate::config::AgentSource {
+        let mut role = crate::config::RoleSource {
             git: "https://example.com/x.git".to_string(),
             trusted: true,
             claude: None,
             env: std::collections::BTreeMap::new(),
         };
-        agent.env.insert(
-            "JACKIN_CLAUDE_ENV".to_string(),
-            "whatever".to_string().into(),
-        );
-        cfg.agents.insert("agent-smith".to_string(), agent);
+        role.env
+            .insert("JACKIN".to_string(), "whatever".to_string().into());
+        cfg.roles.insert("agent-smith".to_string(), role);
 
         let err = validate_reserved_names(&cfg).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("JACKIN_CLAUDE_ENV"), "{msg}");
-        assert!(msg.contains("agent \"agent-smith\""), "{msg}");
+        assert!(msg.contains("JACKIN"), "{msg}");
+        assert!(msg.contains("role \"agent-smith\""), "{msg}");
     }
 
     #[test]
@@ -1840,7 +1858,7 @@ mod tests {
     #[test]
     fn validate_reserved_names_rejects_workspace_agent_override_reserved() {
         let mut cfg = crate::config::AppConfig::default();
-        let mut override_ = crate::workspace::WorkspaceAgentOverride::default();
+        let mut override_ = crate::workspace::WorkspaceRoleOverride::default();
         override_
             .env
             .insert("DOCKER_CERT_PATH".to_string(), "/tmp".to_string().into());
@@ -1854,14 +1872,14 @@ mod tests {
             }],
             ..Default::default()
         };
-        ws.agents.insert("agent-smith".to_string(), override_);
+        ws.roles.insert("agent-smith".to_string(), override_);
         cfg.workspaces.insert("big-monorepo".to_string(), ws);
 
         let err = validate_reserved_names(&cfg).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("DOCKER_CERT_PATH"), "{msg}");
         assert!(
-            msg.contains("workspace \"big-monorepo\"") && msg.contains("agent \"agent-smith\""),
+            msg.contains("workspace \"big-monorepo\"") && msg.contains("role \"agent-smith\""),
             "{msg}"
         );
     }
@@ -1911,7 +1929,10 @@ mod tests {
                 Err(std::env::VarError::NotPresent)
             })
             .unwrap();
-        assert_eq!(resolved.get("FOO").map(|v| v.as_str()), Some("bar"));
+        assert_eq!(
+            resolved.get("FOO").map(std::string::String::as_str),
+            Some("bar")
+        );
     }
 
     #[test]
@@ -1919,16 +1940,16 @@ mod tests {
         let mut cfg = crate::config::AppConfig::default();
         cfg.env.insert("X".to_string(), "global".to_string().into());
 
-        let mut agent_source = crate::config::AgentSource {
+        let mut role_source = crate::config::RoleSource {
             git: "https://example.com/x.git".to_string(),
             trusted: true,
             claude: None,
             env: std::collections::BTreeMap::new(),
         };
-        agent_source
+        role_source
             .env
-            .insert("X".to_string(), "agent".to_string().into());
-        cfg.agents.insert("agent-smith".to_string(), agent_source);
+            .insert("X".to_string(), "role".to_string().into());
+        cfg.roles.insert("agent-smith".to_string(), role_source);
 
         let mut ws = crate::workspace::WorkspaceConfig {
             workdir: "/x".to_string(),
@@ -1942,10 +1963,10 @@ mod tests {
         };
         ws.env
             .insert("X".to_string(), "workspace".to_string().into());
-        let mut wsa = crate::workspace::WorkspaceAgentOverride::default();
+        let mut wsa = crate::workspace::WorkspaceRoleOverride::default();
         wsa.env
-            .insert("X".to_string(), "ws-agent".to_string().into());
-        ws.agents.insert("agent-smith".to_string(), wsa);
+            .insert("X".to_string(), "ws-role".to_string().into());
+        ws.roles.insert("agent-smith".to_string(), wsa);
         cfg.workspaces.insert("big-monorepo".to_string(), ws);
 
         let resolved = resolve_operator_env_with(
@@ -1957,7 +1978,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(resolved.get("X").map(|v| v.as_str()), Some("ws-agent"));
+        assert_eq!(
+            resolved.get("X").map(std::string::String::as_str),
+            Some("ws-role")
+        );
     }
 
     #[test]
@@ -2139,7 +2163,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            resolved.get("API_KEY").map(|v| v.as_str()),
+            resolved.get("API_KEY").map(std::string::String::as_str),
             Some("host-secret")
         );
     }
@@ -2534,6 +2558,12 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
 
     #[test]
     fn op_ref_rejects_unknown_fields_in_inline_table() {
+        #[derive(serde::Deserialize)]
+        struct Wrap {
+            #[allow(dead_code)] // exercised via deserialization, never read in this negative test
+            env: std::collections::BTreeMap<String, EnvValue>,
+        }
+
         // Typo'd inline table: "paht" instead of "path". Should fail
         // with a clear "unknown field" error, not silently produce an
         // OpRef with empty path.
@@ -2541,11 +2571,6 @@ PINNED_AMBIG = { op = "op://abc/def/fld", path = "Vault/Item[sub]/Field" }
 [env]
 TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
 "#;
-        #[derive(serde::Deserialize)]
-        struct Wrap {
-            #[allow(dead_code)] // exercised via deserialization, never read in this negative test
-            env: std::collections::BTreeMap<String, EnvValue>,
-        }
         let result: Result<Wrap, _> = toml::from_str(toml_in);
         let err = result
             .err()
@@ -2569,9 +2594,9 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
     /// and covers only the synchronous path used by the CLI resolver.
     struct StubOpStructRunner {
         vaults: Vec<OpVault>,
-        /// (vault_id → items)
+        /// (`vault_id` → items)
         items: std::collections::HashMap<String, Vec<OpItem>>,
-        /// (item_id → fields)
+        /// (`item_id` → fields)
         fields: std::collections::HashMap<String, Vec<OpField>>,
     }
 

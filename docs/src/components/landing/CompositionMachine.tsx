@@ -7,22 +7,22 @@ export function CompositionMachine() {
   const orgKeys = Object.keys(orgs);
   const [activeOrg, setActiveOrg] = useState(orgKeys[0]);
   const org = orgs[activeOrg];
-  const classKeys = Object.keys(org.classes);
-  const wsKeys    = Object.keys(org.workspaces);
-  const [activeClass, setActiveClass] = useState(classKeys[0]);
+  const roleKeys = Object.keys(org.roles);
+  const wsKeys   = Object.keys(org.workspaces);
+  const [activeRole, setActiveRole] = useState(roleKeys[0]);
   const [activeWs, setActiveWs] = useState(wsKeys[0]);
 
   function switchOrg(o: string) {
     setActiveOrg(o);
     const next = orgs[o];
-    setActiveClass(Object.keys(next.classes)[0]);
+    setActiveRole(Object.keys(next.roles)[0]);
     setActiveWs(Object.keys(next.workspaces)[0]);
   }
 
-  const cl = org.classes[activeClass];
+  const role = org.roles[activeRole];
   const ws = org.workspaces[activeWs];
-  const denied = ws?.allowed && !ws.allowed.includes(activeClass);
-  const shortClass = activeClass.split('/').pop() ?? activeClass;
+  const denied = ws?.allowed && !ws.allowed.includes(activeRole);
+  const shortRole = activeRole.split('/').pop() ?? activeRole;
 
   return (
     <section id="concepts" className="landing-section">
@@ -47,15 +47,15 @@ export function CompositionMachine() {
 
           <div className="landing-machine">
             <div className="landing-machine-panel">
-              <div className="landing-machine-label">Agent Class</div>
+              <div className="landing-machine-label">Role</div>
               <div className="landing-machine-sublabel">the tool profile</div>
               <div className="landing-machine-options">
-                {classKeys.map(name => (
+                {roleKeys.map(name => (
                   <button
                     type="button"
                     key={name}
-                    className={'landing-machine-opt' + (name === activeClass ? ' active' : '')}
-                    onClick={() => setActiveClass(name)}
+                    className={'landing-machine-opt' + (name === activeRole ? ' active' : '')}
+                    onClick={() => setActiveRole(name)}
                   >
                     <span className="landing-radio" />{name}
                   </button>
@@ -91,16 +91,16 @@ export function CompositionMachine() {
                 {denied ? (
                   <div className="landing-preview-denied">
                     <span className="label">✕ not loaded</span>
-                    Workspace "{activeWs}" declares <code>allowed-agents: [{ws?.allowed?.join(', ')}]</code>.
+                    Workspace "{activeWs}" declares <code>allowed-roles: [{ws?.allowed?.join(', ')}]</code>.
                     Rejected before the container starts.
                   </div>
-                ) : cl && ws ? (
+                ) : role && ws ? (
                   <>
-                    <PreviewRow k="container"><span className="hl">jackin-{shortClass}</span></PreviewRow>
-                    <PreviewRow k="class">{activeClass}</PreviewRow>
-                    <PreviewRow k="repo">github.com/{cl.repo}</PreviewRow>
-                    <PreviewRow k="tools">{cl.tools}</PreviewRow>
-                    <PreviewRow k="plugins">{cl.plugins}</PreviewRow>
+                    <PreviewRow k="container"><span className="hl">jackin-{shortRole}</span></PreviewRow>
+                    <PreviewRow k="role">{activeRole}</PreviewRow>
+                    <PreviewRow k="repo">github.com/{role.repo}</PreviewRow>
+                    <PreviewRow k="tools">{role.tools}</PreviewRow>
+                    <PreviewRow k="plugins">{role.plugins}</PreviewRow>
                     <PreviewRow k="workdir">{ws.workdir}</PreviewRow>
                     <PreviewRow k="mounts">
                       <div className="landing-mount-list">
@@ -120,7 +120,7 @@ export function CompositionMachine() {
                         ))}
                       </div>
                     </PreviewRow>
-                    <PreviewRow k="network">jackin-{shortClass}-net</PreviewRow>
+                    <PreviewRow k="network">jackin-{shortRole}-net</PreviewRow>
                   </>
                 ) : null}
               </div>

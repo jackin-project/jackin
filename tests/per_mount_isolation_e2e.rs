@@ -60,6 +60,7 @@ impl CommandRunner for ScriptedRunner {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn materialize_then_clean_exit_removes_record_and_branch() {
     let repo = TempDir::new().unwrap();
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
@@ -76,6 +77,7 @@ fn materialize_then_clean_exit_removes_record_and_branch() {
             readonly: false,
             isolation: MountIsolation::Worktree,
         }],
+        default_agent: None,
         keep_awake_enabled: false,
     };
 

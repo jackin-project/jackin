@@ -31,10 +31,10 @@ export const vocabularyEntries: VocabularyEntry[] = [
     cmd: 'projectjackin/construct:trixie', cmdLabel: 'image',
   },
   {
-    id: '03', term: 'Agent class', pos: 'noun',
+    id: '03', term: 'Role', pos: 'noun',
     def: [
       { t: 'A reusable tool profile built on top of the Construct.', b: true },
-      { t: ' A git repo with a Dockerfile that extends the base image, plus a small manifest \u2014 adds the toolchains, Claude plugins, shell setup, and conventions layered on top. Answers \u201cwhat kind of agent is this?\u201d' },
+      { t: ' A git repo with a Dockerfile that extends the base image, plus a small manifest \u2014 adds the toolchains, Claude plugins, shell setup, and conventions layered on top. Answers \u201cwhat kind of role is this?\u201d' },
     ],
     cmd: 'chainargos/backend-engineer', cmdLabel: 'identifier',
   },
@@ -42,15 +42,15 @@ export const vocabularyEntries: VocabularyEntry[] = [
     id: '04', term: 'Workspace', pos: 'noun',
     def: [
       { t: 'A named list of mounts and access rules.', b: true },
-      { t: ' Each workspace pairs a name with: the host directories that mount into the container, where they land inside, per-mount permission (read-only or read-write), the agent\u2019s starting directory (workdir), and which agent classes are allowed to load it. Answers \u201cwhat can this agent see, and where?\u201d' },
+      { t: ' Each workspace pairs a name with: the host directories that mount into the container, where they land inside, per-mount permission (read-only or read-write), the role\u2019s starting directory (workdir), and which roles are allowed to load it. Answers \u201cwhat can this agent see, and where?\u201d' },
     ],
-    cmd: '{ name, workdir, mounts[], allowed-agents[] }', cmdLabel: 'declares',
+    cmd: '{ name, workdir, mounts[], allowed-roles[] }', cmdLabel: 'declares',
   },
   {
     id: '05', term: 'Jacking in', pos: 'verb',
     def: [
       { t: 'Loading an agent into a workspace.', b: true },
-      { t: ' Clones the agent-class repo, builds the derived image, applies the workspace\u2019s mounts, drops you into Claude Code running inside.' },
+      { t: ' Clones the role repo, builds the derived image, applies the workspace\u2019s mounts, drops you into Claude Code running inside.' },
     ],
     cmd: 'jackin load agent-smith [my-project-workspace]', cmdLabel: 'cli',
   },

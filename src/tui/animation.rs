@@ -506,7 +506,7 @@ pub fn intro_animation(operator_name: &str) {
     let _ = skippable_sleep(std::time::Duration::from_millis(200));
 }
 
-pub fn outro_animation(agent_name: &str, remaining: &[String]) {
+pub fn outro_animation(role_name: &str, remaining: &[String]) {
     clear_screen();
 
     digital_rain(1500, None);
@@ -518,7 +518,7 @@ pub fn outro_animation(agent_name: &str, remaining: &[String]) {
 
     eprintln!();
     if type_text(
-        &format!("{agent_name} has left the container."),
+        &format!("{role_name} has left the container."),
         PHOSPHOR_GREEN,
         40,
     ) {
@@ -532,11 +532,11 @@ pub fn outro_animation(agent_name: &str, remaining: &[String]) {
 
     eprintln!();
     let skipped = if remaining.is_empty() {
-        type_text("No agents remaining.", PHOSPHOR_DIM, 35)
+        type_text("No roles remaining.", PHOSPHOR_DIM, 35)
     } else {
         type_text(
             &format!(
-                "{} agent(s) still running: {}",
+                "{} role(s) still running: {}",
                 remaining.len(),
                 remaining.join(", ")
             ),
@@ -559,19 +559,19 @@ pub fn outro_animation(agent_name: &str, remaining: &[String]) {
     eprintln!();
 }
 
-pub fn simple_outro(agent_name: &str, remaining: &[String]) {
+pub fn simple_outro(role_name: &str, remaining: &[String]) {
     eprintln!();
     eprintln!(
         "  {}",
-        format!("{agent_name} has left the container.").color(rgb(PHOSPHOR_DIM))
+        format!("{role_name} has left the container.").color(rgb(PHOSPHOR_DIM))
     );
     if remaining.is_empty() {
-        eprintln!("  {}", "No agents remaining.".color(rgb(PHOSPHOR_DIM)));
+        eprintln!("  {}", "No roles remaining.".color(rgb(PHOSPHOR_DIM)));
     } else {
         eprintln!(
             "  {}",
             format!(
-                "{} agent(s) still running: {}",
+                "{} role(s) still running: {}",
                 remaining.len(),
                 remaining.join(", ")
             )

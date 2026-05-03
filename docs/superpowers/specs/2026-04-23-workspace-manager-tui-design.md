@@ -29,7 +29,7 @@ PR 1 (`toml_edit` migration, #162) already made `ConfigEditor` the sole write pa
 
 ## Non-Goals
 
-- Per-(workspace × agent) env overrides. That is **PR 3's Secrets tab**; the Agents tab in PR 2 only handles `allowed_agents` + `default_agent`.
+- Per-(workspace × agent) env overrides. That is **PR 3's Secrets tab**; the Agents tab in PR 2 only handles `allowed_roles` + `default_role`.
 - Global (non-workspace) mount management — `[docker.mounts]` and `[docker.mounts.<scope>]` stay CLI-only.
 - Agent lifecycle from within the manager: registering an agent, trusting/untrusting, editing git URL or claude overrides. All CLI.
 - Multi-process config write safety — same constraint as PR 1; jackin's single-operator pattern.
@@ -47,7 +47,7 @@ The launcher gains a third stage, `LaunchStage::Manager`, reached via `m` from t
 - **Act 2 — edit existing.** From the manager list, `Enter` on a workspace pushes a per-workspace editor with four tabs: `General · Mounts · Agents · Secrets ⏳` (the Secrets stub is a visible placeholder so PR 3 fills in the panel without a tab-strip reshuffle).
   - Fields are edited via **modal text input** — a centered overlay when the user presses Enter on a field.
   - Mounts are added by pressing `a`, which opens a **file browser** rooted at `$HOME`. After picking a host folder, a follow-up modal collects `dst` (pre-filled with the same absolute path as host `src`) and `readonly` (single checkbox, off by default).
-  - Agents tab: `Space` toggles `allowed`, `*` sets `default_agent`. Checkbox-style UI.
+  - Agents tab: `Space` toggles `allowed`, `*` sets `default_role`. Checkbox-style UI.
   - Edits stage in a pending `WorkspaceConfig`; dirty markers (`● unsaved`) appear on changed rows. The footer save prompt shows the count of pending changes (`s save (3 changes)`).
   - `s` persists through `ConfigEditor::edit_workspace` + `editor.save()?`. On success, the editor redraws with a `✓ saved · N changes written` banner; dirty markers clear.
   - `Esc` with pending changes opens a **Y/N/C confirm modal**: Discard / Save+leave / Cancel.
@@ -315,7 +315,7 @@ The full-screen agent picker stage is replaced by `Modal::AgentPicker`, an overl
 
 When the operator presses `Enter` on a workspace row in the manager list:
 
-1. If `default_agent` is set on the workspace → launch immediately with that agent.
+1. If `default_role` is set on the workspace → launch immediately with that agent.
 2. If exactly one eligible agent (after `eligible_agents_for_workspace` filtering) → launch with it.
 3. Otherwise → open `Modal::AgentPicker`. Operator picks; the picker commits a launch.
 

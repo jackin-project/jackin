@@ -55,7 +55,7 @@ repo. The TUI parser:
 Important properties:
 
 - **Skill-driven**, not entrypoint-driven. The runtime doesn't enforce
-  emission; agent classes opt in via the skill the operator includes.
+  emission; roles opt in via the skill the operator includes.
 - **Idempotent**. Re-emitting the same tag is a no-op (deduped by value).
 - **Optional**. Agents that don't emit tags work fine; the UI degrades.
 
@@ -63,7 +63,7 @@ Important properties:
 
 A jackin'-namespaced version with a small core vocabulary, an extension
 point for future kinds, and explicit multi-vendor compatibility (jackin'
-honors `<multicode:*>` too, so an agent class designed for either tool
+honors `<multicode:*>` too, so an role designed for either tool
 keeps working).
 
 ### Vocabulary (V1)
@@ -111,7 +111,7 @@ To make adoption cheap, a small repo of jackin-managed skills lives at
 - `jackin-machine-readable-pr` — instructs on PR open/review
 - `jackin-machine-readable-repo` — instructs on workspace identification
 
-Operators add these to their agent class's skill list (mechanism per
+Operators add these to their role's skill list (mechanism per
 runtime; for Claude, that's the `[claude.plugins]` array).
 
 ## Scope (V1)
@@ -125,7 +125,7 @@ runtime; for Claude, that's the `[claude.plugins]` array).
 - Console renders captured links as clickable items next to the agent
   row (using the [operator handler
   system](/reference/roadmap/operator-handler-system/) for click).
-- One published skill bundle (separate repo) that agent classes can
+- One published skill bundle (separate repo) that roles can
   include to enable emission.
 
 ## Defer

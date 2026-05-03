@@ -263,7 +263,7 @@ mod tests {
             .capture("sh", &["-c", "yes x | head -c 200000"], None)
             .unwrap();
 
-        assert!(output.len() >= 190000);
+        assert!(output.len() >= 190_000);
         assert!(output.starts_with('x'));
     }
 
