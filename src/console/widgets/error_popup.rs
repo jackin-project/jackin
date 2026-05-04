@@ -111,7 +111,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
         .split(inner);
 
     // Message body — WHITE to keep readable against the red border.
-    let paragraph = Paragraph::new(state.message.clone())
+    let paragraph = Paragraph::new(state.message.as_str())
         .style(Style::default().fg(WHITE))
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: false });

@@ -165,12 +165,13 @@ Each entry includes:
   unaffected — it still removes an existing same-path mount from the
   workspace config.
 - **Remove when:** After a deprecation window; delete the `no_workdir_mount`
-  field from `WorkspaceCreate` in `src/cli/workspace.rs` and the discard
-  shim in `src/app/mod.rs` (`let _ = no_workdir_mount;`).
+  field from `WorkspaceCreate` in `src/cli/workspace.rs` and the
+  `tui::deprecation_warning` call in `src/app/mod.rs`.
 - **Where:**
   - `src/cli/workspace.rs` — `WorkspaceCreate::no_workdir_mount` field,
     `hide = true`.
-  - `src/app/mod.rs` — emits the deprecation warning then ignores the flag.
+  - `src/app/mod.rs` — calls `tui::deprecation_warning` when the flag is
+    set, then ignores it.
 
 ## How to add an entry
 

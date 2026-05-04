@@ -81,9 +81,6 @@ impl FileBrowserState {
                 if let Some(url) = self.pending_git_url.as_deref()
                     && let Err(e) = open::that_detached(url)
                 {
-                    // FileBrowserState doesn't own the global toast queue, so
-                    // surface the failure on the debug channel where operators
-                    // running with --debug can see why nothing happened.
                     crate::debug_log!("git_prompt", "open::that_detached({url:?}) failed: {e}");
                 }
                 ModalOutcome::Continue

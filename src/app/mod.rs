@@ -491,11 +491,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
                 if no_workdir_mount {
-                    // Deprecated no-op — surface a one-line warning so
-                    // operators copy-pasting pre-PR-213 invocations notice.
-                    // See DEPRECATED.md `--no-workdir-mount` entry.
-                    eprintln!(
-                        "warning: --no-workdir-mount is deprecated and ignored; workspace create requires explicit --mount"
+                    tui::deprecation_warning(
+                        "--no-workdir-mount is deprecated and ignored; workspace create requires explicit --mount",
                     );
                 }
                 let mut plan = workspace::planner::plan_create(&parsed_mounts)?;

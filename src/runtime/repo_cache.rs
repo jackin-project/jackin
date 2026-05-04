@@ -14,23 +14,18 @@ use super::identity::try_capture;
 /// validator's `invalid role repo: ` prefix; pass anything else through
 /// unchanged.
 ///
-/// Walking the whole chain (rather than only `err.to_string()` at the
-/// root) lets a future caller wrap the validator error with
-/// `with_context` without silently dropping the typed classification.
 /// The validator currently emits anyhow strings; this function is the
 /// single substring match left over after the typed-error refactor and
 /// lives here so it's co-located with the variant it produces.
 fn map_validate_error(err: anyhow::Error) -> anyhow::Error {
-    err.chain()
-        .find_map(|cause| {
-            cause
-                .to_string()
-                .strip_prefix("invalid role repo: ")
-                .map(str::to_string)
-        })
-        .map_or(err, |detail| {
-            anyhow::Error::new(RepoError::InvalidRoleRepo { detail })
-        })
+    for cause in err.chain() {
+        if let Some(detail) = cause.to_string().strip_prefix("invalid role repo: ") {
+            return anyhow::Error::new(RepoError::InvalidRoleRepo {
+                detail: detail.to_string(),
+            });
+        }
+    }
+    err
 }
 
 /// Typed errors raised by role-repo resolution.
