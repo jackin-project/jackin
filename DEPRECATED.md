@@ -155,9 +155,10 @@ Each entry includes:
 
 ### `--no-workdir-mount` flag on `workspace create`
 
-- **Status:** Hidden no-op as of PR #213.
-- **Replacement:** `workspace create` now requires at least one `--mount` flag.
-  The workdir is no longer auto-mounted.
+- **Type:** cli
+- **Deprecated since:** 2026-05-04 (PR #213)
+- **Replacement:** `workspace create` requires at least one `--mount` flag.
+  The workdir is not auto-mounted.
 - **Behavior today:** Passing `--no-workdir-mount` to `workspace create` is
   silently accepted but has no effect. The flag is hidden from `--help`.
   `workspace edit --no-workdir-mount` is unaffected — it still removes an
