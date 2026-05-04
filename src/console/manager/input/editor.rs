@@ -525,9 +525,14 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
 fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) {
     use super::super::super::widgets::text_input::TextInputState;
 
-    let mut state =
-        TextInputState::new_with_forbidden("Add role", "", config.roles.keys().cloned().collect());
-    state.forbidden_label = "role registry".into();
+    let trusted_roles = config
+        .roles
+        .iter()
+        .filter(|(_, source)| source.trusted)
+        .map(|(key, _)| key.clone())
+        .collect();
+    let mut state = TextInputState::new_with_forbidden("Add role", "", trusted_roles);
+    state.forbidden_label = "trusted role registry".into();
     editor.modal = Some(Modal::TextInput {
         target: TextInputTarget::Role,
         state,
@@ -751,8 +756,8 @@ pub(super) fn handle_editor_modal(
                             plan,
                             exit_on_success,
                         };
-                    } else {
-                        apply_editor_confirm(editor, &target);
+                    } else if let Err(e) = apply_editor_confirm(editor, &target, config, paths) {
+                        open_role_resolution_error(editor, "confirmed action", None, &e);
                     }
                 } else if matches!(
                     target,
@@ -1219,26 +1224,20 @@ fn apply_role_input_with_runner(
     let result = (|| -> anyhow::Result<crate::config::RoleSource> {
         let source = candidate_role_source(config, &selector)?;
         crate::runtime::resolve_agent_repo(paths, &selector, &source.git, runner, false)?;
-        let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
-        editor_doc.upsert_agent_source(&key, &source);
-        *config = editor_doc.save()?;
         Ok(source)
     })();
 
-    if let Err(e) = result {
-        let source = candidate_role_source(config, &selector).ok();
-        open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
-        return;
-    }
-
-    if !editor.pending.allowed_roles.is_empty()
-        && !editor.pending.allowed_roles.iter().any(|role| role == &key)
-    {
-        editor.pending.allowed_roles.push(key.clone());
-    }
-
-    if let Some(idx) = config.roles.keys().position(|role| role == &key) {
-        editor.active_field = FieldFocus::Row(idx);
+    match result {
+        Ok(source) if source.trusted => {
+            if let Err(e) = persist_trusted_role_add(editor, config, paths, &key, source) {
+                open_role_resolution_error(editor, raw, None, &e);
+            }
+        }
+        Ok(source) => open_role_trust_confirm(editor, key, source),
+        Err(e) => {
+            let source = candidate_role_source(config, &selector).ok();
+            open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
+        }
     }
 }
 
@@ -1286,7 +1285,57 @@ fn open_role_resolution_error(
     });
 }
 
-fn apply_editor_confirm(editor: &mut EditorState<'_>, target: &ConfirmTarget) {
+fn open_role_trust_confirm(
+    editor: &mut EditorState<'_>,
+    key: String,
+    source: crate::config::RoleSource,
+) {
+    let prompt = format!(
+        "Trust role source?\n\
+         Role: {key}\n\
+         Repository:\n\
+         {}\n\
+         Its Dockerfile can run during image builds.\n\
+         The role can access mounted workspace files.",
+        source.git
+    );
+    editor.modal = Some(Modal::Confirm {
+        target: ConfirmTarget::TrustRoleSource { key, source },
+        state: crate::console::widgets::confirm::ConfirmState::new(prompt),
+    });
+}
+
+fn persist_trusted_role_add(
+    editor: &mut EditorState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    key: &str,
+    mut source: crate::config::RoleSource,
+) -> anyhow::Result<()> {
+    source.trusted = true;
+    let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
+    editor_doc.upsert_agent_source(key, &source);
+    *config = editor_doc.save()?;
+
+    if !editor.pending.allowed_roles.is_empty()
+        && !editor.pending.allowed_roles.iter().any(|role| role == key)
+    {
+        editor.pending.allowed_roles.push(key.to_string());
+    }
+
+    if let Some(idx) = config.roles.keys().position(|role| role == key) {
+        editor.active_field = FieldFocus::Row(idx);
+    }
+
+    Ok(())
+}
+
+fn apply_editor_confirm(
+    editor: &mut EditorState<'_>,
+    target: &ConfirmTarget,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+) -> anyhow::Result<()> {
     match target {
         ConfirmTarget::DeleteEnvVar { scope, key } => match scope {
             SecretsScopeTag::Workspace => {
@@ -1308,12 +1357,16 @@ fn apply_editor_confirm(editor: &mut EditorState<'_>, target: &ConfirmTarget) {
                 }
             }
         },
+        ConfirmTarget::TrustRoleSource { key, source } => {
+            persist_trusted_role_add(editor, config, paths, key, source.clone())?;
+        }
         // `DeleteWorkspace` is a list-side target that never reaches the
         // editor modal. `DeleteIsolatedAndSave` is handled inline at the
         // dispatch site because it consumes `plan` and routes through
         // `EditorSaveFlow::PendingCommit`. Both no-op here.
         ConfirmTarget::DeleteWorkspace | ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
     }
+    Ok(())
 }
 
 /// Only `EditAddMountSrc` is meaningful here; the prelude's
@@ -1394,8 +1447,8 @@ mod tests {
     //! Editor-stage tests: tab cycling, modal dispatch, role allow/default
     //! bindings, and mount-row readonly toggle.
     use super::super::super::state::{
-        EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage, ManagerState, Modal,
-        SecretsScopeTag, TextInputTarget,
+        ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
+        ManagerState, Modal, SecretsScopeTag, TextInputTarget,
     };
     use super::super::test_support::{key, mount};
     use super::{
@@ -1843,7 +1896,7 @@ plugins = []
     }
 
     #[test]
-    fn role_input_resolves_and_persists_namespaced_role() {
+    fn role_input_resolves_then_persists_namespaced_role_after_trust() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -1869,15 +1922,60 @@ plugins = []
         );
 
         assert!(
-            editor.modal.is_none(),
-            "successful resolve should close modal"
-        );
-        assert!(
             runner.recorded.iter().any(|cmd| cmd
                 .contains("git clone https://github.com/chainargos/jackin-agent-brown.git")),
             "role add must clone through the normal repo resolver; got {:?}",
             runner.recorded
         );
+
+        match &editor.modal {
+            Some(Modal::Confirm { target, state }) => {
+                assert!(state.prompt.contains("Trust role source?"));
+                assert!(state.prompt.contains("chainargos/agent-brown"));
+                assert!(
+                    state
+                        .prompt
+                        .contains("https://github.com/chainargos/jackin-agent-brown.git"),
+                    "trust prompt should show the repository URL:\n{}",
+                    state.prompt
+                );
+                match target {
+                    ConfirmTarget::TrustRoleSource { key, source } => {
+                        assert_eq!(key, "chainargos/agent-brown");
+                        assert_eq!(
+                            source.git,
+                            "https://github.com/chainargos/jackin-agent-brown.git"
+                        );
+                        assert!(
+                            !source.trusted,
+                            "newly resolved third-party role should require explicit trust first"
+                        );
+                    }
+                    other => panic!("expected TrustRoleSource target; got {other:?}"),
+                }
+            }
+            other => panic!("expected trust Confirm modal; got {other:?}"),
+        }
+        assert!(
+            !editor
+                .pending
+                .allowed_roles
+                .contains(&"chainargos/agent-brown".to_string()),
+            "role should not be allowed before trust confirmation"
+        );
+        assert!(
+            !config.roles.contains_key("chainargos/agent-brown"),
+            "role source should not be added to config before trust confirmation"
+        );
+        let before_trust = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !before_trust.contains("chainargos/agent-brown"),
+            "role source should not be persisted before trust confirmation:\n{before_trust}"
+        );
+
+        handle_modal_with(&mut editor, key(KeyCode::Char('y')), &mut config, &paths);
+
+        assert!(editor.modal.is_none(), "trust confirmation should close");
         assert!(
             editor
                 .pending
@@ -1893,10 +1991,127 @@ plugins = []
             source.git,
             "https://github.com/chainargos/jackin-agent-brown.git"
         );
+        assert!(source.trusted, "trusted role should be marked trusted");
         let persisted = std::fs::read_to_string(paths.config_file).unwrap();
         assert!(
             persisted.contains("[roles.\"chainargos/agent-brown\"]"),
             "new role source should be persisted:\n{persisted}"
+        );
+        assert!(
+            persisted.contains("trusted = true"),
+            "trusted role should be persisted with trusted = true:\n{persisted}"
+        );
+    }
+
+    #[test]
+    fn role_input_trust_decline_does_not_persist_role() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = config_with_agents(&["agent-smith"]);
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
+        editor.pending.allowed_roles = vec!["agent-smith".into()];
+        let selector = crate::selector::RoleSelector::parse("chainargos/agent-brown").unwrap();
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        let mut runner = crate::runtime::FakeRunner::default();
+        runner.side_effects.push((
+            "git clone".to_string(),
+            Box::new(move || seed_valid_role_repo(&repo_dir)),
+        ));
+
+        apply_role_input_with_runner(
+            &mut editor,
+            &mut config,
+            &paths,
+            "chainargos/agent-brown",
+            &mut runner,
+        );
+        assert!(matches!(editor.modal, Some(Modal::Confirm { .. })));
+
+        handle_modal_with(&mut editor, key(KeyCode::Char('n')), &mut config, &paths);
+
+        assert!(editor.modal.is_none(), "decline should close trust prompt");
+        assert!(
+            !editor
+                .pending
+                .allowed_roles
+                .contains(&"chainargos/agent-brown".to_string()),
+            "declined role must not be added to the custom allow-list"
+        );
+        assert!(
+            !config.roles.contains_key("chainargos/agent-brown"),
+            "declined role must not mutate in-memory config"
+        );
+        let persisted = std::fs::read_to_string(paths.config_file).unwrap();
+        assert!(
+            !persisted.contains("chainargos/agent-brown"),
+            "declined role must not be persisted:\n{persisted}"
+        );
+    }
+
+    #[test]
+    fn role_input_existing_untrusted_role_can_be_validated_and_trusted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = config_with_agents(&["agent-smith"]);
+        config.roles.insert(
+            "chainargos/agent-brown".into(),
+            crate::config::RoleSource {
+                git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
+                trusted: false,
+                ..Default::default()
+            },
+        );
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
+        editor.pending.allowed_roles = vec!["agent-smith".into()];
+        let selector = crate::selector::RoleSelector::parse("chainargos/agent-brown").unwrap();
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        let mut runner = crate::runtime::FakeRunner::default();
+        runner.side_effects.push((
+            "git clone".to_string(),
+            Box::new(move || seed_valid_role_repo(&repo_dir)),
+        ));
+
+        apply_role_input_with_runner(
+            &mut editor,
+            &mut config,
+            &paths,
+            "chainargos/agent-brown",
+            &mut runner,
+        );
+        assert!(matches!(
+            editor.modal,
+            Some(Modal::Confirm {
+                target: ConfirmTarget::TrustRoleSource { .. },
+                ..
+            })
+        ));
+
+        handle_modal_with(&mut editor, key(KeyCode::Char('y')), &mut config, &paths);
+
+        assert!(
+            config
+                .roles
+                .get("chainargos/agent-brown")
+                .is_some_and(|source| source.trusted),
+            "existing untrusted role should become trusted after confirmation"
+        );
+        assert!(
+            editor
+                .pending
+                .allowed_roles
+                .contains(&"chainargos/agent-brown".to_string()),
+            "trusted role should be added to the custom allow-list"
+        );
+        let persisted = std::fs::read_to_string(paths.config_file).unwrap();
+        assert!(
+            persisted.contains("trusted = true"),
+            "confirmed role should persist trust:\n{persisted}"
         );
     }
 

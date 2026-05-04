@@ -289,6 +289,10 @@ pub enum ConfirmTarget {
         scope: SecretsScopeTag,
         key: String,
     },
+    TrustRoleSource {
+        key: String,
+        source: crate::config::RoleSource,
+    },
     /// Source-drift confirmation (Task 10.3): operator's edit changes the
     /// `src` of one or more mounts that have preserved isolated state on
     /// stopped containers. Carries the planner's pending save material so
