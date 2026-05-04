@@ -28,7 +28,7 @@ pub(super) fn handle_prelude_key(
 /// Prelude-side transition: mount-src and mount-dst are both known, now
 /// advance to the `PickWorkdir` step by opening a `WorkdirPick` modal.
 ///
-/// Factored out so both the `MountDstChoice::Ok` path (no `TextInput`) and
+/// Factored out so both the `MountDstChoice::SamePath` path (no `TextInput`) and
 /// the `TextInputDst` commit path (operator edited dst) end the same way.
 /// Callers are responsible for having already pushed the mount dst onto
 /// the prelude (via `accept_mount_dst`).
@@ -142,7 +142,7 @@ pub(super) fn handle_prelude_modal(
                 return;
             };
             match outcome {
-                ModalOutcome::Commit(MountDstChoice::Ok) => {
+                ModalOutcome::Commit(MountDstChoice::SamePath) => {
                     // Fast path: dst = src, skip TextInput, chain straight
                     // to WorkdirPick (mirrors the post-TextInputDst tail).
                     let default_dst = prelude.default_mount_dst().unwrap_or_default();

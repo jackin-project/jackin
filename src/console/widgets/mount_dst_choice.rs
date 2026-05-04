@@ -16,15 +16,23 @@ use ratatui::{
 
 use super::ModalOutcome;
 
+/// Outcome of the mount-destination modal.
+///
+/// The button label reads "Mount at same path" — the variant name
+/// mirrors that intent so grep'ing for `Ok` doesn't conflate this
+/// modal's choice with `Result::Ok`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MountDstChoice {
-    Ok,
+    /// Use the host source path verbatim as the container destination.
+    SamePath,
+    /// Open the destination text-input so the user can pick a different
+    /// container path.
     Edit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MountDstFocus {
-    Ok,
+    SamePath,
     Edit,
     Cancel,
 }
@@ -36,38 +44,38 @@ pub struct MountDstChoiceState {
 }
 
 impl MountDstChoiceState {
-    /// Default focus = `Ok`: the common case is "same path inside the
-    /// container", so Enter should commit that without extra effort.
+    /// Default focus = `SamePath`: the common case is "same path inside
+    /// the container", so Enter should commit that without extra effort.
     pub fn new(src: impl Into<String>) -> Self {
         Self {
             src: src.into(),
-            focus: MountDstFocus::Ok,
+            focus: MountDstFocus::SamePath,
         }
     }
 
     pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<MountDstChoice> {
         match key.code {
-            KeyCode::Char('m' | 'M') => ModalOutcome::Commit(MountDstChoice::Ok),
+            KeyCode::Char('m' | 'M') => ModalOutcome::Commit(MountDstChoice::SamePath),
             KeyCode::Char('e' | 'E') => ModalOutcome::Commit(MountDstChoice::Edit),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
             KeyCode::Tab | KeyCode::Right | KeyCode::Char('l' | 'L') => {
                 self.focus = match self.focus {
-                    MountDstFocus::Ok => MountDstFocus::Edit,
+                    MountDstFocus::SamePath => MountDstFocus::Edit,
                     MountDstFocus::Edit => MountDstFocus::Cancel,
-                    MountDstFocus::Cancel => MountDstFocus::Ok,
+                    MountDstFocus::Cancel => MountDstFocus::SamePath,
                 };
                 ModalOutcome::Continue
             }
             KeyCode::Left | KeyCode::Char('h' | 'H') => {
                 self.focus = match self.focus {
-                    MountDstFocus::Ok => MountDstFocus::Cancel,
-                    MountDstFocus::Edit => MountDstFocus::Ok,
+                    MountDstFocus::SamePath => MountDstFocus::Cancel,
+                    MountDstFocus::Edit => MountDstFocus::SamePath,
                     MountDstFocus::Cancel => MountDstFocus::Edit,
                 };
                 ModalOutcome::Continue
             }
             KeyCode::Enter => match self.focus {
-                MountDstFocus::Ok => ModalOutcome::Commit(MountDstChoice::Ok),
+                MountDstFocus::SamePath => ModalOutcome::Commit(MountDstChoice::SamePath),
                 MountDstFocus::Edit => ModalOutcome::Commit(MountDstChoice::Edit),
                 MountDstFocus::Cancel => ModalOutcome::Cancel,
             },
@@ -137,7 +145,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
         .add_modifier(Modifier::BOLD);
     let unfocused_style = Style::default().fg(phosphor).add_modifier(Modifier::BOLD);
 
-    let ok_style = if state.focus == MountDstFocus::Ok {
+    let ok_style = if state.focus == MountDstFocus::SamePath {
         focused_style
     } else {
         unfocused_style
@@ -203,14 +211,14 @@ mod tests {
     #[test]
     fn new_defaults_focus_to_ok() {
         let s = MountDstChoiceState::new("/host/path");
-        assert_eq!(s.focus, MountDstFocus::Ok);
+        assert_eq!(s.focus, MountDstFocus::SamePath);
         assert_eq!(s.src, "/host/path");
     }
 
     #[test]
     fn tab_cycles_ok_edit_cancel_ok() {
         let mut s = MountDstChoiceState::new("/h");
-        assert_eq!(s.focus, MountDstFocus::Ok);
+        assert_eq!(s.focus, MountDstFocus::SamePath);
         assert!(matches!(
             s.handle_key(key(KeyCode::Tab)),
             ModalOutcome::Continue
@@ -219,19 +227,19 @@ mod tests {
         s.handle_key(key(KeyCode::Tab));
         assert_eq!(s.focus, MountDstFocus::Cancel);
         s.handle_key(key(KeyCode::Tab));
-        assert_eq!(s.focus, MountDstFocus::Ok);
+        assert_eq!(s.focus, MountDstFocus::SamePath);
     }
 
     #[test]
     fn left_reverse_cycles() {
         let mut s = MountDstChoiceState::new("/h");
-        assert_eq!(s.focus, MountDstFocus::Ok);
+        assert_eq!(s.focus, MountDstFocus::SamePath);
         s.handle_key(key(KeyCode::Left));
         assert_eq!(s.focus, MountDstFocus::Cancel);
         s.handle_key(key(KeyCode::Left));
         assert_eq!(s.focus, MountDstFocus::Edit);
         s.handle_key(key(KeyCode::Left));
-        assert_eq!(s.focus, MountDstFocus::Ok);
+        assert_eq!(s.focus, MountDstFocus::SamePath);
     }
 
     #[test]
@@ -239,7 +247,7 @@ mod tests {
         let mut s = MountDstChoiceState::new("/h");
         assert!(matches!(
             s.handle_key(key(KeyCode::Enter)),
-            ModalOutcome::Commit(MountDstChoice::Ok)
+            ModalOutcome::Commit(MountDstChoice::SamePath)
         ));
     }
 
@@ -271,7 +279,7 @@ mod tests {
         s.handle_key(key(KeyCode::Tab)); // focus -> Edit
         assert!(matches!(
             s.handle_key(key(KeyCode::Char('m'))),
-            ModalOutcome::Commit(MountDstChoice::Ok)
+            ModalOutcome::Commit(MountDstChoice::SamePath)
         ));
     }
 
@@ -309,7 +317,7 @@ mod tests {
         let mut s = MountDstChoiceState::new("/h");
         assert!(matches!(
             s.handle_key(key(KeyCode::Char('M'))),
-            ModalOutcome::Commit(MountDstChoice::Ok)
+            ModalOutcome::Commit(MountDstChoice::SamePath)
         ));
         let mut s = MountDstChoiceState::new("/h");
         assert!(matches!(

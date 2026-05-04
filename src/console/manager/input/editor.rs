@@ -1441,7 +1441,7 @@ fn dispatch_editor_mount_dst_choice(
 ) {
     use crate::console::widgets::mount_dst_choice::MountDstChoice;
     match outcome {
-        ModalOutcome::Commit(MountDstChoice::Ok) => {
+        ModalOutcome::Commit(MountDstChoice::SamePath) => {
             if target == FileBrowserTarget::EditAddMountSrc {
                 editor.pending.mounts.push(crate::workspace::MountConfig {
                     src: src.to_string(),
