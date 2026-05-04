@@ -33,15 +33,15 @@ pub enum GitPromptFocus {
     Cancel,
 }
 
-/// Resolve the raw origin remote URL for a git-repo path via
-/// `mount_info::inspect`. Returns `Some` only for GitHub remotes.
+/// Resolve the web URL for a git-repo path via `mount_info::inspect`.
+/// Returns `Some` only for GitHub remotes that have a parseable web URL.
 pub(super) fn resolve_git_url(path: &Path) -> Option<String> {
     match crate::console::manager::mount_info::inspect(&path.display().to_string()) {
         crate::console::manager::mount_info::MountKind::Git {
             host: crate::console::manager::mount_info::GitHost::Github,
-            remote_url,
+            web_url,
             ..
-        } => remote_url,
+        } => web_url,
         _ => None,
     }
 }
@@ -363,7 +363,7 @@ mod tests {
             .pending_git_url
             .as_deref()
             .expect("GitHub origin must resolve");
-        assert_eq!(url, "git@github.com:jackin-project/jackin.git");
+        assert_eq!(url, "https://github.com/jackin-project/jackin/tree/main");
     }
 
     #[test]
