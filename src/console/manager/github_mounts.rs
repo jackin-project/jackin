@@ -20,7 +20,7 @@
 use crate::console::widgets::github_picker::GithubChoice;
 use crate::workspace::WorkspaceConfig;
 
-use super::mount_info::{GitBranch, GitHost, MountKind, inspect};
+use super::mount_info::{GitBranch, GitOrigin, MountKind, inspect};
 
 /// Project `ws`'s mounts down to the list of GitHub-hosted sources that
 /// expose a resolvable web URL. Mounts with non-GitHub remotes, no
@@ -31,9 +31,7 @@ pub(super) fn resolve_for_workspace(ws: &WorkspaceConfig) -> Vec<GithubChoice> {
         .filter_map(|m| {
             let MountKind::Git {
                 branch,
-                host: GitHost::Github,
-                web_url: Some(url),
-                ..
+                origin: Some(GitOrigin::Github { web_url, .. }),
             } = inspect(&m.src)
             else {
                 return None;
@@ -46,7 +44,7 @@ pub(super) fn resolve_for_workspace(ws: &WorkspaceConfig) -> Vec<GithubChoice> {
             Some(GithubChoice {
                 src: m.src.clone(),
                 branch: branch_label,
-                url,
+                url: web_url,
             })
         })
         .collect()

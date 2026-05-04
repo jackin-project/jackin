@@ -38,10 +38,9 @@ pub enum GitPromptFocus {
 pub(super) fn resolve_git_url(path: &Path) -> Option<String> {
     match crate::console::manager::mount_info::inspect(&path.display().to_string()) {
         crate::console::manager::mount_info::MountKind::Git {
-            host: crate::console::manager::mount_info::GitHost::Github,
-            web_url,
+            origin: Some(crate::console::manager::mount_info::GitOrigin::Github { web_url, .. }),
             ..
-        } => web_url,
+        } => Some(web_url),
         _ => None,
     }
 }

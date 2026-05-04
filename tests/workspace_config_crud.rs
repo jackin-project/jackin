@@ -128,7 +128,7 @@ fn workspace_create_requires_explicit_mount() {
         .create_workspace(
             "my-app",
             WorkspaceConfig {
-                workdir: expanded_workdir.clone(),
+                workdir: expanded_workdir,
                 mounts: vec![],
                 ..Default::default()
             },

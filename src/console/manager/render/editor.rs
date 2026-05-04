@@ -147,8 +147,7 @@ fn contextual_row_items(
                     && matches!(
                         super::super::mount_info::inspect(&m.src),
                         super::super::mount_info::MountKind::Git {
-                            host: super::super::mount_info::GitHost::Github,
-                            web_url: Some(_),
+                            origin: Some(super::super::mount_info::GitOrigin::Github { .. }),
                             ..
                         }
                     )
@@ -946,7 +945,7 @@ mod contextual_row_items_tests {
     #[test]
     fn github_mount_row_includes_open_in_github_hint() {
         // Build a synthetic GitHub repo on-disk so `mount_info::inspect`
-        // classifies the source as `MountKind::Git { host: Github, web_url: Some }`.
+        // classifies the source as `MountKind::Git { origin: Some(GitOrigin::Github { .. }) }`.
         let tmp = tempfile::tempdir().unwrap();
         let git_dir = tmp.path().join(".git");
         std::fs::create_dir(&git_dir).unwrap();

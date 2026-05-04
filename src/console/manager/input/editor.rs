@@ -264,11 +264,10 @@ pub(super) fn handle_editor_key(
                 let kind = super::super::mount_info::inspect(&m.src);
                 match kind {
                     super::super::mount_info::MountKind::Git {
-                        host: super::super::mount_info::GitHost::Github,
-                        web_url: Some(url),
+                        origin: Some(super::super::mount_info::GitOrigin::Github { web_url, .. }),
                         ..
                     } => {
-                        if let Err(e) = open::that_detached(&url) {
+                        if let Err(e) = open::that_detached(&web_url) {
                             state.toast = Some(Toast {
                                 message: format!("failed to open URL: {e}"),
                                 kind: ToastKind::Error,
@@ -1953,14 +1952,14 @@ plugins = []
 
     #[test]
     fn roles_tab_enter_on_add_role_row_opens_role_input() {
-        let (_tmp, paths, mut config) = {
+        let (tmp, paths, mut config) = {
             let tmp = tempfile::tempdir().unwrap();
             let paths = JackinPaths::for_tests(tmp.path());
             paths.ensure_base_dirs().unwrap();
             let config = config_with_agents(&["agent-smith"]);
             (tmp, paths, config)
         };
-        let cwd = _tmp.path();
+        let cwd = tmp.path();
         let mut state = editor_on_agents_tab(empty_ws(), config.roles.len());
 
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
