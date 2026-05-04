@@ -23,6 +23,7 @@ pub use self::discovery::{
 };
 pub use self::launch::{LoadOptions, load_role};
 pub use self::naming::matching_family;
+pub(crate) use self::repo_cache::RepoError;
 
 pub(crate) fn register_agent_repo(
     paths: &crate::paths::JackinPaths,

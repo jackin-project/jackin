@@ -5,10 +5,50 @@ use crate::repo::{CachedRepo, validate_role_repo};
 use crate::selector::RoleSelector;
 use anyhow::Context;
 use fs2::FileExt;
-use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
 use super::identity::try_capture;
+
+/// Map an anyhow error from `validate_role_repo` into a typed
+/// `RepoError::InvalidRoleRepo` when the message uses the validator's
+/// `invalid role repo: ` prefix; pass anything else through unchanged.
+///
+/// The validator currently uses anyhow strings; this is the single
+/// substring match left over after the typed-error refactor and lives
+/// here so it's co-located with the variant it produces.
+fn map_validate_error(err: anyhow::Error) -> anyhow::Error {
+    let msg = err.to_string();
+    msg.strip_prefix("invalid role repo: ").map_or(err, |detail| {
+        anyhow::Error::new(RepoError::InvalidRoleRepo {
+            detail: detail.to_string(),
+        })
+    })
+}
+
+/// Typed errors raised by role-repo resolution.
+///
+/// Surfaced through `anyhow::Error` chains so the editor can downcast and
+/// pick a friendly translation without substring-matching free text. Add
+/// new variants here together with their `friendly_role_resolution_error`
+/// arm in `console::manager::input::editor`.
+#[derive(Debug, thiserror::Error)]
+pub enum RepoError {
+    /// `git clone` failed for any reason — host unreachable, auth required,
+    /// repo missing, server-side error. The original anyhow chain is kept
+    /// as the `#[source]` so `--debug` still surfaces it.
+    #[error("repository is not available or cannot be accessed")]
+    CloneFailed(#[source] anyhow::Error),
+
+    /// Cached repo's `origin` remote points at a different URL than the
+    /// configured source and the operator declined removal.
+    #[error("cached role repo remote mismatch — aborting")]
+    RemoteMismatch,
+
+    /// `validate_role_repo` rejected the cloned repo. `detail` is the
+    /// validator's message with the `invalid role repo: ` prefix stripped.
+    #[error("invalid role repo: {detail}")]
+    InvalidRoleRepo { detail: String },
+}
 
 /// Extract `owner/repo` from a git remote URL.
 pub(super) fn parse_repo_name(url: &str) -> Option<String> {
@@ -154,9 +194,9 @@ pub(super) fn register_agent_repo(
             None,
             &git_run_opts,
         )
-        .with_context(|| "repository is not available or cannot be accessed")?;
+        .map_err(RepoError::CloneFailed)?;
 
-    let validated_repo = validate_role_repo(&temp_repo)?;
+    let validated_repo = validate_role_repo(&temp_repo).map_err(map_validate_error)?;
     // Install the repo into the cache before persisting registration: if
     // rename fails the role stays unregistered and the user can retry from a
     // clean state. Persisting first would leave config.toml referencing a
@@ -222,26 +262,26 @@ pub(super) fn resolve_agent_repo_with(
             None,
         )?;
         if !repo_matches(git_url, &remote_url) {
-            let repo_display = cached_repo.repo_dir.display();
-            eprintln!(
-                "{} cached role repo remote does not match configured source",
-                "error:".red().bold()
+            // Route diagnostics through the buffered debug channel rather
+            // than `eprintln!` — the latter corrupts the alt-screen render
+            // when called from inside the TUI session. Operators with
+            // `--debug` still get the full expected/found/path trio.
+            crate::debug_log!(
+                "repo_cache",
+                "cached role repo remote mismatch: expected={git_url:?} \
+                 found={remote_url:?} path={}",
+                cached_repo.repo_dir.display()
             );
-            eprintln!("  expected: {}", git_url.green());
-            eprintln!("  found:    {}", remote_url.yellow());
-            eprintln!();
-            eprintln!("To fix this, remove the cached repo and try again:");
-            eprintln!("  rm -rf {repo_display}");
-            eprintln!();
 
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
                 runner.run("git", &["clone", git_url, &repo_path], None, &git_run_opts)?;
-                let validated_repo = validate_role_repo(&cached_repo.repo_dir)?;
+                let validated_repo =
+                    validate_role_repo(&cached_repo.repo_dir).map_err(map_validate_error)?;
                 return Ok((cached_repo, validated_repo, lock_file));
             }
 
-            anyhow::bail!("cached role repo remote mismatch — aborting");
+            return Err(anyhow::Error::new(RepoError::RemoteMismatch));
         }
 
         let status = runner.capture(

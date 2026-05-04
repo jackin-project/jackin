@@ -1216,7 +1216,10 @@ fn apply_role_input_with_runner(
     let selector = match crate::selector::RoleSelector::parse(raw) {
         Ok(selector) => selector,
         Err(e) => {
-            open_role_resolution_error(editor, raw, None, &e);
+            // The unparseable-selector branch ignores `err`; wrap into
+            // anyhow only to satisfy the typed signature.
+            let err = anyhow::Error::new(e);
+            open_role_resolution_error(editor, raw, None, &err);
             return;
         }
     };
@@ -1272,9 +1275,9 @@ fn open_role_resolution_error(
     editor: &mut EditorState<'_>,
     raw: &str,
     source_url: Option<&String>,
-    err: &dyn std::fmt::Display,
+    err: &anyhow::Error,
 ) {
-    crate::debug_log!("role", "failed to resolve role {raw:?}: {err}");
+    crate::debug_log!("role", "failed to resolve role {raw:?}: {err:?}");
     let message = source_url.map_or_else(
         || {
             format!(
@@ -1307,26 +1310,30 @@ fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Di
     });
 }
 
-fn friendly_role_resolution_error(err: &dyn std::fmt::Display) -> String {
-    let message = err.to_string();
-    if message.contains("repository is not available")
-        || message.contains("git clone")
-        || message.contains("not found")
-    {
-        return "Repository is not available, or you do not have access.".into();
-    }
-    if message.contains("cached role repo remote mismatch") {
-        return "A cached copy already exists for this role, but it points at a different repository."
-            .into();
-    }
-    if let Some(detail) = message.strip_prefix("invalid role repo: ") {
-        return format!(
-            "Repository is not a valid Jackin role: {}.",
-            humanize_invalid_role_repo_detail(detail)
-        );
-    }
-    if message.contains("invalid role repo:") {
-        return "Repository is not a valid Jackin role.".into();
+/// Translate a runtime role-resolution error into the operator-facing
+/// blurb shown beneath the role-input dialog.
+///
+/// Classification is by `downcast_ref::<RepoError>` rather than substring
+/// matching on free text — when adding a `RepoError` variant, add the
+/// corresponding match arm here. The `else` branch handles errors that
+/// were never wrapped as `RepoError` (e.g. fs/IO errors raised before the
+/// clone) and uses a generic message rather than mis-classifying them.
+fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
+    if let Some(repo_err) = err.downcast_ref::<crate::runtime::RepoError>() {
+        return match repo_err {
+            crate::runtime::RepoError::CloneFailed(_) => {
+                "Repository is not available, or you do not have access.".into()
+            }
+            crate::runtime::RepoError::RemoteMismatch => {
+                "A cached copy already exists for this role, but it points at a different \
+                 repository."
+                    .into()
+            }
+            crate::runtime::RepoError::InvalidRoleRepo { detail } => format!(
+                "Repository is not a valid Jackin role: {}.",
+                humanize_invalid_role_repo_detail(detail)
+            ),
+        };
     }
     "Repository could not be used as a Jackin role.".into()
 }
