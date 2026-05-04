@@ -11,7 +11,7 @@ jackin load chainargos/agent-brown
 ## Contract
 
 - Final Dockerfile stage must literally be `FROM projectjackin/construct:trixie`
-- Plugins are declared in `jackin.agent.toml`
+- Plugins are declared in `jackin.role.toml`
 
 ## Environment
 

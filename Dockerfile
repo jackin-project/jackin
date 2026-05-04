@@ -15,15 +15,15 @@ RUN sudo apt-get update && \
                /var/cache/apt/* \
                /tmp/*
 
-USER claude
+USER agent
 
 ENV MISE_TRUSTED_CONFIG_PATHS=/workspace
 
 # Set Docker API version for Testcontainers compatibility with Docker 29.x
-RUN echo "api.version=1.44" > /home/claude/.docker-java.properties
+RUN echo "api.version=1.44" > /home/agent/.docker-java.properties
 
 # Create gradle cache directory
-RUN mkdir -p /home/claude/.gradle
+RUN mkdir -p /home/agent/.gradle
 
 # Language runtimes
 RUN mise install node@lts && \
@@ -54,5 +54,5 @@ RUN curl -fsSL https://get.tessl.io | TESSL_VERSION="$TESSL_VERSION" sh
 RUN mise exec node@lts -- npm install -g ctx7
 
 # Docker convenience functions
-COPY --chown=claude:claude zshrc.d/docker-helpers.zsh /home/claude/.zshrc.d/docker-helpers.zsh
-RUN echo 'source /home/claude/.zshrc.d/docker-helpers.zsh' >> /home/claude/.zshrc
+COPY --chown=agent:agent zshrc.d/docker-helpers.zsh /home/agent/.zshrc.d/docker-helpers.zsh
+RUN echo 'source /home/agent/.zshrc.d/docker-helpers.zsh' >> /home/agent/.zshrc
