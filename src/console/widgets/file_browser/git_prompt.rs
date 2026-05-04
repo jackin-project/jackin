@@ -371,6 +371,18 @@ mod tests {
     }
 
     #[test]
+    fn resolve_git_url_returns_none_for_non_github_origin() {
+        // Non-github remote (gitlab here) must yield `None` so the
+        // `O open` keystroke is not advertised — the launcher only
+        // speaks github web URLs.
+        let tmp = tempdir().unwrap();
+        let repo = tmp.path().join("gitlab-repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        seed_git_repo_with_origin(&repo, "git@gitlab.com:owner/repo.git");
+        assert!(resolve_git_url(&repo).is_none());
+    }
+
+    #[test]
     fn enter_on_git_repo_without_origin_leaves_url_none() {
         let tmp = tempdir().unwrap();
         let parent = tmp.path().join("parent");
