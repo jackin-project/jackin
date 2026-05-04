@@ -30,7 +30,9 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
 
     let (pct_w, height_rows) = match modal {
         Modal::TextInput { .. } => (60, 6),
-        Modal::Confirm { state, .. } => (60, confirm::required_height(state)),
+        Modal::Confirm { state, .. } => {
+            (confirm::width_pct(state), confirm::required_height(state))
+        }
         Modal::SaveDiscardCancel { .. } => (70, 7),
         Modal::FileBrowser { .. } => (70, 22),
         Modal::WorkdirPick { .. } => (60, 12),

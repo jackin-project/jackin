@@ -24,16 +24,20 @@ pub use self::discovery::{
 pub use self::launch::{LoadOptions, load_role};
 pub use self::naming::matching_family;
 
-pub(crate) fn resolve_agent_repo(
+pub(crate) fn register_agent_repo(
     paths: &crate::paths::JackinPaths,
     selector: &crate::selector::RoleSelector,
     git_url: &str,
     runner: &mut impl crate::docker::CommandRunner,
     debug: bool,
-) -> anyhow::Result<(
-    crate::repo::CachedRepo,
-    crate::repo::ValidatedRoleRepo,
-    std::fs::File,
-)> {
-    self::repo_cache::resolve_agent_repo(paths, selector, git_url, runner, debug)
+    persist_registration: impl FnOnce() -> anyhow::Result<()>,
+) -> anyhow::Result<(crate::repo::CachedRepo, crate::repo::ValidatedRoleRepo)> {
+    self::repo_cache::register_agent_repo(
+        paths,
+        selector,
+        git_url,
+        runner,
+        debug,
+        persist_registration,
+    )
 }

@@ -3,6 +3,7 @@ use crate::instance::primary_container_name;
 use crate::paths::JackinPaths;
 use crate::repo::{CachedRepo, validate_role_repo};
 use crate::selector::RoleSelector;
+use anyhow::Context;
 use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
@@ -95,6 +96,76 @@ pub(super) fn resolve_agent_repo(
         debug,
         confirm_repo_removal_interactive,
     )
+}
+
+pub(super) fn register_agent_repo(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    git_url: &str,
+    runner: &mut impl CommandRunner,
+    debug: bool,
+    persist_registration: impl FnOnce() -> anyhow::Result<()>,
+) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo)> {
+    let cached_repo = CachedRepo::new(paths, selector);
+    if cached_repo.repo_dir.join(".git").is_dir() {
+        let (cached_repo, validated_repo, _lock_file) =
+            resolve_agent_repo_with(paths, selector, git_url, runner, debug, || Ok(false))?;
+        persist_registration()?;
+        return Ok((cached_repo, validated_repo));
+    }
+
+    let repo_parent = cached_repo.repo_dir.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "role repo path has no parent: {}",
+            cached_repo.repo_dir.display()
+        )
+    })?;
+    std::fs::create_dir_all(repo_parent)?;
+    std::fs::create_dir_all(&paths.data_dir)?;
+
+    if cached_repo.repo_dir.exists() {
+        anyhow::bail!(
+            "cached role path exists but is not a git repository: {}",
+            cached_repo.repo_dir.display()
+        );
+    }
+
+    let lock_path = paths
+        .data_dir
+        .join(format!("{}.repo.lock", primary_container_name(selector)));
+    let lock_file = std::fs::File::create(&lock_path)?;
+    lock_file
+        .lock_exclusive()
+        .map_err(|e| anyhow::anyhow!("failed to acquire repo lock for {}: {e}", selector.key()))?;
+
+    let temp_dir = tempfile::Builder::new()
+        .prefix("role-resolve-")
+        .tempdir_in(&paths.data_dir)?;
+    let temp_repo = temp_dir.path().join("repo");
+    let temp_repo_path = temp_repo.display().to_string();
+    let git_run_opts = RunOptions {
+        quiet: !debug,
+        ..RunOptions::default()
+    };
+    runner
+        .run(
+            "git",
+            &["clone", git_url, &temp_repo_path],
+            None,
+            &git_run_opts,
+        )
+        .with_context(|| "repository is not available or cannot be accessed")?;
+
+    let validated_repo = validate_role_repo(&temp_repo)?;
+    persist_registration()?;
+    std::fs::rename(&temp_repo, &cached_repo.repo_dir).with_context(|| {
+        format!(
+            "failed to install role repository at {}",
+            cached_repo.repo_dir.display()
+        )
+    })?;
+
+    Ok((cached_repo, validated_repo))
 }
 
 pub(super) fn resolve_agent_repo_with(
