@@ -271,6 +271,7 @@ pub enum TextInputTarget {
     Name,
     Workdir,
     MountDst,
+    Role,
     EnvKey { scope: SecretsScopeTag },
     EnvValue { scope: SecretsScopeTag, key: String },
 }

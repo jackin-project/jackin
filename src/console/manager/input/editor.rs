@@ -173,8 +173,16 @@ pub(super) fn handle_editor_key(
             EditorTab::Secrets => {
                 open_secrets_enter_modal(editor);
             }
-            EditorTab::Roles => {}
+            EditorTab::Roles => {
+                let FieldFocus::Row(n) = editor.active_field;
+                if n == config.roles.len() {
+                    open_role_input(editor, config);
+                }
+            }
         },
+        KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Roles => {
+            open_role_input(editor, config);
+        }
         KeyCode::Char(' ') if editor.active_tab == EditorTab::Roles => {
             toggle_agent_allowed_at_cursor(editor, config);
         }
@@ -290,7 +298,8 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         // 0=Name, 1=Working dir, 2=Keep awake
         EditorTab::General => 2,
         EditorTab::Mounts => editor.pending.mounts.len(),
-        EditorTab::Roles => config.roles.len().saturating_sub(1),
+        // One extra sentinel row: + Add role.
+        EditorTab::Roles => config.roles.len(),
         // Secrets tab is handled inline in the Down key arm; never reached here.
         EditorTab::Secrets => 0,
     }
@@ -513,6 +522,18 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
     });
 }
 
+fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) {
+    use super::super::super::widgets::text_input::TextInputState;
+
+    let mut state =
+        TextInputState::new_with_forbidden("Add role", "", config.roles.keys().cloned().collect());
+    state.forbidden_label = "role registry".into();
+    editor.modal = Some(Modal::TextInput {
+        target: TextInputTarget::Role,
+        state,
+    });
+}
+
 fn open_secrets_delete_confirm(editor: &mut EditorState<'_>) {
     use crate::console::widgets::confirm::ConfirmState;
     let FieldFocus::Row(n) = editor.active_field;
@@ -655,7 +676,8 @@ pub(super) fn handle_editor_modal(
     key: KeyEvent,
     op_available: bool,
     op_cache: std::rc::Rc<std::cell::RefCell<crate::console::op_cache::OpCache>>,
-    config: &AppConfig,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
 ) {
     let Some(modal) = editor.modal.as_mut() else {
         return;
@@ -666,7 +688,11 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Commit(value) => {
                     let target = target.clone();
                     editor.modal = None;
-                    apply_text_input_to_pending(&target, editor, &value, op_available);
+                    if target == TextInputTarget::Role {
+                        apply_role_input(editor, config, paths, &value);
+                    } else {
+                        apply_text_input_to_pending(&target, editor, &value, op_available);
+                    }
                 }
                 ModalOutcome::Cancel => {
                     // Cancel of EnvKey/EnvValue must drop both the
@@ -1123,6 +1149,7 @@ pub(super) fn apply_text_input_to_pending(
                 last.dst = value.to_string();
             }
         }
+        TextInputTarget::Role => {}
         TextInputTarget::EnvKey { scope } => {
             // Empty key re-opens the EnvKey modal with the inline
             // "cannot be empty" label instead of committing.
@@ -1159,6 +1186,59 @@ pub(super) fn apply_text_input_to_pending(
             set_pending_env_value(editor, scope, key, value);
             editor.pending_env_key = None;
         }
+    }
+}
+
+fn apply_role_input(
+    editor: &mut EditorState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    value: &str,
+) {
+    let raw = value.trim();
+    let selector = match crate::selector::RoleSelector::parse(raw) {
+        Ok(selector) => selector,
+        Err(e) => {
+            editor.modal = Some(Modal::ErrorPopup {
+                state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                    "Role not found",
+                    format!(
+                        "Could not resolve role {raw:?}. Use a configured role such as \
+                         \"agent-smith\" or a GitHub selector like \"owner/agent-name\". {e}"
+                    ),
+                ),
+            });
+            return;
+        }
+    };
+
+    let key = selector.key();
+    let result = (|| -> anyhow::Result<()> {
+        let (source, _) = config.resolve_role_source(&selector)?;
+        let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
+        editor_doc.upsert_agent_source(&key, &source);
+        *config = editor_doc.save()?;
+        Ok(())
+    })();
+
+    if let Err(e) = result {
+        editor.modal = Some(Modal::ErrorPopup {
+            state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                "Role not found",
+                format!("Could not resolve role {raw:?}: {e}"),
+            ),
+        });
+        return;
+    }
+
+    if !editor.pending.allowed_roles.is_empty()
+        && !editor.pending.allowed_roles.iter().any(|role| role == &key)
+    {
+        editor.pending.allowed_roles.push(key.clone());
+    }
+
+    if let Some(idx) = config.roles.keys().position(|role| role == &key) {
+        editor.active_field = FieldFocus::Row(idx);
     }
 }
 
@@ -1248,7 +1328,7 @@ pub(super) fn apply_file_browser_to_editor(
     match target {
         FileBrowserTarget::EditAddMountSrc => {
             // Defer the mount push to the choice modal: in the common case
-            // the operator will take "OK" (dst = src) and we skip the
+            // the operator will take "Use same path" (dst = src) and we skip the
             // TextInput entirely. Only the `Edit destination` branch pushes
             // a provisional mount and opens the TextInput.
             editor.modal = Some(Modal::MountDstChoice {
@@ -1288,12 +1368,26 @@ mod tests {
     /// editor-modal tests don't exercise the `SourcePicker` /
     /// `OpPicker` branches that need real wiring; defaults are fine.
     fn handle_modal(editor: &mut EditorState<'_>, k: crossterm::event::KeyEvent) {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        handle_modal_with(editor, k, &mut config, &paths);
+    }
+
+    fn handle_modal_with(
+        editor: &mut EditorState<'_>,
+        k: crossterm::event::KeyEvent,
+        config: &mut AppConfig,
+        paths: &JackinPaths,
+    ) {
         handle_editor_modal(
             editor,
             k,
             false,
             std::rc::Rc::new(std::cell::RefCell::new(OpCache::default())),
-            &AppConfig::default(),
+            config,
+            paths,
         );
     }
 
@@ -1520,20 +1614,23 @@ mod tests {
     }
 
     #[test]
-    fn editor_ok_commits_mount_with_dst_equal_src() {
-        // OK shortcut on the choice modal → push MountConfig with dst = src
+    fn editor_use_same_path_commits_mount_with_dst_equal_src() {
+        // Use-same-path shortcut on the choice modal → push MountConfig with dst = src
         // and close the modal. No TextInput should appear.
         let mut editor = editor_with_browser_committed("/host/path");
-        handle_modal(&mut editor, key(KeyCode::Char('o')));
+        handle_modal(&mut editor, key(KeyCode::Char('u')));
         assert!(
             editor.modal.is_none(),
-            "OK must close the modal; got {:?}",
+            "Use same path must close the modal; got {:?}",
             editor.modal
         );
         assert_eq!(editor.pending.mounts.len(), 1, "exactly one mount pushed");
         let m = &editor.pending.mounts[0];
         assert_eq!(m.src, "/host/path");
-        assert_eq!(m.dst, "/host/path", "OK fast-path sets dst = src");
+        assert_eq!(
+            m.dst, "/host/path",
+            "Use-same-path fast path sets dst = src"
+        );
         assert!(!m.readonly);
     }
 
@@ -1653,6 +1750,110 @@ mod tests {
     }
 
     // ── Roles tab: `*` default-toggle binding ───────────────────────
+
+    #[test]
+    fn roles_tab_enter_on_add_role_row_opens_role_input() {
+        let (_tmp, paths, mut config) = {
+            let tmp = tempfile::tempdir().unwrap();
+            let paths = JackinPaths::for_tests(tmp.path());
+            paths.ensure_base_dirs().unwrap();
+            let config = config_with_agents(&["agent-smith"]);
+            (tmp, paths, config)
+        };
+        let cwd = _tmp.path();
+        let mut state = editor_on_agents_tab(empty_ws(), config.roles.len());
+
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter)).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        match &e.modal {
+            Some(Modal::TextInput { target, state }) => {
+                assert_eq!(target, &TextInputTarget::Role);
+                assert_eq!(state.label, "Add role");
+            }
+            other => panic!("expected TextInput(Role); got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn role_input_resolves_and_persists_namespaced_role() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = config_with_agents(&["agent-smith"]);
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
+        editor.pending.allowed_roles = vec!["agent-smith".into()];
+        editor.modal = Some(Modal::TextInput {
+            target: TextInputTarget::Role,
+            state: crate::console::widgets::text_input::TextInputState::new(
+                "Add role",
+                "chainargos/agent-brown",
+            ),
+        });
+
+        handle_modal_with(&mut editor, key(KeyCode::Enter), &mut config, &paths);
+
+        assert!(
+            editor.modal.is_none(),
+            "successful resolve should close modal"
+        );
+        assert!(
+            editor
+                .pending
+                .allowed_roles
+                .contains(&"chainargos/agent-brown".to_string()),
+            "custom allow-list should include the newly resolved role"
+        );
+        let source = config
+            .roles
+            .get("chainargos/agent-brown")
+            .expect("role source must be added to config");
+        assert_eq!(
+            source.git,
+            "https://github.com/chainargos/jackin-agent-brown.git"
+        );
+        let persisted = std::fs::read_to_string(paths.config_file).unwrap();
+        assert!(
+            persisted.contains("[roles.\"chainargos/agent-brown\"]"),
+            "new role source should be persisted:\n{persisted}"
+        );
+    }
+
+    #[test]
+    fn role_input_rejects_invalid_selector_with_error_popup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
+        editor.modal = Some(Modal::TextInput {
+            target: TextInputTarget::Role,
+            state: crate::console::widgets::text_input::TextInputState::new(
+                "Add role",
+                "Chain Argus Agent Brown",
+            ),
+        });
+
+        handle_modal_with(&mut editor, key(KeyCode::Enter), &mut config, &paths);
+
+        match &editor.modal {
+            Some(Modal::ErrorPopup { state }) => {
+                assert_eq!(state.title, "Role not found");
+                assert!(state.message.contains("Could not resolve role"));
+            }
+            other => panic!("expected ErrorPopup for invalid selector; got {other:?}"),
+        }
+        assert!(
+            config.roles.is_empty(),
+            "invalid selector must not mutate config"
+        );
+    }
 
     #[test]
     fn agents_tab_star_sets_default_on_allowed_agent() {

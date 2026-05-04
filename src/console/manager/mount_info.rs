@@ -15,6 +15,9 @@ pub enum MountKind {
         /// Which host the remote `origin` lives on — affects the label
         /// (`github` vs `git`) and whether a web URL is resolvable.
         host: GitHost,
+        /// Raw `origin` remote URL as read from git config, when present.
+        /// Example: `<https://github.com/owner/repo.git>`.
+        remote_url: Option<String>,
         /// URL for the branch on the git host, if resolvable.
         /// Only populated for `GitHost::Github`; always `None` for `Other`.
         /// Example: `<https://github.com/owner/repo/tree/main>`
@@ -55,10 +58,11 @@ pub fn inspect(src: &str) -> MountKind {
         // even when the config lives in the common dir), while the remote URL
         // and host classification come from the common dir's `config`.
         let branch = parse_head(&work_dir);
-        let (host, web_url) = resolve_host_and_url(&config_dir, &branch);
+        let (host, remote_url, web_url) = resolve_host_and_url(&config_dir, &branch);
         MountKind::Git {
             branch,
             host,
+            remote_url,
             web_url,
         }
     })
@@ -151,29 +155,33 @@ fn parse_head(git_dir: &Path) -> GitBranch {
 /// branch. The config dir is the main repo's `.git` for worktrees (see
 /// `resolve_gitdirs`) and the per-repo `.git` for plain clones/submodules.
 ///
-/// Returns `(GitHost, Option<String>)`:
-/// - `GitHost::Github` + `Some(url)` when origin lives on github.com
-/// - `GitHost::Other` + `None` for any other host, or when no remote is set
-fn resolve_host_and_url(config_dir: &Path, branch: &GitBranch) -> (GitHost, Option<String>) {
+/// Returns `(GitHost, remote_url, web_url)`:
+/// - `GitHost::Github` + raw origin + branch/commit web URL when origin lives on github.com
+/// - `GitHost::Other` + raw origin + no web URL for any other host
+/// - `GitHost::Other` + no URLs when no remote is set
+fn resolve_host_and_url(
+    config_dir: &Path,
+    branch: &GitBranch,
+) -> (GitHost, Option<String>, Option<String>) {
     let config_path = config_dir.join("config");
     let Ok(content) = std::fs::read_to_string(&config_path) else {
-        return (GitHost::Other, None);
+        return (GitHost::Other, None, None);
     };
     let Some(remote_url) = parse_remote_origin_url(&content) else {
-        return (GitHost::Other, None);
+        return (GitHost::Other, None, None);
     };
     if !remote_points_at_github(&remote_url) {
-        return (GitHost::Other, None);
+        return (GitHost::Other, Some(remote_url), None);
     }
     let Some(base) = remote_to_web(&remote_url) else {
-        return (GitHost::Other, None);
+        return (GitHost::Other, Some(remote_url), None);
     };
     let url = match branch {
         GitBranch::Named(b) => format!("{base}/tree/{b}"),
         GitBranch::Detached { short_sha } => format!("{base}/commit/{short_sha}"),
         GitBranch::Unknown => base,
     };
-    (GitHost::Github, Some(url))
+    (GitHost::Github, Some(remote_url), Some(url))
 }
 
 /// Cheap predicate — does this remote URL live on `github.com`?
@@ -475,9 +483,11 @@ mod tests {
             MountKind::Git {
                 branch: GitBranch::Named(b),
                 host,
+                remote_url: Some(remote),
                 web_url: Some(url),
             } => {
                 assert_eq!(b, "feature-x", "branch should come from worktree HEAD");
+                assert_eq!(remote, "git@github.com:owner/repo.git");
                 assert_eq!(
                     host,
                     GitHost::Github,
@@ -532,9 +542,11 @@ mod tests {
             MountKind::Git {
                 branch: GitBranch::Named(b),
                 host: GitHost::Github,
+                remote_url: Some(remote),
                 web_url: Some(url),
             } => {
                 assert_eq!(b, "abs-branch");
+                assert_eq!(remote, "https://github.com/owner/repo.git");
                 assert_eq!(url, "https://github.com/owner/repo/tree/abs-branch");
             }
             other => {
@@ -576,9 +588,11 @@ mod tests {
             MountKind::Git {
                 branch: GitBranch::Named(b),
                 host: GitHost::Github,
+                remote_url: Some(remote),
                 web_url: Some(url),
             } => {
                 assert_eq!(b, "submain");
+                assert_eq!(remote, "git@github.com:owner/submod.git");
                 assert_eq!(url, "https://github.com/owner/submod/tree/submain");
             }
             other => panic!("expected submodule to resolve with GitHost::Github, got {other:?}"),
@@ -595,6 +609,7 @@ mod tests {
             MountKind::Git {
                 branch: GitBranch::Named("main".into()),
                 host: GitHost::Other,
+                remote_url: None,
                 web_url: None,
             }
             .label(),
@@ -606,6 +621,7 @@ mod tests {
                     short_sha: "abc1234".into()
                 },
                 host: GitHost::Other,
+                remote_url: None,
                 web_url: None,
             }
             .label(),
@@ -615,6 +631,7 @@ mod tests {
             MountKind::Git {
                 branch: GitBranch::Unknown,
                 host: GitHost::Other,
+                remote_url: None,
                 web_url: None,
             }
             .label(),
@@ -630,6 +647,7 @@ mod tests {
             MountKind::Git {
                 branch: GitBranch::Named("main".into()),
                 host: GitHost::Github,
+                remote_url: Some("https://github.com/owner/repo.git".into()),
                 web_url: Some("https://github.com/owner/repo/tree/main".into()),
             }
             .label(),
@@ -641,6 +659,7 @@ mod tests {
                     short_sha: "abc1234".into()
                 },
                 host: GitHost::Github,
+                remote_url: Some("https://github.com/owner/repo.git".into()),
                 web_url: Some("https://github.com/owner/repo/commit/abc1234".into()),
             }
             .label(),
@@ -650,6 +669,7 @@ mod tests {
             MountKind::Git {
                 branch: GitBranch::Unknown,
                 host: GitHost::Github,
+                remote_url: Some("https://github.com/owner/repo.git".into()),
                 web_url: Some("https://github.com/owner/repo".into()),
             }
             .label(),

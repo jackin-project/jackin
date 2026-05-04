@@ -110,10 +110,11 @@ fn workspace_create_resolves_dot_workdir_and_dotdot_mount() {
     assert!(mount.src.ends_with("/jackin-agent-smith"));
 }
 
-/// Simulates `jackin workspace create my-app --workdir /tmp/app` (default behavior).
-/// The workdir must be auto-mounted as the first mount.
+/// Simulates `jackin workspace create my-app --workdir /tmp/app` without
+/// `--mount`. Workdir is only the start path now, so at least one explicit
+/// mount is required.
 #[test]
-fn workspace_create_auto_mounts_workdir_by_default() {
+fn workspace_create_requires_explicit_mount() {
     let (_temp_home, paths) = bootstrap_paths();
 
     let temp = tempfile::tempdir().unwrap();
@@ -122,48 +123,28 @@ fn workspace_create_auto_mounts_workdir_by_default() {
 
     let expanded_workdir = workdir_dir.display().to_string();
 
-    // Simulate default behavior: no_workdir_mount = false
-    let no_workdir_mount = false;
-    let mut all_mounts: Vec<workspace::MountConfig> = vec![];
-    if !no_workdir_mount {
-        let already_mounted = all_mounts.iter().any(|m| m.dst == expanded_workdir);
-        if !already_mounted {
-            all_mounts.insert(
-                0,
-                workspace::MountConfig {
-                    src: expanded_workdir.clone(),
-                    dst: expanded_workdir.clone(),
-                    readonly: false,
-                    isolation: jackin::isolation::MountIsolation::Shared,
-                },
-            );
-        }
-    }
-
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor
+    let err = editor
         .create_workspace(
             "my-app",
             WorkspaceConfig {
                 workdir: expanded_workdir.clone(),
-                mounts: all_mounts,
+                mounts: vec![],
                 ..Default::default()
             },
         )
-        .unwrap();
+        .unwrap_err();
 
-    let config = editor.save().unwrap();
-    let ws = config.workspaces.get("my-app").unwrap();
-    assert_eq!(ws.mounts.len(), 1);
-    assert_eq!(ws.mounts[0].src, expanded_workdir);
-    assert_eq!(ws.mounts[0].dst, expanded_workdir);
-    assert!(!ws.mounts[0].readonly);
+    assert!(
+        err.to_string().contains("must define at least one mount"),
+        "expected missing mount validation, got: {err}"
+    );
 }
 
-/// Simulates `jackin workspace create monorepo --workdir /workspace --no-workdir-mount
-/// --mount /tmp/src:/workspace`. The workdir must NOT be auto-mounted.
+/// Simulates `jackin workspace create monorepo --workdir /workspace
+/// --mount /tmp/src:/workspace`. The workdir must not add any implicit mount.
 #[test]
-fn workspace_create_no_workdir_mount_skips_auto_mount() {
+fn workspace_create_uses_only_explicit_mounts() {
     let (_temp_home, paths) = bootstrap_paths();
 
     let temp = tempfile::tempdir().unwrap();
@@ -172,26 +153,12 @@ fn workspace_create_no_workdir_mount_skips_auto_mount() {
 
     let src_path = src_dir.display().to_string();
 
-    // Simulate --no-workdir-mount with explicit mount
-    let no_workdir_mount = true;
-    let mut all_mounts = vec![workspace::MountConfig {
+    let all_mounts = vec![workspace::MountConfig {
         src: src_path.clone(),
         dst: "/workspace".to_string(),
         readonly: false,
         isolation: jackin::isolation::MountIsolation::Shared,
     }];
-    if !no_workdir_mount {
-        // This block should NOT execute
-        all_mounts.insert(
-            0,
-            workspace::MountConfig {
-                src: "/workspace".to_string(),
-                dst: "/workspace".to_string(),
-                readonly: false,
-                isolation: jackin::isolation::MountIsolation::Shared,
-            },
-        );
-    }
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor
@@ -212,10 +179,9 @@ fn workspace_create_no_workdir_mount_skips_auto_mount() {
     assert_eq!(ws.mounts[0].dst, "/workspace");
 }
 
-/// When the workdir is already covered by an explicit --mount, the auto-mount
-/// should be skipped even without --no-workdir-mount.
+/// An explicit workdir mount should be preserved exactly as supplied.
 #[test]
-fn workspace_create_skips_auto_mount_when_workdir_already_mounted() {
+fn workspace_create_preserves_explicit_workdir_mount() {
     let (_temp_home, paths) = bootstrap_paths();
 
     let temp = tempfile::tempdir().unwrap();
@@ -224,28 +190,12 @@ fn workspace_create_skips_auto_mount_when_workdir_already_mounted() {
 
     let expanded_workdir = workdir_dir.display().to_string();
 
-    // Simulate: user explicitly mounts workdir via --mount
-    let no_workdir_mount = false;
-    let mut all_mounts = vec![workspace::MountConfig {
+    let all_mounts = vec![workspace::MountConfig {
         src: expanded_workdir.clone(),
         dst: expanded_workdir.clone(),
         readonly: true, // user chose read-only
         isolation: jackin::isolation::MountIsolation::Shared,
     }];
-    if !no_workdir_mount {
-        let already_mounted = all_mounts.iter().any(|m| m.dst == expanded_workdir);
-        if !already_mounted {
-            all_mounts.insert(
-                0,
-                workspace::MountConfig {
-                    src: expanded_workdir.clone(),
-                    dst: expanded_workdir.clone(),
-                    readonly: false,
-                    isolation: jackin::isolation::MountIsolation::Shared,
-                },
-            );
-        }
-    }
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
     editor

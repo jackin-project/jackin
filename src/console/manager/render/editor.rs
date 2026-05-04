@@ -57,7 +57,7 @@ pub fn render_editor(
 
     let mut items: Vec<FooterItem> = Vec::new();
 
-    let row_items = contextual_row_items(state, op_available);
+    let row_items = contextual_row_items(state, config, op_available);
     if !row_items.is_empty() {
         items.extend(row_items);
         items.push(FooterItem::GroupSep);
@@ -105,7 +105,11 @@ pub fn render_editor(
 /// Compute a row-specific hint fragment based on the active tab and cursor.
 /// Returns an empty vec when the current position has no action.
 #[allow(clippy::too_many_lines)]
-fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<FooterItem> {
+fn contextual_row_items(
+    state: &EditorState<'_>,
+    config: &AppConfig,
+    op_available: bool,
+) -> Vec<FooterItem> {
     let FieldFocus::Row(cursor) = state.active_field;
     match state.active_tab {
         EditorTab::General => {
@@ -172,13 +176,22 @@ fn contextual_row_items(state: &EditorState<'_>, op_available: bool) -> Vec<Foot
                 vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")]
             }
         }
-        EditorTab::Roles => vec![
-            FooterItem::Key("Space"),
-            FooterItem::Text("allow/disallow"),
-            FooterItem::Sep,
-            FooterItem::Key("*"),
-            FooterItem::Text("set/unset default"),
-        ],
+        EditorTab::Roles => {
+            if cursor < config.roles.len() {
+                vec![
+                    FooterItem::Key("Space"),
+                    FooterItem::Text("allow/disallow"),
+                    FooterItem::Sep,
+                    FooterItem::Key("*"),
+                    FooterItem::Text("set/unset default"),
+                    FooterItem::Sep,
+                    FooterItem::Key("A"),
+                    FooterItem::Text("add role"),
+                ]
+            } else {
+                vec![FooterItem::Key("Enter/A"), FooterItem::Text("add role")]
+            }
+        }
         EditorTab::Secrets => {
             // Row-specific hints depend on which SecretsRow kind the cursor
             // is sitting on. Op:// rows are read-only at the value level —
@@ -503,6 +516,18 @@ fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, conf
         };
         lines.push(Line::from(Span::styled(text, style)));
     }
+    let sentinel_idx = config.roles.len();
+    let sentinel_selected = cursor == sentinel_idx;
+    let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
+    let sentinel_style = if sentinel_selected {
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(WHITE)
+    };
+    lines.push(Line::from(Span::styled(
+        format!("{sentinel_prefix}+ Add role"),
+        sentinel_style,
+    )));
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
@@ -860,6 +885,7 @@ mod contextual_row_items_tests {
 
     use super::super::FooterItem;
     use super::contextual_row_items;
+    use crate::config::{AppConfig, RoleSource};
     use crate::console::manager::state::{EditorState, EditorTab, FieldFocus};
     use crate::workspace::{MountConfig, WorkspaceConfig};
 
@@ -909,6 +935,14 @@ mod contextual_row_items_tests {
         editor
     }
 
+    fn config_with_agents(names: &[&str]) -> AppConfig {
+        let mut config = AppConfig::default();
+        for name in names {
+            config.roles.insert((*name).into(), RoleSource::default());
+        }
+        config
+    }
+
     #[test]
     fn github_mount_row_includes_open_in_github_hint() {
         // Build a synthetic GitHub repo on-disk so `mount_info::inspect`
@@ -926,7 +960,8 @@ mod contextual_row_items_tests {
         .unwrap();
 
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor, true);
+        let config = AppConfig::default();
+        let hint = contextual_row_items(&editor, &config, true);
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
@@ -947,7 +982,8 @@ mod contextual_row_items_tests {
         // Plain folder (no .git) — no GitHub URL, so `O` must not appear.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor, true);
+        let config = AppConfig::default();
+        let hint = contextual_row_items(&editor, &config, true);
         let keys = key_glyphs(&hint);
         assert!(
             !keys.contains(&"O"),
@@ -965,7 +1001,8 @@ mod contextual_row_items_tests {
         // hint composes alongside D/A even without the O extension.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
-        let hint = contextual_row_items(&editor, true);
+        let config = AppConfig::default();
+        let hint = contextual_row_items(&editor, &config, true);
         let keys = key_glyphs(&hint);
         let labels = text_labels(&hint);
         assert!(
@@ -985,7 +1022,8 @@ mod contextual_row_items_tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         editor.active_field = FieldFocus::Row(editor.pending.mounts.len());
-        let hint = contextual_row_items(&editor, true);
+        let config = AppConfig::default();
+        let hint = contextual_row_items(&editor, &config, true);
         let keys = key_glyphs(&hint);
         assert!(
             !keys.contains(&"R"),
@@ -1002,21 +1040,22 @@ mod contextual_row_items_tests {
         // General row 0 Edit + Create uses only `Enter`, which is multi-char.
         let tmp = tempfile::tempdir().unwrap();
         let editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
+        let config = config_with_agents(&["agent-smith"]);
 
         // Mounts data-row hint.
-        let mounts_row = contextual_row_items(&editor, true);
+        let mounts_row = contextual_row_items(&editor, &config, true);
         assert_hint_hotkeys_uppercase(&mounts_row, "Mounts row 0");
 
         // Mounts sentinel "+ Add mount" row.
         let mut sentinel_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         sentinel_editor.active_field = FieldFocus::Row(sentinel_editor.pending.mounts.len());
-        let sentinel_row = contextual_row_items(&sentinel_editor, true);
+        let sentinel_row = contextual_row_items(&sentinel_editor, &config, true);
         assert_hint_hotkeys_uppercase(&sentinel_row, "Mounts sentinel");
 
         // Roles tab uses Space + `*` — both multi-char / non-alpha.
         let mut roles_editor = editor_at_mounts_row0(tmp.path().to_str().unwrap());
         roles_editor.active_tab = EditorTab::Roles;
-        let roles_row = contextual_row_items(&roles_editor, true);
+        let roles_row = contextual_row_items(&roles_editor, &config, true);
         assert_hint_hotkeys_uppercase(&roles_row, "Roles");
     }
 

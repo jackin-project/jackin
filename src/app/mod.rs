@@ -492,7 +492,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     .collect::<Result<Vec<_>>>()?;
                 let mut plan = workspace::planner::plan_create(
                     &expanded_workdir,
-                    parsed_mounts,
+                    &parsed_mounts,
                     no_workdir_mount,
                 )?;
                 workspace::planner::apply_isolation_overrides(

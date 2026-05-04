@@ -1,7 +1,7 @@
 //! Three-button choice modal for picking a mount destination.
 //!
 //! Most operator mounts want `dst = src`. This modal offers a fast path
-//! (`OK`) for that common case and falls back to the text-input flow via
+//! (`Use same path`) for that common case and falls back to the text-input flow via
 //! `Edit destination` when the operator wants a different container path.
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -46,7 +46,7 @@ impl MountDstChoiceState {
 
     pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<MountDstChoice> {
         match key.code {
-            KeyCode::Char('o' | 'O') => ModalOutcome::Commit(MountDstChoice::Ok),
+            KeyCode::Char('u' | 'U') => ModalOutcome::Commit(MountDstChoice::Ok),
             KeyCode::Char('e' | 'E') => ModalOutcome::Commit(MountDstChoice::Edit),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
             KeyCode::Tab | KeyCode::Right | KeyCode::Char('l' | 'L') => {
@@ -120,7 +120,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     // Explanation line in PHOSPHOR_DIM.
     frame.render_widget(
         Paragraph::new(Span::styled(
-            "Mount into the container at the same path, or pick a different destination?",
+            "Use this same path inside the container, or choose a different destination?",
             Style::default().fg(phosphor_dim),
         ))
         .alignment(Alignment::Center),
@@ -152,7 +152,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     };
 
     let button_line = Line::from(vec![
-        Span::styled("  OK  ", ok_style),
+        Span::styled("  Use same path  ", ok_style),
         Span::raw("    "),
         Span::styled("  Edit destination  ", edit_style),
         Span::raw("    "),
@@ -170,8 +170,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     let sep_style = Style::default().fg(phosphor_dark);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("O", key_style),
-            Span::styled(" ok", text_style),
+            Span::styled("U", key_style),
+            Span::styled(" use same path", text_style),
             Span::styled(" \u{b7} ", sep_style),
             Span::styled("E", key_style),
             Span::styled(" edit", text_style),
@@ -263,12 +263,12 @@ mod tests {
     }
 
     #[test]
-    fn shortcut_o_commits_ok() {
+    fn shortcut_u_commits_ok() {
         let mut s = MountDstChoiceState::new("/h");
-        // Rotate focus away first to prove `o` is not focus-dependent.
+        // Rotate focus away first to prove `u` is not focus-dependent.
         s.handle_key(key(KeyCode::Tab)); // focus -> Edit
         assert!(matches!(
-            s.handle_key(key(KeyCode::Char('o'))),
+            s.handle_key(key(KeyCode::Char('u'))),
             ModalOutcome::Commit(MountDstChoice::Ok)
         ));
     }
@@ -306,7 +306,7 @@ mod tests {
         // commit/cancel outcomes.
         let mut s = MountDstChoiceState::new("/h");
         assert!(matches!(
-            s.handle_key(key(KeyCode::Char('O'))),
+            s.handle_key(key(KeyCode::Char('U'))),
             ModalOutcome::Commit(MountDstChoice::Ok)
         ));
         let mut s = MountDstChoiceState::new("/h");

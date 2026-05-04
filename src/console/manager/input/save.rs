@@ -98,7 +98,7 @@ pub(super) fn begin_editor_save(
             }
             match crate::workspace::planner::plan_create(
                 &editor.pending.workdir,
-                editor.pending.mounts.clone(),
+                &editor.pending.mounts,
                 false,
             ) {
                 Err(e) => {

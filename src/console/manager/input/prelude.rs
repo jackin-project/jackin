@@ -110,7 +110,7 @@ pub(super) fn handle_prelude_modal(
                     prelude.modal = None;
                     prelude.last_browser_cwd = browser_cwd;
                     prelude.accept_mount_src(path);
-                    // Offer the 3-button choice: OK (dst=src, skip TextInput),
+                    // Offer the 3-button choice: use same path (dst=src, skip TextInput),
                     // Edit destination (open TextInput), or Cancel.
                     let src = prelude
                         .pending_mount_src
@@ -212,7 +212,7 @@ pub(super) fn handle_prelude_modal(
                 ModalOutcome::Cancel => {
                     // Step-back: rewind to whichever dst-step the operator
                     // took — TextInputDst if they edited the destination,
-                    // otherwise MountDstChoice (fast-path OK).
+                    // otherwise MountDstChoice (fast-path use same path).
                     if prelude.used_edit_dst {
                         let current_dst = prelude.pending_mount_dst.clone().unwrap_or_default();
                         prelude.modal = Some(Modal::TextInput {
@@ -313,22 +313,22 @@ mod tests {
     }
 
     #[test]
-    fn prelude_ok_chains_to_workdir_pick_with_dst_equal_src() {
-        // OK on the choice modal should: (a) set prelude.pending_mount_dst
+    fn prelude_use_same_path_chains_to_workdir_pick_with_dst_equal_src() {
+        // Use-same-path on the choice modal should: (a) set prelude.pending_mount_dst
         // to src, (b) advance the step to PickWorkdir, (c) open the
         // WorkdirPick modal pre-loaded with the staged mount.
         let mut prelude = prelude_with_browser_committed("/home/user/project");
-        handle_prelude_modal(&mut prelude, key(KeyCode::Char('o')));
+        handle_prelude_modal(&mut prelude, key(KeyCode::Char('u')));
 
         assert!(
             matches!(prelude.modal, Some(Modal::WorkdirPick { .. })),
-            "OK must chain to WorkdirPick; got {:?}",
+            "Use same path must chain to WorkdirPick; got {:?}",
             prelude.modal
         );
         assert_eq!(
             prelude.pending_mount_dst.as_deref(),
             Some("/home/user/project"),
-            "OK fast-path stores dst = src on the prelude"
+            "Use-same-path fast path stores dst = src on the prelude"
         );
         assert!(!prelude.pending_readonly);
         assert!(matches!(
@@ -439,10 +439,10 @@ mod tests {
 
     #[test]
     fn prelude_esc_at_workdir_pick_returns_to_mount_dst_choice_fast_path() {
-        // When the operator took the OK (fast path) for dst, Esc on
+        // When the operator took the use-same-path fast path for dst, Esc on
         // WorkdirPick must step back to MountDstChoice.
         let mut prelude = prelude_with_browser_committed("/home/user/project");
-        handle_prelude_modal(&mut prelude, key(KeyCode::Char('o'))); // OK → WorkdirPick
+        handle_prelude_modal(&mut prelude, key(KeyCode::Char('u'))); // same path → WorkdirPick
         assert!(matches!(prelude.modal, Some(Modal::WorkdirPick { .. })));
 
         handle_prelude_modal(&mut prelude, key(KeyCode::Esc));

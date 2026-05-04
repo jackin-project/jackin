@@ -99,8 +99,8 @@ jackin eject agent-smith
 
 ```bash
 # Save workspaces for your projects
-jackin workspace create frontend --workdir ~/Projects/frontend
-jackin workspace create backend --workdir ~/Projects/backend
+jackin workspace create frontend --workdir ~/Projects/frontend --mount ~/Projects/frontend
+jackin workspace create backend --workdir ~/Projects/backend --mount ~/Projects/backend
 
 # Load agents into different workspaces
 jackin load agent-smith frontend
@@ -115,7 +115,7 @@ jackin load agent-smith backend
 
 ```bash
 # Same project access boundary, different tool profiles
-jackin workspace create monorepo --workdir ~/Projects/monorepo
+jackin workspace create monorepo --workdir ~/Projects/monorepo --mount ~/Projects/monorepo
 
 jackin load agent-smith monorepo
 jackin load the-architect monorepo

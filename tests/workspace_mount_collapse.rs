@@ -69,6 +69,8 @@ fn workspace_create_auto_collapses_and_prints_summary() {
             "--workdir",
             env.proj_alpha.to_str().unwrap(),
             "--mount",
+            env.proj_alpha.to_str().unwrap(),
+            "--mount",
             env.sub_a.to_str().unwrap(),
             "--mount",
             env.sub_b.to_str().unwrap(),
@@ -78,6 +80,31 @@ fn workspace_create_auto_collapses_and_prints_summary() {
         .stderr(predicate::str::contains("collapsed"))
         .stderr(predicate::str::contains("sub-a"))
         .stderr(predicate::str::contains("sub-b"));
+}
+
+#[test]
+fn workspace_create_workdir_parent_does_not_collapse_child_mount() {
+    let env = setup_env();
+    jackin(&env)
+        .args([
+            "workspace",
+            "create",
+            "test",
+            "--workdir",
+            env.proj_alpha.to_str().unwrap(),
+            "--mount",
+            env.sub_a.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("collapsed").not());
+
+    jackin(&env)
+        .args(["workspace", "show", "test"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("sub-a"))
+        .stdout(predicate::str::contains("proj-alpha"));
 }
 
 #[test]

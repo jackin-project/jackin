@@ -64,6 +64,7 @@ Save mounts as part of a workspace definition:
 ```bash
 jackin workspace create my-app \
   --workdir ~/Projects/my-app \
+  --mount ~/Projects/my-app \
   --mount ~/cache:/cache:ro
 ```
 
@@ -119,8 +120,7 @@ When multiple mount sources are resolved, jackin' combines them in this order:
 
 1. **Global mounts** (from `jackin config mount`)
 2. **Workspace mounts** (from `jackin workspace create`)
-3. **Auto-mounted workdir** (unless `--no-workdir-mount`)
-4. **Load-time mounts** (from `jackin load --mount`)
+3. **Load-time mounts** (from `jackin load --mount`)
 
 <Aside type="caution">
 If two mounts target the same container destination, jackin' stops with an error. It does not silently let the later mount win. This is deliberate because mounts are part of the security boundary.

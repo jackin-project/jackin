@@ -24,31 +24,31 @@ fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
 pub enum WorkspaceCommand {
     /// Create a new workspace definition
     ///
-    /// By default the workdir path is automatically mounted into the container
-    /// at the same location (host path = container path). Use --no-workdir-mount
-    /// to disable this and provide all mounts explicitly.
+    /// The workdir is the path jackin starts the agent in. It is not mounted
+    /// implicitly; provide one or more --mount entries for the directories the
+    /// container should see.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
-  jackin workspace create my-app --workdir ~/Projects/my-app
-  jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
-  jackin workspace create my-app --workdir ~/Projects/my-app --default-agent codex
-  jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
-  jackin workspace create restricted --workdir ~/app --allowed-role agent-smith --default-role agent-smith"
+  jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app
+  jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app --mount ~/cache:/cache:ro
+  jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app --default-agent codex
+  jackin workspace create monorepo --workdir /workspace --mount ~/src:/workspace
+  jackin workspace create restricted --workdir ~/app --mount ~/app --allowed-role agent-smith --default-role agent-smith"
     )]
     Create {
         /// Unique name for this workspace
         name: String,
-        /// Working directory (automatically mounted at the same path unless --no-workdir-mount)
+        /// Working directory inside the container
         #[arg(long)]
         workdir: String,
         /// Additional bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)
-        #[arg(long = "mount")]
+        #[arg(long = "mount", required = true)]
         mounts: Vec<String>,
-        /// Do not auto-mount the workdir; provide all mounts explicitly with --mount
-        #[arg(long, default_value_t = false)]
+        /// Deprecated compatibility no-op; create now always uses explicit mounts only
+        #[arg(long, hide = true, default_value_t = false)]
         no_workdir_mount: bool,
         /// Restrict which roles may use this workspace (repeatable)
         #[arg(long = "allowed-role")]
@@ -337,8 +337,8 @@ mod tests {
     }
 
     #[test]
-    fn parses_workspace_create_with_workdir_only() {
-        let cli = Cli::try_parse_from([
+    fn workspace_create_requires_explicit_mount() {
+        let err = Cli::try_parse_from([
             "jackin",
             "workspace",
             "create",
@@ -346,15 +346,9 @@ mod tests {
             "--workdir",
             "/tmp/my-app",
         ])
-        .unwrap();
+        .unwrap_err();
 
-        assert!(matches!(
-            cli.command,
-            Some(Command::Workspace(WorkspaceCommand::Create {
-                no_workdir_mount: false,
-                ..
-            }))
-        ));
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]
@@ -430,6 +424,8 @@ mod tests {
             "my-app",
             "--workdir",
             "/tmp/my-app",
+            "--mount",
+            "/tmp/my-app",
             "--keep-awake",
         ])
         .unwrap();
@@ -449,6 +445,8 @@ mod tests {
             "create",
             "my-app",
             "--workdir",
+            "/tmp/my-app",
+            "--mount",
             "/tmp/my-app",
             "--default-agent",
             "codex",
@@ -470,6 +468,8 @@ mod tests {
             "create",
             "my-app",
             "--workdir",
+            "/tmp/my-app",
+            "--mount",
             "/tmp/my-app",
         ])
         .unwrap();
@@ -676,15 +676,20 @@ mod tests {
     // ── Workspace subcommand help ───────────────────────────────────────
 
     #[test]
-    fn workspace_create_help_shows_auto_mount_and_examples() {
+    fn workspace_create_help_shows_explicit_mounts_and_examples() {
         let help = help_text(&["jackin", "workspace", "create", "--help"]);
         assert!(
-            help.contains("automatically mounted"),
-            "auto-mount behavior not documented"
+            help.contains("not mounted implicitly"),
+            "explicit mount behavior not documented"
         );
-        assert!(help.contains("--no-workdir-mount"), "opt-out flag missing");
+        assert!(
+            !help.contains("--no-workdir-mount"),
+            "deprecated no-op flag should stay hidden"
+        );
         assert!(help.contains("Examples:"));
-        assert!(help.contains("jackin workspace create my-app --workdir ~/Projects/my-app"));
+        assert!(help.contains(
+            "jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app"
+        ));
     }
 
     #[test]

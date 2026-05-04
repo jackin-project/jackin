@@ -33,6 +33,7 @@ pub(super) fn resolve_for_workspace(ws: &WorkspaceConfig) -> Vec<GithubChoice> {
                 branch,
                 host: GitHost::Github,
                 web_url: Some(url),
+                ..
             } = inspect(&m.src)
             else {
                 return None;
