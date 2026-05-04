@@ -291,6 +291,56 @@ pub fn ensure_worktree_config_enabled(
     Ok(true)
 }
 
+/// Probe whether `branch` exists in the host repo at `repo`. Used to
+/// decide whether `git worktree add` should create a fresh branch
+/// (`-b`) or adopt an existing one (no `-b`).
+///
+/// Filesystem probe rather than `git show-ref`: walks
+/// `<repo>/.git/refs/heads/<branch>` (loose ref) and falls back to
+/// `<repo>/.git/packed-refs`. Pure fs reads are cheap, side-effect
+/// free, and don't add a `CommandRunner` capture/run interaction that
+/// every existing test would have to script. jackin enables
+/// `extensions.worktreeConfig` on host repos (see
+/// `ensure_worktree_config_enabled`), but ref storage stays
+/// files-backed in the default git build, so this probe matches
+/// reality for the configurations jackin operates on.
+///
+/// Returns `false` on any read error — the subsequent `git worktree
+/// add` attempt will surface a clearer message if the repo is
+/// genuinely broken.
+fn branch_exists_in(repo: &str, branch: &str) -> bool {
+    let git_dir = std::path::Path::new(repo).join(".git");
+    if !git_dir.exists() {
+        return false;
+    }
+    let mut loose = git_dir.join("refs").join("heads");
+    for segment in branch.split('/') {
+        loose = loose.join(segment);
+    }
+    if loose.is_file() {
+        return true;
+    }
+    let packed = git_dir.join("packed-refs");
+    let Ok(contents) = std::fs::read_to_string(&packed) else {
+        return false;
+    };
+    let want = format!("refs/heads/{branch}");
+    for line in contents.lines() {
+        // `# pack-refs with: ...` headers and `^<sha>` peel lines never
+        // carry a refname — skip them. Other lines have the form
+        // `<sha> <refname>`; the refname is whitespace-separated.
+        if line.starts_with('#') || line.starts_with('^') {
+            continue;
+        }
+        if let Some((_, refname)) = line.split_once(' ')
+            && refname.trim() == want
+        {
+            return true;
+        }
+    }
+    false
+}
+
 use crate::workspace::MountConfig;
 
 #[derive(Debug, Clone)]
@@ -567,15 +617,15 @@ fn materialize_one(
 
     let _ = ensure_worktree_config_enabled(std::path::Path::new(&mount.src), runner)?;
 
-    let base_commit = runner
+    let host_head = runner
         .capture("git", &["-C", &mount.src, "rev-parse", "HEAD"], None)?
         .trim()
         .to_string();
     debug_log!(
         "isolation",
-        "mount {dst}: base commit {commit} from host HEAD",
+        "mount {dst}: host HEAD {commit}",
         dst = mount.dst,
-        commit = base_commit,
+        commit = host_head,
     );
 
     // No per-mount branch suffix in V1: workspace validation rejects
@@ -602,30 +652,106 @@ fn materialize_one(
             .with_context(|| format!("create parent dir for worktree at {}", parent.display()))?;
     }
 
-    debug_log!(
-        "isolation",
-        "mount {dst}: git -C {src} worktree add -b {branch} {wt} {base}",
-        dst = mount.dst,
-        src = mount.src,
-        branch = scratch_branch,
-        wt = worktree_path.display(),
-        base = base_commit,
-    );
-    runner.run(
-        "git",
-        &[
-            "-C",
-            &mount.src,
-            "worktree",
-            "add",
-            "-b",
-            &scratch_branch,
-            &worktree_path.to_string_lossy(),
-            &base_commit,
-        ],
-        None,
-        &crate::docker::RunOptions::default(),
-    )?;
+    // Recovery path: when no isolation record exists but the scratch
+    // branch is already present in the host repo, a prior run of this
+    // container partially materialized — created the branch, then
+    // crashed before persisting the record (or had its state directory
+    // wiped manually). `git worktree add -b` would refuse with "a
+    // branch named '<scratch>' already exists" and leave the operator
+    // unable to launch the role at all. Adopt the existing branch
+    // instead: prune any orphan admin entries left behind, then run
+    // `worktree add` without `-b` so git checks out the existing branch
+    // into the fresh container worktree path. The branch tip becomes
+    // the lifecycle base_commit (matches finalize's "started here"
+    // invariant), preserving any work that may live on the branch.
+    let base_commit = if branch_exists_in(&mount.src, &scratch_branch) {
+        debug_log!(
+            "isolation",
+            "mount {dst}: scratch branch {branch} already exists in host repo (no isolation record); adopting (likely interrupted prior run)",
+            dst = mount.dst,
+            branch = scratch_branch,
+        );
+        debug_log!(
+            "isolation",
+            "mount {dst}: git -C {src} worktree prune",
+            dst = mount.dst,
+            src = mount.src,
+        );
+        runner.run(
+            "git",
+            &["-C", &mount.src, "worktree", "prune"],
+            None,
+            &crate::docker::RunOptions::default(),
+        )?;
+        let branch_tip = runner
+            .capture(
+                "git",
+                &[
+                    "-C",
+                    &mount.src,
+                    "rev-parse",
+                    &format!("refs/heads/{scratch_branch}"),
+                ],
+                None,
+            )?
+            .trim()
+            .to_string();
+        debug_log!(
+            "isolation",
+            "mount {dst}: adopted branch tip {tip} (host HEAD is {host})",
+            dst = mount.dst,
+            tip = branch_tip,
+            host = host_head,
+        );
+        debug_log!(
+            "isolation",
+            "mount {dst}: git -C {src} worktree add {wt} {branch}",
+            dst = mount.dst,
+            src = mount.src,
+            branch = scratch_branch,
+            wt = worktree_path.display(),
+        );
+        runner.run(
+            "git",
+            &[
+                "-C",
+                &mount.src,
+                "worktree",
+                "add",
+                &worktree_path.to_string_lossy(),
+                &scratch_branch,
+            ],
+            None,
+            &crate::docker::RunOptions::default(),
+        )?;
+        branch_tip
+    } else {
+        debug_log!(
+            "isolation",
+            "mount {dst}: git -C {src} worktree add -b {branch} {wt} {base}",
+            dst = mount.dst,
+            src = mount.src,
+            branch = scratch_branch,
+            wt = worktree_path.display(),
+            base = host_head,
+        );
+        runner.run(
+            "git",
+            &[
+                "-C",
+                &mount.src,
+                "worktree",
+                "add",
+                "-b",
+                &scratch_branch,
+                &worktree_path.to_string_lossy(),
+                &host_head,
+            ],
+            None,
+            &crate::docker::RunOptions::default(),
+        )?;
+        host_head
+    };
 
     upsert_record(
         container_state_dir,
@@ -1231,6 +1357,199 @@ mod tests {
     // (`validate_isolation_layout` rule 2). The corresponding suffix
     // logic in materialize is gone; coverage moves to
     // `workspace::tests::isolation_layout_rejects_two_worktree_mounts_on_same_repo`.
+
+    /// Write a loose ref under `<repo>/.git/refs/heads/<branch>` to
+    /// simulate a host repo that already has the scratch branch from
+    /// a prior interrupted materialization attempt.
+    fn write_loose_branch(repo: &std::path::Path, branch: &str, sha: &str) {
+        let mut p = repo.join(".git").join("refs").join("heads");
+        for seg in branch.split('/') {
+            p = p.join(seg);
+        }
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, format!("{sha}\n")).unwrap();
+    }
+
+    #[test]
+    fn branch_exists_in_detects_loose_ref() {
+        let repo = make_repo_root();
+        assert!(!branch_exists_in(
+            &repo.path().to_string_lossy(),
+            "jackin/scratch/x",
+        ));
+        write_loose_branch(repo.path(), "jackin/scratch/x", "deadbeef");
+        assert!(branch_exists_in(
+            &repo.path().to_string_lossy(),
+            "jackin/scratch/x",
+        ));
+    }
+
+    #[test]
+    fn branch_exists_in_detects_packed_ref() {
+        let repo = make_repo_root();
+        let packed = repo.path().join(".git").join("packed-refs");
+        std::fs::write(
+            &packed,
+            "# pack-refs with: peeled fully-peeled sorted\n\
+             1111111111111111111111111111111111111111 refs/heads/main\n\
+             2222222222222222222222222222222222222222 refs/heads/jackin/scratch/x\n\
+             ^abcd1234abcd1234abcd1234abcd1234abcd1234\n",
+        )
+        .unwrap();
+        assert!(branch_exists_in(
+            &repo.path().to_string_lossy(),
+            "jackin/scratch/x",
+        ));
+        assert!(!branch_exists_in(
+            &repo.path().to_string_lossy(),
+            "jackin/scratch/missing",
+        ));
+    }
+
+    /// Recovery path: a prior run created the scratch branch but
+    /// never persisted the isolation record. The next materialization
+    /// must adopt the existing branch (no `-b`) instead of failing
+    /// with "a branch named '<scratch>' already exists".
+    #[test]
+    fn stale_scratch_branch_is_adopted_when_record_absent() {
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-the-architect");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        // Simulate the leftover state: branch present in the host
+        // repo, no record file, no container worktree dir.
+        write_loose_branch(
+            repo.path(),
+            "jackin/scratch/jackin-the-architect",
+            "feedbeefcafebabefeedbeefcafebabefeedbeef",
+        );
+
+        let resolved = resolved_with_one_isolated(repo.path(), "/workspace/jackin");
+        // Capture queue in `materialize_workspace` order:
+        //   preflight: rev-parse --show-toplevel
+        //   preflight: status --porcelain (clean)
+        //   ensure_worktree_config: extensions.worktreeConfig --get
+        //     ("true\n" → already enabled, format-version probe is skipped)
+        //   rev-parse HEAD                             (host head)
+        //   rev-parse refs/heads/<scratch>             (adopted branch tip)
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(),
+            "",
+            "true\n",
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
+            "feedbeefcafebabefeedbeefcafebabefeedbeef\n",
+        ]);
+
+        let mat = materialize_workspace(
+            &resolved,
+            &container_dir,
+            "the-architect",
+            "jackin-the-architect",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+
+        assert_eq!(mat.mounts.len(), 1);
+
+        // `worktree prune` ran before the add (clears any orphan admin
+        // entries left by the interrupted prior run).
+        assert!(
+            runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree prune")),
+            "expected worktree prune in run_recorded; got {:?}",
+            runner.run_recorded,
+        );
+        // `worktree add` ran without `-b` (adopt mode) and named the
+        // existing branch as the last positional argument.
+        let add = runner
+            .run_recorded
+            .iter()
+            .find(|c| c.contains("worktree add"))
+            .expect("worktree add should have been invoked");
+        assert!(
+            !add.contains(" -b "),
+            "adopt path must not pass -b; got {add}",
+        );
+        assert!(
+            add.contains("jackin/scratch/jackin-the-architect"),
+            "adopt add must reference the existing branch; got {add}",
+        );
+
+        // Record persisted; base_commit is the adopted branch tip
+        // (matches finalize's "branch tip == base_commit ⇒ safe"
+        // policy when the operator never touched the worktree).
+        let recs = read_records(&container_dir).unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!(
+            recs[0].base_commit, "feedbeefcafebabefeedbeefcafebabefeedbeef",
+            "base_commit should be the adopted branch tip, not host HEAD",
+        );
+        assert_eq!(
+            recs[0].scratch_branch,
+            "jackin/scratch/jackin-the-architect",
+        );
+    }
+
+    /// Mirror of the adopt test for the absent-branch case: when no
+    /// scratch branch exists in the host repo, materialization must
+    /// fall through the original `worktree add -b <branch> <path>
+    /// <host-head>` path. Guards against accidental regression of the
+    /// happy path while reworking the recovery branch above.
+    #[test]
+    fn fresh_materialization_uses_dash_b_when_branch_absent() {
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+        let resolved = resolved_with_one_isolated(repo.path(), "/workspace/jackin");
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(),
+            "",
+            "true\n",
+            "cafef00dcafef00dcafef00dcafef00dcafef00d\n",
+        ]);
+        materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+        let add = runner
+            .run_recorded
+            .iter()
+            .find(|c| c.contains("worktree add"))
+            .expect("worktree add should have been invoked");
+        assert!(add.contains(" -b "), "fresh path must use -b; got {add}");
+        assert!(
+            !runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree prune")),
+            "fresh path must not run worktree prune (host repo side effect)",
+        );
+        let recs = read_records(&container_dir).unwrap();
+        assert_eq!(
+            recs[0].base_commit,
+            "cafef00dcafef00dcafef00dcafef00dcafef00d"
+        );
+    }
 
     #[test]
     fn docker_mount_order_is_length_ascending() {
