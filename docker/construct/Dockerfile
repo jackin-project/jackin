@@ -1,14 +1,20 @@
 FROM rust:1.95.0-trixie@sha256:a9cfb755b33f5bb872610cbdb25da61f527416b28fc9c052bbce4bef93e7799a AS security-tools
 
-ARG TIRITH_VERSION
 ARG SHELLFIRM_VERSION
 
-RUN cargo install tirith --version "${TIRITH_VERSION}" --locked && \
+# TODO(shellfirm-aarch64-linux-binary): replace with prebuilt binary download
+# once kaplanelad/shellfirm publishes aarch64-linux release artifacts —
+# see TODO.md "External dependencies" → "shellfirm-aarch64-linux-binary".
+# Cache mounts persist the crates.io registry index and downloaded source
+# crates across builds inside a builder, so cargo does not re-download the
+# entire dependency graph on layer-cache miss (eg. SHELLFIRM_VERSION bump
+# or fresh GHA cache scope). The compile itself still runs on miss.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked
 
 FROM debian:trixie-20260421@sha256:35b8ff74ead4880f22090b617372daff0ccae742eb5674455d542bef71ef1999
 
-COPY --from=security-tools /usr/local/cargo/bin/tirith /usr/local/bin/tirith
 COPY --from=security-tools /usr/local/cargo/bin/shellfirm /usr/local/bin/shellfirm
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -41,6 +47,30 @@ RUN apt-get update && \
 
 # Configure git-lfs
 RUN git lfs install
+
+# Install tirith from prebuilt release binary (sheeki03/tirith ships
+# x86_64-unknown-linux-gnu and aarch64-unknown-linux-gnu tarballs plus a
+# checksums.txt). Download path uses TARGETARCH so the buildx multi-arch
+# build picks the matching artifact natively without cross-compilation.
+ARG TIRITH_VERSION
+ARG TARGETARCH
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) tirith_arch=x86_64-unknown-linux-gnu ;; \
+      arm64) tirith_arch=aarch64-unknown-linux-gnu ;; \
+      *) printf 'unsupported TARGETARCH for tirith: %s\n' "${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    base="https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}"; \
+    workdir="$(mktemp -d)"; \
+    cd "${workdir}"; \
+    curl -fsSLO "${base}/tirith-${tirith_arch}.tar.gz"; \
+    curl -fsSLO "${base}/checksums.txt"; \
+    grep "  tirith-${tirith_arch}.tar.gz$" checksums.txt > checksums-tirith.txt; \
+    sha256sum -c checksums-tirith.txt; \
+    tar -xzf "tirith-${tirith_arch}.tar.gz" -C /usr/local/bin tirith; \
+    chmod 0755 /usr/local/bin/tirith; \
+    cd /; \
+    rm -rf "${workdir}"
 
 # Install mise (version pinned via versions.env -> MISE_VERSION ARG; mise apt
 # repo only ships the latest release in `stable`, so this pin must be bumped
