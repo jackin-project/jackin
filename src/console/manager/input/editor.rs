@@ -1223,8 +1223,9 @@ fn apply_role_input_with_runner(
     let selector = match crate::selector::RoleSelector::parse(raw) {
         Ok(selector) => selector,
         Err(e) => {
-            // The unparseable-selector branch ignores `err`; wrap into
-            // anyhow only to satisfy the typed signature.
+            // open_role_resolution_error debug-logs the error chain; the
+            // user-facing message in the no-source-url branch is a generic
+            // "Could not understand role" hint, not the parse error itself.
             let err = anyhow::Error::new(e);
             open_role_resolution_error(editor, raw, None, &err);
             return;
@@ -1320,13 +1321,20 @@ fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Di
 /// Translate a runtime role-resolution error into the operator-facing
 /// blurb shown beneath the role-input dialog.
 ///
-/// Classification is by `downcast_ref::<RepoError>` rather than substring
-/// matching on free text — when adding a `RepoError` variant, add the
-/// corresponding match arm here. The `else` branch handles errors that
-/// were never wrapped as `RepoError` (e.g. fs/IO errors raised before the
-/// clone) and uses a generic message rather than mis-classifying them.
+/// Classification walks the entire `err.chain()` looking for a
+/// `RepoError` rather than substring-matching free text or only
+/// inspecting the root. Walking the chain ensures classification still
+/// works after a future caller wraps the typed error with
+/// `with_context(...)`. When adding a `RepoError` variant, add the
+/// corresponding match arm here. The fallback branch handles errors
+/// that were never wrapped as `RepoError` (e.g. fs/IO errors raised
+/// before the clone) and uses a generic message rather than
+/// mis-classifying them.
 fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
-    if let Some(repo_err) = err.downcast_ref::<crate::runtime::RepoError>() {
+    let typed = err
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<crate::runtime::RepoError>());
+    if let Some(repo_err) = typed {
         return match repo_err {
             crate::runtime::RepoError::CloneFailed(_) => {
                 "Repository is not available, or you do not have access.".into()

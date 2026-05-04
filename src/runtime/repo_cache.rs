@@ -10,19 +10,26 @@ use std::io::IsTerminal;
 use super::identity::try_capture;
 
 /// Map an anyhow error from `validate_role_repo` into a typed
-/// `RepoError::InvalidRoleRepo` when the message uses the validator's
-/// `invalid role repo: ` prefix; pass anything else through unchanged.
+/// `RepoError::InvalidRoleRepo` when any link in the chain uses the
+/// validator's `invalid role repo: ` prefix; pass anything else through
+/// unchanged.
 ///
-/// The validator currently uses anyhow strings; this is the single
-/// substring match left over after the typed-error refactor and lives
-/// here so it's co-located with the variant it produces.
+/// Walking the whole chain (rather than only `err.to_string()` at the
+/// root) lets a future caller wrap the validator error with
+/// `with_context` without silently dropping the typed classification.
+/// The validator currently emits anyhow strings; this function is the
+/// single substring match left over after the typed-error refactor and
+/// lives here so it's co-located with the variant it produces.
 fn map_validate_error(err: anyhow::Error) -> anyhow::Error {
-    let msg = err.to_string();
-    msg.strip_prefix("invalid role repo: ")
+    err.chain()
+        .find_map(|cause| {
+            cause
+                .to_string()
+                .strip_prefix("invalid role repo: ")
+                .map(str::to_string)
+        })
         .map_or(err, |detail| {
-            anyhow::Error::new(RepoError::InvalidRoleRepo {
-                detail: detail.to_string(),
-            })
+            anyhow::Error::new(RepoError::InvalidRoleRepo { detail })
         })
 }
 
@@ -290,7 +297,9 @@ pub(super) fn resolve_agent_repo_with(
 
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
-                runner.run("git", &["clone", git_url, &repo_path], None, &git_run_opts)?;
+                runner
+                    .run("git", &["clone", git_url, &repo_path], None, &git_run_opts)
+                    .map_err(RepoError::CloneFailed)?;
                 let validated_repo =
                     validate_role_repo(&cached_repo.repo_dir).map_err(map_validate_error)?;
                 return Ok((cached_repo, validated_repo, lock_file));
@@ -339,10 +348,12 @@ pub(super) fn resolve_agent_repo_with(
             &git_run_opts,
         )?;
     } else {
-        runner.run("git", &["clone", git_url, &repo_path], None, &git_run_opts)?;
+        runner
+            .run("git", &["clone", git_url, &repo_path], None, &git_run_opts)
+            .map_err(RepoError::CloneFailed)?;
     }
 
-    let validated_repo = validate_role_repo(&cached_repo.repo_dir)?;
+    let validated_repo = validate_role_repo(&cached_repo.repo_dir).map_err(map_validate_error)?;
 
     // Return the repo lock so the caller can hold it until the build
     // context (a snapshot copy of the repo) is created.  This prevents
