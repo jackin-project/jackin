@@ -47,7 +47,14 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
         Modal::ErrorPopup { state } => {
             // 2 borders + 2-col left gutter for safety.
             let inner_width = (outer.width * 60 / 100).saturating_sub(4);
-            (60, error_popup::required_height(state, inner_width))
+            // Allow the popup to grow with the terminal so multi-line
+            // anyhow chains (the root cause is usually at the bottom)
+            // don't get clipped.
+            let max_rows = outer.height.saturating_sub(2);
+            (
+                60,
+                error_popup::required_height(state, inner_width, max_rows),
+            )
         }
         Modal::OpPicker { .. } => (80, 22),
         Modal::RolePicker { state } | Modal::RoleOverridePicker { state } => {

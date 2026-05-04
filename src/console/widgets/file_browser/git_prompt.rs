@@ -76,8 +76,13 @@ impl FileBrowserState {
             // drops the `· O open` hint segment in the None case so the
             // keystroke is only advertised when it actually does something.
             KeyCode::Char('o' | 'O') => {
-                if let Some(url) = self.pending_git_url.as_deref() {
-                    let _ = open::that_detached(url);
+                if let Some(url) = self.pending_git_url.as_deref()
+                    && let Err(e) = open::that_detached(url)
+                {
+                    // FileBrowserState doesn't own the global toast queue, so
+                    // surface the failure on the debug channel where operators
+                    // running with --debug can see why nothing happened.
+                    crate::debug_log!("git_prompt", "open::that_detached({url:?}) failed: {e}");
                 }
                 ModalOutcome::Continue
             }

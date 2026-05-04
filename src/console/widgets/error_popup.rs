@@ -65,10 +65,16 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
 
 /// Total rows the popup wants. Layout: top border + blank + N message
 /// rows + blank + button + blank + hint + bottom border.
+///
+/// `max_rows` is the upper bound the caller is willing to allocate
+/// (typically terminal height minus its own chrome). Long anyhow chains
+/// — common when role resolution or docker build fails — easily exceed
+/// 15 rows, and a fixed cap silently truncates the bottom of the
+/// message where the root cause usually lives.
 #[must_use]
-pub fn required_height(state: &ErrorPopupState, inner_width: u16) -> u16 {
+pub fn required_height(state: &ErrorPopupState, inner_width: u16, max_rows: u16) -> u16 {
     let body = estimated_message_rows(state, inner_width);
-    body.saturating_add(7).min(15)
+    body.saturating_add(7).min(max_rows.max(7))
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
@@ -197,9 +203,15 @@ mod tests {
     }
 
     #[test]
-    fn required_height_caps_at_15() {
+    fn required_height_respects_caller_supplied_max() {
+        // Long message wants well above the cap — required_height must
+        // not exceed `max_rows`, and never drop below the chrome floor.
         let s = ErrorPopupState::new("Save failed", "word ".repeat(500));
-        assert!(required_height(&s, 30) <= 15);
+        assert!(required_height(&s, 30, 15) <= 15);
+        assert!(required_height(&s, 30, 40) <= 40);
+        // Floor: caller passing too-small max still yields enough rows
+        // for the chrome (button + hint + spacers).
+        assert!(required_height(&s, 30, 1) >= 7);
     }
 
     #[test]
@@ -214,7 +226,7 @@ mod tests {
         use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
         let state = ErrorPopupState::new("Role not found", "repository not found");
-        let area = Rect::new(0, 0, 60, required_height(&state, 56));
+        let area = Rect::new(0, 0, 60, required_height(&state, 56, 25));
         let backend = TestBackend::new(area.width, area.height);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| render(f, area, &state)).unwrap();

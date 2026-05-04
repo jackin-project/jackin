@@ -18,11 +18,12 @@ use super::identity::try_capture;
 /// here so it's co-located with the variant it produces.
 fn map_validate_error(err: anyhow::Error) -> anyhow::Error {
     let msg = err.to_string();
-    msg.strip_prefix("invalid role repo: ").map_or(err, |detail| {
-        anyhow::Error::new(RepoError::InvalidRoleRepo {
-            detail: detail.to_string(),
+    msg.strip_prefix("invalid role repo: ")
+        .map_or(err, |detail| {
+            anyhow::Error::new(RepoError::InvalidRoleRepo {
+                detail: detail.to_string(),
+            })
         })
-    })
 }
 
 /// Typed errors raised by role-repo resolution.

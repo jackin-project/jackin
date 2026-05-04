@@ -1153,7 +1153,14 @@ pub(super) fn apply_text_input_to_pending(
                 last.dst = value.to_string();
             }
         }
-        TextInputTarget::Role => {}
+        TextInputTarget::Role => {
+            // Role text-input is dispatched via apply_role_input before
+            // reaching this match — landing here means a future caller
+            // wired Role through the wrong path. Panic so the regression
+            // is loud at the point of misuse rather than silently
+            // discarding the user's input.
+            unreachable!("TextInputTarget::Role is dispatched via apply_role_input");
+        }
         TextInputTarget::EnvKey { scope } => {
             // Empty key re-opens the EnvKey modal with the inline
             // "cannot be empty" label instead of committing.

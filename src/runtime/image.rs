@@ -44,13 +44,14 @@ pub(super) fn build_agent_image(
     drop(repo_lock);
 
     if debug {
+        let dockerfile_body = std::fs::read_to_string(&build.dockerfile_path)
+            .unwrap_or_else(|e| format!("<read failed: {e}>"));
         eprintln!(
             "{}",
             format!(
                 r"[debug] DerivedDockerfile ({}):
-{}",
+{dockerfile_body}",
                 build.dockerfile_path.display(),
-                std::fs::read_to_string(&build.dockerfile_path).unwrap_or_default()
             )
             .dimmed()
         );
