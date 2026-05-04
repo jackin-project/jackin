@@ -9,6 +9,12 @@ pub mod validate;
 #[serde(deny_unknown_fields)]
 pub struct RoleManifest {
     pub dockerfile: String,
+    /// Pre-built Docker image published to a registry. When set, `jackin
+    /// console` pulls this image and layers only the agent install on top,
+    /// skipping the full workspace Dockerfile build. Pass `--rebuild` to
+    /// force a local rebuild from the Dockerfile instead.
+    #[serde(default)]
+    pub published_image: Option<String>,
     #[serde(default)]
     pub identity: Option<IdentityConfig>,
     /// Top-level list of supported agents. `None` means the field
@@ -375,6 +381,46 @@ plugins = []
         let manifest = RoleManifest::load(temp.path()).unwrap();
 
         assert_eq!(manifest.display_name("agent-smith"), "agent-smith");
+    }
+
+    #[test]
+    fn loads_manifest_with_published_image() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let manifest = RoleManifest::load(temp.path()).unwrap();
+
+        assert_eq!(
+            manifest.published_image.as_deref(),
+            Some("docker.io/myorg/my-role:latest")
+        );
+    }
+
+    #[test]
+    fn loads_manifest_without_published_image() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let manifest = RoleManifest::load(temp.path()).unwrap();
+
+        assert!(manifest.published_image.is_none());
     }
 
     #[test]

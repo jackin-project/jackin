@@ -2274,7 +2274,8 @@ model = "gpt-5"
             .iter()
             .find(|call| call.contains("docker build "))
             .unwrap();
-        assert!(build_cmd.contains("--pull"));
+        // No published_image and no --rebuild → workspace mode without --pull
+        assert!(!build_cmd.contains("--pull"));
 
         let run_cmd = runner
             .recorded
@@ -2490,6 +2491,198 @@ plugins = []
                 .run_recorded
                 .iter()
                 .any(|call| call.contains("docker build "))
+        );
+    }
+
+    #[test]
+    fn load_agent_omits_pull_flag_in_normal_workspace_build() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = paths.roles_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &repo_workspace(&repo_dir),
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let build_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker build "))
+            .unwrap();
+        assert!(
+            !build_cmd.contains("--pull"),
+            "workspace mode without --rebuild must not pass --pull"
+        );
+    }
+
+    #[test]
+    fn load_agent_passes_pull_flag_when_rebuild() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = paths.roles_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &repo_workspace(&repo_dir),
+            &mut runner,
+            &LoadOptions {
+                rebuild: true,
+                ..LoadOptions::default()
+            },
+        )
+        .unwrap();
+
+        let build_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker build "))
+            .unwrap();
+        assert!(
+            build_cmd.contains("--pull"),
+            "--rebuild must pass --pull to refresh the base image"
+        );
+    }
+
+    #[test]
+    fn load_agent_passes_pull_flag_with_published_image() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = paths.roles_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &repo_workspace(&repo_dir),
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let build_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker build "))
+            .unwrap();
+        assert!(
+            build_cmd.contains("--pull"),
+            "pre-built image mode must pass --pull to check for registry updates"
+        );
+        // DerivedDockerfile must use the published image, not the workspace FROM
+        assert!(!build_cmd.contains("projectjackin/construct:trixie"));
+    }
+
+    #[test]
+    fn load_agent_ignores_published_image_when_rebuild() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = paths.roles_dir.join("agent-smith");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &repo_workspace(&repo_dir),
+            &mut runner,
+            &LoadOptions {
+                rebuild: true,
+                ..LoadOptions::default()
+            },
+        )
+        .unwrap();
+
+        // With --rebuild the workspace Dockerfile is used even when published_image is set.
+        // The DerivedDockerfile must contain the workspace FROM, not the published image.
+        let recorded = runner.recorded.join("\n");
+        assert!(
+            !recorded.contains("docker.io/myorg/my-role:latest"),
+            "--rebuild must bypass published_image and build from the workspace Dockerfile"
         );
     }
 
