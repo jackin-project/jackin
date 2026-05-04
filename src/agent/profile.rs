@@ -33,7 +33,7 @@ const CODEX_INSTALL_BLOCK: &str = "\
 USER root
 ARG JACKIN_CACHE_BUST=0
 ARG TARGETARCH
-RUN set -eux; \\
+RUN set -euxo pipefail; \\
     : \"${JACKIN_CACHE_BUST}\"; \\
     case \"${TARGETARCH:-amd64}\" in \\
       amd64) ARCH=x86_64-unknown-linux-musl ;; \\
@@ -53,8 +53,9 @@ RUN set -eux; \\
     esac; \\
     ASSET=\"codex-${ARCH}\"; \\
     curl -fsSL \"https://github.com/openai/codex/releases/download/${TAG}/${ASSET}.tar.gz\" \\
-      | tar -xzf - -O \"${ASSET}\" > /usr/local/bin/codex; \\
-    chmod 0755 /usr/local/bin/codex; \\
+      | tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin; \\
+    chmod 0755 /tmp/codex.bin; \\
+    mv /tmp/codex.bin /usr/local/bin/codex; \\
     mkdir -p /etc/jackin && codex --version > /etc/jackin/codex.version
 ";
 
@@ -94,10 +95,19 @@ mod tests {
     fn codex_profile_installs_cli_as_root_with_current_archive_layout() {
         let p = profile(Agent::Codex);
         assert!(p.install_block.starts_with("USER root\n"));
+        assert!(p.install_block.contains("set -euxo pipefail"));
+        assert!(p.install_block.contains("${TARGETARCH:-amd64}"));
+        assert!(p.install_block.contains("x86_64-unknown-linux-musl"));
+        assert!(p.install_block.contains("aarch64-unknown-linux-musl"));
         assert!(p.install_block.contains("ASSET=\"codex-${ARCH}\""));
         assert!(
             p.install_block
-                .contains("tar -xzf - -O \"${ASSET}\" > /usr/local/bin/codex")
+                .contains("tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin")
+        );
+        assert!(p.install_block.contains("chmod 0755 /tmp/codex.bin"));
+        assert!(
+            p.install_block
+                .contains("mv /tmp/codex.bin /usr/local/bin/codex")
         );
         assert!(p.install_block.contains("/etc/jackin/codex.version"));
     }
