@@ -32,13 +32,21 @@ impl RoleState {
     ///     return `TokenMode`.
     ///   * **Ignore** → delete the role-state `auth.json` if present,
     ///     return `Skipped`.
+    ///
+    /// Returns `(outcome, mounted_auth_json)` where `mounted_auth_json` is
+    /// the role-state `auth.json` path when it should be bind-mounted into
+    /// the container (file exists post-call), or `None` when the mount must
+    /// be skipped (Ignore wiped it / Sync host-missing with no prior file /
+    /// Token mode with no prior file). Centralising the decision here means
+    /// `RoleState::prepare` does not need to re-stat the file or reason
+    /// about which outcome implies which mount state.
     pub(super) fn provision_codex_auth(
         config_toml: &std::path::Path,
         auth_json: &std::path::Path,
         manifest: &crate::manifest::RoleManifest,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<AuthProvisionOutcome> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         use std::fmt::Write;
 
         let mut content = String::from(
@@ -105,7 +113,14 @@ impl RoleState {
             },
         };
 
-        Ok(outcome)
+        let mounted_auth_json = match outcome {
+            AuthProvisionOutcome::Synced => Some(auth_json.to_path_buf()),
+            AuthProvisionOutcome::Skipped => None,
+            AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
+                auth_json.exists().then(|| auth_json.to_path_buf())
+            }
+        };
+        Ok((outcome, mounted_auth_json))
     }
 }
 
@@ -1035,13 +1050,14 @@ mod codex_auth_tests {
     ) -> anyhow::Result<AuthProvisionOutcome> {
         let auth_json = config_toml.with_file_name("auth.json");
         let host_home = Path::new("/nonexistent-host-home-for-config-only-tests");
-        RoleState::provision_codex_auth(
+        let (outcome, _) = RoleState::provision_codex_auth(
             config_toml,
             &auth_json,
             manifest,
             AuthForwardMode::Ignore,
             host_home,
-        )
+        )?;
+        Ok(outcome)
     }
 
     fn manifest_with_codex_model(temp: &tempfile::TempDir, model: Option<&str>) -> RoleManifest {
@@ -1199,7 +1215,7 @@ agents = ["codex"]
         let auth_json = temp.path().join("auth.json");
         let (host_home, expected) = stage_host_auth_json(&temp, "abc.test");
 
-        let outcome = RoleState::provision_codex_auth(
+        let (outcome, _) = RoleState::provision_codex_auth(
             &config_toml,
             &auth_json,
             &manifest,
@@ -1220,7 +1236,7 @@ agents = ["codex"]
         let auth_json = temp.path().join("auth.json");
         let host_home = temp.path().join("host_home_without_codex_dir");
 
-        let outcome = RoleState::provision_codex_auth(
+        let (outcome, _) = RoleState::provision_codex_auth(
             &config_toml,
             &auth_json,
             &manifest,
@@ -1242,7 +1258,7 @@ agents = ["codex"]
         std::fs::write(&auth_json, "{\"in_container_login\":true}").unwrap();
         let host_home = temp.path().join("empty_host_home");
 
-        let outcome = RoleState::provision_codex_auth(
+        let (outcome, _) = RoleState::provision_codex_auth(
             &config_toml,
             &auth_json,
             &manifest,
@@ -1267,7 +1283,7 @@ agents = ["codex"]
         let auth_json = temp.path().join("auth.json");
         std::fs::write(&auth_json, "{\"stale\":\"creds\"}").unwrap();
 
-        let outcome = RoleState::provision_codex_auth(
+        let (outcome, _) = RoleState::provision_codex_auth(
             &config_toml,
             &auth_json,
             &manifest,
@@ -1289,7 +1305,7 @@ agents = ["codex"]
         std::fs::write(&auth_json, "{\"existing\":true}").unwrap();
         let (host_home, _) = stage_host_auth_json(&temp, "should-not-be-copied");
 
-        let outcome = RoleState::provision_codex_auth(
+        let (outcome, _) = RoleState::provision_codex_auth(
             &config_toml,
             &auth_json,
             &manifest,
@@ -1408,7 +1424,7 @@ agents = ["codex"]
         let auth_json = temp.path().join("auth.json");
         let (host_home, _) = stage_host_auth_json(&temp, "rev.test");
 
-        let outcome = RoleState::provision_codex_auth(
+        let (outcome, _) = RoleState::provision_codex_auth(
             &config_toml,
             &auth_json,
             &manifest,
@@ -1419,7 +1435,7 @@ agents = ["codex"]
         assert_eq!(outcome, AuthProvisionOutcome::Synced);
         assert!(auth_json.exists());
 
-        let outcome = RoleState::provision_codex_auth(
+        let (outcome, _) = RoleState::provision_codex_auth(
             &config_toml,
             &auth_json,
             &manifest,

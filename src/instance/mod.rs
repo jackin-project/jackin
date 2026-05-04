@@ -179,14 +179,13 @@ impl RoleState {
                 std::fs::create_dir_all(&codex_dir)?;
                 let config_toml = codex_dir.join("config.toml");
                 let auth_json_path = codex_dir.join("auth.json");
-                let outcome = Self::provision_codex_auth(
+                let (outcome, auth_json) = Self::provision_codex_auth(
                     &config_toml,
                     &auth_json_path,
                     manifest,
                     auth_forward,
                     host_home,
                 )?;
-                let auth_json = auth_json_path.exists().then_some(auth_json_path);
                 (
                     AgentRuntimeState::Codex {
                         config_toml,
