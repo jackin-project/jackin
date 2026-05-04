@@ -48,7 +48,15 @@ fn seed_agent(env: &Env, name: &str) {
 fn seed_workspace(env: &Env, name: &str, workdir: &str) {
     fs::create_dir_all(workdir).unwrap();
     jackin(env)
-        .args(["workspace", "create", name, "--workdir", workdir])
+        .args([
+            "workspace",
+            "create",
+            name,
+            "--workdir",
+            workdir,
+            "--mount",
+            workdir,
+        ])
         .assert()
         .success();
 }

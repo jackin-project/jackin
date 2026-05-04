@@ -1,4 +1,3 @@
-use owo_colors::OwoColorize;
 use std::io::Read;
 use std::path::Path;
 
@@ -50,12 +49,9 @@ impl ShellRunner {
             let redacted = redact_env_args(args);
             let cmd = format!("{} {}", program, redacted.join(" "));
             if let Some(dir) = cwd {
-                eprintln!(
-                    "{}",
-                    format!("[debug] cd {} && {}", dir.display(), cmd).dimmed()
-                );
+                crate::tui::emit_debug_line("cmd", &format!("cd {} && {cmd}", dir.display()));
             } else {
-                eprintln!("{}", format!("[debug] {cmd}").dimmed());
+                crate::tui::emit_debug_line("cmd", &cmd);
             }
         }
     }
@@ -223,7 +219,7 @@ impl CommandRunner for ShellRunner {
         let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
         if self.debug && !stdout.is_empty() {
             let first_line = stdout.lines().next().unwrap_or("");
-            eprintln!("{}", format!("[debug] -> {first_line}").dimmed());
+            crate::tui::emit_debug_line("cmd", &format!("-> {first_line}"));
         }
         Ok(stdout)
     }

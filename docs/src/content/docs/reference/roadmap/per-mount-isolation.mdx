@@ -71,7 +71,6 @@ TOML is the storage format, not the only user interface. V1 should let operators
 ```sh
 jackin workspace create jackin \
   --workdir /workspace/jackin \
-  --no-workdir-mount \
   --mount ~/projects/jackin:/workspace/jackin \
   --mount-isolation /workspace/jackin=worktree
 

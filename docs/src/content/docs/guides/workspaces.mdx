@@ -51,7 +51,7 @@ If you regularly work on the same project, a saved workspace turns your mount la
 For projects you work on regularly, save a workspace:
 
 ```bash
-jackin workspace create my-app --workdir ~/Projects/my-app
+jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app
 ```
 
 Now you can load agents into it from anywhere:
@@ -70,13 +70,10 @@ This is the key pattern to keep in mind: the workspace stays the same because th
 
 ### What `--workdir` does
 
-The `--workdir` path serves two purposes:
-
-1. **Working directory** — the container's `cwd` when the agent starts
-2. **Auto-mount** — by default, the workdir is automatically mounted at the same path inside the container
+The `--workdir` path sets the container's `cwd` when the agent starts. It does not mount anything by itself.
 
 <Aside type="tip">
-The auto-mount keeps host and container paths identical, which avoids confusion when the agent references file paths. This is the common case.
+Use `--mount ~/Projects/my-app` when you want the host and container paths to stay identical. Keeping the paths the same avoids confusion when the agent references files.
 </Aside>
 ### Adding extra mounts
 
@@ -85,6 +82,7 @@ Workspaces can include additional directories beyond the workdir:
 ```bash
 jackin workspace create my-app \
   --workdir ~/Projects/my-app \
+  --mount ~/Projects/my-app \
   --mount ~/cache:/cache:ro \
   --mount ~/shared-libs:/libs:ro
 ```
@@ -96,11 +94,10 @@ If you need the container layout to differ from your host:
 ```bash
 jackin workspace create monorepo \
   --workdir /workspace \
-  --no-workdir-mount \
   --mount ~/src:/workspace
 ```
 
-Here, `--no-workdir-mount` disables the automatic workdir mount, and you provide all mounts explicitly.
+Here, `/workspace` is the container start path and `~/src:/workspace` is the explicit mount that makes it available.
 
 ## Per-mount isolation
 
@@ -255,7 +252,7 @@ You can opt in (or out) from the CLI or the operator console — no need to hand
 
 ```bash
 # Opt in at creation time
-jackin workspace create my-app --workdir ~/Projects/my-app --keep-awake
+jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app --keep-awake
 
 # Toggle on an existing workspace
 jackin workspace edit my-app --keep-awake
