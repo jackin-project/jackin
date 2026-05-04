@@ -291,54 +291,58 @@ pub fn ensure_worktree_config_enabled(
     Ok(true)
 }
 
-/// Probe whether `branch` exists in the host repo at `repo`. Used to
-/// decide whether `git worktree add` should create a fresh branch
-/// (`-b`) or adopt an existing one (no `-b`).
+/// Look up the tip SHA of `refs/heads/<branch>` in the host repo at
+/// `repo` via a filesystem probe (loose ref then `packed-refs`).
+/// `None` means the branch is absent; `Some(sha)` lets the caller
+/// skip a follow-up `git rev-parse` subprocess on the adopt path.
 ///
-/// Filesystem probe rather than `git show-ref`: walks
-/// `<repo>/.git/refs/heads/<branch>` (loose ref) and falls back to
-/// `<repo>/.git/packed-refs`. Pure fs reads are cheap, side-effect
-/// free, and don't add a `CommandRunner` capture/run interaction that
-/// every existing test would have to script. jackin enables
-/// `extensions.worktreeConfig` on host repos (see
-/// `ensure_worktree_config_enabled`), but ref storage stays
-/// files-backed in the default git build, so this probe matches
-/// reality for the configurations jackin operates on.
-///
-/// Returns `false` on any read error — the subsequent `git worktree
-/// add` attempt will surface a clearer message if the repo is
-/// genuinely broken.
-fn branch_exists_in(repo: &str, branch: &str) -> bool {
+/// Filesystem probe rather than `git show-ref` keeps the
+/// `CommandRunner` capture queue stable across tests: every existing
+/// test would otherwise have to script another runner interaction
+/// just to declare "no scratch branch yet". Ref storage is
+/// files-backed in the configurations jackin supports.
+fn find_local_branch_tip(repo: &str, branch: &str) -> Option<String> {
     let git_dir = std::path::Path::new(repo).join(".git");
-    if !git_dir.exists() {
-        return false;
-    }
     let mut loose = git_dir.join("refs").join("heads");
     for segment in branch.split('/') {
         loose = loose.join(segment);
     }
-    if loose.is_file() {
-        return true;
+    if let Ok(contents) = std::fs::read_to_string(&loose) {
+        let sha = contents.trim();
+        if !sha.is_empty() {
+            return Some(sha.to_string());
+        }
     }
     let packed = git_dir.join("packed-refs");
-    let Ok(contents) = std::fs::read_to_string(&packed) else {
-        return false;
+    let contents = match std::fs::read_to_string(&packed) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            // Surface non-ENOENT errors (permission, EIO) so an
+            // operator running with `--debug` sees why the probe
+            // returned `None` and can correlate with the
+            // subsequent `git worktree add` failure.
+            debug_log!(
+                "isolation",
+                "find_local_branch_tip: read {packed} failed: {e}",
+                packed = packed.display(),
+            );
+            return None;
+        }
     };
     let want = format!("refs/heads/{branch}");
     for line in contents.lines() {
-        // `# pack-refs with: ...` headers and `^<sha>` peel lines never
-        // carry a refname — skip them. Other lines have the form
-        // `<sha> <refname>`; the refname is whitespace-separated.
         if line.starts_with('#') || line.starts_with('^') {
             continue;
         }
-        if let Some((_, refname)) = line.split_once(' ')
-            && refname.trim() == want
-        {
-            return true;
+        let Some((sha, refname)) = line.split_once(' ') else {
+            continue;
+        };
+        if refname.trim() == want {
+            return Some(sha.trim().to_string());
         }
     }
-    false
+    None
 }
 
 use crate::workspace::MountConfig;
@@ -652,30 +656,20 @@ fn materialize_one(
             .with_context(|| format!("create parent dir for worktree at {}", parent.display()))?;
     }
 
-    // Recovery path: when no isolation record exists but the scratch
-    // branch is already present in the host repo, a prior run of this
-    // container partially materialized — created the branch, then
-    // crashed before persisting the record (or had its state directory
-    // wiped manually). `git worktree add -b` would refuse with "a
-    // branch named '<scratch>' already exists" and leave the operator
-    // unable to launch the role at all. Adopt the existing branch
-    // instead: prune any orphan admin entries left behind, then run
-    // `worktree add` without `-b` so git checks out the existing branch
-    // into the fresh container worktree path. The branch tip becomes
-    // the lifecycle base_commit (matches finalize's "started here"
-    // invariant), preserving any work that may live on the branch.
-    let base_commit = if branch_exists_in(&mount.src, &scratch_branch) {
+    // Adopt path: when the scratch branch already exists but there is
+    // no isolation record, a prior run created the branch and crashed
+    // before persisting state. `worktree add -b` would refuse the
+    // duplicate name; reuse the branch (no `-b`) and record its tip
+    // as `base_commit` so finalize's "tip == base_commit ⇒ Safe"
+    // classifier still holds for an unmodified adopted worktree.
+    let base_commit = if let Some(branch_tip) = find_local_branch_tip(&mount.src, &scratch_branch) {
         debug_log!(
             "isolation",
-            "mount {dst}: scratch branch {branch} already exists in host repo (no isolation record); adopting (likely interrupted prior run)",
+            "mount {dst}: adopting existing scratch branch {branch} at tip {tip} (host HEAD {host}); pruning orphan admin entries first",
             dst = mount.dst,
             branch = scratch_branch,
-        );
-        debug_log!(
-            "isolation",
-            "mount {dst}: git -C {src} worktree prune",
-            dst = mount.dst,
-            src = mount.src,
+            tip = branch_tip,
+            host = host_head,
         );
         runner.run(
             "git",
@@ -683,26 +677,6 @@ fn materialize_one(
             None,
             &crate::docker::RunOptions::default(),
         )?;
-        let branch_tip = runner
-            .capture(
-                "git",
-                &[
-                    "-C",
-                    &mount.src,
-                    "rev-parse",
-                    &format!("refs/heads/{scratch_branch}"),
-                ],
-                None,
-            )?
-            .trim()
-            .to_string();
-        debug_log!(
-            "isolation",
-            "mount {dst}: adopted branch tip {tip} (host HEAD is {host})",
-            dst = mount.dst,
-            tip = branch_tip,
-            host = host_head,
-        );
         debug_log!(
             "isolation",
             "mount {dst}: git -C {src} worktree add {wt} {branch}",
@@ -1371,39 +1345,35 @@ mod tests {
     }
 
     #[test]
-    fn branch_exists_in_detects_loose_ref() {
+    fn find_local_branch_tip_reads_loose_ref_sha() {
         let repo = make_repo_root();
-        assert!(!branch_exists_in(
-            &repo.path().to_string_lossy(),
-            "jackin/scratch/x",
-        ));
-        write_loose_branch(repo.path(), "jackin/scratch/x", "deadbeef");
-        assert!(branch_exists_in(
-            &repo.path().to_string_lossy(),
-            "jackin/scratch/x",
-        ));
+        let path = repo.path().to_string_lossy();
+        assert_eq!(find_local_branch_tip(&path, "jackin/scratch/x"), None);
+        write_loose_branch(repo.path(), "jackin/scratch/x", "deadbeefcafe");
+        assert_eq!(
+            find_local_branch_tip(&path, "jackin/scratch/x"),
+            Some("deadbeefcafe".into()),
+            "loose ref SHA should be returned without trailing newline",
+        );
     }
 
     #[test]
-    fn branch_exists_in_detects_packed_ref() {
+    fn find_local_branch_tip_reads_packed_refs_sha() {
         let repo = make_repo_root();
-        let packed = repo.path().join(".git").join("packed-refs");
         std::fs::write(
-            &packed,
+            repo.path().join(".git").join("packed-refs"),
             "# pack-refs with: peeled fully-peeled sorted\n\
              1111111111111111111111111111111111111111 refs/heads/main\n\
              2222222222222222222222222222222222222222 refs/heads/jackin/scratch/x\n\
              ^abcd1234abcd1234abcd1234abcd1234abcd1234\n",
         )
         .unwrap();
-        assert!(branch_exists_in(
-            &repo.path().to_string_lossy(),
-            "jackin/scratch/x",
-        ));
-        assert!(!branch_exists_in(
-            &repo.path().to_string_lossy(),
-            "jackin/scratch/missing",
-        ));
+        let path = repo.path().to_string_lossy();
+        assert_eq!(
+            find_local_branch_tip(&path, "jackin/scratch/x"),
+            Some("2222222222222222222222222222222222222222".into()),
+        );
+        assert_eq!(find_local_branch_tip(&path, "jackin/scratch/missing"), None);
     }
 
     /// Recovery path: a prior run created the scratch branch but
@@ -1426,19 +1396,21 @@ mod tests {
         );
 
         let resolved = resolved_with_one_isolated(repo.path(), "/workspace/jackin");
-        // Capture queue in `materialize_workspace` order:
+        // Capture queue order — fake_with_outputs is positional; if you
+        // change this you must mirror the order materialize_workspace
+        // calls runner.capture():
         //   preflight: rev-parse --show-toplevel
         //   preflight: status --porcelain (clean)
         //   ensure_worktree_config: extensions.worktreeConfig --get
-        //     ("true\n" → already enabled, format-version probe is skipped)
+        //     ("true\n" → already enabled, format-version probe skipped)
         //   rev-parse HEAD                             (host head)
-        //   rev-parse refs/heads/<scratch>             (adopted branch tip)
+        // The adopted branch tip is read straight from the loose ref
+        // by find_local_branch_tip — no runner capture for it.
         let mut runner = fake_with_outputs(&[
             &repo.path().to_string_lossy(),
             "",
             "true\n",
             "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
-            "feedbeefcafebabefeedbeefcafebabefeedbeef\n",
         ]);
 
         let mat = materialize_workspace(
