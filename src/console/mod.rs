@@ -198,6 +198,10 @@ fn console_location_debug(console_state: &ConsoleState) -> String {
     format!("{location}{list_modal}")
 }
 
+/// Render a key event for the `--debug` log. Redacts the literal
+/// character when the focused widget is consuming text input — without
+/// the redaction the operator's typed values (workspace names, env
+/// values, paths) would land in `--debug` output verbatim.
 fn key_debug_name(state: &ConsoleState, key: crossterm::event::KeyEvent) -> String {
     use crossterm::event::{KeyCode, KeyModifiers};
     let has_command_modifier = key

@@ -96,11 +96,7 @@ pub(super) fn begin_editor_save(
                 };
                 return Ok(());
             }
-            match crate::workspace::planner::plan_create(
-                &editor.pending.workdir,
-                &editor.pending.mounts,
-                false,
-            ) {
+            match crate::workspace::planner::plan_create(&editor.pending.mounts) {
                 Err(e) => {
                     editor.save_flow = EditorSaveFlow::Error {
                         message: e.to_string(),

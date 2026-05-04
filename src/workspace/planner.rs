@@ -16,10 +16,10 @@ use crate::workspace::mounts::covers;
 
 /// Plan for `jackin workspace create`.
 pub struct WorkspaceCreatePlan {
-    /// The final mount list the caller should persist after collapsing
-    /// redundancies among explicitly supplied mounts.
+    /// The final mount list the caller should persist.
     pub final_mounts: Vec<MountConfig>,
-    /// Mounts subsumed during the collapse. All are edit-driven for create.
+    /// Mounts subsumed during the collapse — i.e. each `Removal`'s child
+    /// was redundant against its parent in the supplied mount list.
     pub collapsed: Vec<Removal>,
 }
 
@@ -42,14 +42,10 @@ pub struct WorkspaceEditPlan {
 
 /// Plan a `workspace create`.
 ///
-/// Runs collapse with every supplied mount marked as new (since everything is
-/// "new" for a create). The workdir is not auto-mounted; callers must provide
-/// the mount set explicitly.
-pub fn plan_create(
-    _workdir: &str,
-    mounts: &[MountConfig],
-    _no_workdir_mount: bool,
-) -> Result<WorkspaceCreatePlan, CollapseError> {
+/// Collapses redundancies among the supplied mount list. Callers must
+/// pass every mount explicitly — the planner does not auto-mount the
+/// workdir (see `DEPRECATED.md` for the `--no-workdir-mount` history).
+pub fn plan_create(mounts: &[MountConfig]) -> Result<WorkspaceCreatePlan, CollapseError> {
     let all_indexes: Vec<usize> = (0..mounts.len()).collect();
     let plan = plan_collapse(mounts, &all_indexes)?;
     Ok(WorkspaceCreatePlan {
@@ -266,7 +262,7 @@ mod tests {
 
     #[test]
     fn plan_create_does_not_insert_workdir_auto_mount() {
-        let plan = plan_create("/work", &[mount("/data", "/data")], false).unwrap();
+        let plan = plan_create(&[mount("/data", "/data")]).unwrap();
 
         assert_eq!(plan.final_mounts.len(), 1);
         assert_eq!(plan.final_mounts[0].dst, "/data");
@@ -274,8 +270,8 @@ mod tests {
     }
 
     #[test]
-    fn plan_create_skips_auto_mount_when_workdir_already_mounted() {
-        let plan = plan_create("/work", &[mount("/custom-src", "/work")], false).unwrap();
+    fn plan_create_preserves_explicit_workdir_mount() {
+        let plan = plan_create(&[mount("/custom-src", "/work")]).unwrap();
 
         assert_eq!(plan.final_mounts.len(), 1);
         assert_eq!(plan.final_mounts[0].src, "/custom-src");
@@ -284,22 +280,9 @@ mod tests {
     }
 
     #[test]
-    fn plan_create_no_workdir_mount_flag_is_noop_for_compatibility() {
-        let plan = plan_create("/work", &[mount("/data", "/data")], true).unwrap();
-
-        assert_eq!(plan.final_mounts.len(), 1);
-        assert_eq!(plan.final_mounts[0].dst, "/data");
-        assert!(plan.collapsed.is_empty());
-    }
-
-    #[test]
     fn plan_create_collapses_redundant_children_under_parent() {
-        let plan = plan_create(
-            "/work",
-            &[mount("/work", "/work"), mount("/work/sub", "/work/sub")],
-            false,
-        )
-        .unwrap();
+        let plan =
+            plan_create(&[mount("/work", "/work"), mount("/work/sub", "/work/sub")]).unwrap();
 
         assert_eq!(plan.final_mounts.len(), 1);
         assert_eq!(plan.final_mounts[0].dst, "/work");

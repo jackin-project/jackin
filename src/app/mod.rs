@@ -490,11 +490,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     .iter()
                     .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
-                let mut plan = workspace::planner::plan_create(
-                    &expanded_workdir,
-                    &parsed_mounts,
-                    no_workdir_mount,
-                )?;
+                let _ = no_workdir_mount; // Hidden no-op flag — see DEPRECATED.md.
+                let mut plan = workspace::planner::plan_create(&parsed_mounts)?;
                 workspace::planner::apply_isolation_overrides(
                     &mut plan.final_mounts,
                     &mount_isolation,

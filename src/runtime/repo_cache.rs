@@ -139,6 +139,20 @@ pub(super) fn resolve_agent_repo(
     )
 }
 
+/// Resolve a role repo into the cache, registering it on success.
+///
+/// Two paths:
+/// 1. Cache hit (`.git` already exists): delegate to
+///    `resolve_agent_repo_with` which fetch+merges, then run
+///    `persist_registration` if validation passes.
+/// 2. Cache miss: clone into a temp dir under `data_dir`, validate,
+///    `rename` into the cache, then run `persist_registration`. Rename
+///    happens before persist so a failed rename leaves the role
+///    *un-registered* (clean state) rather than registered without an
+///    on-disk repo (broken state).
+///
+/// `persist_registration` is the single commit point — it must be
+/// idempotent so retries after a transient failure are safe.
 pub(super) fn register_agent_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
