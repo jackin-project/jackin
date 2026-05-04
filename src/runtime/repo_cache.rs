@@ -144,7 +144,7 @@ pub(super) fn register_agent_repo(
     let temp_repo = temp_dir.path().join("repo");
     let temp_repo_path = temp_repo.display().to_string();
     let git_run_opts = RunOptions {
-        quiet: true,
+        quiet: !debug,
         ..RunOptions::default()
     };
     runner
@@ -157,10 +157,20 @@ pub(super) fn register_agent_repo(
         .with_context(|| "repository is not available or cannot be accessed")?;
 
     let validated_repo = validate_role_repo(&temp_repo)?;
-    persist_registration()?;
+    // Install the repo into the cache before persisting registration: if
+    // rename fails the role stays unregistered and the user can retry from a
+    // clean state. Persisting first would leave config.toml referencing a
+    // role that has no on-disk repo, surfacing as "failed to install" once
+    // and then silently registered every load thereafter.
     std::fs::rename(&temp_repo, &cached_repo.repo_dir).with_context(|| {
         format!(
             "failed to install role repository at {}",
+            cached_repo.repo_dir.display()
+        )
+    })?;
+    persist_registration().with_context(|| {
+        format!(
+            "role repo installed at {} but registration could not be persisted",
             cached_repo.repo_dir.display()
         )
     })?;
@@ -255,8 +265,12 @@ pub(super) fn resolve_agent_repo_with(
         // Fetch + merge instead of pull to avoid "Cannot fast-forward to
         // multiple branches" errors that occur with `git pull` when the
         // remote has multiple branches.
-        let branch =
-            git_branch(&cached_repo.repo_dir, runner).unwrap_or_else(|| "main".to_string());
+        let branch = git_branch(&cached_repo.repo_dir, runner).ok_or_else(|| {
+            anyhow::anyhow!(
+                "could not determine current branch of cached role repo at {}",
+                cached_repo.repo_dir.display()
+            )
+        })?;
         runner.run(
             "git",
             &["-C", &repo_path, "fetch", "origin", &branch],

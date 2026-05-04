@@ -70,9 +70,14 @@ pub(super) fn build_agent_image(
     // the original pre-bust layer, causing the installed agent version to
     // ping-pong between old and new on alternate launches.
     let cache_bust_value = if rebuild {
+        // System clock before UNIX_EPOCH is essentially impossible, but if it
+        // happens we must not silently fall back to 0 — that collapses to the
+        // Dockerfile's `JACKIN_CACHE_BUST=0` default and defeats the operator's
+        // explicit `--rebuild` request.
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs())
+            .map_err(|e| anyhow::anyhow!("system clock is before UNIX epoch: {e}"))?
+            .as_secs()
             .to_string();
         version_check::store_cache_bust(paths, &image, &ts);
         ts
