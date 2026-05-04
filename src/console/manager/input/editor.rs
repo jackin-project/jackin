@@ -1195,39 +1195,39 @@ fn apply_role_input(
     paths: &JackinPaths,
     value: &str,
 ) {
+    let mut runner = crate::docker::ShellRunner::default();
+    apply_role_input_with_runner(editor, config, paths, value, &mut runner);
+}
+
+fn apply_role_input_with_runner(
+    editor: &mut EditorState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    value: &str,
+    runner: &mut impl crate::docker::CommandRunner,
+) {
     let raw = value.trim();
     let selector = match crate::selector::RoleSelector::parse(raw) {
         Ok(selector) => selector,
         Err(e) => {
-            editor.modal = Some(Modal::ErrorPopup {
-                state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                    "Role not found",
-                    format!(
-                        "Could not resolve role {raw:?}. Use a configured role such as \
-                         \"agent-smith\" or a GitHub selector like \"owner/agent-name\". {e}"
-                    ),
-                ),
-            });
+            open_role_resolution_error(editor, raw, None, &e);
             return;
         }
     };
 
     let key = selector.key();
-    let result = (|| -> anyhow::Result<()> {
-        let (source, _) = config.resolve_role_source(&selector)?;
+    let result = (|| -> anyhow::Result<crate::config::RoleSource> {
+        let source = candidate_role_source(config, &selector)?;
+        crate::runtime::resolve_agent_repo(paths, &selector, &source.git, runner, false)?;
         let mut editor_doc = crate::config::ConfigEditor::open(paths)?;
         editor_doc.upsert_agent_source(&key, &source);
         *config = editor_doc.save()?;
-        Ok(())
+        Ok(source)
     })();
 
     if let Err(e) = result {
-        editor.modal = Some(Modal::ErrorPopup {
-            state: crate::console::widgets::error_popup::ErrorPopupState::new(
-                "Role not found",
-                format!("Could not resolve role {raw:?}: {e}"),
-            ),
-        });
+        let source = candidate_role_source(config, &selector).ok();
+        open_role_resolution_error(editor, raw, source.as_ref().map(|source| &source.git), &e);
         return;
     }
 
@@ -1240,6 +1240,50 @@ fn apply_role_input(
     if let Some(idx) = config.roles.keys().position(|role| role == &key) {
         editor.active_field = FieldFocus::Row(idx);
     }
+}
+
+fn candidate_role_source(
+    config: &AppConfig,
+    selector: &crate::selector::RoleSelector,
+) -> anyhow::Result<crate::config::RoleSource> {
+    let mut candidate = config.clone();
+    match candidate.resolve_role_source(selector) {
+        Ok((source, _)) => Ok(source),
+        Err(_) if selector.namespace.is_none() => Ok(crate::config::RoleSource {
+            git: format!(
+                "https://github.com/jackin-project/jackin-{}.git",
+                selector.name
+            ),
+            trusted: false,
+            claude: None,
+            env: std::collections::BTreeMap::new(),
+        }),
+        Err(err) => Err(err),
+    }
+}
+
+fn open_role_resolution_error(
+    editor: &mut EditorState<'_>,
+    raw: &str,
+    source_url: Option<&String>,
+    err: &dyn std::fmt::Display,
+) {
+    let mut message = format!(
+        "Could not resolve role {raw:?}. Use a configured role such as \
+         \"agent-smith\" or a GitHub selector like \"owner/agent-name\"."
+    );
+    if let Some(source_url) = source_url {
+        message.push_str("\n\nLooked for repository:\n");
+        message.push_str(source_url);
+    }
+    message.push_str("\n\n");
+    message.push_str(&err.to_string());
+    editor.modal = Some(Modal::ErrorPopup {
+        state: crate::console::widgets::error_popup::ErrorPopupState::new(
+            "Role not found",
+            message,
+        ),
+    });
 }
 
 fn apply_editor_confirm(editor: &mut EditorState<'_>, target: &ConfirmTarget) {
@@ -1354,7 +1398,10 @@ mod tests {
         SecretsScopeTag, TextInputTarget,
     };
     use super::super::test_support::{key, mount};
-    use super::{apply_file_browser_to_editor, apply_text_input_to_pending, handle_editor_modal};
+    use super::{
+        apply_file_browser_to_editor, apply_role_input_with_runner, apply_text_input_to_pending,
+        handle_editor_modal,
+    };
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
     use crate::console::op_cache::OpCache;
@@ -1415,6 +1462,24 @@ mod tests {
         }
         config.workspaces.insert("ws".into(), empty_ws());
         config
+    }
+
+    fn seed_valid_role_repo(repo_dir: &std::path::Path) {
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
     }
 
     fn editor_on_agents_tab<'a>(ws: WorkspaceConfig, row: usize) -> ManagerState<'a> {
@@ -1787,19 +1852,31 @@ mod tests {
 
         let mut editor = EditorState::new_edit("ws".into(), empty_ws());
         editor.pending.allowed_roles = vec!["agent-smith".into()];
-        editor.modal = Some(Modal::TextInput {
-            target: TextInputTarget::Role,
-            state: crate::console::widgets::text_input::TextInputState::new(
-                "Add role",
-                "chainargos/agent-brown",
-            ),
-        });
+        let selector = crate::selector::RoleSelector::parse("chainargos/agent-brown").unwrap();
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        let mut runner = crate::runtime::FakeRunner::default();
+        runner.side_effects.push((
+            "git clone".to_string(),
+            Box::new(move || seed_valid_role_repo(&repo_dir)),
+        ));
 
-        handle_modal_with(&mut editor, key(KeyCode::Enter), &mut config, &paths);
+        apply_role_input_with_runner(
+            &mut editor,
+            &mut config,
+            &paths,
+            "chainargos/agent-brown",
+            &mut runner,
+        );
 
         assert!(
             editor.modal.is_none(),
             "successful resolve should close modal"
+        );
+        assert!(
+            runner.recorded.iter().any(|cmd| cmd
+                .contains("git clone https://github.com/chainargos/jackin-agent-brown.git")),
+            "role add must clone through the normal repo resolver; got {:?}",
+            runner.recorded
         );
         assert!(
             editor
@@ -1820,6 +1897,54 @@ mod tests {
         assert!(
             persisted.contains("[roles.\"chainargos/agent-brown\"]"),
             "new role source should be persisted:\n{persisted}"
+        );
+    }
+
+    #[test]
+    fn role_input_clone_failure_reports_candidate_repository_url() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = config_with_agents(&["agent-smith"]);
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
+        let mut runner = crate::runtime::FakeRunner::default();
+        runner
+            .fail_with
+            .push(("git clone".into(), "repository not found".into()));
+
+        apply_role_input_with_runner(
+            &mut editor,
+            &mut config,
+            &paths,
+            "the-architect2",
+            &mut runner,
+        );
+
+        match &editor.modal {
+            Some(Modal::ErrorPopup { state }) => {
+                assert_eq!(state.title, "Role not found");
+                assert!(state.message.contains("Could not resolve role"));
+                assert!(
+                    state
+                        .message
+                        .contains("https://github.com/jackin-project/jackin-the-architect2.git"),
+                    "message should show the repository URL that was tried:\n{}",
+                    state.message
+                );
+                assert!(state.message.contains("repository not found"));
+            }
+            other => panic!("expected ErrorPopup for failed clone; got {other:?}"),
+        }
+        assert!(
+            !config.roles.contains_key("the-architect2"),
+            "failed clone must not add the role to in-memory config"
+        );
+        let persisted = std::fs::read_to_string(paths.config_file).unwrap();
+        assert!(
+            !persisted.contains("the-architect2"),
+            "failed clone must not persist the role:\n{persisted}"
         );
     }
 

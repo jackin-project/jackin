@@ -68,7 +68,7 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
 #[must_use]
 pub fn required_height(state: &ErrorPopupState, inner_width: u16) -> u16 {
     let body = estimated_message_rows(state, inner_width);
-    body.saturating_add(6).min(15)
+    body.saturating_add(7).min(15)
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
@@ -207,5 +207,29 @@ mod tests {
         let s = ErrorPopupState::new("t", "abcdefghijklmnop"); // 16 chars
         // width 8 → 2 rows
         assert_eq!(estimated_message_rows(&s, 8), 2);
+    }
+
+    #[test]
+    fn render_single_line_message_is_visible() {
+        use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+        let state = ErrorPopupState::new("Role not found", "repository not found");
+        let area = Rect::new(0, 0, 60, required_height(&state, 56));
+        let backend = TestBackend::new(area.width, area.height);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| render(f, area, &state)).unwrap();
+
+        let buf = term.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+            rendered.push('\n');
+        }
+        assert!(
+            rendered.contains("repository not found"),
+            "message should be visible in popup:\n{rendered}"
+        );
     }
 }
