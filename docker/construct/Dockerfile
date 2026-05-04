@@ -2,13 +2,8 @@ FROM rust:1.95.0-trixie@sha256:a9cfb755b33f5bb872610cbdb25da61f527416b28fc9c052b
 
 ARG SHELLFIRM_VERSION
 
-# TODO(shellfirm-aarch64-linux-binary): replace with prebuilt binary download
-# once kaplanelad/shellfirm publishes aarch64-linux release artifacts —
-# see TODO.md "External dependencies" → "shellfirm-aarch64-linux-binary".
-# Cache mounts persist the crates.io registry index and downloaded source
-# crates across builds inside a builder, so cargo does not re-download the
-# entire dependency graph on layer-cache miss (eg. SHELLFIRM_VERSION bump
-# or fresh GHA cache scope). The compile itself still runs on miss.
+# Install shellfirm
+# TODO(shellfirm-aarch64-linux-binary): switch to prebuilt download — see TODO.md.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked
@@ -48,10 +43,7 @@ RUN apt-get update && \
 # Configure git-lfs
 RUN git lfs install
 
-# Install tirith from prebuilt release binary (sheeki03/tirith ships
-# x86_64-unknown-linux-gnu and aarch64-unknown-linux-gnu tarballs plus a
-# checksums.txt). Download path uses TARGETARCH so the buildx multi-arch
-# build picks the matching artifact natively without cross-compilation.
+# Install tirith
 ARG TIRITH_VERSION
 ARG TARGETARCH
 RUN set -eux; \
