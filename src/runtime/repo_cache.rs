@@ -696,4 +696,176 @@ plugins = []
             runner.run_recorded
         );
     }
+
+    /// Materialise a valid role repo at `repo_dir` — `.git`, `Dockerfile`,
+    /// and `jackin.role.toml` are all required by `validate_role_repo`.
+    fn seed_valid_role_repo(repo_dir: &std::path::Path) {
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+    }
+
+    /// Find the `repo` subdir under the first `role-resolve-*` temp dir
+    /// `register_agent_repo` creates inside `data_dir`. Used inside
+    /// `git clone` side-effect callbacks where the path isn't known
+    /// until the function runs.
+    fn first_temp_role_repo(data_dir: &std::path::Path) -> std::path::PathBuf {
+        std::fs::read_dir(data_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.is_dir()
+                    && path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.starts_with("role-resolve-"))
+            })
+            .expect("role registration temp dir should exist before git clone side-effect")
+            .join("repo")
+    }
+
+    #[test]
+    fn register_agent_repo_cleans_up_temp_dir_on_validate_failure() {
+        // When validation rejects the cloned repo (here: no Dockerfile,
+        // no jackin.role.toml — just a `.git` dir), `register_agent_repo`
+        // must NOT rename the temp dir into the cache and must NOT call
+        // `persist_registration`. The temp dir is cleaned up by tempfile's
+        // Drop, so the only assertion is that the cache slot is empty.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let selector = RoleSelector::new(None, "agent-broken");
+        let cached_dir = paths.roles_dir.join("agent-broken");
+
+        let data_dir = paths.data_dir.clone();
+        let mut runner = FakeRunner::default();
+        runner.side_effects.push((
+            "git clone".to_string(),
+            // Materialise a `.git` dir but skip the manifest files so
+            // `validate_role_repo` rejects the clone.
+            Box::new(move || {
+                let temp_repo = first_temp_role_repo(&data_dir);
+                std::fs::create_dir_all(temp_repo.join(".git")).unwrap();
+            }),
+        ));
+
+        let persist_called = std::cell::Cell::new(false);
+        let err = register_agent_repo(
+            &paths,
+            &selector,
+            "https://github.com/example/agent-broken.git",
+            &mut runner,
+            false,
+            || {
+                persist_called.set(true);
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(
+            err.downcast_ref::<RepoError>()
+                .is_some_and(|e| matches!(e, RepoError::InvalidRoleRepo { .. })),
+            "expected RepoError::InvalidRoleRepo, got {err:?}"
+        );
+        assert!(
+            !persist_called.get(),
+            "persist must not run on validate failure"
+        );
+        assert!(
+            !cached_dir.exists(),
+            "cache slot must remain empty when validate fails: {}",
+            cached_dir.display()
+        );
+    }
+
+    #[test]
+    fn register_agent_repo_aborts_when_persist_registration_fails() {
+        // Persist runs *after* rename (the Phase 2 ordering fix), so a
+        // persist failure leaves the cache populated but registration
+        // un-persisted. Verify the error surfaces with the diagnostic
+        // context that points the operator at the inconsistency.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let selector = RoleSelector::new(None, "agent-persist-fail");
+        let cached_dir = paths.roles_dir.join("agent-persist-fail");
+
+        let data_dir = paths.data_dir.clone();
+        let mut runner = FakeRunner::default();
+        runner.side_effects.push((
+            "git clone".to_string(),
+            Box::new(move || seed_valid_role_repo(&first_temp_role_repo(&data_dir))),
+        ));
+
+        let err = register_agent_repo(
+            &paths,
+            &selector,
+            "https://github.com/example/agent-persist-fail.git",
+            &mut runner,
+            false,
+            || anyhow::bail!("simulated config write failure"),
+        )
+        .unwrap_err();
+
+        let chain = format!("{err:?}");
+        assert!(
+            chain.contains("registration could not be persisted"),
+            "error chain must surface persist failure: {chain}"
+        );
+        assert!(
+            cached_dir.join(".git").is_dir(),
+            "cache must be populated before persist runs (rename-then-persist invariant)",
+        );
+    }
+
+    #[test]
+    fn register_agent_repo_rejects_stale_non_git_directory() {
+        // A pre-existing directory at the cache slot that is *not* a
+        // git repo must bail rather than overwrite or skip — the
+        // operator likely has unsynced work there. Pre-fix this branch
+        // had no regression coverage.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        let selector = RoleSelector::new(None, "agent-stale");
+        let cached_dir = paths.roles_dir.join("agent-stale");
+        std::fs::create_dir_all(&cached_dir).unwrap();
+        std::fs::write(cached_dir.join("README"), "operator's lost work\n").unwrap();
+
+        let mut runner = FakeRunner::default();
+        let err = register_agent_repo(
+            &paths,
+            &selector,
+            "https://github.com/example/agent-stale.git",
+            &mut runner,
+            false,
+            || Ok(()),
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("cached role path exists but is not a git repository"),
+            "expected stale-non-git bail, got: {err}"
+        );
+        // Operator's file remains untouched.
+        assert_eq!(
+            std::fs::read_to_string(cached_dir.join("README")).unwrap(),
+            "operator's lost work\n"
+        );
+    }
 }

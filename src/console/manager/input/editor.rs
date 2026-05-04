@@ -2246,6 +2246,59 @@ plugins = []
     }
 
     #[test]
+    fn role_input_trusted_existing_role_skips_trust_prompt() {
+        // When the config already has a trusted role source the editor
+        // must register the cached repo and add it to the workspace
+        // *without* re-prompting for trust. Pre-fix this branch
+        // (`Ok(source) if source.trusted`) was not exercised — only the
+        // trust=false → confirm flow was tested.
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = config_with_agents(&["agent-smith"]);
+        config.roles.insert(
+            "chainargos/agent-brown".into(),
+            crate::config::RoleSource {
+                git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
+                trusted: true,
+                ..Default::default()
+            },
+        );
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+        let mut editor = EditorState::new_edit("ws".into(), empty_ws());
+        editor.pending.allowed_roles = vec!["agent-smith".into()];
+        let data_dir = paths.data_dir.clone();
+        let mut runner = crate::runtime::FakeRunner::default();
+        runner.side_effects.push((
+            "git clone".to_string(),
+            Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
+        ));
+
+        apply_role_input_with_runner(
+            &mut editor,
+            &mut config,
+            &paths,
+            "chainargos/agent-brown",
+            &mut runner,
+        );
+
+        assert!(
+            editor.modal.is_none(),
+            "trusted existing role must not open the trust-confirm modal: {:?}",
+            editor.modal
+        );
+        assert!(
+            editor
+                .pending
+                .allowed_roles
+                .contains(&"chainargos/agent-brown".to_string()),
+            "trusted role should be added to the custom allow-list directly: {:?}",
+            editor.pending.allowed_roles
+        );
+    }
+
+    #[test]
     fn role_input_clone_failure_reports_candidate_repository_url() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
