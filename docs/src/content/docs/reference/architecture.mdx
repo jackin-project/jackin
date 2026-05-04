@@ -169,7 +169,8 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │       │   ├── account.json       # Claude Code account metadata and preferences
 │       │   └── plugins.json       # Installed Claude plugins list
 │       ├── codex/                 # Codex-only state (when launched under Codex)
-│       │   └── config.toml        # Codex config generated at launch
+│       │   ├── config.toml        # Codex config generated at launch
+│       │   └── auth.json          # ChatGPT OAuth tokens (synced from host ~/.codex/auth.json under auth_forward=sync)
 │       ├── .config/gh/            # GitHub CLI authentication (agent-neutral)
 │       └── .jackin/               # jackin runtime metadata (agent-neutral)
 │           └── isolation.json     # Per-mount isolation records (when applicable)
