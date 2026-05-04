@@ -33,29 +33,29 @@ const CODEX_INSTALL_BLOCK: &str = "\
 USER root
 ARG JACKIN_CACHE_BUST=0
 ARG TARGETARCH
-RUN set -euxo pipefail; \\
-    : \"${JACKIN_CACHE_BUST}\"; \\
+RUN set -euxo pipefail && \\
+    : \"${JACKIN_CACHE_BUST}\" && \\
     case \"${TARGETARCH:-amd64}\" in \\
       amd64) ARCH=x86_64-unknown-linux-musl ;; \\
       arm64) ARCH=aarch64-unknown-linux-musl ;; \\
       *) echo \"unsupported arch ${TARGETARCH}\"; exit 1 ;; \\
-    esac; \\
+    esac && \\
     TAG=$(curl -sfIL -o /dev/null -w '%{url_effective}' \\
             https://github.com/openai/codex/releases/latest \\
-          | sed 's|.*/tag/||'); \\
+          | sed 's|.*/tag/||') && \\
     if [ -z \"${TAG}\" ]; then \\
-      echo \"failed to resolve codex release tag — GitHub redirect format may have changed\"; \\
+      echo \"failed to resolve codex release tag — GitHub redirect format may have changed\" && \\
       exit 1; \\
-    fi; \\
+    fi && \\
     case \"${TAG}\" in \\
       v[0-9]*|rust-v[0-9]*) ;; \\
       *) echo \"unexpected codex release tag format: ${TAG}\"; exit 1 ;; \\
-    esac; \\
-    ASSET=\"codex-${ARCH}\"; \\
+    esac && \\
+    ASSET=\"codex-${ARCH}\" && \\
     curl -fsSL \"https://github.com/openai/codex/releases/download/${TAG}/${ASSET}.tar.gz\" \\
-      | tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin; \\
-    chmod 0755 /tmp/codex.bin; \\
-    mv /tmp/codex.bin /usr/local/bin/codex; \\
+      | tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin && \\
+    chmod 0755 /tmp/codex.bin && \\
+    mv /tmp/codex.bin /usr/local/bin/codex && \\
     mkdir -p /etc/jackin && codex --version > /etc/jackin/codex.version
 ";
 
