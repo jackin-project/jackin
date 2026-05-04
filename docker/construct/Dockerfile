@@ -42,13 +42,16 @@ RUN apt-get update && \
 # Configure git-lfs
 RUN git lfs install
 
-# Install mise
+# Install mise (version pinned via versions.env -> MISE_VERSION ARG; mise apt
+# repo only ships the latest release in `stable`, so this pin must be bumped
+# in versions.env when upstream rolls or apt-get install will fail to resolve).
+ARG MISE_VERSION
 RUN install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://mise.jdx.dev/gpg-key.pub -o /etc/apt/keyrings/mise.asc && \
     chmod a+r /etc/apt/keyrings/mise.asc && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/mise.asc] https://mise.jdx.dev/deb stable main" > /etc/apt/sources.list.d/mise.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends mise && \
+    apt-get install -y --no-install-recommends "mise=${MISE_VERSION}" && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \
