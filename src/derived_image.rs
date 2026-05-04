@@ -263,10 +263,44 @@ mod tests {
 
         assert!(dockerfile.contains("https://claude.ai/install.sh"));
         assert!(dockerfile.contains("openai/codex/releases"));
-        // Claude block precedes Codex (cache-bust ordering).
+        // Claude block precedes Codex: stable ordering for deterministic Dockerfile output.
         let claude_pos = dockerfile.find("claude.ai/install.sh").unwrap();
         let codex_pos = dockerfile.find("openai/codex/releases").unwrap();
         assert!(claude_pos < codex_pos);
+    }
+
+    #[test]
+    fn renders_codex_install_as_root_without_extracting_directly_to_bin() {
+        let dockerfile = render_derived_dockerfile(
+            "FROM projectjackin/construct:trixie\n",
+            None,
+            &[Agent::Codex],
+        );
+
+        let codex_block_pos = dockerfile.find("ASSET=\"codex-${ARCH}\"").unwrap();
+        // rfind finds the most recent USER directive before the Codex install
+        // block — must be root, not agent.
+        let root_pos = dockerfile[..codex_block_pos].rfind("USER root\n").unwrap();
+        assert!(root_pos < codex_block_pos);
+        assert!(dockerfile.contains("set -euxo pipefail"));
+        assert!(dockerfile.contains("tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin"));
+        assert!(dockerfile.contains("mv /tmp/codex.bin /usr/local/bin/codex"));
+        assert!(!dockerfile.contains("tar -xz -C /usr/local/bin"));
+    }
+
+    #[test]
+    fn renders_codex_only_dockerfile_final_user_is_agent() {
+        let dockerfile = render_derived_dockerfile(
+            "FROM projectjackin/construct:trixie\n",
+            None,
+            &[Agent::Codex],
+        );
+        let last_user = dockerfile
+            .lines()
+            .filter(|l| l.starts_with("USER "))
+            .last()
+            .unwrap();
+        assert_eq!(last_user, "USER agent");
     }
 
     #[test]
