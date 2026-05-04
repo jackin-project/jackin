@@ -30,7 +30,7 @@ RUN claude --version
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
-USER agent
+USER root
 ARG JACKIN_CACHE_BUST=0
 ARG TARGETARCH
 RUN set -eux; \\
@@ -51,9 +51,10 @@ RUN set -eux; \\
       v[0-9]*|rust-v[0-9]*) ;; \\
       *) echo \"unexpected codex release tag format: ${TAG}\"; exit 1 ;; \\
     esac; \\
-    curl -fsSL \"https://github.com/openai/codex/releases/download/${TAG}/codex-${ARCH}.tar.gz\" \\
-      | tar -xz -C /usr/local/bin; \\
-    chmod +x /usr/local/bin/codex; \\
+    ASSET=\"codex-${ARCH}\"; \\
+    curl -fsSL \"https://github.com/openai/codex/releases/download/${TAG}/${ASSET}.tar.gz\" \\
+      | tar -xzf - -O \"${ASSET}\" > /usr/local/bin/codex; \\
+    chmod 0755 /usr/local/bin/codex; \\
     mkdir -p /etc/jackin && codex --version > /etc/jackin/codex.version
 ";
 
@@ -87,5 +88,17 @@ mod tests {
         assert_eq!(p.required_env, vec!["OPENAI_API_KEY"]);
         assert!(p.install_block.contains("openai/codex/releases"));
         assert!(p.install_block.contains("TARGETARCH"));
+    }
+
+    #[test]
+    fn codex_profile_installs_cli_as_root_with_current_archive_layout() {
+        let p = profile(Agent::Codex);
+        assert!(p.install_block.starts_with("USER root\n"));
+        assert!(p.install_block.contains("ASSET=\"codex-${ARCH}\""));
+        assert!(
+            p.install_block
+                .contains("tar -xzf - -O \"${ASSET}\" > /usr/local/bin/codex")
+        );
+        assert!(p.install_block.contains("/etc/jackin/codex.version"));
     }
 }

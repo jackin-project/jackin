@@ -270,6 +270,21 @@ mod tests {
     }
 
     #[test]
+    fn renders_codex_install_as_root_without_extracting_directly_to_bin() {
+        let dockerfile = render_derived_dockerfile(
+            "FROM projectjackin/construct:trixie\n",
+            None,
+            &[Agent::Codex],
+        );
+
+        let codex_block_pos = dockerfile.find("ASSET=\"codex-${ARCH}\"").unwrap();
+        let root_pos = dockerfile[..codex_block_pos].rfind("USER root\n").unwrap();
+        assert!(root_pos < codex_block_pos);
+        assert!(dockerfile.contains("tar -xzf - -O \"${ASSET}\" > /usr/local/bin/codex"));
+        assert!(!dockerfile.contains("tar -xz -C /usr/local/bin"));
+    }
+
+    #[test]
     fn renders_codex_only_dockerfile_without_claude_install() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
