@@ -153,26 +153,6 @@ Each entry includes:
   - `docs/src/content/docs/reference/architecture.mdx` — layout
     diagram reflects the new shape.
 
-### `--no-workdir-mount` flag on `workspace create`
-
-- **Type:** cli
-- **Deprecated since:** 2026-05-04 (PR #213)
-- **Replacement:** `workspace create` requires at least one `--mount` flag.
-  The workdir is not auto-mounted.
-- **Behavior today:** Passing `--no-workdir-mount` to `workspace create` is
-  accepted, prints a one-line stderr warning, and otherwise has no effect.
-  The flag is hidden from `--help`. `workspace edit --no-workdir-mount` is
-  unaffected — it still removes an existing same-path mount from the
-  workspace config.
-- **Remove when:** After a deprecation window; delete the `no_workdir_mount`
-  field from `WorkspaceCreate` in `src/cli/workspace.rs` and the
-  `tui::deprecation_warning` call in `src/app/mod.rs`.
-- **Where:**
-  - `src/cli/workspace.rs` — `WorkspaceCreate::no_workdir_mount` field,
-    `hide = true`.
-  - `src/app/mod.rs` — calls `tui::deprecation_warning` when the flag is
-    set, then ignores it.
-
 ## How to add an entry
 
 When you deprecate something, append a new section to **Active

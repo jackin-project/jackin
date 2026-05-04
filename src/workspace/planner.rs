@@ -44,7 +44,7 @@ pub struct WorkspaceEditPlan {
 ///
 /// Collapses redundancies among the supplied mount list. Callers must
 /// pass every mount explicitly — the planner does not auto-mount the
-/// workdir (see `DEPRECATED.md` for the `--no-workdir-mount` history).
+/// workdir.
 pub fn plan_create(mounts: &[MountConfig]) -> Result<WorkspaceCreatePlan, CollapseError> {
     let all_indexes: Vec<usize> = (0..mounts.len()).collect();
     let plan = plan_collapse(mounts, &all_indexes)?;

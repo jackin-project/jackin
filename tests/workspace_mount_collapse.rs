@@ -48,7 +48,6 @@ fn create_workspace_with_children(env: &Env, name: &str) {
             name,
             "--workdir",
             env.sub_a.to_str().unwrap(),
-            "--no-workdir-mount",
             "--mount",
             env.sub_a.to_str().unwrap(),
             "--mount",
@@ -250,7 +249,6 @@ fn workspace_edit_fails_on_readonly_mismatch_with_clear_error() {
             "test",
             "--workdir",
             env.sub_a.to_str().unwrap(),
-            "--no-workdir-mount",
             "--mount",
             &format!("{}:ro", env.sub_a.to_str().unwrap()),
         ])

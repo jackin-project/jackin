@@ -478,7 +478,6 @@ pub fn run(cli: Cli) -> Result<()> {
                 name,
                 workdir,
                 mounts,
-                no_workdir_mount,
                 allowed_roles,
                 default_role,
                 default_agent,
@@ -490,11 +489,6 @@ pub fn run(cli: Cli) -> Result<()> {
                     .iter()
                     .map(|value| parse_mount_spec_resolved(value))
                     .collect::<Result<Vec<_>>>()?;
-                if no_workdir_mount {
-                    tui::deprecation_warning(
-                        "--no-workdir-mount is deprecated and ignored; workspace create requires explicit --mount",
-                    );
-                }
                 let mut plan = workspace::planner::plan_create(&parsed_mounts)?;
                 workspace::planner::apply_isolation_overrides(
                     &mut plan.final_mounts,

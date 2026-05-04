@@ -47,9 +47,6 @@ Examples:
         /// Additional bind-mount spec as `path[:ro]` or `src:dst[:ro]` (repeatable)
         #[arg(long = "mount", required = true)]
         mounts: Vec<String>,
-        /// Deprecated compatibility no-op; create now always uses explicit mounts only
-        #[arg(long, hide = true, default_value_t = false)]
-        no_workdir_mount: bool,
         /// Restrict which roles may use this workspace (repeatable)
         #[arg(long = "allowed-role")]
         allowed_roles: Vec<String>,
@@ -349,30 +346,6 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
-    }
-
-    #[test]
-    fn parses_workspace_create_with_no_workdir_mount() {
-        let cli = Cli::try_parse_from([
-            "jackin",
-            "workspace",
-            "create",
-            "monorepo",
-            "--workdir",
-            "/workspace",
-            "--no-workdir-mount",
-            "--mount",
-            "/tmp/src:/workspace",
-        ])
-        .unwrap();
-
-        assert!(matches!(
-            cli.command,
-            Some(Command::Workspace(WorkspaceCommand::Create {
-                no_workdir_mount: true,
-                ..
-            }))
-        ));
     }
 
     #[test]
@@ -681,10 +654,6 @@ mod tests {
         assert!(
             help.contains("not mounted implicitly"),
             "explicit mount behavior not documented"
-        );
-        assert!(
-            !help.contains("--no-workdir-mount"),
-            "deprecated no-op flag should stay hidden"
         );
         assert!(help.contains("Examples:"));
         assert!(help.contains(
