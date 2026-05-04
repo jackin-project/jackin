@@ -1445,11 +1445,10 @@ fn apply_editor_confirm(
         ConfirmTarget::TrustRoleSource { key, source } => {
             persist_trusted_role_add(editor, config, paths, key, source.clone())?;
         }
-        // `DeleteWorkspace` is a list-side target that never reaches the
-        // editor modal. `DeleteIsolatedAndSave` is handled inline at the
-        // dispatch site because it consumes `plan` and routes through
-        // `EditorSaveFlow::PendingCommit`. Both no-op here.
-        ConfirmTarget::DeleteWorkspace | ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
+        // `DeleteIsolatedAndSave` is handled inline at the dispatch
+        // site because it consumes `plan` and routes through
+        // `EditorSaveFlow::PendingCommit`. No-op here.
+        ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
     }
     Ok(())
 }

@@ -284,7 +284,6 @@ pub enum FileBrowserTarget {
 
 #[derive(Debug, Clone)]
 pub enum ConfirmTarget {
-    DeleteWorkspace,
     DeleteEnvVar {
         scope: SecretsScopeTag,
         key: String,
