@@ -16,9 +16,9 @@ pub enum ConfirmFocus {
 
 #[derive(Debug, Clone)]
 pub struct ConfirmState {
-    pub focus: ConfirmFocus,
-    pub title: String,
-    pub kind: ConfirmKind,
+    pub(crate) focus: ConfirmFocus,
+    pub(crate) title: String,
+    pub(crate) kind: ConfirmKind,
 }
 
 /// Discriminated payload for the Confirm modal.
