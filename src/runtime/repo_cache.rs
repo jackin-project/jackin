@@ -9,25 +9,6 @@ use std::io::IsTerminal;
 
 use super::identity::try_capture;
 
-/// Map an anyhow error from `validate_role_repo` into a typed
-/// `RepoError::InvalidRoleRepo` when any link in the chain uses the
-/// validator's `invalid role repo: ` prefix; pass anything else through
-/// unchanged.
-///
-/// The validator currently emits anyhow strings; this function is the
-/// single substring match left over after the typed-error refactor and
-/// lives here so it's co-located with the variant it produces.
-fn map_validate_error(err: anyhow::Error) -> anyhow::Error {
-    for cause in err.chain() {
-        if let Some(detail) = cause.to_string().strip_prefix("invalid role repo: ") {
-            return anyhow::Error::new(RepoError::InvalidRoleRepo {
-                detail: detail.to_string(),
-            });
-        }
-    }
-    err
-}
-
 /// Typed errors raised by role-repo resolution.
 ///
 /// Surfaced through `anyhow::Error` chains so the editor can downcast and
@@ -47,10 +28,11 @@ pub enum RepoError {
     #[error("cached role repo remote mismatch — aborting")]
     RemoteMismatch,
 
-    /// `validate_role_repo` rejected the cloned repo. `detail` is the
-    /// validator's message with the `invalid role repo: ` prefix stripped.
-    #[error("invalid role repo: {detail}")]
-    InvalidRoleRepo { detail: String },
+    /// `validate_role_repo` rejected the cloned repo. The inner typed
+    /// error carries the structural reason; `friendly_role_resolution_error`
+    /// matches on its variants for richer messages.
+    #[error("invalid role repo: {0}")]
+    InvalidRoleRepo(#[from] crate::repo::RoleRepoValidationError),
 }
 
 /// Extract `owner/repo` from a git remote URL.
@@ -213,7 +195,7 @@ pub(super) fn register_agent_repo(
         )
         .map_err(RepoError::CloneFailed)?;
 
-    let validated_repo = validate_role_repo(&temp_repo).map_err(map_validate_error)?;
+    let validated_repo = validate_role_repo(&temp_repo).map_err(RepoError::InvalidRoleRepo)?;
     // Install the repo into the cache before persisting registration: if
     // rename fails the role stays unregistered and the user can retry from a
     // clean state. Persisting first would leave config.toml referencing a
@@ -296,7 +278,7 @@ pub(super) fn resolve_agent_repo_with(
                     .run("git", &["clone", git_url, &repo_path], None, &git_run_opts)
                     .map_err(RepoError::CloneFailed)?;
                 let validated_repo =
-                    validate_role_repo(&cached_repo.repo_dir).map_err(map_validate_error)?;
+                    validate_role_repo(&cached_repo.repo_dir).map_err(RepoError::InvalidRoleRepo)?;
                 return Ok((cached_repo, validated_repo, lock_file));
             }
 
@@ -348,7 +330,7 @@ pub(super) fn resolve_agent_repo_with(
             .map_err(RepoError::CloneFailed)?;
     }
 
-    let validated_repo = validate_role_repo(&cached_repo.repo_dir).map_err(map_validate_error)?;
+    let validated_repo = validate_role_repo(&cached_repo.repo_dir).map_err(RepoError::InvalidRoleRepo)?;
 
     // Return the repo lock so the caller can hold it until the build
     // context (a snapshot copy of the repo) is created.  This prevents
@@ -784,7 +766,7 @@ plugins = []
 
         assert!(
             err.downcast_ref::<RepoError>()
-                .is_some_and(|e| matches!(e, RepoError::InvalidRoleRepo { .. })),
+                .is_some_and(|e| matches!(e, RepoError::InvalidRoleRepo(_))),
             "expected RepoError::InvalidRoleRepo, got {err:?}"
         );
         assert!(

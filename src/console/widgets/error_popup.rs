@@ -26,6 +26,11 @@ const DANGER_RED: Color = Color::Rgb(255, 94, 122);
 pub struct ErrorPopupState {
     pub title: String,
     pub message: String,
+    /// Memoized `(inner_width, rows)` from the last `estimated_message_rows`
+    /// call. The popup is rendered every frame while open and the message
+    /// can be a long anyhow chain — re-walking each line every frame is
+    /// avoidable. `Cell` because `render` only takes `&self`.
+    cached_rows: std::cell::Cell<Option<(u16, u16)>>,
 }
 
 impl ErrorPopupState {
@@ -33,6 +38,7 @@ impl ErrorPopupState {
         Self {
             title: title.into(),
             message: message.into(),
+            cached_rows: std::cell::Cell::new(None),
         }
     }
 
@@ -49,8 +55,17 @@ impl ErrorPopupState {
 
 /// Estimate the number of wrapped rows the message needs for a given
 /// inner width. Used by the modal sizer so tall messages don't clip.
+///
+/// The result is memoized on `state` keyed by `inner_width` so the
+/// per-line `chars().count()` walk only happens on resize, not on every
+/// render frame.
 #[must_use]
 pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 {
+    if let Some((cached_width, rows)) = state.cached_rows.get()
+        && cached_width == inner_width
+    {
+        return rows;
+    }
     let w = usize::from(inner_width.max(1));
     let mut rows: u32 = 0;
     for line in state.message.lines() {
@@ -60,7 +75,9 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
         let r = len.div_ceil(w);
         rows = rows.saturating_add(u32::try_from(r).unwrap_or(u32::MAX));
     }
-    u16::try_from(rows.max(1)).unwrap_or(u16::MAX)
+    let result = u16::try_from(rows.max(1)).unwrap_or(u16::MAX);
+    state.cached_rows.set(Some((inner_width, result)));
+    result
 }
 
 /// Total rows the popup wants. Layout: top border + blank + N message

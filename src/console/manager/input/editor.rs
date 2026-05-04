@@ -1336,24 +1336,33 @@ fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
                  repository."
                     .into()
             }
-            crate::runtime::RepoError::InvalidRoleRepo { detail } => format!(
+            crate::runtime::RepoError::InvalidRoleRepo(detail) => format!(
                 "Repository is not a valid Jackin role: {}.",
-                humanize_invalid_role_repo_detail(detail)
+                humanize_invalid_role_repo(detail)
             ),
         };
     }
     "Repository could not be used as a Jackin role.".into()
 }
 
-fn humanize_invalid_role_repo_detail(detail: &str) -> String {
-    if let Some(path) = detail.strip_prefix("missing ") {
-        let file = std::path::Path::new(path)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or(path);
-        return format!("missing {file}");
+/// Render a `RoleRepoValidationError` for the role-input popup.
+///
+/// `Missing(path)` is shown as the basename only — the full repo path
+/// is operator-noise here since the popup already says which role they
+/// asked for. Other variants fall back to the typed `Display` impl with
+/// any trailing period trimmed (the surrounding sentence adds its own).
+fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> String {
+    use crate::repo::RoleRepoValidationError as V;
+    match err {
+        V::Missing(path) => {
+            let file = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map_or_else(|| path.display().to_string(), str::to_string);
+            format!("missing {file}")
+        }
+        _ => err.to_string().trim_end_matches('.').to_string(),
     }
-    detail.trim_end_matches('.').to_string()
 }
 
 fn open_role_trust_confirm(

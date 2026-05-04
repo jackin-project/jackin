@@ -30,32 +30,72 @@ pub struct ValidatedRoleRepo {
     pub dockerfile: ValidatedDockerfile,
 }
 
-pub fn validate_role_repo(repo_dir: &Path) -> anyhow::Result<ValidatedRoleRepo> {
+/// Specific structural rejections from `validate_role_repo`.
+///
+/// Variants carry the rejected path / label so the editor's friendly
+/// translator can render rich messages without parsing free-form
+/// strings; downstream `RepoError::InvalidRoleRepo` is matched against
+/// the inner variant rather than substring-stripped.
+///
+/// Add a variant per new rejection rule; reach for `Other(anyhow::Error)`
+/// only when the failure is a non-structural pass-through (manifest TOML
+/// parse, IO error from the underlying filesystem, etc.).
+#[derive(Debug, thiserror::Error)]
+pub enum RoleRepoValidationError {
+    #[error("missing {}", _0.display())]
+    Missing(PathBuf),
+    #[error("{label} path must be relative")]
+    PathMustBeRelative { label: &'static str },
+    #[error("{label} path must stay inside the repo")]
+    PathOutsideRepo { label: &'static str },
+    #[error("{label} path must not be a symlink")]
+    PathIsSymlink { label: &'static str },
+    #[error("{label} path escapes the repo boundary")]
+    PathEscapesBoundary { label: &'static str },
+    #[error("pre_launch hook is empty: {}", _0.display())]
+    EmptyPreLaunchHook(PathBuf),
+    #[error("unable to parse Dockerfile: {0}")]
+    DockerfileParse(String),
+    #[error("Dockerfile must contain at least one FROM instruction")]
+    DockerfileMissingFrom,
+    #[error("final Dockerfile stage must use literal FROM {expected}")]
+    DockerfileNonConstruct { expected: &'static str },
+    /// Catch-all for non-structural failures (TOML parse, IO, manifest
+    /// semantic validation). The friendly translator renders these as
+    /// the generic "not a valid Jackin role" message.
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+impl From<std::io::Error> for RoleRepoValidationError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Other(err.into())
+    }
+}
+
+pub fn validate_role_repo(
+    repo_dir: &Path,
+) -> Result<ValidatedRoleRepo, RoleRepoValidationError> {
     let manifest_path = repo_dir.join("jackin.role.toml");
 
     if !manifest_path.is_file() {
-        anyhow::bail!("invalid role repo: missing {}", manifest_path.display());
+        return Err(RoleRepoValidationError::Missing(manifest_path));
     }
 
     let manifest = RoleManifest::load(repo_dir)?;
-    let dockerfile_path = resolve_manifest_dockerfile_path(repo_dir, &manifest)?;
+    let dockerfile_path = validate_relative_path(repo_dir, &manifest.dockerfile, "dockerfile")?;
     let dockerfile = validate_agent_dockerfile(&dockerfile_path)?;
 
-    // Validate pre-launch hook path if declared
     if let Some(ref hooks) = manifest.hooks
         && let Some(ref pre_launch) = hooks.pre_launch
     {
         let hook_path = validate_relative_path(repo_dir, pre_launch, "pre_launch hook")?;
         let contents = std::fs::read_to_string(&hook_path)?;
         if contents.is_empty() {
-            anyhow::bail!(
-                "invalid role repo: pre_launch hook is empty: {}",
-                hook_path.display()
-            );
+            return Err(RoleRepoValidationError::EmptyPreLaunchHook(hook_path));
         }
     }
 
-    // Validate env var declarations
     let warnings = manifest.validate()?;
     for warning in &warnings {
         eprintln!("warning: {}", warning.message);
@@ -67,11 +107,15 @@ pub fn validate_role_repo(repo_dir: &Path) -> anyhow::Result<ValidatedRoleRepo> 
     })
 }
 
-fn validate_relative_path(repo_dir: &Path, path_str: &str, label: &str) -> anyhow::Result<PathBuf> {
+fn validate_relative_path(
+    repo_dir: &Path,
+    path_str: &str,
+    label: &'static str,
+) -> Result<PathBuf, RoleRepoValidationError> {
     let path = Path::new(path_str);
 
     if path.is_absolute() {
-        anyhow::bail!("invalid role repo: {label} path must be relative");
+        return Err(RoleRepoValidationError::PathMustBeRelative { label });
     }
 
     for component in path.components() {
@@ -79,35 +123,28 @@ fn validate_relative_path(repo_dir: &Path, path_str: &str, label: &str) -> anyho
             component,
             Component::ParentDir | Component::RootDir | Component::Prefix(_)
         ) {
-            anyhow::bail!("invalid role repo: {label} path must stay inside the repo");
+            return Err(RoleRepoValidationError::PathOutsideRepo { label });
         }
     }
 
     let resolved = repo_dir.join(path);
     if !resolved.is_file() {
-        anyhow::bail!("invalid role repo: missing {}", resolved.display());
+        return Err(RoleRepoValidationError::Missing(resolved));
     }
     if std::fs::symlink_metadata(&resolved)?
         .file_type()
         .is_symlink()
     {
-        anyhow::bail!("invalid role repo: {label} path must not be a symlink");
+        return Err(RoleRepoValidationError::PathIsSymlink { label });
     }
 
     let canonical_repo = repo_dir.canonicalize()?;
     let canonical_resolved = resolved.canonicalize()?;
     if !canonical_resolved.starts_with(&canonical_repo) {
-        anyhow::bail!("invalid role repo: {label} path escapes the repo boundary");
+        return Err(RoleRepoValidationError::PathEscapesBoundary { label });
     }
 
     Ok(canonical_resolved)
-}
-
-fn resolve_manifest_dockerfile_path(
-    repo_dir: &Path,
-    manifest: &RoleManifest,
-) -> anyhow::Result<PathBuf> {
-    validate_relative_path(repo_dir, &manifest.dockerfile, "dockerfile")
 }
 
 #[cfg(test)]
