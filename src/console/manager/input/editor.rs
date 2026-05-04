@@ -1347,10 +1347,11 @@ fn open_role_trust_confirm(
     key: String,
     source: crate::config::RoleSource,
 ) {
-    let prompt = format!("{key}\n{}", source.git);
+    let state =
+        crate::console::widgets::confirm::ConfirmState::role_trust(key.clone(), source.git.clone());
     editor.modal = Some(Modal::Confirm {
         target: ConfirmTarget::TrustRoleSource { key, source },
-        state: crate::console::widgets::confirm::ConfirmState::role_trust(prompt),
+        state,
     });
 }
 
@@ -2032,17 +2033,15 @@ plugins = []
         match &editor.modal {
             Some(Modal::Confirm { target, state }) => {
                 assert_eq!(state.title, "Trust role source");
+                let crate::console::widgets::confirm::ConfirmKind::RoleTrust { role, repository } =
+                    &state.kind
+                else {
+                    panic!("expected RoleTrust kind, got {:?}", state.kind);
+                };
+                assert_eq!(role, "chainargos/agent-brown");
                 assert_eq!(
-                    state.presentation,
-                    crate::console::widgets::confirm::ConfirmPresentation::RoleTrust
-                );
-                assert!(state.prompt.contains("chainargos/agent-brown"));
-                assert!(
-                    state
-                        .prompt
-                        .contains("https://github.com/chainargos/jackin-agent-brown.git"),
-                    "trust prompt should show the repository URL:\n{}",
-                    state.prompt
+                    repository, "https://github.com/chainargos/jackin-agent-brown.git",
+                    "trust prompt should show the repository URL"
                 );
                 match target {
                     ConfirmTarget::TrustRoleSource { key, source } => {

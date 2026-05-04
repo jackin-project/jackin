@@ -16,16 +16,20 @@ pub enum ConfirmFocus {
 
 #[derive(Debug, Clone)]
 pub struct ConfirmState {
-    pub prompt: String,
     pub focus: ConfirmFocus,
     pub title: String,
-    pub presentation: ConfirmPresentation,
+    pub kind: ConfirmKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfirmPresentation {
-    Default,
-    RoleTrust,
+/// Discriminated payload for the Confirm modal.
+///
+/// `Default` carries a free-form prompt string; `RoleTrust` carries the
+/// role key and repository URL as separate fields so the renderer can lay
+/// them out without parsing them back out of a `\n`-delimited blob.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfirmKind {
+    Default { prompt: String },
+    RoleTrust { role: String, repository: String },
 }
 
 impl ConfirmState {
@@ -33,19 +37,22 @@ impl ConfirmState {
     /// destructive actions — Enter won't accidentally commit Yes).
     pub fn new(prompt: impl Into<String>) -> Self {
         Self {
-            prompt: prompt.into(),
             focus: ConfirmFocus::No,
             title: "Confirm".into(),
-            presentation: ConfirmPresentation::Default,
+            kind: ConfirmKind::Default {
+                prompt: prompt.into(),
+            },
         }
     }
 
-    pub fn role_trust(prompt: impl Into<String>) -> Self {
+    pub fn role_trust(role: impl Into<String>, repository: impl Into<String>) -> Self {
         Self {
-            prompt: prompt.into(),
             focus: ConfirmFocus::No,
             title: "Trust role source".into(),
-            presentation: ConfirmPresentation::RoleTrust,
+            kind: ConfirmKind::RoleTrust {
+                role: role.into(),
+                repository: repository.into(),
+            },
         }
     }
 
@@ -83,24 +90,27 @@ const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 const WHITE: Color = Color::Rgb(255, 255, 255);
 const WARNING_YELLOW: Color = Color::Rgb(255, 216, 94);
 
-/// Height (rows) this Confirm modal wants, given its current prompt text.
-/// Layout is: N prompt lines + 1 spacer + 1 buttons + 1 spacer + 1 hint.
-/// Callers use this to size the surrounding modal rect.
+/// Height (rows) this Confirm modal wants, given its current contents.
+///
+/// `Default` kind: N prompt lines + 6 chrome rows (top/bottom border = 2,
+/// spacer, buttons, spacer, hint). `RoleTrust` uses a fixed 12-row layout
+/// matching the structured renderer in `render_role_trust`.
 #[must_use]
 pub fn required_height(state: &ConfirmState) -> u16 {
-    if matches!(state.presentation, ConfirmPresentation::RoleTrust) {
-        return 12;
+    match &state.kind {
+        ConfirmKind::RoleTrust { .. } => 12,
+        ConfirmKind::Default { prompt } => {
+            let prompt_lines = prompt.lines().count().max(1) as u16;
+            prompt_lines + 6
+        }
     }
-    let prompt_lines = state.prompt.lines().count().max(1) as u16;
-    // Fixed chrome: top/bottom border (2) + spacer + buttons + spacer + hint (4).
-    prompt_lines + 6
 }
 
 #[must_use]
 pub const fn width_pct(state: &ConfirmState) -> u16 {
-    match state.presentation {
-        ConfirmPresentation::Default => 60,
-        ConfirmPresentation::RoleTrust => 70,
+    match &state.kind {
+        ConfirmKind::Default { .. } => 60,
+        ConfirmKind::RoleTrust { .. } => 70,
     }
 }
 
@@ -117,15 +127,18 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    if matches!(state.presentation, ConfirmPresentation::RoleTrust) {
-        render_role_trust(frame, inner, state);
-        return;
-    }
+    let prompt = match &state.kind {
+        ConfirmKind::RoleTrust { role, repository } => {
+            render_role_trust(frame, inner, state, role, repository);
+            return;
+        }
+        ConfirmKind::Default { prompt } => prompt.as_str(),
+    };
 
     // Vertical layout inside the inner rect. The prompt area grows with the
-    // number of lines in `state.prompt` so multi-line confirmations (e.g.
+    // number of lines in `prompt` so multi-line confirmations (e.g.
     // the mount-collapse prompt) render without clipping.
-    let prompt_lines = state.prompt.lines().count().max(1) as u16;
+    let prompt_lines = prompt.lines().count().max(1) as u16;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -138,8 +151,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
         .split(inner);
 
     // Prompt — render each line in turn so centering applies per-line.
-    let prompt_lines_vec: Vec<Line> = state
-        .prompt
+    let prompt_lines_vec: Vec<Line> = prompt
         .lines()
         .map(|l| {
             Line::from(Span::styled(
@@ -203,7 +215,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     frame.render_widget(hint, chunks[4]);
 }
 
-fn render_role_trust(frame: &mut Frame, inner: Rect, state: &ConfirmState) {
+fn render_role_trust(
+    frame: &mut Frame,
+    inner: Rect,
+    state: &ConfirmState,
+    role: &str,
+    repository: &str,
+) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -218,7 +236,6 @@ fn render_role_trust(frame: &mut Frame, inner: Rect, state: &ConfirmState) {
         ])
         .split(inner);
 
-    let (role, repository) = parse_role_trust_prompt(&state.prompt);
     let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let value = Style::default()
         .fg(PHOSPHOR_GREEN)
@@ -275,13 +292,6 @@ fn render_role_trust(frame: &mut Frame, inner: Rect, state: &ConfirmState) {
 
     render_buttons(frame, rows[6], state);
     render_hint(frame, rows[7]);
-}
-
-fn parse_role_trust_prompt(prompt: &str) -> (&str, &str) {
-    let mut lines = prompt.lines();
-    let role = lines.next().unwrap_or_default();
-    let repository = lines.next().unwrap_or_default();
-    (role, repository)
 }
 
 const fn inset(area: Rect, x: u16) -> Rect {
@@ -452,7 +462,8 @@ mod tests {
         use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
         let s = ConfirmState::role_trust(
-            "scentbird/agent-jones\nhttps://github.com/scentbird/jackin-agent-jones.git",
+            "scentbird/agent-jones",
+            "https://github.com/scentbird/jackin-agent-jones.git",
         );
         let area = Rect::new(0, 0, 100, required_height(&s));
         let backend = TestBackend::new(area.width, area.height);
