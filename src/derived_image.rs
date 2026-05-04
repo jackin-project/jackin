@@ -77,6 +77,9 @@ ENTRYPOINT [\"/home/agent/entrypoint.sh\"]
 pub fn create_derived_build_context(
     repo_dir: &Path,
     validated: &ValidatedRoleRepo,
+    // When Some, the DerivedDockerfile starts with `FROM <image>` rather than
+    // the workspace Dockerfile contents (pre-built image fast path).
+    base_image_override: Option<&str>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
@@ -92,15 +95,16 @@ pub fn create_derived_build_context(
         .as_ref()
         .and_then(|h| h.pre_launch.as_deref());
 
+    let base_dockerfile = base_image_override.map_or_else(
+        || validated.dockerfile.dockerfile_contents.clone(),
+        |image| format!("FROM {image}\n"),
+    );
+
     let supported = validated.manifest.supported_agents();
     let dockerfile_path = context_dir.join(".jackin-runtime/DerivedDockerfile");
     std::fs::write(
         &dockerfile_path,
-        render_derived_dockerfile(
-            &validated.dockerfile.dockerfile_contents,
-            pre_launch_hook,
-            &supported,
-        ),
+        render_derived_dockerfile(&base_dockerfile, pre_launch_hook, &supported),
     )?;
     ensure_runtime_assets_are_included(&context_dir, pre_launch_hook)?;
 
@@ -375,7 +379,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None).unwrap();
 
         assert!(build.context_dir.join("Dockerfile").is_file());
         assert!(
@@ -413,13 +417,44 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None).unwrap();
         let dockerignore =
             std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
         assert!(dockerignore.contains("!.jackin-runtime/"));
         assert!(dockerignore.contains("!.jackin-runtime/entrypoint.sh"));
         assert!(dockerignore.contains("!.jackin-runtime/DerivedDockerfile"));
+    }
+
+    #[test]
+    fn uses_base_image_override_instead_of_workspace_dockerfile() {
+        let repo = tempdir().unwrap();
+        std::fs::write(
+            repo.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
+        let build = create_derived_build_context(
+            repo.path(),
+            &validated,
+            Some("docker.io/myorg/my-role:latest"),
+        )
+        .unwrap();
+
+        let contents = std::fs::read_to_string(&build.dockerfile_path).unwrap();
+        assert!(contents.starts_with("FROM docker.io/myorg/my-role:latest\n"));
+        assert!(!contents.contains("projectjackin/construct:trixie"));
     }
 
     #[cfg(unix)]
@@ -448,7 +483,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let error = create_derived_build_context(repo.path(), &validated)
+        let error = create_derived_build_context(repo.path(), &validated, None)
             .expect_err("symlinks should be rejected");
 
         assert!(error.to_string().contains("symlink"));

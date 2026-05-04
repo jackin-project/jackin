@@ -91,7 +91,8 @@ model = "gpt-5"
     )
     .unwrap();
     let validated = jackin::repo::validate_role_repo(&repo_dir).unwrap();
-    let build = jackin::derived_image::create_derived_build_context(&repo_dir, &validated).unwrap();
+    let build =
+        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None).unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
     assert!(dockerfile.contains("claude.ai/install.sh"));
     assert!(dockerfile.contains("openai/codex/releases"));
@@ -127,7 +128,8 @@ model = "gpt-5"
         .iter()
         .find(|call| call.contains("docker build "))
         .expect("docker build should run");
-    assert!(build_cmd.contains("--pull"), "{build_cmd}");
+    // No published_image and no --rebuild → workspace mode; --pull is omitted
+    assert!(!build_cmd.contains("--pull"), "{build_cmd}");
 
     let run_cmd = runner
         .recorded
