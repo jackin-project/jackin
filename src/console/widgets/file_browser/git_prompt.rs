@@ -33,11 +33,14 @@ pub enum GitPromptFocus {
     Cancel,
 }
 
-/// Resolve the origin web URL for a git-repo path via `mount_info::inspect`.
-/// Returns `Some` only for GitHub remotes that expose a resolvable web URL.
+/// Resolve the web URL for a git-repo path via `mount_info::inspect`.
+/// Returns `Some` only for GitHub remotes that have a parseable web URL.
 pub(super) fn resolve_git_url(path: &Path) -> Option<String> {
     match crate::console::manager::mount_info::inspect(&path.display().to_string()) {
-        crate::console::manager::mount_info::MountKind::Git { web_url, .. } => web_url,
+        crate::console::manager::mount_info::MountKind::Git {
+            origin: Some(crate::console::manager::mount_info::GitOrigin::Github { web_url, .. }),
+            ..
+        } => Some(web_url),
         _ => None,
     }
 }
@@ -67,14 +70,18 @@ impl FileBrowserState {
                 self.set_cwd(&path);
                 ModalOutcome::Continue
             }
-            // `o` for "open the repo's web URL in the browser" — best-effort;
-            // silent no-op when `pending_git_url` is `None` (non-GitHub origin
-            // or unresolvable remote) or when the launcher fails. The overlay
-            // drops the `· O open` hint segment in the None case so the
-            // keystroke is only advertised when it actually does something.
+            // `o` for "open the repo's web URL in the browser" — best-effort.
+            // No-op when `pending_git_url` is `None` (non-GitHub origin or
+            // unresolvable remote); launcher failures are logged on the
+            // `--debug` channel since `FileBrowserState` doesn't own the
+            // global toast queue. The overlay drops the `· O open` hint
+            // segment in the None case so the keystroke is only advertised
+            // when it actually does something.
             KeyCode::Char('o' | 'O') => {
-                if let Some(url) = self.pending_git_url.as_deref() {
-                    let _ = open::that_detached(url);
+                if let Some(url) = self.pending_git_url.as_deref()
+                    && let Err(e) = open::that_detached(url)
+                {
+                    crate::debug_log!("git_prompt", "open::that_detached({url:?}) failed: {e}");
                 }
                 ModalOutcome::Continue
             }
@@ -359,7 +366,19 @@ mod tests {
             .pending_git_url
             .as_deref()
             .expect("GitHub origin must resolve");
-        assert!(url.contains("github.com/jackin-project/jackin"));
+        assert_eq!(url, "https://github.com/jackin-project/jackin/tree/main");
+    }
+
+    #[test]
+    fn resolve_git_url_returns_none_for_non_github_origin() {
+        // Non-github remote (gitlab here) must yield `None` so the
+        // `O open` keystroke is not advertised — the launcher only
+        // speaks github web URLs.
+        let tmp = tempdir().unwrap();
+        let repo = tmp.path().join("gitlab-repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        seed_git_repo_with_origin(&repo, "git@gitlab.com:owner/repo.git");
+        assert!(resolve_git_url(&repo).is_none());
     }
 
     #[test]

@@ -18,16 +18,15 @@ A workspace describes project access, not agent tooling. It answers: which host 
 ### `workspace create`
 
 ```bash
-jackin workspace create <NAME> --workdir <PATH> [OPTIONS]
+jackin workspace create <NAME> --workdir <PATH> --mount <SPEC> [OPTIONS]
 ```
 
 Create a new workspace definition.
 
 | Option | Description |
 |---|---|
-| `--workdir <PATH>` | Working directory (auto-mounted at the same path by default) |
-| `--mount <SPEC>` | Additional bind-mount spec (repeatable) |
-| `--no-workdir-mount` | Don't auto-mount the workdir |
+| `--workdir <PATH>` | Working directory inside the container |
+| `--mount <SPEC>` | Bind-mount spec (repeatable, at least one required) |
 | `--allowed-role <NAME>` | Restrict to these roles (repeatable) |
 | `--default-role <NAME>` | Role to auto-select |
 | `--default-agent <claude\|codex>` | Default agent for this workspace |
@@ -35,17 +34,16 @@ Create a new workspace definition.
 | `--keep-awake` | macOS only: opt this workspace into the keep-awake reconciler. While any agent in the workspace is running, jackin keeps a single detached `caffeinate -imsu` alive so the host stays awake. No-op on Linux/Windows. See [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake). |
 
 ```bash
-jackin workspace create my-app --workdir ~/Projects/my-app
-jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/cache:/cache:ro
-jackin workspace create codex-app --workdir ~/Projects/codex-app --default-agent codex
-jackin workspace create monorepo --workdir /workspace --no-workdir-mount --mount ~/src:/workspace
-jackin workspace create restricted --workdir ~/app --allowed-role agent-smith --default-role agent-smith
-jackin workspace create remote --workdir ~/Projects/remote --keep-awake
+jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app
+jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app --mount ~/cache:/cache:ro
+jackin workspace create codex-app --workdir ~/Projects/codex-app --mount ~/Projects/codex-app --default-agent codex
+jackin workspace create monorepo --workdir /workspace --mount ~/src:/workspace
+jackin workspace create restricted --workdir ~/app --mount ~/app --allowed-role agent-smith --default-role agent-smith
+jackin workspace create remote --workdir ~/Projects/remote --mount ~/Projects/remote --keep-awake
 
 # Isolated source mount + shared cache child
 jackin workspace create jackin \
   --workdir /workspace/jackin \
-  --no-workdir-mount \
   --mount ~/projects/jackin:/workspace/jackin \
   --mount ~/.cache/jackin/target:/workspace/jackin/target \
   --mount-isolation /workspace/jackin=worktree

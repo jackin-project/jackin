@@ -149,6 +149,78 @@ const fn consumes_letter_input(state: &ConsoleState) -> bool {
     false
 }
 
+const fn modal_debug_name(modal: &crate::console::manager::state::Modal<'_>) -> &'static str {
+    use crate::console::manager::state::Modal;
+    match modal {
+        Modal::TextInput { .. } => "TextInput",
+        Modal::FileBrowser { .. } => "FileBrowser",
+        Modal::MountDstChoice { .. } => "MountDstChoice",
+        Modal::WorkdirPick { .. } => "WorkdirPick",
+        Modal::Confirm { .. } => "Confirm",
+        Modal::SaveDiscardCancel { .. } => "SaveDiscardCancel",
+        Modal::GithubPicker { .. } => "GithubPicker",
+        Modal::ConfirmSave { .. } => "ConfirmSave",
+        Modal::ErrorPopup { .. } => "ErrorPopup",
+        Modal::OpPicker { .. } => "OpPicker",
+        Modal::RolePicker { .. } => "RolePicker",
+        Modal::RoleOverridePicker { .. } => "RoleOverridePicker",
+        Modal::SourcePicker { .. } => "SourcePicker",
+        Modal::ScopePicker { .. } => "ScopePicker",
+    }
+}
+
+fn console_location_debug(console_state: &ConsoleState) -> String {
+    if console_state.quit_confirm.is_some() {
+        return "quit-confirm".into();
+    }
+
+    let ConsoleStage::Manager(ms) = &console_state.stage;
+    let list_modal = ms.list_modal.as_ref().map_or_else(String::new, |modal| {
+        format!(" list_modal={}", modal_debug_name(modal))
+    });
+    let location = match &ms.stage {
+        crate::console::manager::state::ManagerStage::List => "list".to_string(),
+        crate::console::manager::state::ManagerStage::Editor(editor) => {
+            let modal = editor.modal.as_ref().map_or("none", modal_debug_name);
+            format!(
+                "editor mode={:?} tab={:?} field={:?} modal={modal}",
+                editor.mode, editor.active_tab, editor.active_field
+            )
+        }
+        crate::console::manager::state::ManagerStage::CreatePrelude(prelude) => {
+            let modal = prelude.modal.as_ref().map_or("none", modal_debug_name);
+            format!("create-prelude step={:?} modal={modal}", prelude.step)
+        }
+        crate::console::manager::state::ManagerStage::ConfirmDelete { .. } => {
+            "confirm-delete".to_string()
+        }
+    };
+    format!("{location}{list_modal}")
+}
+
+/// Render a key event for the `--debug` log. Redacts the literal
+/// character when the focused widget is consuming text input — without
+/// the redaction the operator's typed values (workspace names, env
+/// values, paths) would land in `--debug` output verbatim.
+fn key_debug_name(state: &ConsoleState, key: crossterm::event::KeyEvent) -> String {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let has_command_modifier = key
+        .modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
+    let code = match key.code {
+        KeyCode::Char(_) if consumes_letter_input(state) && !has_command_modifier => {
+            "Char(<redacted>)".to_string()
+        }
+        KeyCode::Char(ch) => format!("Char({})", ch.escape_default()),
+        other => format!("{other:?}"),
+    };
+    if key.modifiers.is_empty() {
+        code
+    } else {
+        format!("{:?}+{code}", key.modifiers)
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn run_console(
     mut config: AppConfig,
@@ -173,6 +245,7 @@ pub fn run_console(
             let _ = stdout.execute(DisableMouseCapture);
             let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
             let _ = stdout.execute(crossterm::cursor::Show);
+            crate::tui::end_debug_buffering();
         }
     }
 
@@ -180,6 +253,7 @@ pub fn run_console(
     let mut stdout = std::io::stdout();
     enable_raw_mode()?;
     let guard = TerminalGuard;
+    crate::tui::begin_debug_buffering();
     stdout.execute(EnterAlternateScreen)?;
     stdout.execute(EnableMouseCapture)?;
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
@@ -217,6 +291,12 @@ pub fn run_console(
         if event::poll(Duration::from_millis(TICK_MS))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    crate::debug_log!(
+                        "tui",
+                        "key={} location={}",
+                        key_debug_name(&state, key),
+                        console_location_debug(&state)
+                    );
                     if let Some(confirm) = state.quit_confirm.as_mut() {
                         use crate::console::widgets::ModalOutcome;
                         match confirm.handle_key(key) {
@@ -292,6 +372,11 @@ pub fn run_console(
                     }
                 }
                 Event::Mouse(mouse) => {
+                    crate::debug_log!(
+                        "tui",
+                        "mouse={mouse:?} location={}",
+                        console_location_debug(&state)
+                    );
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         manager::input::handle_mouse(ms, mouse, term_size);
                     }
@@ -322,6 +407,15 @@ mod quit_confirm_tests {
         let cwd = std::env::temp_dir();
         let config = AppConfig::default();
         ConsoleState::new(&config, &cwd).unwrap()
+    }
+
+    fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
+        crossterm::event::KeyEvent {
+            code,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        }
     }
 
     #[test]
@@ -369,38 +463,73 @@ mod quit_confirm_tests {
     }
 
     #[test]
+    fn debug_key_redacts_text_input_characters() {
+        let mut state = fresh_state();
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        let mut editor = EditorState::new_create();
+        editor.modal = Some(Modal::TextInput {
+            target: TextInputTarget::EnvValue {
+                scope: SecretsScopeTag::Workspace,
+                key: "TOKEN".into(),
+            },
+            state: TextInputState::new("Value", ""),
+        });
+        ms.stage = ManagerStage::Editor(editor);
+
+        assert_eq!(
+            key_debug_name(&state, key(crossterm::event::KeyCode::Char('s'))),
+            "Char(<redacted>)"
+        );
+        assert_eq!(
+            key_debug_name(&state, key(crossterm::event::KeyCode::Enter)),
+            "Enter"
+        );
+    }
+
+    #[test]
+    fn debug_location_includes_stage_and_modal_without_values() {
+        let mut state = fresh_state();
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        let mut editor = EditorState::new_create();
+        editor.modal = Some(Modal::TextInput {
+            target: TextInputTarget::EnvValue {
+                scope: SecretsScopeTag::Workspace,
+                key: "TOKEN".into(),
+            },
+            state: TextInputState::new("Value", ""),
+        });
+        ms.stage = ManagerStage::Editor(editor);
+
+        let location = console_location_debug(&state);
+        assert!(location.contains("editor"), "{location}");
+        assert!(location.contains("modal=TextInput"), "{location}");
+        assert!(!location.contains("TOKEN"), "{location}");
+    }
+
+    #[test]
     fn quit_confirm_handle_key_y_commits_exit() {
         let mut s = ConfirmState::new("Exit jackin'?");
-        let key = crossterm::event::KeyEvent {
-            code: crossterm::event::KeyCode::Char('y'),
-            modifiers: crossterm::event::KeyModifiers::NONE,
-            kind: crossterm::event::KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
-        };
-        assert!(matches!(s.handle_key(key), ModalOutcome::Commit(true)));
+        assert!(matches!(
+            s.handle_key(key(crossterm::event::KeyCode::Char('y'))),
+            ModalOutcome::Commit(true)
+        ));
     }
 
     #[test]
     fn quit_confirm_handle_key_n_returns_commit_false() {
         let mut s = ConfirmState::new("Exit jackin'?");
-        let key = crossterm::event::KeyEvent {
-            code: crossterm::event::KeyCode::Char('n'),
-            modifiers: crossterm::event::KeyModifiers::NONE,
-            kind: crossterm::event::KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
-        };
-        assert!(matches!(s.handle_key(key), ModalOutcome::Commit(false)));
+        assert!(matches!(
+            s.handle_key(key(crossterm::event::KeyCode::Char('n'))),
+            ModalOutcome::Commit(false)
+        ));
     }
 
     #[test]
     fn quit_confirm_handle_key_esc_cancels() {
         let mut s = ConfirmState::new("Exit jackin'?");
-        let key = crossterm::event::KeyEvent {
-            code: crossterm::event::KeyCode::Esc,
-            modifiers: crossterm::event::KeyModifiers::NONE,
-            kind: crossterm::event::KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
-        };
-        assert!(matches!(s.handle_key(key), ModalOutcome::Cancel));
+        assert!(matches!(
+            s.handle_key(key(crossterm::event::KeyCode::Esc)),
+            ModalOutcome::Cancel
+        ));
     }
 }

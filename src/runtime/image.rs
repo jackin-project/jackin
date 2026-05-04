@@ -44,13 +44,14 @@ pub(super) fn build_agent_image(
     drop(repo_lock);
 
     if debug {
+        let dockerfile_body = std::fs::read_to_string(&build.dockerfile_path)
+            .unwrap_or_else(|e| format!("<read failed: {e}>"));
         eprintln!(
             "{}",
             format!(
                 r"[debug] DerivedDockerfile ({}):
-{}",
+{dockerfile_body}",
                 build.dockerfile_path.display(),
-                std::fs::read_to_string(&build.dockerfile_path).unwrap_or_default()
             )
             .dimmed()
         );
@@ -70,9 +71,14 @@ pub(super) fn build_agent_image(
     // the original pre-bust layer, causing the installed agent version to
     // ping-pong between old and new on alternate launches.
     let cache_bust_value = if rebuild {
+        // System clock before UNIX_EPOCH is essentially impossible, but if it
+        // happens we must not silently fall back to 0 — that collapses to the
+        // Dockerfile's `JACKIN_CACHE_BUST=0` default and defeats the operator's
+        // explicit `--rebuild` request.
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs())
+            .map_err(|e| anyhow::anyhow!("system clock is before UNIX epoch: {e}"))?
+            .as_secs()
             .to_string();
         version_check::store_cache_bust(paths, &image, &ts);
         ts

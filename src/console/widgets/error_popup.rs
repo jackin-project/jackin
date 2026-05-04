@@ -26,6 +26,11 @@ const DANGER_RED: Color = Color::Rgb(255, 94, 122);
 pub struct ErrorPopupState {
     pub title: String,
     pub message: String,
+    /// Memoized `(inner_width, rows)` from the last `estimated_message_rows`
+    /// call. The popup is rendered every frame while open and the message
+    /// can be a long anyhow chain — re-walking each line every frame is
+    /// avoidable. `Cell` because `render` only takes `&self`.
+    cached_rows: std::cell::Cell<Option<(u16, u16)>>,
 }
 
 impl ErrorPopupState {
@@ -33,6 +38,7 @@ impl ErrorPopupState {
         Self {
             title: title.into(),
             message: message.into(),
+            cached_rows: std::cell::Cell::new(None),
         }
     }
 
@@ -49,8 +55,17 @@ impl ErrorPopupState {
 
 /// Estimate the number of wrapped rows the message needs for a given
 /// inner width. Used by the modal sizer so tall messages don't clip.
+///
+/// The result is memoized on `state` keyed by `inner_width` so the
+/// per-line `chars().count()` walk only happens on resize, not on every
+/// render frame.
 #[must_use]
 pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 {
+    if let Some((cached_width, rows)) = state.cached_rows.get()
+        && cached_width == inner_width
+    {
+        return rows;
+    }
     let w = usize::from(inner_width.max(1));
     let mut rows: u32 = 0;
     for line in state.message.lines() {
@@ -60,15 +75,28 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
         let r = len.div_ceil(w);
         rows = rows.saturating_add(u32::try_from(r).unwrap_or(u32::MAX));
     }
-    u16::try_from(rows.max(1)).unwrap_or(u16::MAX)
+    let result = u16::try_from(rows.max(1)).unwrap_or(u16::MAX);
+    state.cached_rows.set(Some((inner_width, result)));
+    result
 }
 
 /// Total rows the popup wants. Layout: top border + blank + N message
 /// rows + blank + button + blank + hint + bottom border.
+///
+/// `max_rows` is the upper bound the caller is willing to allocate
+/// (typically terminal height minus its own chrome). Long anyhow chains
+/// — common when role resolution or docker build fails — easily exceed
+/// 15 rows, and a fixed cap silently truncates the bottom of the
+/// message where the root cause usually lives.
+///
+/// The chrome floor is 8 (2 borders + 4 spacer/button/hint rows + 1 message
+/// row). At smaller `max_rows` the renderer would produce a zero-row body
+/// chunk and the message would disappear, which is worse than the popup
+/// overflowing the terminal.
 #[must_use]
-pub fn required_height(state: &ErrorPopupState, inner_width: u16) -> u16 {
+pub fn required_height(state: &ErrorPopupState, inner_width: u16, max_rows: u16) -> u16 {
     let body = estimated_message_rows(state, inner_width);
-    body.saturating_add(6).min(15)
+    body.saturating_add(7).min(max_rows.max(8))
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
@@ -100,7 +128,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
         .split(inner);
 
     // Message body — WHITE to keep readable against the red border.
-    let paragraph = Paragraph::new(state.message.clone())
+    let paragraph = Paragraph::new(state.message.as_str())
         .style(Style::default().fg(WHITE))
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: false });
@@ -197,9 +225,16 @@ mod tests {
     }
 
     #[test]
-    fn required_height_caps_at_15() {
+    fn required_height_respects_caller_supplied_max() {
+        // Long message wants well above the cap — required_height must
+        // not exceed `max_rows`, and never drop below the chrome floor.
         let s = ErrorPopupState::new("Save failed", "word ".repeat(500));
-        assert!(required_height(&s, 30) <= 15);
+        assert!(required_height(&s, 30, 15) <= 15);
+        assert!(required_height(&s, 30, 40) <= 40);
+        // Floor: caller passing too-small max still yields the 8-row
+        // chrome floor so the renderer's body chunk is never zero rows
+        // (which would make the message vanish).
+        assert!(required_height(&s, 30, 1) >= 8);
     }
 
     #[test]
@@ -207,5 +242,29 @@ mod tests {
         let s = ErrorPopupState::new("t", "abcdefghijklmnop"); // 16 chars
         // width 8 → 2 rows
         assert_eq!(estimated_message_rows(&s, 8), 2);
+    }
+
+    #[test]
+    fn render_single_line_message_is_visible() {
+        use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+        let state = ErrorPopupState::new("Role not found", "repository not found");
+        let area = Rect::new(0, 0, 60, required_height(&state, 56, 25));
+        let backend = TestBackend::new(area.width, area.height);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| render(f, area, &state)).unwrap();
+
+        let buf = term.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+            rendered.push('\n');
+        }
+        assert!(
+            rendered.contains("repository not found"),
+            "message should be visible in popup:\n{rendered}"
+        );
     }
 }
