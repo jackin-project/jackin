@@ -127,33 +127,6 @@ fn validate_agent_supported(
     );
 }
 
-fn verify_required_agent_env(
-    agent: crate::agent::Agent,
-    resolved_env: &crate::env_resolver::ResolvedEnv,
-) -> anyhow::Result<()> {
-    let profile = crate::agent::profile::profile(agent);
-    let missing = profile
-        .required_env
-        .into_iter()
-        .filter(|required| {
-            !resolved_env
-                .vars
-                .iter()
-                .any(|(key, value)| key == required && !value.is_empty())
-        })
-        .collect::<Vec<_>>();
-
-    if missing.is_empty() {
-        return Ok(());
-    }
-
-    anyhow::bail!(
-        "agent \"{}\" requires {} in the resolved launch env; declare it in workspace/global env or role manifest env",
-        agent.slug(),
-        missing.join(", ")
-    );
-}
-
 struct StepCounter {
     current: u32,
     quiet: bool,
@@ -238,10 +211,22 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
                 plugins_json.display()
             ),
         ],
-        AgentRuntimeState::Codex { config_toml } => vec![format!(
-            "{}:/home/agent/.codex/config.toml",
-            config_toml.display()
-        )],
+        AgentRuntimeState::Codex {
+            config_toml,
+            auth_json,
+        } => {
+            let mut mounts = vec![format!(
+                "{}:/home/agent/.codex/config.toml",
+                config_toml.display()
+            )];
+            if let Some(auth_json) = auth_json {
+                mounts.push(format!(
+                    "{}:/home/agent/.codex/auth.json",
+                    auth_json.display()
+                ));
+            }
+            mounts
+        }
     }
 }
 
@@ -993,7 +978,6 @@ fn load_role_with(
         }
     }
     let resolved_env = crate::env_resolver::ResolvedEnv { vars: merged_vars };
-    verify_required_agent_env(agent, &resolved_env)?;
 
     // Launch-time diagnostic: emit a single compact line summarising
     // the operator env that will be injected. In normal mode we show
@@ -1115,23 +1099,19 @@ fn load_role_with(
                 },
                 crate::instance::AuthProvisionOutcome::Skipped => {}
             }
-        } else if !matches!(auth_mode, crate::config::AuthForwardMode::Ignore) {
-            // auth_forward is a Claude-only setting today (it gates
-            // CLAUDE_CODE_OAUTH_TOKEN forwarding and .credentials.json
-            // syncing). Surface a one-line notice when the operator has
-            // configured something other than the default and the active
-            // agent isn't Claude — otherwise the setting silently no-ops
-            // and the operator never finds out their config is dead.
-            let mode_label = match auth_mode {
-                crate::config::AuthForwardMode::Token => "token",
-                crate::config::AuthForwardMode::Sync => "sync",
-                crate::config::AuthForwardMode::Ignore => unreachable!(),
-            };
-            eprintln!(
-                "[jackin] auth_forward={mode_label} is a Claude-only setting and is ignored \
-                 under agent={}.",
-                agent.slug()
+        } else if agent == crate::agent::Agent::Codex {
+            let raw_source = lookup_operator_env_raw(
+                config,
+                Some(&selector.key()),
+                workspace_name.as_deref(),
+                "OPENAI_API_KEY",
             );
+            let resolved_source = resolved_env
+                .vars
+                .iter()
+                .any(|(k, v)| k == "OPENAI_API_KEY" && !v.trim().is_empty())
+                .then(|| raw_source.as_deref().unwrap_or("OPENAI_API_KEY"));
+            tui::codex_auth_notice(resolved_source, (auth_mode, auth_outcome).into());
         }
 
         // Materialize workspace mounts: shared mounts pass through;
@@ -1600,6 +1580,99 @@ agents = ["codex"]
     }
 
     #[test]
+    fn agent_mounts_for_codex_synced_includes_auth_json() {
+        use crate::agent::Agent;
+        use crate::instance::RoleState;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest_temp = tempdir().unwrap();
+        std::fs::write(
+            manifest_temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            manifest_temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+
+        // Stage a host ~/.codex/auth.json so Sync mode succeeds.
+        let host_home = temp.path().join("host_home");
+        std::fs::create_dir_all(host_home.join(".codex")).unwrap();
+        std::fs::write(
+            host_home.join(".codex/auth.json"),
+            "{\"auth_mode\":\"chatgpt\"}",
+        )
+        .unwrap();
+
+        let (state, _) = RoleState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            crate::config::AuthForwardMode::Sync,
+            &host_home,
+            Agent::Codex,
+        )
+        .unwrap();
+
+        let mounts = agent_mounts(&state);
+        assert_eq!(mounts.len(), 2);
+        assert!(mounts[0].contains("/home/agent/.codex/config.toml"));
+        assert!(mounts[1].contains("/home/agent/.codex/auth.json"));
+        assert!(!mounts[1].ends_with(":ro"));
+    }
+
+    #[test]
+    fn agent_mounts_for_codex_host_missing_omits_auth_json() {
+        use crate::agent::Agent;
+        use crate::instance::RoleState;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest_temp = tempdir().unwrap();
+        std::fs::write(
+            manifest_temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            manifest_temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+
+        let (state, _) = RoleState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            crate::config::AuthForwardMode::Sync,
+            temp.path().join("empty_host_home").as_path(),
+            Agent::Codex,
+        )
+        .unwrap();
+
+        let mounts = agent_mounts(&state);
+        assert_eq!(
+            mounts.len(),
+            1,
+            "no auth.json bind when host has no ~/.codex/auth.json: {mounts:?}"
+        );
+        assert!(mounts[0].contains("/home/agent/.codex/config.toml"));
+    }
+
+    #[test]
     fn build_workspace_mount_strings_marks_overrides_readonly() {
         // One worktree-mode mount with all four bind sources populated.
         // Host `.git/` mount MUST stay rw (git writes refs/objects/
@@ -1871,21 +1944,6 @@ plugins = []
         assert!(message.contains("role \"agent-smith\""));
         assert!(message.contains("agent \"codex\""));
         assert!(message.contains("supported: [claude]"));
-    }
-
-    #[test]
-    fn verify_required_agent_env_rejects_missing_codex_key() {
-        let env = crate::env_resolver::ResolvedEnv { vars: vec![] };
-        let err = verify_required_agent_env(crate::agent::Agent::Codex, &env).unwrap_err();
-        assert!(err.to_string().contains("OPENAI_API_KEY"));
-    }
-
-    #[test]
-    fn verify_required_agent_env_accepts_codex_key() {
-        let env = crate::env_resolver::ResolvedEnv {
-            vars: vec![("OPENAI_API_KEY".to_string(), "test-key".to_string())],
-        };
-        verify_required_agent_env(crate::agent::Agent::Codex, &env).unwrap();
     }
 
     #[test]
@@ -2297,8 +2355,10 @@ model = "gpt-5"
         );
     }
 
+    /// Codex CLI drives interactive `ChatGPT` login when no API key is
+    /// present, so jackin must not gate launch on `OPENAI_API_KEY`.
     #[test]
-    fn load_agent_rejects_codex_when_openai_key_missing() {
+    fn load_agent_launches_codex_without_openai_key() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -2333,7 +2393,7 @@ agents = ["codex"]
 
         let mut workspace = repo_workspace(&repo_dir);
         workspace.default_agent = Some(crate::agent::Agent::Codex);
-        let err = load_role(
+        load_role(
             &paths,
             &mut config,
             &selector,
@@ -2341,15 +2401,15 @@ agents = ["codex"]
             &mut runner,
             &LoadOptions::default(),
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert!(err.to_string().contains("OPENAI_API_KEY"));
-        assert!(
-            !runner
-                .recorded
-                .iter()
-                .any(|call| call.contains("docker build") || call.contains("docker run"))
-        );
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .expect("role docker run should fire even without OPENAI_API_KEY");
+        assert!(run_cmd.contains("-e JACKIN_AGENT=codex"));
+        assert!(!run_cmd.contains("-e OPENAI_API_KEY="));
     }
 
     #[test]

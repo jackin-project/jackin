@@ -2,8 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-pub mod profile;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Agent {
@@ -18,7 +16,51 @@ impl Agent {
             Self::Codex => "codex",
         }
     }
+
+    pub const fn install_block(self) -> &'static str {
+        match self {
+            Self::Claude => CLAUDE_INSTALL_BLOCK,
+            Self::Codex => CODEX_INSTALL_BLOCK,
+        }
+    }
 }
+
+const CLAUDE_INSTALL_BLOCK: &str = "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN claude --version
+";
+
+const CODEX_INSTALL_BLOCK: &str = "\
+USER root
+ARG JACKIN_CACHE_BUST=0
+ARG TARGETARCH
+RUN set -euxo pipefail && \\
+    : \"${JACKIN_CACHE_BUST}\" && \\
+    case \"${TARGETARCH:-amd64}\" in \\
+      amd64) ARCH=x86_64-unknown-linux-musl ;; \\
+      arm64) ARCH=aarch64-unknown-linux-musl ;; \\
+      *) echo \"unsupported arch ${TARGETARCH}\"; exit 1 ;; \\
+    esac && \\
+    TAG=$(curl -sfIL -o /dev/null -w '%{url_effective}' \\
+            https://github.com/openai/codex/releases/latest \\
+          | sed 's|.*/tag/||') && \\
+    if [ -z \"${TAG}\" ]; then \\
+      echo \"failed to resolve codex release tag — GitHub redirect format may have changed\" && \\
+      exit 1; \\
+    fi && \\
+    case \"${TAG}\" in \\
+      v[0-9]*|rust-v[0-9]*) ;; \\
+      *) echo \"unexpected codex release tag format: ${TAG}\"; exit 1 ;; \\
+    esac && \\
+    ASSET=\"codex-${ARCH}\" && \\
+    curl -fsSL \"https://github.com/openai/codex/releases/download/${TAG}/${ASSET}.tar.gz\" \\
+      | tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin && \\
+    chmod 0755 /tmp/codex.bin && \\
+    mv /tmp/codex.bin /usr/local/bin/codex && \\
+    mkdir -p /etc/jackin && codex --version > /etc/jackin/codex.version
+";
 
 impl fmt::Display for Agent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -79,5 +121,29 @@ mod tests {
     fn deserializes_lowercase() {
         let h: Agent = serde_json::from_str("\"codex\"").unwrap();
         assert_eq!(h, Agent::Codex);
+    }
+
+    #[test]
+    fn codex_install_block_installs_cli_as_root_with_current_archive_layout() {
+        let block = Agent::Codex.install_block();
+        assert!(block.starts_with("USER root\n"));
+        assert!(block.contains("set -euxo pipefail"));
+        assert!(block.contains("${TARGETARCH:-amd64}"));
+        assert!(block.contains("x86_64-unknown-linux-musl"));
+        assert!(block.contains("aarch64-unknown-linux-musl"));
+        assert!(block.contains("ASSET=\"codex-${ARCH}\""));
+        assert!(block.contains("tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin"));
+        assert!(block.contains("chmod 0755 /tmp/codex.bin"));
+        assert!(block.contains("mv /tmp/codex.bin /usr/local/bin/codex"));
+        assert!(block.contains("/etc/jackin/codex.version"));
+        assert!(block.contains("openai/codex/releases"));
+    }
+
+    #[test]
+    fn claude_install_block_installs_cli_via_official_script() {
+        let block = Agent::Claude.install_block();
+        assert!(block.starts_with("USER agent\n"));
+        assert!(block.contains("claude.ai/install.sh"));
+        assert!(block.contains("claude --version"));
     }
 }

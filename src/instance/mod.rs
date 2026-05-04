@@ -47,6 +47,13 @@ pub enum AgentRuntimeState {
     Codex {
         /// Host path mounted at `/home/agent/.codex/config.toml`.
         config_toml: PathBuf,
+        /// Host path mounted at `/home/agent/.codex/auth.json` when
+        /// the file was synced from the host's `~/.codex/auth.json` on
+        /// a previous launch. `None` when the host had no auth.json at
+        /// the most recent launch — the bind mount is skipped and any
+        /// in-container `codex login` writes to the container's
+        /// writable layer (lost on `docker rm`).
+        auth_json: Option<PathBuf>,
     },
 }
 
@@ -98,7 +105,20 @@ impl RoleState {
     #[must_use]
     pub fn codex_config_toml(&self) -> Option<&Path> {
         match &self.agent_runtime {
-            AgentRuntimeState::Codex { config_toml } => Some(config_toml),
+            AgentRuntimeState::Codex { config_toml, .. } => Some(config_toml),
+            AgentRuntimeState::Claude { .. } => None,
+        }
+    }
+
+    /// Host path to Codex's `auth.json` (mounted at
+    /// `/home/agent/.codex/auth.json` in the container). `None` when
+    /// no auth file is available (host had none and no in-container
+    /// login has run yet) or when this state was not prepared for
+    /// `Agent::Codex`.
+    #[must_use]
+    pub fn codex_auth_json(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Codex { auth_json, .. } => auth_json.as_deref(),
             AgentRuntimeState::Claude { .. } => None,
         }
     }
@@ -158,10 +178,20 @@ impl RoleState {
                 let codex_dir = root.join("codex");
                 std::fs::create_dir_all(&codex_dir)?;
                 let config_toml = codex_dir.join("config.toml");
-                Self::provision_codex_auth(&config_toml, manifest)?;
+                let auth_json_path = codex_dir.join("auth.json");
+                let (outcome, auth_json) = Self::provision_codex_auth(
+                    &config_toml,
+                    &auth_json_path,
+                    manifest,
+                    auth_forward,
+                    host_home,
+                )?;
                 (
-                    AgentRuntimeState::Codex { config_toml },
-                    AuthProvisionOutcome::Skipped,
+                    AgentRuntimeState::Codex {
+                        config_toml,
+                        auth_json,
+                    },
+                    outcome,
                 )
             }
         };
