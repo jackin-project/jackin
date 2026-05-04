@@ -37,6 +37,14 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 - **Last verified:** 2026-05-01 — latest `lycheeverse/lychee-action` tag is still `v2.8.0`; `faea714` remains current `master` HEAD; pin introduced in [#176](https://github.com/jackin-project/jackin/pull/176). `LYCHEE_VERSION` independently bumped to `v0.24.2` ([release notes](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.24.2)) — tarball layout unchanged from v0.24.1 (PR [#2165](https://github.com/lycheeverse/lychee/pull/2165) is binstall-metadata only), so the post-v2.8.0 master SHA is still required.
 - **Done when:** a tag at or after `faea714` ships. Replace the SHA in `docs.yml` with that tag's commit SHA, update the inline comment from "post-v2.8.0 master" to the tag name, and re-confirm `LYCHEE_VERSION` matches whatever the new release defaults to (or keep the explicit pin if newer).
 
+#### `shellfirm-aarch64-linux-binary` — switch to prebuilt download once upstream ships aarch64-linux artifact
+
+- **What:** in [`docker/construct/Dockerfile`](docker/construct/Dockerfile), drop the `cargo install shellfirm` step (and the multi-stage `rust:1.95.0-trixie` `security-tools` builder it lives in) in favor of downloading a prebuilt `shellfirm-vX.Y.Z-aarch64-linux.tar.xz` artifact, mirroring the tirith install pattern already in place.
+- **Why:** the construct image is built multi-arch (`linux/amd64` + `linux/arm64`). shellfirm currently only ships `x86_64-linux` (and macOS/Windows) prebuilt binaries, so the arm64 variant must compile shellfirm and its full dependency graph from source on every layer-cache miss, dominating the arm64 build time. tirith already moved to prebuilt download because its upstream publishes both Linux arches; shellfirm is the last blocker preventing us from removing the rust toolchain stage from the construct image entirely.
+- **Tracking:** <https://github.com/kaplanelad/shellfirm/issues/179> — upstream issue requesting that the existing-but-commented-out `aarch64-linux` matrix entry in [`release.yml`](https://github.com/kaplanelad/shellfirm/blob/main/.github/workflows/release.yml) be re-enabled.
+- **Last verified:** 2026-05-04 — checked v0.3.5 through v0.3.9 release assets; only `x86_64-linux.tar.xz` ships for Linux. Filed upstream issue #179 same day.
+- **Done when:** a shellfirm release at or after the fix publishes `shellfirm-v<ver>-aarch64-linux.tar.xz` (or equivalently named) alongside the existing x86_64 tarball. Replace the cargo install step with a TARGETARCH-aware curl + `tar -xJ` block (mirroring the tirith pattern), drop the `security-tools` stage and the `FROM rust:...` line, remove the `COPY --from=security-tools` for shellfirm, and remove the `TODO(shellfirm-aarch64-linux-binary)` marker in the Dockerfile.
+
 ### Internal cleanups
 
 #### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check
