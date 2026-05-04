@@ -23,10 +23,24 @@ pub(super) fn build_agent_image(
     runner: &mut impl CommandRunner,
     repo_lock: std::fs::File,
 ) -> anyhow::Result<String> {
+    // Decide the build mode up front.
+    //
+    // Pre-built mode: the manifest declares a `published_image` and the
+    // caller has not passed `--rebuild`. The heavy workspace layers (apt
+    // installs, Rust toolchain, etc.) are already baked into that image; we
+    // only need to layer the agent install on top.
+    //
+    // Workspace mode: either `--rebuild` was requested or no `published_image`
+    // is declared. We build from the workspace Dockerfile from scratch.
+    let published_image = validated_repo.manifest.published_image.as_deref();
+    let use_prebuilt = published_image.is_some() && !rebuild;
+    let base_image_override = use_prebuilt.then(|| published_image.unwrap());
+
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
     // repo can be safely modified by a parallel load.
-    let build = create_derived_build_context(&cached_repo.repo_dir, validated_repo)?;
+    let build =
+        create_derived_build_context(&cached_repo.repo_dir, validated_repo, base_image_override)?;
     drop(repo_lock);
 
     if debug {
@@ -48,13 +62,13 @@ pub(super) fn build_agent_image(
     // Always pass the cache-bust arg so Docker matches the correct layer.
     //
     // When rebuilding (update available / --rebuild), generate a fresh
-    // timestamp to invalidate the cached Claude Code install layer, and
-    // persist it so subsequent non-rebuild builds reuse the same layer.
+    // timestamp to invalidate the cached agent install layer, and persist it
+    // so subsequent non-rebuild builds reuse the same layer.
     //
     // When NOT rebuilding, replay the stored bust value.  Without this,
-    // Docker resolves the Dockerfile default `JACKIN_CACHE_BUST=0` and
-    // hits the original pre-bust layer, causing the installed Claude
-    // version to ping-pong between old and new on alternate launches.
+    // Docker resolves the Dockerfile default `JACKIN_CACHE_BUST=0` and hits
+    // the original pre-bust layer, causing the installed agent version to
+    // ping-pong between old and new on alternate launches.
     let cache_bust_value = if rebuild {
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -69,17 +83,30 @@ pub(super) fn build_agent_image(
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
 
-    let mut build_args: Vec<&str> = vec![
-        "build",
-        "--pull",
-        "--build-arg",
-        &build_arg_uid,
-        "--build-arg",
-        &build_arg_gid,
-        "--build-arg",
-        &cache_bust,
-    ];
+    let mut build_args: Vec<&str> = vec!["build"];
+
+    // --pull semantics:
+    //
+    // Pre-built mode: pass --pull so Docker always checks the registry for an
+    // updated published image. A pull with an unchanged digest is a fast
+    // no-op, so this adds negligible overhead while ensuring the local daemon
+    // picks up any newly pushed workspace image.
+    //
+    // Workspace mode with --rebuild: pass --pull to refresh the upstream
+    // construct base before rebuilding from the workspace Dockerfile.
+    //
+    // Workspace mode without --rebuild (no published_image): omit --pull so
+    // Docker's layer cache is respected across invocations. The base image is
+    // not re-evaluated and heavy apt / toolchain layers stay cached.
+    if use_prebuilt || rebuild {
+        build_args.push("--pull");
+    }
+
+    build_args.extend(["--build-arg", &build_arg_uid]);
+    build_args.extend(["--build-arg", &build_arg_gid]);
+    build_args.extend(["--build-arg", &cache_bust]);
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
+
     runner.run(
         "docker",
         &build_args,
