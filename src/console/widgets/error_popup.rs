@@ -71,10 +71,15 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
 /// — common when role resolution or docker build fails — easily exceed
 /// 15 rows, and a fixed cap silently truncates the bottom of the
 /// message where the root cause usually lives.
+///
+/// The chrome floor is 8 (2 borders + 4 spacer/button/hint rows + 1 message
+/// row). At smaller `max_rows` the renderer would produce a zero-row body
+/// chunk and the message would disappear, which is worse than the popup
+/// overflowing the terminal.
 #[must_use]
 pub fn required_height(state: &ErrorPopupState, inner_width: u16, max_rows: u16) -> u16 {
     let body = estimated_message_rows(state, inner_width);
-    body.saturating_add(7).min(max_rows.max(7))
+    body.saturating_add(7).min(max_rows.max(8))
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ErrorPopupState) {
@@ -209,9 +214,10 @@ mod tests {
         let s = ErrorPopupState::new("Save failed", "word ".repeat(500));
         assert!(required_height(&s, 30, 15) <= 15);
         assert!(required_height(&s, 30, 40) <= 40);
-        // Floor: caller passing too-small max still yields enough rows
-        // for the chrome (button + hint + spacers).
-        assert!(required_height(&s, 30, 1) >= 7);
+        // Floor: caller passing too-small max still yields the 8-row
+        // chrome floor so the renderer's body chunk is never zero rows
+        // (which would make the message vanish).
+        assert!(required_height(&s, 30, 1) >= 8);
     }
 
     #[test]
