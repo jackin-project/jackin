@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
-pub enum MountKind {
+pub(crate) enum MountKind {
     /// Path doesn't exist on disk. Nothing to inspect.
     Missing,
     /// Path exists, not a git repo.
@@ -24,28 +24,31 @@ pub enum MountKind {
 /// can't ask for a web URL on a non-github remote or hold separate
 /// `host`, `remote_url`, and `web_url` fields that drift out of sync.
 #[derive(Debug, Clone)]
-pub enum GitOrigin {
+pub(crate) enum GitOrigin {
     /// Remote `origin` points at `github.com` (SSH `git@github.com:`,
     /// HTTPS `https://github.com/...`, or `ssh://git@github.com/...`).
     /// `web_url` is the resolved branch/commit page on github.com.
-    Github { remote_url: String, web_url: String },
+    ///
+    /// `remote_url` is preserved here for diagnostic and Debug output
+    /// even though no production reader currently destructures it; the
+    /// `dead_code` allow keeps the value carried in the variant so a
+    /// future caller (e.g. error chains showing the operator-typed URL)
+    /// doesn't have to plumb it back in separately.
+    Github {
+        #[allow(dead_code)]
+        remote_url: String,
+        web_url: String,
+    },
     /// Self-hosted gitea/forgejo, GitLab, Bitbucket, Azure DevOps, etc.
     /// We expose the raw remote URL but no web URL — we don't speak the
     /// branch-URL conventions of these hosts.
-    Other { remote_url: String },
+    Other {
+        #[allow(dead_code)]
+        remote_url: String,
+    },
 }
 
 impl GitOrigin {
-    /// `https://...` URL for the branch on github.com when applicable.
-    /// `None` for non-github remotes — callers asking for an "open in
-    /// browser" URL should gate on this rather than synthesizing one.
-    pub fn web_url(&self) -> Option<&str> {
-        match self {
-            Self::Github { web_url, .. } => Some(web_url),
-            Self::Other { .. } => None,
-        }
-    }
-
     /// Display prefix used by `MountKind::label`. Github gets a distinct
     /// prefix so the operator knows "open in browser" is wired up.
     const fn display_prefix(&self) -> &'static str {
@@ -57,13 +60,13 @@ impl GitOrigin {
 }
 
 #[derive(Debug, Clone)]
-pub enum GitBranch {
+pub(crate) enum GitBranch {
     Named(String),
     Detached { short_sha: String },
     Unknown,
 }
 
-pub fn inspect(src: &str) -> MountKind {
+pub(crate) fn inspect(src: &str) -> MountKind {
     let path = Path::new(src);
     if !path.exists() {
         return MountKind::Missing;
@@ -274,7 +277,7 @@ impl MountKind {
     /// remotes have an `o`-opens-in-browser affordance wired up; everything
     /// else (self-hosted gitea, gitlab, no remote, …) keeps the generic
     /// `git · …` prefix.
-    pub fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         match self {
             Self::Missing => "missing".to_string(),
             Self::Folder => "folder".to_string(),
