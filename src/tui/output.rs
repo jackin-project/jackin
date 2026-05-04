@@ -220,6 +220,88 @@ fn format_auth_mode_notice_for_test(mode: &str, source_reference: Option<&str>) 
     format!("{label} {}", body.color(rgb(PHOSPHOR_DIM)))
 }
 
+/// Sync-state half of the Codex auth notice.
+///
+/// Derived from `(AuthForwardMode, AuthProvisionOutcome)` via [`From`]
+/// so a future outcome variant forces a compile error here instead of
+/// a silent fallback to a misleading notice.
+#[derive(Debug, Clone, Copy)]
+pub enum CodexSyncState {
+    Synced,
+    HostMissing,
+    TokenMode,
+    Ignored,
+}
+
+impl
+    From<(
+        crate::config::AuthForwardMode,
+        crate::instance::AuthProvisionOutcome,
+    )> for CodexSyncState
+{
+    fn from(
+        (mode, outcome): (
+            crate::config::AuthForwardMode,
+            crate::instance::AuthProvisionOutcome,
+        ),
+    ) -> Self {
+        use crate::config::AuthForwardMode as M;
+        use crate::instance::AuthProvisionOutcome as O;
+        match (mode, outcome) {
+            (_, O::Synced) => Self::Synced,
+            (_, O::HostMissing) => Self::HostMissing,
+            (_, O::TokenMode) => Self::TokenMode,
+            (M::Ignore, O::Skipped) => Self::Ignored,
+            // `Skipped` is only emitted by the Ignore arm of
+            // `provision_codex_auth`; the Sync/Token arms always return
+            // Synced/HostMissing/TokenMode. If a future outcome variant
+            // is added, these arms become reachable and the `unreachable!`
+            // will fire in tests/debug — preferable to silently routing
+            // a new outcome to the wrong notice.
+            (M::Sync | M::Token, O::Skipped) => unreachable!(
+                "AuthProvisionOutcome::Skipped should only be returned for AuthForwardMode::Ignore"
+            ),
+        }
+    }
+}
+
+/// Render the one-line launch diagnostic for Codex auth state.
+///
+/// `api_key_source` wins display when present — Codex CLI prefers
+/// `OPENAI_API_KEY` over `auth.json` (verified against the Codex CLI
+/// source as of 2026-05; if that precedence ever changes upstream the
+/// `codex_auth_notice_api_key_wins_over_sync_state` test will need to
+/// be revisited rather than silently rotting in prose).
+pub fn codex_auth_notice(api_key_source: Option<&str>, sync_state: CodexSyncState) {
+    eprintln!(
+        "  {}",
+        format_codex_auth_notice_for_test(api_key_source, sync_state)
+    );
+}
+
+fn format_codex_auth_notice_for_test(
+    api_key_source: Option<&str>,
+    sync_state: CodexSyncState,
+) -> String {
+    let label = "codex auth:".color(rgb(PHOSPHOR_GREEN)).bold().to_string();
+    let body = api_key_source.map_or_else(
+        || match sync_state {
+            CodexSyncState::Synced => "synced (~/.codex/auth.json)".to_string(),
+            CodexSyncState::HostMissing => {
+                "none — Codex CLI will prompt for ChatGPT login inside the container".to_string()
+            }
+            CodexSyncState::TokenMode => {
+                "none (token mode is a no-op for Codex — set OPENAI_API_KEY or auth_forward = \"sync\")".to_string()
+            }
+            CodexSyncState::Ignored => {
+                "none (ignore — login required inside the container)".to_string()
+            }
+        },
+        |src| format!("OPENAI_API_KEY ({src})"),
+    );
+    format!("{label} {}", body.color(rgb(PHOSPHOR_DIM)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,5 +353,85 @@ mod tests {
         assert!(clean.contains("claude auth:"));
         assert!(clean.contains("none"));
         assert!(clean.contains("ignore"));
+    }
+
+    #[test]
+    fn codex_auth_notice_api_key_wins_over_sync_state() {
+        let clean = strip_ansi(&format_codex_auth_notice_for_test(
+            Some("op://Work/OpenAI/default"),
+            CodexSyncState::Synced,
+        ));
+        assert!(clean.contains("codex auth:"), "got: {clean}");
+        assert!(clean.contains("OPENAI_API_KEY"), "got: {clean}");
+        assert!(clean.contains("op://Work/OpenAI/default"), "got: {clean}");
+        assert!(!clean.contains("synced"), "api key should win: {clean}");
+    }
+
+    #[test]
+    fn codex_auth_notice_synced_mentions_auth_json_source() {
+        let clean = strip_ansi(&format_codex_auth_notice_for_test(
+            None,
+            CodexSyncState::Synced,
+        ));
+        assert!(clean.contains("codex auth:"));
+        assert!(clean.contains("synced"));
+        assert!(clean.contains("~/.codex/auth.json"));
+    }
+
+    #[test]
+    fn codex_auth_notice_host_missing_describes_chatgpt_login_fallback() {
+        let clean = strip_ansi(&format_codex_auth_notice_for_test(
+            None,
+            CodexSyncState::HostMissing,
+        ));
+        assert!(clean.contains("codex auth:"));
+        assert!(clean.contains("none"));
+        assert!(clean.contains("ChatGPT login"));
+    }
+
+    #[test]
+    fn codex_auth_notice_token_mode_steers_operator_to_sync_or_env() {
+        let clean = strip_ansi(&format_codex_auth_notice_for_test(
+            None,
+            CodexSyncState::TokenMode,
+        ));
+        assert!(clean.contains("token mode"));
+        assert!(clean.contains("no-op"));
+        assert!(clean.contains("OPENAI_API_KEY"));
+        assert!(clean.contains("sync"));
+    }
+
+    #[test]
+    fn codex_auth_notice_ignored_says_login_required() {
+        let clean = strip_ansi(&format_codex_auth_notice_for_test(
+            None,
+            CodexSyncState::Ignored,
+        ));
+        assert!(clean.contains("ignore"));
+        assert!(clean.contains("login required"));
+    }
+
+    /// Pin the (`AuthForwardMode`, `AuthProvisionOutcome`) → `CodexSyncState`
+    /// table so a future outcome variant or mode addition has to be wired
+    /// here explicitly instead of silently falling through to a misleading
+    /// notice. Mirrors the unreachable arm in the `From` impl.
+    #[test]
+    fn codex_sync_state_from_mode_outcome_table() {
+        use crate::config::AuthForwardMode as M;
+        use crate::instance::AuthProvisionOutcome as O;
+
+        let cases = [
+            (M::Sync, O::Synced, CodexSyncState::Synced),
+            (M::Sync, O::HostMissing, CodexSyncState::HostMissing),
+            (M::Token, O::TokenMode, CodexSyncState::TokenMode),
+            (M::Ignore, O::Skipped, CodexSyncState::Ignored),
+        ];
+        for (mode, outcome, expected) in cases {
+            let got: CodexSyncState = (mode, outcome).into();
+            assert!(
+                std::mem::discriminant(&got) == std::mem::discriminant(&expected),
+                "({mode:?}, {outcome:?}) → {got:?}, expected {expected:?}"
+            );
+        }
     }
 }

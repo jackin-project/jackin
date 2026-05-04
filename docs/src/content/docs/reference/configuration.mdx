@@ -136,6 +136,7 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `claude/account.json` | Claude Code account metadata and preferences (mounted at `/home/agent/.claude.json`) |
 | `claude/plugins.json` | Installed Claude plugins list (mounted at `/home/agent/.jackin/plugins.json:ro`) |
 | `codex/config.toml` | Codex config generated at launch (mounted at `/home/agent/.codex/config.toml`) |
+| `codex/auth.json` | Synced copy of host `~/.codex/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/home/agent/.codex/auth.json`; absent when host has no auth.json) |
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |
 | `.jackin/` | jackin runtime metadata (agent-neutral) |
 
