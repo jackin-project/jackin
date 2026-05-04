@@ -120,7 +120,6 @@ fn workspace_create_rejects_duplicate_destination() {
             "test",
             "--workdir",
             env.proj_alpha.to_str().unwrap(),
-            "--no-workdir-mount",
             "--mount",
             &format!("{}:/work", env.sub_a.to_str().unwrap()),
             "--mount",
@@ -145,7 +144,6 @@ fn workspace_create_accepts_src_colon_dst_spec() {
             "test",
             "--workdir",
             "/code",
-            "--no-workdir-mount",
             "--mount",
             &format!("{}:/code", env.sub_a.to_str().unwrap()),
         ])
@@ -172,7 +170,6 @@ fn workspace_create_rejects_duplicate_name() {
             "test",
             "--workdir",
             env.sub_a.to_str().unwrap(),
-            "--no-workdir-mount",
             "--mount",
             env.sub_a.to_str().unwrap(),
         ])
@@ -186,7 +183,6 @@ fn workspace_create_rejects_duplicate_name() {
             "test",
             "--workdir",
             env.sub_b.to_str().unwrap(),
-            "--no-workdir-mount",
             "--mount",
             env.sub_b.to_str().unwrap(),
         ])

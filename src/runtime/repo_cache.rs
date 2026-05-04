@@ -805,10 +805,10 @@ plugins = []
 
     #[test]
     fn register_agent_repo_aborts_when_persist_registration_fails() {
-        // Persist runs *after* rename (the Phase 2 ordering fix), so a
-        // persist failure leaves the cache populated but registration
-        // un-persisted. Verify the error surfaces with the diagnostic
-        // context that points the operator at the inconsistency.
+        // Persist runs after rename, so a persist failure leaves the
+        // cache populated but registration un-persisted. Verify the
+        // error surfaces with the diagnostic context that points the
+        // operator at the inconsistency.
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -847,8 +847,7 @@ plugins = []
     fn register_agent_repo_rejects_stale_non_git_directory() {
         // A pre-existing directory at the cache slot that is *not* a
         // git repo must bail rather than overwrite or skip — the
-        // operator likely has unsynced work there. Pre-fix this branch
-        // had no regression coverage.
+        // operator likely has unsynced work there.
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();

@@ -1129,9 +1129,8 @@ mod tests {
     fn editor_save_create_with_no_name_routes_to_error_flow() {
         // begin_editor_save in Create mode must gate ConfirmSave on
         // pending_name being set. Without a name the inline banner reads
-        // "missing workspace name" — pre-fix this branch was untested
-        // even though it's the central failure surface for the rewritten
-        // workspace-create flow.
+        // "missing workspace name" — gating prevents the operator from
+        // committing a nameless workspace.
         let ws = WorkspaceConfig {
             workdir: "/seed".into(),
             mounts: vec![mount("/seed", "/seed")],

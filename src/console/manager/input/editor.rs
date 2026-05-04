@@ -2257,9 +2257,8 @@ plugins = []
     fn role_input_trusted_existing_role_skips_trust_prompt() {
         // When the config already has a trusted role source the editor
         // must register the cached repo and add it to the workspace
-        // *without* re-prompting for trust. Pre-fix this branch
-        // (`Ok(source) if source.trusted`) was not exercised — only the
-        // trust=false → confirm flow was tested.
+        // *without* re-prompting for trust (`Ok(source) if
+        // source.trusted` branch in `apply_role_input_with_runner`).
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
