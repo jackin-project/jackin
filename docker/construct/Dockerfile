@@ -46,22 +46,21 @@ RUN git lfs install
 # Install tirith
 ARG TIRITH_VERSION
 ARG TARGETARCH
-RUN set -eux; \
-    case "${TARGETARCH}" in \
+RUN case "${TARGETARCH}" in \
       amd64) tirith_arch=x86_64-unknown-linux-gnu ;; \
       arm64) tirith_arch=aarch64-unknown-linux-gnu ;; \
-      *) printf 'unsupported TARGETARCH for tirith: %s\n' "${TARGETARCH}" >&2; exit 1 ;; \
-    esac; \
-    base="https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}"; \
-    workdir="$(mktemp -d)"; \
-    cd "${workdir}"; \
-    curl -fsSLO "${base}/tirith-${tirith_arch}.tar.gz"; \
-    curl -fsSLO "${base}/checksums.txt"; \
-    grep "  tirith-${tirith_arch}.tar.gz$" checksums.txt > checksums-tirith.txt; \
-    sha256sum -c checksums-tirith.txt; \
-    tar -xzf "tirith-${tirith_arch}.tar.gz" -C /usr/local/bin tirith; \
-    chmod 0755 /usr/local/bin/tirith; \
-    cd /; \
+      *) printf 'unsupported TARGETARCH for tirith: %s\n' "${TARGETARCH}" >&2 && exit 1 ;; \
+    esac && \
+    base="https://github.com/sheeki03/tirith/releases/download/v${TIRITH_VERSION}" && \
+    workdir="$(mktemp -d)" && \
+    cd "${workdir}" && \
+    curl -fsSLO "${base}/tirith-${tirith_arch}.tar.gz" && \
+    curl -fsSLO "${base}/checksums.txt" && \
+    grep "  tirith-${tirith_arch}.tar.gz$" checksums.txt > checksums-tirith.txt && \
+    sha256sum -c checksums-tirith.txt && \
+    tar -xzf "tirith-${tirith_arch}.tar.gz" -C /usr/local/bin tirith && \
+    chmod 0755 /usr/local/bin/tirith && \
+    cd / && \
     rm -rf "${workdir}"
 
 # Install mise (version pinned via versions.env -> MISE_VERSION ARG; mise apt
