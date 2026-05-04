@@ -1,8 +1,9 @@
 //! Three-button choice modal for picking a mount destination.
 //!
 //! Most operator mounts want `dst = src`. This modal offers a fast path
-//! (`Use same path`) for that common case and falls back to the text-input flow via
-//! `Edit destination` when the operator wants a different container path.
+//! (`Mount at same path`) for that common case and falls back to the
+//! text-input flow via `Edit destination` when the operator wants a
+//! different container path.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -46,7 +47,7 @@ impl MountDstChoiceState {
 
     pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<MountDstChoice> {
         match key.code {
-            KeyCode::Char('u' | 'U') => ModalOutcome::Commit(MountDstChoice::Ok),
+            KeyCode::Char('m' | 'M') => ModalOutcome::Commit(MountDstChoice::Ok),
             KeyCode::Char('e' | 'E') => ModalOutcome::Commit(MountDstChoice::Edit),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
             KeyCode::Tab | KeyCode::Right | KeyCode::Char('l' | 'L') => {
@@ -92,13 +93,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // Layout: path | blank | explanation | blank | buttons | blank | hint
+    // Layout mirrors the git-repo prompt:
+    // question | path | blank | buttons | blank | hint
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1), // question
             Constraint::Length(1), // src path
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // explanation
             Constraint::Length(1), // spacer
             Constraint::Length(1), // buttons
             Constraint::Length(1), // spacer
@@ -106,25 +107,26 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
         ])
         .split(inner);
 
-    // Host path line — the operator-picked source.
-    let shortened = crate::tui::shorten_home(&state.src);
     frame.render_widget(
         Paragraph::new(Span::styled(
-            shortened,
+            "What would you like to do?",
             Style::default().fg(white).add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
         chunks[0],
     );
 
-    // Explanation line in PHOSPHOR_DIM.
+    // Host path line — the operator-picked source.
+    let shortened = crate::tui::shorten_home(&state.src);
     frame.render_widget(
         Paragraph::new(Span::styled(
-            "Use this same path inside the container, or choose a different destination?",
-            Style::default().fg(phosphor_dim),
+            shortened,
+            Style::default()
+                .fg(phosphor_dim)
+                .add_modifier(Modifier::ITALIC),
         ))
         .alignment(Alignment::Center),
-        chunks[2],
+        chunks[1],
     );
 
     // Buttons — focused choice highlights on white; unfocused stays
@@ -152,7 +154,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     };
 
     let button_line = Line::from(vec![
-        Span::styled("  Use same path  ", ok_style),
+        Span::styled("  Mount at same path  ", ok_style),
         Span::raw("    "),
         Span::styled("  Edit destination  ", edit_style),
         Span::raw("    "),
@@ -160,7 +162,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     ]);
     frame.render_widget(
         Paragraph::new(button_line).alignment(Alignment::Center),
-        chunks[4],
+        chunks[3],
     );
 
     // Footer hint — mirrors save_discard styling (key WHITE+BOLD, label
@@ -170,8 +172,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
     let sep_style = Style::default().fg(phosphor_dark);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("U", key_style),
-            Span::styled(" use same path", text_style),
+            Span::styled("M", key_style),
+            Span::styled(" mount", text_style),
             Span::styled(" \u{b7} ", sep_style),
             Span::styled("E", key_style),
             Span::styled(" edit", text_style),
@@ -180,7 +182,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &MountDstChoiceState) {
             Span::styled(" cancel", text_style),
         ]))
         .alignment(Alignment::Center),
-        chunks[6],
+        chunks[5],
     );
 }
 
@@ -263,12 +265,12 @@ mod tests {
     }
 
     #[test]
-    fn shortcut_u_commits_ok() {
+    fn shortcut_m_commits_ok() {
         let mut s = MountDstChoiceState::new("/h");
-        // Rotate focus away first to prove `u` is not focus-dependent.
+        // Rotate focus away first to prove `m` is not focus-dependent.
         s.handle_key(key(KeyCode::Tab)); // focus -> Edit
         assert!(matches!(
-            s.handle_key(key(KeyCode::Char('u'))),
+            s.handle_key(key(KeyCode::Char('m'))),
             ModalOutcome::Commit(MountDstChoice::Ok)
         ));
     }
@@ -306,7 +308,7 @@ mod tests {
         // commit/cancel outcomes.
         let mut s = MountDstChoiceState::new("/h");
         assert!(matches!(
-            s.handle_key(key(KeyCode::Char('U'))),
+            s.handle_key(key(KeyCode::Char('M'))),
             ModalOutcome::Commit(MountDstChoice::Ok)
         ));
         let mut s = MountDstChoiceState::new("/h");

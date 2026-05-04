@@ -1328,7 +1328,7 @@ pub(super) fn apply_file_browser_to_editor(
     match target {
         FileBrowserTarget::EditAddMountSrc => {
             // Defer the mount push to the choice modal: in the common case
-            // the operator will take "Use same path" (dst = src) and we skip the
+            // the operator will take "Mount at same path" (dst = src) and we skip the
             // TextInput entirely. Only the `Edit destination` branch pushes
             // a provisional mount and opens the TextInput.
             editor.modal = Some(Modal::MountDstChoice {
@@ -1614,14 +1614,14 @@ mod tests {
     }
 
     #[test]
-    fn editor_use_same_path_commits_mount_with_dst_equal_src() {
-        // Use-same-path shortcut on the choice modal → push MountConfig with dst = src
+    fn editor_mount_same_path_commits_mount_with_dst_equal_src() {
+        // Mount-at-same-path shortcut on the choice modal → push MountConfig with dst = src
         // and close the modal. No TextInput should appear.
         let mut editor = editor_with_browser_committed("/host/path");
-        handle_modal(&mut editor, key(KeyCode::Char('u')));
+        handle_modal(&mut editor, key(KeyCode::Char('m')));
         assert!(
             editor.modal.is_none(),
-            "Use same path must close the modal; got {:?}",
+            "Mount at same path must close the modal; got {:?}",
             editor.modal
         );
         assert_eq!(editor.pending.mounts.len(), 1, "exactly one mount pushed");
@@ -1629,7 +1629,7 @@ mod tests {
         assert_eq!(m.src, "/host/path");
         assert_eq!(
             m.dst, "/host/path",
-            "Use-same-path fast path sets dst = src"
+            "Mount-at-same-path fast path sets dst = src"
         );
         assert!(!m.readonly);
     }
