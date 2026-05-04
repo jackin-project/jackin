@@ -144,7 +144,7 @@ pub(super) fn register_agent_repo(
     let temp_repo = temp_dir.path().join("repo");
     let temp_repo_path = temp_repo.display().to_string();
     let git_run_opts = RunOptions {
-        quiet: !debug,
+        quiet: true,
         ..RunOptions::default()
     };
     runner
