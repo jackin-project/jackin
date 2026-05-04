@@ -21,8 +21,8 @@ pub enum MountKind {
 ///
 /// The two variants encode the "github vs other" distinction together
 /// with the URLs that are reachable for that classification, so callers
-/// can't ask for a web URL on a non-github remote or carry around an
-/// unsynchronized `(host, remote_url, web_url)` triple.
+/// can't ask for a web URL on a non-github remote or hold separate
+/// `host`, `remote_url`, and `web_url` fields that drift out of sync.
 #[derive(Debug, Clone)]
 pub enum GitOrigin {
     /// Remote `origin` points at `github.com` (SSH `git@github.com:`,
@@ -75,7 +75,7 @@ pub fn inspect(src: &str) -> MountKind {
     resolve_gitdirs(path).map_or(MountKind::Folder, |(work_dir, config_dir)| {
         // Branch comes from the worktree-specific gitdir (HEAD is per-worktree
         // even when the config lives in the common dir), while the origin URL
-        // and host classification come from the common dir's `config`.
+        // and its github/other classification come from the common dir's `config`.
         let branch = parse_head(&work_dir);
         let origin = resolve_origin(&config_dir, &branch);
         MountKind::Git { branch, origin }
@@ -92,8 +92,8 @@ pub fn inspect(src: &str) -> MountKind {
 /// own `HEAD` but no `config` of its own — instead, a `commondir` file
 /// points at the main repo's git-dir, where the remote URL lives.
 ///
-/// Without following the `commondir` redirect, `resolve_host_and_url`
-/// reads nothing, `GitHost` falls through to `Other`, and the label
+/// Without following the `commondir` redirect, `resolve_origin`
+/// reads nothing, the origin resolves to `None`, and the label
 /// renders as `git · branch` instead of `github · branch`.
 fn resolve_gitdirs(workdir: &Path) -> Option<(PathBuf, PathBuf)> {
     let dotgit = workdir.join(".git");
@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn remote_to_web_returns_none_for_gitlab() {
         // GitLab is a non-GitHub host — `remote_to_web` no longer synthesises
-        // a web URL for it. (Classification falls through to `GitHost::Other`
+        // a web URL for it. (Classification falls through to `GitOrigin::Other`
         // at the `resolve_host_and_url` layer.)
         assert_eq!(remote_to_web("git@gitlab.com:owner/repo.git"), None);
         assert_eq!(remote_to_web("https://gitlab.com/owner/repo.git"), None);
