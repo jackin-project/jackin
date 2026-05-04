@@ -3,10 +3,12 @@ use crate::config::AuthForwardMode;
 use std::path::Path;
 
 impl RoleState {
-    /// Provision Codex's host-side config.toml. Mounted RW into the
-    /// container at `/home/agent/.codex/config.toml`.
+    /// Provision Codex's host-side `config.toml` (always written) and,
+    /// under `auth_forward = sync`, its `auth.json` (copied from the
+    /// host's `~/.codex/auth.json` when present, deleted under `ignore`,
+    /// untouched under `token`).
     ///
-    /// The generated file sets `approval_policy = "never"` and
+    /// The generated `config.toml` sets `approval_policy = "never"` and
     /// `sandbox_mode = "danger-full-access"` to match the operator
     /// contract jackin already accepts for Claude
     /// (`--dangerously-skip-permissions`): once the operator has
@@ -15,10 +17,36 @@ impl RoleState {
     /// Codex's internal approval prompt would add per-action friction
     /// without changing what the agent can reach (workspace mounts,
     /// the network namespace, the `DinD` sidecar).
+    ///
+    /// `auth.json` semantics mirror Claude's `.credentials.json` for
+    /// the file-mount surface; in-container `codex login` writes are
+    /// only persisted across container removal when a sync mount
+    /// already exists at launch (a host file at `~/.codex/auth.json`).
+    ///   * **Sync** + host file present → copy with `0600` perms,
+    ///     return `Synced`.
+    ///   * **Sync** + host file absent → leave any existing role-state
+    ///     `auth.json` untouched (it may survive from a prior synced
+    ///     run), return `HostMissing`.
+    ///   * **Token** → no-op (jackin does not own the auth state in
+    ///     this mode; operator drives auth via `OPENAI_API_KEY` env),
+    ///     return `TokenMode`.
+    ///   * **Ignore** → delete the role-state `auth.json` if present,
+    ///     return `Skipped`.
+    ///
+    /// Returns `(outcome, mounted_auth_json)` where `mounted_auth_json` is
+    /// the role-state `auth.json` path when it should be bind-mounted into
+    /// the container (file exists post-call), or `None` when the mount must
+    /// be skipped (Ignore wiped it / Sync host-missing with no prior file /
+    /// Token mode with no prior file). Centralising the decision here means
+    /// `RoleState::prepare` does not need to re-stat the file or reason
+    /// about which outcome implies which mount state.
     pub(super) fn provision_codex_auth(
         config_toml: &std::path::Path,
+        auth_json: &std::path::Path,
         manifest: &crate::manifest::RoleManifest,
-    ) -> anyhow::Result<()> {
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         use std::fmt::Write;
 
         let mut content = String::from(
@@ -38,13 +66,61 @@ impl RoleState {
         // still be regenerated when manifest content changes — e.g. a new
         // [codex].model — which is the intended behaviour for a "do not
         // edit" file).
-        if let Ok(existing) = std::fs::read_to_string(config_toml)
-            && existing == content
-        {
-            return Ok(());
+        if !std::fs::read_to_string(config_toml).is_ok_and(|existing| existing == content) {
+            write_private_file(config_toml, &content)?;
         }
 
-        write_private_file(config_toml, &content)
+        // Reject any pre-existing symlink at the role-state auth.json path
+        // BEFORE branching on mode. The host bind-mounts this file RW into
+        // the container, so a compromised role could otherwise replace it
+        // with a symlink between launches and trick subsequent provisioning
+        // calls into reading/writing/deleting through the symlink.
+        if auth_json.exists() {
+            reject_symlink(auth_json)?;
+        }
+
+        let host_auth_json = host_home.join(".codex/auth.json");
+        let outcome = match mode {
+            AuthForwardMode::Token => AuthProvisionOutcome::TokenMode,
+            AuthForwardMode::Ignore => {
+                if auth_json.exists() {
+                    std::fs::remove_file(auth_json)?;
+                }
+                AuthProvisionOutcome::Skipped
+            }
+            AuthForwardMode::Sync => match std::fs::read_to_string(&host_auth_json) {
+                Ok(content) => {
+                    write_private_file(auth_json, &content)?;
+                    AuthProvisionOutcome::Synced
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    if auth_json.exists() {
+                        repair_permissions(auth_json);
+                    }
+                    AuthProvisionOutcome::HostMissing
+                }
+                Err(e) => {
+                    // Surface unexpected read errors (EACCES, EIO, ENOTDIR,
+                    // …) instead of misdiagnosing them as "host missing"
+                    // and silently dropping the operator into a re-login
+                    // loop they cannot escape until they notice the bad
+                    // permission/dir/etc. on `~/.codex/auth.json`.
+                    anyhow::bail!(
+                        "failed to read host {}: {e} (run with --debug to capture the underlying error)",
+                        host_auth_json.display()
+                    );
+                }
+            },
+        };
+
+        let mounted_auth_json = match outcome {
+            AuthProvisionOutcome::Synced => Some(auth_json.to_path_buf()),
+            AuthProvisionOutcome::Skipped => None,
+            AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
+                auth_json.exists().then(|| auth_json.to_path_buf())
+            }
+        };
+        Ok((outcome, mounted_auth_json))
     }
 }
 
@@ -957,9 +1033,32 @@ plugins = []
 
 #[cfg(test)]
 mod codex_auth_tests {
-    use crate::instance::RoleState;
+    use crate::config::AuthForwardMode;
+    use crate::instance::{AuthProvisionOutcome, RoleState};
     use crate::manifest::RoleManifest;
+    use std::path::Path;
     use tempfile::tempdir;
+
+    /// Test wrapper that pins config.toml provisioning under a fixed
+    /// (Ignore, no-host-codex) auth context, so the legacy assertions
+    /// stay focused on the config.toml contract. The auth.json half is
+    /// exercised by the dedicated `sync_*`, `ignore_*`, `token_*`,
+    /// `switching_*`, and `rejects_symlink_at_auth_json_*` tests below.
+    fn provision_config_only(
+        config_toml: &Path,
+        manifest: &RoleManifest,
+    ) -> anyhow::Result<AuthProvisionOutcome> {
+        let auth_json = config_toml.with_file_name("auth.json");
+        let host_home = Path::new("/nonexistent-host-home-for-config-only-tests");
+        let (outcome, _) = RoleState::provision_codex_auth(
+            config_toml,
+            &auth_json,
+            manifest,
+            AuthForwardMode::Ignore,
+            host_home,
+        )?;
+        Ok(outcome)
+    }
 
     fn manifest_with_codex_model(temp: &tempfile::TempDir, model: Option<&str>) -> RoleManifest {
         let codex_section = model.map_or_else(
@@ -990,7 +1089,7 @@ agents = ["codex"]
         let manifest = manifest_with_codex_model(&temp, None);
         let path = temp.path().join("config.toml");
 
-        RoleState::provision_codex_auth(&path, &manifest).unwrap();
+        provision_config_only(&path, &manifest).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("approval_policy = \"never\""));
@@ -1004,7 +1103,7 @@ agents = ["codex"]
         let manifest = manifest_with_codex_model(&temp, Some("gpt-5"));
         let path = temp.path().join("config.toml");
 
-        RoleState::provision_codex_auth(&path, &manifest).unwrap();
+        provision_config_only(&path, &manifest).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("model = \"gpt-5\""));
@@ -1026,7 +1125,7 @@ agents = ["codex"]
         std::fs::write(&decoy, "secret").unwrap();
         std::os::unix::fs::symlink(&decoy, &path).unwrap();
 
-        let err = RoleState::provision_codex_auth(&path, &manifest).unwrap_err();
+        let err = provision_config_only(&path, &manifest).unwrap_err();
         assert!(
             err.to_string().contains("symlink"),
             "expected symlink error, got: {err}"
@@ -1045,7 +1144,7 @@ agents = ["codex"]
         let manifest = manifest_with_codex_model(&temp, None);
         let path = temp.path().join("config.toml");
 
-        RoleState::provision_codex_auth(&path, &manifest).unwrap();
+        provision_config_only(&path, &manifest).unwrap();
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "codex config.toml must be 0o600, got {mode:o}");
@@ -1062,13 +1161,13 @@ agents = ["codex"]
         let manifest = manifest_with_codex_model(&temp, Some("gpt-5"));
         let path = temp.path().join("config.toml");
 
-        RoleState::provision_codex_auth(&path, &manifest).unwrap();
+        provision_config_only(&path, &manifest).unwrap();
         let mtime_first = std::fs::metadata(&path).unwrap().modified().unwrap();
 
         // Sleep just enough to make a second mtime distinguishable on
         // filesystems with second-resolution timestamps.
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        RoleState::provision_codex_auth(&path, &manifest).unwrap();
+        provision_config_only(&path, &manifest).unwrap();
         let mtime_second = std::fs::metadata(&path).unwrap().modified().unwrap();
 
         assert_eq!(
@@ -1083,14 +1182,313 @@ agents = ["codex"]
         let path = temp.path().join("config.toml");
 
         let manifest_a = manifest_with_codex_model(&temp, Some("gpt-5"));
-        RoleState::provision_codex_auth(&path, &manifest_a).unwrap();
+        provision_config_only(&path, &manifest_a).unwrap();
         assert!(std::fs::read_to_string(&path).unwrap().contains("gpt-5"));
 
         // Re-write the manifest with a different model.
         let manifest_b = manifest_with_codex_model(&temp, Some("o3"));
-        RoleState::provision_codex_auth(&path, &manifest_b).unwrap();
+        provision_config_only(&path, &manifest_b).unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("o3"));
         assert!(!content.contains("gpt-5"));
+    }
+
+    /// Stage a fake host home with a populated `~/.codex/auth.json` so
+    /// the sync-mode tests below have a real source file to copy from.
+    /// Returns the host-home root and the auth.json contents written.
+    fn stage_host_auth_json(temp: &tempfile::TempDir, tail: &str) -> (std::path::PathBuf, String) {
+        let host_home = temp.path().join("host_home");
+        let codex_dir = host_home.join(".codex");
+        std::fs::create_dir_all(&codex_dir).unwrap();
+        let content = format!(
+            "{{\"auth_mode\":\"chatgpt\",\"OPENAI_API_KEY\":null,\"tokens\":{{\"id_token\":\"{tail}\"}}}}",
+        );
+        std::fs::write(codex_dir.join("auth.json"), &content).unwrap();
+        (host_home, content)
+    }
+
+    #[test]
+    fn sync_copies_host_auth_json_when_present() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+        let (host_home, expected) = stage_host_auth_json(&temp, "abc.test");
+
+        let (outcome, _) = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Sync,
+            &host_home,
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
+    }
+
+    #[test]
+    fn sync_returns_host_missing_when_host_lacks_auth_json() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+        let host_home = temp.path().join("host_home_without_codex_dir");
+
+        let (outcome, _) = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Sync,
+            &host_home,
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        assert!(!auth_json.exists(), "no bootstrap file should be created");
+    }
+
+    #[test]
+    fn sync_preserves_existing_role_auth_json_when_host_file_missing() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+        std::fs::write(&auth_json, "{\"in_container_login\":true}").unwrap();
+        let host_home = temp.path().join("empty_host_home");
+
+        let (outcome, _) = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Sync,
+            &host_home,
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        assert_eq!(
+            std::fs::read_to_string(&auth_json).unwrap(),
+            "{\"in_container_login\":true}",
+            "in-container login state must survive sync-with-no-host"
+        );
+    }
+
+    #[test]
+    fn ignore_deletes_existing_role_auth_json() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+        std::fs::write(&auth_json, "{\"stale\":\"creds\"}").unwrap();
+
+        let (outcome, _) = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Ignore,
+            Path::new("/nonexistent"),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+        assert!(!auth_json.exists());
+    }
+
+    #[test]
+    fn token_mode_leaves_role_auth_json_untouched() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+        std::fs::write(&auth_json, "{\"existing\":true}").unwrap();
+        let (host_home, _) = stage_host_auth_json(&temp, "should-not-be-copied");
+
+        let (outcome, _) = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Token,
+            &host_home,
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        assert_eq!(
+            std::fs::read_to_string(&auth_json).unwrap(),
+            "{\"existing\":true}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn synced_auth_json_has_restricted_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+        let (host_home, _) = stage_host_auth_json(&temp, "perm.test");
+
+        RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Sync,
+            &host_home,
+        )
+        .unwrap();
+
+        let mode = std::fs::metadata(&auth_json).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "codex auth.json must be 0o600, got {mode:o}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_at_auth_json_under_ignore() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+
+        let decoy = temp.path().join("decoy.txt");
+        std::fs::write(&decoy, "secret").unwrap();
+        std::os::unix::fs::symlink(&decoy, &auth_json).unwrap();
+
+        let err = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Ignore,
+            Path::new("/nonexistent"),
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains("symlink"),
+            "expected symlink rejection, got: {err}"
+        );
+        // Decoy file must be untouched.
+        assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "secret");
+    }
+
+    /// Pin symlink rejection across all three modes via the
+    /// pre-mode-dispatch check at the top of `provision_codex_auth`.
+    /// Without this, a compromised role could plant a symlink at the
+    /// role-state `auth.json` and have subsequent sync/token-mode
+    /// provisioning bind-mount it into the container as-is.
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_at_auth_json_under_sync_and_token() {
+        for mode in [AuthForwardMode::Sync, AuthForwardMode::Token] {
+            let temp = tempdir().unwrap();
+            let manifest = manifest_with_codex_model(&temp, None);
+            let config_toml = temp.path().join("config.toml");
+            let auth_json = temp.path().join("auth.json");
+
+            let decoy = temp.path().join("decoy.txt");
+            std::fs::write(&decoy, "secret").unwrap();
+            std::os::unix::fs::symlink(&decoy, &auth_json).unwrap();
+
+            let err = RoleState::provision_codex_auth(
+                &config_toml,
+                &auth_json,
+                &manifest,
+                mode,
+                Path::new("/nonexistent"),
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("symlink"),
+                "mode {mode:?} did not reject symlink: {err}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&decoy).unwrap(),
+                "secret",
+                "mode {mode:?} clobbered decoy"
+            );
+        }
+    }
+
+    /// Switching from Sync (creds present on host) to Ignore must wipe
+    /// the synced auth.json so the next container start forces a fresh
+    /// in-container login. Without this, an operator who toggles to
+    /// Ignore to revoke access keeps the prior credentials accessible.
+    #[test]
+    fn switching_from_sync_to_ignore_wipes_synced_auth_json() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+        let (host_home, _) = stage_host_auth_json(&temp, "rev.test");
+
+        let (outcome, _) = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Sync,
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(auth_json.exists());
+
+        let (outcome, _) = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Ignore,
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+        assert!(!auth_json.exists(), "Ignore must wipe prior synced creds");
+    }
+
+    /// An unreadable host `auth.json` (e.g. `chmod 0` after a `sudo
+    /// codex login`) used to be silently bucketed as `HostMissing`,
+    /// trapping operators in a re-login loop. Verify the EACCES path
+    /// now surfaces an explicit error mentioning the host path.
+    #[cfg(unix)]
+    #[test]
+    fn surfaces_unreadable_host_auth_json_as_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+        let host_home = temp.path().join("host_home");
+        let host_codex = host_home.join(".codex");
+        std::fs::create_dir_all(&host_codex).unwrap();
+        let host_auth_json = host_codex.join("auth.json");
+        std::fs::write(&host_auth_json, "{\"auth_mode\":\"chatgpt\"}").unwrap();
+        // chmod 0 — file exists but is unreadable. Skip if we can't
+        // produce an unreadable file (e.g. running as root in CI).
+        std::fs::set_permissions(&host_auth_json, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read_to_string(&host_auth_json).is_ok() {
+            // Running as root — chmod 0 doesn't block reads. Skip.
+            return;
+        }
+
+        let err = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Sync,
+            &host_home,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("auth.json"),
+            "error must mention the host path: {msg}"
+        );
+        assert!(
+            !msg.to_lowercase().contains("not found"),
+            "EACCES must not be reported as not-found: {msg}"
+        );
     }
 }

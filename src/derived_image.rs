@@ -16,8 +16,6 @@ pub fn render_derived_dockerfile(
     pre_launch_hook: Option<&str>,
     supported: &[crate::agent::Agent],
 ) -> String {
-    use crate::agent::profile::profile;
-
     let hook_section = pre_launch_hook.map_or_else(String::new, |hook_path| {
         format!(
             "\
@@ -30,15 +28,13 @@ USER agent
     });
 
     // Concatenate per-agent install blocks in a stable order (Claude
-    // first when present, Codex second). The order itself is no longer
-    // load-bearing for cache invalidation — both Claude's and Codex's
-    // install blocks now declare their own `ARG JACKIN_CACHE_BUST=0`
-    // (see `agent/profile.rs::CLAUDE_INSTALL_BLOCK` /
-    // `CODEX_INSTALL_BLOCK`), so each layer's cache key advances
+    // first when present, Codex second). Each block declares its own
+    // `ARG JACKIN_CACHE_BUST=0` (see the per-agent blocks returned
+    // by `Agent::install_block`), so layer cache keys advance
     // independently when `--build-arg JACKIN_CACHE_BUST=<ts>` is
-    // passed. The stable ordering is kept purely for deterministic
-    // Dockerfile output (helps `docker build` cache reuse and makes
-    // diffs reviewable).
+    // passed. The stable ordering is for deterministic Dockerfile
+    // output (helps `docker build` cache reuse and keeps diffs
+    // reviewable).
     let mut install_blocks = String::new();
     let mut sorted: Vec<crate::agent::Agent> = supported.to_vec();
     sorted.sort_by_key(|h| match h {
@@ -46,7 +42,7 @@ USER agent
         crate::agent::Agent::Codex => 1,
     });
     for h in sorted {
-        install_blocks.push_str(&profile(h).install_block);
+        install_blocks.push_str(h.install_block());
     }
 
     format!(

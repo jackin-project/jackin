@@ -146,21 +146,31 @@ Auth forwarding is an operator-level setting. Agent manifests (`jackin.role.toml
 
 ## Codex authentication
 
-Codex uses environment-only authentication in jackin V1. Set `OPENAI_API_KEY` through the same operator env system used for other secrets:
+Codex supports three auth paths in jackin:
 
-```toml
-[env]
-OPENAI_API_KEY = "$OPENAI_API_KEY"
-```
+1. **API key (non-interactive).** Set `OPENAI_API_KEY` through the same operator env system used for other secrets:
 
-or:
+   ```toml
+   [env]
+   OPENAI_API_KEY = "$OPENAI_API_KEY"
+   ```
 
-```toml
-[env]
-OPENAI_API_KEY = "op://Work/OpenAI/key"
-```
+   or:
 
-When a workspace or launch selects the `codex` agent, jackin requires `OPENAI_API_KEY` to be present in the resolved launch env before it builds or starts the container. There is no Codex equivalent of Claude's `sync` or `token` auth-forward modes in this slice.
+   ```toml
+   [env]
+   OPENAI_API_KEY = "op://Work/OpenAI/default"
+   ```
+
+   When set, jackin forwards the value into the container as a `-e OPENAI_API_KEY=…` env var. Codex CLI prefers this path when both an API key and a synced `auth.json` are present (verified against the Codex CLI source as of 2026-05).
+
+2. **Synced ChatGPT login (`auth_forward = "sync"`, default).** When the host has `~/.codex/auth.json` (written by `codex login` on the host), jackin copies it into the role-state directory `~/.jackin/data/<container>/codex/auth.json` with `0600` permissions and bind-mounts that file at `/home/agent/.codex/auth.json`. The container reuses the host's ChatGPT session without prompting, and any in-container token refresh writes back to the host file through the bind mount.
+
+   When the host has no `~/.codex/auth.json` (and no `OPENAI_API_KEY` is set), jackin still starts the container — Codex CLI prompts for ChatGPT login on first invocation. jackin emits a `codex auth: none — Codex CLI will prompt for ChatGPT login` notice at launch so the fallback is explicit, not silent. The login that happens inside the container writes to the container's writable layer (no bind mount exists yet), so it is **not** preserved across `docker rm` / `jackin purge`. To get persistence, run `codex login` on the host first so jackin can sync the resulting `~/.codex/auth.json` on the next launch.
+
+3. **Ignore (`auth_forward = "ignore"`).** Any role-state `auth.json` is deleted at launch; the operator must re-login from inside the container every time.
+
+`auth_forward = "token"` is a no-op for Codex (no OAuth-token analog of Claude's `CLAUDE_CODE_OAUTH_TOKEN` — the API key in env is the token). jackin leaves any existing role-state `auth.json` untouched and reports `codex auth: none (token mode is a no-op for Codex — set OPENAI_API_KEY or auth_forward = "sync")`.
 
 ## What gets forwarded
 
