@@ -153,6 +153,23 @@ Each entry includes:
   - `docs/src/content/docs/reference/architecture.mdx` — layout
     diagram reflects the new shape.
 
+### `--no-workdir-mount` flag on `workspace create`
+
+- **Status:** Hidden no-op as of PR #213.
+- **Replacement:** `workspace create` now requires at least one `--mount` flag.
+  The workdir is no longer auto-mounted.
+- **Behavior today:** Passing `--no-workdir-mount` to `workspace create` is
+  silently accepted but has no effect. The flag is hidden from `--help`.
+  `workspace edit --no-workdir-mount` is unaffected — it still removes an
+  existing same-path mount from the workspace config.
+- **Remove when:** After a deprecation window; delete the `no_workdir_mount`
+  field from `WorkspaceCreate` in `src/cli/workspace.rs` and the ignored
+  parameter from `src/workspace/planner.rs::plan_create`.
+- **Where:**
+  - `src/cli/workspace.rs` — `WorkspaceCreate::no_workdir_mount` field,
+    `hide = true`.
+  - `src/workspace/planner.rs::plan_create` — receives but ignores the flag.
+
 ## How to add an entry
 
 When you deprecate something, append a new section to **Active
