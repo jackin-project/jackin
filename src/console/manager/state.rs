@@ -271,6 +271,7 @@ pub enum TextInputTarget {
     Name,
     Workdir,
     MountDst,
+    Role,
     EnvKey { scope: SecretsScopeTag },
     EnvValue { scope: SecretsScopeTag, key: String },
 }
@@ -283,10 +284,13 @@ pub enum FileBrowserTarget {
 
 #[derive(Debug, Clone)]
 pub enum ConfirmTarget {
-    DeleteWorkspace,
     DeleteEnvVar {
         scope: SecretsScopeTag,
         key: String,
+    },
+    TrustRoleSource {
+        key: String,
+        source: crate::config::RoleSource,
     },
     /// Source-drift confirmation (Task 10.3): operator's edit changes the
     /// `src` of one or more mounts that have preserved isolated state on

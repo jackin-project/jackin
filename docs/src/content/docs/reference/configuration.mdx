@@ -111,7 +111,7 @@ enabled = true
 | `last_role` | Most recently used role selector for this workspace |
 | `keep_awake.enabled` | macOS-only: keep the host awake while any agent in this workspace is running (see [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake)). On Linux/Windows the flag is silently accepted but has no effect — useful when sharing a `config.toml` across machines, but the host will still sleep. |
 
-When you use `jackin workspace create`, the common case is to make `workdir` and the first mount destination the same absolute path. If you need a different container layout, use `--no-workdir-mount` and define mounts explicitly.
+When you use `jackin workspace create`, `workdir` is only the container start path. Add an explicit `--mount` for every directory the container should see.
 
 ### Global mounts
 

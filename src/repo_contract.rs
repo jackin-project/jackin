@@ -3,6 +3,8 @@ use std::str::FromStr;
 
 use dockerfile_parser_rs::{Dockerfile, Instruction};
 
+use crate::repo::RoleRepoValidationError;
+
 pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
 
 #[derive(Debug, Clone)]
@@ -13,11 +15,12 @@ pub struct ValidatedDockerfile {
     pub final_stage_alias: Option<String>,
 }
 
-pub fn validate_agent_dockerfile(dockerfile_path: &Path) -> anyhow::Result<ValidatedDockerfile> {
+pub fn validate_agent_dockerfile(
+    dockerfile_path: &Path,
+) -> Result<ValidatedDockerfile, RoleRepoValidationError> {
     let dockerfile_contents = std::fs::read_to_string(dockerfile_path)?;
-    let dockerfile = Dockerfile::from_str(&dockerfile_contents).map_err(|error| {
-        anyhow::anyhow!("invalid role repo: unable to parse Dockerfile: {error}")
-    })?;
+    let dockerfile = Dockerfile::from_str(&dockerfile_contents)
+        .map_err(|error| RoleRepoValidationError::DockerfileParse(error.to_string()))?;
 
     let Some((platform, image, alias)) =
         dockerfile
@@ -37,13 +40,14 @@ pub fn validate_agent_dockerfile(dockerfile_path: &Path) -> anyhow::Result<Valid
                 Some((platform, image, alias))
             })
     else {
-        anyhow::bail!("invalid role repo: Dockerfile must contain at least one FROM instruction")
+        return Err(RoleRepoValidationError::DockerfileMissingFrom);
     };
 
-    anyhow::ensure!(
-        platform.is_none() && image == CONSTRUCT_IMAGE,
-        "invalid role repo: final Dockerfile stage must use literal FROM {CONSTRUCT_IMAGE}"
-    );
+    if platform.is_some() || image != CONSTRUCT_IMAGE {
+        return Err(RoleRepoValidationError::DockerfileNonConstruct {
+            expected: CONSTRUCT_IMAGE,
+        });
+    }
 
     Ok(ValidatedDockerfile {
         dockerfile_path: dockerfile_path.to_path_buf(),

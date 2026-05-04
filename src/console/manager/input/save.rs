@@ -96,11 +96,7 @@ pub(super) fn begin_editor_save(
                 };
                 return Ok(());
             }
-            match crate::workspace::planner::plan_create(
-                &editor.pending.workdir,
-                editor.pending.mounts.clone(),
-                false,
-            ) {
+            match crate::workspace::planner::plan_create(&editor.pending.mounts) {
                 Err(e) => {
                     editor.save_flow = EditorSaveFlow::Error {
                         message: e.to_string(),
@@ -1127,6 +1123,82 @@ mod tests {
         let reloaded = AppConfig::load_or_init(&paths).unwrap();
         let ws_on_disk = reloaded.workspaces.get("big-monorepo").unwrap();
         assert_eq!(ws_on_disk.mounts.len(), 1);
+    }
+
+    #[test]
+    fn editor_save_create_with_no_name_routes_to_error_flow() {
+        // begin_editor_save in Create mode must gate ConfirmSave on
+        // pending_name being set. Without a name the inline banner reads
+        // "missing workspace name" — gating prevents the operator from
+        // committing a nameless workspace.
+        let ws = WorkspaceConfig {
+            workdir: "/seed".into(),
+            mounts: vec![mount("/seed", "/seed")],
+            ..Default::default()
+        };
+        let (tmp, paths, config) = setup_with_workspace("seed", ws).unwrap();
+
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_create();
+        editor.pending.workdir = "/w".into();
+        editor.pending.mounts = vec![mount("/w", "/w")];
+        // pending_name intentionally None → save must route to Error.
+        state.stage = ManagerStage::Editor(editor);
+
+        begin_editor_save(&mut state, &config, false).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(e.modal.is_none(), "no confirm modal when name missing");
+        assert_eq!(
+            e.save_flow.error_message().expect("error banner expected"),
+            "missing workspace name"
+        );
+        // On-disk config unchanged.
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        assert!(!reloaded.workspaces.contains_key("w"));
+    }
+
+    #[test]
+    fn editor_save_create_with_invalid_mount_routes_to_error_flow() {
+        // Create-mode planner errors (here a ReadonlyMismatch — `/work/sub`
+        // ro under `/work` rw) surface as the inline banner, mirroring the
+        // edit-mode behavior covered by
+        // `readonly_mismatch_produces_error_banner_no_write`.
+        let ws = WorkspaceConfig {
+            workdir: "/seed".into(),
+            mounts: vec![mount("/seed", "/seed")],
+            ..Default::default()
+        };
+        let (tmp, paths, config) = setup_with_workspace("seed", ws).unwrap();
+
+        let cwd = tmp.path();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_create();
+        editor.pending_name = Some("test".into());
+        editor.pending.workdir = "/work".into();
+        editor.pending.mounts = vec![mount("/work", "/work"), ro_mount("/work/sub", "/work/sub")];
+        state.stage = ManagerStage::Editor(editor);
+
+        begin_editor_save(&mut state, &config, false).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(e.modal.is_none(), "no confirm modal when planner rejects");
+        let banner = e
+            .save_flow
+            .error_message()
+            .expect("readonly mismatch should produce banner");
+        assert!(
+            banner.contains("readonly"),
+            "banner should mention readonly: {banner}"
+        );
+        // On-disk config unchanged.
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        assert!(!reloaded.workspaces.contains_key("test"));
     }
 
     #[test]

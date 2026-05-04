@@ -17,13 +17,26 @@ use super::centered_rect_fixed;
 /// `input::file_browser_modal_rect` re-uses it for mouse hit-testing
 /// so the two views stay in sync.
 pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Rect) -> Rect {
+    if matches!(modal, Modal::MountDstChoice { .. }) {
+        let w = outer.width.min(80);
+        let h = 8.min(outer.height);
+        return Rect {
+            x: outer.x + outer.width.saturating_sub(w) / 2,
+            y: outer.y + outer.height.saturating_sub(h) / 2,
+            width: w,
+            height: h,
+        };
+    }
+
     let (pct_w, height_rows) = match modal {
         Modal::TextInput { .. } => (60, 6),
-        Modal::Confirm { state, .. } => (60, confirm::required_height(state)),
+        Modal::Confirm { state, .. } => {
+            (confirm::width_pct(state), confirm::required_height(state))
+        }
         Modal::SaveDiscardCancel { .. } => (70, 7),
         Modal::FileBrowser { .. } => (70, 22),
         Modal::WorkdirPick { .. } => (60, 12),
-        Modal::MountDstChoice { .. } => (80, 9),
+        Modal::MountDstChoice { .. } => unreachable!("handled above"),
         Modal::GithubPicker { state } => {
             let rows = (state.choices.len() as u16).saturating_add(5).min(15);
             (60, rows)
@@ -34,7 +47,14 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
         Modal::ErrorPopup { state } => {
             // 2 borders + 2-col left gutter for safety.
             let inner_width = (outer.width * 60 / 100).saturating_sub(4);
-            (60, error_popup::required_height(state, inner_width))
+            // Allow the popup to grow with the terminal so multi-line
+            // anyhow chains (the root cause is usually at the bottom)
+            // don't get clipped.
+            let max_rows = outer.height.saturating_sub(2);
+            (
+                60,
+                error_popup::required_height(state, inner_width, max_rows),
+            )
         }
         Modal::OpPicker { .. } => (80, 22),
         Modal::RolePicker { state } | Modal::RoleOverridePicker { state } => {

@@ -4,44 +4,69 @@
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
-pub enum MountKind {
+pub(crate) enum MountKind {
     /// Path doesn't exist on disk. Nothing to inspect.
     Missing,
     /// Path exists, not a git repo.
     Folder,
-    /// Path is a git working copy.
+    /// Path is a git working copy. `origin` is `None` when the repo has no
+    /// resolvable `origin` remote at all.
     Git {
         branch: GitBranch,
-        /// Which host the remote `origin` lives on — affects the label
-        /// (`github` vs `git`) and whether a web URL is resolvable.
-        host: GitHost,
-        /// URL for the branch on the git host, if resolvable.
-        /// Only populated for `GitHost::Github`; always `None` for `Other`.
-        /// Example: `<https://github.com/owner/repo/tree/main>`
-        web_url: Option<String>,
+        origin: Option<GitOrigin>,
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GitHost {
-    /// Remote `origin` points at `github.com` in any of the supported forms
-    /// (SSH `git@github.com:`, HTTPS `https://github.com/...`, or
-    /// `ssh://git@github.com/...`).
-    Github,
-    /// Anything else — self-hosted gitea/forgejo, GitLab, Bitbucket,
-    /// Azure DevOps, or a repo with no resolvable remote. Label collapses
-    /// to the generic `git` prefix.
-    Other,
+/// Classification of a git repo's `origin` remote.
+///
+/// The two variants encode the "github vs other" distinction together
+/// with the URLs that are reachable for that classification, so callers
+/// can't ask for a web URL on a non-github remote or hold separate
+/// `host`, `remote_url`, and `web_url` fields that drift out of sync.
+#[derive(Debug, Clone)]
+pub(crate) enum GitOrigin {
+    /// Remote `origin` points at `github.com` (SSH `git@github.com:`,
+    /// HTTPS `https://github.com/...`, or `ssh://git@github.com/...`).
+    /// `web_url` is the resolved branch/commit page on github.com.
+    ///
+    /// `remote_url` is preserved here for diagnostic and Debug output
+    /// even though no production reader currently destructures it; the
+    /// `dead_code` allow keeps the value carried in the variant so a
+    /// future caller (e.g. error chains showing the operator-typed URL)
+    /// doesn't have to plumb it back in separately.
+    Github {
+        #[allow(dead_code)]
+        remote_url: String,
+        web_url: String,
+    },
+    /// Self-hosted gitea/forgejo, GitLab, Bitbucket, Azure DevOps, etc.
+    /// We expose the raw remote URL but no web URL — we don't speak the
+    /// branch-URL conventions of these hosts.
+    Other {
+        #[allow(dead_code)]
+        remote_url: String,
+    },
+}
+
+impl GitOrigin {
+    /// Display prefix used by `MountKind::label`. Github gets a distinct
+    /// prefix so the operator knows "open in browser" is wired up.
+    const fn display_prefix(&self) -> &'static str {
+        match self {
+            Self::Github { .. } => "github",
+            Self::Other { .. } => "git",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-pub enum GitBranch {
+pub(crate) enum GitBranch {
     Named(String),
     Detached { short_sha: String },
     Unknown,
 }
 
-pub fn inspect(src: &str) -> MountKind {
+pub(crate) fn inspect(src: &str) -> MountKind {
     let path = Path::new(src);
     if !path.exists() {
         return MountKind::Missing;
@@ -52,15 +77,11 @@ pub fn inspect(src: &str) -> MountKind {
     }
     resolve_gitdirs(path).map_or(MountKind::Folder, |(work_dir, config_dir)| {
         // Branch comes from the worktree-specific gitdir (HEAD is per-worktree
-        // even when the config lives in the common dir), while the remote URL
-        // and host classification come from the common dir's `config`.
+        // even when the config lives in the common dir), while the origin URL
+        // and its github/other classification come from the common dir's `config`.
         let branch = parse_head(&work_dir);
-        let (host, web_url) = resolve_host_and_url(&config_dir, &branch);
-        MountKind::Git {
-            branch,
-            host,
-            web_url,
-        }
+        let origin = resolve_origin(&config_dir, &branch);
+        MountKind::Git { branch, origin }
     })
 }
 
@@ -74,8 +95,8 @@ pub fn inspect(src: &str) -> MountKind {
 /// own `HEAD` but no `config` of its own — instead, a `commondir` file
 /// points at the main repo's git-dir, where the remote URL lives.
 ///
-/// Without following the `commondir` redirect, `resolve_host_and_url`
-/// reads nothing, `GitHost` falls through to `Other`, and the label
+/// Without following the `commondir` redirect, `resolve_origin`
+/// reads nothing, the origin resolves to `None`, and the label
 /// renders as `git · branch` instead of `github · branch`.
 fn resolve_gitdirs(workdir: &Path) -> Option<(PathBuf, PathBuf)> {
     let dotgit = workdir.join(".git");
@@ -146,34 +167,36 @@ fn parse_head(git_dir: &Path) -> GitBranch {
     )
 }
 
-/// Parse `<config_dir>/config` to find the origin remote's URL, classify
-/// the host, and (for GitHub only) transform into a web URL for the given
-/// branch. The config dir is the main repo's `.git` for worktrees (see
-/// `resolve_gitdirs`) and the per-repo `.git` for plain clones/submodules.
+/// Parse `<config_dir>/config` to find the origin remote's URL and
+/// classify it. The config dir is the main repo's `.git` for worktrees
+/// (see `resolve_gitdirs`) and the per-repo `.git` for plain
+/// clones/submodules.
 ///
-/// Returns `(GitHost, Option<String>)`:
-/// - `GitHost::Github` + `Some(url)` when origin lives on github.com
-/// - `GitHost::Other` + `None` for any other host, or when no remote is set
-fn resolve_host_and_url(config_dir: &Path, branch: &GitBranch) -> (GitHost, Option<String>) {
+/// Returns:
+/// - `Some(GitOrigin::Github { ... })` when origin lives on github.com
+///   and resolves into a branch/commit web URL.
+/// - `Some(GitOrigin::Other { ... })` for any other host, or for a
+///   github URL whose web shape we can't synthesize (degenerate case).
+/// - `None` when no remote is set.
+fn resolve_origin(config_dir: &Path, branch: &GitBranch) -> Option<GitOrigin> {
     let config_path = config_dir.join("config");
-    let Ok(content) = std::fs::read_to_string(&config_path) else {
-        return (GitHost::Other, None);
-    };
-    let Some(remote_url) = parse_remote_origin_url(&content) else {
-        return (GitHost::Other, None);
-    };
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let remote_url = parse_remote_origin_url(&content)?;
     if !remote_points_at_github(&remote_url) {
-        return (GitHost::Other, None);
+        return Some(GitOrigin::Other { remote_url });
     }
     let Some(base) = remote_to_web(&remote_url) else {
-        return (GitHost::Other, None);
+        return Some(GitOrigin::Other { remote_url });
     };
-    let url = match branch {
+    let web_url = match branch {
         GitBranch::Named(b) => format!("{base}/tree/{b}"),
         GitBranch::Detached { short_sha } => format!("{base}/commit/{short_sha}"),
         GitBranch::Unknown => base,
     };
-    (GitHost::Github, Some(url))
+    Some(GitOrigin::Github {
+        remote_url,
+        web_url,
+    })
 }
 
 /// Cheap predicate — does this remote URL live on `github.com`?
@@ -254,15 +277,12 @@ impl MountKind {
     /// remotes have an `o`-opens-in-browser affordance wired up; everything
     /// else (self-hosted gitea, gitlab, no remote, …) keeps the generic
     /// `git · …` prefix.
-    pub fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         match self {
             Self::Missing => "missing".to_string(),
             Self::Folder => "folder".to_string(),
-            Self::Git { branch, host, .. } => {
-                let prefix = match host {
-                    GitHost::Github => "github",
-                    GitHost::Other => "git",
-                };
+            Self::Git { branch, origin } => {
+                let prefix = origin.as_ref().map_or("git", |o| o.display_prefix());
                 match branch {
                     GitBranch::Named(b) => format!("{prefix} · {b}"),
                     GitBranch::Detached { short_sha } => {
@@ -338,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn inspect_classifies_github_remote_as_github_host() {
+    fn inspect_classifies_github_remote_as_github_origin() {
         let temp = tempdir().unwrap();
         let git_dir = temp.path().join(".git");
         std::fs::create_dir(&git_dir).unwrap();
@@ -353,19 +373,17 @@ mod tests {
         let result = inspect(temp.path().to_str().unwrap());
         match result {
             MountKind::Git {
-                host,
-                web_url: Some(url),
+                origin: Some(GitOrigin::Github { web_url, .. }),
                 ..
             } => {
-                assert_eq!(host, GitHost::Github);
-                assert_eq!(url, "https://github.com/owner/repo/tree/main");
+                assert_eq!(web_url, "https://github.com/owner/repo/tree/main");
             }
-            other => panic!("expected Git {{ host: Github, web_url: Some }}, got {other:?}"),
+            other => panic!("expected Git {{ origin: Some(Github), .. }}, got {other:?}"),
         }
     }
 
     #[test]
-    fn inspect_classifies_gitlab_remote_as_other_host_with_no_url() {
+    fn inspect_classifies_gitlab_remote_as_other_origin() {
         let temp = tempdir().unwrap();
         let git_dir = temp.path().join(".git");
         std::fs::create_dir(&git_dir).unwrap();
@@ -379,19 +397,18 @@ mod tests {
         .unwrap();
         let result = inspect(temp.path().to_str().unwrap());
         match result {
-            MountKind::Git { host, web_url, .. } => {
-                assert_eq!(host, GitHost::Other);
-                assert!(
-                    web_url.is_none(),
-                    "non-GitHub remote must not yield a web URL: {web_url:?}"
-                );
+            MountKind::Git {
+                origin: Some(GitOrigin::Other { remote_url }),
+                ..
+            } => {
+                assert_eq!(remote_url, "git@gitlab.com:owner/repo.git");
             }
-            other => panic!("expected Git {{ host: Other }}, got {other:?}"),
+            other => panic!("expected Git {{ origin: Some(Other), .. }}, got {other:?}"),
         }
     }
 
     #[test]
-    fn inspect_classifies_repo_without_remote_as_other_host() {
+    fn inspect_classifies_repo_without_remote_as_no_origin() {
         let temp = tempdir().unwrap();
         let git_dir = temp.path().join(".git");
         std::fs::create_dir(&git_dir).unwrap();
@@ -399,11 +416,8 @@ mod tests {
         // No config file at all — simulates `git init` without a remote.
         let result = inspect(temp.path().to_str().unwrap());
         match result {
-            MountKind::Git { host, web_url, .. } => {
-                assert_eq!(host, GitHost::Other);
-                assert!(web_url.is_none());
-            }
-            other => panic!("expected Git {{ host: Other }}, got {other:?}"),
+            MountKind::Git { origin: None, .. } => {}
+            other => panic!("expected Git {{ origin: None, .. }}, got {other:?}"),
         }
     }
 
@@ -474,20 +488,20 @@ mod tests {
         match result {
             MountKind::Git {
                 branch: GitBranch::Named(b),
-                host,
-                web_url: Some(url),
+                origin:
+                    Some(GitOrigin::Github {
+                        remote_url,
+                        web_url,
+                    }),
             } => {
                 assert_eq!(b, "feature-x", "branch should come from worktree HEAD");
                 assert_eq!(
-                    host,
-                    GitHost::Github,
-                    "host must be resolved from commondir's config"
+                    remote_url, "git@github.com:owner/repo.git",
+                    "origin must be resolved from commondir's config"
                 );
-                assert_eq!(url, "https://github.com/owner/repo/tree/feature-x");
+                assert_eq!(web_url, "https://github.com/owner/repo/tree/feature-x");
             }
-            other => panic!(
-                "expected Git {{ host: Github, web_url: Some, branch: feature-x }}, got {other:?}"
-            ),
+            other => panic!("expected Git {{ origin: Github, branch: feature-x }}, got {other:?}"),
         }
     }
 
@@ -531,11 +545,15 @@ mod tests {
         match result {
             MountKind::Git {
                 branch: GitBranch::Named(b),
-                host: GitHost::Github,
-                web_url: Some(url),
+                origin:
+                    Some(GitOrigin::Github {
+                        remote_url,
+                        web_url,
+                    }),
             } => {
                 assert_eq!(b, "abs-branch");
-                assert_eq!(url, "https://github.com/owner/repo/tree/abs-branch");
+                assert_eq!(remote_url, "https://github.com/owner/repo.git");
+                assert_eq!(web_url, "https://github.com/owner/repo/tree/abs-branch");
             }
             other => {
                 panic!("expected Github worktree resolution via absolute commondir, got {other:?}")
@@ -575,13 +593,56 @@ mod tests {
         match result {
             MountKind::Git {
                 branch: GitBranch::Named(b),
-                host: GitHost::Github,
-                web_url: Some(url),
+                origin:
+                    Some(GitOrigin::Github {
+                        remote_url,
+                        web_url,
+                    }),
             } => {
                 assert_eq!(b, "submain");
-                assert_eq!(url, "https://github.com/owner/submod/tree/submain");
+                assert_eq!(remote_url, "git@github.com:owner/submod.git");
+                assert_eq!(web_url, "https://github.com/owner/submod/tree/submain");
             }
-            other => panic!("expected submodule to resolve with GitHost::Github, got {other:?}"),
+            other => panic!("expected submodule to resolve with GitOrigin::Github, got {other:?}"),
+        }
+    }
+
+    /// Build a `MountKind::Git` value for label tests from a github
+    /// `owner/repo` slug and a branch. The remote and web URLs are derived
+    /// from the slug + branch using the same shapes `resolve_origin`
+    /// produces for real github remotes — keeps tests focused on label
+    /// behavior instead of URL bookkeeping.
+    fn github_mount(owner_repo: &str, branch: GitBranch) -> MountKind {
+        let base = format!("https://github.com/{owner_repo}");
+        let web_url = match &branch {
+            GitBranch::Named(b) => format!("{base}/tree/{b}"),
+            GitBranch::Detached { short_sha } => format!("{base}/commit/{short_sha}"),
+            GitBranch::Unknown => base.clone(),
+        };
+        MountKind::Git {
+            branch,
+            origin: Some(GitOrigin::Github {
+                remote_url: format!("{base}.git"),
+                web_url,
+            }),
+        }
+    }
+
+    /// Build a `MountKind::Git` for label tests with a non-github origin.
+    fn other_mount(remote_url: &str, branch: GitBranch) -> MountKind {
+        MountKind::Git {
+            branch,
+            origin: Some(GitOrigin::Other {
+                remote_url: remote_url.into(),
+            }),
+        }
+    }
+
+    /// Build a `MountKind::Git` for label tests with no resolvable origin.
+    fn no_origin_mount(branch: GitBranch) -> MountKind {
+        MountKind::Git {
+            branch,
+            origin: None,
         }
     }
 
@@ -592,34 +653,20 @@ mod tests {
         assert_eq!(MountKind::Missing.label(), "missing");
         assert_eq!(MountKind::Folder.label(), "folder");
         assert_eq!(
-            MountKind::Git {
-                branch: GitBranch::Named("main".into()),
-                host: GitHost::Other,
-                web_url: None,
-            }
-            .label(),
+            no_origin_mount(GitBranch::Named("main".into())).label(),
             "git · main"
         );
         assert_eq!(
-            MountKind::Git {
-                branch: GitBranch::Detached {
+            other_mount(
+                "git@gitlab.com:o/r.git",
+                GitBranch::Detached {
                     short_sha: "abc1234".into()
                 },
-                host: GitHost::Other,
-                web_url: None,
-            }
+            )
             .label(),
             "git · detached abc1234"
         );
-        assert_eq!(
-            MountKind::Git {
-                branch: GitBranch::Unknown,
-                host: GitHost::Other,
-                web_url: None,
-            }
-            .label(),
-            "git"
-        );
+        assert_eq!(no_origin_mount(GitBranch::Unknown).label(), "git");
     }
 
     #[test]
@@ -627,32 +674,21 @@ mod tests {
         // GitHub-hosted mounts get a `github · …` prefix so the operator
         // can tell which rows have an "open in browser" affordance.
         assert_eq!(
-            MountKind::Git {
-                branch: GitBranch::Named("main".into()),
-                host: GitHost::Github,
-                web_url: Some("https://github.com/owner/repo/tree/main".into()),
-            }
-            .label(),
+            github_mount("owner/repo", GitBranch::Named("main".into())).label(),
             "github · main"
         );
         assert_eq!(
-            MountKind::Git {
-                branch: GitBranch::Detached {
+            github_mount(
+                "owner/repo",
+                GitBranch::Detached {
                     short_sha: "abc1234".into()
                 },
-                host: GitHost::Github,
-                web_url: Some("https://github.com/owner/repo/commit/abc1234".into()),
-            }
+            )
             .label(),
             "github · detached abc1234"
         );
         assert_eq!(
-            MountKind::Git {
-                branch: GitBranch::Unknown,
-                host: GitHost::Github,
-                web_url: Some("https://github.com/owner/repo".into()),
-            }
-            .label(),
+            github_mount("owner/repo", GitBranch::Unknown).label(),
             "github"
         );
     }
@@ -686,7 +722,7 @@ mod tests {
     #[test]
     fn remote_to_web_returns_none_for_gitlab() {
         // GitLab is a non-GitHub host — `remote_to_web` no longer synthesises
-        // a web URL for it. (Classification falls through to `GitHost::Other`
+        // a web URL for it. (Classification falls through to `GitOrigin::Other`
         // at the `resolve_host_and_url` layer.)
         assert_eq!(remote_to_web("git@gitlab.com:owner/repo.git"), None);
         assert_eq!(remote_to_web("https://gitlab.com/owner/repo.git"), None);

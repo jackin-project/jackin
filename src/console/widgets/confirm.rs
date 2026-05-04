@@ -16,8 +16,20 @@ pub enum ConfirmFocus {
 
 #[derive(Debug, Clone)]
 pub struct ConfirmState {
-    pub prompt: String,
-    pub focus: ConfirmFocus,
+    pub(crate) focus: ConfirmFocus,
+    pub(crate) title: String,
+    pub(crate) kind: ConfirmKind,
+}
+
+/// Discriminated payload for the Confirm modal.
+///
+/// `Default` carries a free-form prompt string; `RoleTrust` carries the
+/// role key and repository URL as separate fields so the renderer can lay
+/// them out without parsing them back out of a `\n`-delimited blob.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfirmKind {
+    Default { prompt: String },
+    RoleTrust { role: String, repository: String },
 }
 
 impl ConfirmState {
@@ -25,8 +37,22 @@ impl ConfirmState {
     /// destructive actions — Enter won't accidentally commit Yes).
     pub fn new(prompt: impl Into<String>) -> Self {
         Self {
-            prompt: prompt.into(),
             focus: ConfirmFocus::No,
+            title: "Confirm".into(),
+            kind: ConfirmKind::Default {
+                prompt: prompt.into(),
+            },
+        }
+    }
+
+    pub fn role_trust(role: impl Into<String>, repository: impl Into<String>) -> Self {
+        Self {
+            focus: ConfirmFocus::No,
+            title: "Trust role source".into(),
+            kind: ConfirmKind::RoleTrust {
+                role: role.into(),
+                repository: repository.into(),
+            },
         }
     }
 
@@ -60,16 +86,32 @@ use ratatui::{
 
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
+const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 const WHITE: Color = Color::Rgb(255, 255, 255);
+const WARNING_YELLOW: Color = Color::Rgb(255, 216, 94);
 
-/// Height (rows) this Confirm modal wants, given its current prompt text.
-/// Layout is: N prompt lines + 1 spacer + 1 buttons + 1 spacer + 1 hint.
-/// Callers use this to size the surrounding modal rect.
+/// Height (rows) this Confirm modal wants, given its current contents.
+///
+/// `Default` kind: N prompt lines + 6 chrome rows (top/bottom border = 2,
+/// spacer, buttons, spacer, hint). `RoleTrust` uses a fixed 12-row layout
+/// matching the structured renderer in `render_role_trust`.
 #[must_use]
 pub fn required_height(state: &ConfirmState) -> u16 {
-    let prompt_lines = state.prompt.lines().count().max(1) as u16;
-    // Fixed chrome: top/bottom border (2) + spacer + buttons + spacer + hint (4).
-    prompt_lines + 6
+    match &state.kind {
+        ConfirmKind::RoleTrust { .. } => 12,
+        ConfirmKind::Default { prompt } => {
+            let prompt_lines = prompt.lines().count().max(1) as u16;
+            prompt_lines + 6
+        }
+    }
+}
+
+#[must_use]
+pub const fn width_pct(state: &ConfirmState) -> u16 {
+    match &state.kind {
+        ConfirmKind::Default { .. } => 60,
+        ConfirmKind::RoleTrust { .. } => 70,
+    }
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
@@ -78,17 +120,25 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
-            " Confirm ",
+            format!(" {} ", state.title),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
+    let prompt = match &state.kind {
+        ConfirmKind::RoleTrust { role, repository } => {
+            render_role_trust(frame, inner, state, role, repository);
+            return;
+        }
+        ConfirmKind::Default { prompt } => prompt.as_str(),
+    };
+
     // Vertical layout inside the inner rect. The prompt area grows with the
-    // number of lines in `state.prompt` so multi-line confirmations (e.g.
+    // number of lines in `prompt` so multi-line confirmations (e.g.
     // the mount-collapse prompt) render without clipping.
-    let prompt_lines = state.prompt.lines().count().max(1) as u16;
+    let prompt_lines = prompt.lines().count().max(1) as u16;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -101,8 +151,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
         .split(inner);
 
     // Prompt — render each line in turn so centering applies per-line.
-    let prompt_lines_vec: Vec<Line> = state
-        .prompt
+    let prompt_lines_vec: Vec<Line> = prompt
         .lines()
         .map(|l| {
             Line::from(Span::styled(
@@ -164,6 +213,146 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
     ]))
     .alignment(Alignment::Center);
     frame.render_widget(hint, chunks[4]);
+}
+
+fn render_role_trust(
+    frame: &mut Frame,
+    inner: Rect,
+    state: &ConfirmState,
+    role: &str,
+    repository: &str,
+) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(2),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let value = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
+    let note = Style::default().fg(PHOSPHOR_DIM);
+
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "Trust this role source?",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        )))
+        .alignment(Alignment::Left),
+        inset(rows[0], 3),
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Role: ", key),
+            Span::styled(role, value),
+        ])),
+        inset(rows[2], 3),
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Repository: ", key),
+            Span::styled(repository, value),
+        ])),
+        inset(rows[3], 3),
+    );
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from(vec![
+                Span::styled(
+                    "!",
+                    Style::default()
+                        .fg(WARNING_YELLOW)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+                Span::styled("Dockerfile can run during image builds.", note),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "!",
+                    Style::default()
+                        .fg(WARNING_YELLOW)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+                Span::styled("The role can access mounted workspace files.", note),
+            ]),
+        ]),
+        inset(rows[5], 3),
+    );
+
+    render_buttons(frame, rows[6], state);
+    render_hint(frame, rows[7]);
+}
+
+const fn inset(area: Rect, x: u16) -> Rect {
+    Rect {
+        x: area.x.saturating_add(x),
+        y: area.y,
+        width: area.width.saturating_sub(x.saturating_mul(2)),
+        height: area.height,
+    }
+}
+
+fn render_buttons(frame: &mut Frame, area: Rect, state: &ConfirmState) {
+    let yes_focused = matches!(state.focus, ConfirmFocus::Yes);
+    let no_focused = matches!(state.focus, ConfirmFocus::No);
+
+    let focused_style = Style::default()
+        .bg(WHITE)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    let unfocused_style = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
+
+    let yes_btn_style = if yes_focused {
+        focused_style
+    } else {
+        unfocused_style
+    };
+    let no_btn_style = if no_focused {
+        focused_style
+    } else {
+        unfocused_style
+    };
+
+    let button_line = Line::from(vec![
+        Span::styled("  Yes  ", yes_btn_style),
+        Span::raw("    "),
+        Span::styled("  No  ", no_btn_style),
+    ]);
+    frame.render_widget(
+        Paragraph::new(button_line).alignment(Alignment::Center),
+        area,
+    );
+}
+
+fn render_hint(frame: &mut Frame, area: Rect) {
+    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let text = Style::default().fg(PHOSPHOR_GREEN);
+    let sep = Style::default().fg(PHOSPHOR_DARK);
+    let hint = Paragraph::new(ratatui::text::Line::from(vec![
+        Span::styled("Y", key),
+        Span::styled(" yes", text),
+        Span::styled(" \u{b7} ", sep),
+        Span::styled("N", key),
+        Span::styled(" no", text),
+        Span::styled(" \u{b7} ", sep),
+        Span::styled("Esc", key),
+        Span::styled(" cancel", text),
+    ]))
+    .alignment(Alignment::Center);
+    frame.render_widget(hint, area);
 }
 
 #[cfg(test)]
@@ -266,5 +455,36 @@ mod tests {
             s.handle_key(key(KeyCode::Char('y'))),
             ModalOutcome::Commit(true)
         ));
+    }
+
+    #[test]
+    fn role_trust_prompt_renders_readable_source_details() {
+        use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+        let s = ConfirmState::role_trust(
+            "scentbird/agent-jones",
+            "https://github.com/scentbird/jackin-agent-jones.git",
+        );
+        let area = Rect::new(0, 0, 100, required_height(&s));
+        let backend = TestBackend::new(area.width, area.height);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| render(f, area, &s)).unwrap();
+
+        let buf = term.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+            rendered.push('\n');
+        }
+
+        assert!(rendered.contains("Trust role source"));
+        assert!(rendered.contains("Role: scentbird/agent-jones"));
+        assert!(
+            rendered.contains("Repository: https://github.com/scentbird/jackin-agent-jones.git")
+        );
+        assert!(rendered.contains("Dockerfile can run during image builds."));
+        assert!(rendered.contains("The role can access mounted workspace files."));
     }
 }

@@ -65,6 +65,7 @@ isolation = "worktree"
 
 ```sh
 jackin workspace create my-ws --workdir /workspace/x \
+  --mount ~/projects/x:/workspace/x \
   --description "Issue #412 isolated repro branch"
 
 jackin workspace edit my-ws --description "..."

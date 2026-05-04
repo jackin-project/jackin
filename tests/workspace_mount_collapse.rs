@@ -48,7 +48,6 @@ fn create_workspace_with_children(env: &Env, name: &str) {
             name,
             "--workdir",
             env.sub_a.to_str().unwrap(),
-            "--no-workdir-mount",
             "--mount",
             env.sub_a.to_str().unwrap(),
             "--mount",
@@ -69,6 +68,8 @@ fn workspace_create_auto_collapses_and_prints_summary() {
             "--workdir",
             env.proj_alpha.to_str().unwrap(),
             "--mount",
+            env.proj_alpha.to_str().unwrap(),
+            "--mount",
             env.sub_a.to_str().unwrap(),
             "--mount",
             env.sub_b.to_str().unwrap(),
@@ -78,6 +79,115 @@ fn workspace_create_auto_collapses_and_prints_summary() {
         .stderr(predicate::str::contains("collapsed"))
         .stderr(predicate::str::contains("sub-a"))
         .stderr(predicate::str::contains("sub-b"));
+}
+
+#[test]
+fn workspace_create_workdir_parent_does_not_collapse_child_mount() {
+    let env = setup_env();
+    jackin(&env)
+        .args([
+            "workspace",
+            "create",
+            "test",
+            "--workdir",
+            env.proj_alpha.to_str().unwrap(),
+            "--mount",
+            env.sub_a.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("collapsed").not());
+
+    jackin(&env)
+        .args(["workspace", "show", "test"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("sub-a"))
+        .stdout(predicate::str::contains("proj-alpha"));
+}
+
+#[test]
+fn workspace_create_rejects_duplicate_destination() {
+    // Two `--mount` entries with the same explicit `dst` must fail loudly
+    // at the validator (`workspace::mounts.rs`'s "duplicate mount
+    // destination" bail) rather than silently collapsing one of them.
+    let env = setup_env();
+    jackin(&env)
+        .args([
+            "workspace",
+            "create",
+            "test",
+            "--workdir",
+            env.proj_alpha.to_str().unwrap(),
+            "--mount",
+            &format!("{}:/work", env.sub_a.to_str().unwrap()),
+            "--mount",
+            &format!("{}:/work", env.sub_b.to_str().unwrap()),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("duplicate mount destination"));
+}
+
+#[test]
+fn workspace_create_accepts_src_colon_dst_spec() {
+    // `--mount src:/dst` should parse and persist the explicit container
+    // path. Pre-existing tests only exercise the `src` and `src:ro`
+    // shapes — this pins the third documented form. `--workdir` matches
+    // the explicit dst so the workdir-vs-dst validator is satisfied.
+    let env = setup_env();
+    jackin(&env)
+        .args([
+            "workspace",
+            "create",
+            "test",
+            "--workdir",
+            "/code",
+            "--mount",
+            &format!("{}:/code", env.sub_a.to_str().unwrap()),
+        ])
+        .assert()
+        .success();
+
+    jackin(&env)
+        .args(["workspace", "show", "test"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("/code"));
+}
+
+#[test]
+fn workspace_create_rejects_duplicate_name() {
+    // Creating a workspace with a name that already exists must fail
+    // loudly — silently overwriting the existing config would lose the
+    // operator's prior mount/env/workdir setup.
+    let env = setup_env();
+    jackin(&env)
+        .args([
+            "workspace",
+            "create",
+            "test",
+            "--workdir",
+            env.sub_a.to_str().unwrap(),
+            "--mount",
+            env.sub_a.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    jackin(&env)
+        .args([
+            "workspace",
+            "create",
+            "test",
+            "--workdir",
+            env.sub_b.to_str().unwrap(),
+            "--mount",
+            env.sub_b.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("already exists"));
 }
 
 #[test]
@@ -139,7 +249,6 @@ fn workspace_edit_fails_on_readonly_mismatch_with_clear_error() {
             "test",
             "--workdir",
             env.sub_a.to_str().unwrap(),
-            "--no-workdir-mount",
             "--mount",
             &format!("{}:ro", env.sub_a.to_str().unwrap()),
         ])
