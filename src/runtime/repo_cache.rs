@@ -277,8 +277,8 @@ pub(super) fn resolve_agent_repo_with(
                 runner
                     .run("git", &["clone", git_url, &repo_path], None, &git_run_opts)
                     .map_err(RepoError::CloneFailed)?;
-                let validated_repo =
-                    validate_role_repo(&cached_repo.repo_dir).map_err(RepoError::InvalidRoleRepo)?;
+                let validated_repo = validate_role_repo(&cached_repo.repo_dir)
+                    .map_err(RepoError::InvalidRoleRepo)?;
                 return Ok((cached_repo, validated_repo, lock_file));
             }
 
@@ -330,7 +330,8 @@ pub(super) fn resolve_agent_repo_with(
             .map_err(RepoError::CloneFailed)?;
     }
 
-    let validated_repo = validate_role_repo(&cached_repo.repo_dir).map_err(RepoError::InvalidRoleRepo)?;
+    let validated_repo =
+        validate_role_repo(&cached_repo.repo_dir).map_err(RepoError::InvalidRoleRepo)?;
 
     // Return the repo lock so the caller can hold it until the build
     // context (a snapshot copy of the repo) is created.  This prevents

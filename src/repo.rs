@@ -73,9 +73,7 @@ impl From<std::io::Error> for RoleRepoValidationError {
     }
 }
 
-pub fn validate_role_repo(
-    repo_dir: &Path,
-) -> Result<ValidatedRoleRepo, RoleRepoValidationError> {
+pub fn validate_role_repo(repo_dir: &Path) -> Result<ValidatedRoleRepo, RoleRepoValidationError> {
     let manifest_path = repo_dir.join("jackin.role.toml");
 
     if !manifest_path.is_file() {
