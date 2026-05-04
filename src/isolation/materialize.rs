@@ -291,6 +291,80 @@ pub fn ensure_worktree_config_enabled(
     Ok(true)
 }
 
+/// Filesystem probe (loose ref then `packed-refs`) rather than `git
+/// show-ref` to keep the test `CommandRunner` capture queue stable.
+fn find_local_branch_tip(repo: &str, branch: &str) -> Option<String> {
+    let git_dir = std::path::Path::new(repo).join(".git");
+    let mut loose = git_dir.join("refs").join("heads");
+    for segment in branch.split('/') {
+        loose = loose.join(segment);
+    }
+    match std::fs::read_to_string(&loose) {
+        Ok(contents) => {
+            let sha = contents.trim();
+            // Symref content (`ref: refs/heads/foo`) and a 0-byte
+            // ref file are pathological local states that would
+            // otherwise be returned verbatim and poison the
+            // `IsolationRecord.base_commit` SHA field. Fall through
+            // to packed-refs and (failing that) `None` so the caller
+            // takes the fresh `-b` path; git will surface its own
+            // error if the branch genuinely does exist somewhere
+            // unreadable.
+            if sha.is_empty() {
+                debug_log!(
+                    "isolation",
+                    "find_local_branch_tip: loose ref {loose} present but empty — treating as missing",
+                    loose = loose.display(),
+                );
+            } else if sha.starts_with("ref:") {
+                debug_log!(
+                    "isolation",
+                    "find_local_branch_tip: loose ref {loose} is a symref ({sha}) — treating as missing",
+                    loose = loose.display(),
+                );
+            } else {
+                return Some(sha.to_string());
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            // Permission / EIO / non-UTF-8: surface so --debug
+            // correlates with the later worktree-add failure.
+            debug_log!(
+                "isolation",
+                "find_local_branch_tip: read {loose} failed: {e}",
+                loose = loose.display(),
+            );
+        }
+    }
+    let packed = git_dir.join("packed-refs");
+    let contents = match std::fs::read_to_string(&packed) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            debug_log!(
+                "isolation",
+                "find_local_branch_tip: read {packed} failed: {e}",
+                packed = packed.display(),
+            );
+            return None;
+        }
+    };
+    let want = format!("refs/heads/{branch}");
+    for line in contents.lines() {
+        if line.starts_with('#') || line.starts_with('^') {
+            continue;
+        }
+        let Some((sha, refname)) = line.split_once(char::is_whitespace) else {
+            continue;
+        };
+        if refname.trim() == want {
+            return Some(sha.trim().to_string());
+        }
+    }
+    None
+}
+
 use crate::workspace::MountConfig;
 
 #[derive(Debug, Clone)]
@@ -567,15 +641,15 @@ fn materialize_one(
 
     let _ = ensure_worktree_config_enabled(std::path::Path::new(&mount.src), runner)?;
 
-    let base_commit = runner
+    let host_head = runner
         .capture("git", &["-C", &mount.src, "rev-parse", "HEAD"], None)?
         .trim()
         .to_string();
     debug_log!(
         "isolation",
-        "mount {dst}: base commit {commit} from host HEAD",
+        "mount {dst}: host HEAD {commit}",
         dst = mount.dst,
-        commit = base_commit,
+        commit = host_head,
     );
 
     // No per-mount branch suffix in V1: workspace validation rejects
@@ -602,30 +676,86 @@ fn materialize_one(
             .with_context(|| format!("create parent dir for worktree at {}", parent.display()))?;
     }
 
-    debug_log!(
-        "isolation",
-        "mount {dst}: git -C {src} worktree add -b {branch} {wt} {base}",
-        dst = mount.dst,
-        src = mount.src,
-        branch = scratch_branch,
-        wt = worktree_path.display(),
-        base = base_commit,
-    );
-    runner.run(
-        "git",
-        &[
-            "-C",
-            &mount.src,
-            "worktree",
-            "add",
-            "-b",
-            &scratch_branch,
-            &worktree_path.to_string_lossy(),
-            &base_commit,
-        ],
-        None,
-        &crate::docker::RunOptions::default(),
-    )?;
+    // `worktree add -b` rejects an existing branch; reuse it. Record
+    // `base_commit = host_head`, NOT branch tip: if a prior session
+    // committed work onto the scratch branch and the operator wiped
+    // the state dir, branch tip != host HEAD, and finalize routes
+    // through the upstream/[gone]/detached arms (fail-safe to
+    // PreservedUnpushed) instead of the `tip == base_commit ⇒ Safe`
+    // arm that would silently delete the work.
+    let base_commit = if let Some(branch_tip) = find_local_branch_tip(&mount.src, &scratch_branch) {
+        debug_log!(
+            "isolation",
+            "mount {dst}: adopting existing scratch branch {branch} at tip {tip} (host HEAD {host}); pruning orphan admin entries first",
+            dst = mount.dst,
+            branch = scratch_branch,
+            tip = branch_tip,
+            host = host_head,
+        );
+        runner.run(
+            "git",
+            &["-C", &mount.src, "worktree", "prune"],
+            None,
+            &crate::docker::RunOptions::default(),
+        )?;
+        debug_log!(
+            "isolation",
+            "mount {dst}: git -C {src} worktree add {wt} {branch}",
+            dst = mount.dst,
+            src = mount.src,
+            branch = scratch_branch,
+            wt = worktree_path.display(),
+        );
+        runner
+            .run(
+                "git",
+                &[
+                    "-C",
+                    &mount.src,
+                    "worktree",
+                    "add",
+                    &worktree_path.to_string_lossy(),
+                    &scratch_branch,
+                ],
+                None,
+                &crate::docker::RunOptions::default(),
+            )
+            .with_context(|| {
+                format!(
+                    "isolated mount `{}`: adopt of existing scratch branch `{}` failed; \
+                     if the branch is checked out in another worktree, \
+                     `git -C {} worktree list --porcelain` will show where",
+                    mount.dst, scratch_branch, mount.src,
+                )
+            })?;
+        host_head.clone()
+    } else {
+        debug_log!(
+            "isolation",
+            "mount {dst}: git -C {src} worktree add -b {branch} {wt} {base}",
+            dst = mount.dst,
+            src = mount.src,
+            branch = scratch_branch,
+            wt = worktree_path.display(),
+            base = host_head,
+        );
+        runner.run(
+            "git",
+            &[
+                "-C",
+                &mount.src,
+                "worktree",
+                "add",
+                "-b",
+                &scratch_branch,
+                &worktree_path.to_string_lossy(),
+                &host_head,
+            ],
+            None,
+            &crate::docker::RunOptions::default(),
+        )?;
+        host_head
+    };
 
     upsert_record(
         container_state_dir,
@@ -1231,6 +1361,295 @@ mod tests {
     // (`validate_isolation_layout` rule 2). The corresponding suffix
     // logic in materialize is gone; coverage moves to
     // `workspace::tests::isolation_layout_rejects_two_worktree_mounts_on_same_repo`.
+
+    fn write_loose_branch(repo: &std::path::Path, branch: &str, content: &str) {
+        let mut p = repo.join(".git").join("refs").join("heads");
+        for seg in branch.split('/') {
+            p = p.join(seg);
+        }
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, content).unwrap();
+    }
+
+    fn write_packed_refs(repo: &std::path::Path, contents: &str) {
+        std::fs::write(repo.join(".git").join("packed-refs"), contents).unwrap();
+    }
+
+    #[test]
+    fn find_local_branch_tip_reads_loose_ref_sha() {
+        let repo = make_repo_root();
+        let path = repo.path().to_string_lossy();
+        assert_eq!(find_local_branch_tip(&path, "jackin/scratch/x"), None);
+        write_loose_branch(repo.path(), "jackin/scratch/x", "deadbeefcafe\n");
+        assert_eq!(
+            find_local_branch_tip(&path, "jackin/scratch/x"),
+            Some("deadbeefcafe".into()),
+        );
+    }
+
+    #[test]
+    fn find_local_branch_tip_reads_packed_refs_sha() {
+        let repo = make_repo_root();
+        write_packed_refs(
+            repo.path(),
+            "# pack-refs with: peeled fully-peeled sorted\n\
+             1111111111111111111111111111111111111111 refs/heads/main\n\
+             2222222222222222222222222222222222222222 refs/heads/jackin/scratch/x\n\
+             ^abcd1234abcd1234abcd1234abcd1234abcd1234\n",
+        );
+        let path = repo.path().to_string_lossy();
+        assert_eq!(
+            find_local_branch_tip(&path, "jackin/scratch/x"),
+            Some("2222222222222222222222222222222222222222".into()),
+        );
+        assert_eq!(find_local_branch_tip(&path, "jackin/scratch/missing"), None);
+    }
+
+    #[test]
+    fn find_local_branch_tip_loose_ref_wins_over_packed_refs() {
+        // git semantics: loose refs override packed-refs entries.
+        // Critical because base_commit feeds finalize's safety
+        // classifier, and a wrong SHA there can authorize deletion
+        // of operator work.
+        let repo = make_repo_root();
+        write_loose_branch(repo.path(), "jackin/scratch/x", "1010101010101010\n");
+        write_packed_refs(
+            repo.path(),
+            "9999999999999999999999999999999999999999 refs/heads/jackin/scratch/x\n",
+        );
+        assert_eq!(
+            find_local_branch_tip(&repo.path().to_string_lossy(), "jackin/scratch/x"),
+            Some("1010101010101010".into()),
+        );
+    }
+
+    #[test]
+    fn find_local_branch_tip_rejects_symref_loose_content() {
+        // `git symbolic-ref refs/heads/<x> refs/heads/main` writes
+        // `ref: refs/heads/main\n`. Returning that verbatim as the
+        // SHA poisons IsolationRecord.base_commit.
+        let repo = make_repo_root();
+        write_loose_branch(repo.path(), "jackin/scratch/x", "ref: refs/heads/main\n");
+        assert_eq!(
+            find_local_branch_tip(&repo.path().to_string_lossy(), "jackin/scratch/x"),
+            None,
+        );
+    }
+
+    #[test]
+    fn find_local_branch_tip_empty_loose_falls_through_to_packed() {
+        // A 0-byte ref file (interrupted git op, third-party
+        // tooling) must not yield Some("") and must not block the
+        // packed-refs lookup.
+        let repo = make_repo_root();
+        write_loose_branch(repo.path(), "jackin/scratch/x", "");
+        write_packed_refs(
+            repo.path(),
+            "abcdef1234567890abcdef1234567890abcdef12 refs/heads/jackin/scratch/x\n",
+        );
+        assert_eq!(
+            find_local_branch_tip(&repo.path().to_string_lossy(), "jackin/scratch/x"),
+            Some("abcdef1234567890abcdef1234567890abcdef12".into()),
+        );
+    }
+
+    #[test]
+    fn find_local_branch_tip_skips_malformed_packed_refs_lines() {
+        let repo = make_repo_root();
+        write_packed_refs(
+            repo.path(),
+            "# header only\n\
+             ^abcd\n\
+             noseparator\n\
+             1111111111111111111111111111111111111111\trefs/heads/jackin/scratch/x\n",
+        );
+        // Tab-separated row also resolves (split_once now matches
+        // any ASCII whitespace, defensive against non-stock writers).
+        assert_eq!(
+            find_local_branch_tip(&repo.path().to_string_lossy(), "jackin/scratch/x"),
+            Some("1111111111111111111111111111111111111111".into()),
+        );
+    }
+
+    #[test]
+    fn stale_scratch_branch_is_adopted_when_record_absent() {
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-the-architect");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        write_loose_branch(
+            repo.path(),
+            "jackin/scratch/jackin-the-architect",
+            "feedbeefcafebabefeedbeefcafebabefeedbeef\n",
+        );
+
+        let resolved = resolved_with_one_isolated(repo.path(), "/workspace/jackin");
+        // fake_with_outputs is positional: order must match
+        // materialize_workspace's runner.capture() sequence.
+        // Adopted branch tip is read directly from the loose ref —
+        // no runner.capture() entry is consumed for it.
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(),
+            "",
+            "true\n",
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
+        ]);
+
+        let mat = materialize_workspace(
+            &resolved,
+            &container_dir,
+            "the-architect",
+            "jackin-the-architect",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+
+        assert_eq!(mat.mounts.len(), 1);
+
+        let prune_idx = runner
+            .run_recorded
+            .iter()
+            .position(|c| c.contains("worktree prune"))
+            .expect("worktree prune should be invoked on adopt");
+        let add_idx = runner
+            .run_recorded
+            .iter()
+            .position(|c| c.contains("worktree add"))
+            .expect("worktree add should be invoked");
+        assert!(
+            prune_idx < add_idx,
+            "prune must run before add; got prune@{prune_idx} add@{add_idx}: {:?}",
+            runner.run_recorded,
+        );
+        let add = &runner.run_recorded[add_idx];
+        assert!(
+            !add.split_whitespace().any(|t| t == "-b" || t == "--branch"),
+            "adopt path must not pass -b/--branch; got {add}",
+        );
+        assert!(
+            add.ends_with(" jackin/scratch/jackin-the-architect"),
+            "adopt add must end with the existing branch as the last positional arg; got {add}",
+        );
+
+        let recs = read_records(&container_dir).unwrap();
+        assert_eq!(recs.len(), 1);
+        // base_commit is host_head, NOT branch tip — see the comment
+        // above the adopt arm in materialize_one. Asserting the
+        // branch-tip value here would silently re-introduce the
+        // data-loss regression flagged in PR #219 review.
+        assert_eq!(
+            recs[0].base_commit,
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+        );
+        assert_eq!(
+            recs[0].scratch_branch,
+            "jackin/scratch/jackin-the-architect",
+        );
+    }
+
+    #[test]
+    fn adopt_aborts_when_worktree_prune_fails() {
+        // Prune failure must short-circuit before `worktree add`,
+        // otherwise the add proceeds against an inconsistent admin
+        // index and risks corrupting state.
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+        write_loose_branch(repo.path(), "jackin/scratch/jackin-x", "abc123\n");
+        let resolved = resolved_with_one_isolated(repo.path(), "/workspace/jackin");
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(),
+            "",
+            "true\n",
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
+        ]);
+        runner.fail_on.push("worktree prune".into());
+
+        let err = materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("worktree prune"));
+        assert!(
+            !runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree add")),
+            "worktree add must not run when prune fails; got {:?}",
+            runner.run_recorded,
+        );
+        assert!(
+            read_records(&container_dir).unwrap().is_empty(),
+            "no record on prune failure",
+        );
+    }
+
+    #[test]
+    fn fresh_materialization_uses_dash_b_when_branch_absent() {
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+        let resolved = resolved_with_one_isolated(repo.path(), "/workspace/jackin");
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(),
+            "",
+            "true\n",
+            "cafef00dcafef00dcafef00dcafef00dcafef00d\n",
+        ]);
+        materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+        let add = runner
+            .run_recorded
+            .iter()
+            .find(|c| c.contains("worktree add"))
+            .expect("worktree add should have been invoked");
+        assert!(
+            add.split_whitespace().any(|t| t == "-b"),
+            "fresh path must use -b; got {add}",
+        );
+        assert!(
+            !runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("worktree prune")),
+        );
+        let recs = read_records(&container_dir).unwrap();
+        assert_eq!(
+            recs[0].base_commit,
+            "cafef00dcafef00dcafef00dcafef00dcafef00d",
+        );
+    }
 
     #[test]
     fn docker_mount_order_is_length_ascending() {
