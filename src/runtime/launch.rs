@@ -1376,6 +1376,213 @@ fn claim_container_name(
     }
 }
 
+/// What we found in a single env layer when looking up the credential
+/// var required by an `auth_forward` mode.
+///
+/// Carried inside `LaunchError::AuthCredentialMissing` so both CLI text
+/// rendering and TUI structured rendering can reuse the same trace
+/// without re-deriving it from the resolved env map.
+//
+// `ResolvedLiteral` / `ResolvedOpRef` are only constructed by Task 13's
+// validator (next commit). Allowed dead until then so this commit can
+// land the structured-error scaffolding without churning the wider
+// codebase.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnvLayerState {
+    /// Layer does not declare the var at all.
+    Unset,
+    /// Layer declares the var with a literal (or `$VAR`) value that
+    /// resolved to a non-empty string.
+    ResolvedLiteral,
+    /// Layer declares the var with an `op://...` reference that
+    /// resolved to a non-empty string.
+    ResolvedOpRef,
+}
+
+impl std::fmt::Display for EnvLayerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unset => write!(f, "unset"),
+            Self::ResolvedLiteral => write!(f, "resolved (literal)"),
+            Self::ResolvedOpRef => write!(f, "resolved (op://...)"),
+        }
+    }
+}
+
+/// Errors produced by launch-time validation that benefit from
+/// structured fields (e.g. TUI rendering, multi-line CLI output) rather
+/// than the stringy `anyhow::bail!` shape used elsewhere in this file.
+///
+/// Today this enum carries a single variant — the auth-credential
+/// pre-flight failure — but it's defined as an enum so that future
+/// launch-time validators (`DinD` readiness, image build preconditions,
+/// etc.) can grow structured variants alongside it without churning the
+/// type at every call site.
+//
+// Constructed by Task 13's `verify_credential_env_present` (next
+// commit) and bubbled through Task 14's `load_role_with` integration.
+// Allowed dead until then so this commit can land the structured-error
+// scaffolding in isolation.
+#[allow(dead_code)]
+#[derive(Debug, thiserror::Error)]
+pub enum LaunchError {
+    /// `auth_forward` mode requires a credential env var to resolve to
+    /// a non-empty value, but the resolved operator env doesn't carry
+    /// it. Carries enough structure for both CLI rendering (multi-line
+    /// text via the `Display` impl) and TUI rendering (structured
+    /// panel) to reuse the same data without re-deriving it.
+    #[error("{}", render_auth_credential_missing(
+        *.agent,
+        *.mode,
+        .env_var,
+        .workspace,
+        .role,
+        .mode_resolution,
+        .env_layers,
+    ))]
+    AuthCredentialMissing {
+        /// Agent the launch was for (drives the var name and remediation copy).
+        agent: crate::agent::Agent,
+        /// Resolved `auth_forward` mode that requires the credential.
+        mode: crate::config::AuthForwardMode,
+        /// Well-known credential env var (e.g. `ANTHROPIC_API_KEY`,
+        /// `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`) that must
+        /// resolve to a non-empty value for `mode`.
+        env_var: &'static str,
+        /// Workspace name the launch targets (for messaging).
+        workspace: String,
+        /// Role selector key the launch targets (for messaging).
+        role: String,
+        /// Trace of the 3-layer mode resolution: each entry pairs a
+        /// human-readable layer label (e.g. `"workspace × role × claude"`)
+        /// with the mode value declared at that layer (`None` = layer
+        /// is silent). Layers are ordered most-specific first.
+        mode_resolution: Vec<(String, Option<crate::config::AuthForwardMode>)>,
+        /// Trace of the env-layer resolution for `env_var`: each entry
+        /// pairs a TOML-table label (e.g. `"[workspaces.proj.env]"`)
+        /// with what we found in that layer. Layers are ordered
+        /// lowest-to-highest priority so the rendered output reads
+        /// chronologically the same way operators read TOML.
+        env_layers: Vec<(String, EnvLayerState)>,
+    },
+}
+
+/// Constant gutter between the layer-label column and the `->` arrow
+/// in `render_auth_credential_missing` output. Sized so even the longest
+/// label has visible whitespace before the arrow (matches the spec test
+/// fixture `workspace × role × claude    -> api_key`).
+const RENDER_LABEL_GUTTER: usize = 4;
+
+/// Cap on the layer-label column width. Keeps a pathologically-long
+/// label (60+ chars) from blowing up line width while still
+/// comfortably fitting any realistic env-table path.
+const RENDER_LABEL_WIDTH_CAP: usize = 60;
+
+/// Compute the padded column width used for the layer-label column in
+/// `render_auth_credential_missing`. Pulled out so both the
+/// mode-resolution and env-layer sections share the same arithmetic
+/// without repeating the gutter / cap constants inline.
+fn render_label_width<T>(rows: &[(String, T)]) -> usize {
+    rows.iter()
+        .map(|(l, _)| l.chars().count())
+        .max()
+        .unwrap_or(0)
+        .saturating_add(RENDER_LABEL_GUTTER)
+        .min(RENDER_LABEL_WIDTH_CAP)
+}
+
+/// Render the structured multi-line `AuthCredentialMissing` message
+/// for CLI display. The TUI panel consumes the structured fields
+/// directly and ignores this rendering — they intentionally share the
+/// data, not the formatting.
+//
+// Constructed only when `LaunchError::AuthCredentialMissing` is built,
+// which today only happens from the test module. Allowed dead until
+// Task 13's validator wires it from production code.
+#[allow(dead_code)]
+fn render_auth_credential_missing(
+    agent: crate::agent::Agent,
+    mode: crate::config::AuthForwardMode,
+    env_var: &str,
+    workspace: &str,
+    role: &str,
+    mode_resolution: &[(String, Option<crate::config::AuthForwardMode>)],
+    env_layers: &[(String, EnvLayerState)],
+) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+
+    let _ = writeln!(
+        out,
+        "cannot launch {agent} in workspace '{workspace}' role '{role}'"
+    );
+    let _ = writeln!(
+        out,
+        "       \u{2014} auth_forward is '{mode}', which requires {env_var}"
+    );
+    let _ = writeln!(
+        out,
+        "         to resolve to a non-empty value, but it is unset."
+    );
+
+    if !mode_resolution.is_empty() {
+        let _ = writeln!(out);
+        let _ = writeln!(out, "  Effective auth resolution:");
+        let label_width = render_label_width(mode_resolution);
+        for (idx, (label, value)) in mode_resolution.iter().enumerate() {
+            let value_str = value
+                .as_ref()
+                .map_or_else(|| "(none)".to_string(), ToString::to_string);
+            let suffix = if idx == 0 { "  (most-specific)" } else { "" };
+            let _ = writeln!(out, "    {label:<label_width$}-> {value_str}{suffix}");
+        }
+    }
+
+    if !env_layers.is_empty() {
+        let _ = writeln!(out);
+        let _ = writeln!(
+            out,
+            "  Env layer resolution for {env_var} (lowest -> highest):"
+        );
+        let label_width = render_label_width(env_layers);
+        for (label, state) in env_layers {
+            let _ = writeln!(out, "    {label:<label_width$}-> {state}");
+        }
+    }
+
+    let agent_title = match agent {
+        crate::agent::Agent::Claude => "Claude",
+        crate::agent::Agent::Codex => "Codex",
+    };
+
+    let _ = writeln!(out);
+    let _ = writeln!(out, "  Fix one of:");
+    let _ = writeln!(
+        out,
+        "    - Open the Auth panel:  jackin tui workspaces  \u{2192} '{workspace}' \u{2192} Auth \u{2192} {role} / {agent_title}"
+    );
+    // `jackin config env set` does not yet support `--workspace`; show
+    // the role-scoped form (the closest existing remediation) so we
+    // don't print a flag the operator can't actually use today.
+    let _ = writeln!(
+        out,
+        "    - Or by hand:           jackin config env set {env_var} <value> --role {role}"
+    );
+    let _ = writeln!(
+        out,
+        "    - Or change the mode:   set auth_forward = 'sync' at one of the layers above"
+    );
+
+    // Trim the trailing newline left by the final `writeln!` so callers
+    // composing this into larger errors don't get an awkward extra blank
+    // line.
+    if out.ends_with('\n') {
+        out.pop();
+    }
+    out
+}
+
 /// Verify that `CLAUDE_CODE_OAUTH_TOKEN` is present in the resolved
 /// operator env when `auth_forward == Token`. Returns an actionable
 /// error listing both remediation paths (1Password `op://` reference
@@ -3924,5 +4131,61 @@ plugins = []
         let mut runner = inspect_runner("hibernated", 0, false);
         let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
         assert_eq!(outcome, AttachOutcome::still_running());
+    }
+
+    #[test]
+    fn auth_credential_missing_displays_layer_trace() {
+        let err = LaunchError::AuthCredentialMissing {
+            agent: crate::agent::Agent::Claude,
+            mode: crate::config::AuthForwardMode::ApiKey,
+            env_var: "ANTHROPIC_API_KEY",
+            workspace: "proj".into(),
+            role: "smith".into(),
+            mode_resolution: vec![
+                (
+                    "workspace × role × claude".into(),
+                    Some(crate::config::AuthForwardMode::ApiKey),
+                ),
+                ("workspace × claude".into(), None),
+                (
+                    "global × claude".into(),
+                    Some(crate::config::AuthForwardMode::Sync),
+                ),
+            ],
+            env_layers: vec![
+                ("[env]".into(), EnvLayerState::Unset),
+                ("[roles.smith.env]".into(), EnvLayerState::Unset),
+                ("[workspaces.proj.env]".into(), EnvLayerState::Unset),
+                (
+                    "[workspaces.proj.roles.smith.env]".into(),
+                    EnvLayerState::Unset,
+                ),
+            ],
+        };
+        let s = err.to_string();
+        assert!(s.contains("auth_forward is 'api_key'"), "got: {s}");
+        assert!(s.contains("ANTHROPIC_API_KEY"), "got: {s}");
+        assert!(
+            s.contains("workspace × role × claude    -> api_key"),
+            "got: {s}"
+        );
+        assert!(s.contains("[workspaces.proj.roles.smith.env]"), "got: {s}");
+        assert!(s.contains("Open the Auth panel"), "got: {s}");
+    }
+
+    #[test]
+    fn auth_credential_missing_codex_oauth_token_renders() {
+        let err = LaunchError::AuthCredentialMissing {
+            agent: crate::agent::Agent::Codex,
+            mode: crate::config::AuthForwardMode::ApiKey,
+            env_var: "OPENAI_API_KEY",
+            workspace: "proj".into(),
+            role: "smith".into(),
+            mode_resolution: vec![],
+            env_layers: vec![],
+        };
+        let s = err.to_string();
+        assert!(s.contains("codex"), "got: {s}");
+        assert!(s.contains("OPENAI_API_KEY"), "got: {s}");
     }
 }
