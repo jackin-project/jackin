@@ -7,6 +7,7 @@
 //! exposes only a single shared `dir_style`). All are consumed by both
 //! the manager (PR 2) and the Secrets tab (PR 3).
 
+pub mod auth_panel;
 pub mod confirm;
 pub mod confirm_save;
 pub mod error_popup;
