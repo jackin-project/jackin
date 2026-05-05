@@ -8,7 +8,7 @@ pub use crate::workspace::WorkspaceRoleOverride;
 pub mod editor;
 mod mounts;
 mod persist;
-pub mod roles;
+mod roles;
 mod workspaces;
 
 pub use editor::{ConfigEditor, EnvScope};
@@ -369,12 +369,7 @@ trusted = true
             "absent [claude] block must deserialize to None"
         );
         assert_eq!(
-            crate::config::roles::resolve_mode(
-                &config,
-                crate::agent::Agent::Claude,
-                "",
-                "agent-smith",
-            ),
+            crate::config::resolve_mode(&config, crate::agent::Agent::Claude, "", "agent-smith",),
             AuthForwardMode::Sync
         );
     }

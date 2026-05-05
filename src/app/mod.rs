@@ -367,13 +367,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
                 cli::AuthCommand::Show => {
-                    // Empty workspace + role names fall through to layer 1
-                    // (global), so this prints the global default — same
-                    // user-visible semantics as before, but the resolver
-                    // logic is no longer duplicated in this site.
-                    let mode =
-                        crate::config::resolve_mode(&config, crate::agent::Agent::Claude, "", "");
-                    println!("{mode}");
+                    print!("{}", render_auth_show(&config));
                     Ok(())
                 }
             },
@@ -1060,6 +1054,21 @@ fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
     }
 }
 
+/// Render the `config auth show` output as a string. Empty workspace + role
+/// names fall through to layer 1 (global), so this prints the global default
+/// for each agent. Printing both Claude and Codex avoids privileging either
+/// agent in the no-context output — until/unless an `--agent` flag is added,
+/// both-agents output is the honest bridge.
+fn render_auth_show(config: &AppConfig) -> String {
+    use std::fmt::Write as _;
+    let claude_mode = crate::config::resolve_mode(config, crate::agent::Agent::Claude, "", "");
+    let codex_mode = crate::config::resolve_mode(config, crate::agent::Agent::Codex, "", "");
+    let mut out = String::new();
+    let _ = writeln!(out, "claude: {claude_mode}");
+    let _ = writeln!(out, "codex:  {codex_mode}");
+    out
+}
+
 /// Render the `workspace show <name>` output as a string. Includes the info
 /// table (name/workdir/allowed/default-role), and, when there are mounts, a
 /// trailing mounts table with one row per mount. The mounts table renders the
@@ -1158,6 +1167,18 @@ mod auth_set_tests {
     #[test]
     fn parse_auth_forward_mode_from_cli_rejects_bogus() {
         assert!(parse_auth_forward_mode_from_cli("bogus").is_err());
+    }
+
+    #[test]
+    fn auth_show_prints_both_agents() {
+        // No global override means each agent falls through to its
+        // default-mode (Sync). The point of this test is the output shape:
+        // both agents are surfaced, so a Codex-primary operator running
+        // `jackin config auth show` is not silently shown only Claude.
+        let config = AppConfig::default();
+        let out = render_auth_show(&config);
+        assert!(out.contains("claude:"), "missing claude line: {out}");
+        assert!(out.contains("codex:"), "missing codex line: {out}");
     }
 
     #[test]
