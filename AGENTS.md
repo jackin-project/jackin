@@ -2,6 +2,14 @@
 
 This repository uses `main` as its primary branch. This file is the canonical home for rules and restrictions that apply only to AI agents. Rules that apply equally to human contributors and agents live in topic-specific files linked under **Shared conventions** below.
 
+## Project status: pre-release (agent-only)
+
+Jackin has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (config TOML, on-disk state layout, CLI flags, role manifests, role/workspace/agent shapes), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale configs fail with the standard parser error.
+
+Do not memorialize old shapes in code comments ("formerly named X", "old location was Y") or in documentation files outside the changelog. The git history is the record of what changed; the code should describe only the current shape.
+
+This rule retires when jackin ships its first tagged release.
+
 ## Pull Request Merging (agent-only)
 
 **Agents must never merge a pull request without explicit per-PR confirmation from the human operator.**
