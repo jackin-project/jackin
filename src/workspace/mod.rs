@@ -70,7 +70,7 @@ pub struct WorkspaceConfig {
     /// Workspace-level Codex auth configuration. See `claude` above —
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex: Option<crate::config::AgentAuthConfig>,
+    pub codex: Option<crate::config::CodexAuthConfig>,
 }
 
 /// Per-workspace power-management opt-in.
@@ -128,7 +128,7 @@ pub struct WorkspaceRoleOverride {
     /// Per-(workspace × role) Codex auth override. See `claude` above —
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex: Option<crate::config::AgentAuthConfig>,
+    pub codex: Option<crate::config::CodexAuthConfig>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -781,6 +781,41 @@ allowed_roles = ["smith"]
         assert!(
             cfg.codex.is_none(),
             "WorkspaceConfig.codex must default to None"
+        );
+    }
+
+    #[test]
+    fn reject_codex_oauth_token_in_workspace() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+
+[codex]
+auth_forward = "oauth_token"
+"#;
+        let err = toml::from_str::<WorkspaceConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not supported for codex"),
+            "expected codex-rejection message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn reject_codex_oauth_token_in_workspace_role_override() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+
+[roles.smith]
+[roles.smith.codex]
+auth_forward = "oauth_token"
+"#;
+        let err = toml::from_str::<WorkspaceConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not supported for codex"),
+            "expected codex-rejection message, got: {msg}"
         );
     }
 

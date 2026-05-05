@@ -92,6 +92,38 @@ pub struct AgentAuthConfig {
     pub auth_forward: AuthForwardMode,
 }
 
+/// Newtype around `AgentAuthConfig` that rejects `oauth_token` at parse time.
+///
+/// Codex does not support `AuthForwardMode::OAuthToken` (the CLI uses a
+/// refresh-token flow rather than a static OAuth token); rejecting it at
+/// deserialization time keeps the type system honest so downstream code
+/// never has to handle the impossible combination.
+#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
+pub struct CodexAuthConfig(pub AgentAuthConfig);
+
+impl<'de> serde::Deserialize<'de> for CodexAuthConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let cfg = AgentAuthConfig::deserialize(deserializer)?;
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err(serde::de::Error::custom(
+                "auth_forward 'oauth_token' is not supported for codex; \
+                 supported modes: sync, api_key, ignore",
+            ));
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl std::ops::Deref for CodexAuthConfig {
+    type Target = AgentAuthConfig;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleSource {
@@ -116,7 +148,7 @@ pub struct AppConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex: Option<AgentAuthConfig>,
+    pub codex: Option<CodexAuthConfig>,
     /// Global operator env map — the bottom layer. Merged under
     /// per-role, per-workspace, and per-(workspace × role) layers.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -399,6 +431,20 @@ auth_forward = "api_key"
         assert!(
             cfg.codex.is_none(),
             "codex must be None when [codex] absent"
+        );
+    }
+
+    #[test]
+    fn reject_codex_oauth_token_global() {
+        let toml = r#"
+[codex]
+auth_forward = "oauth_token"
+"#;
+        let err = toml::from_str::<AppConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not supported for codex"),
+            "expected codex-rejection message, got: {msg}"
         );
     }
 
