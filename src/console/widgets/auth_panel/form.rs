@@ -5,7 +5,7 @@
 
 use crate::agent::Agent;
 use crate::config::AuthForwardMode;
-use crate::operator_env::{EnvValue, OpRef};
+use crate::operator_env::{EnvValue, OpRef, OpRunner};
 
 /// What the user has supplied in the credential block.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +78,20 @@ impl AuthForm {
 
     pub fn set_op_ref(&mut self, r: OpRef) {
         self.credential = CredentialInput::OpRef(r);
+    }
+
+    /// Attempts to commit an [`OpRef`]. Calls `runner.read(&candidate.op)`;
+    /// only persists the reference if the read succeeds. On failure, the
+    /// form's credential state is left unchanged so a broken reference
+    /// never reaches disk.
+    pub fn try_commit_op_ref<R: OpRunner + ?Sized>(
+        &mut self,
+        runner: &R,
+        candidate: OpRef,
+    ) -> anyhow::Result<()> {
+        let _ = runner.read(&candidate.op)?;
+        self.set_op_ref(candidate);
+        Ok(())
     }
 
     pub fn clear_credential(&mut self) {
@@ -276,5 +290,51 @@ mod tests {
         );
         assert_eq!(f.mode, Some(AuthForwardMode::OAuthToken));
         assert_eq!(f.credential, CredentialInput::OpRef(r));
+    }
+
+    struct FailRunner;
+    impl OpRunner for FailRunner {
+        fn read(&self, _r: &str) -> anyhow::Result<String> {
+            Err(anyhow::anyhow!("vault gone"))
+        }
+    }
+
+    struct GoodRunner;
+    impl OpRunner for GoodRunner {
+        fn read(&self, _r: &str) -> anyhow::Result<String> {
+            Ok("sk-ant-real".into())
+        }
+    }
+
+    #[test]
+    fn op_picker_failed_read_blocks_commit() {
+        let mut f = AuthForm::new(Agent::Claude);
+        f.set_mode(AuthForwardMode::ApiKey);
+        let attempted = OpRef {
+            op: "op://uuid/missing".into(),
+            path: "Vault/Missing/field".into(),
+        };
+        let result = f.try_commit_op_ref(&FailRunner, attempted);
+        assert!(result.is_err(), "failed op read must not commit");
+        assert!(
+            !f.can_save(),
+            "form must not be commitable after failed read"
+        );
+        assert_eq!(f.credential, CredentialInput::None);
+    }
+
+    #[test]
+    fn op_picker_successful_read_persists_op_ref() {
+        let mut f = AuthForm::new(Agent::Claude);
+        f.set_mode(AuthForwardMode::ApiKey);
+        let r = OpRef {
+            op: "op://uuid/anthropic".into(),
+            path: "Work/Anthropic/api-key".into(),
+        };
+        let result = f.try_commit_op_ref(&GoodRunner, r.clone());
+        assert!(result.is_ok());
+        assert!(f.can_save());
+        let outcome = f.commit().unwrap();
+        assert!(matches!(outcome.env_value, Some(EnvValue::OpRef(ref got)) if got == &r));
     }
 }

@@ -12,5 +12,5 @@ pub mod render;
 pub mod state;
 
 pub use form::{AuthForm, AuthFormOutcome, CredentialInput};
-pub use render::{render, render_with_selection};
+pub use render::{FormContext, render, render_form, render_with_selection};
 pub use state::{AuthPanelState, AuthRow, CredentialBadge, ProvenanceTag};
