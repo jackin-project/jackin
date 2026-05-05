@@ -957,11 +957,19 @@ pub(super) fn handle_editor_modal(
             }
         }
         Modal::AuthForm { .. } => {
-            super::auth::handle_auth_form_key(editor, key);
+            super::auth::handle_auth_form_key(editor, key, op_cache);
         }
         Modal::OpPicker { state: picker } => {
             match picker.handle_key(key) {
                 ModalOutcome::Commit(op_ref) => {
+                    // Auth-form round trip wins over the Secrets-tab
+                    // dispatch: the auth form sets
+                    // `pending_auth_form_return` exactly when it's the
+                    // caller, so the two paths can never collide.
+                    if editor.pending_auth_form_return.is_some() {
+                        super::auth::apply_op_picker_to_auth_form(editor, op_ref);
+                        return;
+                    }
                     // Operator picked a Vault → Item → Field path. The
                     // dispatch depends on whether `P` was pressed on a
                     // key row (write directly) or on an `+ Add` sentinel
@@ -988,6 +996,14 @@ pub(super) fn handle_editor_modal(
                     }
                 }
                 ModalOutcome::Cancel => {
+                    // Auth-form round trip: re-mount the form
+                    // unchanged. Mirrors the Commit branch — the two
+                    // callers (Secrets-tab `P`, auth-form Enter) are
+                    // disambiguated by `pending_auth_form_return`.
+                    if editor.pending_auth_form_return.is_some() {
+                        super::auth::restore_auth_form_after_op_picker_cancel(editor);
+                        return;
+                    }
                     // Clear both scratch fields so a stale path/target
                     // can't carry into a later interaction.
                     editor.modal = None;

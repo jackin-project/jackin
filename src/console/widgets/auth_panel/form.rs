@@ -117,7 +117,13 @@ impl AuthForm {
         match &self.credential {
             CredentialInput::None => false,
             CredentialInput::Literal(s) => !s.is_empty(),
-            CredentialInput::OpRef(_) => true,
+            // Both fields must be non-empty: the empty `OpRef { op: "",
+            // path: "" }` seeded by the credential-source toggle would
+            // otherwise pass the save gate and write a broken reference
+            // into `[workspaces.X.roles.Y.env]`. The launcher would then
+            // fail with "credential is unset" only after the operator
+            // had already committed the corrupt config to disk.
+            CredentialInput::OpRef(r) => !r.op.is_empty() && !r.path.is_empty(),
         }
     }
 
@@ -205,6 +211,35 @@ mod tests {
         f.set_mode(AuthForwardMode::ApiKey);
         f.set_op_ref(dummy_op_ref());
         assert!(f.can_save());
+    }
+
+    /// Empty `OpRef` (seeded by the credential-source toggle before
+    /// the operator has picked a vault item) must NOT pass the save
+    /// gate. Persisting such a reference into the env block would
+    /// only blow up at launch time with "credential is unset", long
+    /// after the broken config had been written to disk.
+    #[test]
+    fn save_disabled_for_api_key_with_empty_op_ref() {
+        let mut f = AuthForm::new(Agent::Claude);
+        f.set_mode(AuthForwardMode::ApiKey);
+        // Both fields empty (the toggle-radio seed): rejected.
+        f.set_op_ref(OpRef {
+            op: String::new(),
+            path: String::new(),
+        });
+        assert!(!f.can_save());
+        // Empty `op` alone: rejected.
+        f.set_op_ref(OpRef {
+            op: String::new(),
+            path: "Test/api/key".into(),
+        });
+        assert!(!f.can_save());
+        // Empty `path` alone: rejected.
+        f.set_op_ref(OpRef {
+            op: "op://uuid/test".into(),
+            path: String::new(),
+        });
+        assert!(!f.can_save());
     }
 
     #[test]

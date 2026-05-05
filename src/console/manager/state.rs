@@ -129,6 +129,28 @@ pub struct EditorState<'a> {
     /// (wrapped as `EnvValue::OpRef`) until the operator names the key
     /// and the `EnvKey` modal commits both fields at once.
     pub pending_picker_value: Option<crate::operator_env::EnvValue>,
+    /// Stash for the auth-form → `OpPicker` → auth-form round trip.
+    /// Set when the operator presses Enter at `AuthFormFocus::OpRefValue`,
+    /// and consumed when `OpPicker` commits or cancels: on commit we
+    /// reconstruct the `Modal::AuthForm` with the picked `OpRef`
+    /// applied; on cancel we reconstruct it pristine. Threading the
+    /// auth-form context through this field (rather than via a
+    /// payload on `Modal::OpPicker`) keeps the picker variant
+    /// orthogonal to its caller.
+    pub pending_auth_form_return: Option<AuthFormReturnPath>,
+}
+
+/// Captured auth-form context to re-mount the form after the
+/// `OpPicker` commits or cancels.
+///
+/// `state` and `literal_buffer` are stashed so a half-typed literal
+/// isn't lost when the operator detours into the picker.
+#[derive(Debug)]
+pub struct AuthFormReturnPath {
+    pub target: AuthFormTarget,
+    pub state: Box<AuthForm>,
+    pub focus: AuthFormFocus,
+    pub literal_buffer: String,
 }
 
 /// Save cycle state machine.
@@ -572,6 +594,7 @@ impl EditorState<'_> {
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
+            pending_auth_form_return: None,
         }
     }
 
@@ -592,6 +615,7 @@ impl EditorState<'_> {
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
+            pending_auth_form_return: None,
         }
     }
 

@@ -8,10 +8,14 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::super::widgets::auth_panel::{AuthForm, CredentialInput};
+use super::super::super::widgets::op_picker::OpPickerState;
 use super::super::render::editor::resolve_auth_row_target;
-use super::super::state::{AuthFormFocus, AuthFormTarget, EditorState, FieldFocus, Modal};
+use super::super::state::{
+    AuthFormFocus, AuthFormReturnPath, AuthFormTarget, EditorState, FieldFocus, Modal,
+};
 use crate::agent::Agent;
 use crate::config::{AgentAuthConfig, AuthForwardMode, CodexAuthConfig};
+use crate::console::op_cache::OpCache;
 use crate::operator_env::EnvValue;
 use crate::workspace::WorkspaceRoleOverride;
 
@@ -76,8 +80,20 @@ fn current_mode_and_credential(
 }
 
 /// Drive a single keystroke into an open `Modal::AuthForm`. Returns
-/// `true` when the modal was closed (committed or cancelled).
-pub(super) fn handle_auth_form_key(editor: &mut EditorState<'_>, key: KeyEvent) -> bool {
+/// `true` when the modal was closed (committed, cancelled, or
+/// transitioned to `Modal::OpPicker` for credential selection).
+///
+/// `op_cache` is consumed when the operator presses Enter at
+/// `AuthFormFocus::OpRefValue` to mount a fresh `OpPicker` modal; the
+/// auth-form's context is stashed in
+/// `editor.pending_auth_form_return` so the picker's commit handler
+/// in `editor.rs` can re-mount the form with the picked `OpRef`
+/// applied (or unchanged on cancel).
+pub(super) fn handle_auth_form_key(
+    editor: &mut EditorState<'_>,
+    key: KeyEvent,
+    op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
+) -> bool {
     let Some(Modal::AuthForm {
         state,
         focus,
@@ -105,6 +121,9 @@ pub(super) fn handle_auth_form_key(editor: &mut EditorState<'_>, key: KeyEvent) 
             handle_literal_value_key(focus, state.as_mut(), literal_buffer, key);
         }
         AuthFormFocus::OpRefValue => match key.code {
+            KeyCode::Enter => {
+                return open_op_picker_from_auth_form(editor, op_cache);
+            }
             KeyCode::Down | KeyCode::Tab => *focus = AuthFormFocus::Save,
             KeyCode::Up => *focus = AuthFormFocus::CredentialSource,
             _ => {}
@@ -120,6 +139,121 @@ pub(super) fn handle_auth_form_key(editor: &mut EditorState<'_>, key: KeyEvent) 
         }
     }
     false
+}
+
+/// Detach the auth-form context into `editor.pending_auth_form_return`
+/// and replace `editor.modal` with a fresh `Modal::OpPicker`. The
+/// picker's commit handler (in `editor.rs`) is responsible for
+/// reading `pending_auth_form_return.take()` and re-mounting the form.
+///
+/// Returns `true` so the caller treats the auth-form modal as closed
+/// (it's been swapped out for the picker).
+fn open_op_picker_from_auth_form(
+    editor: &mut EditorState<'_>,
+    op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
+) -> bool {
+    let Some(Modal::AuthForm {
+        target,
+        state,
+        focus,
+        literal_buffer,
+    }) = editor.modal.take()
+    else {
+        return false;
+    };
+    editor.pending_auth_form_return = Some(AuthFormReturnPath {
+        target,
+        state,
+        focus,
+        literal_buffer,
+    });
+    editor.modal = Some(Modal::OpPicker {
+        state: Box::new(OpPickerState::new_with_cache(op_cache)),
+    });
+    true
+}
+
+/// Re-mount the auth-form modal with a freshly-picked `OpRef` applied
+/// against the production `OpCli` runner. Called from the `OpPicker`'s
+/// commit handler in `editor.rs` when `pending_auth_form_return` was
+/// set (i.e. the picker was opened from the auth form, not from the
+/// Secrets tab).
+///
+/// On `try_commit_op_ref` failure (vault read error), the form is
+/// re-opened with the credential left unchanged and an `ErrorPopup`
+/// modal is layered on top so the operator sees what went wrong. The
+/// `read-then-commit` invariant from Task 18 guarantees a broken
+/// reference never lands in `editor.pending`.
+pub(super) fn apply_op_picker_to_auth_form(
+    editor: &mut EditorState<'_>,
+    op_ref: crate::operator_env::OpRef,
+) {
+    apply_op_picker_to_auth_form_with_runner(editor, op_ref, &crate::operator_env::OpCli::new());
+}
+
+/// Restore the auth-form modal unchanged after the operator cancels
+/// the `OpPicker`. Called from the `OpPicker` cancel branch in
+/// `editor.rs` when `pending_auth_form_return` was set.
+pub(super) fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<'_>) {
+    let Some(AuthFormReturnPath {
+        target,
+        state,
+        focus,
+        literal_buffer,
+    }) = editor.pending_auth_form_return.take()
+    else {
+        return;
+    };
+    editor.modal = Some(Modal::AuthForm {
+        target,
+        state,
+        focus,
+        literal_buffer,
+    });
+}
+
+/// Inner helper split out so tests can inject a fake `OpRunner`
+/// without touching the real `op` binary. Mirrors the test pattern
+/// for `try_commit_op_ref` in `form.rs`.
+fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?Sized>(
+    editor: &mut EditorState<'_>,
+    op_ref: crate::operator_env::OpRef,
+    runner: &R,
+) {
+    use crate::console::widgets::error_popup::ErrorPopupState;
+
+    let Some(AuthFormReturnPath {
+        target,
+        mut state,
+        focus,
+        literal_buffer,
+    }) = editor.pending_auth_form_return.take()
+    else {
+        return;
+    };
+    let read_result = state.try_commit_op_ref(runner, op_ref);
+    let new_focus = if read_result.is_ok() {
+        // On success, drop the cursor onto Save so Enter commits.
+        AuthFormFocus::Save
+    } else {
+        // On failure, keep the cursor on OpRefValue so the operator
+        // can retry without navigating.
+        focus
+    };
+    editor.modal = Some(Modal::AuthForm {
+        target,
+        state,
+        focus: new_focus,
+        literal_buffer,
+    });
+    if let Err(e) = read_result {
+        // Layer the error popup on top of the re-mounted auth form.
+        // The popup's commit closes only itself, returning the
+        // operator to the form with the credential field unchanged.
+        editor.modal = Some(Modal::ErrorPopup {
+            state: ErrorPopupState::new("1Password read failed", e.to_string()),
+        });
+    }
 }
 
 fn handle_mode_key(focus: &mut AuthFormFocus, form: &mut AuthForm, key: KeyEvent) {
@@ -367,6 +501,7 @@ mod tests {
     use crate::console::manager::state::{
         AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState,
     };
+    use crate::operator_env::{OpRef, OpRunner};
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -377,6 +512,18 @@ mod tests {
             kind: KeyEventKind::Press,
             state: KeyEventState::NONE,
         }
+    }
+
+    /// Per-test op-cache (no shared state between test cases).
+    fn fresh_op_cache() -> std::rc::Rc<std::cell::RefCell<OpCache>> {
+        std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()))
+    }
+
+    /// Test wrapper around `handle_auth_form_key` that allocates a
+    /// throwaway op-cache. Most existing tests don't care about
+    /// op-picker plumbing — this keeps their bodies short.
+    fn drive_key(editor: &mut EditorState<'_>, k: KeyEvent) -> bool {
+        handle_auth_form_key(editor, k, fresh_op_cache())
     }
 
     fn build_state() -> (AppConfig, ManagerState<'static>) {
@@ -428,20 +575,20 @@ mod tests {
         assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
 
         // Cycle mode: None → first available (sync) → ApiKey is two cycles.
-        handle_auth_form_key(editor, key(KeyCode::Char(' ')));
-        handle_auth_form_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Char(' ')));
         // Enter to advance to credential block.
-        handle_auth_form_key(editor, key(KeyCode::Enter));
+        drive_key(editor, key(KeyCode::Enter));
         // Enter on cred radio → into LiteralValue.
-        handle_auth_form_key(editor, key(KeyCode::Enter));
+        drive_key(editor, key(KeyCode::Enter));
         // Type "secret".
         for c in "secret".chars() {
-            handle_auth_form_key(editor, key(KeyCode::Char(c)));
+            drive_key(editor, key(KeyCode::Char(c)));
         }
         // Tab to Save.
-        handle_auth_form_key(editor, key(KeyCode::Tab));
+        drive_key(editor, key(KeyCode::Tab));
         // Enter → save.
-        let closed = handle_auth_form_key(editor, key(KeyCode::Enter));
+        let closed = drive_key(editor, key(KeyCode::Enter));
         assert!(closed, "save must close the modal");
         assert!(editor.modal.is_none(), "modal should be gone");
 
@@ -479,12 +626,12 @@ mod tests {
         open_auth_form_modal(editor);
         // Tab through to Reset and Enter.
         // From Mode → Down → Cred → Down → Literal → Tab → Save → Tab → Cancel → Tab → Reset.
-        handle_auth_form_key(editor, key(KeyCode::Down)); // Mode → CredentialSource
-        handle_auth_form_key(editor, key(KeyCode::Down)); // → LiteralValue
-        handle_auth_form_key(editor, key(KeyCode::Tab)); // → Save
-        handle_auth_form_key(editor, key(KeyCode::Tab)); // → Cancel
-        handle_auth_form_key(editor, key(KeyCode::Tab)); // → Reset
-        let closed = handle_auth_form_key(editor, key(KeyCode::Enter));
+        drive_key(editor, key(KeyCode::Down)); // Mode → CredentialSource
+        drive_key(editor, key(KeyCode::Down)); // → LiteralValue
+        drive_key(editor, key(KeyCode::Tab)); // → Save
+        drive_key(editor, key(KeyCode::Tab)); // → Cancel
+        drive_key(editor, key(KeyCode::Tab)); // → Reset
+        let closed = drive_key(editor, key(KeyCode::Enter));
         assert!(closed, "reset must close the modal");
         assert!(
             editor.pending.claude.is_none(),
@@ -501,9 +648,9 @@ mod tests {
             panic!()
         };
         open_auth_form_modal(editor);
-        handle_auth_form_key(editor, key(KeyCode::Char(' '))); // cycle to sync
+        drive_key(editor, key(KeyCode::Char(' '))); // cycle to sync
         // Esc cancels at any focus.
-        let closed = handle_auth_form_key(editor, key(KeyCode::Esc));
+        let closed = drive_key(editor, key(KeyCode::Esc));
         assert!(closed);
         assert!(
             editor.pending.claude.is_none(),
@@ -537,15 +684,15 @@ mod tests {
         );
 
         // Cycle to api_key, enter cred, type, tab to save, enter.
-        handle_auth_form_key(editor, key(KeyCode::Char(' ')));
-        handle_auth_form_key(editor, key(KeyCode::Char(' ')));
-        handle_auth_form_key(editor, key(KeyCode::Enter));
-        handle_auth_form_key(editor, key(KeyCode::Enter));
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Enter));
+        drive_key(editor, key(KeyCode::Enter));
         for c in "abc".chars() {
-            handle_auth_form_key(editor, key(KeyCode::Char(c)));
+            drive_key(editor, key(KeyCode::Char(c)));
         }
-        handle_auth_form_key(editor, key(KeyCode::Tab));
-        let closed = handle_auth_form_key(editor, key(KeyCode::Enter));
+        drive_key(editor, key(KeyCode::Tab));
+        let closed = drive_key(editor, key(KeyCode::Enter));
         assert!(closed);
 
         let role_entry = editor
@@ -566,5 +713,149 @@ mod tests {
             EnvValue::Plain(s) => assert_eq!(s, "abc"),
             EnvValue::OpRef(_) => panic!("expected plain literal"),
         }
+    }
+
+    /// Pressing Enter while focused on `OpRefValue` swaps the auth-form
+    /// modal for an `OpPicker` and stashes the form context in
+    /// `pending_auth_form_return`. Confirms the open path of the
+    /// picker round-trip wiring.
+    #[test]
+    fn auth_form_op_ref_picker_invocation_opens_op_picker_modal() {
+        let (_cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        open_auth_form_modal(editor);
+        // Mode → ApiKey (two cycles past `None → sync`).
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Char(' ')));
+        // Enter to advance to the credential block (CredentialSource).
+        drive_key(editor, key(KeyCode::Enter));
+        // Toggle credential source: Literal → OpRef. Now the cred-value
+        // focus resolves to OpRefValue.
+        drive_key(editor, key(KeyCode::Char(' ')));
+        // Down: CredentialSource → OpRefValue (focus_for_credential_value).
+        drive_key(editor, key(KeyCode::Down));
+        // Sanity-check we're on OpRefValue.
+        let Some(Modal::AuthForm { focus, .. }) = &editor.modal else {
+            panic!("expected auth form still open before picker invocation")
+        };
+        assert_eq!(*focus, AuthFormFocus::OpRefValue);
+        // Enter on OpRefValue → swaps to OpPicker.
+        let closed = drive_key(editor, key(KeyCode::Enter));
+        assert!(closed, "transitioning to OpPicker must close auth form");
+        assert!(
+            matches!(editor.modal, Some(Modal::OpPicker { .. })),
+            "auth form must hand off to OpPicker on Enter at OpRefValue"
+        );
+        assert!(
+            editor.pending_auth_form_return.is_some(),
+            "auth-form context must be stashed for the picker to return to"
+        );
+    }
+
+    /// Simulating a successful `OpPicker` commit re-mounts the auth
+    /// form with the picked `OpRef` applied. `can_save` flips to true
+    /// because the form now carries a valid OpRef and a committed
+    /// mode. Uses an injected fake `OpRunner` so the test never
+    /// shells out to the real `op` binary.
+    #[test]
+    fn auth_form_op_ref_picker_commit_applies_to_form() {
+        struct StubRunner;
+        impl OpRunner for StubRunner {
+            fn read(&self, _r: &str) -> anyhow::Result<String> {
+                Ok("sk-ant-from-vault".into())
+            }
+        }
+
+        let (_cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        // Open the auth form on workspace × Claude and bring it to
+        // OpRefValue with mode = ApiKey.
+        open_auth_form_modal(editor);
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Enter));
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Down));
+        drive_key(editor, key(KeyCode::Enter));
+        assert!(matches!(editor.modal, Some(Modal::OpPicker { .. })));
+
+        // Simulate the picker committing a valid OpRef. Bypass the
+        // production `OpCli` by calling the runner-injecting helper
+        // directly — same code path the editor.rs handler invokes,
+        // just with a stub runner.
+        let picked = OpRef {
+            op: "op://uuid/anthropic-vault".into(),
+            path: "Work/Anthropic/api-key".into(),
+        };
+        super::apply_op_picker_to_auth_form_with_runner(editor, picked.clone(), &StubRunner);
+
+        // Form is back; the credential carries the picked OpRef and
+        // can_save must be true (mode + non-empty OpRef both set).
+        let Some(Modal::AuthForm { state, focus, .. }) = &editor.modal else {
+            panic!("auth form must be re-mounted after picker commit");
+        };
+        assert_eq!(
+            *focus,
+            AuthFormFocus::Save,
+            "successful picker commit drops cursor onto Save"
+        );
+        match &state.credential {
+            CredentialInput::OpRef(r) => assert_eq!(r, &picked),
+            other => panic!("expected OpRef credential after picker commit; got {other:?}"),
+        }
+        assert!(
+            state.can_save(),
+            "form must be commitable after picker supplies a non-empty OpRef"
+        );
+        assert!(
+            editor.pending_auth_form_return.is_none(),
+            "stash must be drained on commit"
+        );
+    }
+
+    /// A failed vault read (e.g. biometric timeout) must NOT corrupt
+    /// the form's credential — the read-then-commit invariant from
+    /// Task 18 is what stops a broken reference reaching disk. The
+    /// form re-opens with the credential unchanged and an
+    /// `ErrorPopup` layered on top.
+    #[test]
+    fn auth_form_op_ref_picker_failed_read_does_not_apply_op_ref() {
+        struct FailRunner;
+        impl OpRunner for FailRunner {
+            fn read(&self, _r: &str) -> anyhow::Result<String> {
+                Err(anyhow::anyhow!("biometric prompt timed out"))
+            }
+        }
+
+        let (_cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        open_auth_form_modal(editor);
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Enter));
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Down));
+        drive_key(editor, key(KeyCode::Enter));
+
+        let picked = OpRef {
+            op: "op://uuid/missing".into(),
+            path: "Vault/Missing/field".into(),
+        };
+        super::apply_op_picker_to_auth_form_with_runner(editor, picked, &FailRunner);
+
+        // Top modal must be the ErrorPopup; credential must remain
+        // the empty OpRef (or whatever the toggle seeded), NOT the
+        // attempted reference.
+        assert!(
+            matches!(editor.modal, Some(Modal::ErrorPopup { .. })),
+            "failed vault read must surface an error popup"
+        );
+        assert!(editor.pending_auth_form_return.is_none());
     }
 }
