@@ -2638,3 +2638,144 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     assert_eq!(role.key(), "chainargos/agent-smith");
     Ok(())
 }
+
+// ── Auth tab integration test ─────────────────────────────────────────
+//
+// End-to-end coverage of the auth-form save path: open the form on a
+// workspace × Claude row, set mode = api_key + a literal credential,
+// commit the form, save the editor, reload from disk, and assert the
+// persisted TOML carries BOTH the `auth_forward = "api_key"` block AND
+// the `ANTHROPIC_API_KEY` env var.
+//
+// The bug this guards against: prior to the C1 fixup, the auth-form
+// commit only mutated `editor.pending.{claude,codex,roles[*]…}`, but
+// `build_workspace_edit` / `WorkspaceEdit` carried no auth-forward
+// field, so `edit_workspace` re-rendered the workspace table from the
+// parsed-from-disk in-memory copy — silently overwriting the operator's
+// mode change. The credential env var landed (env diff is wired
+// separately) but the mode never reached disk; on reload, the resolver
+// fell back to the global default and ignored the freshly-written key.
+#[test]
+fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    // Start the manager on the Auth tab, cursor on row 0 = workspace ×
+    // Claude.
+    let mut state = ManagerState::from_config(&config, cwd);
+    let ws = config
+        .workspaces
+        .get("big-monorepo")
+        .expect("seed must create big-monorepo")
+        .clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.active_field = FieldFocus::Row(0);
+    state.stage = ManagerStage::Editor(ed);
+
+    // Enter opens the auth-edit form modal on workspace × Claude.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthForm { .. })),
+        "Enter on auth row 0 must open the auth-form modal; got {:?}",
+        editor(&state).modal
+    );
+
+    // Cycle mode: None → Sync → ApiKey (two Spaces).
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    // Enter advances to credential block (CredentialSource).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    // Enter again moves into LiteralValue (default credential is Literal).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    // Type "sk-ant-test".
+    for ch in "sk-ant-test".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    // Tab to Save, Enter to commit the form.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "auth-form save must close the modal"
+    );
+
+    // pending.claude reflects ApiKey, pending.env carries the credential.
+    let pending = &editor(&state).pending;
+    assert_eq!(
+        pending.claude.as_ref().map(|c| c.auth_forward),
+        Some(jackin::config::AuthForwardMode::ApiKey),
+        "form commit must set workspace × claude mode in pending"
+    );
+    assert!(
+        pending.env.contains_key("ANTHROPIC_API_KEY"),
+        "form commit must set credential env var in pending"
+    );
+
+    // Save the editor: `s` opens the ConfirmSave modal (no collapses
+    // expected here since the seed has a single mount), Enter commits
+    // and bounces back to List.
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('s')),
+    )?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // Reload AppConfig from disk and assert both halves of the auth
+    // change survived the round-trip.
+    let reloaded = AppConfig::load_or_init(&paths)?;
+    let ws_on_disk = reloaded
+        .workspaces
+        .get("big-monorepo")
+        .expect("workspace must still exist on disk");
+    assert_eq!(
+        ws_on_disk.claude.as_ref().map(|c| c.auth_forward),
+        Some(jackin::config::AuthForwardMode::ApiKey),
+        "reload must see [workspaces.big-monorepo.claude] auth_forward = api_key"
+    );
+    let env_value = ws_on_disk
+        .env
+        .get("ANTHROPIC_API_KEY")
+        .expect("reload must see ANTHROPIC_API_KEY in workspace env");
+    match env_value {
+        jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "sk-ant-test"),
+        jackin::operator_env::EnvValue::OpRef(_) => {
+            panic!("expected literal credential, got OpRef")
+        }
+    }
+
+    // Belt-and-braces: read the raw TOML and confirm the literal text is
+    // there. Catches a future regression where a typed accessor papered
+    // over a missing block (e.g. resolver fall-through).
+    let toml = std::fs::read_to_string(&paths.config_file)?;
+    assert!(
+        toml.contains("[workspaces.big-monorepo.claude]"),
+        "raw TOML must carry the workspace claude block; got:\n{toml}"
+    );
+    assert!(
+        toml.contains(r#"auth_forward = "api_key""#),
+        "raw TOML must carry auth_forward = \"api_key\"; got:\n{toml}"
+    );
+    assert!(
+        toml.contains(r#"ANTHROPIC_API_KEY = "sk-ant-test""#),
+        "raw TOML must carry the credential env var; got:\n{toml}"
+    );
+    Ok(())
+}

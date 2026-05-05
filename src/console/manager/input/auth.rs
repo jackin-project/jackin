@@ -104,9 +104,13 @@ pub(super) fn handle_auth_form_key(
         return false;
     };
 
-    // Esc cancels at every focus.
+    // Esc cancels at every focus. Drain the auth-form return stash too so
+    // a stale OpPicker round-trip can't be re-applied to a future modal —
+    // every other exit path (Save / Cancel / Reset commit, OpPicker
+    // commit/cancel) drains it explicitly; Esc must too.
     if key.code == KeyCode::Esc {
         editor.modal = None;
+        editor.pending_auth_form_return = None;
         return true;
     }
 
@@ -857,5 +861,111 @@ mod tests {
             "failed vault read must surface an error popup"
         );
         assert!(editor.pending_auth_form_return.is_none());
+    }
+
+    /// Esc on an open auth form must drain `pending_auth_form_return`
+    /// alongside dismissing the modal — leaving it set would let a
+    /// later `OpPicker` open from the Secrets tab silently inherit a
+    /// stale auth-form context. Defensive cleanup against future
+    /// picker flows.
+    #[test]
+    fn auth_form_esc_clears_pending_auth_form_return() {
+        use crate::console::manager::state::AuthFormReturnPath;
+
+        let (_cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        // Stash a return path manually as if a picker handoff was in
+        // flight. (Reaching this state via the public API is hard
+        // because the picker swap takes the modal — the defensive
+        // cleanup is for reentrancy / partial-flow bugs we don't want
+        // to leak through Esc.)
+        editor.pending_auth_form_return = Some(AuthFormReturnPath {
+            target: AuthFormTarget::Workspace {
+                agent: Agent::Claude,
+            },
+            state: Box::new(AuthForm::new(Agent::Claude)),
+            focus: AuthFormFocus::Mode,
+            literal_buffer: String::new(),
+        });
+        // Open the auth form modal so handle_auth_form_key can be
+        // entered.
+        open_auth_form_modal(editor);
+        assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
+
+        let closed = drive_key(editor, key(KeyCode::Esc));
+        assert!(closed, "Esc must close the auth form");
+        assert!(editor.modal.is_none(), "modal must be dropped");
+        assert!(
+            editor.pending_auth_form_return.is_none(),
+            "Esc must drain pending_auth_form_return so future picker flows \
+             don't inherit stale stash state"
+        );
+    }
+
+    /// `Enter` on the Save focus when `can_save` is false (e.g. an
+    /// `OpRef` credential with empty `op` and `path`) must NOT dismiss
+    /// the modal NOR mutate `editor.pending`. The Task 18 fixup made
+    /// `can_save` reject empty `OpRef`s; this test pins that the input
+    /// layer honours the guard rather than ignoring it.
+    #[test]
+    fn auth_form_save_disabled_blocks_enter() {
+        let (_cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        let pending_before = editor.pending.clone();
+        open_auth_form_modal(editor);
+        // Build a form state with mode = ApiKey and credential = empty
+        // OpRef so `can_save` returns false. Cycle Mode (None → Sync →
+        // ApiKey), Enter into the credential block, Space to flip from
+        // Literal to (empty) OpRef, then Down to navigate to OpRefValue.
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Char(' ')));
+        drive_key(editor, key(KeyCode::Enter));
+        drive_key(editor, key(KeyCode::Char(' ')));
+
+        // Confirm the form's credential is the empty OpRef and can_save
+        // is false.
+        let Some(Modal::AuthForm { state, .. }) = &editor.modal else {
+            panic!("auth form must still be open");
+        };
+        match &state.credential {
+            CredentialInput::OpRef(r) => {
+                assert!(
+                    r.op.is_empty() && r.path.is_empty(),
+                    "expected empty OpRef as setup; got {r:?}"
+                );
+            }
+            other => panic!("expected OpRef credential after toggle; got {other:?}"),
+        }
+        assert!(
+            !state.can_save(),
+            "form must NOT be save-able with mode set + empty OpRef"
+        );
+
+        // Move focus directly to Save and press Enter. The handler
+        // must short-circuit on `!can_save()` and leave the modal
+        // open + pending untouched.
+        if let Some(Modal::AuthForm { focus, .. }) = editor.modal.as_mut() {
+            *focus = AuthFormFocus::Save;
+        } else {
+            panic!("auth form must still be open");
+        }
+        let closed = drive_key(editor, key(KeyCode::Enter));
+        assert!(
+            !closed,
+            "Enter on Save with !can_save must NOT close the modal"
+        );
+        assert!(
+            matches!(editor.modal, Some(Modal::AuthForm { .. })),
+            "modal must remain on AuthForm; got {:?}",
+            editor.modal
+        );
+        assert_eq!(
+            editor.pending, pending_before,
+            "Enter on Save with !can_save must NOT mutate editor.pending"
+        );
     }
 }

@@ -345,6 +345,14 @@ pub(super) fn commit_editor_save_with_runner(
                 return Ok(());
             }
 
+            // `edit_workspace` re-renders the entire `[workspaces.<name>]`
+            // table from the parsed in-memory config — which preserves
+            // whatever `claude` / `codex` / `roles[*].{claude,codex}` blocks
+            // already lived on disk, NOT what's in `editor.pending`. Apply
+            // the diff against `editor.original` AFTER the table rewrite so
+            // mode changes survive the round-trip.
+            apply_auth_forward_diff(&mut ce, &current_name, &editor.original, &editor.pending);
+
             (rename_to, current_name)
         }
         SaveMode::Create => {
@@ -356,6 +364,9 @@ pub(super) fn commit_editor_save_with_runner(
                 open_save_error_popup(editor, &e.to_string());
                 return Ok(());
             }
+            // `create_workspace` serializes `editor.pending` whole, which
+            // already carries `claude` / `codex` / `roles[*].{claude,codex}`
+            // — no separate diff needed for the create path.
             (None, name)
         }
     };
@@ -781,6 +792,66 @@ fn build_prospective_mounts(
         }
     }
     out
+}
+
+/// Diff `claude` / `codex` and per-role `claude` / `codex` mode fields
+/// between `original` and `pending`, propagating each change to disk via
+/// `ConfigEditor::set_workspace_auth_forward` /
+/// `set_workspace_role_auth_forward`.
+///
+/// `WorkspaceEdit` does not (yet) carry the auth-forward fields, so
+/// `edit_workspace` re-renders the entire workspace table from the parsed
+/// in-memory config — preserving whatever was on disk, NOT what the
+/// auth-form mutated in `editor.pending`. Calling this helper after
+/// `edit_workspace` resolves that drift: the typed auth-forward setters
+/// reach into the freshly-rewritten `[workspaces.<name>.<agent>]` /
+/// `[workspaces.<name>.roles.<role>.<agent>]` blocks and apply the diff.
+///
+/// Roles present only in `original` get their auth blocks cleared. Roles
+/// present only in `pending` get their auth blocks written.
+fn apply_auth_forward_diff(
+    ce: &mut crate::config::ConfigEditor,
+    workspace_name: &str,
+    original: &crate::workspace::WorkspaceConfig,
+    pending: &crate::workspace::WorkspaceConfig,
+) {
+    use crate::agent::Agent;
+    let original_claude = original.claude.as_ref().map(|c| c.auth_forward);
+    let pending_claude = pending.claude.as_ref().map(|c| c.auth_forward);
+    if original_claude != pending_claude {
+        ce.set_workspace_auth_forward(workspace_name, Agent::Claude, pending_claude);
+    }
+    let original_codex = original.codex.as_ref().map(|c| c.0.auth_forward);
+    let pending_codex = pending.codex.as_ref().map(|c| c.0.auth_forward);
+    if original_codex != pending_codex {
+        ce.set_workspace_auth_forward(workspace_name, Agent::Codex, pending_codex);
+    }
+
+    // Union so roles on only one side are caught.
+    let role_keys: std::collections::BTreeSet<&String> =
+        original.roles.keys().chain(pending.roles.keys()).collect();
+    for role in role_keys {
+        let orig_override = original.roles.get(role);
+        let pend_override = pending.roles.get(role);
+        let orig_claude = orig_override
+            .and_then(|o| o.claude.as_ref())
+            .map(|c| c.auth_forward);
+        let pend_claude = pend_override
+            .and_then(|p| p.claude.as_ref())
+            .map(|c| c.auth_forward);
+        if orig_claude != pend_claude {
+            ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Claude, pend_claude);
+        }
+        let orig_codex = orig_override
+            .and_then(|o| o.codex.as_ref())
+            .map(|c| c.0.auth_forward);
+        let pend_codex = pend_override
+            .and_then(|p| p.codex.as_ref())
+            .map(|c| c.0.auth_forward);
+        if orig_codex != pend_codex {
+            ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Codex, pend_codex);
+        }
+    }
 }
 
 /// Roles present only in `original` get all keys removed.
