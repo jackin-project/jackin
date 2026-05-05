@@ -746,6 +746,34 @@ auth_forward = "oauth_token"
     }
 
     #[test]
+    fn agent_auth_config_serializes_canonical_names() {
+        for (mode, expected) in [
+            (AuthForwardMode::Sync, "sync"),
+            (AuthForwardMode::ApiKey, "api_key"),
+            (AuthForwardMode::OAuthToken, "oauth_token"),
+            (AuthForwardMode::Ignore, "ignore"),
+        ] {
+            let cfg = AgentAuthConfig { auth_forward: mode };
+            let s = toml::to_string(&cfg).expect("serialize must succeed");
+            assert!(
+                s.contains(&format!("auth_forward = \"{expected}\"")),
+                "mode {mode:?} must serialize as auth_forward = \"{expected}\", got: {s}"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_auth_config_rejects_unknown_field() {
+        let toml = "auth_forward = \"sync\"\nbogus = true";
+        let err = toml::from_str::<AgentAuthConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field `bogus`") || msg.contains("unknown field \"bogus\""),
+            "expected unknown-field error, got: {msg}"
+        );
+    }
+
+    #[test]
     fn deserializes_global_env_map() {
         let toml_str = r#"
 [env]

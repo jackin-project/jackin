@@ -1093,10 +1093,23 @@ fn load_role_with(
                     );
                 }
                 crate::instance::AuthProvisionOutcome::TokenMode => {
-                    eprintln!(
-                        "[jackin] auth_forward=token — role will use CLAUDE_CODE_OAUTH_TOKEN \
-                         from the resolved env."
-                    );
+                    // Tasks 10/11/13 will route this through Agent::required_env_var.
+                    match auth_mode {
+                        crate::config::AuthForwardMode::OAuthToken => {
+                            eprintln!(
+                                "[jackin] auth_forward={auth_mode} — role will use \
+                                 CLAUDE_CODE_OAUTH_TOKEN from the resolved env."
+                            );
+                        }
+                        crate::config::AuthForwardMode::ApiKey => {
+                            eprintln!(
+                                "[jackin] auth_forward={auth_mode} — role will use \
+                                 ANTHROPIC_API_KEY from the resolved env."
+                            );
+                        }
+                        crate::config::AuthForwardMode::Sync
+                        | crate::config::AuthForwardMode::Ignore => {}
+                    }
                 }
                 crate::instance::AuthProvisionOutcome::HostMissing => match auth_mode {
                     crate::config::AuthForwardMode::Sync => {
