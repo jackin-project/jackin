@@ -92,13 +92,6 @@ pub struct AgentAuthConfig {
     pub auth_forward: AuthForwardMode,
 }
 
-/// Global Claude Code configuration.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ClaudeConfig {
-    #[serde(default)]
-    pub auth_forward: AuthForwardMode,
-}
-
 /// Per-role Claude Code configuration override.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClaudeRoleConfig {
@@ -128,8 +121,10 @@ pub struct DockerConfig {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppConfig {
-    #[serde(default)]
-    pub claude: ClaudeConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude: Option<AgentAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex: Option<AgentAuthConfig>,
     /// Global operator env map — the bottom layer. Merged under
     /// per-role, per-workspace, and per-(workspace × role) layers.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -358,7 +353,10 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.claude.auth_forward, AuthForwardMode::Sync);
+        assert!(
+            config.claude.is_none(),
+            "absent [claude] block must deserialize to None"
+        );
         assert_eq!(
             config.resolve_auth_forward_mode("agent-smith"),
             AuthForwardMode::Sync
@@ -386,7 +384,44 @@ trusted = true
 auth_forward = "oauth_token"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.claude.auth_forward, AuthForwardMode::OAuthToken);
+        assert_eq!(
+            config.claude.as_ref().unwrap().auth_forward,
+            AuthForwardMode::OAuthToken
+        );
+    }
+
+    #[test]
+    fn parse_app_config_claude_and_codex() {
+        let toml = r#"
+[claude]
+auth_forward = "sync"
+
+[codex]
+auth_forward = "api_key"
+"#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(
+            cfg.claude.as_ref().unwrap().auth_forward,
+            AuthForwardMode::Sync
+        );
+        assert_eq!(
+            cfg.codex.as_ref().unwrap().auth_forward,
+            AuthForwardMode::ApiKey
+        );
+    }
+
+    #[test]
+    fn parse_app_config_no_agent_blocks() {
+        let toml = "";
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert!(
+            cfg.claude.is_none(),
+            "claude must be None when [claude] absent"
+        );
+        assert!(
+            cfg.codex.is_none(),
+            "codex must be None when [codex] absent"
+        );
     }
 
     #[test]

@@ -52,7 +52,12 @@ impl AppConfig {
             .get(agent_key)
             .and_then(|a| a.claude.as_ref())
             .and_then(|c| c.auth_forward)
-            .unwrap_or(self.claude.auth_forward)
+            .unwrap_or_else(|| {
+                self.claude
+                    .as_ref()
+                    .map(|c| c.auth_forward)
+                    .unwrap_or_default()
+            })
     }
 
     /// Set the per-role auth forward mode override.
@@ -357,7 +362,15 @@ git = "https://github.com/jackin-project/jackin-the-architect.git"
     #[test]
     fn auth_forward_defaults_to_sync() {
         let config = AppConfig::default();
-        assert_eq!(config.claude.auth_forward, AuthForwardMode::Sync);
+        assert!(
+            config.claude.is_none(),
+            "default AppConfig must have no [claude] block"
+        );
+        assert_eq!(
+            config.resolve_auth_forward_mode("any"),
+            AuthForwardMode::Sync,
+            "absent [claude] resolves to Sync via default"
+        );
     }
 
     #[test]
@@ -370,7 +383,10 @@ auth_forward = "sync"
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.claude.auth_forward, AuthForwardMode::Sync);
+        assert_eq!(
+            config.claude.as_ref().unwrap().auth_forward,
+            AuthForwardMode::Sync
+        );
     }
 
     #[test]
@@ -449,7 +465,10 @@ auth_forward = "ignore"
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         let serialized = toml::to_string_pretty(&config).unwrap();
         let reloaded: AppConfig = toml::from_str(&serialized).unwrap();
-        assert_eq!(reloaded.claude.auth_forward, AuthForwardMode::Sync);
+        assert_eq!(
+            reloaded.claude.as_ref().unwrap().auth_forward,
+            AuthForwardMode::Sync
+        );
         assert_eq!(
             reloaded.resolve_auth_forward_mode("agent-smith"),
             AuthForwardMode::Ignore

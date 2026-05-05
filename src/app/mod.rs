@@ -384,7 +384,12 @@ pub fn run(cli: Cli) -> Result<()> {
                         let effective = config.resolve_auth_forward_mode(&class.key());
                         println!("{effective}");
                     } else {
-                        println!("{}", config.claude.auth_forward);
+                        let mode = config
+                            .claude
+                            .as_ref()
+                            .map(|c| c.auth_forward)
+                            .unwrap_or_default();
+                        println!("{mode}");
                     }
                     Ok(())
                 }
