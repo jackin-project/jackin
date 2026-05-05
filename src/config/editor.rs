@@ -313,37 +313,6 @@ impl ConfigEditor {
         }
     }
 
-    /// Rewrite any `auth_forward = "copy"` to `"sync"` at the two paths
-    /// `contains_deprecated_copy_auth_forward` checks:
-    ///   [claude].`auth_forward`
-    ///   [roles.*.claude].`auth_forward`
-    ///
-    /// Does not touch any other structure. Used by `load_or_init` when the
-    /// on-disk config still contains the deprecated literal.
-    pub fn normalize_deprecated_copy(&mut self) {
-        // Global [claude]
-        if let Some(claude) = self.doc.get_mut("claude").and_then(|i| i.as_table_mut())
-            && claude.get("auth_forward").and_then(|i| i.as_str()) == Some("copy")
-        {
-            claude.insert("auth_forward", toml_edit::value("sync"));
-        }
-        // Per-role [roles.X.claude]
-        if let Some(roles) = self.doc.get_mut("roles").and_then(|i| i.as_table_mut()) {
-            for (_, agent_item) in roles.iter_mut() {
-                let Some(agent_table) = agent_item.as_table_mut() else {
-                    continue;
-                };
-                let Some(claude) = agent_table.get_mut("claude").and_then(|i| i.as_table_mut())
-                else {
-                    continue;
-                };
-                if claude.get("auth_forward").and_then(|i| i.as_str()) == Some("copy") {
-                    claude.insert("auth_forward", toml_edit::value("sync"));
-                }
-            }
-        }
-    }
-
     pub fn remove_env_var(&mut self, scope: &EnvScope, key: &str) -> bool {
         let path = env_scope_path(scope);
         // Walk without creating: return false if any segment is missing.
@@ -486,7 +455,10 @@ const fn auth_forward_str(mode: crate::config::AuthForwardMode) -> &'static str 
     match mode {
         crate::config::AuthForwardMode::Ignore => "ignore",
         crate::config::AuthForwardMode::Sync => "sync",
-        crate::config::AuthForwardMode::Token => "token",
+        // Tasks 10/11 will split per-mode behavior; today both env-driven
+        // modes serialize to their canonical snake_case names.
+        crate::config::AuthForwardMode::ApiKey => "api_key",
+        crate::config::AuthForwardMode::OAuthToken => "oauth_token",
     }
 }
 
@@ -1272,12 +1244,12 @@ git = "x"
         .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_agent_auth_forward("my-role", crate::config::AuthForwardMode::Token);
+        editor.set_agent_auth_forward("my-role", crate::config::AuthForwardMode::OAuthToken);
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains("[roles.my-role.claude]"), "{out}");
-        assert!(out.contains(r#"auth_forward = "token""#), "{out}");
+        assert!(out.contains(r#"auth_forward = "oauth_token""#), "{out}");
     }
 
     #[test]
@@ -1327,7 +1299,7 @@ git = "OLD-URL"
 trusted = false
 
 [roles.agent-smith.claude]
-auth_forward = "token"
+auth_forward = "oauth_token"
 "#,
         )
         .unwrap();
@@ -1346,7 +1318,7 @@ auth_forward = "token"
         );
         assert!(out.contains("trusted = true"), "{out}");
         assert!(
-            out.contains(r#"auth_forward = "token""#),
+            out.contains(r#"auth_forward = "oauth_token""#),
             "claude override wiped: {out}"
         );
     }
@@ -1461,37 +1433,6 @@ MY_VAR = "preserved"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains(r#"git = "NEW""#), "{out}");
         assert!(out.contains(r#"MY_VAR = "preserved""#), "{out}");
-    }
-
-    #[test]
-    fn normalize_deprecated_copy_rewrites_global_and_agent_paths() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-        std::fs::write(
-            &paths.config_file,
-            r#"[claude]
-auth_forward = "copy"
-
-[roles.foo]
-git = "x"
-
-[roles.foo.claude]
-auth_forward = "copy"
-
-[roles.bar]
-git = "y"
-"#,
-        )
-        .unwrap();
-
-        let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.normalize_deprecated_copy();
-        editor.save().unwrap();
-
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(!out.contains(r#""copy""#), "{out}");
-        assert!(out.contains(r#"auth_forward = "sync""#), "{out}");
     }
 
     #[test]

@@ -11,11 +11,6 @@ impl AppConfig {
             Err(e) => return Err(e.into()),
         };
 
-        let deprecated_copy_seen = match &contents_opt {
-            Some(c) => contains_deprecated_copy_auth_forward(c)?,
-            None => false,
-        };
-
         let mut config: Self = match contents_opt {
             Some(c) => toml::from_str(&c)?,
             None => Self::default(),
@@ -32,21 +27,13 @@ impl AppConfig {
 
         let builtins_changed = config.sync_builtin_agents();
 
-        if deprecated_copy_seen {
-            crate::tui::deprecation_warning(&format!(
-                "migrated auth_forward \"copy\" → \"sync\" in {} (copy is deprecated)",
-                paths.config_file.display()
-            ));
-        }
-
-        if builtins_changed || deprecated_copy_seen {
+        if builtins_changed {
             // Bootstrap only when the file doesn't exist yet. Without this
             // gate, ConfigEditor::open would call load_or_init for the
             // missing file and recurse. When the file DOES exist (the
-            // builtins-drifted or deprecated-copy upgrade path), we must
-            // NOT rewrite it through the lossy serde path first — that
-            // would destroy every user comment before the editor could
-            // preserve them, defeating the whole point of this migration.
+            // builtins-drifted upgrade path), we must NOT rewrite it
+            // through the lossy serde path first — that would destroy
+            // every user comment before the editor could preserve them.
             if !paths.config_file.exists() {
                 // Inline of the removed AppConfig::save. Atomic write:
                 // serialize → .tmp (0o600 on unix, fsync) → rename.
@@ -73,13 +60,8 @@ impl AppConfig {
                 std::fs::rename(&tmp, &paths.config_file)?;
             }
             let mut editor = crate::config::ConfigEditor::open(paths)?;
-            if builtins_changed {
-                for &(name, git) in crate::config::roles::BUILTIN_ROLES {
-                    editor.upsert_builtin_agent(name, git);
-                }
-            }
-            if deprecated_copy_seen {
-                editor.normalize_deprecated_copy();
+            for &(name, git) in crate::config::roles::BUILTIN_ROLES {
+                editor.upsert_builtin_agent(name, git);
             }
             // editor.save() returns an AppConfig parsed from the on-disk file,
             // which has [roles.X.env] preserved (upsert_builtin_agent doesn't
@@ -96,43 +78,6 @@ impl AppConfig {
         config.validate_workspaces()?;
         Ok(config)
     }
-}
-
-/// Detect the literal deprecated `auth_forward = "copy"` at either of the
-/// two known config paths: the global `[claude]` table or any
-/// `[roles.*.claude]` table. Returns `true` if any occurrence is found.
-///
-/// Uses `toml::Value` (cheap — we parse the same string into `AppConfig`
-/// right after) instead of a regex, so quoted keys with odd whitespace
-/// are handled correctly.
-fn contains_deprecated_copy_auth_forward(raw: &str) -> anyhow::Result<bool> {
-    let value: toml::Value = toml::from_str(raw)?;
-
-    // Global [claude] auth_forward
-    if let Some(s) = value
-        .get("claude")
-        .and_then(|c| c.get("auth_forward"))
-        .and_then(|v| v.as_str())
-        && s == "copy"
-    {
-        return Ok(true);
-    }
-
-    // Per-role [roles.<name>.claude] auth_forward
-    if let Some(roles) = value.get("roles").and_then(|a| a.as_table()) {
-        for role in roles.values() {
-            if let Some(s) = role
-                .get("claude")
-                .and_then(|c| c.get("auth_forward"))
-                .and_then(|v| v.as_str())
-                && s == "copy"
-            {
-                return Ok(true);
-            }
-        }
-    }
-
-    Ok(false)
 }
 
 #[cfg(test)]
@@ -167,7 +112,9 @@ mod tests {
     }
 
     #[test]
-    fn load_migrates_global_copy_to_sync_and_rewrites_config() {
+    fn load_rejects_deprecated_copy_alias() {
+        // Pre-release stance: no compatibility shims. `auth_forward = "copy"`
+        // must hard-fail at load instead of being silently migrated.
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -183,95 +130,12 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
         )
         .unwrap();
 
-        let config = AppConfig::load_or_init(&paths).unwrap();
-
-        // In memory, Copy normalized to Sync
-        assert_eq!(
-            config.claude.auth_forward,
-            crate::config::AuthForwardMode::Sync
-        );
-
-        // On disk, "copy" no longer present
-        let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
+        let err = AppConfig::load_or_init(&paths).unwrap_err();
+        let msg = err.to_string();
         assert!(
-            !persisted.contains("auth_forward = \"copy\""),
-            "expected on-disk config to be migrated; got:\n{persisted}"
+            msg.contains("unknown variant `copy`") || msg.contains("invalid auth_forward mode"),
+            "expected parse error rejecting `copy`, got: {msg}"
         );
-        assert!(
-            persisted.contains("auth_forward = \"sync\""),
-            "expected migrated config to contain sync; got:\n{persisted}"
-        );
-    }
-
-    #[test]
-    fn load_migrates_per_agent_copy_to_sync() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-
-        std::fs::write(
-            &paths.config_file,
-            r#"[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-
-[roles.agent-smith.claude]
-auth_forward = "copy"
-"#,
-        )
-        .unwrap();
-
-        let config = AppConfig::load_or_init(&paths).unwrap();
-
-        assert_eq!(
-            config.resolve_auth_forward_mode("agent-smith"),
-            crate::config::AuthForwardMode::Sync
-        );
-
-        let persisted = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(!persisted.contains("auth_forward = \"copy\""));
-    }
-
-    #[test]
-    fn load_migration_preserves_user_comments() {
-        // Regression test for the persist.rs migration path: the copy→sync
-        // and builtin-sync branches must NOT pre-flush through the lossy
-        // serde writer, or every user comment gets destroyed before the
-        // editor can preserve them.
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-
-        let original = r#"# Top-of-file note — keep this
-[claude]
-auth_forward = "copy"
-
-# Builtin role, operator-configured
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-
-# Keep this comment too — it explains why we trust
-[roles.agent-smith.claude]
-auth_forward = "copy"
-"#;
-        std::fs::write(&paths.config_file, original).unwrap();
-
-        let _config = AppConfig::load_or_init(&paths).unwrap();
-
-        let after = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(
-            after.contains("# Top-of-file note — keep this"),
-            "top-of-file comment lost: {after}"
-        );
-        assert!(
-            after.contains("# Builtin role, operator-configured"),
-            "role-section comment lost: {after}"
-        );
-        assert!(
-            after.contains("# Keep this comment too — it explains why we trust"),
-            "claude-section comment lost: {after}"
-        );
-        assert!(!after.contains("\"copy\""), "copy not migrated: {after}");
-        assert!(after.contains("auth_forward = \"sync\""), "{after}");
     }
 
     #[test]
@@ -298,7 +162,7 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
     }
 
     #[test]
-    fn load_does_not_rewrite_when_no_copy_present() {
+    fn load_is_idempotent_when_builtins_already_synced() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
 
@@ -311,7 +175,7 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
         std::thread::sleep(std::time::Duration::from_millis(50));
 
-        // Second load with no "copy" anywhere — must not rewrite.
+        // Second load on a stable file must not rewrite.
         AppConfig::load_or_init(&paths).unwrap();
         let mtime_after = std::fs::metadata(&paths.config_file)
             .unwrap()

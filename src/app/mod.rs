@@ -26,14 +26,8 @@ use self::context::{
 };
 
 /// Parse an `auth_forward` mode value as it arrived from the CLI.
-///
-/// Returns the resolved mode and a boolean indicating whether the operator
-/// passed the deprecated `copy` alias — the caller is responsible for
-/// emitting a user-facing warning in that case.
-fn parse_auth_forward_mode_from_cli(raw: &str) -> anyhow::Result<(config::AuthForwardMode, bool)> {
-    let mode: config::AuthForwardMode = raw.parse().map_err(|e: String| anyhow::anyhow!("{e}"))?;
-    let was_deprecated = raw == "copy";
-    Ok((mode, was_deprecated))
+fn parse_auth_forward_mode_from_cli(raw: &str) -> anyhow::Result<config::AuthForwardMode> {
+    raw.parse().map_err(|e: String| anyhow::anyhow!("{e}"))
 }
 
 #[allow(clippy::too_many_lines)]
@@ -365,12 +359,7 @@ pub fn run(cli: Cli) -> Result<()> {
             },
             cli::ConfigCommand::Auth(auth_cmd) => match auth_cmd {
                 cli::AuthCommand::Set { mode, role } => {
-                    let (parsed_mode, was_deprecated) = parse_auth_forward_mode_from_cli(&mode)?;
-                    if was_deprecated {
-                        tui::deprecation_warning(
-                            "auth_forward \"copy\" is deprecated; saving as \"sync\"",
-                        );
-                    }
+                    let parsed_mode = parse_auth_forward_mode_from_cli(&mode)?;
                     if let Some(role_selector) = role {
                         let class = RoleSelector::parse(&role_selector)?;
                         config.resolve_role_source(&class)?;
@@ -1165,17 +1154,15 @@ mod auth_set_tests {
     use super::*;
 
     #[test]
-    fn parse_auth_forward_mode_from_cli_accepts_copy_as_deprecated() {
-        let (mode, was_deprecated) = parse_auth_forward_mode_from_cli("copy").unwrap();
-        assert_eq!(mode, crate::config::AuthForwardMode::Sync);
-        assert!(was_deprecated);
+    fn parse_auth_forward_mode_from_cli_rejects_deprecated_copy_alias() {
+        // Pre-release stance: no compatibility shims.
+        assert!(parse_auth_forward_mode_from_cli("copy").is_err());
     }
 
     #[test]
-    fn parse_auth_forward_mode_from_cli_accepts_sync_non_deprecated() {
-        let (mode, was_deprecated) = parse_auth_forward_mode_from_cli("sync").unwrap();
+    fn parse_auth_forward_mode_from_cli_accepts_sync() {
+        let mode = parse_auth_forward_mode_from_cli("sync").unwrap();
         assert_eq!(mode, crate::config::AuthForwardMode::Sync);
-        assert!(!was_deprecated);
     }
 
     #[test]

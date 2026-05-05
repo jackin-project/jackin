@@ -1035,8 +1035,14 @@ fn load_role_with(
         // operator env; fail fast with an actionable error if it is
         // missing so the operator sees the problem before we spend time
         // starting the network and DinD sidecar.
+        //
+        // ApiKey mirrors OAuthToken's filesystem behavior in this commit;
+        // Tasks 10/11 will split the credential check per mode.
         if agent == crate::agent::Agent::Claude
-            && matches!(auth_mode, crate::config::AuthForwardMode::Token)
+            && matches!(
+                auth_mode,
+                crate::config::AuthForwardMode::OAuthToken | crate::config::AuthForwardMode::ApiKey
+            )
         {
             verify_token_env_present(&operator_env)?;
         }
@@ -1057,7 +1063,10 @@ fn load_role_with(
         // printed.
         if agent == crate::agent::Agent::Claude {
             match auth_mode {
-                crate::config::AuthForwardMode::Token => {
+                // ApiKey mirrors OAuthToken's notice in this commit; Tasks
+                // 10/11 will split per-mode env-source diagnostics.
+                crate::config::AuthForwardMode::OAuthToken
+                | crate::config::AuthForwardMode::ApiKey => {
                     let raw = lookup_operator_env_raw(
                         config,
                         Some(&selector.key()),
@@ -1065,7 +1074,7 @@ fn load_role_with(
                         "CLAUDE_CODE_OAUTH_TOKEN",
                     );
                     let source_ref = auth_token_source_reference(raw.as_deref());
-                    tui::auth_mode_notice("token", Some(&source_ref));
+                    tui::auth_mode_notice(&auth_mode.to_string(), Some(&source_ref));
                 }
                 crate::config::AuthForwardMode::Sync => {
                     tui::auth_mode_notice("sync", None);
@@ -1097,7 +1106,8 @@ fn load_role_with(
                         );
                     }
                     crate::config::AuthForwardMode::Ignore
-                    | crate::config::AuthForwardMode::Token => {}
+                    | crate::config::AuthForwardMode::OAuthToken
+                    | crate::config::AuthForwardMode::ApiKey => {}
                 },
                 crate::instance::AuthProvisionOutcome::Skipped => {}
             }

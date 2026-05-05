@@ -6,7 +6,7 @@ impl RoleState {
     /// Provision Codex's host-side `config.toml` (always written) and,
     /// under `auth_forward = sync`, its `auth.json` (copied from the
     /// host's `~/.codex/auth.json` when present, deleted under `ignore`,
-    /// untouched under `token`).
+    /// untouched under `oauth_token` / `api_key`).
     ///
     /// The generated `config.toml` sets `approval_policy = "never"` and
     /// `sandbox_mode = "danger-full-access"` to match the operator
@@ -27,9 +27,9 @@ impl RoleState {
     ///   * **Sync** + host file absent → leave any existing role-state
     ///     `auth.json` untouched (it may survive from a prior synced
     ///     run), return `HostMissing`.
-    ///   * **Token** → no-op (jackin does not own the auth state in
-    ///     this mode; operator drives auth via `OPENAI_API_KEY` env),
-    ///     return `TokenMode`.
+    ///   * **`OAuthToken`** / **`ApiKey`** → no-op (jackin does not own the
+    ///     auth state in these modes; operator drives auth via env),
+    ///     return `TokenMode`. Tasks 10/11 will split per-mode behavior.
     ///   * **Ignore** → delete the role-state `auth.json` if present,
     ///     return `Skipped`.
     ///
@@ -81,7 +81,11 @@ impl RoleState {
 
         let host_auth_json = host_home.join(".codex/auth.json");
         let outcome = match mode {
-            AuthForwardMode::Token => AuthProvisionOutcome::TokenMode,
+            // ApiKey mirrors OAuthToken's filesystem behavior in this commit;
+            // Tasks 10/11 will split provisioning per credential variant.
+            AuthForwardMode::OAuthToken | AuthForwardMode::ApiKey => {
+                AuthProvisionOutcome::TokenMode
+            }
             AuthForwardMode::Ignore => {
                 if auth_json.exists() {
                     std::fs::remove_file(auth_json)?;
@@ -161,12 +165,13 @@ impl RoleState {
                 }
                 AuthProvisionOutcome::Skipped
             }
-            AuthForwardMode::Token => {
-                // Token mode provisions the same empty shape as Ignore —
-                // Claude Code inside the container authenticates via
-                // CLAUDE_CODE_OAUTH_TOKEN from the resolved env, not via
-                // filesystem credentials. Switching from sync → token must
-                // still wipe any previously forwarded creds.
+            // ApiKey mirrors OAuthToken's filesystem behavior in this commit;
+            // Tasks 10/11 will split per-mode credential provisioning. Both
+            // env-driven modes provision the same empty shape as Ignore — the
+            // agent inside the container authenticates via env vars, not via
+            // filesystem credentials. Switching from sync → token/api_key must
+            // still wipe any previously forwarded creds.
+            AuthForwardMode::OAuthToken | AuthForwardMode::ApiKey => {
                 if !account_json.exists() || std::fs::read_to_string(account_json)? != "{}" {
                     write_private_file(account_json, "{}")?;
                 }
@@ -580,7 +585,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Token,
+            AuthForwardMode::OAuthToken,
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -633,7 +638,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Token,
+            AuthForwardMode::OAuthToken,
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -664,7 +669,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Token,
+            AuthForwardMode::OAuthToken,
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -709,7 +714,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Token,
+            AuthForwardMode::OAuthToken,
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -1309,7 +1314,7 @@ agents = ["codex"]
             &config_toml,
             &auth_json,
             &manifest,
-            AuthForwardMode::Token,
+            AuthForwardMode::OAuthToken,
             &host_home,
         )
         .unwrap();
@@ -1374,7 +1379,7 @@ agents = ["codex"]
         assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "secret");
     }
 
-    /// Pin symlink rejection across all three modes via the
+    /// Pin symlink rejection across all credential-bearing modes via the
     /// pre-mode-dispatch check at the top of `provision_codex_auth`.
     /// Without this, a compromised role could plant a symlink at the
     /// role-state `auth.json` and have subsequent sync/token-mode
@@ -1382,7 +1387,11 @@ agents = ["codex"]
     #[cfg(unix)]
     #[test]
     fn rejects_symlink_at_auth_json_under_sync_and_token() {
-        for mode in [AuthForwardMode::Sync, AuthForwardMode::Token] {
+        for mode in [
+            AuthForwardMode::Sync,
+            AuthForwardMode::OAuthToken,
+            AuthForwardMode::ApiKey,
+        ] {
             let temp = tempdir().unwrap();
             let manifest = manifest_with_codex_model(&temp, None);
             let config_toml = temp.path().join("config.toml");
