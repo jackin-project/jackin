@@ -61,6 +61,16 @@ pub struct WorkspaceConfig {
     pub roles: std::collections::BTreeMap<String, WorkspaceRoleOverride>,
     #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
     pub keep_awake: KeepAwakeConfig,
+    /// Workspace-level Claude auth configuration. Forms the middle
+    /// layer of the 3-layer auth resolver
+    /// (global → workspace → workspace × role × agent). Inert until
+    /// Task 8 wires the resolver to consult this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude: Option<crate::config::AgentAuthConfig>,
+    /// Workspace-level Codex auth configuration. See `claude` above —
+    /// same role in the resolver, parallel field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex: Option<crate::config::AgentAuthConfig>,
 }
 
 /// Per-workspace power-management opt-in.
@@ -660,12 +670,37 @@ isolation = "worktree"
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("nested inside"),
             "validate_workspace_config must surface the nested-worktrees error from validate_isolation_layout; got: {msg}",
+        );
+    }
+
+    #[test]
+    fn parse_workspace_with_agent_auth_blocks() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+
+[claude]
+auth_forward = "api_key"
+
+[codex]
+auth_forward = "sync"
+"#;
+        let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
+        assert_eq!(
+            cfg.claude.as_ref().unwrap().auth_forward,
+            crate::config::AuthForwardMode::ApiKey,
+        );
+        assert_eq!(
+            cfg.codex.as_ref().unwrap().auth_forward,
+            crate::config::AuthForwardMode::Sync,
         );
     }
 

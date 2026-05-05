@@ -1838,6 +1838,8 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
         };
         let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
 

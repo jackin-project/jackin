@@ -498,6 +498,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     keep_awake: crate::workspace::KeepAwakeConfig {
                         enabled: keep_awake,
                     },
+                    claude: None,
+                    codex: None,
                 };
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
                 editor.create_workspace(&name, ws)?;
@@ -1182,6 +1184,8 @@ mod auth_set_tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
         };
         let out = render_workspace_show("jackin", &ws);
         assert!(out.contains("Isolation"));

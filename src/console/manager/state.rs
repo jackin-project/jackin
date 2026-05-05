@@ -1159,6 +1159,8 @@ mod tests {
             env: BTreeMap::default(),
             roles: BTreeMap::default(),
             keep_awake: KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
         };
         let mut e = EditorState::new_edit("ws".into(), ws);
         e.active_tab = EditorTab::Mounts;

@@ -266,6 +266,8 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
         };
         config
             .create_workspace("big-monorepo", original.clone())
