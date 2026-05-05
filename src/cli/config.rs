@@ -104,16 +104,11 @@ Examples:
   jackin config auth set sync
   jackin config auth set ignore
   jackin config auth set oauth_token
-  jackin config auth set api_key
-  jackin config auth set sync --role agent-smith
-  jackin config auth set oauth_token --role chainargos/the-architect"
+  jackin config auth set api_key"
     )]
     Set {
         /// Authentication forwarding mode: sync, ignore, `api_key`, or `oauth_token`
         mode: String,
-        /// Apply to a specific role instead of globally
-        #[arg(long)]
-        role: Option<String>,
     },
     /// Show the current authentication forwarding mode
     #[command(
@@ -121,14 +116,9 @@ Examples:
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
-  jackin config auth show
-  jackin config auth show --role agent-smith"
+  jackin config auth show"
     )]
-    Show {
-        /// Show mode for a specific role (including inheritance)
-        #[arg(long)]
-        role: Option<String>,
-    },
+    Show,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -377,7 +367,6 @@ mod tests {
         assert!(help.contains("jackin config auth set sync"));
         assert!(help.contains("jackin config auth set oauth_token"));
         assert!(help.contains("jackin config auth set api_key"));
-        assert!(help.contains("--role"));
     }
 
     #[test]
@@ -410,7 +399,6 @@ mod tests {
             cli.command,
             Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
-                        role: None,
                     }))) if mode == "sync"
         ));
     }
@@ -422,29 +410,7 @@ mod tests {
             cli.command,
             Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
-                        role: None,
                     }))) if mode == "oauth_token"
-        ));
-    }
-
-    #[test]
-    fn parses_config_auth_set_per_agent() {
-        let cli = Cli::try_parse_from([
-            "jackin",
-            "config",
-            "auth",
-            "set",
-            "sync",
-            "--role",
-            "agent-smith",
-        ])
-        .unwrap();
-        assert!(matches!(
-            cli.command,
-            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
-                        ref mode,
-                        role: Some(ref role),
-                    }))) if mode == "sync" && role == "agent-smith"
         ));
     }
 
@@ -453,9 +419,7 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "auth", "show"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Show {
-                role: None
-            })))
+            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Show)))
         ));
     }
 }

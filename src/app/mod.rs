@@ -358,12 +358,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
             },
             cli::ConfigCommand::Auth(auth_cmd) => match auth_cmd {
-                cli::AuthCommand::Set { mode, role } => {
-                    if role.is_some() {
-                        anyhow::bail!(
-                            "per-role auth_forward is not currently supported; set the global mode instead"
-                        );
-                    }
+                cli::AuthCommand::Set { mode } => {
                     let parsed_mode = parse_auth_forward_mode_from_cli(&mode)?;
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.set_global_auth_forward(parsed_mode);
@@ -371,7 +366,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     println!("Set global auth forwarding to {parsed_mode}.");
                     Ok(())
                 }
-                cli::AuthCommand::Show { role: _ } => {
+                cli::AuthCommand::Show => {
                     let mode = config
                         .claude
                         .as_ref()
