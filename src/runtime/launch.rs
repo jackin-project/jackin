@@ -1029,7 +1029,12 @@ fn load_role_with(
         // released on exit (or process crash).
         let (container_name, _name_lock) = claim_container_name(paths, selector, runner)?;
 
-        let auth_mode = config.resolve_auth_forward_mode(&selector.key());
+        let auth_mode = crate::config::resolve_mode(
+            config,
+            agent,
+            workspace_name.as_deref().unwrap_or(""),
+            &selector.key(),
+        );
 
         // Token mode requires CLAUDE_CODE_OAUTH_TOKEN in the resolved
         // operator env; fail fast with an actionable error if it is

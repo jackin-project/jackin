@@ -367,11 +367,12 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
                 cli::AuthCommand::Show => {
-                    let mode = config
-                        .claude
-                        .as_ref()
-                        .map(|c| c.auth_forward)
-                        .unwrap_or_default();
+                    // Empty workspace + role names fall through to layer 1
+                    // (global), so this prints the global default — same
+                    // user-visible semantics as before, but the resolver
+                    // logic is no longer duplicated in this site.
+                    let mode =
+                        crate::config::resolve_mode(&config, crate::agent::Agent::Claude, "", "");
                     println!("{mode}");
                     Ok(())
                 }

@@ -8,12 +8,13 @@ pub use crate::workspace::WorkspaceRoleOverride;
 pub mod editor;
 mod mounts;
 mod persist;
-mod roles;
+pub mod roles;
 mod workspaces;
 
 pub use editor::{ConfigEditor, EnvScope};
 pub use mounts::DockerMounts;
 pub(crate) use mounts::MountEntry;
+pub use roles::resolve_mode;
 pub use workspaces::{DriftDetection, detect_workspace_edit_drift};
 
 /// Serde helper: `skip_serializing_if` requires `fn(&T) -> bool`.
@@ -368,7 +369,12 @@ trusted = true
             "absent [claude] block must deserialize to None"
         );
         assert_eq!(
-            config.resolve_auth_forward_mode("agent-smith"),
+            crate::config::roles::resolve_mode(
+                &config,
+                crate::agent::Agent::Claude,
+                "",
+                "agent-smith",
+            ),
             AuthForwardMode::Sync
         );
     }

@@ -1,5 +1,51 @@
 use super::{AppConfig, AuthForwardMode, RoleSource};
+use crate::agent::Agent;
 use crate::selector::RoleSelector;
+
+/// Resolve the effective auth-forward mode for an agent in a (workspace, role) scope.
+///
+/// Walks three layers, most-specific wins:
+///
+/// 1. `workspaces[ws].roles[role].<agent>.auth_forward`
+/// 2. `workspaces[ws].<agent>.auth_forward`
+/// 3. `<agent>.auth_forward` (global)
+///
+/// Returns [`AuthForwardMode::Sync`] if no layer is set. The `<agent>`
+/// selector picks the `claude` vs `codex` field at each layer.
+///
+/// Passing `workspace = ""` (or any name not present in the config)
+/// naturally falls through to the global layer; this is the supported
+/// way for non-workspace-scoped callers (e.g. `jackin config auth show`)
+/// to read the global default through the same code path.
+pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) -> AuthForwardMode {
+    // Layer 3 (most specific): workspace × role × agent
+    if let Some(m) = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|ws| ws.roles.get(role))
+        .and_then(|ro| match agent {
+            Agent::Claude => ro.claude.as_ref().map(|c| c.auth_forward),
+            Agent::Codex => ro.codex.as_ref().map(|c| c.auth_forward),
+        })
+    {
+        return m;
+    }
+
+    // Layer 2: workspace × agent
+    if let Some(m) = cfg.workspaces.get(workspace).and_then(|ws| match agent {
+        Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
+        Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
+    }) {
+        return m;
+    }
+
+    // Layer 1: global agent
+    match agent {
+        Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
+        Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
+    }
+    .unwrap_or_default()
+}
 
 pub const BUILTIN_ROLES: &[(&str, &str)] = &[
     (
@@ -41,19 +87,6 @@ impl AppConfig {
         };
         self.roles.insert(selector.key(), source.clone());
         Ok((source, true))
-    }
-
-    /// Resolve the effective `AuthForwardMode` for a given role.
-    ///
-    /// Reads only the global `[claude]` block. The workspace and
-    /// per-(workspace × role) layers added in subsequent tasks
-    /// will rebuild this into a layered resolver; the deleted
-    /// per-role-global slot has no replacement until then.
-    pub fn resolve_auth_forward_mode(&self, _agent_key: &str) -> AuthForwardMode {
-        self.claude
-            .as_ref()
-            .map(|c| c.auth_forward)
-            .unwrap_or_default()
     }
 
     /// Mark an role source as trusted.  Returns `true` when the flag changed.
@@ -344,20 +377,6 @@ git = "https://github.com/jackin-project/jackin-the-architect.git"
     // ── Auth forwarding config tests ────────────────────────────────────
 
     #[test]
-    fn auth_forward_defaults_to_sync() {
-        let config = AppConfig::default();
-        assert!(
-            config.claude.is_none(),
-            "default AppConfig must have no [claude] block"
-        );
-        assert_eq!(
-            config.resolve_auth_forward_mode("any"),
-            AuthForwardMode::Sync,
-            "absent [claude] resolves to Sync via default"
-        );
-    }
-
-    #[test]
     fn deserializes_global_claude_auth_forward() {
         let toml_str = r#"
 [claude]
@@ -372,29 +391,151 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
             AuthForwardMode::Sync
         );
     }
+}
+
+#[cfg(test)]
+mod resolve_mode_tests {
+    use super::*;
+    use crate::agent::Agent;
+    use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode, CodexAuthConfig};
+    use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+
+    /// Build an `AppConfig` with optionally-set Claude modes at each of
+    /// the 3 layers: global, workspace, workspace × role.
+    fn cfg_claude(
+        global: Option<AuthForwardMode>,
+        ws: Option<AuthForwardMode>,
+        ws_role: Option<AuthForwardMode>,
+    ) -> AppConfig {
+        let mut cfg = AppConfig::default();
+        if let Some(m) = global {
+            cfg.claude = Some(AgentAuthConfig { auth_forward: m });
+        }
+        let mut ws_cfg = WorkspaceConfig::default();
+        if let Some(m) = ws {
+            ws_cfg.claude = Some(AgentAuthConfig { auth_forward: m });
+        }
+        if let Some(m) = ws_role {
+            let over = WorkspaceRoleOverride {
+                claude: Some(AgentAuthConfig { auth_forward: m }),
+                ..Default::default()
+            };
+            ws_cfg.roles.insert("smith".to_string(), over);
+        }
+        cfg.workspaces.insert("proj".to_string(), ws_cfg);
+        cfg
+    }
 
     #[test]
-    fn resolve_auth_forward_defaults_to_sync() {
-        let config = AppConfig::default();
+    fn default_is_sync_when_nothing_set() {
+        let cfg = cfg_claude(None, None, None);
         assert_eq!(
-            config.resolve_auth_forward_mode("nonexistent"),
+            resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
             AuthForwardMode::Sync
         );
     }
 
     #[test]
-    fn resolve_auth_forward_uses_global_setting() {
-        let toml_str = r#"
-[claude]
-auth_forward = "sync"
-
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-"#;
-        let config: AppConfig = toml::from_str(toml_str).unwrap();
+    fn global_used_when_others_unset() {
+        let cfg = cfg_claude(Some(AuthForwardMode::ApiKey), None, None);
         assert_eq!(
-            config.resolve_auth_forward_mode("agent-smith"),
+            resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+            AuthForwardMode::ApiKey
+        );
+    }
+
+    #[test]
+    fn workspace_overrides_global() {
+        let cfg = cfg_claude(
+            Some(AuthForwardMode::ApiKey),
+            Some(AuthForwardMode::OAuthToken),
+            None,
+        );
+        assert_eq!(
+            resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+            AuthForwardMode::OAuthToken
+        );
+    }
+
+    #[test]
+    fn role_override_wins() {
+        let cfg = cfg_claude(
+            Some(AuthForwardMode::ApiKey),
+            Some(AuthForwardMode::OAuthToken),
+            Some(AuthForwardMode::Ignore),
+        );
+        assert_eq!(
+            resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+            AuthForwardMode::Ignore
+        );
+    }
+
+    #[test]
+    fn workspace_only_when_global_unset() {
+        let cfg = cfg_claude(None, Some(AuthForwardMode::ApiKey), None);
+        assert_eq!(
+            resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+            AuthForwardMode::ApiKey
+        );
+    }
+
+    #[test]
+    fn role_only_when_global_and_workspace_unset() {
+        let cfg = cfg_claude(None, None, Some(AuthForwardMode::OAuthToken));
+        assert_eq!(
+            resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+            AuthForwardMode::OAuthToken
+        );
+    }
+
+    #[test]
+    fn unknown_workspace_falls_back_to_global() {
+        let cfg = cfg_claude(Some(AuthForwardMode::ApiKey), None, None);
+        assert_eq!(
+            resolve_mode(&cfg, Agent::Claude, "nonexistent", "smith"),
+            AuthForwardMode::ApiKey
+        );
+    }
+
+    #[test]
+    fn unknown_role_falls_back_to_workspace_or_global() {
+        let cfg = cfg_claude(
+            Some(AuthForwardMode::ApiKey),
+            Some(AuthForwardMode::OAuthToken),
+            None,
+        );
+        assert_eq!(
+            resolve_mode(&cfg, Agent::Claude, "proj", "ghost"),
+            AuthForwardMode::OAuthToken
+        );
+    }
+
+    #[test]
+    fn codex_isolated_from_claude_global() {
+        let cfg = AppConfig {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+            }),
+            // codex unset
+            ..AppConfig::default()
+        };
+        assert_eq!(
+            resolve_mode(&cfg, Agent::Codex, "proj", "smith"),
             AuthForwardMode::Sync
+        );
+    }
+
+    #[test]
+    fn codex_uses_codex_layer() {
+        let cfg = AppConfig {
+            codex: Some(CodexAuthConfig(AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+            })),
+            ..AppConfig::default()
+        };
+        assert_eq!(
+            resolve_mode(&cfg, Agent::Codex, "proj", "smith"),
+            AuthForwardMode::ApiKey
         );
     }
 }
