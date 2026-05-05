@@ -415,7 +415,11 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     let mut roles = std::collections::BTreeMap::new();
     roles.insert(
         "agent-smith".into(),
-        WorkspaceRoleOverride { env: role_env },
+        WorkspaceRoleOverride {
+            env: role_env,
+            claude: None,
+            codex: None,
+        },
     );
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -1600,7 +1604,11 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     let mut roles = std::collections::BTreeMap::new();
     roles.insert(
         "agent-smith".into(),
-        WorkspaceRoleOverride { env: role_env },
+        WorkspaceRoleOverride {
+            env: role_env,
+            claude: None,
+            codex: None,
+        },
     );
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -1751,7 +1759,14 @@ fn seed_override_picker_workspace(
             "LOG_LEVEL".into(),
             jackin::operator_env::EnvValue::Plain("debug".into()),
         );
-        roles_map.insert((*name).into(), WorkspaceRoleOverride { env });
+        roles_map.insert(
+            (*name).into(),
+            WorkspaceRoleOverride {
+                env,
+                claude: None,
+                codex: None,
+            },
+        );
     }
 
     let ws = WorkspaceConfig {

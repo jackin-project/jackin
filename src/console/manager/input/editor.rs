@@ -2936,7 +2936,11 @@ plugins = []
         );
         ws.roles.insert(
             "smith".into(),
-            crate::workspace::WorkspaceRoleOverride { env: ag_env },
+            crate::workspace::WorkspaceRoleOverride {
+                env: ag_env,
+                claude: None,
+                codex: None,
+            },
         );
 
         let mut state = ManagerState::from_config(&config, tmp.path());
@@ -3223,7 +3227,11 @@ plugins = []
         ag_env.insert("API_TOKEN".into(), "role-value".into());
         ws.roles.insert(
             "smith".into(),
-            crate::workspace::WorkspaceRoleOverride { env: ag_env },
+            crate::workspace::WorkspaceRoleOverride {
+                env: ag_env,
+                claude: None,
+                codex: None,
+            },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -3277,7 +3285,11 @@ plugins = []
         ag_env.insert("LOG_LEVEL".into(), "debug".into());
         ws.roles.insert(
             "agent-smith".into(),
-            crate::workspace::WorkspaceRoleOverride { env: ag_env },
+            crate::workspace::WorkspaceRoleOverride {
+                env: ag_env,
+                claude: None,
+                codex: None,
+            },
         );
 
         let mut state = ManagerState::from_config(&config, tmp.path());

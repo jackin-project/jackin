@@ -968,8 +968,14 @@ mod tests {
             "LOG_LEVEL".into(),
             crate::operator_env::EnvValue::Plain("info".into()),
         );
-        ws.roles
-            .insert("agent-x".into(), WorkspaceRoleOverride { env: role_x_env });
+        ws.roles.insert(
+            "agent-x".into(),
+            WorkspaceRoleOverride {
+                env: role_x_env,
+                claude: None,
+                codex: None,
+            },
+        );
         let mut e = EditorState::new_edit("a".into(), ws);
         assert_eq!(e.change_count(), 0);
 
@@ -1016,6 +1022,8 @@ mod tests {
                     m.insert("K".into(), crate::operator_env::EnvValue::Plain("v".into()));
                     m
                 },
+                claude: None,
+                codex: None,
             },
         );
         assert!(e2.is_dirty(), "role env set must make state dirty");

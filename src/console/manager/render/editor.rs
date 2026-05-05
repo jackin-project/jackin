@@ -1247,7 +1247,11 @@ mod secrets_tab_render_tests {
         let mut roles = std::collections::BTreeMap::new();
         roles.insert(
             "agent-smith".into(),
-            WorkspaceRoleOverride { env: role_env },
+            WorkspaceRoleOverride {
+                env: role_env,
+                claude: None,
+                codex: None,
+            },
         );
         let ws = WorkspaceConfig {
             roles,
@@ -1385,11 +1389,20 @@ mod secrets_tab_render_tests {
         role_env.insert("KEY".into(), "v".into());
 
         let mut roles = std::collections::BTreeMap::new();
-        roles.insert("agent-a".into(), WorkspaceRoleOverride { env: role_env });
+        roles.insert(
+            "agent-a".into(),
+            WorkspaceRoleOverride {
+                env: role_env,
+                claude: None,
+                codex: None,
+            },
+        );
         roles.insert(
             "agent-b".into(),
             WorkspaceRoleOverride {
                 env: std::collections::BTreeMap::new(),
+                claude: None,
+                codex: None,
             },
         );
 
@@ -1695,7 +1708,11 @@ mod secrets_tab_render_tests {
         let mut roles = std::collections::BTreeMap::new();
         roles.insert(
             "agent-smith".into(),
-            WorkspaceRoleOverride { env: role_env },
+            WorkspaceRoleOverride {
+                env: role_env,
+                claude: None,
+                codex: None,
+            },
         );
         let ws = WorkspaceConfig {
             env,
@@ -1727,9 +1744,20 @@ mod secrets_tab_render_tests {
         let mut roles = std::collections::BTreeMap::new();
         roles.insert(
             "agent-architect".into(),
-            WorkspaceRoleOverride { env: a_env },
+            WorkspaceRoleOverride {
+                env: a_env,
+                claude: None,
+                codex: None,
+            },
         );
-        roles.insert("agent-smith".into(), WorkspaceRoleOverride { env: b_env });
+        roles.insert(
+            "agent-smith".into(),
+            WorkspaceRoleOverride {
+                env: b_env,
+                claude: None,
+                codex: None,
+            },
+        );
         let ws = WorkspaceConfig {
             roles,
             ..WorkspaceConfig::default()
@@ -2030,7 +2058,14 @@ mod eligible_agents_for_override_tests {
         for a in override_agents {
             let mut env = std::collections::BTreeMap::new();
             env.insert("LOG_LEVEL".into(), "debug".into());
-            roles.insert((*a).into(), WorkspaceRoleOverride { env });
+            roles.insert(
+                (*a).into(),
+                WorkspaceRoleOverride {
+                    env,
+                    claude: None,
+                    codex: None,
+                },
+            );
         }
         WorkspaceConfig {
             allowed_roles: allowed.iter().map(|s| (*s).into()).collect(),
