@@ -10,8 +10,8 @@ use crate::console::op_cache::OpCache;
 use crate::workspace::WorkspaceConfig;
 
 use crate::console::widgets::{
-    confirm::ConfirmState, confirm_save::ConfirmSaveState, error_popup::ErrorPopupState,
-    file_browser::FileBrowserState, github_picker::GithubPickerState,
+    auth_panel::AuthForm, confirm::ConfirmState, confirm_save::ConfirmSaveState,
+    error_popup::ErrorPopupState, file_browser::FileBrowserState, github_picker::GithubPickerState,
     mount_dst_choice::MountDstChoiceState, op_picker::OpPickerState, role_picker::RolePickerState,
     scope_picker::ScopePickerState, source_picker::SourcePickerState, text_input::TextInputState,
     workdir_pick::WorkdirPickState,
@@ -196,6 +196,10 @@ pub enum EditorTab {
     Mounts,
     Roles,
     Secrets,
+    /// Auth panel: workspace-level + per-(workspace × role) auth-forward
+    /// modes and credentials, with a global-defaults preview at the top.
+    /// Mounts the `auth_panel` widget (Tasks 15-18) inside the editor.
+    Auth,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -263,6 +267,57 @@ pub enum Modal<'a> {
     },
     ScopePicker {
         state: ScopePickerState,
+    },
+    /// Auth-form modal opened from the Auth tab. `target` identifies
+    /// which scope (workspace or workspace × role) and which agent the
+    /// form is editing so commit can write back to the correct slot
+    /// on `editor.pending`.
+    AuthForm {
+        target: AuthFormTarget,
+        state: Box<AuthForm>,
+        /// Active focus inside the form (mode picker / cred radio / cred value / buttons).
+        focus: AuthFormFocus,
+        /// Scratch text-input buffer when the credential value is being
+        /// typed inline in the form. Cleared on Esc; committed to
+        /// `state.set_literal` on Enter.
+        literal_buffer: String,
+    },
+}
+
+/// Where in the auth-edit form the cursor currently sits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthFormFocus {
+    /// Mode picker line — Space/Tab cycles, Enter commits selection.
+    Mode,
+    /// Credential source radio (Literal / 1Password) — Space toggles.
+    CredentialSource,
+    /// Literal value text input — operator types into `literal_buffer`.
+    LiteralValue,
+    /// 1Password value display — Enter opens the `OpPicker`.
+    OpRefValue,
+    /// `[ Save ]` action button.
+    Save,
+    /// `[ Cancel ]` action button.
+    Cancel,
+    /// `[ Reset ]` action button — clears the layer's mode/credential.
+    Reset,
+}
+
+/// Identifies the (scope, agent) pair an open `AuthForm` modal is editing.
+///
+/// Committing the form writes back into the matching slot on
+/// `editor.pending` (workspace `claude/codex` field, or workspace-role
+/// override `claude/codex` field, plus the credential env var).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthFormTarget {
+    /// `[workspaces.<ws>.<agent>].auth_forward` slot, with the credential
+    /// env var landing in `[workspaces.<ws>.env]`.
+    Workspace { agent: crate::agent::Agent },
+    /// `[workspaces.<ws>.roles.<role>.<agent>].auth_forward` slot, with
+    /// the credential env var landing in `[workspaces.<ws>.roles.<role>.env]`.
+    WorkspaceRole {
+        role: String,
+        agent: crate::agent::Agent,
     },
 }
 

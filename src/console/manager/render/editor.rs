@@ -53,6 +53,7 @@ pub fn render_editor(
         EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state),
         EditorTab::Roles => render_roles_tab(frame, chunks[2], state, config),
         EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config),
+        EditorTab::Auth => render_auth_tab(frame, chunks[2], state, config),
     }
 
     let mut items: Vec<FooterItem> = Vec::new();
@@ -281,7 +282,26 @@ fn contextual_row_items(
                 Some(SecretsRow::SectionSpacer) | None => vec![],
             }
         }
+        EditorTab::Auth => {
+            // Auth tab rows are editable workspace + workspace × role
+            // entries; the global section is read-only.
+            let rows = auth_editable_row_count(state);
+            if rows == 0 {
+                Vec::new()
+            } else {
+                vec![FooterItem::Key("Enter"), FooterItem::Text("edit auth")]
+            }
+        }
     }
+}
+
+/// Number of rows in the auth panel that the operator can navigate / edit.
+/// Workspace rows (one per agent) plus role × agent rows. The global
+/// section is read-only and not part of the editable count.
+pub(in crate::console::manager) const fn auth_editable_row_count(state: &EditorState<'_>) -> usize {
+    // 2 agents (Claude + Codex) at the workspace layer; another 2 per role.
+    let agents = 2;
+    agents + state.pending.allowed_roles.len() * agents
 }
 
 fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
@@ -290,6 +310,7 @@ fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
         (EditorTab::Mounts, "Mounts"),
         (EditorTab::Roles, "Roles"),
         (EditorTab::Secrets, "Environments"),
+        (EditorTab::Auth, "Auth"),
     ];
     let mut spans = Vec::new();
     for (tab, label) in labels {
@@ -876,6 +897,94 @@ fn render_secrets_key_line(
     };
     spans.push(Span::styled(rendered_value, value_style));
     Line::from(spans)
+}
+
+/// Render the Auth tab.
+///
+/// Materializes a synthetic [`AppConfig`] from the editor's pending workspace
+/// merged with the (mostly read-only) global layer of the live config so the
+/// panel's `AuthPanelState::compute_for` can render with the operator's
+/// in-flight edits reflected immediately.
+fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
+    use crate::console::widgets::auth_panel;
+
+    let synthesized = synthesize_appconfig_for_auth(state, config);
+    let workspace_name = workspace_name_for_panel(state);
+    let panel_state = auth_panel::AuthPanelState::compute_for(&synthesized, &workspace_name);
+
+    let FieldFocus::Row(cursor) = state.active_field;
+    let max_idx = auth_editable_row_count(state).saturating_sub(1);
+    let selected = if cursor > max_idx {
+        Some(max_idx)
+    } else {
+        Some(cursor)
+    };
+
+    auth_panel::render_with_selection(frame, area, &panel_state, selected);
+}
+
+/// Synthesize an `AppConfig` whose `[claude]/[codex]` come from the live
+/// global config and whose `[workspaces.<ws>]` mirrors `editor.pending`.
+/// The Auth panel reads from this so changes the operator makes via the
+/// auth-edit form show up immediately, before save.
+pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
+    state: &EditorState<'_>,
+    config: &AppConfig,
+) -> AppConfig {
+    let mut synthesized = AppConfig {
+        claude: config.claude.clone(),
+        codex: config.codex.clone(),
+        env: config.env.clone(),
+        roles: config.roles.clone(),
+        ..AppConfig::default()
+    };
+    let ws_name = workspace_name_for_panel(state);
+    synthesized
+        .workspaces
+        .insert(ws_name, state.pending.clone());
+    synthesized
+}
+
+/// Resolve the workspace key used by the Auth panel. In Edit mode this is
+/// the existing workspace name; in Create mode we use `pending_name` if set,
+/// otherwise a stable placeholder ("(new workspace)") so the panel can still
+/// render with the pending values populated.
+pub(in crate::console::manager) fn workspace_name_for_panel(state: &EditorState<'_>) -> String {
+    match &state.mode {
+        EditorMode::Edit { name } => state.pending_name.clone().unwrap_or_else(|| name.clone()),
+        EditorMode::Create => state
+            .pending_name
+            .clone()
+            .unwrap_or_else(|| "(new workspace)".to_string()),
+    }
+}
+
+/// Map a flattened editable row index (the cursor) to a concrete
+/// `(scope, agent)` pair the form modal can target. The flattened layout
+/// is `[workspace × Claude, workspace × Codex, role0 × Claude, role0 × Codex, ...]`.
+pub(in crate::console::manager) fn resolve_auth_row_target(
+    state: &EditorState<'_>,
+    row: usize,
+) -> Option<crate::console::manager::state::AuthFormTarget> {
+    use crate::agent::Agent;
+    use crate::console::manager::state::AuthFormTarget;
+    let agents = [Agent::Claude, Agent::Codex];
+    if row < agents.len() {
+        return Some(AuthFormTarget::Workspace { agent: agents[row] });
+    }
+    let mut idx = agents.len();
+    for role in &state.pending.allowed_roles {
+        for agent in agents {
+            if idx == row {
+                return Some(AuthFormTarget::WorkspaceRole {
+                    role: role.clone(),
+                    agent,
+                });
+            }
+            idx += 1;
+        }
+    }
+    None
 }
 
 #[cfg(test)]

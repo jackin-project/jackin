@@ -242,6 +242,68 @@ impl ConfigEditor {
         claude_table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
     }
 
+    /// Write or clear `[workspaces.<workspace>.<agent>].auth_forward`.
+    ///
+    /// `mode = Some(m)` writes the named mode; `mode = None` removes the
+    /// `auth_forward` field (and the agent block if it becomes empty),
+    /// dropping that layer of the resolver back to the workspace's
+    /// inheritance from the global default.
+    ///
+    /// The agent block is keyed by `agent.slug()` (`"claude"` /
+    /// `"codex"`), keeping the on-disk shape parallel to
+    /// `set_global_auth_forward`.
+    pub fn set_workspace_auth_forward(
+        &mut self,
+        workspace: &str,
+        agent: crate::agent::Agent,
+        mode: Option<crate::config::AuthForwardMode>,
+    ) {
+        let agent_path = vec![
+            "workspaces".to_string(),
+            workspace.to_string(),
+            agent.slug().to_string(),
+        ];
+        match mode {
+            Some(m) => {
+                let table = table_path_mut(&mut self.doc, &agent_path);
+                table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
+            }
+            None => {
+                clear_auth_forward_field(&mut self.doc, &agent_path);
+            }
+        }
+    }
+
+    /// Write or clear `[workspaces.<workspace>.roles.<role>.<agent>].auth_forward`.
+    ///
+    /// Mirrors [`Self::set_workspace_auth_forward`] one layer deeper.
+    /// Used by the workspace-manager's Auth tab when the operator commits
+    /// the auth-edit form on a (role × agent) row.
+    pub fn set_workspace_role_auth_forward(
+        &mut self,
+        workspace: &str,
+        role: &str,
+        agent: crate::agent::Agent,
+        mode: Option<crate::config::AuthForwardMode>,
+    ) {
+        let agent_path = vec![
+            "workspaces".to_string(),
+            workspace.to_string(),
+            "roles".to_string(),
+            role.to_string(),
+            agent.slug().to_string(),
+        ];
+        match mode {
+            Some(m) => {
+                let table = table_path_mut(&mut self.doc, &agent_path);
+                table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
+            }
+            None => {
+                clear_auth_forward_field(&mut self.doc, &agent_path);
+            }
+        }
+    }
+
     pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
         // Touch only git + trusted. Leave [roles.X.env] alone —
         // operator-owned.
@@ -441,6 +503,37 @@ fn validate_candidate(contents: &str) -> anyhow::Result<AppConfig> {
     let config: AppConfig = toml::from_str(contents).context("deserializing candidate config")?;
     crate::operator_env::validate_reserved_names(&config)?;
     Ok(config)
+}
+
+/// Remove the `auth_forward` field at `agent_path`. If the agent block
+/// is left empty afterwards, removes the agent block too. Walks without
+/// creating, so a reset on a layer that was already empty is a no-op.
+fn clear_auth_forward_field(doc: &mut DocumentMut, agent_path: &[String]) {
+    let mut current: &mut Item = doc.as_item_mut();
+    for segment in agent_path {
+        match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
+            Some(next) => current = next,
+            None => return,
+        }
+    }
+    if let Some(table) = current.as_table_mut() {
+        table.remove("auth_forward");
+        if table.is_empty()
+            && let Some((last, parent_path)) = agent_path.split_last()
+        {
+            // Walk to the parent and remove the now-empty agent block.
+            let mut walker: &mut Item = doc.as_item_mut();
+            for segment in parent_path {
+                match walker.as_table_mut().and_then(|t| t.get_mut(segment)) {
+                    Some(next) => walker = next,
+                    None => return,
+                }
+            }
+            if let Some(parent_table) = walker.as_table_mut() {
+                parent_table.remove(last.as_str());
+            }
+        }
+    }
 }
 
 fn table_path_mut<'a>(doc: &'a mut DocumentMut, path: &[String]) -> &'a mut Table {
@@ -1199,6 +1292,121 @@ trusted = true
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains("[claude]"), "{out}");
         assert!(out.contains(r#"auth_forward = "sync""#), "{out}");
+    }
+
+    #[test]
+    fn set_workspace_auth_forward_writes_workspace_agent_block() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"
+[workspaces.proj]
+workdir = "/tmp/proj"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_auth_forward(
+            "proj",
+            crate::agent::Agent::Claude,
+            Some(crate::config::AuthForwardMode::ApiKey),
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[workspaces.proj.claude]"), "{out}");
+        assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
+    }
+
+    #[test]
+    fn set_workspace_auth_forward_clears_when_mode_none() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"
+[workspaces.proj]
+workdir = "/tmp/proj"
+
+[workspaces.proj.claude]
+auth_forward = "api_key"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_auth_forward("proj", crate::agent::Agent::Claude, None);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !out.contains("[workspaces.proj.claude]"),
+            "agent block must be removed when mode = None; {out}"
+        );
+        assert!(
+            !out.contains("auth_forward"),
+            "auth_forward field must be cleared; {out}"
+        );
+    }
+
+    #[test]
+    fn set_workspace_role_auth_forward_writes_role_agent_block() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"
+[workspaces.proj]
+workdir = "/tmp/proj"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_role_auth_forward(
+            "proj",
+            "smith",
+            crate::agent::Agent::Codex,
+            Some(crate::config::AuthForwardMode::ApiKey),
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[workspaces.proj.roles.smith.codex]"), "{out}");
+        assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
+    }
+
+    #[test]
+    fn set_workspace_role_auth_forward_clears_when_mode_none() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"
+[workspaces.proj]
+workdir = "/tmp/proj"
+
+[workspaces.proj.roles.smith.claude]
+auth_forward = "oauth_token"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_role_auth_forward("proj", "smith", crate::agent::Agent::Claude, None);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !out.contains("[workspaces.proj.roles.smith.claude]"),
+            "{out}"
+        );
     }
 
     #[test]

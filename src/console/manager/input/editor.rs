@@ -101,7 +101,8 @@ pub(super) fn handle_editor_key(
                 EditorTab::General => EditorTab::Mounts,
                 EditorTab::Mounts => EditorTab::Roles,
                 EditorTab::Roles => EditorTab::Secrets,
-                EditorTab::Secrets => EditorTab::General,
+                EditorTab::Secrets => EditorTab::Auth,
+                EditorTab::Auth => EditorTab::General,
             };
             editor.active_field = FieldFocus::Row(0);
             if was_secrets {
@@ -123,10 +124,11 @@ pub(super) fn handle_editor_key(
             }
             let was_secrets = editor.active_tab == EditorTab::Secrets;
             editor.active_tab = match editor.active_tab {
-                EditorTab::General => EditorTab::Secrets,
+                EditorTab::General => EditorTab::Auth,
                 EditorTab::Mounts => EditorTab::General,
                 EditorTab::Roles => EditorTab::Mounts,
                 EditorTab::Secrets => EditorTab::Roles,
+                EditorTab::Auth => EditorTab::Secrets,
             };
             editor.active_field = FieldFocus::Row(0);
             if was_secrets {
@@ -178,6 +180,9 @@ pub(super) fn handle_editor_key(
                 if n == config.roles.len() {
                     open_role_input(editor, config);
                 }
+            }
+            EditorTab::Auth => {
+                super::auth::open_auth_form_modal(editor);
             }
         },
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Roles => {
@@ -301,6 +306,9 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         EditorTab::Roles => config.roles.len(),
         // Secrets tab is handled inline in the Down key arm; never reached here.
         EditorTab::Secrets => 0,
+        EditorTab::Auth => {
+            super::super::render::editor::auth_editable_row_count(editor).saturating_sub(1)
+        }
     }
 }
 
@@ -947,6 +955,9 @@ pub(super) fn handle_editor_modal(
                 }
                 ModalOutcome::Continue => {}
             }
+        }
+        Modal::AuthForm { .. } => {
+            super::auth::handle_auth_form_key(editor, key);
         }
         Modal::OpPicker { state: picker } => {
             match picker.handle_key(key) {
@@ -1936,7 +1947,7 @@ plugins = []
 
     #[test]
     fn editor_left_wraps_to_last_tab_from_first() {
-        // Match Tab's wrap contract: Left from General → Secrets.
+        // Match Tab's wrap contract: Left from General → Auth (last tab).
         let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
         handle_key(
             &mut state,
@@ -1949,13 +1960,13 @@ plugins = []
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
-        assert_eq!(e.active_tab, EditorTab::Secrets);
+        assert_eq!(e.active_tab, EditorTab::Auth);
     }
 
     #[test]
     fn editor_right_wraps_to_first_tab_from_last() {
-        // Match Tab's wrap contract: Right from Secrets → General.
-        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Secrets);
+        // Match Tab's wrap contract: Right from Auth (last tab) → General.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Auth);
         handle_key(
             &mut state,
             &mut config,
@@ -3164,7 +3175,7 @@ plugins = []
             key(KeyCode::Char('m')),
         )
         .unwrap();
-        // Tab to General → leaves Secrets.
+        // Tab to Auth → leaves Secrets.
         handle_key(
             &mut state,
             &mut config,
@@ -3173,32 +3184,18 @@ plugins = []
             key(KeyCode::Tab),
         )
         .unwrap();
-        // Tab around the wheel back to Secrets (General → Mounts → Roles
-        // → Secrets is 3 more presses).
-        handle_key(
-            &mut state,
-            &mut config,
-            &paths,
-            tmp.path(),
-            key(KeyCode::Tab),
-        )
-        .unwrap();
-        handle_key(
-            &mut state,
-            &mut config,
-            &paths,
-            tmp.path(),
-            key(KeyCode::Tab),
-        )
-        .unwrap();
-        handle_key(
-            &mut state,
-            &mut config,
-            &paths,
-            tmp.path(),
-            key(KeyCode::Tab),
-        )
-        .unwrap();
+        // Tab around the wheel back to Secrets (Auth → General → Mounts →
+        // Roles → Secrets is 4 more presses).
+        for _ in 0..4 {
+            handle_key(
+                &mut state,
+                &mut config,
+                &paths,
+                tmp.path(),
+                key(KeyCode::Tab),
+            )
+            .unwrap();
+        }
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!();

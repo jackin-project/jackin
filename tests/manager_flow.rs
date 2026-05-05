@@ -2377,11 +2377,11 @@ fn tab_on_agent_header_advances_tab_normally() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     assert!(matches!(editor(&state).active_field, FieldFocus::Row(2)));
 
-    // `Tab` from Secrets must wrap to General regardless of focus.
+    // `Tab` from Secrets must advance to Auth (the next tab) regardless of focus.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     assert_eq!(
         editor(&state).active_tab,
-        EditorTab::General,
+        EditorTab::Auth,
         "Tab on a header must still advance the active tab"
     );
     Ok(())
