@@ -457,7 +457,6 @@ mod tests {
             config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );
@@ -501,7 +500,6 @@ mod tests {
             config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );
@@ -544,7 +542,6 @@ mod tests {
             config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );
@@ -587,7 +584,6 @@ mod tests {
             config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );
@@ -596,7 +592,6 @@ mod tests {
             config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-the-architect.git".to_string(),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );

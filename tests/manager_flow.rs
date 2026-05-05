@@ -1317,7 +1317,6 @@ fn seed_config_with_agents(
             jackin::config::RoleSource {
                 git: format!("https://example.invalid/jackin-{key}.git"),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );
@@ -1738,7 +1737,6 @@ fn seed_override_picker_workspace(
             jackin::config::RoleSource {
                 git: format!("https://example.invalid/{name}.git"),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );

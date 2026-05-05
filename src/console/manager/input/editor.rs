@@ -1269,7 +1269,6 @@ fn candidate_role_source(
                 selector.name
             ),
             trusted: false,
-            claude: None,
             env: std::collections::BTreeMap::new(),
         }),
         Err(err) => Err(err),

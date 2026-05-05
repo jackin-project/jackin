@@ -359,38 +359,25 @@ pub fn run(cli: Cli) -> Result<()> {
             },
             cli::ConfigCommand::Auth(auth_cmd) => match auth_cmd {
                 cli::AuthCommand::Set { mode, role } => {
-                    let parsed_mode = parse_auth_forward_mode_from_cli(&mode)?;
-                    if let Some(role_selector) = role {
-                        let class = RoleSelector::parse(&role_selector)?;
-                        config.resolve_role_source(&class)?;
-                        let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                        if let Some(source) = config.roles.get(&class.key()) {
-                            editor.upsert_agent_source(&class.key(), source);
-                        }
-                        editor.set_agent_auth_forward(&class.key(), parsed_mode);
-                        editor.save()?;
-                        println!("Set auth forwarding for {} to {parsed_mode}.", class.key());
-                    } else {
-                        let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                        editor.set_global_auth_forward(parsed_mode);
-                        editor.save()?;
-                        println!("Set global auth forwarding to {parsed_mode}.");
+                    if role.is_some() {
+                        anyhow::bail!(
+                            "per-role auth_forward is not currently supported; set the global mode instead"
+                        );
                     }
+                    let parsed_mode = parse_auth_forward_mode_from_cli(&mode)?;
+                    let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                    editor.set_global_auth_forward(parsed_mode);
+                    editor.save()?;
+                    println!("Set global auth forwarding to {parsed_mode}.");
                     Ok(())
                 }
-                cli::AuthCommand::Show { role } => {
-                    if let Some(role_selector) = role {
-                        let class = RoleSelector::parse(&role_selector)?;
-                        let effective = config.resolve_auth_forward_mode(&class.key());
-                        println!("{effective}");
-                    } else {
-                        let mode = config
-                            .claude
-                            .as_ref()
-                            .map(|c| c.auth_forward)
-                            .unwrap_or_default();
-                        println!("{mode}");
-                    }
+                cli::AuthCommand::Show { role: _ } => {
+                    let mode = config
+                        .claude
+                        .as_ref()
+                        .map(|c| c.auth_forward)
+                        .unwrap_or_default();
+                    println!("{mode}");
                     Ok(())
                 }
             },

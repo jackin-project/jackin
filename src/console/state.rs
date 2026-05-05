@@ -172,7 +172,6 @@ mod tests {
             crate::config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );
@@ -213,7 +212,6 @@ mod tests {
         crate::config::RoleSource {
             git: "https://example.invalid/org/repo.git".to_string(),
             trusted: true,
-            claude: None,
             env: std::collections::BTreeMap::new(),
         }
     }

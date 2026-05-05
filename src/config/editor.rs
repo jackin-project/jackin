@@ -237,44 +237,27 @@ impl ConfigEditor {
         }
     }
 
-    pub fn set_agent_auth_forward(
-        &mut self,
-        agent_key: &str,
-        mode: crate::config::AuthForwardMode,
-    ) {
-        let claude_table = table_path_mut(
-            &mut self.doc,
-            &[
-                "roles".to_string(),
-                agent_key.to_string(),
-                "claude".to_string(),
-            ],
-        );
-        claude_table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
-    }
-
     pub fn set_global_auth_forward(&mut self, mode: crate::config::AuthForwardMode) {
         let claude_table = table_path_mut(&mut self.doc, &["claude".to_string()]);
         claude_table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
     }
 
     pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
-        // Touch only git + trusted. Leave [roles.X.claude] and
-        // [roles.X.env] alone — those are operator-owned.
+        // Touch only git + trusted. Leave [roles.X.env] alone —
+        // operator-owned.
         let table = table_path_mut(&mut self.doc, &["roles".to_string(), agent_key.to_string()]);
         table.insert("git", toml_edit::value(git_url));
         table.insert("trusted", toml_edit::value(true));
     }
 
     /// Writes `git` and `trusted` from the given `RoleSource` into
-    /// `[roles.<agent_key>]`, and if the doc has no `[roles.<agent_key>.claude]`
-    /// table yet but the source carries a `claude` override, writes that too.
-    /// Does NOT touch `[roles.<agent_key>.env]` — operator-owned.
+    /// `[roles.<agent_key>]`. Does NOT touch `[roles.<agent_key>.env]` —
+    /// operator-owned.
     ///
     /// Used by call sites that first invoke `resolve_role_source` (which may
     /// insert a new role into the in-memory `AppConfig`) and need the editor
-    /// to persist that insert alongside whatever trust / `auth_forward` change
-    /// they're about to make.
+    /// to persist that insert alongside whatever trust change they're about
+    /// to make.
     pub fn upsert_agent_source(&mut self, agent_key: &str, source: &crate::config::RoleSource) {
         let table = table_path_mut(&mut self.doc, &["roles".to_string(), agent_key.to_string()]);
         table.insert("git", toml_edit::value(source.git.clone()));
@@ -282,34 +265,6 @@ impl ConfigEditor {
             table.insert("trusted", toml_edit::value(true));
         } else {
             table.remove("trusted");
-        }
-        // If the source carries a claude override and the doc doesn't have
-        // one, serialize it in. If the doc already has one, leave it alone —
-        // operator-owned.
-        if let Some(claude) = &source.claude {
-            let existing_claude = self
-                .doc
-                .get("roles")
-                .and_then(|i| i.as_table())
-                .and_then(|t| t.get(agent_key))
-                .and_then(|i| i.as_table())
-                .and_then(|t| t.get("claude"));
-            if existing_claude.is_none()
-                && let Ok(rendered) = toml::to_string(claude)
-                && let Ok(parsed) = rendered.parse::<DocumentMut>()
-            {
-                let claude_table = table_path_mut(
-                    &mut self.doc,
-                    &[
-                        "roles".to_string(),
-                        agent_key.to_string(),
-                        "claude".to_string(),
-                    ],
-                );
-                for (k, v) in parsed.as_table() {
-                    claude_table.insert(k, v.clone());
-                }
-            }
         }
     }
 
@@ -1231,28 +1186,6 @@ trusted = true
     }
 
     #[test]
-    fn set_agent_auth_forward_writes_claude_subtable() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-        std::fs::write(
-            &paths.config_file,
-            r#"[roles.my-role]
-git = "x"
-"#,
-        )
-        .unwrap();
-
-        let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_agent_auth_forward("my-role", crate::config::AuthForwardMode::OAuthToken);
-        editor.save().unwrap();
-
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[roles.my-role.claude]"), "{out}");
-        assert!(out.contains(r#"auth_forward = "oauth_token""#), "{out}");
-    }
-
-    #[test]
     fn set_global_auth_forward_writes_root_claude_table() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
@@ -1285,42 +1218,6 @@ git = "x"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains("[roles.agent-smith]"), "{out}");
         assert!(out.contains("trusted = true"), "{out}");
-    }
-
-    #[test]
-    fn upsert_builtin_agent_preserves_existing_claude_override() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-        std::fs::write(
-            &paths.config_file,
-            r#"[roles.agent-smith]
-git = "OLD-URL"
-trusted = false
-
-[roles.agent-smith.claude]
-auth_forward = "oauth_token"
-"#,
-        )
-        .unwrap();
-
-        let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.upsert_builtin_agent(
-            "agent-smith",
-            "https://github.com/jackin-project/jackin-agent-smith.git",
-        );
-        editor.save().unwrap();
-
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(
-            out.contains(r#"git = "https://github.com/jackin-project/jackin-agent-smith.git""#),
-            "{out}"
-        );
-        assert!(out.contains("trusted = true"), "{out}");
-        assert!(
-            out.contains(r#"auth_forward = "oauth_token""#),
-            "claude override wiped: {out}"
-        );
     }
 
     #[test]
@@ -1423,7 +1320,6 @@ MY_VAR = "preserved"
         let source = crate::config::RoleSource {
             git: "NEW".to_string(),
             trusted: true,
-            claude: None,
             env: std::collections::BTreeMap::new(),
         };
         let mut editor = ConfigEditor::open(&paths).unwrap();

@@ -1,4 +1,4 @@
-use super::{AppConfig, AuthForwardMode, ClaudeRoleConfig, RoleSource};
+use super::{AppConfig, AuthForwardMode, RoleSource};
 use crate::selector::RoleSelector;
 
 pub const BUILTIN_ROLES: &[(&str, &str)] = &[
@@ -37,7 +37,6 @@ impl AppConfig {
                 selector.name
             ),
             trusted: false,
-            claude: None,
             env: std::collections::BTreeMap::new(),
         };
         self.roles.insert(selector.key(), source.clone());
@@ -46,28 +45,15 @@ impl AppConfig {
 
     /// Resolve the effective `AuthForwardMode` for a given role.
     ///
-    /// Resolution order: per-role override → global default → `Sync`.
-    pub fn resolve_auth_forward_mode(&self, agent_key: &str) -> AuthForwardMode {
-        self.roles
-            .get(agent_key)
-            .and_then(|a| a.claude.as_ref())
-            .and_then(|c| c.auth_forward)
-            .unwrap_or_else(|| {
-                self.claude
-                    .as_ref()
-                    .map(|c| c.auth_forward)
-                    .unwrap_or_default()
-            })
-    }
-
-    /// Set the per-role auth forward mode override.
-    // pub(crate): test-only affordance; production callers use ConfigEditor.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn set_agent_auth_forward(&mut self, key: &str, mode: AuthForwardMode) {
-        if let Some(source) = self.roles.get_mut(key) {
-            let claude = source.claude.get_or_insert_with(ClaudeRoleConfig::default);
-            claude.auth_forward = Some(mode);
-        }
+    /// Reads only the global `[claude]` block. The workspace and
+    /// per-(workspace × role) layers added in subsequent tasks
+    /// will rebuild this into a layered resolver; the deleted
+    /// per-role-global slot has no replacement until then.
+    pub fn resolve_auth_forward_mode(&self, _agent_key: &str) -> AuthForwardMode {
+        self.claude
+            .as_ref()
+            .map(|c| c.auth_forward)
+            .unwrap_or_default()
     }
 
     /// Mark an role source as trusted.  Returns `true` when the flag changed.
@@ -109,11 +95,9 @@ impl AppConfig {
     pub(super) fn sync_builtin_agents(&mut self) -> bool {
         let mut changed = false;
         for &(name, git) in BUILTIN_ROLES {
-            let existing_claude = self.roles.get(name).and_then(|a| a.claude.clone());
             let expected = RoleSource {
                 git: git.to_string(),
                 trusted: true,
-                claude: existing_claude,
                 env: std::collections::BTreeMap::new(),
             };
             match self.roles.get(name) {
@@ -390,23 +374,6 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
     }
 
     #[test]
-    fn deserializes_per_agent_claude_auth_forward() {
-        let toml_str = r#"
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-
-[roles.agent-smith.claude]
-auth_forward = "ignore"
-"#;
-        let config: AppConfig = toml::from_str(toml_str).unwrap();
-        let role = config.roles.get("agent-smith").unwrap();
-        assert_eq!(
-            role.claude.as_ref().unwrap().auth_forward,
-            Some(AuthForwardMode::Ignore)
-        );
-    }
-
-    #[test]
     fn resolve_auth_forward_defaults_to_sync() {
         let config = AppConfig::default();
         assert_eq!(
@@ -428,50 +395,6 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
         assert_eq!(
             config.resolve_auth_forward_mode("agent-smith"),
             AuthForwardMode::Sync
-        );
-    }
-
-    #[test]
-    fn resolve_auth_forward_per_agent_overrides_global() {
-        let toml_str = r#"
-[claude]
-auth_forward = "sync"
-
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-
-[roles.agent-smith.claude]
-auth_forward = "ignore"
-"#;
-        let config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(
-            config.resolve_auth_forward_mode("agent-smith"),
-            AuthForwardMode::Ignore
-        );
-    }
-
-    #[test]
-    fn auth_forward_round_trips_through_toml() {
-        let toml_str = r#"
-[claude]
-auth_forward = "sync"
-
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-
-[roles.agent-smith.claude]
-auth_forward = "ignore"
-"#;
-        let config: AppConfig = toml::from_str(toml_str).unwrap();
-        let serialized = toml::to_string_pretty(&config).unwrap();
-        let reloaded: AppConfig = toml::from_str(&serialized).unwrap();
-        assert_eq!(
-            reloaded.claude.as_ref().unwrap().auth_forward,
-            AuthForwardMode::Sync
-        );
-        assert_eq!(
-            reloaded.resolve_auth_forward_mode("agent-smith"),
-            AuthForwardMode::Ignore
         );
     }
 }

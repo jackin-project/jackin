@@ -92,20 +92,12 @@ pub struct AgentAuthConfig {
     pub auth_forward: AuthForwardMode,
 }
 
-/// Per-role Claude Code configuration override.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ClaudeRoleConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auth_forward: Option<AuthForwardMode>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RoleSource {
     pub git: String,
     #[serde(default, skip_serializing_if = "is_false")]
     pub trusted: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub claude: Option<ClaudeRoleConfig>,
     /// Role-layer operator env map. Merged on top of the global
     /// `[env]` map when the role is launched. Values use the
     /// `operator_env` dispatch syntax.
@@ -329,20 +321,6 @@ dst = "/workspace/src"
 
         let err = AppConfig::load_or_init(&paths).unwrap_err();
         assert!(err.to_string().contains("workspace \"broken\" workdir must be equal to, inside, or a parent of one of the workspace mount destinations"));
-    }
-
-    #[test]
-    fn set_agent_auth_forward_creates_claude_section() {
-        let toml_str = r#"
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-"#;
-        let mut config: AppConfig = toml::from_str(toml_str).unwrap();
-        config.set_agent_auth_forward("agent-smith", AuthForwardMode::Sync);
-        assert_eq!(
-            config.resolve_auth_forward_mode("agent-smith"),
-            AuthForwardMode::Sync
-        );
     }
 
     #[test]
@@ -805,6 +783,24 @@ auth_forward = "api_key"
         assert!(
             msg.contains("unknown field `bogus`") || msg.contains("unknown field \"bogus\""),
             "expected unknown-field error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn reject_legacy_role_claude_block() {
+        let toml = r#"
+[roles.smith]
+git = "git@example.com:smith.git"
+trusted = true
+
+[roles.smith.claude]
+auth_forward = "ignore"
+"#;
+        let err = toml::from_str::<AppConfig>(toml).expect_err("must reject legacy block");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field `claude`") || msg.contains("unknown field \"claude\""),
+            "expected unknown-field error for legacy [roles.X.claude] block, got: {msg}"
         );
     }
 
