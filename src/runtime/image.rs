@@ -19,6 +19,7 @@ pub(super) fn build_agent_image(
     host: &HostIdentity,
     agent: crate::agent::Agent,
     rebuild: bool,
+    agent_update: bool,
     debug: bool,
     runner: &mut impl CommandRunner,
     repo_lock: std::fs::File,
@@ -70,7 +71,7 @@ pub(super) fn build_agent_image(
     // Docker resolves the Dockerfile default `JACKIN_CACHE_BUST=0` and hits
     // the original pre-bust layer, causing the installed agent version to
     // ping-pong between old and new on alternate launches.
-    let cache_bust_value = if rebuild {
+    let cache_bust_value = if rebuild || agent_update {
         // System clock before UNIX_EPOCH is essentially impossible, but if it
         // happens we must not silently fall back to 0 — that collapses to the
         // Dockerfile's `JACKIN_CACHE_BUST=0` default and defeats the operator's

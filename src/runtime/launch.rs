@@ -996,12 +996,13 @@ fn load_role_with(
 
     let load_result = (|| -> anyhow::Result<String> {
         // Step 2: Build Docker image
-        let rebuild = opts.rebuild || {
+        let rebuild = opts.rebuild;
+        let agent_update = !rebuild && {
             let img = image_name(selector);
             let needs_update = agent == crate::agent::Agent::Claude
                 && version_check::needs_claude_update(paths, &img, runner);
             if needs_update {
-                eprintln!("        Claude update available — rebuilding image");
+                eprintln!("        Claude update available — refreshing agent layer");
             }
             needs_update
         };
@@ -1014,6 +1015,7 @@ fn load_role_with(
             &host,
             agent,
             rebuild,
+            agent_update,
             opts.debug,
             runner,
             repo_lock,
