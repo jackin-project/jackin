@@ -157,27 +157,18 @@ impl RoleState {
                 // Always ensure a clean slate — if switching from sync/token
                 // to ignore, the previously forwarded credentials must be
                 // revoked.
-                if !account_json.exists() || std::fs::read_to_string(account_json)? != "{}" {
-                    write_private_file(account_json, "{}")?;
-                }
-                if credentials_json.exists() {
-                    std::fs::remove_file(&credentials_json)?;
-                }
+                wipe_claude_state(account_json, &credentials_json)?;
                 AuthProvisionOutcome::Skipped
             }
-            // ApiKey mirrors OAuthToken's filesystem behavior in this commit;
-            // Tasks 10/11 will split per-mode credential provisioning. Both
-            // env-driven modes provision the same empty shape as Ignore — the
-            // agent inside the container authenticates via env vars, not via
+            // ApiKey and OAuthToken share filesystem behavior: both env-driven
+            // modes provision the same empty shape as Ignore — the agent
+            // inside the container authenticates via env vars, not via
             // filesystem credentials. Switching from sync → token/api_key must
-            // still wipe any previously forwarded creds.
+            // still wipe any previously forwarded creds. They differ only in
+            // which env var the launcher sets (CLAUDE_CODE_OAUTH_TOKEN vs
+            // ANTHROPIC_API_KEY); host-state provisioning is identical.
             AuthForwardMode::OAuthToken | AuthForwardMode::ApiKey => {
-                if !account_json.exists() || std::fs::read_to_string(account_json)? != "{}" {
-                    write_private_file(account_json, "{}")?;
-                }
-                if credentials_json.exists() {
-                    std::fs::remove_file(&credentials_json)?;
-                }
+                wipe_claude_state(account_json, &credentials_json)?;
                 AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::Sync => {
@@ -211,6 +202,27 @@ impl RoleState {
 fn copy_host_claude_json(host_path: &Path, dest_path: &Path) -> anyhow::Result<()> {
     let content = std::fs::read_to_string(host_path).unwrap_or_else(|_| "{}".to_string());
     write_private_file(dest_path, &content)
+}
+
+/// Wipe the container's Claude auth state to a clean empty shape.
+///
+/// Used by every non-Sync mode (`Ignore`, `OAuthToken`, `ApiKey`) — they
+/// all must guarantee no stale `.credentials.json` survives from a
+/// prior Sync run, and that `.claude.json` is `{}` so Claude Code
+/// inside the container authenticates exclusively via env vars (or
+/// fresh login) rather than re-using forwarded credentials.
+///
+/// `account_json` is rewritten only when its current contents differ
+/// from `{}` (or the file doesn't exist), to avoid touching mtime on
+/// every launch.
+fn wipe_claude_state(account_json: &Path, credentials_json: &Path) -> anyhow::Result<()> {
+    if !account_json.exists() || std::fs::read_to_string(account_json)? != "{}" {
+        write_private_file(account_json, "{}")?;
+    }
+    if credentials_json.exists() {
+        std::fs::remove_file(credentials_json)?;
+    }
+    Ok(())
 }
 
 /// Read the host's Claude Code OAuth credentials.
@@ -602,6 +614,67 @@ plugins = []
                 .join(".credentials.json")
                 .exists(),
             "token mode must not write .credentials.json"
+        );
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+    }
+
+    /// `ApiKey` shares the wipe-state contract with `OAuthToken` (both
+    /// env-driven modes) but is dispatched as a distinct enum variant —
+    /// pin its filesystem behavior independently so a future per-mode
+    /// split can't silently break the `ApiKey` path. The pre-seeded
+    /// `.credentials.json` here doubles as a "switching from sync to
+    /// `ApiKey` revokes forwarded creds" assertion: the file existed
+    /// before the `ApiKey` run and must be gone after.
+    #[test]
+    fn api_key_mode_wipes_credentials_and_writes_empty_json() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        // Seed host auth — api_key mode must NOT copy it.
+        seed_host_auth(&temp);
+        let manifest = simple_manifest(&temp);
+
+        // First run: sync mode writes credentials we'll then need to verify
+        // get wiped under api_key.
+        let (state, _) = RoleState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::Sync,
+            temp.path(),
+            crate::agent::Agent::Claude,
+        )
+        .unwrap();
+        assert!(
+            state
+                .claude_state_dir()
+                .unwrap()
+                .join(".credentials.json")
+                .exists(),
+            "precondition: sync seeded .credentials.json"
+        );
+
+        let (state2, outcome) = RoleState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            AuthForwardMode::ApiKey,
+            temp.path(),
+            crate::agent::Agent::Claude,
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(state2.claude_account_json().unwrap()).unwrap(),
+            "{}",
+            "api_key mode must reset .claude.json to empty object"
+        );
+        assert!(
+            !state2
+                .claude_state_dir()
+                .unwrap()
+                .join(".credentials.json")
+                .exists(),
+            "api_key mode must wipe .credentials.json"
         );
         assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
     }
