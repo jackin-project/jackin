@@ -1042,15 +1042,27 @@ fn load_role_with(
         // problem before we spend time starting the network and DinD
         // sidecar. Sync / Ignore short-circuit inside the helper.
         //
-        // Task 14 will replace the empty `env_layers` slice with a
-        // real per-layer trace derived from the operator env config.
+        // Build the per-layer mode-resolution and env-layer traces
+        // here (in the caller) so the structured error carries the
+        // full picture. The helpers mirror the layers walked by
+        // `crate::config::resolve_mode` and
+        // `operator_env::build_attributed_layers` respectively.
+        let workspace_name_str = workspace_name.as_deref().unwrap_or("");
+        let role_key = selector.key();
+        let mode_resolution = build_mode_resolution(config, agent, workspace_name_str, &role_key);
+        let env_layers = agent
+            .required_env_var(auth_mode)
+            .map_or_else(Vec::new, |env_var| {
+                build_env_layer_states(config, workspace_name_str, &role_key, env_var)
+            });
         verify_credential_env_present(
             agent,
             auth_mode,
             &operator_env,
-            &[],
-            workspace_name.as_deref().unwrap_or(""),
-            &selector.key(),
+            &mode_resolution,
+            &env_layers,
+            workspace_name_str,
+            &role_key,
         )?;
 
         let (state, auth_outcome) = RoleState::prepare(
@@ -1068,26 +1080,21 @@ fn load_role_with(
         // reference or $NAME ref as written). Resolved values are never
         // printed.
         if agent == crate::agent::Agent::Claude {
-            match auth_mode {
-                // ApiKey mirrors OAuthToken's notice in this commit; Tasks
-                // 10/11 will split per-mode env-source diagnostics.
-                crate::config::AuthForwardMode::OAuthToken
-                | crate::config::AuthForwardMode::ApiKey => {
-                    let raw = lookup_operator_env_raw(
-                        config,
-                        Some(&selector.key()),
-                        workspace_name.as_deref(),
-                        "CLAUDE_CODE_OAUTH_TOKEN",
-                    );
-                    let source_ref = auth_token_source_reference(raw.as_deref());
-                    tui::auth_mode_notice(&auth_mode.to_string(), Some(&source_ref));
-                }
-                crate::config::AuthForwardMode::Sync => {
-                    tui::auth_mode_notice("sync", None);
-                }
-                crate::config::AuthForwardMode::Ignore => {
-                    tui::auth_mode_notice("ignore", None);
-                }
+            // Per-mode auth notice: for credential-injecting modes we look
+            // up the raw declaration of the mode's required env var
+            // (resolved through `Agent::required_env_var`) and surface its
+            // source reference; sync/ignore have no env source to print.
+            if let Some(env_var) = agent.required_env_var(auth_mode) {
+                let raw = lookup_operator_env_raw(
+                    config,
+                    Some(&role_key),
+                    workspace_name.as_deref(),
+                    env_var,
+                );
+                let source_ref = auth_token_source_reference(env_var, raw.as_deref());
+                tui::auth_mode_notice(&auth_mode.to_string(), Some(&source_ref));
+            } else {
+                tui::auth_mode_notice(&auth_mode.to_string(), None);
             }
 
             // Verbose outcome notices kept for operator context.
@@ -1099,49 +1106,38 @@ fn load_role_with(
                     );
                 }
                 crate::instance::AuthProvisionOutcome::TokenMode => {
-                    // Tasks 10/11/13 will route this through Agent::required_env_var.
-                    match auth_mode {
-                        crate::config::AuthForwardMode::OAuthToken => {
-                            eprintln!(
-                                "[jackin] auth_forward={auth_mode} — role will use \
-                                 CLAUDE_CODE_OAUTH_TOKEN from the resolved env."
-                            );
-                        }
-                        crate::config::AuthForwardMode::ApiKey => {
-                            eprintln!(
-                                "[jackin] auth_forward={auth_mode} — role will use \
-                                 ANTHROPIC_API_KEY from the resolved env."
-                            );
-                        }
-                        crate::config::AuthForwardMode::Sync
-                        | crate::config::AuthForwardMode::Ignore => {}
+                    if let Some(env_var) = agent.required_env_var(auth_mode) {
+                        eprintln!(
+                            "[jackin] auth_forward={auth_mode} — role will use \
+                             {env_var} from the resolved env."
+                        );
                     }
                 }
-                crate::instance::AuthProvisionOutcome::HostMissing => match auth_mode {
-                    crate::config::AuthForwardMode::Sync => {
+                crate::instance::AuthProvisionOutcome::HostMissing => {
+                    if matches!(auth_mode, crate::config::AuthForwardMode::Sync) {
                         eprintln!(
                             "[jackin] auth_forward=sync but no host credentials found; \
                                  preserving existing container auth if present."
                         );
                     }
-                    crate::config::AuthForwardMode::Ignore
-                    | crate::config::AuthForwardMode::OAuthToken
-                    | crate::config::AuthForwardMode::ApiKey => {}
-                },
+                }
                 crate::instance::AuthProvisionOutcome::Skipped => {}
             }
         } else if agent == crate::agent::Agent::Codex {
-            let raw_source = lookup_operator_env_raw(
-                config,
-                Some(&selector.key()),
-                workspace_name.as_deref(),
-                "OPENAI_API_KEY",
-            );
-            let resolved_source = resolved_env
-                .vars
-                .iter()
-                .any(|(k, v)| k == "OPENAI_API_KEY" && !v.trim().is_empty())
-                .then(|| raw_source.as_deref().unwrap_or("OPENAI_API_KEY"));
+            // For Codex, the credential env var is OPENAI_API_KEY in
+            // ApiKey mode and absent for Sync/Ignore. Drive the lookup
+            // through `Agent::required_env_var` to keep this generic.
+            let codex_env_var = agent.required_env_var(auth_mode);
+            let raw_source = codex_env_var.and_then(|v| {
+                lookup_operator_env_raw(config, Some(&role_key), workspace_name.as_deref(), v)
+            });
+            let resolved_source = codex_env_var.and_then(|v| {
+                resolved_env
+                    .vars
+                    .iter()
+                    .any(|(k, value)| k == v && !value.trim().is_empty())
+                    .then(|| raw_source.as_deref().unwrap_or(v))
+            });
             tui::codex_auth_notice(resolved_source, (auth_mode, auth_outcome).into());
         }
 
@@ -1383,13 +1379,11 @@ fn claim_container_name(
 /// Carried inside `LaunchError::AuthCredentialMissing` so both CLI text
 /// rendering and TUI structured rendering can reuse the same trace
 /// without re-deriving it from the resolved env map.
-//
-// `ResolvedLiteral` / `ResolvedOpRef` are produced by Task 14's caller
-// when it derives the per-layer state from the operator env config.
-// `Unset` is constructed by Task 13's `verify_credential_env_present`
-// today; the resolved variants stay allowed-dead until Task 14 wires
-// the per-layer derivation.
-#[allow(dead_code)]
+///
+/// All three variants are constructed today: `Unset` by both
+/// `verify_credential_env_present`'s tests and `build_env_layer_states`
+/// when a layer is silent; `ResolvedLiteral` / `ResolvedOpRef` by
+/// `build_env_layer_states` when a layer declares the var.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvLayerState {
     /// Layer does not declare the var at all.
@@ -1590,13 +1584,17 @@ fn render_auth_credential_missing(
 ///
 /// Otherwise looks up the well-known env var in `merged_env`. If the
 /// value is non-empty, returns `Ok(())`. If it is missing or empty,
-/// returns `LaunchError::AuthCredentialMissing` carrying the layer
-/// trace passed in by the caller, so both CLI and TUI rendering can
-/// surface a structured remediation panel.
+/// returns `LaunchError::AuthCredentialMissing` carrying the
+/// `mode_resolution` and `env_layers` traces passed in by the caller,
+/// so both CLI and TUI rendering can surface a structured remediation
+/// panel. The caller (`load_role_with`, see `build_mode_resolution` /
+/// `build_env_layer_states`) owns trace derivation; this helper only
+/// looks up the env var and constructs the error.
 pub fn verify_credential_env_present(
     agent: crate::agent::Agent,
     mode: crate::config::AuthForwardMode,
     merged_env: &std::collections::BTreeMap<String, String>,
+    mode_resolution: &[(String, Option<crate::config::AuthForwardMode>)],
     env_layers: &[(String, EnvLayerState)],
     workspace: &str,
     role: &str,
@@ -1609,39 +1607,109 @@ pub fn verify_credential_env_present(
         return Ok(());
     }
 
-    // Mode-resolution trace: most-specific first. The caller (Task 14)
-    // owns the per-layer mode lookup; this helper only knows the leaf
-    // (the resolved mode that triggered the check), so the broader
-    // layers are left as `None`. The renderer prints those as
-    // `(none)`, which is correct: when the checker is invoked the
-    // caller has already collapsed the 3 layers down to one decision.
-    let mode_resolution = vec![
-        (format!("workspace × role × {agent}"), Some(mode)),
-        (format!("workspace × {agent}"), None),
-        (format!("global × {agent}"), None),
-    ];
-
     Err(LaunchError::AuthCredentialMissing {
         agent,
         mode,
         env_var,
         workspace: workspace.to_string(),
         role: role.to_string(),
-        mode_resolution,
+        mode_resolution: mode_resolution.to_vec(),
         env_layers: env_layers.to_vec(),
     })
 }
 
-/// Return a printable source reference for `CLAUDE_CODE_OAUTH_TOKEN`
+/// Build the 3-layer mode-resolution trace (most-specific first) that
+/// `LaunchError::AuthCredentialMissing` carries for rendering. Walks
+/// the same layers as [`crate::config::resolve_mode`] but records each
+/// layer's value (or `None` when silent) so the operator can see at a
+/// glance which TOML layer wins.
+fn build_mode_resolution(
+    cfg: &AppConfig,
+    agent: crate::agent::Agent,
+    workspace: &str,
+    role: &str,
+) -> Vec<(String, Option<crate::config::AuthForwardMode>)> {
+    use crate::agent::Agent;
+    let agent_at_global = match agent {
+        Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
+        Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
+    };
+    let agent_at_workspace = cfg.workspaces.get(workspace).and_then(|ws| match agent {
+        Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
+        Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
+    });
+    let agent_at_ws_role = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|ws| ws.roles.get(role))
+        .and_then(|ro| match agent {
+            Agent::Claude => ro.claude.as_ref().map(|c| c.auth_forward),
+            Agent::Codex => ro.codex.as_ref().map(|c| c.auth_forward),
+        });
+    vec![
+        (format!("workspace × role × {agent}"), agent_at_ws_role),
+        (format!("workspace × {agent}"), agent_at_workspace),
+        (format!("global × {agent}"), agent_at_global),
+    ]
+}
+
+/// Build the 4-layer env-layer trace (lowest precedence first) for the
+/// credential var. Layers mirror `operator_env::build_attributed_layers`:
+/// `[env]` < `[roles.<role>.env]` < `[workspaces.<ws>.env]` <
+/// `[workspaces.<ws>.roles.<role>.env]`. Each entry records whether the
+/// layer declared the var as a literal, an `op://...` reference, or
+/// not at all.
+fn build_env_layer_states(
+    cfg: &AppConfig,
+    workspace: &str,
+    role: &str,
+    env_var: &str,
+) -> Vec<(String, EnvLayerState)> {
+    const fn classify(value: &crate::operator_env::EnvValue) -> EnvLayerState {
+        match value {
+            crate::operator_env::EnvValue::Plain(_) => EnvLayerState::ResolvedLiteral,
+            crate::operator_env::EnvValue::OpRef(_) => EnvLayerState::ResolvedOpRef,
+        }
+    }
+    let global = cfg.env.get(env_var).map_or(EnvLayerState::Unset, classify);
+    let role_global = cfg
+        .roles
+        .get(role)
+        .and_then(|r| r.env.get(env_var))
+        .map_or(EnvLayerState::Unset, classify);
+    let workspace_global = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|ws| ws.env.get(env_var))
+        .map_or(EnvLayerState::Unset, classify);
+    let workspace_role = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|ws| ws.roles.get(role))
+        .and_then(|ro| ro.env.get(env_var))
+        .map_or(EnvLayerState::Unset, classify);
+    vec![
+        ("[env]".to_string(), global),
+        (format!("[roles.{role}.env]"), role_global),
+        (format!("[workspaces.{workspace}.env]"), workspace_global),
+        (
+            format!("[workspaces.{workspace}.roles.{role}.env]"),
+            workspace_role,
+        ),
+    ]
+}
+
+/// Return a printable source reference for the credential env var
+/// `env_var` (e.g. `"CLAUDE_CODE_OAUTH_TOKEN"`, `"ANTHROPIC_API_KEY"`)
 /// given the raw (unresolved) declaration value from the operator env
 /// config (e.g. `"Private/Claude/security/auth token"` or
 /// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Produces the `"KEY ← value"` form
 /// consumed by `tui::auth_mode_notice`. When `raw` is `None` or the
 /// display string is empty, falls back to the bare env-var name.
-fn auth_token_source_reference(raw: Option<&str>) -> String {
+fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
     match raw {
-        None | Some("") => "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
-        Some(value) => format!("CLAUDE_CODE_OAUTH_TOKEN \u{2190} {value}"),
+        None | Some("") => env_var.to_string(),
+        Some(value) => format!("{env_var} \u{2190} {value}"),
     }
 }
 
@@ -4004,6 +4072,7 @@ plugins = []
             Agent::Claude,
             AuthForwardMode::Sync,
             &merged,
+            &[],
             &layers,
             "proj",
             "smith",
@@ -4021,6 +4090,7 @@ plugins = []
             Agent::Claude,
             AuthForwardMode::Ignore,
             &merged,
+            &[],
             &layers,
             "proj",
             "smith",
@@ -4039,6 +4109,7 @@ plugins = []
             Agent::Claude,
             AuthForwardMode::ApiKey,
             &merged,
+            &[],
             &layers,
             "proj",
             "smith",
@@ -4061,10 +4132,19 @@ plugins = []
                 EnvLayerState::Unset,
             ),
         ];
+        let mode_resolution = vec![
+            (
+                "workspace × role × claude".into(),
+                Some(AuthForwardMode::ApiKey),
+            ),
+            ("workspace × claude".into(), None),
+            ("global × claude".into(), None),
+        ];
         let r = verify_credential_env_present(
             Agent::Claude,
             AuthForwardMode::ApiKey,
             &merged,
+            &mode_resolution,
             &layers,
             "proj",
             "smith",
@@ -4078,6 +4158,7 @@ plugins = []
                 workspace,
                 role,
                 env_layers,
+                mode_resolution,
                 ..
             } => {
                 assert_eq!(env_var, "ANTHROPIC_API_KEY");
@@ -4085,8 +4166,10 @@ plugins = []
                 assert_eq!(mode, AuthForwardMode::ApiKey);
                 assert_eq!(workspace, "proj");
                 assert_eq!(role, "smith");
-                // Helper passes the caller's env-layer trace through verbatim.
+                // Helper passes the caller's traces through verbatim.
                 assert_eq!(env_layers.len(), 4);
+                assert_eq!(mode_resolution.len(), 3);
+                assert_eq!(mode_resolution[0].1, Some(AuthForwardMode::ApiKey));
             }
         }
     }
@@ -4102,6 +4185,7 @@ plugins = []
             Agent::Claude,
             AuthForwardMode::ApiKey,
             &merged,
+            &[],
             &layers,
             "proj",
             "smith",
@@ -4119,6 +4203,7 @@ plugins = []
             Agent::Claude,
             AuthForwardMode::OAuthToken,
             &merged,
+            &[],
             &layers,
             "proj",
             "smith",
@@ -4141,6 +4226,7 @@ plugins = []
             Agent::Codex,
             AuthForwardMode::ApiKey,
             &merged,
+            &[],
             &layers,
             "proj",
             "smith",
@@ -4152,6 +4238,112 @@ plugins = []
                 assert_eq!(agent, Agent::Codex);
             }
         }
+    }
+
+    #[test]
+    fn build_mode_resolution_populates_all_3_layers() {
+        use crate::agent::Agent;
+        use crate::config::{AgentAuthConfig, AuthForwardMode};
+        use crate::workspace::WorkspaceConfig;
+
+        let ws = WorkspaceConfig {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+            }),
+            ..WorkspaceConfig::default()
+        };
+        let mut cfg = AppConfig {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::Sync,
+            }),
+            ..AppConfig::default()
+        };
+        cfg.workspaces.insert("proj".into(), ws);
+
+        let trace = build_mode_resolution(&cfg, Agent::Claude, "proj", "smith");
+        assert_eq!(trace.len(), 3);
+        // Ordered most-specific first: ws × role × claude (no override),
+        // then ws × claude (api_key), then global × claude (sync).
+        assert_eq!(trace[0].0, "workspace × role × claude");
+        assert_eq!(trace[0].1, None);
+        assert_eq!(trace[1].0, "workspace × claude");
+        assert_eq!(trace[1].1, Some(AuthForwardMode::ApiKey));
+        assert_eq!(trace[2].0, "global × claude");
+        assert_eq!(trace[2].1, Some(AuthForwardMode::Sync));
+    }
+
+    #[test]
+    fn build_mode_resolution_role_override_wins() {
+        use crate::agent::Agent;
+        use crate::config::{AgentAuthConfig, AuthForwardMode};
+        use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+
+        let ro = WorkspaceRoleOverride {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::OAuthToken,
+            }),
+            ..Default::default()
+        };
+        let mut ws = WorkspaceConfig::default();
+        ws.roles.insert("smith".into(), ro);
+        let mut cfg = AppConfig::default();
+        cfg.workspaces.insert("proj".into(), ws);
+
+        let trace = build_mode_resolution(&cfg, Agent::Claude, "proj", "smith");
+        assert_eq!(trace[0].1, Some(AuthForwardMode::OAuthToken));
+        assert_eq!(trace[1].1, None);
+        assert_eq!(trace[2].1, None);
+    }
+
+    #[test]
+    fn build_env_layer_states_classifies_present_vs_absent() {
+        use crate::operator_env::{EnvValue, OpRef};
+        use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+
+        let mut ro = WorkspaceRoleOverride::default();
+        ro.env.insert(
+            "ANTHROPIC_API_KEY".into(),
+            EnvValue::OpRef(OpRef {
+                op: "op://uuid/test/field".into(),
+                path: "Test/api/key".into(),
+            }),
+        );
+        let mut ws = WorkspaceConfig::default();
+        ws.roles.insert("smith".into(), ro);
+        let mut cfg = AppConfig::default();
+        cfg.workspaces.insert("proj".into(), ws);
+
+        let layers = build_env_layer_states(&cfg, "proj", "smith", "ANTHROPIC_API_KEY");
+        assert_eq!(layers.len(), 4);
+        assert_eq!(layers[0].0, "[env]");
+        assert_eq!(layers[0].1, EnvLayerState::Unset);
+        assert_eq!(layers[1].0, "[roles.smith.env]");
+        assert_eq!(layers[1].1, EnvLayerState::Unset);
+        assert_eq!(layers[2].0, "[workspaces.proj.env]");
+        assert_eq!(layers[2].1, EnvLayerState::Unset);
+        assert_eq!(layers[3].0, "[workspaces.proj.roles.smith.env]");
+        assert_eq!(layers[3].1, EnvLayerState::ResolvedOpRef);
+    }
+
+    #[test]
+    fn build_env_layer_states_classifies_literal_at_global() {
+        use crate::operator_env::EnvValue;
+
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            "ANTHROPIC_API_KEY".into(),
+            EnvValue::Plain("$ANTHROPIC_API_KEY".into()),
+        );
+        let cfg = AppConfig {
+            env,
+            ..AppConfig::default()
+        };
+
+        let layers = build_env_layer_states(&cfg, "proj", "smith", "ANTHROPIC_API_KEY");
+        assert_eq!(layers[0].1, EnvLayerState::ResolvedLiteral);
+        assert_eq!(layers[1].1, EnvLayerState::Unset);
+        assert_eq!(layers[2].1, EnvLayerState::Unset);
+        assert_eq!(layers[3].1, EnvLayerState::Unset);
     }
 
     #[test]
