@@ -1036,21 +1036,22 @@ fn load_role_with(
             &selector.key(),
         );
 
-        // Token mode requires CLAUDE_CODE_OAUTH_TOKEN in the resolved
-        // operator env; fail fast with an actionable error if it is
-        // missing so the operator sees the problem before we spend time
-        // starting the network and DinD sidecar.
+        // Modes that inject a credential require the well-known env
+        // var to resolve to a non-empty value; fail fast with an
+        // actionable structured error so the operator sees the
+        // problem before we spend time starting the network and DinD
+        // sidecar. Sync / Ignore short-circuit inside the helper.
         //
-        // ApiKey mirrors OAuthToken's filesystem behavior in this commit;
-        // Tasks 10/11 will split the credential check per mode.
-        if agent == crate::agent::Agent::Claude
-            && matches!(
-                auth_mode,
-                crate::config::AuthForwardMode::OAuthToken | crate::config::AuthForwardMode::ApiKey
-            )
-        {
-            verify_token_env_present(&operator_env)?;
-        }
+        // Task 14 will replace the empty `env_layers` slice with a
+        // real per-layer trace derived from the operator env config.
+        verify_credential_env_present(
+            agent,
+            auth_mode,
+            &operator_env,
+            &[],
+            workspace_name.as_deref().unwrap_or(""),
+            &selector.key(),
+        )?;
 
         let (state, auth_outcome) = RoleState::prepare(
             paths,
@@ -1383,10 +1384,11 @@ fn claim_container_name(
 /// rendering and TUI structured rendering can reuse the same trace
 /// without re-deriving it from the resolved env map.
 //
-// `ResolvedLiteral` / `ResolvedOpRef` are only constructed by Task 13's
-// validator (next commit). Allowed dead until then so this commit can
-// land the structured-error scaffolding without churning the wider
-// codebase.
+// `ResolvedLiteral` / `ResolvedOpRef` are produced by Task 14's caller
+// when it derives the per-layer state from the operator env config.
+// `Unset` is constructed by Task 13's `verify_credential_env_present`
+// today; the resolved variants stay allowed-dead until Task 14 wires
+// the per-layer derivation.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvLayerState {
@@ -1420,11 +1422,8 @@ impl std::fmt::Display for EnvLayerState {
 /// etc.) can grow structured variants alongside it without churning the
 /// type at every call site.
 //
-// Constructed by Task 13's `verify_credential_env_present` (next
-// commit) and bubbled through Task 14's `load_role_with` integration.
-// Allowed dead until then so this commit can land the structured-error
-// scaffolding in isolation.
-#[allow(dead_code)]
+// Constructed by Task 13's `verify_credential_env_present` and bubbled
+// through Task 14's `load_role_with` integration.
 #[derive(Debug, thiserror::Error)]
 pub enum LaunchError {
     /// `auth_forward` mode requires a credential env var to resolve to
@@ -1496,11 +1495,6 @@ fn render_label_width<T>(rows: &[(String, T)]) -> usize {
 /// for CLI display. The TUI panel consumes the structured fields
 /// directly and ignores this rendering — they intentionally share the
 /// data, not the formatting.
-//
-// Constructed only when `LaunchError::AuthCredentialMissing` is built,
-// which today only happens from the test module. Allowed dead until
-// Task 13's validator wires it from production code.
-#[allow(dead_code)]
 fn render_auth_credential_missing(
     agent: crate::agent::Agent,
     mode: crate::config::AuthForwardMode,
@@ -1583,40 +1577,59 @@ fn render_auth_credential_missing(
     out
 }
 
-/// Verify that `CLAUDE_CODE_OAUTH_TOKEN` is present in the resolved
-/// operator env when `auth_forward == Token`. Returns an actionable
-/// error listing both remediation paths (1Password `op://` reference
-/// and `$CLAUDE_CODE_OAUTH_TOKEN` host shell forwarding) when the
-/// token is missing or empty.
+/// Verify that the credential env var required by the resolved
+/// `auth_forward` mode is present (and non-empty) in the merged
+/// operator-env map. Drives the per-(agent, mode) lookup through
+/// `Agent::required_env_var`, which is the single source of truth
+/// for which env var carries which credential.
 ///
-/// Kept as a small pure helper over `BTreeMap<String, String>` so it
-/// can be unit-tested without faking the workspace env resolver.
-fn verify_token_env_present(
-    vars: &std::collections::BTreeMap<String, String>,
-) -> anyhow::Result<()> {
-    if vars
-        .get("CLAUDE_CODE_OAUTH_TOKEN")
-        .is_some_and(|v| !v.is_empty())
-    {
+/// Returns `Ok(())` for modes that don't inject a credential
+/// (`Sync`, `Ignore`) — the operator may still need a host-side
+/// credential in those modes, but the launch-time pre-flight has
+/// nothing to verify in the merged env.
+///
+/// Otherwise looks up the well-known env var in `merged_env`. If the
+/// value is non-empty, returns `Ok(())`. If it is missing or empty,
+/// returns `LaunchError::AuthCredentialMissing` carrying the layer
+/// trace passed in by the caller, so both CLI and TUI rendering can
+/// surface a structured remediation panel.
+pub fn verify_credential_env_present(
+    agent: crate::agent::Agent,
+    mode: crate::config::AuthForwardMode,
+    merged_env: &std::collections::BTreeMap<String, String>,
+    env_layers: &[(String, EnvLayerState)],
+    workspace: &str,
+    role: &str,
+) -> Result<(), LaunchError> {
+    let Some(env_var) = agent.required_env_var(mode) else {
+        return Ok(());
+    };
+    let value = merged_env.get(env_var).map_or("", String::as_str);
+    if !value.is_empty() {
         return Ok(());
     }
-    anyhow::bail!(
-        "auth_forward = \"token\" but CLAUDE_CODE_OAUTH_TOKEN is not set in the resolved \
-         operator env.\n\
-         \n\
-         Add it in your workspace config under [env]. Either:\n\
-         \n\
-         - Reference a 1Password secret:\n  \
-             [env]\n  \
-             CLAUDE_CODE_OAUTH_TOKEN = \"op://vault/claude/token\"\n\
-         \n\
-         - Forward from the host shell:\n  \
-             [env]\n  \
-             CLAUDE_CODE_OAUTH_TOKEN = \"$CLAUDE_CODE_OAUTH_TOKEN\"\n\
-         \n\
-         Generate a token with `claude setup-token`, then either store it in \
-         1Password (first form) or export it in your shell (second form)."
-    );
+
+    // Mode-resolution trace: most-specific first. The caller (Task 14)
+    // owns the per-layer mode lookup; this helper only knows the leaf
+    // (the resolved mode that triggered the check), so the broader
+    // layers are left as `None`. The renderer prints those as
+    // `(none)`, which is correct: when the checker is invoked the
+    // caller has already collapsed the 3 layers down to one decision.
+    let mode_resolution = vec![
+        (format!("workspace × role × {agent}"), Some(mode)),
+        (format!("workspace × {agent}"), None),
+        (format!("global × {agent}"), None),
+    ];
+
+    Err(LaunchError::AuthCredentialMissing {
+        agent,
+        mode,
+        env_var,
+        workspace: workspace.to_string(),
+        role: role.to_string(),
+        mode_resolution,
+        env_layers: env_layers.to_vec(),
+    })
 }
 
 /// Return a printable source reference for `CLAUDE_CODE_OAUTH_TOKEN`
@@ -3982,34 +3995,163 @@ plugins = []
     }
 
     #[test]
-    fn verify_token_env_present_accepts_resolved_token() {
-        let mut vars = std::collections::BTreeMap::new();
-        vars.insert(
-            "CLAUDE_CODE_OAUTH_TOKEN".to_string(),
-            "sk-ant-oat01-redacted".to_string(),
+    fn verify_credential_sync_returns_ok_regardless() {
+        use crate::agent::Agent;
+        use crate::config::AuthForwardMode;
+        let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+        let layers: Vec<(String, EnvLayerState)> = vec![];
+        let r = verify_credential_env_present(
+            Agent::Claude,
+            AuthForwardMode::Sync,
+            &merged,
+            &layers,
+            "proj",
+            "smith",
         );
-        assert!(verify_token_env_present(&vars).is_ok());
+        assert!(r.is_ok());
     }
 
     #[test]
-    fn verify_token_env_missing_returns_actionable_error() {
-        let vars = std::collections::BTreeMap::<String, String>::new();
-        let err = verify_token_env_present(&vars).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("CLAUDE_CODE_OAUTH_TOKEN"), "got: {msg}");
-        // Both remediation paths must be surfaced.
-        assert!(
-            msg.contains("op://"),
-            "error should mention the 1Password remediation path; got: {msg}"
+    fn verify_credential_ignore_returns_ok_regardless() {
+        use crate::agent::Agent;
+        use crate::config::AuthForwardMode;
+        let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+        let layers: Vec<(String, EnvLayerState)> = vec![];
+        let r = verify_credential_env_present(
+            Agent::Claude,
+            AuthForwardMode::Ignore,
+            &merged,
+            &layers,
+            "proj",
+            "smith",
         );
-        assert!(
-            msg.contains("$CLAUDE_CODE_OAUTH_TOKEN"),
-            "error should mention the host env remediation path; got: {msg}"
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn verify_credential_api_key_present_ok() {
+        use crate::agent::Agent;
+        use crate::config::AuthForwardMode;
+        let mut merged = std::collections::BTreeMap::new();
+        merged.insert("ANTHROPIC_API_KEY".into(), "sk-ant-xxx".into());
+        let layers: Vec<(String, EnvLayerState)> = vec![];
+        let r = verify_credential_env_present(
+            Agent::Claude,
+            AuthForwardMode::ApiKey,
+            &merged,
+            &layers,
+            "proj",
+            "smith",
         );
-        assert!(
-            msg.contains("[env]"),
-            "error should point the operator at the [env] manifest table; got: {msg}"
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn verify_credential_api_key_missing_returns_structured_error() {
+        use crate::agent::Agent;
+        use crate::config::AuthForwardMode;
+        let mut merged = std::collections::BTreeMap::new();
+        merged.insert("ANTHROPIC_API_KEY".into(), String::new());
+        let layers = vec![
+            ("[env]".into(), EnvLayerState::Unset),
+            ("[roles.smith.env]".into(), EnvLayerState::Unset),
+            ("[workspaces.proj.env]".into(), EnvLayerState::Unset),
+            (
+                "[workspaces.proj.roles.smith.env]".into(),
+                EnvLayerState::Unset,
+            ),
+        ];
+        let r = verify_credential_env_present(
+            Agent::Claude,
+            AuthForwardMode::ApiKey,
+            &merged,
+            &layers,
+            "proj",
+            "smith",
         );
+        let err = r.unwrap_err();
+        match err {
+            LaunchError::AuthCredentialMissing {
+                env_var,
+                agent,
+                mode,
+                workspace,
+                role,
+                env_layers,
+                ..
+            } => {
+                assert_eq!(env_var, "ANTHROPIC_API_KEY");
+                assert_eq!(agent, Agent::Claude);
+                assert_eq!(mode, AuthForwardMode::ApiKey);
+                assert_eq!(workspace, "proj");
+                assert_eq!(role, "smith");
+                // Helper passes the caller's env-layer trace through verbatim.
+                assert_eq!(env_layers.len(), 4);
+            }
+        }
+    }
+
+    #[test]
+    fn verify_credential_api_key_unset_returns_structured_error() {
+        use crate::agent::Agent;
+        use crate::config::AuthForwardMode;
+        // ANTHROPIC_API_KEY not in map at all.
+        let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+        let layers: Vec<(String, EnvLayerState)> = vec![];
+        let r = verify_credential_env_present(
+            Agent::Claude,
+            AuthForwardMode::ApiKey,
+            &merged,
+            &layers,
+            "proj",
+            "smith",
+        );
+        assert!(matches!(r, Err(LaunchError::AuthCredentialMissing { .. })));
+    }
+
+    #[test]
+    fn verify_credential_oauth_token_missing_for_claude() {
+        use crate::agent::Agent;
+        use crate::config::AuthForwardMode;
+        let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+        let layers = vec![("[env]".into(), EnvLayerState::Unset)];
+        let r = verify_credential_env_present(
+            Agent::Claude,
+            AuthForwardMode::OAuthToken,
+            &merged,
+            &layers,
+            "proj",
+            "smith",
+        );
+        let err = r.unwrap_err();
+        match err {
+            LaunchError::AuthCredentialMissing { env_var, .. } => {
+                assert_eq!(env_var, "CLAUDE_CODE_OAUTH_TOKEN");
+            }
+        }
+    }
+
+    #[test]
+    fn verify_credential_codex_api_key_missing() {
+        use crate::agent::Agent;
+        use crate::config::AuthForwardMode;
+        let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+        let layers: Vec<(String, EnvLayerState)> = vec![];
+        let r = verify_credential_env_present(
+            Agent::Codex,
+            AuthForwardMode::ApiKey,
+            &merged,
+            &layers,
+            "proj",
+            "smith",
+        );
+        let err = r.unwrap_err();
+        match err {
+            LaunchError::AuthCredentialMissing { env_var, agent, .. } => {
+                assert_eq!(env_var, "OPENAI_API_KEY");
+                assert_eq!(agent, Agent::Codex);
+            }
+        }
     }
 
     #[test]
@@ -4174,7 +4316,7 @@ plugins = []
     }
 
     #[test]
-    fn auth_credential_missing_codex_oauth_token_renders() {
+    fn auth_credential_missing_codex_api_key_renders() {
         let err = LaunchError::AuthCredentialMissing {
             agent: crate::agent::Agent::Codex,
             mode: crate::config::AuthForwardMode::ApiKey,
