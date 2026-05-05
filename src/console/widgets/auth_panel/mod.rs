@@ -7,8 +7,10 @@
 //!
 //! Mounted as a peer to the Secrets panel by Task 19.
 
+pub mod form;
 pub mod render;
 pub mod state;
 
+pub use form::{AuthForm, AuthFormOutcome, CredentialInput};
 pub use render::{render, render_with_selection};
 pub use state::{AuthPanelState, AuthRow, CredentialBadge, ProvenanceTag};
