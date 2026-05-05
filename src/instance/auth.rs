@@ -5,8 +5,8 @@ use std::path::Path;
 impl RoleState {
     /// Provision Codex's host-side `config.toml` (always written) and,
     /// under `auth_forward = sync`, its `auth.json` (copied from the
-    /// host's `~/.codex/auth.json` when present, deleted under `ignore`,
-    /// untouched under `oauth_token` / `api_key`).
+    /// host's `~/.codex/auth.json` when present, deleted under `ignore`
+    /// / `api_key`).
     ///
     /// The generated `config.toml` sets `approval_policy = "never"` and
     /// `sandbox_mode = "danger-full-access"` to match the operator
@@ -27,9 +27,13 @@ impl RoleState {
     ///   * **Sync** + host file absent → leave any existing role-state
     ///     `auth.json` untouched (it may survive from a prior synced
     ///     run), return `HostMissing`.
-    ///   * **`OAuthToken`** / **`ApiKey`** → no-op (jackin does not own the
-    ///     auth state in these modes; operator drives auth via env),
-    ///     return `TokenMode`. Tasks 10/11 will split per-mode behavior.
+    ///   * **`ApiKey`** → wipe the role-state `auth.json` (the agent
+    ///     authenticates via `OPENAI_API_KEY`; a forwarded auth.json
+    ///     would let it silently fall back to OAuth credentials the
+    ///     operator chose to bypass), return `TokenMode`.
+    ///   * **`OAuthToken`** → unreachable in production: parser-rejected
+    ///     for Codex (Task 6). Defensive arm returns `TokenMode` without
+    ///     touching role-state files.
     ///   * **Ignore** → delete the role-state `auth.json` if present,
     ///     return `Skipped`.
     ///
@@ -81,15 +85,24 @@ impl RoleState {
 
         let host_auth_json = host_home.join(".codex/auth.json");
         let outcome = match mode {
-            // ApiKey mirrors OAuthToken's filesystem behavior in this commit;
-            // Tasks 10/11 will split provisioning per credential variant.
-            AuthForwardMode::OAuthToken | AuthForwardMode::ApiKey => {
+            // OAuthToken is parser-rejected for Codex (Task 6), so this arm
+            // is unreachable in production — kept for match exhaustiveness
+            // and to preserve historical no-wipe behavior if a config ever
+            // bypasses the parser. Treated as TokenMode without touching
+            // role-state files.
+            AuthForwardMode::OAuthToken => AuthProvisionOutcome::TokenMode,
+            // ApiKey is env-driven (OPENAI_API_KEY): the agent inside the
+            // container must NOT see a forwarded auth.json from a prior
+            // Sync run, otherwise it would silently fall back to OAuth
+            // credentials that the operator has explicitly chosen to
+            // bypass. Wipe role-state auth.json identically to Ignore,
+            // and surface the env-driven nature via TokenMode.
+            AuthForwardMode::ApiKey => {
+                wipe_codex_state(auth_json)?;
                 AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::Ignore => {
-                if auth_json.exists() {
-                    std::fs::remove_file(auth_json)?;
-                }
+                wipe_codex_state(auth_json)?;
                 AuthProvisionOutcome::Skipped
             }
             AuthForwardMode::Sync => match std::fs::read_to_string(&host_auth_json) {
@@ -221,6 +234,26 @@ fn wipe_claude_state(account_json: &Path, credentials_json: &Path) -> anyhow::Re
     }
     if credentials_json.exists() {
         std::fs::remove_file(credentials_json)?;
+    }
+    Ok(())
+}
+
+/// Wipe the container's Codex auth state to a clean empty shape.
+///
+/// Used by every non-Sync mode that owns the file (`Ignore`, `ApiKey`)
+/// — they must guarantee no stale `auth.json` from a prior Sync run
+/// survives so the agent inside the container authenticates exclusively
+/// via env vars (or fresh `codex login`) rather than re-using forwarded
+/// credentials.
+///
+/// Unlike `wipe_claude_state`, there is no companion "account" file to
+/// reset — Codex's role-state surface is just `auth.json`. Removing it
+/// is sufficient because the launcher only bind-mounts `auth.json` when
+/// `provision_codex_auth` reports it exists post-call (see
+/// `mounted_auth_json` in the caller).
+fn wipe_codex_state(auth_json: &Path) -> anyhow::Result<()> {
+    if auth_json.exists() {
+        std::fs::remove_file(auth_json)?;
     }
     Ok(())
 }
@@ -1374,6 +1407,12 @@ agents = ["codex"]
         assert!(!auth_json.exists());
     }
 
+    /// `OAuthToken` is parser-rejected for Codex (Task 6) so this arm is
+    /// unreachable from operator config in production. The test pins the
+    /// defensive no-wipe behavior of the `OAuthToken` arm anyway: if a
+    /// parser bypass ever lands a Codex+OAuthToken config at this layer,
+    /// the existing role-state `auth.json` is preserved (rather than
+    /// silently destroyed) so the operator can recover.
     #[test]
     fn token_mode_leaves_role_auth_json_untouched() {
         let temp = tempdir().unwrap();
@@ -1397,6 +1436,79 @@ agents = ["codex"]
             std::fs::read_to_string(&auth_json).unwrap(),
             "{\"existing\":true}"
         );
+    }
+
+    /// `ApiKey` mode authenticates via `OPENAI_API_KEY`; a leftover
+    /// `auth.json` from a prior Sync run would let Codex silently fall
+    /// back to forwarded OAuth credentials that the operator has
+    /// explicitly chosen to bypass. Pin the wipe contract here so a
+    /// future refactor can't quietly downgrade `ApiKey` to no-op.
+    #[test]
+    fn api_key_mode_wipes_role_auth_json() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+        std::fs::write(&auth_json, "{\"stale\":\"creds\"}").unwrap();
+        // Stage a host auth.json too — api_key mode must NOT copy it,
+        // and must NOT leave the stale role-state file in place either.
+        let (host_home, _) = stage_host_auth_json(&temp, "should-not-be-copied");
+
+        let (outcome, mounted) = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::ApiKey,
+            &host_home,
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        assert!(
+            !auth_json.exists(),
+            "api_key mode must wipe role-state auth.json"
+        );
+        assert!(
+            mounted.is_none(),
+            "api_key mode must report no auth.json to mount"
+        );
+    }
+
+    /// Switching from Sync (creds present on host) to `ApiKey` must wipe
+    /// the synced `auth.json` so the next container start cannot fall
+    /// back to forwarded OAuth credentials. Without this, an operator
+    /// who toggles to `ApiKey` to use `OPENAI_API_KEY` would still be
+    /// running on stale OAuth state from the previous sync run.
+    #[test]
+    fn switching_from_sync_to_api_key_wipes_synced_auth_json() {
+        let temp = tempdir().unwrap();
+        let manifest = manifest_with_codex_model(&temp, None);
+        let config_toml = temp.path().join("config.toml");
+        let auth_json = temp.path().join("auth.json");
+        let (host_home, _) = stage_host_auth_json(&temp, "switch.test");
+
+        let (outcome, _) = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::Sync,
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(auth_json.exists());
+
+        let (outcome, mounted) = RoleState::provision_codex_auth(
+            &config_toml,
+            &auth_json,
+            &manifest,
+            AuthForwardMode::ApiKey,
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        assert!(!auth_json.exists(), "ApiKey must wipe prior synced creds");
+        assert!(mounted.is_none());
     }
 
     #[cfg(unix)]
