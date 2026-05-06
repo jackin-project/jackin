@@ -41,6 +41,7 @@ pub struct ResolvedWorkspace {
     /// workspaces). The launch flow combines this with any CLI override
     /// in `runtime::launch::resolve_agent`.
     pub default_agent: Option<crate::agent::Agent>,
+    pub git_pull_on_entry: bool,
 }
 
 fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
@@ -185,6 +186,7 @@ pub fn resolve_load_workspace(
         mounts,
         keep_awake_enabled: workspace.keep_awake.enabled,
         default_agent: workspace.default_agent,
+        git_pull_on_entry: workspace.git_pull_on_entry,
     })
 }
 

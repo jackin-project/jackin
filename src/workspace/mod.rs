@@ -18,6 +18,10 @@ pub use sensitive::{SensitiveMount, confirm_sensitive_mounts, find_sensitive_mou
 
 use serde::{Deserialize, Serialize};
 
+fn is_false(b: &bool) -> bool {
+    !b
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MountConfig {
     pub src: String,
@@ -61,6 +65,8 @@ pub struct WorkspaceConfig {
     pub roles: std::collections::BTreeMap<String, WorkspaceRoleOverride>,
     #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
     pub keep_awake: KeepAwakeConfig,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub git_pull_on_entry: bool,
 }
 
 /// Per-workspace power-management opt-in.
@@ -129,6 +135,7 @@ pub struct WorkspaceEdit {
     /// `--keep-awake` / `--no-keep-awake` flags map onto this; the TUI
     /// derives it by diffing `pending.keep_awake` vs `original`.
     pub keep_awake_enabled: Option<bool>,
+    pub git_pull_on_entry_enabled: Option<bool>,
 }
 
 /// Validate the isolation layout for a workspace's mounts. Two rules
@@ -660,6 +667,7 @@ isolation = "worktree"
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
+            git_pull_on_entry: false,
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();

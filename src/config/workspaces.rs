@@ -181,6 +181,10 @@ impl AppConfig {
             workspace.keep_awake.enabled = enabled;
         }
 
+        if let Some(enabled) = edit.git_pull_on_entry_enabled {
+            workspace.git_pull_on_entry = enabled;
+        }
+
         // Rule-C invariant: after applying this edit, the mount list must be
         // pairwise non-covering under rule C. The CLI layer pre-collapses
         // redundants; if any remain here, the caller is buggy (non-CLI) or
@@ -266,6 +270,7 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            git_pull_on_entry: false,
         };
         config
             .create_workspace("big-monorepo", original.clone())

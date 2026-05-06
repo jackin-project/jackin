@@ -508,6 +508,13 @@ fn build_confirm_save_lines(
                     Span::styled("enabled", value),
                 ]));
             }
+            if editor.pending.git_pull_on_entry {
+                out.push(Line::raw(""));
+                out.push(Line::from(vec![
+                    Span::styled("Git pull: ", heading),
+                    Span::styled("enabled", value),
+                ]));
+            }
             let env_lines = env_diff_lines(&editor.original, &editor.pending, value, dim);
             if !env_lines.is_empty() {
                 out.push(Line::raw(""));
@@ -636,6 +643,15 @@ fn build_confirm_save_lines(
                 } else {
                     "disabled"
                 };
+                out.push(Line::from(Span::styled(format!("  - {old_label}"), dim)));
+                out.push(Line::from(Span::styled(format!("  + {new_label}"), value)));
+            }
+
+            if editor.pending.git_pull_on_entry != editor.original.git_pull_on_entry {
+                out.push(Line::raw(""));
+                out.push(Line::from(Span::styled("Git pull:", heading)));
+                let old_label = if editor.original.git_pull_on_entry { "enabled" } else { "disabled" };
+                let new_label = if editor.pending.git_pull_on_entry { "enabled" } else { "disabled" };
                 out.push(Line::from(Span::styled(format!("  - {old_label}"), dim)));
                 out.push(Line::from(Span::styled(format!("  + {new_label}"), value)));
             }
@@ -866,6 +882,9 @@ pub(super) fn build_workspace_edit(
     }
     if pending.keep_awake.enabled != original.keep_awake.enabled {
         edit.keep_awake_enabled = Some(pending.keep_awake.enabled);
+    }
+    if pending.git_pull_on_entry != original.git_pull_on_entry {
+        edit.git_pull_on_entry_enabled = Some(pending.git_pull_on_entry);
     }
     edit
 }
@@ -1838,6 +1857,7 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
+            git_pull_on_entry: false,
         };
         let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
 
