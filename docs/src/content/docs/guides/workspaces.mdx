@@ -265,6 +265,45 @@ jackin workspace edit my-app --no-keep-awake
 
 `jackin workspace show <name>` surfaces a `Keep Awake: enabled (macOS only)` row when the flag is on, so you can confirm at a glance which workspaces are holding power assertions.
 
+## Git pull on entry
+
+When you open a workspace, your local branches may have drifted behind their remotes. The git-pull-on-entry toggle runs `git pull` on every mounted git repository from the **host** before the agent container starts — so the agent always sees the latest committed code without you needing to remember a manual pull first.
+
+```toml
+[workspaces.my-app]
+workdir = "/workspace/my-app"
+git_pull_on_entry = true
+
+[[workspaces.my-app.mounts]]
+src = "~/Projects/my-app"
+dst = "/workspace/my-app"
+```
+
+Failures are **non-fatal**: if a pull fails (offline, uncommitted changes, protected branch, etc.) jackin prints a warning and continues the launch. The workspace remains fully usable — the toggle is a convenience, not a gate.
+
+<Aside type="caution">
+`git pull` is run on the **host** directory, not inside the container. Any uncommitted local changes or an active rebase will cause the pull to fail; jackin will warn and proceed.
+</Aside>
+
+### Setting git pull on entry
+
+**CLI** — paired flags on `workspace create` and `workspace edit`:
+
+```bash
+# Opt in at creation time
+jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app --git-pull
+
+# Toggle on an existing workspace
+jackin workspace edit my-app --git-pull
+jackin workspace edit my-app --no-git-pull
+```
+
+`--git-pull` and `--no-git-pull` are mutually exclusive. Omit both for "no change."
+
+**Operator console** — the **General** tab of the workspace editor has a `Git pull` row. Press `Space` to toggle it; the change persists when you save the workspace.
+
+`jackin workspace show <name>` surfaces a `Git Pull: on entry` row when the flag is on.
+
 ## Workspace auto-detection
 
 When you open the operator console (`jackin console`), it checks whether your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths. If it does, that workspace is preselected — saving you a selection step and reinforcing the value of naming project boundaries once. Container-only `workdir` values like `/workspace` can still be auto-detected as long as one of the workspace's mounted host paths contains your current directory. You can always override the preselection by choosing a different workspace or "Current directory."
