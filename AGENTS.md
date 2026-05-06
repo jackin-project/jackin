@@ -30,6 +30,34 @@ When the first release is being cut, the operator will explicitly ask for the ch
 
 If you are uncertain whether authorization applies to the PR in front of you, ask. The cost of pausing is ~30 seconds; the cost of merging something the operator wasn't ready for is much higher.
 
+### Include local checkout instructions in every PR
+
+Every pull request created by an agent must include a copy-pasteable "Verify locally" section in the PR body, and the agent's final response should repeat the same commands after sharing the PR URL.
+
+Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it.
+
+Template:
+
+```sh
+mkdir -p "$HOME/Projects/jackin-project/test"
+cd "$HOME/Projects/jackin-project/test"
+
+if [ ! -d jackin/.git ]; then
+  git clone https://github.com/jackin-project/jackin.git
+fi
+
+cd jackin
+git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
+git checkout pr-<PR_NUMBER>
+
+# Run the checks relevant to this PR, for example:
+# cd docs
+# bun install --frozen-lockfile
+# bun run dev
+```
+
+If the PR needs a different validation flow, replace the final example commands with the exact commands the operator should run. When those commands invoke `jackin`, include `--debug` as required by "Walking the operator through local validation".
+
 ### CI must be green before merging
 
 **Never merge a pull request unless all required CI checks pass.** This is non-negotiable regardless of how the operator phrases the merge request.
