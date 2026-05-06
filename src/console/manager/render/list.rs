@@ -1000,6 +1000,7 @@ mod subpanel_padding_tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            git_pull_on_entry: false,
         }
     }
 

@@ -869,6 +869,38 @@ pub fn inspect_attach_outcome(
     }
 }
 
+fn pull_workspace_repos(workspace: &crate::workspace::ResolvedWorkspace, debug: bool) {
+    for mount in &workspace.mounts {
+        let src = std::path::Path::new(&mount.src);
+        if !src.join(".git").exists() {
+            continue;
+        }
+        if debug {
+            eprintln!("[jackin debug] git pull in {}", mount.src);
+        }
+        eprintln!("  Pulling {} …", crate::tui::shorten_home(&mount.src));
+        match std::process::Command::new("git")
+            .args(["-C", &mount.src, "pull"])
+            .output()
+        {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let trimmed = stdout.trim();
+                if !trimmed.is_empty() {
+                    eprintln!("    {trimmed}");
+                }
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                eprintln!("  Warning: git pull failed in {}: {}", mount.src, stderr.trim());
+            }
+            Err(e) => {
+                eprintln!("  Warning: could not run git pull in {}: {e}", mount.src);
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn load_role(
     paths: &JackinPaths,
@@ -915,6 +947,10 @@ fn load_role_with(
             &git.user_name
         };
         tui::intro_animation(intro_name);
+    }
+
+    if workspace.git_pull_on_entry {
+        pull_workspace_repos(workspace, opts.debug);
     }
 
     let (source, is_new) = config.resolve_role_source(selector)?;
@@ -2038,6 +2074,7 @@ agents = ["codex"]
             }],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         }
     }
 
@@ -2324,6 +2361,7 @@ trusted = true
             ],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         };
 
         load_role(
@@ -2598,6 +2636,7 @@ plugins = []
             }],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         };
 
         load_role(
@@ -2668,6 +2707,7 @@ plugins = []
             }],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         };
 
         load_role(

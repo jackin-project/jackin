@@ -32,6 +32,7 @@ Create a new workspace definition.
 | `--default-agent <claude\|codex>` | Default agent for this workspace |
 | `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared` or `worktree`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
 | `--keep-awake` | macOS only: opt this workspace into the keep-awake reconciler. While any agent in the workspace is running, jackin keeps a single detached `caffeinate -imsu` alive so the host stays awake. No-op on Linux/Windows. See [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake). |
+| `--git-pull` | Run `git pull` on every mounted git repository from the host before the agent container starts. Failures are non-fatal — the launch continues even when offline or the working tree is dirty. See [Git pull on entry](/guides/workspaces/#git-pull-on-entry). |
 
 ```bash
 jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app
@@ -90,6 +91,8 @@ Modify an existing workspace.
 | `--delete-isolated-state` | Acknowledge deleting preserved isolated state when an edit changes the `src` of a materialized isolated mount. Required for non-interactive source-drift edits; ignored when no preserved state exists. |
 | `--keep-awake` | macOS only: enable the keep-awake reconciler on this workspace. Mutually exclusive with `--no-keep-awake`. |
 | `--no-keep-awake` | Disable the keep-awake reconciler on this workspace. Mutually exclusive with `--keep-awake`. |
+| `--git-pull` | Enable git pull on entry for this workspace. Mutually exclusive with `--no-git-pull`. |
+| `--no-git-pull` | Disable git pull on entry for this workspace. Mutually exclusive with `--git-pull`. |
 
 ```bash
 jackin workspace edit my-app --workdir ~/new-dir
@@ -102,6 +105,8 @@ jackin workspace edit my-app --default-agent codex
 jackin workspace edit my-app --clear-default-agent
 jackin workspace edit my-app --keep-awake
 jackin workspace edit my-app --no-keep-awake
+jackin workspace edit my-app --git-pull
+jackin workspace edit my-app --no-git-pull
 
 # Flip an existing mount to per-container worktrees
 jackin workspace edit my-app --mount-isolation /workspace/my-app=worktree
