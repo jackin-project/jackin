@@ -1,7 +1,11 @@
 # Jackin config — top-of-file note
 # keep this across saves
 
+# Layer 1: global agent auth defaults
 [claude]
+auth_forward = "sync"
+
+[codex]
 auth_forward = "sync"
 
 # Our two builtin roles
@@ -21,7 +25,15 @@ trusted = true
 # Production workspace — the big one
 [workspaces.prod]
 workdir = "/workspace/prod"
+allowed_roles = ["agent-smith"]
 default_agent = "codex"
+
+# Layer 2: workspace-level agent auth
+[workspaces.prod.claude]
+auth_forward = "api_key"
+
+[workspaces.prod.codex]
+auth_forward = "api_key"
 
 [workspaces.prod.env]
 # Rotate quarterly (last: 2026-Q1)
@@ -30,8 +42,18 @@ API_TOKEN = "op://Personal/api/token"
 # Passes through from host
 GITHUB_TOKEN = "$GITHUB_TOKEN"
 
+# Layer 3: per-(workspace × role × agent) most-specific overrides
+[workspaces.prod.roles.agent-smith.claude]
+auth_forward = "oauth_token"
+
+[workspaces.prod.roles.agent-smith.codex]
+auth_forward = "ignore"
+
 [workspaces.prod.roles.agent-smith.env]
-OPENAI_API_KEY = "op://Work/OpenAI/default"
+# 1Password OpRef shape
+ANTHROPIC_API_KEY = { op = "op://Work/Anthropic/api-key", path = "Work/Anthropic/api-key" }
+# Literal $-expansion shape
+OPENAI_API_KEY = "$OPENAI_API_KEY"
 
 # Playground workspace — disposable
 [workspaces.playground]

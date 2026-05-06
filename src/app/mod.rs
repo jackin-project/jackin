@@ -26,14 +26,8 @@ use self::context::{
 };
 
 /// Parse an `auth_forward` mode value as it arrived from the CLI.
-///
-/// Returns the resolved mode and a boolean indicating whether the operator
-/// passed the deprecated `copy` alias — the caller is responsible for
-/// emitting a user-facing warning in that case.
-fn parse_auth_forward_mode_from_cli(raw: &str) -> anyhow::Result<(config::AuthForwardMode, bool)> {
-    let mode: config::AuthForwardMode = raw.parse().map_err(|e: String| anyhow::anyhow!("{e}"))?;
-    let was_deprecated = raw == "copy";
-    Ok((mode, was_deprecated))
+fn parse_auth_forward_mode_from_cli(raw: &str) -> anyhow::Result<config::AuthForwardMode> {
+    raw.parse().map_err(|e: String| anyhow::anyhow!("{e}"))
 }
 
 #[allow(clippy::too_many_lines)]
@@ -372,39 +366,16 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
             },
             cli::ConfigCommand::Auth(auth_cmd) => match auth_cmd {
-                cli::AuthCommand::Set { mode, role } => {
-                    let (parsed_mode, was_deprecated) = parse_auth_forward_mode_from_cli(&mode)?;
-                    if was_deprecated {
-                        tui::deprecation_warning(
-                            "auth_forward \"copy\" is deprecated; saving as \"sync\"",
-                        );
-                    }
-                    if let Some(role_selector) = role {
-                        let class = RoleSelector::parse(&role_selector)?;
-                        config.resolve_role_source(&class)?;
-                        let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                        if let Some(source) = config.roles.get(&class.key()) {
-                            editor.upsert_agent_source(&class.key(), source);
-                        }
-                        editor.set_agent_auth_forward(&class.key(), parsed_mode);
-                        editor.save()?;
-                        println!("Set auth forwarding for {} to {parsed_mode}.", class.key());
-                    } else {
-                        let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                        editor.set_global_auth_forward(parsed_mode);
-                        editor.save()?;
-                        println!("Set global auth forwarding to {parsed_mode}.");
-                    }
+                cli::AuthCommand::Set { mode } => {
+                    let parsed_mode = parse_auth_forward_mode_from_cli(&mode)?;
+                    let mut editor = crate::config::ConfigEditor::open(&paths)?;
+                    editor.set_global_auth_forward(parsed_mode);
+                    editor.save()?;
+                    println!("Set global auth forwarding to {parsed_mode}.");
                     Ok(())
                 }
-                cli::AuthCommand::Show { role } => {
-                    if let Some(role_selector) = role {
-                        let class = RoleSelector::parse(&role_selector)?;
-                        let effective = config.resolve_auth_forward_mode(&class.key());
-                        println!("{effective}");
-                    } else {
-                        println!("{}", config.claude.auth_forward);
-                    }
+                cli::AuthCommand::Show => {
+                    print!("{}", render_auth_show(&config));
                     Ok(())
                 }
             },
@@ -531,6 +502,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     keep_awake: crate::workspace::KeepAwakeConfig {
                         enabled: keep_awake,
                     },
+                    claude: None,
+                    codex: None,
                     git_pull_on_entry: git_pull,
                 };
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
@@ -1107,6 +1080,21 @@ fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
     }
 }
 
+/// Render the `config auth show` output as a string. Empty workspace + role
+/// names fall through to layer 1 (global), so this prints the global default
+/// for each agent. Printing both Claude and Codex avoids privileging either
+/// agent in the no-context output — until/unless an `--agent` flag is added,
+/// both-agents output is the honest bridge.
+fn render_auth_show(config: &AppConfig) -> String {
+    use std::fmt::Write as _;
+    let claude_mode = crate::config::resolve_mode(config, crate::agent::Agent::Claude, "", "");
+    let codex_mode = crate::config::resolve_mode(config, crate::agent::Agent::Codex, "", "");
+    let mut out = String::new();
+    let _ = writeln!(out, "claude: {claude_mode}");
+    let _ = writeln!(out, "codex:  {codex_mode}");
+    out
+}
+
 /// Render the `workspace show <name>` output as a string. Includes the info
 /// table (name/workdir/allowed/default-role), and, when there are mounts, a
 /// trailing mounts table with one row per mount. The mounts table renders the
@@ -1194,22 +1182,32 @@ mod auth_set_tests {
     use super::*;
 
     #[test]
-    fn parse_auth_forward_mode_from_cli_accepts_copy_as_deprecated() {
-        let (mode, was_deprecated) = parse_auth_forward_mode_from_cli("copy").unwrap();
-        assert_eq!(mode, crate::config::AuthForwardMode::Sync);
-        assert!(was_deprecated);
+    fn parse_auth_forward_mode_from_cli_rejects_deprecated_copy_alias() {
+        // Pre-release stance: no compatibility shims.
+        assert!(parse_auth_forward_mode_from_cli("copy").is_err());
     }
 
     #[test]
-    fn parse_auth_forward_mode_from_cli_accepts_sync_non_deprecated() {
-        let (mode, was_deprecated) = parse_auth_forward_mode_from_cli("sync").unwrap();
+    fn parse_auth_forward_mode_from_cli_accepts_sync() {
+        let mode = parse_auth_forward_mode_from_cli("sync").unwrap();
         assert_eq!(mode, crate::config::AuthForwardMode::Sync);
-        assert!(!was_deprecated);
     }
 
     #[test]
     fn parse_auth_forward_mode_from_cli_rejects_bogus() {
         assert!(parse_auth_forward_mode_from_cli("bogus").is_err());
+    }
+
+    #[test]
+    fn auth_show_prints_both_agents() {
+        // No global override means each agent falls through to its
+        // default-mode (Sync). The point of this test is the output shape:
+        // both agents are surfaced, so a Codex-primary operator running
+        // `jackin config auth show` is not silently shown only Claude.
+        let config = AppConfig::default();
+        let out = render_auth_show(&config);
+        assert!(out.contains("claude:"), "missing claude line: {out}");
+        assert!(out.contains("codex:"), "missing codex line: {out}");
     }
 
     #[test]
@@ -1237,6 +1235,8 @@ mod auth_set_tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
             git_pull_on_entry: false,
         };
         let out = render_workspace_show("jackin", &ws);

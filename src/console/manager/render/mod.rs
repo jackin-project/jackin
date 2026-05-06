@@ -11,7 +11,7 @@ use ratatui::{
 use super::state::{ManagerListRow, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 
-pub(super) mod editor;
+pub mod editor;
 pub(super) mod list;
 pub(super) mod modal;
 

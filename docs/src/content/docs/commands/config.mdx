@@ -76,50 +76,44 @@ jackin config mount remove secrets --scope "chainargos/*"
 
 ## `config auth`
 
-Manage Claude Code authentication forwarding from the host machine into agent containers. See the [Authentication Forwarding](/guides/authentication) guide for full details.
+Manage the **global** Claude auth-forwarding mode. See the
+[Authentication Forwarding](/guides/authentication) guide for the full
+layered model. Workspace and per (workspace × role × agent) overrides
+are configured through the **Auth** tab in the `jackin console`
+workspace editor (or by hand-editing TOML).
 
 ### `config auth set`
 
 ```bash
-jackin config auth set <MODE> [OPTIONS]
+jackin config auth set <MODE>
 ```
 
-Set the authentication forwarding mode.
+Set the global Claude auth-forwarding mode (`[claude].auth_forward`).
 
 | Mode | Description |
 |---|---|
-| `copy` | Copy host auth on first container creation (default) |
-| `sync` | Overwrite from host on each launch when host auth exists; preserve container auth when absent |
+| `sync` | Overwrite from host on each launch when host auth exists; preserve container auth when absent (default) |
+| `api_key` | Inject `ANTHROPIC_API_KEY` from the operator-env layer |
+| `oauth_token` | Inject `CLAUDE_CODE_OAUTH_TOKEN` from the operator-env layer |
 | `ignore` | Never forward; revoke any previously forwarded credentials |
 
-| Option | Description |
-|---|---|
-| `--role <SELECTOR>` | Apply to a specific role instead of globally |
-
 ```bash
-# Set global default
-jackin config auth set copy
-
-# Override for a specific role
-jackin config auth set ignore --role agent-smith
-jackin config auth set sync --role chainargos/the-architect
+jackin config auth set sync
+jackin config auth set ignore
+jackin config auth set oauth_token
+jackin config auth set api_key
 ```
 
 ### `config auth show`
 
 ```bash
-jackin config auth show [OPTIONS]
+jackin config auth show
 ```
 
-Show the current authentication forwarding mode.
-
-| Option | Description |
-|---|---|
-| `--role <SELECTOR>` | Show effective mode for a specific role (includes per-role override) |
+Show the current global Claude auth-forwarding mode.
 
 ```bash
 jackin config auth show
-jackin config auth show --role agent-smith
 ```
 
 ## `config env`
@@ -128,7 +122,7 @@ Manage operator env vars at global and per-role scope.
 
 Values are stored verbatim — whatever you type is what goes into the TOML. No editor-side validation of key names or value shape. jackin' resolves values at launch time through the operator-env layer, so `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work.
 
-Without `--role`, writes and reads target the global `[env]` table. With `--role <SELECTOR>`, they target `[roles.<SELECTOR>.env]`. The role selector is not pre-validated — the table path is written even if the role is not registered, matching how `config auth set --role` behaves.
+Without `--role`, writes and reads target the global `[env]` table. With `--role <SELECTOR>`, they target `[roles.<SELECTOR>.env]`. The role selector is not pre-validated — the table path is written even if the role is not registered.
 
 ### `config env set`
 

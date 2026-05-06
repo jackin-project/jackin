@@ -16,25 +16,55 @@ import { Aside } from '@astrojs/starlight/components'
 
 The configuration file is TOML format at `~/.config/jackin/config.toml`. It's managed through CLI commands — you generally don't need to edit it by hand.
 
-### Claude Code settings
+### Agent auth-forward settings
+
+`auth_forward` is configured per agent (`claude`, `codex`) at three
+layers, with most-specific wins:
 
 ```toml
+# Layer 1 — global default (per agent)
 [claude]
-auth_forward = "sync"  # "sync" (default), "ignore", or "token"
+auth_forward = "sync"  # "sync" (default), "api_key", "oauth_token", or "ignore"
+
+[codex]
+auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Codex rejects "oauth_token"
+
+# Layer 2 — workspace-wide override
+[workspaces.my-app.claude]
+auth_forward = "oauth_token"
+
+[workspaces.my-app.codex]
+auth_forward = "api_key"
+
+# Layer 3 — most-specific (workspace × role × agent) override
+[workspaces.my-app.roles.agent-smith.claude]
+auth_forward = "ignore"
+
+[workspaces.my-app.roles.agent-smith.codex]
+auth_forward = "sync"
 ```
 
 | Field | Description | Default |
 |---|---|---|
-| `auth_forward` | How the host's Claude Code credentials are made available to agent containers. See [Authentication Forwarding](/guides/authentication). | `sync` |
+| `auth_forward` | How the host's agent credentials (or env-supplied keys/tokens) are made available to agent containers. See [Authentication Forwarding](/guides/authentication). | `sync` |
 
-Per-role overrides are set under the role's `[claude]` section:
+Accepted values: `sync` \| `api_key` \| `oauth_token` \| `ignore`.
+`oauth_token` is **Claude only** — setting it under any `[codex]` block
+is rejected at parse time with an "unknown variant" error.
 
-```toml
-[roles.agent-smith.claude]
-auth_forward = "ignore"
-```
+Locations the field may appear at, in resolution order
+(most-specific first):
 
-Resolution order: per-role override > global `[claude]` > `sync`.
+- `[workspaces.<ws>.roles.<role>.claude].auth_forward`
+- `[workspaces.<ws>.roles.<role>.codex].auth_forward`
+- `[workspaces.<ws>.claude].auth_forward`
+- `[workspaces.<ws>.codex].auth_forward`
+- `[claude].auth_forward` (global default)
+- `[codex].auth_forward` (global default)
+
+Credentials referenced by `api_key` and `oauth_token` live in ordinary
+`[*.env]` blocks under the well-known names `ANTHROPIC_API_KEY`,
+`CLAUDE_CODE_OAUTH_TOKEN`, and `OPENAI_API_KEY`.
 
 ### Operator env layers
 

@@ -14,6 +14,7 @@ mod workspaces;
 pub use editor::{ConfigEditor, EnvScope};
 pub use mounts::DockerMounts;
 pub(crate) use mounts::MountEntry;
+pub use roles::resolve_mode;
 pub use workspaces::{DriftDetection, detect_workspace_edit_drift};
 
 /// Serde helper: `skip_serializing_if` requires `fn(&T) -> bool`.
@@ -22,29 +23,43 @@ const fn is_false(v: &bool) -> bool {
     !*v
 }
 
-/// Controls how the host's `~/.claude.json` is forwarded into role containers.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
+/// Controls how the host's agent credentials are forwarded into role containers.
+///
+/// Wire format (TOML / JSON) uses explicit per-variant `rename` so the names
+/// the operator types match what `serde` reads. Without `rename`, the default
+/// `snake_case` rule turns `OAuthToken` into `o_auth_token`, which is not
+/// what we want.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AuthForwardMode {
-    /// Revoke any forwarded auth and never copy — container starts with `{}`.
-    Ignore,
     /// Overwrite container auth from host on each launch when host auth
     /// exists; preserve container auth when host auth is absent.
     #[default]
+    #[serde(rename = "sync")]
     Sync,
-    /// Use a long-lived OAuth token from the operator-resolved env
-    /// (`CLAUDE_CODE_OAUTH_TOKEN`). The role state directory is
-    /// provisioned empty (same shape as `Ignore`); Claude Code inside
-    /// the container picks up the token from its process environment.
-    Token,
+    /// Use a short-lived API key sourced from the operator-resolved env
+    /// (e.g. `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`). The role state
+    /// directory is provisioned empty; the agent inside the container
+    /// reads the key from its process environment.
+    #[serde(rename = "api_key")]
+    ApiKey,
+    /// Use a long-lived OAuth token sourced from the operator-resolved env
+    /// (e.g. `CLAUDE_CODE_OAUTH_TOKEN`). The role state directory is
+    /// provisioned empty; the agent inside the container reads the token
+    /// from its process environment.
+    #[serde(rename = "oauth_token")]
+    OAuthToken,
+    /// Revoke any forwarded auth and never copy — container starts with `{}`.
+    #[serde(rename = "ignore")]
+    Ignore,
 }
 
 impl std::fmt::Display for AuthForwardMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Ignore => write!(f, "ignore"),
             Self::Sync => write!(f, "sync"),
-            Self::Token => write!(f, "token"),
+            Self::ApiKey => write!(f, "api_key"),
+            Self::OAuthToken => write!(f, "oauth_token"),
+            Self::Ignore => write!(f, "ignore"),
         }
     }
 }
@@ -53,58 +68,69 @@ impl std::str::FromStr for AuthForwardMode {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // `"copy"` is kept as a separate arm (rather than merged with `"sync"`)
-        // so callers can pattern-match the literal when emitting a deprecation
-        // warning before calling `parse()`.
-        #[allow(clippy::match_same_arms)]
         match s {
-            "ignore" => Ok(Self::Ignore),
             "sync" => Ok(Self::Sync),
-            "token" => Ok(Self::Token),
-            // Deprecated alias — accepted to avoid breaking scripts and
-            // configs from before the default flipped to `sync`. Callers
-            // that want to surface the deprecation should check for the
-            // literal `"copy"` themselves before calling `parse()`.
-            "copy" => Ok(Self::Sync),
+            "api_key" => Ok(Self::ApiKey),
+            "oauth_token" => Ok(Self::OAuthToken),
+            "ignore" => Ok(Self::Ignore),
             other => Err(format!(
-                "invalid auth_forward mode {other:?}; expected one of: sync, ignore, token"
+                "invalid auth_forward mode {other:?}; expected one of: sync, api_key, oauth_token, ignore"
             )),
         }
     }
 }
 
-impl<'de> serde::Deserialize<'de> for AuthForwardMode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use serde::de::Error;
-        let raw = String::deserialize(deserializer)?;
-        raw.parse().map_err(D::Error::custom)
-    }
-}
-
-/// Global Claude Code configuration.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ClaudeConfig {
+/// Per-agent auth configuration wrapper.
+///
+/// Used at every layer (global, per-role, per-workspace, per-(workspace × role))
+/// to carry the auth-forwarding mode for a particular agent. Future fields
+/// (e.g. credential-env overrides) live under this struct so each agent's
+/// auth knobs are namespaced together.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentAuthConfig {
     #[serde(default)]
     pub auth_forward: AuthForwardMode,
 }
 
-/// Per-role Claude Code configuration override.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ClaudeRoleConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auth_forward: Option<AuthForwardMode>,
+/// Newtype around `AgentAuthConfig` that rejects `oauth_token` at parse time.
+///
+/// Codex does not support `AuthForwardMode::OAuthToken` (the CLI uses a
+/// refresh-token flow rather than a static OAuth token); rejecting it at
+/// deserialization time keeps the type system honest so downstream code
+/// never has to handle the impossible combination.
+#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
+pub struct CodexAuthConfig(pub AgentAuthConfig);
+
+impl<'de> serde::Deserialize<'de> for CodexAuthConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let cfg = AgentAuthConfig::deserialize(deserializer)?;
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err(serde::de::Error::custom(
+                "auth_forward 'oauth_token' is not supported for codex; \
+                 supported modes: sync, api_key, ignore",
+            ));
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl std::ops::Deref for CodexAuthConfig {
+    type Target = AgentAuthConfig;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RoleSource {
     pub git: String,
     #[serde(default, skip_serializing_if = "is_false")]
     pub trusted: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub claude: Option<ClaudeRoleConfig>,
     /// Role-layer operator env map. Merged on top of the global
     /// `[env]` map when the role is launched. Values use the
     /// `operator_env` dispatch syntax.
@@ -120,8 +146,10 @@ pub struct DockerConfig {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppConfig {
-    #[serde(default)]
-    pub claude: ClaudeConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude: Option<AgentAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex: Option<CodexAuthConfig>,
     /// Global operator env map — the bottom layer. Merged under
     /// per-role, per-workspace, and per-(workspace × role) layers.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -329,20 +357,6 @@ dst = "/workspace/src"
     }
 
     #[test]
-    fn set_agent_auth_forward_creates_claude_section() {
-        let toml_str = r#"
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-"#;
-        let mut config: AppConfig = toml::from_str(toml_str).unwrap();
-        config.set_agent_auth_forward("agent-smith", AuthForwardMode::Sync);
-        assert_eq!(
-            config.resolve_auth_forward_mode("agent-smith"),
-            AuthForwardMode::Sync
-        );
-    }
-
-    #[test]
     fn existing_config_without_claude_section_deserializes_with_defaults() {
         let toml_str = r#"
 [roles.agent-smith]
@@ -350,44 +364,98 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.claude.auth_forward, AuthForwardMode::Sync);
+        assert!(
+            config.claude.is_none(),
+            "absent [claude] block must deserialize to None"
+        );
         assert_eq!(
-            config.resolve_auth_forward_mode("agent-smith"),
+            crate::config::resolve_mode(&config, crate::agent::Agent::Claude, "", "agent-smith",),
             AuthForwardMode::Sync
         );
     }
 
     #[test]
-    fn auth_forward_mode_from_str_accepts_token() {
+    fn auth_forward_mode_from_str_accepts_oauth_token() {
         use std::str::FromStr;
         assert_eq!(
-            AuthForwardMode::from_str("token").unwrap(),
-            AuthForwardMode::Token
+            AuthForwardMode::from_str("oauth_token").unwrap(),
+            AuthForwardMode::OAuthToken
         );
     }
 
     #[test]
-    fn auth_forward_mode_display_emits_token() {
-        assert_eq!(AuthForwardMode::Token.to_string(), "token");
+    fn auth_forward_mode_display_emits_oauth_token() {
+        assert_eq!(AuthForwardMode::OAuthToken.to_string(), "oauth_token");
     }
 
     #[test]
-    fn auth_forward_mode_deserializes_token() {
+    fn auth_forward_mode_deserializes_oauth_token() {
         let toml_str = r#"
 [claude]
-auth_forward = "token"
+auth_forward = "oauth_token"
 "#;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.claude.auth_forward, AuthForwardMode::Token);
+        assert_eq!(
+            config.claude.as_ref().unwrap().auth_forward,
+            AuthForwardMode::OAuthToken
+        );
     }
 
     #[test]
-    fn auth_forward_mode_from_str_error_lists_token() {
+    fn parse_app_config_claude_and_codex() {
+        let toml = r#"
+[claude]
+auth_forward = "sync"
+
+[codex]
+auth_forward = "api_key"
+"#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(
+            cfg.claude.as_ref().unwrap().auth_forward,
+            AuthForwardMode::Sync
+        );
+        assert_eq!(
+            cfg.codex.as_ref().unwrap().auth_forward,
+            AuthForwardMode::ApiKey
+        );
+    }
+
+    #[test]
+    fn parse_app_config_no_agent_blocks() {
+        let toml = "";
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert!(
+            cfg.claude.is_none(),
+            "claude must be None when [claude] absent"
+        );
+        assert!(
+            cfg.codex.is_none(),
+            "codex must be None when [codex] absent"
+        );
+    }
+
+    #[test]
+    fn reject_codex_oauth_token_global() {
+        let toml = r#"
+[codex]
+auth_forward = "oauth_token"
+"#;
+        let err = toml::from_str::<AppConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not supported for codex"),
+            "expected codex-rejection message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn auth_forward_mode_from_str_error_lists_oauth_token() {
         use std::str::FromStr;
         let err = AuthForwardMode::from_str("nope").unwrap_err();
         assert!(
-            err.contains("token"),
-            "error message should advertise the token mode; got: {err}"
+            err.contains("oauth_token"),
+            "error message should advertise the oauth_token mode; got: {err}"
         );
     }
 
@@ -674,11 +742,11 @@ auth_forward = "token"
     }
 
     #[test]
-    fn auth_forward_mode_from_str_accepts_copy_as_deprecated_alias() {
+    fn auth_forward_mode_from_str_rejects_deprecated_copy_alias() {
         use std::str::FromStr;
-        assert_eq!(
-            AuthForwardMode::from_str("copy").unwrap(),
-            AuthForwardMode::Sync
+        assert!(
+            AuthForwardMode::from_str("copy").is_err(),
+            "the deprecated `copy` alias must no longer parse"
         );
     }
 
@@ -702,19 +770,85 @@ auth_forward = "token"
     }
 
     #[test]
-    fn auth_forward_mode_deserializes_copy_to_sync() {
-        let toml_str = r#"
-[claude]
-auth_forward = "copy"
-"#;
-        let config: AppConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.claude.auth_forward, AuthForwardMode::Sync);
+    fn auth_forward_mode_display_emits_canonical_names() {
+        assert_eq!(AuthForwardMode::Sync.to_string(), "sync");
+        assert_eq!(AuthForwardMode::Ignore.to_string(), "ignore");
+        assert_eq!(AuthForwardMode::ApiKey.to_string(), "api_key");
+        assert_eq!(AuthForwardMode::OAuthToken.to_string(), "oauth_token");
     }
 
     #[test]
-    fn auth_forward_mode_display_does_not_emit_copy() {
-        assert_eq!(AuthForwardMode::Sync.to_string(), "sync");
-        assert_eq!(AuthForwardMode::Ignore.to_string(), "ignore");
+    fn parse_agent_auth_config_sync() {
+        let toml = r#"auth_forward = "sync""#;
+        let cfg: AgentAuthConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.auth_forward, AuthForwardMode::Sync);
+    }
+
+    #[test]
+    fn parse_agent_auth_config_api_key() {
+        let toml = r#"auth_forward = "api_key""#;
+        let cfg: AgentAuthConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.auth_forward, AuthForwardMode::ApiKey);
+    }
+
+    #[test]
+    fn parse_agent_auth_config_oauth_token() {
+        let toml = r#"auth_forward = "oauth_token""#;
+        let cfg: AgentAuthConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.auth_forward, AuthForwardMode::OAuthToken);
+    }
+
+    #[test]
+    fn parse_agent_auth_config_ignore() {
+        let toml = r#"auth_forward = "ignore""#;
+        let cfg: AgentAuthConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.auth_forward, AuthForwardMode::Ignore);
+    }
+
+    #[test]
+    fn agent_auth_config_serializes_canonical_names() {
+        for (mode, expected) in [
+            (AuthForwardMode::Sync, "sync"),
+            (AuthForwardMode::ApiKey, "api_key"),
+            (AuthForwardMode::OAuthToken, "oauth_token"),
+            (AuthForwardMode::Ignore, "ignore"),
+        ] {
+            let cfg = AgentAuthConfig { auth_forward: mode };
+            let s = toml::to_string(&cfg).expect("serialize must succeed");
+            assert!(
+                s.contains(&format!("auth_forward = \"{expected}\"")),
+                "mode {mode:?} must serialize as auth_forward = \"{expected}\", got: {s}"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_auth_config_rejects_unknown_field() {
+        let toml = "auth_forward = \"sync\"\nbogus = true";
+        let err = toml::from_str::<AgentAuthConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field `bogus`") || msg.contains("unknown field \"bogus\""),
+            "expected unknown-field error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn reject_legacy_role_claude_block() {
+        let toml = r#"
+[roles.smith]
+git = "git@example.com:smith.git"
+trusted = true
+
+[roles.smith.claude]
+auth_forward = "ignore"
+"#;
+        let err = toml::from_str::<AppConfig>(toml).expect_err("must reject legacy block");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field `claude`") || msg.contains("unknown field \"claude\""),
+            "expected unknown-field error for legacy [roles.X.claude] block, got: {msg}"
+        );
     }
 
     #[test]

@@ -5,46 +5,96 @@ description: Forward or provide agent credentials for agent containers
 import { Aside } from '@astrojs/starlight/components'
 
 
-By default, jackin' forwards your host machine's Claude Code authentication into new agent containers. This means agents start pre-authenticated with your account — no manual `/login` inside the container.
+jackin' provisions agent containers with credentials drawn from the host
+or from the operator-env layer, so agents start pre-authenticated
+without an interactive `/login` step inside the container.
+
+The shape of that provisioning is described by an `auth_forward` mode,
+configured per agent (`claude`, `codex`) at three layers: a global
+default, a per-workspace override, and a per (workspace × role × agent)
+override.
 
 ## How it works
 
-Claude Code stores its credentials differently depending on the platform:
+Each agent has its own credential model:
 
-| Platform | Credential storage |
+| Agent | Credential storage on the host |
 |---|---|
-| macOS | System Keychain ("Claude Code-credentials") |
-| Linux | `~/.claude/.credentials.json` |
+| Claude (macOS) | System Keychain ("Claude Code-credentials") + `~/.claude.json` |
+| Claude (Linux) | `~/.claude/.credentials.json` + `~/.claude.json` |
+| Codex | `~/.codex/auth.json` (written by `codex login`) |
 
-When jackin' creates or launches an agent container, it reads the host credentials and writes them into the agent's persisted state directory at `~/.jackin/data/<container-name>/.claude/.credentials.json`. The host's `~/.claude.json` (account metadata and preferences) is also copied.
+When jackin' creates or launches an agent container, it consults the
+resolved `auth_forward` mode for that (workspace × role × agent) and
+either:
 
-Since the `.claude/` directory and `.claude.json` file are bind-mounted into the container, Claude Code inside the container picks up the credentials immediately.
+- copies the host credential file into the role-state directory
+  (`sync`), or
+- injects an env var resolved from the operator-env layer
+  (`api_key`, `oauth_token`), or
+- provisions an empty state and lets the agent authenticate inside the
+  container (`ignore`).
 
-## Auth forwarding modes
+The role-state directory at `~/.jackin/data/<container-name>/` is
+bind-mounted into the container, so the agent picks up forwarded
+credentials immediately.
 
-jackin' supports three modes, configurable globally or per-agent:
+## Modes
+
+jackin' supports four modes:
 
 | Mode | Behavior |
 |---|---|
-| `sync` (default) | When host auth exists, overwrite container auth on each launch. When host auth is absent, preserve existing container auth. |
-| `ignore` | Never forward host auth. Revoke any previously forwarded credentials. The agent authenticates itself via `/login`. |
-| `token` | Provision the agent with an empty state and inject `CLAUDE_CODE_OAUTH_TOKEN` (from the resolved operator env) into the container. Claude Code uses the token directly — no `/login` session state is bind-mounted. Recommended for long-lived or concurrent sessions. |
+| `sync` (default) | When host auth exists, copy it into the container's role-state on each launch. When host auth is absent, preserve any existing container auth. |
+| `api_key` | Inject the agent's API-key env var (`ANTHROPIC_API_KEY` for Claude, `OPENAI_API_KEY` for Codex), resolved from the operator-env layer. No credential files are written. |
+| `oauth_token` | **Claude only.** Inject `CLAUDE_CODE_OAUTH_TOKEN` from the operator-env layer. Codex rejects this mode at config-parse time. |
+| `ignore` | Never forward host auth. Revoke any previously forwarded credentials. The agent authenticates itself inside the container. |
 
 ### sync
 
-The `sync` mode is the default. It re-copies host credentials on every launch. Use this when you want agents to always reflect the host's current account — for example, if you rotate credentials frequently or switch between organizations.
+`sync` re-copies host credentials on every launch. Use this when you
+want agents to always reflect the host's current account — for example,
+if you rotate credentials frequently or switch between organizations.
 
-When the host's `~/.claude.json` or credentials are missing (e.g. you logged out), `sync` preserves the container's existing auth rather than wiping it. This prevents accidental de-authentication from a missing file.
+When the host's credentials are missing (e.g. you logged out), `sync`
+preserves the container's existing auth rather than wiping it. This
+prevents accidental de-authentication from a missing file.
 
-### ignore
+### api_key
 
-The `ignore` mode is the legacy behavior — the container starts with an empty `{}` config and no credentials. The agent must authenticate itself inside the container (Claude Code's device-flow login via browser).
+`api_key` provisions the agent with an empty state and exports the
+agent's API key into the container's process env. Claude Code reads
+`ANTHROPIC_API_KEY`; Codex CLI reads `OPENAI_API_KEY`. No file-based
+credentials are written into the role-state.
 
-Switching an agent from `copy` or `sync` to `ignore` actively revokes any previously forwarded credentials by resetting `.claude.json` to `{}` and deleting `.credentials.json`.
+Setup:
 
-### token
+1. Add the API-key entry to any of the four operator-env layers.
+   For example, in the workspace's `[env]` block referencing 1Password:
 
-The `token` mode is designed for long-lived and concurrent jackin' sessions. Instead of bind-mounting a copy of your host's `/login` session state, jackin' injects a long-lived OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`) into the container's process env. Claude Code inside the container reads the token directly, bypassing the file-based credential store entirely.
+   ```toml
+   [workspaces.my-app.env]
+   ANTHROPIC_API_KEY = "op://Personal/Anthropic/key"
+   ```
+
+   Or forwarding from the host shell:
+
+   ```toml
+   [env]
+   OPENAI_API_KEY = "$OPENAI_API_KEY"
+   ```
+
+2. Set the `auth_forward` mode at the layer that should pick this up
+   (see [Layered configuration](#layered-configuration) below).
+
+### oauth_token (Claude only)
+
+`oauth_token` is designed for long-lived and concurrent jackin' sessions
+on Claude. Instead of bind-mounting a copy of the host's `/login`
+session state, jackin' injects a long-lived OAuth token
+(`CLAUDE_CODE_OAUTH_TOKEN`) into the container's process env. Claude
+Code inside the container reads the token directly, bypassing the
+file-based credential store.
 
 Setup:
 
@@ -54,161 +104,265 @@ Setup:
    claude setup-token
    ```
 
-2. Tell jackin' where to find it by adding a line to the `[env]` section of the workspace manifest. Either reference a 1Password secret:
+2. Tell jackin' where to find it by adding a line to one of the
+   operator-env layers. For example, referencing 1Password:
 
    ```toml
-   [env]
+   [claude.env]
    CLAUDE_CODE_OAUTH_TOKEN = "op://Personal/Claude/token"
    ```
 
-   or forward from the host shell:
+   or forwarding from the host shell:
 
    ```toml
    [env]
    CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN"
    ```
 
-3. Enable token mode:
+3. Set `auth_forward = "oauth_token"` for `[claude]` at the appropriate
+   layer.
 
-   ```bash
-   jackin config auth set token
-   ```
+If `CLAUDE_CODE_OAUTH_TOKEN` is not present in the resolved env when
+`oauth_token` mode is active, jackin' aborts the launch with a
+structured error (see [Launch-time validation](#launch-time-validation)).
 
-On launch, jackin' prints a one-line diagnostic confirming the active mode and where the token came from:
+<Aside type="caution">
+Codex has no OAuth-token analog of Claude's `CLAUDE_CODE_OAUTH_TOKEN`.
+Setting `auth_forward = "oauth_token"` under any `[codex]` block is
+rejected at config-parse time with an "unknown variant" error. Use
+`api_key` (with `OPENAI_API_KEY`) or `sync` for Codex.
+</Aside>
 
-```
-claude auth: OAuth token (CLAUDE_CODE_OAUTH_TOKEN ← op://Personal/Claude/token)
-```
+### ignore
 
-If `CLAUDE_CODE_OAUTH_TOKEN` is not present in the resolved env when `token` mode is active, jackin' aborts with an actionable error listing both remediation paths above.
+`ignore` provisions the container with an empty state — no
+credential file is written, and any previously forwarded credentials
+in the role-state are deleted. The agent must authenticate itself
+inside the container the next time it runs.
 
-The agent's state directory is provisioned with the same empty shape as `ignore` mode — no `.credentials.json` is written — so switching between `token`, `sync`, and `ignore` is safe.
+Switching an agent from `sync`, `api_key`, or `oauth_token` to `ignore`
+actively revokes any previously forwarded credentials.
 
-### `copy` (deprecated)
+## Layered configuration
 
-The `copy` mode — "copy host auth on first container creation only; never overwrite afterwards" — was jackin's previous default. It caused subtle auth drift when OAuth refresh tokens rotated across concurrent Claude Code sessions on the host and in containers, surfacing as intermittent `API Error: 401` inside agents.
+`auth_forward` is configured per agent (`claude`, `codex`) at three
+layers, with most-specific wins:
 
-It was removed in favor of `sync`. On the first launch after upgrading, jackin automatically rewrites any `auth_forward = "copy"` entries in your config to `"sync"` and prints a one-line deprecation notice:
+1. **Global default** — `[claude].auth_forward` and
+   `[codex].auth_forward` in `~/.config/jackin/config.toml`.
+2. **Per workspace** — `[workspaces.<ws>.claude].auth_forward` and
+   `[workspaces.<ws>.codex].auth_forward`.
+3. **Per (workspace × role)** — `[workspaces.<ws>.roles.<role>.claude].auth_forward`
+   and `[workspaces.<ws>.roles.<role>.codex].auth_forward`.
 
-```
-warning: migrated auth_forward "copy" → "sync" in ~/.config/jackin/config.toml (copy is deprecated)
-```
+Resolution order: **per-(workspace × role) > per-workspace > global > `sync`**.
 
-Scripts or invocations that still pass `copy` to `jackin config auth set` continue to work — the value is accepted as a deprecated alias and saved as `sync`.
-
-## Configuration
-
-### Set the global default
-
-```bash
-jackin config auth set sync     # default — overwrite from host on each launch
-jackin config auth set ignore   # never forward
-```
-
-### Override per role
-
-```bash
-jackin config auth set ignore --role agent-smith
-jackin config auth set sync --role chainargos/the-architect
-```
-
-### Show the current mode
-
-```bash
-# Global default
-jackin config auth show
-
-# Effective mode for a specific role (includes per-role override)
-jackin config auth show --role agent-smith
-```
-
-### config.toml format
+Example `config.toml`:
 
 ```toml
-# Global default
+# Layer 1 — global defaults
 [claude]
 auth_forward = "sync"
 
-# Per-role override
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-trusted = true
+[codex]
+auth_forward = "sync"
 
-[roles.agent-smith.claude]
-auth_forward = "token"
+# Layer 2 — workspace-wide overrides
+[workspaces.my-app.claude]
+auth_forward = "oauth_token"
+
+# Layer 3 — most-specific override for one (workspace, role) cell
+[workspaces.my-app.roles.agent-smith.claude]
+auth_forward = "ignore"
+
+[workspaces.my-app.roles.agent-smith.codex]
+auth_forward = "api_key"
 ```
 
-Resolution order: **per-agent override > global default > `sync`**.
+Credentials referenced by `api_key` and `oauth_token` modes live in
+ordinary `[*.env]` blocks under the well-known names
+(`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`) and
+follow the same four-layer env merge as every other variable. See
+[Environment Variables](/guides/environment-variables) for the layer
+order.
 
 <Aside type="note">
-Auth forwarding is an operator-level setting. Agent manifests (`jackin.role.toml`) cannot set or override this — it is always the operator's decision.
+Auth forwarding is an operator-level setting. Agent manifests
+(`jackin.role.toml`) cannot set or override this — it is always the
+operator's decision.
 </Aside>
 
-## Codex authentication
+## Auth tab in the operator console
 
-Codex supports three auth paths in jackin:
+The `jackin console` workspace editor exposes auth forwarding through a
+dedicated **Auth** tab, peer to the existing **Secrets** tab. To open
+it:
 
-1. **API key (non-interactive).** Set `OPENAI_API_KEY` through the same operator env system used for other secrets:
+1. Run `jackin console`.
+2. Select the workspace.
+3. In the workspace editor, switch to the **Auth** tab.
 
-   ```toml
-   [env]
-   OPENAI_API_KEY = "$OPENAI_API_KEY"
-   ```
+The Auth tab presents three sections, top to bottom:
 
-   or:
+1. **Global defaults** (read-only) — what `[claude]` / `[codex]` resolve
+   to at the global layer. These rows reflect `~/.config/jackin/config.toml`
+   and cannot be edited from within a workspace.
+2. **Workspace defaults** — `[workspaces.<ws>.claude]` and
+   `[workspaces.<ws>.codex]` rows. Press `Enter` on a row to open the
+   auth-edit form for that agent.
+3. **Per-role overrides** — collapsible role headers. The list starts
+   empty; press `Enter` on the `+ Add per-role override` entry to step
+   through a three-step flow: choose the **role**, choose the **agent**
+   (`claude` or `codex`), then fill in the **auth-edit form**.
+   Press `→` / `←` to expand or collapse a role header. Press `D` on a
+   role header to open a confirmation dialog that clears both agents'
+   overrides for that role; press `D` on a single agent row to clear
+   only that agent's override.
 
-   ```toml
-   [env]
-   OPENAI_API_KEY = "op://Work/OpenAI/default"
-   ```
+Footer hints surface the resolved mode and its provenance for whichever
+override row is currently focused.
 
-   When set, jackin forwards the value into the container as a `-e OPENAI_API_KEY=…` env var. Codex CLI prefers this path when both an API key and a synced `auth.json` are present (verified against the Codex CLI source as of 2026-05).
+### The edit form
 
-2. **Synced ChatGPT login (`auth_forward = "sync"`, default).** When the host has `~/.codex/auth.json` (written by `codex login` on the host), jackin copies it into the role-state directory `~/.jackin/data/<container>/codex/auth.json` with `0600` permissions and bind-mounts that file at `/home/agent/.codex/auth.json`. The container reuses the host's ChatGPT session without prompting, and any in-container token refresh writes back to the host file through the bind mount.
+Pressing `Enter` on a workspace-defaults row or completing the
+role-add flow opens an edit form with three blocks:
 
-   When the host has no `~/.codex/auth.json` (and no `OPENAI_API_KEY` is set), jackin still starts the container — Codex CLI prompts for ChatGPT login on first invocation. jackin emits a `codex auth: none — Codex CLI will prompt for ChatGPT login` notice at launch so the fallback is explicit, not silent. The login that happens inside the container writes to the container's writable layer (no bind mount exists yet), so it is **not** preserved across `docker rm` / `jackin purge`. To get persistence, run `codex login` on the host first so jackin can sync the resulting `~/.codex/auth.json` on the next launch.
+1. **Mode picker.** `sync`, `api_key`, `oauth_token` (Claude only),
+   `ignore`. Codex cells omit `oauth_token`.
+2. **Credential block** (only shown for modes that need a credential —
+   `api_key` and `oauth_token`). Pick the credential source: a
+   1Password reference (`op://...`), a host-env passthrough
+   (`$VAR` / `${VAR}`), or a literal value.
+3. **Save / Cancel / Reset.** Save commits the change to disk; Cancel
+   reverts the form; Reset clears the override at this layer (so the
+   cell falls through to the next layer up).
 
-3. **Ignore (`auth_forward = "ignore"`).** Any role-state `auth.json` is deleted at launch; the operator must re-login from inside the container every time.
+#### Save invariant
 
-`auth_forward = "token"` is a no-op for Codex (no OAuth-token analog of Claude's `CLAUDE_CODE_OAUTH_TOKEN` — the API key in env is the token). jackin leaves any existing role-state `auth.json` untouched and reports `codex auth: none (token mode is a no-op for Codex — set OPENAI_API_KEY or auth_forward = "sync")`.
+The **Save** button stays disabled until both:
 
-## What gets forwarded
+- a mode is selected, and
+- if the mode requires a credential (`api_key` or `oauth_token`),
+  the credential block has a committed value.
 
-Two pieces of data are forwarded from the host:
+This makes it impossible to leave the workspace in a state where
+`auth_forward` says "use a credential" but no credential resolves.
+
+#### 1Password picker integration
+
+When the credential source is set to a 1Password reference, the form
+opens the standard 1Password picker (the same component used by the
+Secrets tab). Picking a reference triggers an `op read` validation
+**before** the value is committed to the form — broken or
+unauthorized references never reach the form, and never reach disk.
+
+## Launch-time validation
+
+When jackin' resolves `auth_forward` for a launch, it verifies that
+modes requiring a credential have one set in the operator-env layer.
+If the credential is missing, the launch fails with a structured
+`LaunchError::AuthCredentialMissing` error containing:
+
+- The fully-resolved mode trace (which layer chose which mode for
+  Claude and Codex).
+- The state of the relevant env var across all four env layers, so the
+  operator can see exactly which layer was supposed to provide the
+  value.
+
+A typical message looks like:
+
+```
+error: auth credential missing for claude (mode = oauth_token)
+  required env var: CLAUDE_CODE_OAUTH_TOKEN
+  mode resolved at: workspaces.my-app.claude
+  env layer state:
+    [env]                                     : (unset)
+    [claude.env]                              : (unset)
+    [workspaces.my-app.env]                   : (unset)
+    [workspaces.my-app.roles.smith.env]       : (unset)
+  fix: set CLAUDE_CODE_OAUTH_TOKEN in any of the four env layers above,
+       or change auth_forward to "sync" / "ignore".
+```
+
+## What gets forwarded under `sync`
+
+For Claude, two pieces of data are forwarded from the host:
 
 | File | Contents |
 |---|---|
 | `.claude.json` | Account metadata, preferences (email, org, billing type, startup config) |
 | `.claude/.credentials.json` | OAuth tokens (access token, refresh token, scopes, subscription type) |
 
-Both files are written with `0600` permissions (owner-only read/write). If an older agent state directory has a pre-existing `.claude.json` with permissive permissions (e.g. `0644`), the permissions are tightened on the next write.
+Both files are written with `0600` permissions (owner-only read/write).
+If an older agent state directory has a pre-existing `.claude.json`
+with permissive permissions (e.g. `0644`), the permissions are
+tightened on the next write.
+
+For Codex, the host's `~/.codex/auth.json` is copied into
+`~/.jackin/data/<container>/codex/auth.json` with `0600` permissions
+and bind-mounted at `/home/agent/.codex/auth.json`. Token refreshes
+inside the container write back to the host file through the bind
+mount.
+
+When the host has no Codex auth.json (and `OPENAI_API_KEY` is not set
+via `api_key` mode), jackin' still starts the container — Codex CLI
+prompts for ChatGPT login on first invocation. jackin' emits a
+`codex auth: none — Codex CLI will prompt for ChatGPT login` notice at
+launch so the fallback is explicit, not silent.
 
 ## Security considerations
 
-- Forwarded credentials give the agent the same Claude Code access as your host account (same model tier, same organization, same billing).
-- Credentials are stored on disk in the agent's state directory (`~/.jackin/data/<container-name>/`). Use `jackin purge <agent>` to delete all persisted state including credentials.
-- Switching to `ignore` mode actively revokes forwarded credentials — it does not just stop future forwarding.
-- The agent manifest cannot control auth forwarding. An untrusted agent cannot force `sync` or `ignore` against the operator's wishes.
+- Forwarded credentials give the agent the same agent access as your
+  host account (same model tier, same organization, same billing).
+- Under `sync`, credentials are stored on disk in the agent's
+  state directory (`~/.jackin/data/<container-name>/`). Use
+  `jackin purge <agent>` to delete all persisted state including
+  credentials.
+- Switching to `ignore` mode actively revokes forwarded credentials —
+  it does not just stop future forwarding.
+- The agent manifest cannot control auth forwarding. An untrusted
+  agent cannot force any mode against the operator's wishes.
+- `api_key` and `oauth_token` modes never write the credential to disk
+  in the role-state — the value is exported into the container's
+  process env at launch only.
 
 <Aside type="caution">
-Auth forwarding copies OAuth tokens to the container's filesystem. While the files are permission-locked to `0600`, any process running as the container user can read them. This is equivalent to the existing risk when authenticating manually inside the container — the difference is that forwarding happens automatically.
+Under `sync`, OAuth tokens are copied to the container's filesystem.
+While the files are permission-locked to `0600`, any process running
+as the container user can read them. This is equivalent to the
+existing risk when authenticating manually inside the container — the
+difference is that forwarding happens automatically.
 </Aside>
+
 ## Troubleshooting
 
 ### Agent shows "Not logged in" after forwarding
 
-If the agent shows "Not logged in" or falls back to a different model tier (e.g. Sonnet instead of Opus), the credentials may not have been forwarded. Check:
+If the agent shows "Not logged in" or falls back to a different model
+tier (e.g. Sonnet instead of Opus), the credentials may not have been
+forwarded. Check:
 
-1. **Is auth forwarding enabled?** Run `jackin config auth show` — the default is `sync`.
-2. **Does the host have credentials?** On macOS, check `security find-generic-password -s "Claude Code-credentials" -w`. On Linux, check `~/.claude/.credentials.json`.
-3. **Is this a pre-existing container?** In `sync` mode, host credentials are forwarded on every launch — but if the host has no credentials, the container's existing auth is preserved. If the container has stale auth and the host has fresh auth, restart the container (`jackin eject <agent> && jackin load <agent>`) or purge state (`jackin purge <agent>`) to force a fresh sync.
+1. **What mode is effective?** Open the **Auth** tab in
+   `jackin console` for that workspace, and look at the effective mode
+   for the (role × agent) cell.
+2. **Does the host have credentials?** For Claude on macOS, check
+   `security find-generic-password -s "Claude Code-credentials" -w`.
+   On Linux, check `~/.claude/.credentials.json`. For Codex, check
+   `~/.codex/auth.json`.
+3. **Is this a pre-existing container?** In `sync` mode, host
+   credentials are forwarded on every launch — but if the host has no
+   credentials, the container's existing auth is preserved. If the
+   container has stale auth and the host has fresh auth, restart the
+   container (`jackin eject <agent> && jackin load <agent>`) or purge
+   state (`jackin purge <agent>`) to force a fresh sync.
 
 ### Revoking forwarded credentials
 
-To stop forwarding and clear existing credentials:
+To stop forwarding and clear existing credentials, set the (workspace
+× role × agent) cell to `ignore` in the **Auth** tab and reload the
+agent:
 
 ```bash
-jackin config auth set ignore --role <role>
 jackin load <role>  # next launch will reset to {}
 ```
 
@@ -220,4 +374,9 @@ jackin purge <agent>
 
 ## See also
 
-- [Environment Variables](/guides/environment-variables) — forward operator-owned secrets (API tokens, host env vars, 1Password items) into the agent container. Complements (but does not replace) Claude Code auth forwarding.
+- [Environment Variables](/guides/environment-variables) — the
+  four-layer operator-env model that supplies credentials for
+  `api_key` and `oauth_token` modes, and forwards arbitrary
+  operator-owned secrets into the agent container.
+- [Configuration File](/reference/configuration) — the full
+  `config.toml` schema, including the layered `auth_forward` shape.

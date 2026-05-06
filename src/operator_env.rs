@@ -1819,7 +1819,6 @@ mod tests {
         let mut role = crate::config::RoleSource {
             git: "https://example.com/x.git".to_string(),
             trusted: true,
-            claude: None,
             env: std::collections::BTreeMap::new(),
         };
         role.env
@@ -1943,7 +1942,6 @@ mod tests {
         let mut role_source = crate::config::RoleSource {
             git: "https://example.com/x.git".to_string(),
             trusted: true,
-            claude: None,
             env: std::collections::BTreeMap::new(),
         };
         role_source

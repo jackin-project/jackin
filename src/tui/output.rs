@@ -139,17 +139,6 @@ pub fn fatal(msg: &str) {
     );
 }
 
-/// One-line yellow deprecation warning to stderr. Used for soft-migration
-/// notices like "config field X is deprecated — migrated to Y".
-pub fn deprecation_warning(msg: &str) {
-    const AMBER: (u8, u8, u8) = (230, 180, 80);
-    eprintln!(
-        "  {} {}",
-        "warning:".color(rgb(AMBER)).bold(),
-        msg.color(rgb(AMBER)),
-    );
-}
-
 pub fn set_terminal_title(title: &str) {
     eprint!("\x1b]0;jackin' \u{00b7} {title}\x07");
     let _ = io::stderr().flush();
@@ -193,8 +182,8 @@ pub fn hint(prefix: &str, command: &str, suffix: &str) {
 ///   claude auth: none (ignore — /login required inside the container)
 ///   claude auth: OAuth token (`CLAUDE_CODE_OAUTH_TOKEN` ← <source-reference>)
 ///
-/// `source_reference` is consulted only by the `token` arm; pass the
-/// resolver's source description for the `CLAUDE_CODE_OAUTH_TOKEN`
+/// `source_reference` is consulted only by the env-driven token/api-key
+/// arms; pass the resolver's source description for the relevant env
 /// entry (e.g. `"op://vault/claude/token"` or
 /// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Other modes pass `None`.
 pub fn auth_mode_notice(mode: &str, source_reference: Option<&str>) {
@@ -209,9 +198,15 @@ pub fn auth_mode_notice(mode: &str, source_reference: Option<&str>) {
 fn format_auth_mode_notice_for_test(mode: &str, source_reference: Option<&str>) -> String {
     let label = "claude auth:".color(rgb(PHOSPHOR_GREEN)).bold().to_string();
     let body = match mode {
-        "token" => {
+        // Tasks 10/11 will split per-mode notices; today both env-driven
+        // modes render a token/key notice off the same source_reference.
+        "oauth_token" => {
             let src = source_reference.unwrap_or("CLAUDE_CODE_OAUTH_TOKEN");
             format!("OAuth token ({src})")
+        }
+        "api_key" => {
+            let src = source_reference.unwrap_or("ANTHROPIC_API_KEY");
+            format!("API key ({src})")
         }
         "sync" => "host session (sync)".to_string(),
         "ignore" => "none (ignore — /login required inside the container)".to_string(),
@@ -258,7 +253,7 @@ impl
             // is added, these arms become reachable and the `unreachable!`
             // will fire in tests/debug — preferable to silently routing
             // a new outcome to the wrong notice.
-            (M::Sync | M::Token, O::Skipped) => unreachable!(
+            (M::Sync | M::OAuthToken | M::ApiKey, O::Skipped) => unreachable!(
                 "AuthProvisionOutcome::Skipped should only be returned for AuthForwardMode::Ignore"
             ),
         }
@@ -325,9 +320,9 @@ mod tests {
     }
 
     #[test]
-    fn auth_mode_notice_token_mentions_source_reference() {
+    fn auth_mode_notice_oauth_token_mentions_source_reference() {
         let line = format_auth_mode_notice_for_test(
-            "token",
+            "oauth_token",
             Some("CLAUDE_CODE_OAUTH_TOKEN ← op://vault/claude/token"),
         );
         let clean = strip_ansi(&line);
@@ -423,7 +418,8 @@ mod tests {
         let cases = [
             (M::Sync, O::Synced, CodexSyncState::Synced),
             (M::Sync, O::HostMissing, CodexSyncState::HostMissing),
-            (M::Token, O::TokenMode, CodexSyncState::TokenMode),
+            (M::OAuthToken, O::TokenMode, CodexSyncState::TokenMode),
+            (M::ApiKey, O::TokenMode, CodexSyncState::TokenMode),
             (M::Ignore, O::Skipped, CodexSyncState::Ignored),
         ];
         for (mode, outcome, expected) in cases {

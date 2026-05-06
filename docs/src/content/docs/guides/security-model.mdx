@@ -197,9 +197,9 @@ Mounted files are live host files. If the agent edits a mounted path, the host f
 
 ### Authentication forwarding
 
-By default, jackin' forwards the host's Claude Code OAuth credentials into new agent containers (`auth_forward = "copy"`). This means agents start pre-authenticated but also means OAuth tokens are stored on disk in the agent state directory with `0600` permissions.
+By default, jackin' forwards the host's Claude Code OAuth credentials into new agent containers (`auth_forward = "sync"`). This means agents start pre-authenticated but also means OAuth tokens are stored on disk in the agent state directory with `0600` permissions.
 
-You can control this behavior globally or per-agent — see [Authentication Forwarding](/guides/authentication). Setting `auth_forward = "ignore"` revokes any previously forwarded credentials and returns to the legacy behavior of manual in-container login.
+You can control this behavior at three layers (global, per workspace, and per workspace × role × agent) — see [Authentication Forwarding](/guides/authentication). Setting `auth_forward = "ignore"` revokes any previously forwarded credentials and returns to the legacy behavior of manual in-container login. The `api_key` and `oauth_token` modes inject the credential into the container's process env at launch only — no credential is written to disk in the role-state directory.
 
 ### Credentials obtained inside the runtime remain inside the runtime
 

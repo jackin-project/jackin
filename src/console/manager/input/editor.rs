@@ -96,12 +96,25 @@ pub(super) fn handle_editor_key(
                     return Ok(InputOutcome::Continue);
                 }
             }
+            if key.code == KeyCode::Right && editor.active_tab == EditorTab::Auth {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = super::super::render::editor::auth_flat_rows(editor);
+                if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
+                    rows.get(n).cloned()
+                {
+                    if !expanded {
+                        editor.auth_expanded.insert(role);
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
+            }
             let was_secrets = editor.active_tab == EditorTab::Secrets;
             editor.active_tab = match editor.active_tab {
                 EditorTab::General => EditorTab::Mounts,
                 EditorTab::Mounts => EditorTab::Roles,
                 EditorTab::Roles => EditorTab::Secrets,
-                EditorTab::Secrets => EditorTab::General,
+                EditorTab::Secrets => EditorTab::Auth,
+                EditorTab::Auth => EditorTab::General,
             };
             editor.active_field = FieldFocus::Row(0);
             if was_secrets {
@@ -121,12 +134,25 @@ pub(super) fn handle_editor_key(
                     return Ok(InputOutcome::Continue);
                 }
             }
+            if editor.active_tab == EditorTab::Auth {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = super::super::render::editor::auth_flat_rows(editor);
+                if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
+                    rows.get(n).cloned()
+                {
+                    if expanded {
+                        editor.auth_expanded.remove(&role);
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
+            }
             let was_secrets = editor.active_tab == EditorTab::Secrets;
             editor.active_tab = match editor.active_tab {
-                EditorTab::General => EditorTab::Secrets,
+                EditorTab::General => EditorTab::Auth,
                 EditorTab::Mounts => EditorTab::General,
                 EditorTab::Roles => EditorTab::Mounts,
                 EditorTab::Secrets => EditorTab::Roles,
+                EditorTab::Auth => EditorTab::Secrets,
             };
             editor.active_field = FieldFocus::Row(0);
             if was_secrets {
@@ -179,6 +205,25 @@ pub(super) fn handle_editor_key(
                     open_role_input(editor, config);
                 }
             }
+            EditorTab::Auth => {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = super::super::render::editor::auth_flat_rows(editor);
+                match rows.get(n) {
+                    Some(super::super::render::editor::AuthRow::AddSentinel { .. }) => {
+                        super::auth::open_auth_role_picker(editor, config);
+                    }
+                    Some(super::super::render::editor::AuthRow::RoleHeader { role, .. }) => {
+                        super::auth::toggle_role_expand(editor, role.clone());
+                    }
+                    Some(
+                        super::super::render::editor::AuthRow::WorkspaceDefault { .. }
+                        | super::super::render::editor::AuthRow::RoleAgentRow { .. },
+                    ) => {
+                        super::auth::open_auth_form_modal(editor);
+                    }
+                    _ => {}
+                }
+            }
         },
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Roles => {
             open_role_input(editor, config);
@@ -207,6 +252,9 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
+        }
+        KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Auth => {
+            super::auth::handle_d_on_auth_row(editor);
         }
         // M toggles per-row masking on the focused Secrets-tab key row.
         // Operator feedback (commit 32): the global mask flag was too
@@ -304,6 +352,9 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         EditorTab::Roles => config.roles.len(),
         // Secrets tab is handled inline in the Down key arm; never reached here.
         EditorTab::Secrets => 0,
+        EditorTab::Auth => {
+            super::super::render::editor::auth_editable_row_count(editor).saturating_sub(1)
+        }
     }
 }
 
@@ -951,9 +1002,55 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Continue => {}
             }
         }
+        Modal::AuthForm { .. } => {
+            super::auth::handle_auth_form_key(editor, key, op_cache);
+        }
+        Modal::AuthRolePicker { state: picker } => match picker.handle_key(key) {
+            ModalOutcome::Commit(role) => {
+                editor.modal = Some(Modal::AuthAgentPicker {
+                    role: role.key(),
+                    state: crate::console::widgets::agent_choice::AgentChoiceState::new(),
+                });
+            }
+            ModalOutcome::Cancel => {
+                editor.modal = None;
+            }
+            ModalOutcome::Continue => {}
+        },
+        Modal::AuthAgentPicker { role, state } => {
+            let outcome = state.handle_key(key);
+            match outcome {
+                ModalOutcome::Commit(agent) => {
+                    let role = role.clone();
+                    let target = crate::console::manager::state::AuthFormTarget::WorkspaceRole {
+                        role,
+                        agent,
+                    };
+                    let form = crate::console::widgets::auth_panel::AuthForm::new(agent);
+                    editor.modal = Some(Modal::AuthForm {
+                        target,
+                        state: Box::new(form),
+                        focus: crate::console::manager::state::AuthFormFocus::Mode,
+                        literal_buffer: String::new(),
+                    });
+                }
+                ModalOutcome::Cancel => {
+                    editor.modal = None;
+                }
+                ModalOutcome::Continue => {}
+            }
+        }
         Modal::OpPicker { state: picker } => {
             match picker.handle_key(key) {
                 ModalOutcome::Commit(op_ref) => {
+                    // Auth-form round trip wins over the Secrets-tab
+                    // dispatch: the auth form sets
+                    // `pending_auth_form_return` exactly when it's the
+                    // caller, so the two paths can never collide.
+                    if editor.pending_auth_form_return.is_some() {
+                        super::auth::apply_op_picker_to_auth_form(editor, op_ref);
+                        return;
+                    }
                     // Operator picked a Vault → Item → Field path. The
                     // dispatch depends on whether `P` was pressed on a
                     // key row (write directly) or on an `+ Add` sentinel
@@ -980,6 +1077,14 @@ pub(super) fn handle_editor_modal(
                     }
                 }
                 ModalOutcome::Cancel => {
+                    // Auth-form round trip: re-mount the form
+                    // unchanged. Mirrors the Commit branch — the two
+                    // callers (Secrets-tab `P`, auth-form Enter) are
+                    // disambiguated by `pending_auth_form_return`.
+                    if editor.pending_auth_form_return.is_some() {
+                        super::auth::restore_auth_form_after_op_picker_cancel(editor);
+                        return;
+                    }
                     // Clear both scratch fields so a stale path/target
                     // can't carry into a later interaction.
                     editor.modal = None;
@@ -1272,7 +1377,6 @@ fn candidate_role_source(
                 selector.name
             ),
             trusted: false,
-            claude: None,
             env: std::collections::BTreeMap::new(),
         }),
         Err(err) => Err(err),
@@ -1452,6 +1556,12 @@ fn apply_editor_confirm(
         // site because it consumes `plan` and routes through
         // `EditorSaveFlow::PendingCommit`. No-op here.
         ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
+        ConfirmTarget::ClearAuthRoleOverride { role } => {
+            if let Some(ro) = editor.pending.roles.get_mut(role) {
+                ro.claude = None;
+                ro.codex = None;
+            }
+        }
     }
     Ok(())
 }
@@ -1940,7 +2050,7 @@ plugins = []
 
     #[test]
     fn editor_left_wraps_to_last_tab_from_first() {
-        // Match Tab's wrap contract: Left from General → Secrets.
+        // Match Tab's wrap contract: Left from General → Auth (last tab).
         let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
         handle_key(
             &mut state,
@@ -1953,13 +2063,13 @@ plugins = []
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
-        assert_eq!(e.active_tab, EditorTab::Secrets);
+        assert_eq!(e.active_tab, EditorTab::Auth);
     }
 
     #[test]
     fn editor_right_wraps_to_first_tab_from_last() {
-        // Match Tab's wrap contract: Right from Secrets → General.
-        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Secrets);
+        // Match Tab's wrap contract: Right from Auth (last tab) → General.
+        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Auth);
         handle_key(
             &mut state,
             &mut config,
@@ -2940,7 +3050,11 @@ plugins = []
         );
         ws.roles.insert(
             "smith".into(),
-            crate::workspace::WorkspaceRoleOverride { env: ag_env },
+            crate::workspace::WorkspaceRoleOverride {
+                env: ag_env,
+                claude: None,
+                codex: None,
+            },
         );
 
         let mut state = ManagerState::from_config(&config, tmp.path());
@@ -3164,7 +3278,7 @@ plugins = []
             key(KeyCode::Char('m')),
         )
         .unwrap();
-        // Tab to General → leaves Secrets.
+        // Tab to Auth → leaves Secrets.
         handle_key(
             &mut state,
             &mut config,
@@ -3173,32 +3287,18 @@ plugins = []
             key(KeyCode::Tab),
         )
         .unwrap();
-        // Tab around the wheel back to Secrets (General → Mounts → Roles
-        // → Secrets is 3 more presses).
-        handle_key(
-            &mut state,
-            &mut config,
-            &paths,
-            tmp.path(),
-            key(KeyCode::Tab),
-        )
-        .unwrap();
-        handle_key(
-            &mut state,
-            &mut config,
-            &paths,
-            tmp.path(),
-            key(KeyCode::Tab),
-        )
-        .unwrap();
-        handle_key(
-            &mut state,
-            &mut config,
-            &paths,
-            tmp.path(),
-            key(KeyCode::Tab),
-        )
-        .unwrap();
+        // Tab around the wheel back to Secrets (Auth → General → Mounts →
+        // Roles → Secrets is 4 more presses).
+        for _ in 0..4 {
+            handle_key(
+                &mut state,
+                &mut config,
+                &paths,
+                tmp.path(),
+                key(KeyCode::Tab),
+            )
+            .unwrap();
+        }
 
         let ManagerStage::Editor(e) = &state.stage else {
             panic!();
@@ -3227,7 +3327,11 @@ plugins = []
         ag_env.insert("API_TOKEN".into(), "role-value".into());
         ws.roles.insert(
             "smith".into(),
-            crate::workspace::WorkspaceRoleOverride { env: ag_env },
+            crate::workspace::WorkspaceRoleOverride {
+                env: ag_env,
+                claude: None,
+                codex: None,
+            },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -3281,7 +3385,11 @@ plugins = []
         ag_env.insert("LOG_LEVEL".into(), "debug".into());
         ws.roles.insert(
             "agent-smith".into(),
-            crate::workspace::WorkspaceRoleOverride { env: ag_env },
+            crate::workspace::WorkspaceRoleOverride {
+                env: ag_env,
+                claude: None,
+                codex: None,
+            },
         );
 
         let mut state = ManagerState::from_config(&config, tmp.path());

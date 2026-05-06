@@ -68,6 +68,15 @@ pub struct WorkspaceConfig {
     pub roles: std::collections::BTreeMap<String, WorkspaceRoleOverride>,
     #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
     pub keep_awake: KeepAwakeConfig,
+    /// Workspace-level Claude auth configuration. Forms the middle
+    /// layer of the 3-layer auth resolver
+    /// (global → workspace → workspace × role × agent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude: Option<crate::config::AgentAuthConfig>,
+    /// Workspace-level Codex auth configuration. See `claude` above —
+    /// same role in the resolver, parallel field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex: Option<crate::config::CodexAuthConfig>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub git_pull_on_entry: bool,
 }
@@ -109,14 +118,36 @@ impl WorkspaceConfig {
 
 /// Per-(workspace × role) operator overrides.
 ///
-/// Currently only `env` is supported; the struct exists as a named type
-/// so future overrides (e.g. `auth_forward`) can be added without a
-/// TOML schema break.
+/// Holds the **most-specific** layer of the 3-layer auth resolver
+/// (global → workspace → workspace × role × agent). The `claude` and
+/// `codex` fields here override anything set at the workspace or global
+/// layer for the matching agent. They are inert until Task 8 wires the
+/// resolver to consult them.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceRoleOverride {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub env: std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    /// Per-(workspace × role) Claude auth override — most-specific
+    /// layer of the 3-layer auth resolver. Inert until Task 8 wires
+    /// the resolver to consult this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude: Option<crate::config::AgentAuthConfig>,
+    /// Per-(workspace × role) Codex auth override. See `claude` above —
+    /// same role in the resolver, parallel field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex: Option<crate::config::CodexAuthConfig>,
+}
+
+impl WorkspaceRoleOverride {
+    /// Returns `true` when this role-override entry carries any
+    /// per-agent auth override (Claude or Codex). Used by the Auth-tab
+    /// renderer to decide whether to materialize a `RoleHeader` row,
+    /// and by the input dispatcher to filter out already-overridden
+    /// roles in the `+ Add` flow.
+    pub const fn has_auth_override(&self) -> bool {
+        self.claude.is_some() || self.codex.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -670,6 +701,8 @@ isolation = "worktree"
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
             git_pull_on_entry: false,
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
@@ -677,6 +710,29 @@ isolation = "worktree"
         assert!(
             msg.contains("nested inside"),
             "validate_workspace_config must surface the nested-worktrees error from validate_isolation_layout; got: {msg}",
+        );
+    }
+
+    #[test]
+    fn parse_workspace_with_agent_auth_blocks() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+
+[claude]
+auth_forward = "api_key"
+
+[codex]
+auth_forward = "sync"
+"#;
+        let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
+        assert_eq!(
+            cfg.claude.as_ref().unwrap().auth_forward,
+            crate::config::AuthForwardMode::ApiKey,
+        );
+        assert_eq!(
+            cfg.codex.as_ref().unwrap().auth_forward,
+            crate::config::AuthForwardMode::Sync,
         );
     }
 
@@ -705,6 +761,102 @@ OLD = "op://Vault/Item/Field"
             ws.env.get("OLD").expect("OLD env var present"),
             &crate::operator_env::EnvValue::Plain("op://Vault/Item/Field".into()),
             "bare op:// scalar must deserialize as Plain, not OpRef",
+        );
+    }
+
+    #[test]
+    fn parse_workspace_role_override_with_agent_auth() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+
+[roles.smith]
+[roles.smith.claude]
+auth_forward = "oauth_token"
+[roles.smith.codex]
+auth_forward = "ignore"
+"#;
+        let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
+        let smith = cfg.roles.get("smith").expect("smith role must be present");
+        assert_eq!(
+            smith.claude.as_ref().unwrap().auth_forward,
+            crate::config::AuthForwardMode::OAuthToken,
+        );
+        assert_eq!(
+            smith.codex.as_ref().unwrap().auth_forward,
+            crate::config::AuthForwardMode::Ignore,
+        );
+    }
+
+    #[test]
+    fn parse_workspace_without_agent_auth_blocks() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+"#;
+        let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
+        assert!(
+            cfg.claude.is_none(),
+            "WorkspaceConfig.claude must default to None"
+        );
+        assert!(
+            cfg.codex.is_none(),
+            "WorkspaceConfig.codex must default to None"
+        );
+    }
+
+    #[test]
+    fn reject_codex_oauth_token_in_workspace() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+
+[codex]
+auth_forward = "oauth_token"
+"#;
+        let err = toml::from_str::<WorkspaceConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not supported for codex"),
+            "expected codex-rejection message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn reject_codex_oauth_token_in_workspace_role_override() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+
+[roles.smith]
+[roles.smith.codex]
+auth_forward = "oauth_token"
+"#;
+        let err = toml::from_str::<WorkspaceConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not supported for codex"),
+            "expected codex-rejection message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_workspace_role_override_without_agent_auth() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+
+[roles.smith]
+"#;
+        let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
+        let smith = cfg.roles.get("smith").expect("smith role must be present");
+        assert!(
+            smith.claude.is_none(),
+            "role override claude must default to None"
+        );
+        assert!(
+            smith.codex.is_none(),
+            "role override codex must default to None"
         );
     }
 }

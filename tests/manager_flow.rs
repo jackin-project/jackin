@@ -5,11 +5,13 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{
+    agent::Agent,
     config::{AppConfig, ConfigEditor},
     console::{
         ConsoleStage, ConsoleState,
         manager::{
             ManagerStage, ManagerState, handle_key,
+            render::editor::{AuthRow, auth_flat_rows},
             state::{EditorState, EditorTab, FieldFocus, Modal, TextInputTarget},
         },
     },
@@ -415,7 +417,11 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     let mut roles = std::collections::BTreeMap::new();
     roles.insert(
         "agent-smith".into(),
-        WorkspaceRoleOverride { env: role_env },
+        WorkspaceRoleOverride {
+            env: role_env,
+            claude: None,
+            codex: None,
+        },
     );
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -1317,7 +1323,6 @@ fn seed_config_with_agents(
             jackin::config::RoleSource {
                 git: format!("https://example.invalid/jackin-{key}.git"),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );
@@ -1601,7 +1606,11 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     let mut roles = std::collections::BTreeMap::new();
     roles.insert(
         "agent-smith".into(),
-        WorkspaceRoleOverride { env: role_env },
+        WorkspaceRoleOverride {
+            env: role_env,
+            claude: None,
+            codex: None,
+        },
     );
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -1738,7 +1747,6 @@ fn seed_override_picker_workspace(
             jackin::config::RoleSource {
                 git: format!("https://example.invalid/{name}.git"),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );
@@ -1753,7 +1761,14 @@ fn seed_override_picker_workspace(
             "LOG_LEVEL".into(),
             jackin::operator_env::EnvValue::Plain("debug".into()),
         );
-        roles_map.insert((*name).into(), WorkspaceRoleOverride { env });
+        roles_map.insert(
+            (*name).into(),
+            WorkspaceRoleOverride {
+                env,
+                claude: None,
+                codex: None,
+            },
+        );
     }
 
     let ws = WorkspaceConfig {
@@ -2364,11 +2379,11 @@ fn tab_on_agent_header_advances_tab_normally() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down))?;
     assert!(matches!(editor(&state).active_field, FieldFocus::Row(2)));
 
-    // `Tab` from Secrets must wrap to General regardless of focus.
+    // `Tab` from Secrets must advance to Auth (the next tab) regardless of focus.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     assert_eq!(
         editor(&state).active_tab,
-        EditorTab::General,
+        EditorTab::Auth,
         "Tab on a header must still advance the active tab"
     );
     Ok(())
@@ -2623,5 +2638,353 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     )?;
     let (role, _ws) = alive.expect("survivor-ws must still resolve");
     assert_eq!(role.key(), "chainargos/agent-smith");
+    Ok(())
+}
+
+// ── Auth tab helpers ──────────────────────────────────────────────────
+
+/// Return the flat-row index of the first `AuthRow` that matches `pred`.
+fn auth_row_idx(ed: &EditorState<'_>, pred: impl Fn(&AuthRow) -> bool) -> usize {
+    auth_flat_rows(ed)
+        .iter()
+        .position(pred)
+        .expect("required auth row not found")
+}
+
+// ── Auth tab integration test ─────────────────────────────────────────
+//
+// End-to-end coverage of the auth-form save path: open the form on a
+// workspace × Claude row, set mode = api_key + a literal credential,
+// commit the form, save the editor, reload from disk, and assert the
+// persisted TOML carries BOTH the `auth_forward = "api_key"` block AND
+// the `ANTHROPIC_API_KEY` env var.
+//
+// The bug this guards against: prior to the C1 fixup, the auth-form
+// commit only mutated `editor.pending.{claude,codex,roles[*]…}`, but
+// `build_workspace_edit` / `WorkspaceEdit` carried no auth-forward
+// field, so `edit_workspace` re-rendered the workspace table from the
+// parsed-from-disk in-memory copy — silently overwriting the operator's
+// mode change. The credential env var landed (env diff is wired
+// separately) but the mode never reached disk; on reload, the resolver
+// fell back to the global default and ignored the freshly-written key.
+#[test]
+fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    // Start the manager on the Auth tab, cursor on the workspace × Claude row.
+    let mut state = ManagerState::from_config(&config, cwd);
+    let ws = config
+        .workspaces
+        .get("big-monorepo")
+        .expect("seed must create big-monorepo")
+        .clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    let ws_claude_idx = auth_row_idx(&ed, |r| {
+        matches!(
+            r,
+            AuthRow::WorkspaceDefault {
+                agent: Agent::Claude
+            }
+        )
+    });
+    ed.active_field = FieldFocus::Row(ws_claude_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    // Enter opens the auth-edit form modal on workspace × Claude.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthForm { .. })),
+        "Enter on WorkspaceDefault/Claude must open AuthForm; got {:?}",
+        editor(&state).modal
+    );
+
+    // Cycle mode: None → Sync → ApiKey (two Spaces).
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    // Enter advances to credential block (CredentialSource).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    // Enter again moves into LiteralValue (default credential is Literal).
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    // Type "sk-ant-test".
+    for ch in "sk-ant-test".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    // Tab to Save, Enter to commit the form.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "auth-form save must close the modal"
+    );
+
+    // pending.claude reflects ApiKey, pending.env carries the credential.
+    let pending = &editor(&state).pending;
+    assert_eq!(
+        pending.claude.as_ref().map(|c| c.auth_forward),
+        Some(jackin::config::AuthForwardMode::ApiKey),
+        "form commit must set workspace × claude mode in pending"
+    );
+    assert!(
+        pending.env.contains_key("ANTHROPIC_API_KEY"),
+        "form commit must set credential env var in pending"
+    );
+
+    // Save the editor: `s` opens the ConfirmSave modal (no collapses
+    // expected here since the seed has a single mount), Enter commits
+    // and bounces back to List.
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('s')),
+    )?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // Reload AppConfig from disk and assert both halves of the auth
+    // change survived the round-trip.
+    let reloaded = AppConfig::load_or_init(&paths)?;
+    let ws_on_disk = reloaded
+        .workspaces
+        .get("big-monorepo")
+        .expect("workspace must still exist on disk");
+    assert_eq!(
+        ws_on_disk.claude.as_ref().map(|c| c.auth_forward),
+        Some(jackin::config::AuthForwardMode::ApiKey),
+        "reload must see [workspaces.big-monorepo.claude] auth_forward = api_key"
+    );
+    let env_value = ws_on_disk
+        .env
+        .get("ANTHROPIC_API_KEY")
+        .expect("reload must see ANTHROPIC_API_KEY in workspace env");
+    match env_value {
+        jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "sk-ant-test"),
+        jackin::operator_env::EnvValue::OpRef(_) => {
+            panic!("expected literal credential, got OpRef")
+        }
+    }
+
+    // Belt-and-braces: read the raw TOML and confirm the literal text is
+    // there. Catches a future regression where a typed accessor papered
+    // over a missing block (e.g. resolver fall-through).
+    let toml = std::fs::read_to_string(&paths.config_file)?;
+    assert!(
+        toml.contains("[workspaces.big-monorepo.claude]"),
+        "raw TOML must carry the workspace claude block; got:\n{toml}"
+    );
+    assert!(
+        toml.contains(r#"auth_forward = "api_key""#),
+        "raw TOML must carry auth_forward = \"api_key\"; got:\n{toml}"
+    );
+    assert!(
+        toml.contains(r#"ANTHROPIC_API_KEY = "sk-ant-test""#),
+        "raw TOML must carry the credential env var; got:\n{toml}"
+    );
+    Ok(())
+}
+
+#[test]
+fn auth_add_role_override_three_step_flow() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let ws = config
+        .workspaces
+        .get("big-monorepo")
+        .expect("seed must create big-monorepo")
+        .clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+
+    let sentinel_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::AddSentinel { .. }));
+    ed.active_field = FieldFocus::Row(sentinel_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthRolePicker { .. })),
+        "Enter on AddSentinel must open AuthRolePicker; got {:?}",
+        editor(&state).modal
+    );
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthAgentPicker { .. })),
+        "Enter on AuthRolePicker must open AuthAgentPicker; got {:?}",
+        editor(&state).modal
+    );
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    match &editor(&state).modal {
+        Some(Modal::AuthForm {
+            target: jackin::console::manager::state::AuthFormTarget::WorkspaceRole { role, agent },
+            ..
+        }) => {
+            assert_eq!(*agent, Agent::Claude);
+            assert!(
+                !role.is_empty(),
+                "role must propagate from AuthRolePicker → AuthAgentPicker → AuthForm"
+            );
+        }
+        other => panic!("expected AuthForm/WorkspaceRole, got {other:?}"),
+    }
+    Ok(())
+}
+
+#[test]
+fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut over = WorkspaceRoleOverride::default();
+    over.claude = Some(jackin::config::AgentAuthConfig {
+        auth_forward: jackin::config::AuthForwardMode::Ignore,
+    });
+    ws.roles.insert("the-architect".into(), over);
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    let header_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::RoleHeader { .. }));
+    ed.active_field = FieldFocus::Row(header_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
+    assert!(editor(&state).auth_expanded.contains("the-architect"));
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Left))?;
+    assert!(!editor(&state).auth_expanded.contains("the-architect"));
+    Ok(())
+}
+
+#[test]
+fn auth_role_header_d_opens_confirm_then_clears_overrides() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut over = WorkspaceRoleOverride::default();
+    over.claude = Some(jackin::config::AgentAuthConfig {
+        auth_forward: jackin::config::AuthForwardMode::Ignore,
+    });
+    over.codex = Some(jackin::config::CodexAuthConfig(
+        jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::ApiKey,
+        },
+    ));
+    ws.roles.insert("the-architect".into(), over);
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    let header_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::RoleHeader { .. }));
+    ed.active_field = FieldFocus::Row(header_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('d')),
+    )?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::Confirm {
+            target: jackin::console::manager::state::ConfirmTarget::ClearAuthRoleOverride { .. },
+            ..
+        })
+    ));
+
+    // Confirm with 'y' (default focus is No; Enter would dismiss without action).
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('y')),
+    )?;
+    let role_over = editor(&state)
+        .pending
+        .roles
+        .get("the-architect")
+        .expect("override entry stays even after clear");
+    assert!(role_over.claude.is_none());
+    assert!(role_over.codex.is_none());
+    Ok(())
+}
+
+#[test]
+fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut over = WorkspaceRoleOverride::default();
+    over.claude = Some(jackin::config::AgentAuthConfig {
+        auth_forward: jackin::config::AuthForwardMode::Ignore,
+    });
+    over.codex = Some(jackin::config::CodexAuthConfig(
+        jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::ApiKey,
+        },
+    ));
+    ws.roles.insert("the-architect".into(), over);
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_expanded.insert("the-architect".into());
+    let claude_idx = auth_row_idx(&ed, |r| {
+        matches!(
+            r,
+            AuthRow::RoleAgentRow {
+                agent: jackin::agent::Agent::Claude,
+                ..
+            }
+        )
+    });
+    ed.active_field = FieldFocus::Row(claude_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('d')),
+    )?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "single-agent clear must be silent (no modal)"
+    );
+    let ro = editor(&state).pending.roles.get("the-architect").unwrap();
+    assert!(ro.claude.is_none());
+    assert!(ro.codex.is_some(), "Codex override must be untouched");
     Ok(())
 }

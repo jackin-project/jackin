@@ -10,8 +10,8 @@ use crate::console::op_cache::OpCache;
 use crate::workspace::WorkspaceConfig;
 
 use crate::console::widgets::{
-    confirm::ConfirmState, confirm_save::ConfirmSaveState, error_popup::ErrorPopupState,
-    file_browser::FileBrowserState, github_picker::GithubPickerState,
+    auth_panel::AuthForm, confirm::ConfirmState, confirm_save::ConfirmSaveState,
+    error_popup::ErrorPopupState, file_browser::FileBrowserState, github_picker::GithubPickerState,
     mount_dst_choice::MountDstChoiceState, op_picker::OpPickerState, role_picker::RolePickerState,
     scope_picker::ScopePickerState, source_picker::SourcePickerState, text_input::TextInputState,
     workdir_pick::WorkdirPickState,
@@ -117,6 +117,7 @@ pub struct EditorState<'a> {
     /// — they render as a breadcrumb, not a masked value.
     pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
     pub secrets_expanded: BTreeSet<String>,
+    pub auth_expanded: BTreeSet<String>,
     /// Scratch for the two-step add flow: set on `EnvKey` commit,
     /// cleared on `EnvValue` commit/cancel.
     pub pending_env_key: Option<(SecretsScopeTag, String)>,
@@ -129,6 +130,28 @@ pub struct EditorState<'a> {
     /// (wrapped as `EnvValue::OpRef`) until the operator names the key
     /// and the `EnvKey` modal commits both fields at once.
     pub pending_picker_value: Option<crate::operator_env::EnvValue>,
+    /// Stash for the auth-form → `OpPicker` → auth-form round trip.
+    /// Set when the operator presses Enter at `AuthFormFocus::OpRefValue`,
+    /// and consumed when `OpPicker` commits or cancels: on commit we
+    /// reconstruct the `Modal::AuthForm` with the picked `OpRef`
+    /// applied; on cancel we reconstruct it pristine. Threading the
+    /// auth-form context through this field (rather than via a
+    /// payload on `Modal::OpPicker`) keeps the picker variant
+    /// orthogonal to its caller.
+    pub pending_auth_form_return: Option<AuthFormReturnPath>,
+}
+
+/// Captured auth-form context to re-mount the form after the
+/// `OpPicker` commits or cancels.
+///
+/// `state` and `literal_buffer` are stashed so a half-typed literal
+/// isn't lost when the operator detours into the picker.
+#[derive(Debug)]
+pub struct AuthFormReturnPath {
+    pub target: AuthFormTarget,
+    pub state: Box<AuthForm>,
+    pub focus: AuthFormFocus,
+    pub literal_buffer: String,
 }
 
 /// Save cycle state machine.
@@ -196,6 +219,10 @@ pub enum EditorTab {
     Mounts,
     Roles,
     Secrets,
+    /// Auth panel: workspace-level + per-(workspace × role) auth-forward
+    /// modes and credentials, with a global-defaults preview at the top.
+    /// Mounts the `auth_panel` widget (Tasks 15-18) inside the editor.
+    Auth,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -258,11 +285,75 @@ pub enum Modal<'a> {
     RoleOverridePicker {
         state: RolePickerState,
     },
+    /// Auth-tab role picker — the first step in the 3-step add flow
+    /// (sentinel → role → agent → `AuthForm`). Reuses the existing
+    /// `RolePickerState` widget; commit hands off to `AuthAgentPicker`.
+    AuthRolePicker {
+        state: RolePickerState,
+    },
+    /// Auth-tab agent picker — second step. Carries the role chosen in
+    /// `AuthRolePicker` so commit can build the `AuthFormTarget`
+    /// directly without another round-trip.
+    AuthAgentPicker {
+        role: String,
+        state: crate::console::widgets::agent_choice::AgentChoiceState,
+    },
     SourcePicker {
         state: SourcePickerState,
     },
     ScopePicker {
         state: ScopePickerState,
+    },
+    /// Auth-form modal opened from the Auth tab. `target` identifies
+    /// which scope (workspace or workspace × role) and which agent the
+    /// form is editing so commit can write back to the correct slot
+    /// on `editor.pending`.
+    AuthForm {
+        target: AuthFormTarget,
+        state: Box<AuthForm>,
+        /// Active focus inside the form (mode picker / cred radio / cred value / buttons).
+        focus: AuthFormFocus,
+        /// Scratch text-input buffer when the credential value is being
+        /// typed inline in the form. Cleared on Esc; committed to
+        /// `state.set_literal` on Enter.
+        literal_buffer: String,
+    },
+}
+
+/// Where in the auth-edit form the cursor currently sits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthFormFocus {
+    /// Mode picker line — Space/Tab cycles, Enter commits selection.
+    Mode,
+    /// Credential source radio (Literal / 1Password) — Space toggles.
+    CredentialSource,
+    /// Literal value text input — operator types into `literal_buffer`.
+    LiteralValue,
+    /// 1Password value display — Enter opens the `OpPicker`.
+    OpRefValue,
+    /// `[ Save ]` action button.
+    Save,
+    /// `[ Cancel ]` action button.
+    Cancel,
+    /// `[ Reset ]` action button — clears the layer's mode/credential.
+    Reset,
+}
+
+/// Identifies the (scope, agent) pair an open `AuthForm` modal is editing.
+///
+/// Committing the form writes back into the matching slot on
+/// `editor.pending` (workspace `claude/codex` field, or workspace-role
+/// override `claude/codex` field, plus the credential env var).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthFormTarget {
+    /// `[workspaces.<ws>.<agent>].auth_forward` slot, with the credential
+    /// env var landing in `[workspaces.<ws>.env]`.
+    Workspace { agent: crate::agent::Agent },
+    /// `[workspaces.<ws>.roles.<role>.<agent>].auth_forward` slot, with
+    /// the credential env var landing in `[workspaces.<ws>.roles.<role>.env]`.
+    WorkspaceRole {
+        role: String,
+        agent: crate::agent::Agent,
     },
 }
 
@@ -301,6 +392,11 @@ pub enum ConfirmTarget {
         plan: PendingSaveCommit,
         exit_on_success: bool,
         affected_containers: Vec<String>,
+    },
+    /// `D` on a `RoleHeader` on the Auth tab — clears both agent overrides
+    /// for `role` after the operator confirms in the Confirm modal.
+    ClearAuthRoleOverride {
+        role: String,
     },
 }
 
@@ -514,9 +610,11 @@ impl EditorState<'_> {
             save_flow: EditorSaveFlow::Idle,
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
+            auth_expanded: BTreeSet::default(),
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
+            pending_auth_form_return: None,
         }
     }
 
@@ -534,9 +632,11 @@ impl EditorState<'_> {
             save_flow: EditorSaveFlow::Idle,
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
+            auth_expanded: BTreeSet::default(),
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
+            pending_auth_form_return: None,
         }
     }
 
@@ -971,8 +1071,14 @@ mod tests {
             "LOG_LEVEL".into(),
             crate::operator_env::EnvValue::Plain("info".into()),
         );
-        ws.roles
-            .insert("agent-x".into(), WorkspaceRoleOverride { env: role_x_env });
+        ws.roles.insert(
+            "agent-x".into(),
+            WorkspaceRoleOverride {
+                env: role_x_env,
+                claude: None,
+                codex: None,
+            },
+        );
         let mut e = EditorState::new_edit("a".into(), ws);
         assert_eq!(e.change_count(), 0);
 
@@ -1019,6 +1125,8 @@ mod tests {
                     m.insert("K".into(), crate::operator_env::EnvValue::Plain("v".into()));
                     m
                 },
+                claude: None,
+                codex: None,
             },
         );
         assert!(e2.is_dirty(), "role env set must make state dirty");
@@ -1162,6 +1270,8 @@ mod tests {
             env: BTreeMap::default(),
             roles: BTreeMap::default(),
             keep_awake: KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
             git_pull_on_entry: false,
         };
         let mut e = EditorState::new_edit("ws".into(), ws);
