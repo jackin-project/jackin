@@ -701,15 +701,16 @@ impl EditorState<'_> {
     }
 
     /// Cycle the per-mount isolation strategy on the highlighted mount row.
-    /// Sequence: `Shared → Worktree → Shared`. Silent no-op when the cursor
+    /// Sequence: `Shared → Worktree → Clone → Shared`. Silent no-op when the cursor
     /// is on the `+ Add mount` sentinel (i.e. past the last data row).
     pub fn cycle_isolation_for_selected_mount(&mut self) {
-        use crate::isolation::MountIsolation::{Shared, Worktree};
+        use crate::isolation::MountIsolation::{Clone, Shared, Worktree};
         let FieldFocus::Row(n) = self.active_field;
         if let Some(m) = self.pending.mounts.get_mut(n) {
             m.isolation = match m.isolation {
                 Shared => Worktree,
-                Worktree => Shared,
+                Worktree => Clone,
+                Clone => Shared,
             };
         }
     }
@@ -1298,8 +1299,14 @@ mod tests {
         e.cycle_isolation_for_selected_mount();
         assert_eq!(
             e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Clone,
+            "two I presses must cycle Worktree to Clone",
+        );
+        e.cycle_isolation_for_selected_mount();
+        assert_eq!(
+            e.pending.mounts[0].isolation,
             crate::isolation::MountIsolation::Shared,
-            "two I presses must net back to Shared (Clone is reserved-but-rejected in V1)"
+            "three I presses must net back to Shared",
         );
         assert_eq!(
             e.change_count(),
