@@ -51,10 +51,14 @@ pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>) {
     });
 }
 
-/// Open the role-picker modal for the Auth-tab "+ Add per-role override"
-/// sentinel. Filters out roles that already have at least one agent
-/// override configured so only un-overridden roles appear in the picker.
-/// If no eligible candidates remain, the call is a no-op.
+/// Mount the Auth-tab role picker for the "+ Add per-role override"
+/// flow. Filters `eligible_agents_for_override` down to roles that
+/// don't yet carry any agent override — unlike the Secrets tab, where
+/// adding more env keys to an existing override is meaningful, the
+/// Auth tab's per-role block is a 2-row inline-editable surface, so
+/// re-mounting the picker for an already-overridden role would just
+/// duplicate the existing rows. Silent no-op when no candidates remain
+/// (the row is rendered dimmed in that state).
 pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
     let eligible = super::super::render::editor::eligible_agents_for_override(editor, config);
     let already_overridden: std::collections::BTreeSet<String> = editor

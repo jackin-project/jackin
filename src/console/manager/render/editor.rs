@@ -1095,11 +1095,18 @@ fn render_auth_row(
                 badge_span(badge),
             ])
         }
-        AuthRow::AddSentinel { eligible } => ratatui::text::Line::from(vec![
-            Span::styled("  + Add per-role override", phosphor),
-            Span::raw("   "),
-            Span::styled(format!("({eligible} eligible)"), dim_green),
-        ]),
+        AuthRow::AddSentinel { eligible } => {
+            let label_style = if *eligible == 0 { dim_green } else { phosphor };
+            let suffix = if *eligible == 0 {
+                "   (all roles overridden)".to_string()
+            } else {
+                format!("   ({eligible} eligible)")
+            };
+            ratatui::text::Line::from(vec![
+                Span::styled("  + Add per-role override", label_style),
+                Span::styled(suffix, dim_green),
+            ])
+        }
         AuthRow::Divider => ratatui::text::Line::from(Span::styled(
             "  ──────────────────────────────────────────",
             dim_green,
