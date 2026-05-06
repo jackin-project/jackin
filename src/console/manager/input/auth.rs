@@ -502,6 +502,7 @@ mod tests {
     use super::*;
     use crate::agent::Agent;
     use crate::config::{AppConfig, AuthForwardMode};
+    use crate::console::manager::render::editor::{AuthRow, auth_flat_rows};
     use crate::console::manager::state::{
         AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState,
     };
@@ -528,6 +529,23 @@ mod tests {
     /// op-picker plumbing — this keeps their bodies short.
     fn drive_key(editor: &mut EditorState<'_>, k: KeyEvent) -> bool {
         handle_auth_form_key(editor, k, fresh_op_cache())
+    }
+
+    /// Return the flat-row index for `WorkspaceDefault { Claude }`.
+    /// Panics if the row doesn't exist (which would indicate a broken
+    /// fixture, not a test-under-test failure).
+    fn workspace_claude_row_idx(editor: &EditorState<'_>) -> usize {
+        auth_flat_rows(editor)
+            .iter()
+            .position(|r| {
+                matches!(
+                    r,
+                    AuthRow::WorkspaceDefault {
+                        agent: Agent::Claude,
+                    }
+                )
+            })
+            .expect("WorkspaceDefault × Claude row must exist in auth_flat_rows")
     }
 
     fn build_state() -> (AppConfig, ManagerState<'static>) {
@@ -559,7 +577,8 @@ mod tests {
         let ws = cfg.workspaces.get("proj").unwrap().clone();
         let mut editor = EditorState::new_edit("proj".into(), ws);
         editor.active_tab = crate::console::manager::state::EditorTab::Auth;
-        editor.active_field = FieldFocus::Row(0);
+        let ws_claude_idx = workspace_claude_row_idx(&editor);
+        editor.active_field = FieldFocus::Row(ws_claude_idx);
         state.stage = ManagerStage::Editor(editor);
         (cfg, state)
     }
@@ -672,9 +691,39 @@ mod tests {
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
-        // Row 2 is workspace×role[0]×Claude (rows 0..2 are the workspace
-        // layer × {Claude, Codex}; row 2 is the first role-agent row).
-        editor.active_field = FieldFocus::Row(2);
+        // Insert an override entry for "smith" so it materialises as a
+        // RoleHeader in auth_flat_rows (the row only appears when
+        // claude.is_some() || codex.is_some()). We seed codex only so
+        // the claude field stays None — the auth form then opens fresh
+        // (None mode) and the two-Space cycle reaches ApiKey as the
+        // test expects.
+        editor.pending.roles.insert(
+            "smith".into(),
+            WorkspaceRoleOverride {
+                codex: Some(crate::config::CodexAuthConfig(
+                    crate::config::AgentAuthConfig {
+                        auth_forward: AuthForwardMode::Sync,
+                    },
+                )),
+                ..Default::default()
+            },
+        );
+        // Expand the role so the RoleAgentRow children are emitted.
+        editor.auth_expanded.insert("smith".into());
+        // Dynamically locate the smith × Claude agent row.
+        let smith_claude_idx = auth_flat_rows(editor)
+            .iter()
+            .position(|r| {
+                matches!(
+                    r,
+                    AuthRow::RoleAgentRow {
+                        role,
+                        agent: Agent::Claude,
+                    } if role == "smith"
+                )
+            })
+            .expect("RoleAgentRow smith × Claude must exist after override insertion");
+        editor.active_field = FieldFocus::Row(smith_claude_idx);
         open_auth_form_modal(editor);
         let Some(Modal::AuthForm { target, .. }) = &editor.modal else {
             panic!("form must be open");
