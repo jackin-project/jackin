@@ -21,8 +21,8 @@ use crate::workspace::{
 };
 
 use self::context::{
-    TargetKind, classify_target, remember_last_agent, resolve_agent_from_context,
-    resolve_running_container_from_context, resolve_target_name,
+    TargetKind, classify_target, prompt_agent_choice_if_needed, remember_last_agent,
+    resolve_agent_from_context, resolve_running_container_from_context, resolve_target_name,
 };
 
 /// Parse an `auth_forward` mode value as it arrived from the CLI.
@@ -107,7 +107,12 @@ pub fn run(cli: Cli) -> Result<()> {
 
             let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
             opts.force = force;
-            opts.agent = agent;
+            opts.agent = match agent {
+                Some(explicit) => Some(explicit),
+                None => {
+                    prompt_agent_choice_if_needed(&paths, &class, resolved_workspace.default_agent)?
+                }
+            };
             // Pre-launch reconcile: if a previous role in a keep_awake
             // workspace already runs, ensure caffeinate is up before we
             // build/launch (so a long Docker build doesn't see the host
@@ -148,7 +153,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("aborted — sensitive mount paths were not confirmed");
             }
 
-            let opts = runtime::LoadOptions::for_launch(debug);
+            let mut opts = runtime::LoadOptions::for_launch(debug);
+            opts.agent = prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?;
             runtime::reconcile_keep_awake(&paths, &mut runner);
             let result =
                 runtime::load_role(&paths, &mut config, &class, &workspace, &mut runner, &opts);
