@@ -827,11 +827,12 @@ The practical resolution, as of April 2026, is to **always create jackin's machi
 - v2.1.0 (April 19, 2026): "Isolated machines without filesystem integration" — an isolated machine has no automatic `/Users` mount and the host filesystem is not visible
 - v2.1.1 (April 20, 2026): "Selective file sharing mounts in isolated machines" — inside an isolated machine, specific host paths can be declared as shares
 
-Historical context (kept for audit trail — these are now resolved upstream):
+Historical context (kept for audit trail — these are now resolved upstream by
+OrbStack v2.1.x, so the roadmap no longer links to the old tracking issues):
 
-- [orbstack/orbstack#169](https://github.com/orbstack/orbstack/issues/169) (2023) — the long-standing request that tracked this. The feature shipped as "isolated machines" + "selective shares" in v2.1.x.
-- [orbstack/orbstack#1243](https://github.com/orbstack/orbstack/issues/1243) (2024) — closed as duplicate.
-- [orbstack/orbstack#2308](https://github.com/orbstack/orbstack/issues/2308) (January 2026) — superseded by v2.1.x.
+- orbstack/orbstack#169 (2023) — the long-standing request that tracked this. The feature shipped as "isolated machines" + "selective shares" in v2.1.x.
+- orbstack/orbstack#1243 (2024) — closed as duplicate.
+- orbstack/orbstack#2308 (January 2026) — superseded by v2.1.x.
 
 Implication for jackin: the `orbstack` provider should default to `--isolated` and reject any flow that would fall back to the default machine mode, unless the user opts out explicitly. The `umount /Users` workaround is no longer needed.
 

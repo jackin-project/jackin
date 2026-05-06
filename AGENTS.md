@@ -86,21 +86,49 @@ Don't ask the operator for permission to bring the metadata into agreement with 
 
 Why this rule exists: the operator relies on PR titles and bodies as the long-term navigable record of what shipped. Drift between description and diff is the single most common cause of "what does this PR actually do?" archaeology after the fact.
 
-### PR merge commit titles
+### PR squash merge messages
 
-When an agent merges a pull request, the resulting squash/merge commit title must preserve the GitHub PR reference.
+When an agent merges a pull request, the resulting squash commit must preserve the GitHub PR reference and enough attribution to make the shipped history auditable.
 
 - Always use squash merge unless the human operator explicitly requests a different merge method for that specific PR.
-- Prefer GitHub's default squash/merge title when it already includes `(#PR_NUMBER)`.
+- The squash commit title must be the final PR title with the PR number suffix: `type(scope): summary (#PR_NUMBER)`.
+- Prefer GitHub's default squash title when it already matches that format.
 - If overriding the commit title, manually append `(#PR_NUMBER)`.
 - For Codex/GitHub connector merges: do not pass a custom `commit_title` unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
-- Example: `docs(roadmap): refine per-mount isolation design (#168)`
+- The squash commit body must retain the PR details and a direct link to the original pull request. At minimum, include `Pull request: https://github.com/<owner>/<repo>/pull/<PR_NUMBER>` before trailers if GitHub's generated body does not already include the PR URL.
+- The squash commit trailers must include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent that materially contributed to the PR. Include multiple agent trailers when multiple agents contributed.
+
+Good squash titles:
+
+```text
+docs: include mise trust in PR verification (#232)
+docs: improve landing hero nav and PR guidance (#231)
+chore(deps): update taiki-e/install-action action to v2.77.1 (#222)
+refactor!: relocate host→container handoff under /jackin/, drop ~/.claude bind mount (#229)
+```
+
+Good squash trailers for a Codex-authored PR:
+
+```text
+Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
+Co-authored-by: Codex <codex@openai.com>
+```
+
+Good squash trailers for a PR with multiple AI agents:
+
+```text
+Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
+Co-authored-by: Codex <codex@openai.com>
+Co-authored-by: Claude <noreply@anthropic.com>
+```
 
 This keeps commit history, GitHub commit pages, and local `git log --oneline` visibly linked back to the PR.
 
 ## Commit Attribution (agent-only)
 
 Every commit created by an AI agent in this repository must include **exactly one** `Co-authored-by` trailer identifying the agent that made the commit. The trailer identifies the **agent tool**, not the underlying model — **never stack multiple agent trailers on one commit** (for example, an Amp-generated commit must not also carry `Co-authored-by: Claude` or `Co-authored-by: Codex` just because Amp used one of those vendors' models under the hood).
+
+Exception: a squash merge commit may include multiple `Co-authored-by` trailers when multiple AI agents materially contributed to the PR. In that case, include one trailer per contributing agent as described in "PR squash merge messages".
 
 Until the listed agents emit their trailers automatically, the trailer must be added by hand when creating or amending the commit.
 
