@@ -285,6 +285,19 @@ pub enum Modal<'a> {
     RoleOverridePicker {
         state: RolePickerState,
     },
+    /// Auth-tab role picker — the first step in the 3-step add flow
+    /// (sentinel → role → agent → `AuthForm`). Reuses the existing
+    /// `RolePickerState` widget; commit hands off to `AuthAgentPicker`.
+    AuthRolePicker {
+        state: RolePickerState,
+    },
+    /// Auth-tab agent picker — second step. Carries the role chosen in
+    /// `AuthRolePicker` so commit can build the `AuthFormTarget`
+    /// directly without another round-trip.
+    AuthAgentPicker {
+        role: String,
+        state: crate::console::widgets::agent_choice::AgentChoiceState,
+    },
     SourcePicker {
         state: SourcePickerState,
     },
@@ -380,6 +393,9 @@ pub enum ConfirmTarget {
         exit_on_success: bool,
         affected_containers: Vec<String>,
     },
+    /// `D` on a `RoleHeader` on the Auth tab — clears both agent overrides
+    /// for `role` after the operator confirms in the Confirm modal.
+    ClearAuthRoleOverride { role: String },
 }
 
 /// Separate from [`crate::config::editor::EnvScope`].

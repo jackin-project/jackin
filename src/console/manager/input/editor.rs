@@ -959,6 +959,10 @@ pub(super) fn handle_editor_modal(
         Modal::AuthForm { .. } => {
             super::auth::handle_auth_form_key(editor, key, op_cache);
         }
+        #[allow(clippy::unimplemented)]
+        Modal::AuthRolePicker { .. } | Modal::AuthAgentPicker { .. } => {
+            unimplemented!("wired in Tasks 8-10");
+        }
         Modal::OpPicker { state: picker } => {
             match picker.handle_key(key) {
                 ModalOutcome::Commit(op_ref) => {
@@ -1475,6 +1479,10 @@ fn apply_editor_confirm(
         // site because it consumes `plan` and routes through
         // `EditorSaveFlow::PendingCommit`. No-op here.
         ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
+        #[allow(clippy::unimplemented)]
+        ConfirmTarget::ClearAuthRoleOverride { .. } => {
+            unimplemented!("wired in Task 12");
+        }
     }
     Ok(())
 }

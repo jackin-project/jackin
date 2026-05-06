@@ -63,6 +63,10 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
         }
         Modal::SourcePicker { .. } | Modal::ScopePicker { .. } => (50, 7),
         Modal::AuthForm { .. } => (70, 14),
+        #[allow(clippy::unimplemented)]
+        Modal::AuthRolePicker { .. } | Modal::AuthAgentPicker { .. } => {
+            unimplemented!("wired in Tasks 8-10");
+        }
     };
     centered_rect_fixed(outer, pct_w, height_rows)
 }
@@ -100,6 +104,10 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
             };
             let ctx = auth_panel::FormContext { workspace, role };
             auth_panel::render_form(frame, modal_area, state.as_ref(), &ctx);
+        }
+        #[allow(clippy::unimplemented)]
+        Modal::AuthRolePicker { .. } | Modal::AuthAgentPicker { .. } => {
+            unimplemented!("wired in Tasks 8-10");
         }
     }
 }
