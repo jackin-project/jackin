@@ -300,9 +300,11 @@ tightened on the next write.
 
 For Codex, the host's `~/.codex/auth.json` is copied into
 `~/.jackin/data/<container>/codex/auth.json` with `0600` permissions
-and bind-mounted at `/home/agent/.codex/auth.json`. Token refreshes
-inside the container write back to the host file through the bind
-mount.
+and bind-mounted at `/jackin/codex/auth.json`. The runtime entrypoint
+copies the file into `~/.codex/auth.json` inside the container before
+launching the agent. Token refreshes performed inside the container
+stay in the container's writable layer (lost on `docker rm`); they
+are not propagated back to the host.
 
 When the host has no Codex auth.json (and `OPENAI_API_KEY` is not set
 via `api_key` mode), jackin' still starts the container — Codex CLI

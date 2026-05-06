@@ -37,9 +37,28 @@ else
 fi
 
 # ── agent-specific setup ───────────────────────────────────────────
+#
+# Auth/config files arrive under /jackin/<agent>/... rather than being
+# bind-mounted directly over the agent's home. The image bakes
+# ~/.claude/{settings.json,hooks,memory} (and the codex equivalents);
+# bind-mounting on top would mask those, so we copy from /jackin/ into
+# the agent home here at startup. Copies — not symlinks — to avoid
+# tools that resolve realpath and refuse paths outside $HOME, and so
+# in-session writes (token rotation, etc.) stay in the container's
+# writable layer instead of leaking back to the host.
 case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
   claude)
-    run_maybe_quiet /home/agent/install-claude-plugins.sh
+    mkdir -p /home/agent/.claude
+    if [ -f /jackin/claude/account.json ]; then
+        cp /jackin/claude/account.json /home/agent/.claude.json
+        chmod 600 /home/agent/.claude.json
+    fi
+    if [ -f /jackin/claude/credentials.json ]; then
+        cp /jackin/claude/credentials.json /home/agent/.claude/.credentials.json
+        chmod 600 /home/agent/.claude/.credentials.json
+    fi
+
+    run_maybe_quiet /home/agent/install-claude-plugins.sh /jackin/claude/plugins.json
 
     # Register security tool MCP servers (ignore "already exists" on subsequent runs)
     if [[ "${JACKIN_DISABLE_TIRITH:-0}" != "1" ]]; then
@@ -56,7 +75,15 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     LAUNCH=(claude --dangerously-skip-permissions --verbose)
     ;;
   codex)
-    # config.toml is mounted RW from host; no in-container generation needed.
+    mkdir -p /home/agent/.codex
+    if [ -f /jackin/codex/config.toml ]; then
+        cp /jackin/codex/config.toml /home/agent/.codex/config.toml
+        chmod 600 /home/agent/.codex/config.toml
+    fi
+    if [ -f /jackin/codex/auth.json ]; then
+        cp /jackin/codex/auth.json /home/agent/.codex/auth.json
+        chmod 600 /home/agent/.codex/auth.json
+    fi
     LAUNCH=(codex)
     ;;
   *)
