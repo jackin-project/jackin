@@ -182,7 +182,23 @@ pub(super) fn handle_editor_key(
                 }
             }
             EditorTab::Auth => {
-                super::auth::open_auth_form_modal(editor);
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = super::super::render::editor::auth_flat_rows(editor);
+                match rows.get(n) {
+                    Some(super::super::render::editor::AuthRow::AddSentinel { .. }) => {
+                        super::auth::open_auth_role_picker(editor, config);
+                    }
+                    Some(super::super::render::editor::AuthRow::RoleHeader { role, .. }) => {
+                        super::auth::toggle_role_expand(editor, role.clone());
+                    }
+                    Some(
+                        super::super::render::editor::AuthRow::WorkspaceDefault { .. }
+                        | super::super::render::editor::AuthRow::RoleAgentRow { .. },
+                    ) => {
+                        super::auth::open_auth_form_modal(editor);
+                    }
+                    _ => {}
+                }
             }
         },
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Roles => {
@@ -959,9 +975,21 @@ pub(super) fn handle_editor_modal(
         Modal::AuthForm { .. } => {
             super::auth::handle_auth_form_key(editor, key, op_cache);
         }
+        Modal::AuthRolePicker { state: picker } => match picker.handle_key(key) {
+            ModalOutcome::Commit(role) => {
+                editor.modal = Some(Modal::AuthAgentPicker {
+                    role: role.key(),
+                    state: crate::console::widgets::agent_choice::AgentChoiceState::new(),
+                });
+            }
+            ModalOutcome::Cancel => {
+                editor.modal = None;
+            }
+            ModalOutcome::Continue => {}
+        },
         #[allow(clippy::unimplemented)]
-        Modal::AuthRolePicker { .. } | Modal::AuthAgentPicker { .. } => {
-            unimplemented!("wired in Tasks 8-10");
+        Modal::AuthAgentPicker { .. } => {
+            unimplemented!("wired in Task 9");
         }
         Modal::OpPicker { state: picker } => {
             match picker.handle_key(key) {

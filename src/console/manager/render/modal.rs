@@ -57,15 +57,17 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
             )
         }
         Modal::OpPicker { .. } => (80, 22),
-        Modal::RolePicker { state } | Modal::RoleOverridePicker { state } => {
+        Modal::RolePicker { state }
+        | Modal::RoleOverridePicker { state }
+        | Modal::AuthRolePicker { state } => {
             let rows = (state.filtered.len() as u16).saturating_add(6).min(15);
             (50, rows)
         }
         Modal::SourcePicker { .. } | Modal::ScopePicker { .. } => (50, 7),
         Modal::AuthForm { .. } => (70, 14),
         #[allow(clippy::unimplemented)]
-        Modal::AuthRolePicker { .. } | Modal::AuthAgentPicker { .. } => {
-            unimplemented!("wired in Tasks 8-10");
+        Modal::AuthAgentPicker { .. } => {
+            unimplemented!("wired in Task 9");
         }
     };
     centered_rect_fixed(outer, pct_w, height_rows)
@@ -92,7 +94,9 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
             state.tick();
             op_picker::render::render(frame, modal_area, state);
         }
-        Modal::RolePicker { state } | Modal::RoleOverridePicker { state } => {
+        Modal::RolePicker { state }
+        | Modal::RoleOverridePicker { state }
+        | Modal::AuthRolePicker { state } => {
             role_picker::render(frame, modal_area, state);
         }
         Modal::SourcePicker { state } => source_picker::render(frame, modal_area, state),
@@ -106,8 +110,8 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
             auth_panel::render_form(frame, modal_area, state.as_ref(), &ctx);
         }
         #[allow(clippy::unimplemented)]
-        Modal::AuthRolePicker { .. } | Modal::AuthAgentPicker { .. } => {
-            unimplemented!("wired in Tasks 8-10");
+        Modal::AuthAgentPicker { .. } => {
+            unimplemented!("wired in Task 9");
         }
     }
 }

@@ -9,10 +9,12 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::super::widgets::auth_panel::{AuthForm, CredentialInput};
 use super::super::super::widgets::op_picker::OpPickerState;
+use super::super::super::widgets::role_picker::RolePickerState;
 use super::super::render::editor::resolve_auth_row_target;
 use super::super::state::{
     AuthFormFocus, AuthFormReturnPath, AuthFormTarget, EditorState, FieldFocus, Modal,
 };
+use crate::config::AppConfig;
 use crate::agent::Agent;
 use crate::config::{AgentAuthConfig, AuthForwardMode, CodexAuthConfig};
 use crate::console::op_cache::OpCache;
@@ -47,6 +49,39 @@ pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>) {
         focus: AuthFormFocus::Mode,
         literal_buffer,
     });
+}
+
+/// Open the role-picker modal for the Auth-tab "+ Add per-role override"
+/// sentinel. Filters out roles that already have at least one agent
+/// override configured so only un-overridden roles appear in the picker.
+/// If no eligible candidates remain, the call is a no-op.
+pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
+    let eligible = super::super::render::editor::eligible_agents_for_override(editor, config);
+    let already_overridden: std::collections::BTreeSet<String> = editor
+        .pending
+        .roles
+        .iter()
+        .filter(|(_, ro)| ro.claude.is_some() || ro.codex.is_some())
+        .map(|(name, _)| name.clone())
+        .collect();
+    let candidates: Vec<crate::selector::RoleSelector> = eligible
+        .into_iter()
+        .filter(|r| !already_overridden.contains(r))
+        .filter_map(|r| crate::selector::RoleSelector::parse(&r).ok())
+        .collect();
+    if candidates.is_empty() {
+        return;
+    }
+    let state = RolePickerState::new(candidates);
+    editor.modal = Some(Modal::AuthRolePicker { state });
+}
+
+/// Toggle the expanded/collapsed state of a role section on the Auth tab.
+/// If the role is currently expanded, collapse it; otherwise expand it.
+pub(super) fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
+    if !editor.auth_expanded.remove(&role) {
+        editor.auth_expanded.insert(role);
+    }
 }
 
 /// Read the current mode + credential for the form's target out of
