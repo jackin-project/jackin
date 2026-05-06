@@ -698,6 +698,16 @@ fn launch_role_runtime(
     // for a single interactive session.
     super::caffeinate::reconcile(paths, runner);
 
+    // Pre-attach safety check: if the container has already exited
+    // (entrypoint crashed, agent CLI failed at startup, etc.), `docker
+    // attach` will print the opaque "cannot attach to a stopped
+    // container, start it first" and we'd lose the actual reason.
+    // Capture `docker logs` and surface it in the error so the operator
+    // sees what really happened.
+    if let Some(err) = diagnose_premature_exit(runner, container_name) {
+        return Err(err);
+    }
+
     // Attach with signal forwarding disabled and the default detach shortcut
     // cleared: only an explicit exit from inside (or terminal close) ends the
     // foreground session, and closing the terminal leaves the container
@@ -715,9 +725,70 @@ fn launch_role_runtime(
     );
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
+    if attach_result.is_err()
+        && let Some(err) = diagnose_premature_exit(runner, container_name)
+    {
+        return Err(err);
+    }
     attach_result?;
 
     Ok(())
+}
+
+/// Detect a container that exited before (or during) the foreground attach
+/// and return an actionable error including the captured `docker logs`.
+///
+/// `docker attach` against a stopped container prints the opaque
+/// "cannot attach to a stopped container, start it first" with no hint
+/// at the underlying entrypoint failure (auth wiring crash, agent CLI
+/// startup error, missing mount, …). This wraps the inspect + log
+/// fetch so the surfaced error names the exit code, OOM flag, and the
+/// last lines of the container's combined stdout/stderr.
+///
+/// Returns `None` when the container is still running (the normal
+/// happy path) so the caller can proceed to attach.
+fn diagnose_premature_exit(
+    runner: &mut impl crate::docker::CommandRunner,
+    container_name: &str,
+) -> Option<anyhow::Error> {
+    use super::attach::{ContainerState, inspect_container_state};
+
+    match inspect_container_state(runner, container_name) {
+        // Default to letting `docker attach` proceed when state is
+        // ambiguous: the daemon's own error from a true `NotFound`
+        // (`No such container`) is just as actionable as anything we
+        // could synthesize, and a transient inspect hiccup must not
+        // hijack an otherwise-healthy launch.
+        ContainerState::Running | ContainerState::NotFound => None,
+        ContainerState::Stopped {
+            exit_code,
+            oom_killed,
+        } => {
+            let logs = runner
+                .capture("docker", &["logs", "--tail", "40", container_name], None)
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let reason = if oom_killed {
+                "OOM killed".to_string()
+            } else {
+                format!("exit {exit_code}")
+            };
+            let body = logs.map_or_else(
+                || {
+                    format!(
+                        "container {container_name} exited before attach ({reason}) and produced no log output"
+                    )
+                },
+                |text| {
+                    format!(
+                        "container {container_name} exited before attach ({reason}); last 40 log lines:\n{text}"
+                    )
+                },
+            );
+            Some(anyhow::anyhow!(body))
+        }
+    }
 }
 
 /// Query a container's post-attach state for use by `finalize_foreground_session`.
@@ -1488,6 +1559,75 @@ mod tests {
     use crate::selector::RoleSelector;
     use std::collections::VecDeque;
     use tempfile::tempdir;
+
+    #[test]
+    fn diagnose_premature_exit_returns_none_when_container_running() {
+        // Single inspect = "running" → fast path returns Ok(()) so attach
+        // proceeds. The function must NOT consume the logs queue entry in
+        // this case.
+        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+        let result = super::diagnose_premature_exit(&mut runner, "jackin-the-architect");
+        assert!(
+            result.is_none(),
+            "running container must not be diagnosed as a failure"
+        );
+    }
+
+    #[test]
+    fn diagnose_premature_exit_includes_logs_when_container_already_stopped() {
+        // First capture: inspect → exited 127 (entrypoint command not found).
+        // Second capture: docker logs → entrypoint stderr.
+        let mut runner = FakeRunner::with_capture_queue([
+            "false 127 false".to_string(),
+            "/home/agent/entrypoint.sh: line 85: exec: codex: not found".to_string(),
+        ]);
+        let err = super::diagnose_premature_exit(&mut runner, "jackin-the-architect")
+            .expect("stopped container must produce a diagnostic error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("exit 127"),
+            "exit code missing from msg: {msg}"
+        );
+        assert!(
+            msg.contains("codex: not found"),
+            "logs missing from msg: {msg}"
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker logs --tail 40 jackin-the-architect")),
+            "must shell out to `docker logs` to capture the entrypoint output"
+        );
+    }
+
+    #[test]
+    fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
+        let mut runner =
+            FakeRunner::with_capture_queue(["false 137 true".to_string(), String::new()]);
+        let err = super::diagnose_premature_exit(&mut runner, "jackin-x")
+            .expect("OOM-killed container is a premature exit");
+        let msg = err.to_string();
+        assert!(msg.contains("OOM killed"), "expected OOM marker in: {msg}");
+        assert!(
+            msg.contains("no log output"),
+            "empty logs branch missing: {msg}"
+        );
+    }
+
+    #[test]
+    fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() {
+        // Empty inspect output maps to `ContainerState::NotFound`. We
+        // intentionally let docker attach surface its own
+        // `No such container` rather than synthesize a less-helpful
+        // diagnostic — and a transient inspect hiccup must not abort
+        // an otherwise-healthy launch.
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+        assert!(
+            super::diagnose_premature_exit(&mut runner, "jackin-x").is_none(),
+            "NotFound must defer to docker attach's own error path"
+        );
+    }
 
     #[test]
     fn agent_mounts_for_claude_includes_claude_state() {
