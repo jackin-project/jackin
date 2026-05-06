@@ -117,6 +117,7 @@ pub struct EditorState<'a> {
     /// — they render as a breadcrumb, not a masked value.
     pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
     pub secrets_expanded: BTreeSet<String>,
+    pub auth_expanded: BTreeSet<String>,
     /// Scratch for the two-step add flow: set on `EnvKey` commit,
     /// cleared on `EnvValue` commit/cancel.
     pub pending_env_key: Option<(SecretsScopeTag, String)>,
@@ -591,6 +592,7 @@ impl EditorState<'_> {
             save_flow: EditorSaveFlow::Idle,
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
+            auth_expanded: BTreeSet::default(),
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
@@ -612,6 +614,7 @@ impl EditorState<'_> {
             save_flow: EditorSaveFlow::Idle,
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
+            auth_expanded: BTreeSet::default(),
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
