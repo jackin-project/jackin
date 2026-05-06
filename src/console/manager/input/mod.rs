@@ -2,6 +2,7 @@
 //! if a modal is open, events go to the modal handler; otherwise they
 //! go to the active stage's handler.
 
+pub(super) mod auth;
 pub(super) mod editor;
 pub(super) mod list;
 pub(super) mod mouse;

@@ -237,44 +237,89 @@ impl ConfigEditor {
         }
     }
 
-    pub fn set_agent_auth_forward(
-        &mut self,
-        agent_key: &str,
-        mode: crate::config::AuthForwardMode,
-    ) {
-        let claude_table = table_path_mut(
-            &mut self.doc,
-            &[
-                "roles".to_string(),
-                agent_key.to_string(),
-                "claude".to_string(),
-            ],
-        );
-        claude_table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
-    }
-
     pub fn set_global_auth_forward(&mut self, mode: crate::config::AuthForwardMode) {
         let claude_table = table_path_mut(&mut self.doc, &["claude".to_string()]);
         claude_table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
     }
 
+    /// Write or clear `[workspaces.<workspace>.<agent>].auth_forward`.
+    ///
+    /// `mode = Some(m)` writes the named mode; `mode = None` removes the
+    /// `auth_forward` field (and the agent block if it becomes empty),
+    /// dropping that layer of the resolver back to the workspace's
+    /// inheritance from the global default.
+    ///
+    /// The agent block is keyed by `agent.slug()` (`"claude"` /
+    /// `"codex"`), keeping the on-disk shape parallel to
+    /// `set_global_auth_forward`.
+    pub fn set_workspace_auth_forward(
+        &mut self,
+        workspace: &str,
+        agent: crate::agent::Agent,
+        mode: Option<crate::config::AuthForwardMode>,
+    ) {
+        let agent_path = vec![
+            "workspaces".to_string(),
+            workspace.to_string(),
+            agent.slug().to_string(),
+        ];
+        match mode {
+            Some(m) => {
+                let table = table_path_mut(&mut self.doc, &agent_path);
+                table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
+            }
+            None => {
+                clear_auth_forward_field(&mut self.doc, &agent_path);
+            }
+        }
+    }
+
+    /// Write or clear `[workspaces.<workspace>.roles.<role>.<agent>].auth_forward`.
+    ///
+    /// Mirrors [`Self::set_workspace_auth_forward`] one layer deeper.
+    /// Used by the workspace-manager's Auth tab when the operator commits
+    /// the auth-edit form on a (role × agent) row.
+    pub fn set_workspace_role_auth_forward(
+        &mut self,
+        workspace: &str,
+        role: &str,
+        agent: crate::agent::Agent,
+        mode: Option<crate::config::AuthForwardMode>,
+    ) {
+        let agent_path = vec![
+            "workspaces".to_string(),
+            workspace.to_string(),
+            "roles".to_string(),
+            role.to_string(),
+            agent.slug().to_string(),
+        ];
+        match mode {
+            Some(m) => {
+                let table = table_path_mut(&mut self.doc, &agent_path);
+                table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
+            }
+            None => {
+                clear_auth_forward_field(&mut self.doc, &agent_path);
+            }
+        }
+    }
+
     pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
-        // Touch only git + trusted. Leave [roles.X.claude] and
-        // [roles.X.env] alone — those are operator-owned.
+        // Touch only git + trusted. Leave [roles.X.env] alone —
+        // operator-owned.
         let table = table_path_mut(&mut self.doc, &["roles".to_string(), agent_key.to_string()]);
         table.insert("git", toml_edit::value(git_url));
         table.insert("trusted", toml_edit::value(true));
     }
 
     /// Writes `git` and `trusted` from the given `RoleSource` into
-    /// `[roles.<agent_key>]`, and if the doc has no `[roles.<agent_key>.claude]`
-    /// table yet but the source carries a `claude` override, writes that too.
-    /// Does NOT touch `[roles.<agent_key>.env]` — operator-owned.
+    /// `[roles.<agent_key>]`. Does NOT touch `[roles.<agent_key>.env]` —
+    /// operator-owned.
     ///
     /// Used by call sites that first invoke `resolve_role_source` (which may
     /// insert a new role into the in-memory `AppConfig`) and need the editor
-    /// to persist that insert alongside whatever trust / `auth_forward` change
-    /// they're about to make.
+    /// to persist that insert alongside whatever trust change they're about
+    /// to make.
     pub fn upsert_agent_source(&mut self, agent_key: &str, source: &crate::config::RoleSource) {
         let table = table_path_mut(&mut self.doc, &["roles".to_string(), agent_key.to_string()]);
         table.insert("git", toml_edit::value(source.git.clone()));
@@ -282,65 +327,6 @@ impl ConfigEditor {
             table.insert("trusted", toml_edit::value(true));
         } else {
             table.remove("trusted");
-        }
-        // If the source carries a claude override and the doc doesn't have
-        // one, serialize it in. If the doc already has one, leave it alone —
-        // operator-owned.
-        if let Some(claude) = &source.claude {
-            let existing_claude = self
-                .doc
-                .get("roles")
-                .and_then(|i| i.as_table())
-                .and_then(|t| t.get(agent_key))
-                .and_then(|i| i.as_table())
-                .and_then(|t| t.get("claude"));
-            if existing_claude.is_none()
-                && let Ok(rendered) = toml::to_string(claude)
-                && let Ok(parsed) = rendered.parse::<DocumentMut>()
-            {
-                let claude_table = table_path_mut(
-                    &mut self.doc,
-                    &[
-                        "roles".to_string(),
-                        agent_key.to_string(),
-                        "claude".to_string(),
-                    ],
-                );
-                for (k, v) in parsed.as_table() {
-                    claude_table.insert(k, v.clone());
-                }
-            }
-        }
-    }
-
-    /// Rewrite any `auth_forward = "copy"` to `"sync"` at the two paths
-    /// `contains_deprecated_copy_auth_forward` checks:
-    ///   [claude].`auth_forward`
-    ///   [roles.*.claude].`auth_forward`
-    ///
-    /// Does not touch any other structure. Used by `load_or_init` when the
-    /// on-disk config still contains the deprecated literal.
-    pub fn normalize_deprecated_copy(&mut self) {
-        // Global [claude]
-        if let Some(claude) = self.doc.get_mut("claude").and_then(|i| i.as_table_mut())
-            && claude.get("auth_forward").and_then(|i| i.as_str()) == Some("copy")
-        {
-            claude.insert("auth_forward", toml_edit::value("sync"));
-        }
-        // Per-role [roles.X.claude]
-        if let Some(roles) = self.doc.get_mut("roles").and_then(|i| i.as_table_mut()) {
-            for (_, agent_item) in roles.iter_mut() {
-                let Some(agent_table) = agent_item.as_table_mut() else {
-                    continue;
-                };
-                let Some(claude) = agent_table.get_mut("claude").and_then(|i| i.as_table_mut())
-                else {
-                    continue;
-                };
-                if claude.get("auth_forward").and_then(|i| i.as_str()) == Some("copy") {
-                    claude.insert("auth_forward", toml_edit::value("sync"));
-                }
-            }
         }
     }
 
@@ -486,7 +472,10 @@ const fn auth_forward_str(mode: crate::config::AuthForwardMode) -> &'static str 
     match mode {
         crate::config::AuthForwardMode::Ignore => "ignore",
         crate::config::AuthForwardMode::Sync => "sync",
-        crate::config::AuthForwardMode::Token => "token",
+        // Tasks 10/11 will split per-mode behavior; today both env-driven
+        // modes serialize to their canonical snake_case names.
+        crate::config::AuthForwardMode::ApiKey => "api_key",
+        crate::config::AuthForwardMode::OAuthToken => "oauth_token",
     }
 }
 
@@ -514,6 +503,37 @@ fn validate_candidate(contents: &str) -> anyhow::Result<AppConfig> {
     let config: AppConfig = toml::from_str(contents).context("deserializing candidate config")?;
     crate::operator_env::validate_reserved_names(&config)?;
     Ok(config)
+}
+
+/// Remove the `auth_forward` field at `agent_path`. If the agent block
+/// is left empty afterwards, removes the agent block too. Walks without
+/// creating, so a reset on a layer that was already empty is a no-op.
+fn clear_auth_forward_field(doc: &mut DocumentMut, agent_path: &[String]) {
+    let mut current: &mut Item = doc.as_item_mut();
+    for segment in agent_path {
+        match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
+            Some(next) => current = next,
+            None => return,
+        }
+    }
+    if let Some(table) = current.as_table_mut() {
+        table.remove("auth_forward");
+        if table.is_empty()
+            && let Some((last, parent_path)) = agent_path.split_last()
+        {
+            // Walk to the parent and remove the now-empty agent block.
+            let mut walker: &mut Item = doc.as_item_mut();
+            for segment in parent_path {
+                match walker.as_table_mut().and_then(|t| t.get_mut(segment)) {
+                    Some(next) => walker = next,
+                    None => return,
+                }
+            }
+            if let Some(parent_table) = walker.as_table_mut() {
+                parent_table.remove(last.as_str());
+            }
+        }
+    }
 }
 
 fn table_path_mut<'a>(doc: &'a mut DocumentMut, path: &[String]) -> &'a mut Table {
@@ -1259,28 +1279,6 @@ trusted = true
     }
 
     #[test]
-    fn set_agent_auth_forward_writes_claude_subtable() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-        std::fs::write(
-            &paths.config_file,
-            r#"[roles.my-role]
-git = "x"
-"#,
-        )
-        .unwrap();
-
-        let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_agent_auth_forward("my-role", crate::config::AuthForwardMode::Token);
-        editor.save().unwrap();
-
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[roles.my-role.claude]"), "{out}");
-        assert!(out.contains(r#"auth_forward = "token""#), "{out}");
-    }
-
-    #[test]
     fn set_global_auth_forward_writes_root_claude_table() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
@@ -1294,6 +1292,121 @@ git = "x"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains("[claude]"), "{out}");
         assert!(out.contains(r#"auth_forward = "sync""#), "{out}");
+    }
+
+    #[test]
+    fn set_workspace_auth_forward_writes_workspace_agent_block() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"
+[workspaces.proj]
+workdir = "/tmp/proj"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_auth_forward(
+            "proj",
+            crate::agent::Agent::Claude,
+            Some(crate::config::AuthForwardMode::ApiKey),
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[workspaces.proj.claude]"), "{out}");
+        assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
+    }
+
+    #[test]
+    fn set_workspace_auth_forward_clears_when_mode_none() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"
+[workspaces.proj]
+workdir = "/tmp/proj"
+
+[workspaces.proj.claude]
+auth_forward = "api_key"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_auth_forward("proj", crate::agent::Agent::Claude, None);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !out.contains("[workspaces.proj.claude]"),
+            "agent block must be removed when mode = None; {out}"
+        );
+        assert!(
+            !out.contains("auth_forward"),
+            "auth_forward field must be cleared; {out}"
+        );
+    }
+
+    #[test]
+    fn set_workspace_role_auth_forward_writes_role_agent_block() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"
+[workspaces.proj]
+workdir = "/tmp/proj"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_role_auth_forward(
+            "proj",
+            "smith",
+            crate::agent::Agent::Codex,
+            Some(crate::config::AuthForwardMode::ApiKey),
+        );
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[workspaces.proj.roles.smith.codex]"), "{out}");
+        assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
+    }
+
+    #[test]
+    fn set_workspace_role_auth_forward_clears_when_mode_none() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"
+[workspaces.proj]
+workdir = "/tmp/proj"
+
+[workspaces.proj.roles.smith.claude]
+auth_forward = "oauth_token"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_role_auth_forward("proj", "smith", crate::agent::Agent::Claude, None);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !out.contains("[workspaces.proj.roles.smith.claude]"),
+            "{out}"
+        );
     }
 
     #[test]
@@ -1313,42 +1426,6 @@ git = "x"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains("[roles.agent-smith]"), "{out}");
         assert!(out.contains("trusted = true"), "{out}");
-    }
-
-    #[test]
-    fn upsert_builtin_agent_preserves_existing_claude_override() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-        std::fs::write(
-            &paths.config_file,
-            r#"[roles.agent-smith]
-git = "OLD-URL"
-trusted = false
-
-[roles.agent-smith.claude]
-auth_forward = "token"
-"#,
-        )
-        .unwrap();
-
-        let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.upsert_builtin_agent(
-            "agent-smith",
-            "https://github.com/jackin-project/jackin-agent-smith.git",
-        );
-        editor.save().unwrap();
-
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(
-            out.contains(r#"git = "https://github.com/jackin-project/jackin-agent-smith.git""#),
-            "{out}"
-        );
-        assert!(out.contains("trusted = true"), "{out}");
-        assert!(
-            out.contains(r#"auth_forward = "token""#),
-            "claude override wiped: {out}"
-        );
     }
 
     #[test]
@@ -1451,7 +1528,6 @@ MY_VAR = "preserved"
         let source = crate::config::RoleSource {
             git: "NEW".to_string(),
             trusted: true,
-            claude: None,
             env: std::collections::BTreeMap::new(),
         };
         let mut editor = ConfigEditor::open(&paths).unwrap();
@@ -1461,37 +1537,6 @@ MY_VAR = "preserved"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(out.contains(r#"git = "NEW""#), "{out}");
         assert!(out.contains(r#"MY_VAR = "preserved""#), "{out}");
-    }
-
-    #[test]
-    fn normalize_deprecated_copy_rewrites_global_and_agent_paths() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-        std::fs::write(
-            &paths.config_file,
-            r#"[claude]
-auth_forward = "copy"
-
-[roles.foo]
-git = "x"
-
-[roles.foo.claude]
-auth_forward = "copy"
-
-[roles.bar]
-git = "y"
-"#,
-        )
-        .unwrap();
-
-        let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.normalize_deprecated_copy();
-        editor.save().unwrap();
-
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(!out.contains(r#""copy""#), "{out}");
-        assert!(out.contains(r#"auth_forward = "sync""#), "{out}");
     }
 
     #[test]

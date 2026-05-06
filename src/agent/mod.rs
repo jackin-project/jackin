@@ -23,6 +23,36 @@ impl Agent {
             Self::Codex => CODEX_INSTALL_BLOCK,
         }
     }
+
+    /// Well-known env var that carries the auth credential for this
+    /// (agent, mode) combination, if any. Returns None for modes that
+    /// don't inject a credential (sync, ignore) or for combinations that
+    /// don't make sense for the agent.
+    pub const fn required_env_var(
+        self,
+        mode: crate::config::AuthForwardMode,
+    ) -> Option<&'static str> {
+        use crate::config::AuthForwardMode as M;
+        match (self, mode) {
+            (Self::Claude, M::ApiKey) => Some("ANTHROPIC_API_KEY"),
+            (Self::Claude, M::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
+            (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
+            (Self::Claude, M::Sync | M::Ignore)
+            | (Self::Codex, M::Sync | M::Ignore | M::OAuthToken) => None,
+        }
+    }
+
+    /// Modes this agent supports. UI surfaces should consult this when
+    /// listing options to the user. The TOML parser uses `CodexAuthConfig`
+    /// to reject unsupported modes at parse time — this method is the
+    /// runtime/UI parallel.
+    pub const fn supported_modes(self) -> &'static [crate::config::AuthForwardMode] {
+        use crate::config::AuthForwardMode as M;
+        match self {
+            Self::Claude => &[M::Sync, M::ApiKey, M::OAuthToken, M::Ignore],
+            Self::Codex => &[M::Sync, M::ApiKey, M::Ignore],
+        }
+    }
 }
 
 const CLAUDE_INSTALL_BLOCK: &str = "\
@@ -145,5 +175,64 @@ mod tests {
         assert!(block.starts_with("USER agent\n"));
         assert!(block.contains("claude.ai/install.sh"));
         assert!(block.contains("claude --version"));
+    }
+}
+
+#[cfg(test)]
+mod auth_table_tests {
+    use super::*;
+    use crate::config::AuthForwardMode;
+
+    #[test]
+    fn required_env_var_table() {
+        // Claude
+        assert_eq!(Agent::Claude.required_env_var(AuthForwardMode::Sync), None);
+        assert_eq!(
+            Agent::Claude.required_env_var(AuthForwardMode::ApiKey),
+            Some("ANTHROPIC_API_KEY")
+        );
+        assert_eq!(
+            Agent::Claude.required_env_var(AuthForwardMode::OAuthToken),
+            Some("CLAUDE_CODE_OAUTH_TOKEN")
+        );
+        assert_eq!(
+            Agent::Claude.required_env_var(AuthForwardMode::Ignore),
+            None
+        );
+
+        // Codex
+        assert_eq!(Agent::Codex.required_env_var(AuthForwardMode::Sync), None);
+        assert_eq!(
+            Agent::Codex.required_env_var(AuthForwardMode::ApiKey),
+            Some("OPENAI_API_KEY")
+        );
+        // OAuthToken for Codex is parser-rejected (Task 6); behavior at the
+        // method level is "no env var" (None) for safety.
+        assert_eq!(
+            Agent::Codex.required_env_var(AuthForwardMode::OAuthToken),
+            None
+        );
+        assert_eq!(Agent::Codex.required_env_var(AuthForwardMode::Ignore), None);
+    }
+
+    #[test]
+    fn supported_modes_claude_includes_oauth_token() {
+        let modes = Agent::Claude.supported_modes();
+        assert!(modes.contains(&AuthForwardMode::Sync));
+        assert!(modes.contains(&AuthForwardMode::ApiKey));
+        assert!(modes.contains(&AuthForwardMode::OAuthToken));
+        assert!(modes.contains(&AuthForwardMode::Ignore));
+    }
+
+    #[test]
+    fn supported_modes_codex_excludes_oauth_token() {
+        let modes = Agent::Codex.supported_modes();
+        assert!(modes.contains(&AuthForwardMode::Sync));
+        assert!(modes.contains(&AuthForwardMode::ApiKey));
+        assert!(
+            !modes.contains(&AuthForwardMode::OAuthToken),
+            "codex must not advertise oauth_token"
+        );
+        assert!(modes.contains(&AuthForwardMode::Ignore));
     }
 }
