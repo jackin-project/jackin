@@ -198,25 +198,34 @@ The `jackin console` workspace editor exposes auth forwarding through a
 dedicated **Auth** tab, peer to the existing **Secrets** tab. To open
 it:
 
-1. Run `jackin console` (or `jackin` on an interactive terminal).
+1. Run `jackin console`.
 2. Select the workspace.
 3. In the workspace editor, switch to the **Auth** tab.
 
-The Auth tab shows three sections, mirroring the three configuration
-layers:
+The Auth tab presents three sections, top to bottom:
 
-| Section | Layer it edits |
-|---|---|
-| **Global** | `[claude]` / `[codex]` in `~/.config/jackin/config.toml` |
-| **This workspace** | `[workspaces.<ws>.claude]` / `[workspaces.<ws>.codex]` |
-| **Per role × agent** | `[workspaces.<ws>.roles.<role>.claude]` / `[workspaces.<ws>.roles.<role>.codex]` for each role allowed in this workspace |
+1. **Global defaults** (read-only) — what `[claude]` / `[codex]` resolve
+   to at the global layer. These rows reflect `~/.config/jackin/config.toml`
+   and cannot be edited from within a workspace.
+2. **Workspace defaults** — `[workspaces.<ws>.claude]` and
+   `[workspaces.<ws>.codex]` rows. Press `Enter` on a row to open the
+   auth-edit form for that agent.
+3. **Per-role overrides** — collapsible role headers. The list starts
+   empty; press `Enter` on the `+ Add per-role override` entry to step
+   through a three-step flow: choose the **role**, choose the **agent**
+   (`claude` or `codex`), then fill in the **auth-edit form**.
+   Press `→` / `←` to expand or collapse a role header. Press `D` on a
+   role header to open a confirmation dialog that clears both agents'
+   overrides for that role; press `D` on a single agent row to clear
+   only that agent's override.
 
-Each row shows the configured mode at that layer and which mode is
-**effective** at the most-specific cell after layered resolution.
+Footer hints surface the resolved mode and its provenance for whichever
+override row is currently focused.
 
 ### The edit form
 
-Selecting a cell opens an edit form with three blocks:
+Pressing `Enter` on a workspace-defaults row or completing the
+role-add flow opens an edit form with three blocks:
 
 1. **Mode picker.** `sync`, `api_key`, `oauth_token` (Claude only),
    `ignore`. Codex cells omit `oauth_token`.

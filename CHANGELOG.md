@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Auth tab UX (breaking)** — the workspace-manager Auth tab now mirrors
+  the Environments tab: per-role overrides render only when set, with a
+  3-step Role → Agent → form add flow under `+ Add per-role override`.
+  Collapsing/expanding a role uses `←` / `→`; `D` on a role header
+  prompts for confirmation before clearing both agents' overrides.
 - **BREAKING.** Auth-forward configuration moved out of `[roles.<role>.claude]` and into per-agent blocks at three layers (`[claude]` global, `[workspaces.<ws>.claude]`, `[workspaces.<ws>.roles.<role>.claude]`). The same shape now exists for `[codex]`. Stale configs that still set `[roles.<role>.claude]` fail to parse with the standard "unknown field" error. No migration shim — see AGENTS.md "Project status: pre-release".
 - New `api_key` mode for both Claude and Codex (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` from the env layer).
 - `Token` mode renamed to `oauth_token`. The deprecated `"copy"` alias is removed.
