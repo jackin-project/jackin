@@ -211,30 +211,50 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
 
     match &state.agent_runtime {
         AgentRuntimeState::Claude {
-            state_dir,
-            account_json,
             plugins_json,
-        } => vec![
-            format!("{}:/home/agent/.claude", state_dir.display()),
-            format!("{}:/home/agent/.claude.json", account_json.display()),
-            format!(
-                "{}:/home/agent/.jackin/plugins.json:ro",
+            account_json,
+            credentials_json,
+            forward_auth,
+        } => {
+            // Plugins manifest is always mounted read-only; the runtime
+            // entrypoint reads it from `/jackin/claude/plugins.json` to
+            // drive `claude plugin install` on every launch.
+            let mut mounts = vec![format!(
+                "{}:/jackin/claude/plugins.json:ro",
                 plugins_json.display()
-            ),
-        ],
+            )];
+            // Auth files only flow into the container under sync mode
+            // (`forward_auth = true`) AND only when the file exists on
+            // disk. Env-driven modes (api_key/oauth_token/ignore) leave
+            // `forward_auth = false`, keeping host filesystem state out
+            // of the container even though `wipe_claude_state` may have
+            // left a `{}` placeholder behind.
+            if *forward_auth {
+                if account_json.exists() {
+                    mounts.push(format!(
+                        "{}:/jackin/claude/account.json",
+                        account_json.display()
+                    ));
+                }
+                if credentials_json.exists() {
+                    mounts.push(format!(
+                        "{}:/jackin/claude/credentials.json",
+                        credentials_json.display()
+                    ));
+                }
+            }
+            mounts
+        }
         AgentRuntimeState::Codex {
             config_toml,
             auth_json,
         } => {
             let mut mounts = vec![format!(
-                "{}:/home/agent/.codex/config.toml",
+                "{}:/jackin/codex/config.toml",
                 config_toml.display()
             )];
             if let Some(auth_json) = auth_json {
-                mounts.push(format!(
-                    "{}:/home/agent/.codex/auth.json",
-                    auth_json.display()
-                ));
+                mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
             }
             mounts
         }
@@ -2120,7 +2140,10 @@ mod tests {
     }
 
     #[test]
-    fn agent_mounts_for_claude_includes_claude_state() {
+    fn agent_mounts_for_claude_ignore_mode_only_has_plugins_json() {
+        // Ignore mode is env-driven (no env var, just no auth) — auth
+        // files must NOT flow into the container, so the only Claude
+        // mount is the read-only plugins manifest.
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -2154,20 +2177,93 @@ plugins = []
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert!(
-            mounts
-                .iter()
-                .any(|m| m.contains("/home/agent/.claude") && !m.contains("/.claude.json"))
+        assert_eq!(
+            mounts.len(),
+            1,
+            "ignore mode → plugins.json only: {mounts:?}"
         );
         assert!(
             mounts
                 .iter()
-                .any(|m| m.contains("/home/agent/.claude.json"))
+                .any(|m| m.contains("/jackin/claude/plugins.json:ro"))
+        );
+        // No legacy `/home/agent/.claude*` mounts should leak through —
+        // the agent home is image-baked, not bind-mounted.
+        assert!(
+            !mounts.iter().any(|m| m.contains("/home/agent/.claude")),
+            "legacy ~/.claude mount must not survive: {mounts:?}"
+        );
+    }
+
+    #[test]
+    fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
+        // Sync mode + host auth present → both account.json and
+        // credentials.json flow under /jackin/claude/. The plugins.json
+        // mount is unconditional and read-only.
+        use crate::agent::Agent;
+        use crate::instance::RoleState;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest_temp = tempdir().unwrap();
+        std::fs::write(
+            manifest_temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            manifest_temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+
+        // Seed a fake host home with both Claude files so sync resolves.
+        let host_home = temp.path().join("host_home");
+        std::fs::create_dir_all(host_home.join(".claude")).unwrap();
+        std::fs::write(
+            host_home.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"test@example.com"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            host_home.join(".claude/.credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"t","refreshToken":"r"}}"#,
+        )
+        .unwrap();
+
+        let (state, _) = RoleState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            crate::config::AuthForwardMode::Sync,
+            &host_home,
+            Agent::Claude,
+        )
+        .unwrap();
+
+        let mounts = agent_mounts(&state);
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains("/jackin/claude/plugins.json:ro")),
+            "plugins.json mount missing: {mounts:?}",
         );
         assert!(
             mounts
                 .iter()
-                .any(|m| m.contains("/home/agent/.jackin/plugins.json:ro"))
+                .any(|m| m.contains("/jackin/claude/account.json") && !m.ends_with(":ro")),
+            "account.json mount missing under /jackin/claude/: {mounts:?}",
+        );
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains("/jackin/claude/credentials.json") && !m.ends_with(":ro")),
+            "credentials.json mount missing under /jackin/claude/: {mounts:?}",
         );
     }
 
@@ -2207,7 +2303,7 @@ agents = ["codex"]
 
         let mounts = agent_mounts(&state);
         assert_eq!(mounts.len(), 1);
-        assert!(mounts[0].contains("/home/agent/.codex/config.toml"));
+        assert!(mounts[0].contains("/jackin/codex/config.toml"));
         assert!(!mounts[0].ends_with(":ro"));
     }
 
@@ -2256,8 +2352,8 @@ agents = ["codex"]
 
         let mounts = agent_mounts(&state);
         assert_eq!(mounts.len(), 2);
-        assert!(mounts[0].contains("/home/agent/.codex/config.toml"));
-        assert!(mounts[1].contains("/home/agent/.codex/auth.json"));
+        assert!(mounts[0].contains("/jackin/codex/config.toml"));
+        assert!(mounts[1].contains("/jackin/codex/auth.json"));
         assert!(!mounts[1].ends_with(":ro"));
     }
 
@@ -2301,7 +2397,7 @@ agents = ["codex"]
             1,
             "no auth.json bind when host has no ~/.codex/auth.json: {mounts:?}"
         );
-        assert!(mounts[0].contains("/home/agent/.codex/config.toml"));
+        assert!(mounts[0].contains("/jackin/codex/config.toml"));
     }
 
     #[test]
@@ -2737,7 +2833,7 @@ plugins = ["code-review@claude-plugins-official"]
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("/home/agent/.jackin/plugins.json:ro"))
+                .any(|call| call.contains("/jackin/claude/plugins.json:ro"))
         );
         assert!(
             !runner
@@ -2953,7 +3049,7 @@ plugins = ["code-review@claude-plugins-official"]
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("/home/agent/.jackin/plugins.json:ro"))
+                .any(|call| call.contains("/jackin/claude/plugins.json:ro"))
         );
         assert!(
             !runner
@@ -3031,9 +3127,10 @@ model = "gpt-5"
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_AGENT=codex"));
         assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
-        assert!(run_cmd.contains("/home/agent/.codex/config.toml"));
+        assert!(run_cmd.contains("/jackin/codex/config.toml"));
+        // Codex container must not receive any Claude-side mounts.
+        assert!(!run_cmd.contains("/jackin/claude/"));
         assert!(!run_cmd.contains("/home/agent/.claude"));
-        assert!(!run_cmd.contains("/home/agent/.jackin/plugins.json"));
         assert!(
             paths
                 .data_dir
