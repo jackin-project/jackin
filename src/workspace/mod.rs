@@ -18,6 +18,9 @@ pub use sensitive::{SensitiveMount, confirm_sensitive_mounts, find_sensitive_mou
 
 use serde::{Deserialize, Serialize};
 
+// serde skip_serializing_if requires &T; clippy's trivially_copy_pass_by_ref
+// lint does not apply here because the signature is mandated by the attribute.
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_false(b: &bool) -> bool {
     !b
 }

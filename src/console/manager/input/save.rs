@@ -650,8 +650,16 @@ fn build_confirm_save_lines(
             if editor.pending.git_pull_on_entry != editor.original.git_pull_on_entry {
                 out.push(Line::raw(""));
                 out.push(Line::from(Span::styled("Git pull:", heading)));
-                let old_label = if editor.original.git_pull_on_entry { "enabled" } else { "disabled" };
-                let new_label = if editor.pending.git_pull_on_entry { "enabled" } else { "disabled" };
+                let old_label = if editor.original.git_pull_on_entry {
+                    "enabled"
+                } else {
+                    "disabled"
+                };
+                let new_label = if editor.pending.git_pull_on_entry {
+                    "enabled"
+                } else {
+                    "disabled"
+                };
                 out.push(Line::from(Span::styled(format!("  - {old_label}"), dim)));
                 out.push(Line::from(Span::styled(format!("  + {new_label}"), value)));
             }
