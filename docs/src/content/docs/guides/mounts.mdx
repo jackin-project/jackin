@@ -141,12 +141,13 @@ Ad-hoc `-v` mounts passed on the command line at launch time are not collapsed; 
 
 ## Mount isolation
 
-Workspace mounts accept an `isolation` field that controls whether the host path is bind-mounted as-is or materialized into a per-container `git worktree` first.
+Workspace mounts accept an `isolation` field that controls whether the host path is bind-mounted as-is or materialized into a per-container git checkout first.
 
 | Value | Default | Behavior |
 |---|---|---|
 | `shared` | yes | Host path bind-mounted as-is. |
-| `worktree` | no | jackin' runs `git worktree add` on the host repo and bind-mounts the worktree. Each container gets its own checkout and scratch branch. |
+| `worktree` | no | jackin' runs `git worktree add` on the host repo and bind-mounts the worktree. Each container gets its own checkout and scratch branch, while refs remain shared with the host repo. |
+| `clone` | no | jackin' runs `git clone --local` into the per-container state dir and bind-mounts the clone. Each container gets its own `.git/` and independent refs. |
 
 ```toml
 [[workspaces.my-app.mounts]]
