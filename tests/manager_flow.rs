@@ -2936,3 +2936,55 @@ fn auth_role_header_d_opens_confirm_then_clears_overrides() -> Result<()> {
     assert!(role_over.codex.is_none());
     Ok(())
 }
+
+#[test]
+fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut over = WorkspaceRoleOverride::default();
+    over.claude = Some(jackin::config::AgentAuthConfig {
+        auth_forward: jackin::config::AuthForwardMode::Ignore,
+    });
+    over.codex = Some(jackin::config::CodexAuthConfig(
+        jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::ApiKey,
+        },
+    ));
+    ws.roles.insert("the-architect".into(), over);
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_expanded.insert("the-architect".into());
+    let claude_idx = auth_row_idx(&ed, |r| {
+        matches!(
+            r,
+            AuthRow::RoleAgentRow {
+                agent: jackin::agent::Agent::Claude,
+                ..
+            }
+        )
+    });
+    ed.active_field = FieldFocus::Row(claude_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('d')),
+    )?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "single-agent clear must be silent (no modal)"
+    );
+    let ro = editor(&state).pending.roles.get("the-architect").unwrap();
+    assert!(ro.claude.is_none());
+    assert!(ro.codex.is_some(), "Codex override must be untouched");
+    Ok(())
+}
