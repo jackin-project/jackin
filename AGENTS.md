@@ -47,6 +47,7 @@ if [ ! -d jackin/.git ]; then
 fi
 
 cd jackin
+mise trust
 git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
 git checkout pr-<PR_NUMBER>
 
