@@ -16,7 +16,7 @@ use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_ho
 use super::image::build_agent_image;
 use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
-    format_role_display, image_name,
+    format_role_display, image_name, image_name_for_branch,
 };
 use super::repo_cache::resolve_agent_repo;
 
@@ -48,6 +48,12 @@ pub struct LoadOptions {
     /// CLI override for the agent. `None` means "use the workspace's
     /// `default_agent` field, falling back to `Agent::Claude` when unset".
     pub agent: Option<crate::agent::Agent>,
+
+    /// When set, resolve this branch of the role repo instead of the default
+    /// branch, build the image locally from the branch's Dockerfile (ignoring
+    /// any `published_image`), and tag it with a branch-specific name so the
+    /// stable image is not overwritten.
+    pub role_branch: Option<String>,
 }
 
 impl LoadOptions {
@@ -61,6 +67,7 @@ impl LoadOptions {
             op_runner: None,
             host_env: None,
             agent: None,
+            role_branch: None,
         }
     }
 
@@ -75,6 +82,7 @@ impl LoadOptions {
             op_runner: None,
             host_env: None,
             agent: None,
+            role_branch: None,
         }
     }
 }
@@ -89,6 +97,7 @@ impl Default for LoadOptions {
             op_runner: None,
             host_env: None,
             agent: None,
+            role_branch: None,
         }
     }
 }
@@ -355,6 +364,72 @@ fn export_host_terminfo(
 
 /// Display an untrusted-role warning and ask the operator to confirm.
 /// Aborts when stdin is not a terminal or the operator declines.
+/// Branch-specific trust confirmation.
+///
+/// Even when a role is already trusted, an unmerged branch contains unreviewed
+/// code. The operator trusted the *default* branch, not this PR. A malicious
+/// contributor could craft a branch whose Dockerfile runs arbitrary commands
+/// during the image build on the operator's machine.
+///
+/// This gate always fires when `--role-branch` is set, regardless of the
+/// role's `trusted` state in config. It is intentionally separate from
+/// `confirm_agent_trust` so the two gates compose: loading an *untrusted*
+/// role on a branch requires confirming both.
+fn confirm_branch_trust(
+    selector: &RoleSelector,
+    source: &crate::config::RoleSource,
+    branch: &str,
+) -> anyhow::Result<()> {
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "role \"{selector}\" is being loaded from unmerged branch \"{branch}\".\n\
+             Branch builds require interactive confirmation — run the command in a terminal."
+        );
+    }
+
+    eprintln!();
+    eprintln!(
+        "{}",
+        "!! Unreviewed branch — verify before proceeding !!"
+            .red()
+            .bold()
+    );
+    eprintln!();
+    eprintln!("  role:   {}", selector.to_string().bold());
+    eprintln!("  source: {}", source.git.yellow());
+    eprintln!("  branch: {}", branch.yellow().bold());
+    eprintln!();
+    eprintln!(
+        "  {}",
+        "This branch has not been merged to the default branch.".bold()
+    );
+    eprintln!("  Its Dockerfile and scripts may differ from the trusted main branch.");
+    eprintln!("  A malicious contributor could introduce harmful code that runs");
+    eprintln!("  on your machine during the image build.");
+    eprintln!();
+    eprintln!(
+        "  {}",
+        "Review the branch diff in the role repository before continuing.".dimmed()
+    );
+    eprintln!();
+
+    let confirmed = dialoguer::Confirm::new()
+        .with_prompt(format!(
+            "Have you reviewed branch \"{branch}\" and verified it is safe to build?"
+        ))
+        .default(false)
+        .interact()?;
+
+    if !confirmed {
+        anyhow::bail!(
+            "branch \"{branch}\" not confirmed — aborting.\n\
+             Review the Dockerfile and scripts on that branch before loading it."
+        );
+    }
+
+    Ok(())
+}
+
 fn confirm_agent_trust(
     selector: &RoleSelector,
     source: &crate::config::RoleSource,
@@ -918,10 +993,11 @@ pub fn load_role(
         runner,
         opts,
         confirm_agent_trust,
+        confirm_branch_trust,
     )
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn load_role_with(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -930,6 +1006,7 @@ fn load_role_with(
     runner: &mut impl CommandRunner,
     opts: &LoadOptions,
     confirm_trust: impl FnOnce(&RoleSelector, &crate::config::RoleSource) -> anyhow::Result<()>,
+    confirm_branch: impl FnOnce(&RoleSelector, &crate::config::RoleSource, &str) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     // Pre-launch garbage collection: remove orphaned DinD containers and
     // networks left behind by hard kills, terminal closures, or startup
@@ -960,8 +1037,14 @@ fn load_role_with(
     // Step 1: Resolve role identity (clone or update repo)
     steps.next("Resolving role identity");
 
-    let (cached_repo, validated_repo, repo_lock) =
-        resolve_agent_repo(paths, selector, &source.git, runner, opts.debug)?;
+    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo(
+        paths,
+        selector,
+        &source.git,
+        runner,
+        opts.debug,
+        opts.role_branch.as_deref(),
+    )?;
 
     // Trust gate: prompt the operator before running an untrusted third-party role
     let newly_trusted = if source.trusted {
@@ -991,12 +1074,21 @@ fn load_role_with(
     let agent = resolve_agent(opts.agent, workspace.default_agent);
     validate_agent_supported(selector, &validated_repo.manifest, agent)?;
 
+    // Branch trust gate: fires even for already-trusted roles because the
+    // operator trusted the default branch, not this unreviewed PR branch.
+    if let Some(branch) = opts.role_branch.as_deref() {
+        confirm_branch(selector, &source, branch)?;
+    }
+
     // Logo (if present in role repo)
     tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
 
     // Show a preliminary config summary (container name will be
     // confirmed after the image build, right before launch).
-    let image_tag = image_name(selector);
+    let image_tag = opts.role_branch.as_deref().map_or_else(
+        || image_name(selector),
+        |b| image_name_for_branch(selector, b),
+    );
     let preliminary_name = primary_container_name(selector);
     let config_rows = build_config_rows(
         &agent_display_name,
@@ -1124,6 +1216,7 @@ fn load_role_with(
             rebuild,
             agent_update,
             opts.debug,
+            opts.role_branch.as_deref(),
             runner,
             repo_lock,
         )?;
@@ -2201,6 +2294,7 @@ plugins = ["code-review@claude-plugins-official"]
             &mut runner,
             &LoadOptions::default(),
             auto_trust,
+            |_, _, _| Ok(()),
         )
         .unwrap();
 
@@ -2289,6 +2383,7 @@ plugins = []
             &mut runner,
             &LoadOptions::default(),
             deny_trust,
+            |_, _, _| Ok(()),
         )
         .unwrap_err();
 
