@@ -633,12 +633,20 @@ pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
     use crate::agent::Agent;
     let mut rows = vec![
         AuthRow::GlobalHeader,
-        AuthRow::GlobalDefault { agent: Agent::Claude },
-        AuthRow::GlobalDefault { agent: Agent::Codex },
+        AuthRow::GlobalDefault {
+            agent: Agent::Claude,
+        },
+        AuthRow::GlobalDefault {
+            agent: Agent::Codex,
+        },
         AuthRow::Divider,
         AuthRow::WorkspaceHeader,
-        AuthRow::WorkspaceDefault { agent: Agent::Claude },
-        AuthRow::WorkspaceDefault { agent: Agent::Codex },
+        AuthRow::WorkspaceDefault {
+            agent: Agent::Claude,
+        },
+        AuthRow::WorkspaceDefault {
+            agent: Agent::Codex,
+        },
         AuthRow::Divider,
     ];
 
@@ -646,7 +654,7 @@ pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
         .pending
         .roles
         .iter()
-        .filter(|(_, ro)| ro.claude.is_some() || ro.codex.is_some())
+        .filter(|(_, ro)| ro.has_auth_override())
         .map(|(name, _)| name.clone())
         .collect();
     rows.push(AuthRow::OverridesHeader {
@@ -1123,9 +1131,7 @@ fn badge_span(
     use crate::console::widgets::auth_panel::{CredentialBadge, DANGER_RED, PHOSPHOR_GREEN};
     match badge {
         CredentialBadge::Resolves => Span::styled("OK", Style::default().fg(PHOSPHOR_GREEN)),
-        CredentialBadge::Unset => {
-            Span::styled("! unset", Style::default().fg(DANGER_RED))
-        }
+        CredentialBadge::Unset => Span::styled("! unset", Style::default().fg(DANGER_RED)),
         CredentialBadge::NotApplicable => Span::raw(""),
     }
 }
@@ -2618,11 +2624,20 @@ mod auth_flat_rows_tests {
         let rows = auth_flat_rows(&editor);
         let workspace_claude_idx = rows
             .iter()
-            .position(|r| matches!(r, AuthRow::WorkspaceDefault { agent: Agent::Claude }))
+            .position(|r| {
+                matches!(
+                    r,
+                    AuthRow::WorkspaceDefault {
+                        agent: Agent::Claude
+                    }
+                )
+            })
             .unwrap();
         assert_eq!(
             super::resolve_auth_row_target(&editor, workspace_claude_idx),
-            Some(AuthFormTarget::Workspace { agent: Agent::Claude }),
+            Some(AuthFormTarget::Workspace {
+                agent: Agent::Claude
+            }),
         );
     }
 

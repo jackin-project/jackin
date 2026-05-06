@@ -251,6 +251,9 @@ pub(super) fn handle_editor_key(
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
         }
+        KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Auth => {
+            super::auth::handle_d_on_auth_row(editor);
+        }
         // M toggles per-row masking on the focused Secrets-tab key row.
         // Operator feedback (commit 32): the global mask flag was too
         // blunt — it revealed every value at once when an operator just
@@ -1550,9 +1553,11 @@ fn apply_editor_confirm(
         // site because it consumes `plan` and routes through
         // `EditorSaveFlow::PendingCommit`. No-op here.
         ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
-        #[allow(clippy::unimplemented)]
-        ConfirmTarget::ClearAuthRoleOverride { .. } => {
-            unimplemented!("wired in Task 12");
+        ConfirmTarget::ClearAuthRoleOverride { role } => {
+            if let Some(ro) = editor.pending.roles.get_mut(role) {
+                ro.claude = None;
+                ro.codex = None;
+            }
         }
     }
     Ok(())

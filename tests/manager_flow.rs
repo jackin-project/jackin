@@ -2877,3 +2877,62 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
     assert!(!editor(&state).auth_expanded.contains("the-architect"));
     Ok(())
 }
+
+#[test]
+fn auth_role_header_d_opens_confirm_then_clears_overrides() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut over = WorkspaceRoleOverride::default();
+    over.claude = Some(jackin::config::AgentAuthConfig {
+        auth_forward: jackin::config::AuthForwardMode::Ignore,
+    });
+    over.codex = Some(jackin::config::CodexAuthConfig(
+        jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::ApiKey,
+        },
+    ));
+    ws.roles.insert("the-architect".into(), over);
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    let header_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::RoleHeader { .. }));
+    ed.active_field = FieldFocus::Row(header_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('d')),
+    )?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::Confirm {
+            target: jackin::console::manager::state::ConfirmTarget::ClearAuthRoleOverride { .. },
+            ..
+        })
+    ));
+
+    // Confirm with 'y' (default focus is No; Enter would dismiss without action).
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('y')),
+    )?;
+    let role_over = editor(&state)
+        .pending
+        .roles
+        .get("the-architect")
+        .expect("override entry stays even after clear");
+    assert!(role_over.claude.is_none());
+    assert!(role_over.codex.is_none());
+    Ok(())
+}

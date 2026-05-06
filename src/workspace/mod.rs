@@ -131,6 +131,17 @@ pub struct WorkspaceRoleOverride {
     pub codex: Option<crate::config::CodexAuthConfig>,
 }
 
+impl WorkspaceRoleOverride {
+    /// Returns `true` when this role-override entry carries any
+    /// per-agent auth override (Claude or Codex). Used by the Auth-tab
+    /// renderer to decide whether to materialize a `RoleHeader` row,
+    /// and by the input dispatcher to filter out already-overridden
+    /// roles in the `+ Add` flow.
+    pub const fn has_auth_override(&self) -> bool {
+        self.claude.is_some() || self.codex.is_some()
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct WorkspaceEdit {
     pub workdir: Option<String>,

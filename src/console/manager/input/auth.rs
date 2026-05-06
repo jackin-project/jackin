@@ -14,8 +14,8 @@ use super::super::render::editor::resolve_auth_row_target;
 use super::super::state::{
     AuthFormFocus, AuthFormReturnPath, AuthFormTarget, EditorState, FieldFocus, Modal,
 };
-use crate::config::AppConfig;
 use crate::agent::Agent;
+use crate::config::AppConfig;
 use crate::config::{AgentAuthConfig, AuthForwardMode, CodexAuthConfig};
 use crate::console::op_cache::OpCache;
 use crate::operator_env::EnvValue;
@@ -65,7 +65,7 @@ pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppCo
         .pending
         .roles
         .iter()
-        .filter(|(_, ro)| ro.claude.is_some() || ro.codex.is_some())
+        .filter(|(_, ro)| ro.has_auth_override())
         .map(|(name, _)| name.clone())
         .collect();
     let candidates: Vec<crate::selector::RoleSelector> = eligible
@@ -85,6 +85,41 @@ pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppCo
 pub(super) fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
     if !editor.auth_expanded.remove(&role) {
         editor.auth_expanded.insert(role);
+    }
+}
+
+/// Handle `D`/`d` on the Auth tab.
+///
+/// - `RoleHeader` → open a `Confirm` modal targeting `ClearAuthRoleOverride`.
+/// - `RoleAgentRow` → silently clear that single agent's override (no modal).
+/// - Anything else → no-op.
+pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>) {
+    let FieldFocus::Row(n) = editor.active_field;
+    let rows = super::super::render::editor::auth_flat_rows(editor);
+    match rows.get(n).cloned() {
+        Some(super::super::render::editor::AuthRow::RoleHeader { role, .. }) => {
+            editor.modal = Some(Modal::Confirm {
+                target: crate::console::manager::state::ConfirmTarget::ClearAuthRoleOverride {
+                    role: role.clone(),
+                },
+                state: crate::console::widgets::confirm::ConfirmState::new(format!(
+                    "Clear all auth overrides for '{role}'?"
+                )),
+            });
+        }
+        Some(super::super::render::editor::AuthRow::RoleAgentRow { role, agent }) => {
+            clear_role_agent(editor, &role, agent);
+        }
+        _ => {}
+    }
+}
+
+fn clear_role_agent(editor: &mut EditorState<'_>, role: &str, agent: crate::agent::Agent) {
+    if let Some(ro) = editor.pending.roles.get_mut(role) {
+        match agent {
+            crate::agent::Agent::Claude => ro.claude = None,
+            crate::agent::Agent::Codex => ro.codex = None,
+        }
     }
 }
 
