@@ -641,22 +641,38 @@ pub(in crate::console::manager) fn auth_flat_rows(editor: &EditorState<'_>) -> V
         AuthRow::Divider,
     ];
 
-    let override_roles: Vec<&String> = editor
+    let override_roles: Vec<String> = editor
         .pending
         .roles
         .iter()
         .filter(|(_, ro)| ro.claude.is_some() || ro.codex.is_some())
-        .map(|(name, _)| name)
+        .map(|(name, _)| name.clone())
         .collect();
     rows.push(AuthRow::OverridesHeader {
         count: override_roles.len(),
     });
-    let eligible_total = if editor.pending.allowed_roles.is_empty() {
-        0
-    } else {
-        editor.pending.allowed_roles.len()
-    };
-    let eligible_remaining = eligible_total.saturating_sub(override_roles.len());
+    for role in &override_roles {
+        let expanded = editor.auth_expanded.contains(role);
+        rows.push(AuthRow::RoleHeader {
+            role: role.clone(),
+            expanded,
+        });
+        if expanded {
+            rows.push(AuthRow::RoleAgentRow {
+                role: role.clone(),
+                agent: crate::agent::Agent::Claude,
+            });
+            rows.push(AuthRow::RoleAgentRow {
+                role: role.clone(),
+                agent: crate::agent::Agent::Codex,
+            });
+        }
+    }
+    let eligible_remaining = editor
+        .pending
+        .allowed_roles
+        .len()
+        .saturating_sub(override_roles.len());
     rows.push(AuthRow::AddSentinel {
         eligible: eligible_remaining,
     });
@@ -2410,5 +2426,68 @@ mod auth_flat_rows_tests {
                 AuthRow::AddSentinel { eligible: 0 },
             ],
         );
+    }
+
+    #[test]
+    fn role_with_override_renders_collapsed_header_then_sentinel() {
+        use crate::config::{AgentAuthConfig, AuthForwardMode};
+        use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+        let mut ws = WorkspaceConfig::default();
+        ws.allowed_roles = vec!["the-architect".into(), "agent-smith".into()];
+        let mut over = WorkspaceRoleOverride::default();
+        over.claude = Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Ignore,
+        });
+        ws.roles.insert("the-architect".into(), over);
+
+        let editor = EditorState::new_edit("ws".into(), ws);
+        let rows = auth_flat_rows(&editor);
+
+        let header_idx = rows
+            .iter()
+            .position(|r| matches!(r, AuthRow::OverridesHeader { count: 1 }))
+            .expect("overrides header with count=1 expected");
+        assert!(matches!(
+            rows[header_idx + 1],
+            AuthRow::RoleHeader { ref role, expanded: false } if role == "the-architect"
+        ));
+        assert!(matches!(
+            rows[header_idx + 2],
+            AuthRow::AddSentinel { eligible: 1 }
+        ));
+    }
+
+    #[test]
+    fn role_with_override_when_expanded_emits_agent_rows() {
+        use crate::agent::Agent;
+        use crate::config::{AgentAuthConfig, AuthForwardMode, CodexAuthConfig};
+        use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+        let mut ws = WorkspaceConfig::default();
+        ws.allowed_roles = vec!["the-architect".into()];
+        let mut over = WorkspaceRoleOverride::default();
+        over.claude = Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Ignore,
+        });
+        over.codex = Some(CodexAuthConfig(AgentAuthConfig {
+            auth_forward: AuthForwardMode::ApiKey,
+        }));
+        ws.roles.insert("the-architect".into(), over);
+
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.auth_expanded.insert("the-architect".into());
+        let rows = auth_flat_rows(&editor);
+
+        let header_pos = rows
+            .iter()
+            .position(|r| matches!(r, AuthRow::RoleHeader { expanded: true, .. }))
+            .expect("expanded role header missing");
+        assert!(matches!(
+            rows[header_pos + 1],
+            AuthRow::RoleAgentRow { ref role, agent: Agent::Claude } if role == "the-architect"
+        ));
+        assert!(matches!(
+            rows[header_pos + 2],
+            AuthRow::RoleAgentRow { ref role, agent: Agent::Codex } if role == "the-architect"
+        ));
     }
 }
