@@ -5,11 +5,13 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{
+    agent::Agent,
     config::{AppConfig, ConfigEditor},
     console::{
         ConsoleStage, ConsoleState,
         manager::{
             ManagerStage, ManagerState, handle_key,
+            render::editor::{AuthRow, auth_flat_rows},
             state::{EditorState, EditorTab, FieldFocus, Modal, TextInputTarget},
         },
     },
@@ -2641,9 +2643,6 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
 
 // ── Auth tab helpers ──────────────────────────────────────────────────
 
-use jackin::console::manager::render::editor::{AuthRow, auth_flat_rows};
-use jackin::agent::Agent;
-
 /// Return the flat-row index of the first `AuthRow` that matches `pred`.
 fn auth_row_idx(ed: &EditorState<'_>, pred: impl Fn(&AuthRow) -> bool) -> usize {
     auth_flat_rows(ed)
@@ -2685,7 +2684,12 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
     let ws_claude_idx = auth_row_idx(&ed, |r| {
-        matches!(r, AuthRow::WorkspaceDefault { agent: Agent::Claude })
+        matches!(
+            r,
+            AuthRow::WorkspaceDefault {
+                agent: Agent::Claude
+            }
+        )
     });
     ed.active_field = FieldFocus::Row(ws_claude_idx);
     state.stage = ManagerStage::Editor(ed);
@@ -2832,9 +2836,15 @@ fn auth_add_role_override_three_step_flow() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     match &editor(&state).modal {
         Some(Modal::AuthForm {
-            target: jackin::console::manager::state::AuthFormTarget::WorkspaceRole { agent, .. },
+            target: jackin::console::manager::state::AuthFormTarget::WorkspaceRole { role, agent },
             ..
-        }) => assert_eq!(*agent, Agent::Claude),
+        }) => {
+            assert_eq!(*agent, Agent::Claude);
+            assert!(
+                !role.is_empty(),
+                "role must propagate from AuthRolePicker → AuthAgentPicker → AuthForm"
+            );
+        }
         other => panic!("expected AuthForm/WorkspaceRole, got {other:?}"),
     }
     Ok(())
