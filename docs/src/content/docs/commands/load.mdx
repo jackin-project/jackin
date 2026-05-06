@@ -31,6 +31,7 @@ Load an agent into an isolated Docker container. This is the primary command for
 | `--force` | Acknowledge a dirty host working tree when materializing an isolated mount in non-interactive mode. Required only when (a) the workspace has at least one `worktree`-isolated mount and (b) the host repo's tree has staged, unstaged-tracked, or untracked files. Ignored otherwise. |
 | `--no-intro` | Skip the animated intro sequence |
 | `--debug` | Print raw container output for troubleshooting |
+| `--agent <NAME>` | Override the launch agent (`claude` or `codex`). When omitted on a multi-agent role with no `default_agent` on the workspace, an interactive prompt asks. |
 
 ## Examples
 
