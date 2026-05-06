@@ -61,6 +61,24 @@ Pressing `Enter` on a workspace row routes by eligible-role count:
 The picker is anchored on the manager list — cancelling drops you back
 on the same workspace row with the launch unchanged.
 
+## Agent disambiguation
+
+Roles declare which agents (`claude`, `codex`) they can host via the
+`agents` field in their `jackin.role.toml`. Once the role is resolved,
+the console may prompt for the agent:
+
+- **`default_agent` set** on the workspace → launch with that agent. No
+  prompt.
+- **Role supports a single agent** → launch with it. No prompt.
+- **Role supports multiple agents and the workspace has no
+  `default_agent`** → after the TUI tears down, a one-shot terminal
+  prompt asks which agent to start. Press `Enter` on the highlighted
+  choice to commit, `Ctrl-C` to abort.
+
+The prompt is intentionally a plain terminal `Select`, not a TUI
+overlay — it sits on the same path as the sensitive-mount confirmation
+that runs between `run_console` and `load_role`.
+
 ## When to use the console vs `load`
 
 `jackin console` is the simplified, intuitive TUI for everyday

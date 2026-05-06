@@ -16,7 +16,7 @@ use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_ho
 use super::image::build_agent_image;
 use super::naming::{
     LABEL_KEEP_AWAKE, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume,
-    format_role_display, image_name,
+    format_role_display, image_name, image_name_for_branch,
 };
 use super::repo_cache::resolve_agent_repo;
 
@@ -48,6 +48,12 @@ pub struct LoadOptions {
     /// CLI override for the agent. `None` means "use the workspace's
     /// `default_agent` field, falling back to `Agent::Claude` when unset".
     pub agent: Option<crate::agent::Agent>,
+
+    /// When set, resolve this branch of the role repo instead of the default
+    /// branch, build the image locally from the branch's Dockerfile (ignoring
+    /// any `published_image`), and tag it with a branch-specific name so the
+    /// stable image is not overwritten.
+    pub role_branch: Option<String>,
 }
 
 impl LoadOptions {
@@ -61,6 +67,7 @@ impl LoadOptions {
             op_runner: None,
             host_env: None,
             agent: None,
+            role_branch: None,
         }
     }
 
@@ -75,6 +82,7 @@ impl LoadOptions {
             op_runner: None,
             host_env: None,
             agent: None,
+            role_branch: None,
         }
     }
 }
@@ -89,6 +97,7 @@ impl Default for LoadOptions {
             op_runner: None,
             host_env: None,
             agent: None,
+            role_branch: None,
         }
     }
 }
@@ -355,6 +364,72 @@ fn export_host_terminfo(
 
 /// Display an untrusted-role warning and ask the operator to confirm.
 /// Aborts when stdin is not a terminal or the operator declines.
+/// Branch-specific trust confirmation.
+///
+/// Even when a role is already trusted, an unmerged branch contains unreviewed
+/// code. The operator trusted the *default* branch, not this PR. A malicious
+/// contributor could craft a branch whose Dockerfile runs arbitrary commands
+/// during the image build on the operator's machine.
+///
+/// This gate always fires when `--role-branch` is set, regardless of the
+/// role's `trusted` state in config. It is intentionally separate from
+/// `confirm_agent_trust` so the two gates compose: loading an *untrusted*
+/// role on a branch requires confirming both.
+fn confirm_branch_trust(
+    selector: &RoleSelector,
+    source: &crate::config::RoleSource,
+    branch: &str,
+) -> anyhow::Result<()> {
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "role \"{selector}\" is being loaded from unmerged branch \"{branch}\".\n\
+             Branch builds require interactive confirmation — run the command in a terminal."
+        );
+    }
+
+    eprintln!();
+    eprintln!(
+        "{}",
+        "!! Unreviewed branch — verify before proceeding !!"
+            .red()
+            .bold()
+    );
+    eprintln!();
+    eprintln!("  role:   {}", selector.to_string().bold());
+    eprintln!("  source: {}", source.git.yellow());
+    eprintln!("  branch: {}", branch.yellow().bold());
+    eprintln!();
+    eprintln!(
+        "  {}",
+        "This branch has not been merged to the default branch.".bold()
+    );
+    eprintln!("  Its Dockerfile and scripts may differ from the trusted main branch.");
+    eprintln!("  A malicious contributor could introduce harmful code that runs");
+    eprintln!("  on your machine during the image build.");
+    eprintln!();
+    eprintln!(
+        "  {}",
+        "Review the branch diff in the role repository before continuing.".dimmed()
+    );
+    eprintln!();
+
+    let confirmed = dialoguer::Confirm::new()
+        .with_prompt(format!(
+            "Have you reviewed branch \"{branch}\" and verified it is safe to build?"
+        ))
+        .default(false)
+        .interact()?;
+
+    if !confirmed {
+        anyhow::bail!(
+            "branch \"{branch}\" not confirmed — aborting.\n\
+             Review the Dockerfile and scripts on that branch before loading it."
+        );
+    }
+
+    Ok(())
+}
+
 fn confirm_agent_trust(
     selector: &RoleSelector,
     source: &crate::config::RoleSource,
@@ -698,6 +773,16 @@ fn launch_role_runtime(
     // for a single interactive session.
     super::caffeinate::reconcile(paths, runner);
 
+    // Pre-attach safety check: if the container has already exited
+    // (entrypoint crashed, agent CLI failed at startup, etc.), `docker
+    // attach` will print the opaque "cannot attach to a stopped
+    // container, start it first" and we'd lose the actual reason.
+    // Capture `docker logs` and surface it in the error so the operator
+    // sees what really happened.
+    if let Some(err) = diagnose_premature_exit(runner, container_name) {
+        return Err(err);
+    }
+
     // Attach with signal forwarding disabled and the default detach shortcut
     // cleared: only an explicit exit from inside (or terminal close) ends the
     // foreground session, and closing the terminal leaves the container
@@ -715,9 +800,70 @@ fn launch_role_runtime(
     );
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
+    if attach_result.is_err()
+        && let Some(err) = diagnose_premature_exit(runner, container_name)
+    {
+        return Err(err);
+    }
     attach_result?;
 
     Ok(())
+}
+
+/// Detect a container that exited before (or during) the foreground attach
+/// and return an actionable error including the captured `docker logs`.
+///
+/// `docker attach` against a stopped container prints the opaque
+/// "cannot attach to a stopped container, start it first" with no hint
+/// at the underlying entrypoint failure (auth wiring crash, agent CLI
+/// startup error, missing mount, …). This wraps the inspect + log
+/// fetch so the surfaced error names the exit code, OOM flag, and the
+/// last lines of the container's combined stdout/stderr.
+///
+/// Returns `None` when the container is still running (the normal
+/// happy path) so the caller can proceed to attach.
+fn diagnose_premature_exit(
+    runner: &mut impl crate::docker::CommandRunner,
+    container_name: &str,
+) -> Option<anyhow::Error> {
+    use super::attach::{ContainerState, inspect_container_state};
+
+    match inspect_container_state(runner, container_name) {
+        // Default to letting `docker attach` proceed when state is
+        // ambiguous: the daemon's own error from a true `NotFound`
+        // (`No such container`) is just as actionable as anything we
+        // could synthesize, and a transient inspect hiccup must not
+        // hijack an otherwise-healthy launch.
+        ContainerState::Running | ContainerState::NotFound => None,
+        ContainerState::Stopped {
+            exit_code,
+            oom_killed,
+        } => {
+            let logs = runner
+                .capture("docker", &["logs", "--tail", "40", container_name], None)
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let reason = if oom_killed {
+                "OOM killed".to_string()
+            } else {
+                format!("exit {exit_code}")
+            };
+            let body = logs.map_or_else(
+                || {
+                    format!(
+                        "container {container_name} exited before attach ({reason}) and produced no log output"
+                    )
+                },
+                |text| {
+                    format!(
+                        "container {container_name} exited before attach ({reason}); last 40 log lines:\n{text}"
+                    )
+                },
+            );
+            Some(anyhow::anyhow!(body))
+        }
+    }
 }
 
 /// Query a container's post-attach state for use by `finalize_foreground_session`.
@@ -798,6 +944,42 @@ pub fn inspect_attach_outcome(
     }
 }
 
+fn pull_workspace_repos(workspace: &crate::workspace::ResolvedWorkspace, debug: bool) {
+    for mount in &workspace.mounts {
+        let src = std::path::Path::new(&mount.src);
+        if !src.join(".git").exists() {
+            continue;
+        }
+        if debug {
+            eprintln!("[jackin debug] git pull in {}", mount.src);
+        }
+        eprintln!("  Pulling {} …", crate::tui::shorten_home(&mount.src));
+        match std::process::Command::new("git")
+            .args(["-C", &mount.src, "pull"])
+            .output()
+        {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let trimmed = stdout.trim();
+                if !trimmed.is_empty() {
+                    eprintln!("    {trimmed}");
+                }
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                eprintln!(
+                    "  Warning: git pull failed in {}: {}",
+                    mount.src,
+                    stderr.trim()
+                );
+            }
+            Err(e) => {
+                eprintln!("  Warning: could not run git pull in {}: {e}", mount.src);
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn load_role(
     paths: &JackinPaths,
@@ -815,10 +997,11 @@ pub fn load_role(
         runner,
         opts,
         confirm_agent_trust,
+        confirm_branch_trust,
     )
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn load_role_with(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -827,6 +1010,7 @@ fn load_role_with(
     runner: &mut impl CommandRunner,
     opts: &LoadOptions,
     confirm_trust: impl FnOnce(&RoleSelector, &crate::config::RoleSource) -> anyhow::Result<()>,
+    confirm_branch: impl FnOnce(&RoleSelector, &crate::config::RoleSource, &str) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     // Pre-launch garbage collection: remove orphaned DinD containers and
     // networks left behind by hard kills, terminal closures, or startup
@@ -846,6 +1030,10 @@ fn load_role_with(
         tui::intro_animation(intro_name);
     }
 
+    if workspace.git_pull_on_entry {
+        pull_workspace_repos(workspace, opts.debug);
+    }
+
     let (source, is_new) = config.resolve_role_source(selector)?;
 
     let mut steps = StepCounter::new(opts.no_intro, &selector.name);
@@ -853,8 +1041,14 @@ fn load_role_with(
     // Step 1: Resolve role identity (clone or update repo)
     steps.next("Resolving role identity");
 
-    let (cached_repo, validated_repo, repo_lock) =
-        resolve_agent_repo(paths, selector, &source.git, runner, opts.debug)?;
+    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo(
+        paths,
+        selector,
+        &source.git,
+        runner,
+        opts.debug,
+        opts.role_branch.as_deref(),
+    )?;
 
     // Trust gate: prompt the operator before running an untrusted third-party role
     let newly_trusted = if source.trusted {
@@ -884,12 +1078,21 @@ fn load_role_with(
     let agent = resolve_agent(opts.agent, workspace.default_agent);
     validate_agent_supported(selector, &validated_repo.manifest, agent)?;
 
+    // Branch trust gate: fires even for already-trusted roles because the
+    // operator trusted the default branch, not this unreviewed PR branch.
+    if let Some(branch) = opts.role_branch.as_deref() {
+        confirm_branch(selector, &source, branch)?;
+    }
+
     // Logo (if present in role repo)
     tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
 
     // Show a preliminary config summary (container name will be
     // confirmed after the image build, right before launch).
-    let image_tag = image_name(selector);
+    let image_tag = opts.role_branch.as_deref().map_or_else(
+        || image_name(selector),
+        |b| image_name_for_branch(selector, b),
+    );
     let preliminary_name = primary_container_name(selector);
     let config_rows = build_config_rows(
         &agent_display_name,
@@ -1017,6 +1220,7 @@ fn load_role_with(
             rebuild,
             agent_update,
             opts.debug,
+            opts.role_branch.as_deref(),
             runner,
             repo_lock,
         )?;
@@ -1806,6 +2010,75 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn diagnose_premature_exit_returns_none_when_container_running() {
+        // Single inspect = "running" → fast path returns Ok(()) so attach
+        // proceeds. The function must NOT consume the logs queue entry in
+        // this case.
+        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+        let result = super::diagnose_premature_exit(&mut runner, "jackin-the-architect");
+        assert!(
+            result.is_none(),
+            "running container must not be diagnosed as a failure"
+        );
+    }
+
+    #[test]
+    fn diagnose_premature_exit_includes_logs_when_container_already_stopped() {
+        // First capture: inspect → exited 127 (entrypoint command not found).
+        // Second capture: docker logs → entrypoint stderr.
+        let mut runner = FakeRunner::with_capture_queue([
+            "false 127 false".to_string(),
+            "/home/agent/entrypoint.sh: line 85: exec: codex: not found".to_string(),
+        ]);
+        let err = super::diagnose_premature_exit(&mut runner, "jackin-the-architect")
+            .expect("stopped container must produce a diagnostic error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("exit 127"),
+            "exit code missing from msg: {msg}"
+        );
+        assert!(
+            msg.contains("codex: not found"),
+            "logs missing from msg: {msg}"
+        );
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker logs --tail 40 jackin-the-architect")),
+            "must shell out to `docker logs` to capture the entrypoint output"
+        );
+    }
+
+    #[test]
+    fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
+        let mut runner =
+            FakeRunner::with_capture_queue(["false 137 true".to_string(), String::new()]);
+        let err = super::diagnose_premature_exit(&mut runner, "jackin-x")
+            .expect("OOM-killed container is a premature exit");
+        let msg = err.to_string();
+        assert!(msg.contains("OOM killed"), "expected OOM marker in: {msg}");
+        assert!(
+            msg.contains("no log output"),
+            "empty logs branch missing: {msg}"
+        );
+    }
+
+    #[test]
+    fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() {
+        // Empty inspect output maps to `ContainerState::NotFound`. We
+        // intentionally let docker attach surface its own
+        // `No such container` rather than synthesize a less-helpful
+        // diagnostic — and a transient inspect hiccup must not abort
+        // an otherwise-healthy launch.
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+        assert!(
+            super::diagnose_premature_exit(&mut runner, "jackin-x").is_none(),
+            "NotFound must defer to docker attach's own error path"
+        );
+    }
+
+    #[test]
     fn agent_mounts_for_claude_includes_claude_state() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
@@ -2214,6 +2487,7 @@ agents = ["codex"]
             }],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         }
     }
 
@@ -2339,6 +2613,7 @@ plugins = ["code-review@claude-plugins-official"]
             &mut runner,
             &LoadOptions::default(),
             auto_trust,
+            |_, _, _| Ok(()),
         )
         .unwrap();
 
@@ -2427,6 +2702,7 @@ plugins = []
             &mut runner,
             &LoadOptions::default(),
             deny_trust,
+            |_, _, _| Ok(()),
         )
         .unwrap_err();
 
@@ -2499,6 +2775,7 @@ trusted = true
             ],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         };
 
         load_role(
@@ -2773,6 +3050,7 @@ plugins = []
             }],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         };
 
         load_role(
@@ -2843,6 +3121,7 @@ plugins = []
             }],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         };
 
         load_role(

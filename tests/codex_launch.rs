@@ -110,6 +110,7 @@ model = "gpt-5"
         }],
         default_agent: Some(Agent::Codex),
         keep_awake_enabled: false,
+        git_pull_on_entry: false,
     };
     let mut runner = FakeRunner::for_load_agent([String::new()]);
 
@@ -211,6 +212,7 @@ plugins = []
         }],
         default_agent: Some(Agent::Claude),
         keep_awake_enabled: false,
+        git_pull_on_entry: false,
     };
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     let opts = LoadOptions {

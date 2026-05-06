@@ -21,8 +21,8 @@ use crate::workspace::{
 };
 
 use self::context::{
-    TargetKind, classify_target, remember_last_agent, resolve_agent_from_context,
-    resolve_running_container_from_context, resolve_target_name,
+    TargetKind, classify_target, prompt_agent_choice_if_needed, remember_last_agent,
+    resolve_agent_from_context, resolve_running_container_from_context, resolve_target_name,
 };
 
 /// Parse an `auth_forward` mode value as it arrived from the CLI.
@@ -54,6 +54,7 @@ pub fn run(cli: Cli) -> Result<()> {
             debug,
             force,
             agent,
+            role_branch,
         }) => {
             runner.debug = debug;
             tui::set_debug_mode(debug);
@@ -101,7 +102,13 @@ pub fn run(cli: Cli) -> Result<()> {
 
             let mut opts = runtime::LoadOptions::for_load(no_intro, debug, rebuild);
             opts.force = force;
-            opts.agent = agent;
+            opts.agent = match agent {
+                Some(explicit) => Some(explicit),
+                None => {
+                    prompt_agent_choice_if_needed(&paths, &class, resolved_workspace.default_agent)?
+                }
+            };
+            opts.role_branch = role_branch;
             // Pre-launch reconcile: if a previous role in a keep_awake
             // workspace already runs, ensure caffeinate is up before we
             // build/launch (so a long Docker build doesn't see the host
@@ -142,7 +149,8 @@ pub fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("aborted — sensitive mount paths were not confirmed");
             }
 
-            let opts = runtime::LoadOptions::for_launch(debug);
+            let mut opts = runtime::LoadOptions::for_launch(debug);
+            opts.agent = prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?;
             runtime::reconcile_keep_awake(&paths, &mut runner);
             let result =
                 runtime::load_role(&paths, &mut config, &class, &workspace, &mut runner, &opts);
@@ -454,6 +462,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 default_agent,
                 mount_isolation,
                 keep_awake,
+                git_pull,
             } => {
                 let expanded_workdir = workspace::resolve_path(&workdir);
                 let parsed_mounts = mounts
@@ -495,6 +504,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     },
                     claude: None,
                     codex: None,
+                    git_pull_on_entry: git_pull,
                 };
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
                 editor.create_workspace(&name, ws)?;
@@ -578,10 +588,19 @@ pub fn run(cli: Cli) -> Result<()> {
                 delete_isolated_state,
                 keep_awake,
                 no_keep_awake,
+                git_pull,
+                no_git_pull,
             } => {
                 // Map paired flags to Option<bool>: None = no change.
                 // Mutual exclusion is enforced at parse time by clap's
                 // `conflicts_with`, so at most one of the two is true.
+                let git_pull_change = if git_pull {
+                    Some(true)
+                } else if no_git_pull {
+                    Some(false)
+                } else {
+                    None
+                };
                 let keep_awake_change = if keep_awake {
                     Some(true)
                 } else if no_keep_awake {
@@ -720,6 +739,12 @@ pub fn run(cli: Cli) -> Result<()> {
                         if v { "enabled" } else { "disabled" }
                     ));
                 }
+                if let Some(v) = git_pull_change {
+                    changes.push(format!(
+                        "git_pull_on_entry → {}",
+                        if v { "enabled" } else { "disabled" }
+                    ));
+                }
 
                 // Build the prospective mount list (mirrors edit_workspace's
                 // merge order) so we can check for source drift on any mount
@@ -801,6 +826,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         },
                         mount_isolation_overrides: mount_isolation,
                         keep_awake_enabled: keep_awake_change,
+                        git_pull_on_entry_enabled: git_pull_change,
                     },
                 )?;
                 editor.save()?;
@@ -1113,6 +1139,9 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
     if workspace.keep_awake.enabled {
         info.push(("Keep Awake", "enabled (macOS only)"));
     }
+    if workspace.git_pull_on_entry {
+        info.push(("Git Pull", "on entry"));
+    }
     let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
     info_table
         .with(Style::modern_rounded())
@@ -1208,6 +1237,7 @@ mod auth_set_tests {
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            git_pull_on_entry: false,
         };
         let out = render_workspace_show("jackin", &ws);
         assert!(out.contains("Isolation"));

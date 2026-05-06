@@ -21,6 +21,7 @@ pub(super) fn build_agent_image(
     rebuild: bool,
     agent_update: bool,
     debug: bool,
+    branch_override: Option<&str>,
     runner: &mut impl CommandRunner,
     repo_lock: std::fs::File,
 ) -> anyhow::Result<String> {
@@ -34,7 +35,10 @@ pub(super) fn build_agent_image(
     // Workspace mode: either `--rebuild` was requested or no `published_image`
     // is declared. We build from the workspace Dockerfile from scratch.
     let published_image = validated_repo.manifest.published_image.as_deref();
-    let use_prebuilt = published_image.is_some() && !rebuild;
+    // Branch builds always use the workspace Dockerfile regardless of
+    // `published_image` — the operator is testing uncommitted code that has
+    // not been pushed to the registry.
+    let use_prebuilt = published_image.is_some() && !rebuild && branch_override.is_none();
     let base_image_override = use_prebuilt.then(|| published_image.unwrap());
 
     // create_derived_build_context copies the repo into a temp directory,
@@ -57,7 +61,10 @@ pub(super) fn build_agent_image(
             .dimmed()
         );
     }
-    let image = image_name(selector);
+    let image = branch_override.map_or_else(
+        || image_name(selector),
+        |b| super::naming::image_name_for_branch(selector, b),
+    );
 
     let build_arg_uid = format!("JACKIN_HOST_UID={}", host.uid);
     let build_arg_gid = format!("JACKIN_HOST_GID={}", host.gid);

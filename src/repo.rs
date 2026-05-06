@@ -22,6 +22,24 @@ impl CachedRepo {
             repo_dir,
         }
     }
+
+    /// Cache directory isolated to a specific branch, leaving the default-branch
+    /// cache entry untouched. The branch name is used directly as a path
+    /// component so `feat/my-pr` lives at `…/branches/feat/my-pr` — a branch
+    /// named `feat-my-pr` (with a dash) would live at `…/branches/feat-my-pr`,
+    /// which is a different path, eliminating any ambiguity.
+    pub fn for_branch(paths: &JackinPaths, selector: &RoleSelector, branch: &str) -> Self {
+        let base = selector.namespace.as_ref().map_or_else(
+            || paths.roles_dir.join(&selector.name),
+            |namespace| paths.roles_dir.join(namespace).join(&selector.name),
+        );
+        Self {
+            key: format!("{}@{branch}", selector.key()),
+            // Path::join handles forward slashes as directory separators, so
+            // "feat/my-pr" naturally becomes …/branches/feat/my-pr on disk.
+            repo_dir: base.join("branches").join(branch),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

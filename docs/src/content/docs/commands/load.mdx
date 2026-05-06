@@ -28,9 +28,11 @@ Load an agent into an isolated Docker container. This is the primary command for
 |---|---|
 | `--mount <SPEC>` | Additional bind-mount spec. Repeatable. Format: `path[:ro]` or `src:dst[:ro]` |
 | `--rebuild` | Force rebuild the Docker image and refresh agent CLI install layers |
+| `--role-branch <BRANCH>` | Check out a specific branch of the role repository for local testing. See **Testing a role branch** below. |
 | `--force` | Acknowledge a dirty host working tree when materializing an isolated mount in non-interactive mode. Required only when (a) the workspace has at least one `worktree`-isolated mount and (b) the host repo's tree has staged, unstaged-tracked, or untracked files. Ignored otherwise. |
 | `--no-intro` | Skip the animated intro sequence |
 | `--debug` | Print raw container output for troubleshooting |
+| `--agent <NAME>` | Override the launch agent (`claude` or `codex`). When omitted on a multi-agent role with no `default_agent` on the workspace, an interactive prompt asks. |
 
 ## Examples
 
@@ -58,20 +60,24 @@ jackin load agent-smith big-monorepo --mount ~/extra-data
 
 # Path with read-only additional mount
 jackin load agent-smith ~/app --mount ~/cache:/cache:ro
+
+# Build and test a specific role branch locally before it merges
+jackin load the-architect --role-branch feat/my-pr
 ```
 
 ## What happens
 
-1. Resolves the role and clones/updates its repository
+1. Resolves the role and clones/updates its repository (or the specified branch when `--role-branch` is set)
 2. Validates the role repo contract (`jackin.role.toml` + Dockerfile) with strict manifest parsing
 3. **If the agent source has never been trusted**, prompts the operator to review and confirm before proceeding (see [Agent source trust](/guides/security-model#4-agent-source-trust))
-4. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
-5. Prompts for interactive environment variables declared in the manifest
-6. Generates and builds a derived Docker image (cached if unchanged)
-7. Creates a per-agent Docker network and DinD sidecar
-8. Launches the agent container with all resolved mounts and environment variables
-9. Runs the pre-launch hook if declared
-10. Starts Claude Code with `--dangerously-skip-permissions`
+4. **If `--role-branch` is set**, always prompts to confirm the branch is safe to build, regardless of the role's trust status (see [Branch trust gate](/guides/security-model#branch-trust-gate))
+5. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
+6. Prompts for interactive environment variables declared in the manifest
+7. Generates and builds a derived Docker image (cached if unchanged; branch builds ignore `published_image` and always build from source)
+8. Creates a per-agent Docker network and DinD sidecar
+9. Launches the agent container with all resolved mounts and environment variables
+10. Runs the pre-launch hook if declared
+11. Starts Claude Code with `--dangerously-skip-permissions`
 
 <Aside type="note">
 If the agent manifest declares interactive environment variables, `jackin load` prompts for their values before building the Docker image. This ensures no build time is wasted if you cancel.
@@ -88,6 +94,62 @@ If two resolved mounts target the same container destination, `jackin load` fail
 <Aside type="tip">
 If no selector is given and the current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace's default or last-used agent is used automatically.
 </Aside>
+## Testing a role branch (`--role-branch`)
+
+`--role-branch` lets you build and run a specific branch of a role repository locally before it merges to the default branch. This is the intended workflow for verifying a PR on a role repo (for example, checking that a Dockerfile change works end-to-end) without affecting your stable local image or other operators who may share the same role.
+
+```bash
+jackin load the-architect --role-branch feat/caveman-all-install
+```
+
+### What changes when `--role-branch` is set
+
+| Behaviour | Default | With `--role-branch` |
+|---|---|---|
+| Role repo cache path | `~/.jackin/roles/<name>/` | `~/.jackin/roles/<name>/branches/<branch>/` |
+| Image tag | `jackin-<name>` | `jackin-<name>-<branch-slug>` |
+| Uses `published_image` | Yes (if declared in manifest) | No — always builds from the branch Dockerfile |
+| Docker layer cache | Used | Used (no forced rebuild unless `--rebuild` is also passed) |
+| Repo lock file | Shared with default-branch loads | Separate — branch builds never block default-branch loads |
+| Trust confirmation | First-use only | **Always** — regardless of the role's trusted status |
+
+The branch cache (`branches/<branch>/`) is completely separate from the default-branch cache. Running `jackin load the-architect` after a branch build still uses the unchanged default-branch image.
+
+Branch names with slashes are preserved as nested directories on disk (`feat/my-pr` → `branches/feat/my-pr/`), so a branch named `feat/my-pr` and one named `feat-my-pr` are always stored at distinct paths and use distinct lock files.
+
+### Branch trust gate
+
+Every `--role-branch` load triggers an interactive confirmation, even for roles you have already trusted:
+
+```
+!! Unreviewed branch — verify before proceeding !!
+
+  role:   the-architect
+  source: https://github.com/jackin-project/jackin-the-architect.git
+  branch: feat/caveman-all-install
+
+  This branch has not been merged to the default branch.
+  Its Dockerfile and scripts may differ from the trusted main branch.
+  A malicious contributor could introduce harmful code that runs
+  on your machine during the image build.
+
+  Review the branch diff in the role repository before continuing.
+
+Have you reviewed branch "feat/caveman-all-install" and verified it is safe to build? [y/N]
+```
+
+This gate exists because `trusted = true` in your config covers the default branch of a role, not every PR branch an external contributor might open against it. See [Branch trust gate](/guides/security-model#branch-trust-gate) for the full threat model.
+
+`--role-branch` requires an interactive terminal. Non-interactive contexts (CI, scripts) will exit with an error — this is intentional.
+
+### Combining with `--rebuild`
+
+`--role-branch` alone does not bust the Docker layer cache. If you push new commits to the branch and want a clean rebuild:
+
+```bash
+jackin load the-architect --role-branch feat/my-pr --rebuild
+```
+
 ## Dirty-host acknowledgement (`--force`)
 
 When a workspace mount has `isolation = "worktree"`, `jackin load` materializes a new `git worktree` from the host repo's current `HEAD` before starting the container. If the host tree is dirty (staged changes, unstaged tracked changes, or untracked files — ignored files do not count), those edits stay on the host and are **not** carried into the agent's worktree.

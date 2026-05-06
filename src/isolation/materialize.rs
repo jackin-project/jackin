@@ -1149,6 +1149,7 @@ mod tests {
             }],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         }
     }
 
@@ -1235,6 +1236,7 @@ mod tests {
             }],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         };
         let mut runner = FakeRunner::default();
         let mat = materialize_workspace(

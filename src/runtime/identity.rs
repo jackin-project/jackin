@@ -101,6 +101,7 @@ mod tests {
             mounts: vec![],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         };
         let git = GitIdentity {
             user_name: String::new(),
@@ -131,6 +132,7 @@ mod tests {
             mounts: vec![],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         };
         let git = GitIdentity {
             user_name: "Alice".to_string(),
@@ -164,6 +166,7 @@ mod tests {
             mounts: vec![],
             default_agent: None,
             keep_awake_enabled: false,
+            git_pull_on_entry: false,
         };
         let git = GitIdentity {
             user_name: String::new(),

@@ -667,6 +667,9 @@ impl EditorState<'_> {
         if self.pending.keep_awake != self.original.keep_awake {
             n += 1;
         }
+        if self.pending.git_pull_on_entry != self.original.git_pull_on_entry {
+            n += 1;
+        }
         // Rename in Edit mode counts as a change.
         if let EditorMode::Edit { name } = &self.mode
             && self.pending_name.as_deref().is_some_and(|pn| pn != name)
@@ -1269,6 +1272,7 @@ mod tests {
             keep_awake: KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            git_pull_on_entry: false,
         };
         let mut e = EditorState::new_edit("ws".into(), ws);
         e.active_tab = EditorTab::Mounts;

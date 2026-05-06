@@ -87,6 +87,7 @@ pub fn build_workspace_choice(
                     mounts: current.mounts,
                     default_agent: None,
                     keep_awake_enabled: false,
+                    git_pull_on_entry: false,
                 },
                 allowed_roles: configured_agents(config),
                 default_role: None,
@@ -108,6 +109,7 @@ pub fn build_workspace_choice(
                     mounts: saved.mounts.clone(),
                     default_agent: saved.default_agent,
                     keep_awake_enabled: saved.keep_awake.enabled,
+                    git_pull_on_entry: saved.git_pull_on_entry,
                 },
                 allowed_roles,
                 default_role: saved.default_role.clone(),
@@ -194,6 +196,7 @@ mod tests {
                 keep_awake: crate::workspace::KeepAwakeConfig::default(),
                 claude: None,
                 codex: None,
+                git_pull_on_entry: false,
             },
         );
 
@@ -231,6 +234,7 @@ mod tests {
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            git_pull_on_entry: false,
         }
     }
 

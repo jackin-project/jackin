@@ -232,11 +232,13 @@ pub(super) fn handle_editor_key(
             toggle_agent_allowed_at_cursor(editor, config);
         }
         KeyCode::Char(' ') if editor.active_tab == EditorTab::General => {
-            // Row 2 is the keep_awake toggle. Other General rows
-            // ignore Space — Enter is the modal-opening key for them.
+            // Row 2 = keep_awake toggle, row 3 = git_pull_on_entry toggle.
+            // Other General rows ignore Space — Enter is the modal-opening key for them.
             let FieldFocus::Row(n) = editor.active_field;
             if n == 2 {
                 editor.pending.keep_awake.enabled = !editor.pending.keep_awake.enabled;
+            } else if n == 3 {
+                editor.pending.git_pull_on_entry = !editor.pending.git_pull_on_entry;
             }
         }
         KeyCode::Char('*') if editor.active_tab == EditorTab::Roles => {
@@ -343,7 +345,8 @@ pub(super) fn handle_editor_key(
 fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
     match editor.active_tab {
         // 0=Name, 1=Working dir, 2=Keep awake
-        EditorTab::General => 2,
+        // 0=Name, 1=Working dir, 2=Keep awake, 3=Git pull
+        EditorTab::General => 3,
         EditorTab::Mounts => editor.pending.mounts.len(),
         // One extra sentinel row: + Add role.
         EditorTab::Roles => config.roles.len(),

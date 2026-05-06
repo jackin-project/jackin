@@ -119,6 +119,7 @@ fn contextual_row_items(
             //   row 0 = Name        (editable — Enter opens rename)
             //   row 1 = Working dir (editable — Enter opens workdir picker)
             //   row 2 = Keep awake  (toggle — Space flips on/off)
+            //   row 3 = Git pull    (toggle — Space flips on/off)
             match cursor {
                 0 => vec![FooterItem::Key("Enter"), FooterItem::Text("rename")],
                 // WorkdirPick requires at least one mount to choose from;
@@ -128,7 +129,7 @@ fn contextual_row_items(
                     FooterItem::Key("Enter"),
                     FooterItem::Text("pick working directory"),
                 ],
-                2 => vec![FooterItem::Key("Space"), FooterItem::Text("toggle")],
+                2 | 3 => vec![FooterItem::Key("Space"), FooterItem::Text("toggle")],
                 _ => Vec::new(),
             }
         }
@@ -360,10 +361,11 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         EditorMode::Create => state.pending_name.as_deref().unwrap_or("(new)"),
     };
 
-    // Both Edit and Create modes show the same three rows:
+    // Both Edit and Create modes show the same four rows:
     //   0 = Name        (editable; Enter opens rename TextInput)
     //   1 = Working dir (editable; Enter opens workdir picker)
     //   2 = Keep awake  (toggle; Space flips pending.keep_awake.enabled)
+    //   3 = Git pull    (toggle; Space flips pending.git_pull_on_entry)
     //
     // The former `Default role` (ro) and `Last used` (ro) rows were
     // removed from the General tab. `Default role` is now editable on the
@@ -399,6 +401,12 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         "Keep awake",
         keep_awake_display,
     ));
+    let git_pull_display = if state.pending.git_pull_on_entry {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    rows.push(render_editor_row(3, cursor, "Git pull", git_pull_display));
 
     frame.render_widget(Paragraph::new(rows).block(block), area);
 }

@@ -301,6 +301,70 @@ pub(crate) fn resolve_running_container_from_context(
     }
 }
 
+/// Resolve which agent to launch when the operator hasn't explicitly
+/// chosen one (no `--agent` flag, no workspace `default_agent`).
+///
+/// Reads the role's cached `jackin.role.toml` to discover its
+/// `supported_agents` list. When the role allows multiple agents and
+/// stdin is interactive, prompts the operator with a `dialoguer::Select`
+/// menu. Single-agent roles, headless invocations, or a missing/invalid
+/// cached manifest all return `Ok(None)` so the caller falls back to
+/// the workspace `default_agent` → `Agent::Claude` resolution chain in
+/// `runtime::launch::resolve_agent`.
+///
+/// Loading the manifest from the local cache (no git fetch) keeps this
+/// fast and TUI-tear-down-safe: the prompt fires after `run_console`
+/// has already restored the terminal but before the heavy `load_role`
+/// pipeline begins.
+pub(crate) fn prompt_agent_choice_if_needed(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    workspace_default: Option<crate::agent::Agent>,
+) -> Result<Option<crate::agent::Agent>> {
+    use std::io::IsTerminal;
+
+    let Some(supported) = supported_agents_requiring_prompt(paths, selector, workspace_default)
+    else {
+        return Ok(None);
+    };
+
+    if !std::io::stdin().is_terminal() {
+        return Ok(None);
+    }
+
+    let labels: Vec<String> = supported.iter().map(|a| a.slug().to_string()).collect();
+    let selection = dialoguer::Select::new()
+        .with_prompt(format!(
+            "Role \"{}\" supports multiple agents. Choose one",
+            selector.key()
+        ))
+        .items(&labels)
+        .default(0)
+        .interact()?;
+
+    Ok(Some(supported[selection]))
+}
+
+/// Returns `Some(supported)` when the operator should be asked to pick
+/// an agent, `None` when the choice is already determined (workspace
+/// default set, single-agent role, or unreadable manifest). Split from
+/// the prompting wrapper so the gating logic is unit-testable without
+/// stdin / dialoguer scaffolding.
+fn supported_agents_requiring_prompt(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    workspace_default: Option<crate::agent::Agent>,
+) -> Option<Vec<crate::agent::Agent>> {
+    if workspace_default.is_some() {
+        return None;
+    }
+    let cached = crate::repo::CachedRepo::new(paths, selector);
+    let supported = crate::manifest::RoleManifest::load(&cached.repo_dir)
+        .ok()?
+        .supported_agents();
+    (supported.len() >= 2).then_some(supported)
+}
+
 pub(crate) fn remember_last_agent(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -479,6 +543,7 @@ mod tests {
                 keep_awake: workspace::KeepAwakeConfig::default(),
                 claude: None,
                 codex: None,
+                git_pull_on_entry: false,
             },
         );
 
@@ -524,6 +589,7 @@ mod tests {
                 keep_awake: workspace::KeepAwakeConfig::default(),
                 claude: None,
                 codex: None,
+                git_pull_on_entry: false,
             },
         );
 
@@ -568,6 +634,7 @@ mod tests {
                 keep_awake: workspace::KeepAwakeConfig::default(),
                 claude: None,
                 codex: None,
+                git_pull_on_entry: false,
             },
         );
 
@@ -620,6 +687,7 @@ mod tests {
                 keep_awake: workspace::KeepAwakeConfig::default(),
                 claude: None,
                 codex: None,
+                git_pull_on_entry: false,
             },
         );
         config
@@ -860,5 +928,91 @@ mod tests {
             "cwd inside a mount source must still preselect the workspace"
         );
         assert_eq!(result.unwrap().0, "jackin-roles");
+    }
+
+    // ── supported_agents_requiring_prompt gating ─────────────────────
+
+    fn write_role_manifest(role_dir: &std::path::Path, body: &str) {
+        std::fs::create_dir_all(role_dir).unwrap();
+        std::fs::write(role_dir.join("jackin.role.toml"), body).unwrap();
+    }
+
+    #[test]
+    fn requires_prompt_when_role_supports_two_agents_and_no_workspace_default() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
+        write_role_manifest(
+            &paths.roles_dir.join(&selector.name),
+            r#"dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+        );
+
+        let agents = supported_agents_requiring_prompt(&paths, &selector, None)
+            .expect("multi-agent role with no workspace default must trigger a prompt");
+        assert_eq!(
+            agents,
+            vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
+        );
+    }
+
+    #[test]
+    fn skips_prompt_when_workspace_default_agent_is_set() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
+        write_role_manifest(
+            &paths.roles_dir.join(&selector.name),
+            r#"dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+        );
+
+        let result =
+            supported_agents_requiring_prompt(&paths, &selector, Some(crate::agent::Agent::Codex));
+        assert!(
+            result.is_none(),
+            "explicit workspace default_agent must short-circuit the prompt"
+        );
+    }
+
+    #[test]
+    fn skips_prompt_when_role_supports_a_single_agent() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let selector = crate::selector::RoleSelector::parse("solo").unwrap();
+        write_role_manifest(
+            &paths.roles_dir.join(&selector.name),
+            r#"dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+"#,
+        );
+
+        assert!(
+            supported_agents_requiring_prompt(&paths, &selector, None).is_none(),
+            "single-agent roles have nothing to disambiguate"
+        );
+    }
+
+    #[test]
+    fn skips_prompt_when_manifest_is_missing_or_unreadable() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let selector = crate::selector::RoleSelector::parse("ghost").unwrap();
+        // No manifest written — load_role will fetch and validate later.
+        assert!(supported_agents_requiring_prompt(&paths, &selector, None).is_none());
     }
 }
